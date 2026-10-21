@@ -6,8 +6,10 @@
 //! it. [`UnweightStrategy`] is the choice, and the two implemented here differ in
 //! what they put in `IDWTUP`:
 //!
-//! * [`Buffer`] keeps the weights, declaring `IDWTUP = -4` — `XWGTUP` is a cross
-//!   section in picobarns and the total is the *mean* of the event weights. The
+//! * [`Buffer`] keeps the weights, declaring `IDWTUP = -4` under the card's
+//!   default `event_norm = average` — `XWGTUP` is a cross section in picobarns
+//!   and the total is the *mean* of the event weights; `sum` declares `-3` and
+//!   weights summing to the cross section, `unity` `-3` and weights of one. The
 //!   overweight tail stays visible in the file, event by event, and each part of
 //!   the sample is normalised to its integrated cross section.
 //! * [`StochasticRounding`] keeps unit weights, declaring `IDWTUP = +3`, and
@@ -40,6 +42,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::progress;
+
+use crate::runcard::EventNorm;
 
 use super::record::{LheEvent, LheInit, LheProcess, WeightStrategy};
 use super::write::{initrwgt_block, rwgt_block, LheWriter};
@@ -133,6 +137,10 @@ pub struct EmitPlan {
     /// `(id, description)`: declared in `<initrwgt>`, and written per event as a
     /// `<rwgt>` block in `XWGTUP`'s own units.
     pub reweights: Vec<(String, String)>,
+    /// The run card's `event_norm`: what the written `XWGTUP` are normalised to
+    /// and the `IDWTUP` that says so. Only [`Buffer`] writes anything but
+    /// [`EventNorm::Average`].
+    pub event_norm: EventNorm,
 }
 
 /// One integrated part's cross section and its uncertainty, in picobarns.
@@ -201,6 +209,12 @@ pub enum EmitError {
         strategy: &'static str,
         parts: usize,
     },
+    /// The plan asks for an `event_norm` this strategy does not write: its
+    /// `IDWTUP` is fixed by how it represents the overweight tail.
+    EventNormUnsupported {
+        strategy: &'static str,
+        norm: EventNorm,
+    },
 }
 
 impl std::fmt::Display for EmitError {
@@ -218,6 +232,12 @@ impl std::fmt::Display for EmitError {
             EmitError::UndeclaredPart(k) => write!(
                 f,
                 "an event names integrated part {k}, which the emission plan does not declare"
+            ),
+            EmitError::EventNormUnsupported { strategy, norm } => write!(
+                f,
+                "{strategy} writes unit weights under IDWTUP = +3 and cannot honour \
+                 event_norm = {}; use the buffered strategy",
+                norm.as_str()
             ),
             EmitError::PartsUnsupported { strategy, parts } => write!(
                 f,
@@ -239,8 +259,8 @@ impl From<io::Error> for EmitError {
 
 /// How a weighted accept/reject sample becomes the events of a file.
 pub trait UnweightStrategy {
-    /// The `IDWTUP` a file written by this strategy declares.
-    fn weight_strategy(&self) -> WeightStrategy;
+    /// The `IDWTUP` a file written by this strategy declares under `norm`.
+    fn weight_strategy(&self, norm: EventNorm) -> WeightStrategy;
 
     /// A one-line description of the mode, for a run's provenance header.
     fn describe(&self) -> String;
@@ -446,7 +466,8 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 }
 
 /// Generate the whole sample in memory, then write it with the weights it
-/// carries (`IDWTUP = -4`), each part normalised to its integrated cross section.
+/// carries (`IDWTUP = -4` under `event_norm = average`, the others as
+/// [`EventNorm`] says), each part normalised to its integrated cross section.
 ///
 /// The overweight events an accept/reject pass keeps above weight `1` stay in the
 /// file as weights, so a consumer sees the tail rather than a smoothed version of
@@ -460,7 +481,7 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 /// common factor so that they contribute exactly its integrated `σₖ` to the
 /// file's cross section: `Σ_{i∈k} XWGTUPᵢ / N = σₖ` over the file's `N` events,
 /// which under `IDWTUP = -4` is the statement that the part's weights sum to its
-/// cross section. MadEvent pins each of its channels to its integral the same
+/// cross section; under `sum` the `/ N` drops out. MadEvent pins each of its channels to its integral the same
 /// way (`unwgt.f`, `xscale = xsecabs/xsum`); taking it at the multiplicity
 /// level keeps every part normalised over at least the events of its share of
 /// the sample rather than over a handful.
@@ -518,13 +539,14 @@ struct PartTally {
 }
 
 impl UnweightStrategy for Buffer {
-    fn weight_strategy(&self) -> WeightStrategy {
-        WeightStrategy::MeanCrossSectionPb
+    fn weight_strategy(&self, norm: EventNorm) -> WeightStrategy {
+        norm_rule(norm).idwtup
     }
 
     fn describe(&self) -> String {
-        "buffered, IDWTUP = -4 (XWGTUP in pb, sigma = mean weight, each part's weights \
-         normalised to its integration)"
+        "buffered (event_norm = average: IDWTUP = -4, XWGTUP in pb, sigma = mean weight; sum: \
+         IDWTUP = -3, sigma = summed weight; unity: IDWTUP = -3, every XWGTUP = 1; each part's \
+         weights normalised to its integration)"
             .to_string()
     }
 
@@ -538,6 +560,7 @@ impl UnweightStrategy for Buffer {
         let n = events.len();
         let parts = plan.part_sigmas();
         let (tally, by_process) = tally_parts(plan, &events, &parts)?;
+        let norm = plan.event_norm;
 
         let sample_sigma_pb = source.sigma_pb();
         let total_weight: f64 = tally.iter().map(|t| t.weight).sum();
@@ -549,10 +572,11 @@ impl UnweightStrategy for Buffer {
         let xsec_pb: f64 = processes.iter().map(|p| p.xsec_pb).sum();
         let xmax = processes.iter().map(|p| p.xmax).fold(0.0f64, f64::max);
 
-        let init = init_block(plan, self.weight_strategy(), processes);
+        let init = init_block(plan, self.weight_strategy(norm), processes);
         let mut writer = begin(sink, &init, Some(&header), plan)?;
         for event in &events {
-            let record = finished_record(event, tally[event.part].scale * event.weight, plan);
+            let xwgtup = written_weight(norm, tally[event.part].scale, event.weight);
+            let record = finished_record(event, xwgtup, plan);
             writer.write_event(&record)?;
         }
         let written = writer.events_written();
@@ -567,6 +591,56 @@ impl UnweightStrategy for Buffer {
             xmax,
             mean_source_weight: if n > 0 { total_weight / n as f64 } else { 0.0 },
         })
+    }
+}
+
+/// What an `event_norm` makes [`Buffer`] write: the one place the setting is
+/// decided.
+///
+/// MadGraph's rule is `MultiEventFile.unweight` (`lhe_parser.py:1225-1239`) and
+/// `EventFile.unweight` (`lhe_parser.py:519-527`, `lha_stra = -1*abs(strategy)`
+/// with the sign of the strategy kept): `average` weights sum to `N` times the
+/// cross section and are declared `IDWTUP = -4`; `sum` weights sum to the cross
+/// section (`-3`); `unity` writes weight one (`-3`).
+#[derive(Clone, Copy)]
+struct NormRule {
+    /// The `IDWTUP` the file declares.
+    idwtup: WeightStrategy,
+    /// Whether a part's weights sum to its `σₖ` (`sum`), and not to `N σₖ` over
+    /// the file's `N` events (the mean is then `σₖ`).
+    sums_to_sigma: bool,
+    /// Whether every event is written at weight one, an overweight event keeping
+    /// no weight above the rest.
+    flatten: bool,
+}
+
+fn norm_rule(norm: EventNorm) -> NormRule {
+    match norm {
+        EventNorm::Average => NormRule {
+            idwtup: WeightStrategy::MeanCrossSectionPb,
+            sums_to_sigma: false,
+            flatten: false,
+        },
+        EventNorm::Sum => NormRule {
+            idwtup: WeightStrategy::SumCrossSectionPb,
+            sums_to_sigma: true,
+            flatten: false,
+        },
+        EventNorm::Unity => NormRule {
+            idwtup: WeightStrategy::SumCrossSectionPb,
+            sums_to_sigma: false,
+            flatten: true,
+        },
+    }
+}
+
+/// The `XWGTUP` of an event of generator weight `w` in a part whose weights are
+/// scaled by `scale`, under `norm`.
+fn written_weight(norm: EventNorm, scale: f64, w: f64) -> f64 {
+    if norm_rule(norm).flatten {
+        1.0
+    } else {
+        scale * w
     }
 }
 
@@ -592,8 +666,16 @@ fn tally_parts(
     }
     let n = events.len();
     for (t, part) in tally.iter_mut().zip(parts) {
+        // Averaged weights have the part contribute `σₖ` as their mean over the
+        // file's `n` events, and summed weights as their sum, `n` times smaller
+        // each.
+        let events_per_weight = if norm_rule(plan.event_norm).sums_to_sigma {
+            1.0
+        } else {
+            n as f64
+        };
         t.scale = if t.weight > 0.0 {
-            part.sigma_pb * n as f64 / t.weight
+            part.sigma_pb * events_per_weight / t.weight
         } else {
             0.0
         };
@@ -665,7 +747,7 @@ fn buffered_processes(
     let mut max_written = vec![0.0f64; by_process.len()];
     for event in events {
         let slot = process_slot(plan, event.record.process_id)?;
-        let w = tally[event.part].scale * event.weight;
+        let w = written_weight(plan.event_norm, tally[event.part].scale, event.weight);
         max_written[slot] = max_written[slot].max(w);
     }
     Ok(by_process
@@ -737,6 +819,14 @@ impl StochasticRounding {
         StochasticRounding { seed }
     }
 
+    /// Whether the strategy can write a file under `norm`: its unit weights are
+    /// declared `IDWTUP = +3`, which is no `event_norm` but its own, so only the
+    /// card default `average` is honoured. The emitter and the command line both
+    /// refuse on this.
+    pub fn honours(norm: EventNorm) -> bool {
+        norm == EventNorm::Average
+    }
+
     /// Run the pass without writing, returning each process's written-event count
     /// as its share and the total written.
     fn count_shares(
@@ -772,7 +862,7 @@ impl StochasticRounding {
 }
 
 impl UnweightStrategy for StochasticRounding {
-    fn weight_strategy(&self) -> WeightStrategy {
+    fn weight_strategy(&self, _norm: EventNorm) -> WeightStrategy {
         WeightStrategy::UnitWeight
     }
 
@@ -789,6 +879,12 @@ impl UnweightStrategy for StochasticRounding {
         plan: &EmitPlan,
         sink: &mut dyn Write,
     ) -> Result<EmitSummary, EmitError> {
+        if !Self::honours(plan.event_norm) {
+            return Err(EmitError::EventNormUnsupported {
+                strategy: "stochastic rounding",
+                norm: plan.event_norm,
+            });
+        }
         // Unit weights leave each part's share of the file to the realised sample,
         // so a sum over multiplicities would not carry each part's integration.
         if plan.parts.len() > 1 {
@@ -810,7 +906,7 @@ impl UnweightStrategy for StochasticRounding {
         };
         let init = init_block(
             plan,
-            self.weight_strategy(),
+            self.weight_strategy(plan.event_norm),
             shared_processes(plan, plan.sigma_pb, &shares, counted, |_| 1.0),
         );
         let mut writer = begin(sink, &init, plan.header.as_deref(), plan)?;
@@ -955,6 +1051,7 @@ mod tests {
             header: None,
             header_blocks: Vec::new(),
             reweights: Vec::new(),
+            event_norm: EventNorm::Average,
         }
     }
 
@@ -1002,6 +1099,82 @@ mod tests {
             largest > 8.0 * mean / summary.mean_source_weight,
             "the 8.4x event did not survive into the file"
         );
+    }
+
+    /// The three `event_norm` values on one overweight-carrying sample: the
+    /// `IDWTUP`, the weights and their relation to the integration's σ.
+    ///
+    /// `average` is the baseline (mean `XWGTUP` = σ); `sum` is the same weights
+    /// divided by the event count (Σ `XWGTUP` = σ); `unity` writes one for every
+    /// event. Under all three `XSECUP` is σ. A `sum` file that kept the `average`
+    /// weights fails the sum and the ratio; one that flattened them fails the
+    /// ratio; an `average` file that divided by the count fails the mean.
+    #[test]
+    fn event_norm_sets_the_idwtup_and_the_weights() {
+        let weights = vec![1.0, 1.0, 1.0, 2.5, 1.0, 1.0, 8.4, 1.0];
+        let sigma = 17.25;
+        let written = |norm: EventNorm| {
+            let mut source = FixedWeights::new(weights.clone(), sigma);
+            let mut plan = plan(weights.len(), sigma);
+            plan.event_norm = norm;
+            let (text, summary) = emit_to_string(&Buffer, &mut source, &plan);
+            (LheFile::parse(&text).expect("our own file parses"), summary)
+        };
+        let n = weights.len() as f64;
+        let (average, _) = written(EventNorm::Average);
+        let (sum, sum_summary) = written(EventNorm::Sum);
+        let (unity, unity_summary) = written(EventNorm::Unity);
+
+        assert_eq!(
+            average.init.weight_strategy,
+            WeightStrategy::MeanCrossSectionPb
+        );
+        assert_eq!(sum.init.weight_strategy, WeightStrategy::SumCrossSectionPb);
+        assert_eq!(
+            unity.init.weight_strategy,
+            WeightStrategy::SumCrossSectionPb
+        );
+
+        let mean: f64 = average.events.iter().map(|e| e.weight).sum::<f64>() / n;
+        assert!((mean / sigma - 1.0).abs() < 1e-6, "average mean {mean}");
+        let total: f64 = sum.events.iter().map(|e| e.weight).sum();
+        assert!((total / sigma - 1.0).abs() < 1e-6, "sum total {total}");
+        for (a, s) in average.events.iter().zip(&sum.events) {
+            assert!(
+                (s.weight * n / a.weight - 1.0).abs() < 1e-6,
+                "sum weight {} is not the average weight {} over {n}",
+                s.weight,
+                a.weight
+            );
+        }
+        assert!(unity.events.iter().all(|e| e.weight == 1.0));
+
+        for file in [&average, &sum, &unity] {
+            assert!((file.init.processes[0].xsec_pb / sigma - 1.0).abs() < 1e-6);
+        }
+        let largest = |file: &LheFile| file.events.iter().map(|e| e.weight).fold(0.0f64, f64::max);
+        assert!((sum.init.processes[0].xmax / largest(&sum) - 1.0).abs() < 1e-6);
+        assert!((sum_summary.xmax / largest(&sum) - 1.0).abs() < 1e-6);
+        assert_eq!(unity.init.processes[0].xmax, 1.0);
+        assert_eq!(unity_summary.xmax, 1.0);
+    }
+
+    /// Stochastic rounding's `IDWTUP = +3` is no `event_norm`, so it refuses `sum`
+    /// and `unity` instead of writing the unit-weight file under them.
+    #[test]
+    fn stochastic_rounding_refuses_an_event_norm_it_cannot_write() {
+        for norm in [EventNorm::Sum, EventNorm::Unity] {
+            let mut source = FixedWeights::new(vec![1.0], 1.0);
+            let mut plan = plan(10, 1.0);
+            plan.event_norm = norm;
+            let err = StochasticRounding::new(1)
+                .emit(&mut source, &plan, &mut Vec::new())
+                .expect_err("unit weights cannot be normalised to the sum");
+            assert!(
+                matches!(err, EmitError::EventNormUnsupported { .. }),
+                "{err}"
+            );
+        }
     }
 
     /// Stochastic rounding writes unit weights and pays for the tail in copies.
@@ -1213,6 +1386,209 @@ mod tests {
         }
     }
 
+    /// MadEvent's own `<init>` under `event_norm = sum`, banked in the
+    /// decay-chain event references (their run cards never set `event_norm`, so
+    /// MadGraph resolves it to its system default `sum`): `IDWTUP = -3`, every
+    /// process line's `XMAXUP` the weight each event carries, and that weight the
+    /// summed `XSECUP` over the sample's event count (`MultiEventFile.unweight`,
+    /// `lhe_parser.py:1225-1228`, `new_wgt = sum(self.across)/event_target`).
+    ///
+    /// The same cross sections and event count through [`Buffer`] under
+    /// [`EventNorm::Sum`] give the same `IDWTUP`, the same total `XSECUP`, and a
+    /// mean `XWGTUP` that is MadEvent's `XMAXUP`. The mean and not each weight:
+    /// MadGraph writes one weight to every event, flattening the overweight tail
+    /// that this writer keeps, so a single event's weight is not comparable but
+    /// the sum is. What this cannot see is a per-event `XWGTUP` of a MadEvent
+    /// file: the reference keeps the `<init>` lines and the event summaries, not
+    /// the event weights, so `XMAXUP` is the weight MadGraph's rule assigns and
+    /// not a weight read off an `<event>`.
+    #[test]
+    fn a_sum_file_carries_madevents_idwtup_and_event_weight() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/decay_chain_events_reference.json"
+        );
+        let text = std::fs::read_to_string(path).expect("the committed decay-chain reference");
+        let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let rows = dump["rows"].as_object().expect("rows");
+        assert!(rows.len() >= 5, "the reference lost rows");
+        for (name, row) in rows {
+            let lines: Vec<Vec<&str>> = row["init"]
+                .as_array()
+                .expect("init")
+                .iter()
+                .map(|l| l.as_str().unwrap().split_whitespace().collect())
+                .collect();
+            let banked_idwtup: i32 = lines[0][8].parse().unwrap();
+            let nevents = row["runs"][0]["events"].as_u64().unwrap() as usize;
+            let processes: Vec<(f64, f64, i32)> = lines[1..]
+                .iter()
+                .map(|l| {
+                    (
+                        l[0].parse().unwrap(),
+                        l[2].parse().unwrap(),
+                        l[3].parse().unwrap(),
+                    )
+                })
+                .collect();
+            let total: f64 = processes.iter().map(|p| p.0).sum();
+            for (_, xmax, id) in &processes {
+                assert!(
+                    (xmax * nevents as f64 / total - 1.0).abs() < 1e-5,
+                    "{name} process {id}: XMAXUP {xmax:e} is not the summed XSECUP {total:e} over \
+                     {nevents} events"
+                );
+            }
+
+            let ids: Vec<i32> = processes.iter().map(|p| p.2).collect();
+            let mut plan = plan(nevents, total);
+            plan.process_ids = ids.clone();
+            plan.event_norm = EventNorm::Sum;
+            let mut source = TwoProcesses {
+                inner: FixedWeights::new(vec![1.0, 1.0, 2.5, 1.0, 1.0, 1.0, 8.4], total),
+                ids,
+            };
+            let (text, _) = emit_to_string(&Buffer, &mut source, &plan);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            assert_eq!(
+                file.init.weight_strategy.as_i32(),
+                banked_idwtup,
+                "{name}: IDWTUP"
+            );
+            let xsec: f64 = file.init.processes.iter().map(|p| p.xsec_pb).sum();
+            assert!((xsec / total - 1.0).abs() < 1e-6, "{name}: XSECUP {xsec}");
+            let mean = file.events.iter().map(|e| e.weight).sum::<f64>() / nevents as f64;
+            assert!(
+                (mean / processes[0].1 - 1.0).abs() < 1e-5,
+                "{name}: mean XWGTUP {mean:e} vs MadEvent's XMAXUP {:e}",
+                processes[0].1
+            );
+        }
+    }
+
+    /// MadEvent's own `e+ e- > mu+ mu-` samples under `event_norm = sum` and
+    /// `average` (`validation/madgraph/event_norm_reference.json`: one card, one
+    /// seed, 1000 events, differing only in `event_norm`), read per event.
+    ///
+    /// MadGraph writes `IDWTUP -3` with `XMAXUP = XWGTUP = σ/N` on every event
+    /// under `sum`, and `IDWTUP -4` with `XWGTUP = σ` on every event under
+    /// `average`. The banked `σ` and `N` go through [`Buffer`] under the same
+    /// norm, so the file's `IDWTUP`, its `XSECUP`/`XMAXUP` and each event's
+    /// `XWGTUP` are this crate's weight rule against MadEvent's, not a
+    /// re-integration.
+    ///
+    /// A source of equal generator weights has no overweight tail, and then
+    /// every written `XWGTUP` equals MadEvent's. MadGraph flattens the tail to
+    /// the constant weight; this writer keeps it proportional, so with a tail
+    /// the bulk sits below MadEvent's constant by the tail's excess of the mean
+    /// and a tail event above it. There the per-event comparison can assert
+    /// only what the rule fixes: the bulk is constant and below MadEvent's
+    /// weight, the tail is above it, and the sum (`sum`) or mean (`average`)
+    /// of the weights is MadEvent's `σ`.
+    ///
+    /// What this cannot see: both samples come from one process, one card, one
+    /// part and one process entry, so a rule that is wrong only when several
+    /// parts or processes share the file is not exercised here (see
+    /// `each_part_is_normalised_to_its_integration_under_every_event_norm`),
+    /// and a rescaling that preserves the sum or mean but moves weight between
+    /// events is visible only through the tail's ordering and ratio.
+    #[test]
+    fn event_norm_weights_match_madevents_per_event() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/event_norm_reference.json"
+        );
+        let text = std::fs::read_to_string(path).expect("the committed event_norm reference");
+        let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let nevents = dump["nevents"].as_u64().unwrap() as usize;
+        let samples = dump["samples"].as_object().expect("samples");
+        assert_eq!(samples.len(), 2, "the reference holds sum and average");
+
+        for (norm_name, norm, banked_idwtup, per_event_of_sigma) in [
+            ("sum", EventNorm::Sum, -3, 1.0 / nevents as f64),
+            ("average", EventNorm::Average, -4, 1.0),
+        ] {
+            let sample = &samples[norm_name];
+            let lines: Vec<Vec<&str>> = sample["init"]
+                .as_array()
+                .expect("init")
+                .iter()
+                .map(|l| l.as_str().unwrap().split_whitespace().collect())
+                .collect();
+            assert_eq!(lines.len(), 2, "{norm_name}: one process line");
+            assert_eq!(lines[0][8].parse::<i32>().unwrap(), banked_idwtup);
+            let sigma: f64 = lines[1][0].parse().unwrap();
+            let banked_xmax: f64 = lines[1][2].parse().unwrap();
+            let process_id: i32 = lines[1][3].parse().unwrap();
+            assert!(
+                (banked_xmax / (sigma * per_event_of_sigma) - 1.0).abs() < 1e-5,
+                "{norm_name}: banked XMAXUP {banked_xmax:e} is not {per_event_of_sigma:e} sigma"
+            );
+            let banked: Vec<f64> = sample["xwgtup"]
+                .as_array()
+                .expect("xwgtup")
+                .iter()
+                .map(|w| w.as_str().unwrap().parse().unwrap())
+                .collect();
+            assert_eq!(banked.len(), nevents, "{norm_name}: one XWGTUP per event");
+            let constant = banked[0];
+            assert!(
+                banked.iter().all(|w| (w / constant - 1.0).abs() < 1e-6),
+                "{norm_name}: MadEvent's weights are not constant"
+            );
+
+            let mut plan = plan(nevents, sigma);
+            plan.process_ids = vec![process_id];
+            plan.event_norm = norm;
+
+            // No tail: every event is MadEvent's.
+            let mut source = FixedWeights::new(vec![1.0], sigma);
+            let (text, _) = emit_to_string(&Buffer, &mut source, &plan);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            assert_eq!(file.init.weight_strategy.as_i32(), banked_idwtup);
+            assert!((file.init.processes[0].xsec_pb / sigma - 1.0).abs() < 1e-6);
+            assert!((file.init.processes[0].xmax / banked_xmax - 1.0).abs() < 1e-5);
+            assert_eq!(file.events.len(), nevents);
+            for (k, (ours, theirs)) in file.events.iter().zip(&banked).enumerate() {
+                assert!(
+                    (ours.weight / theirs - 1.0).abs() < 1e-5,
+                    "{norm_name} event {k}: XWGTUP {:e} vs MadEvent's {theirs:e}",
+                    ours.weight
+                );
+            }
+
+            // A tail: one event in ten carries four times the generator weight.
+            let mut weights = vec![1.0; 10];
+            weights[9] = 4.0;
+            let mut source = FixedWeights::new(weights, sigma);
+            let (text, _) = emit_to_string(&Buffer, &mut source, &plan);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            let total: f64 = file.events.iter().map(|e| e.weight).sum();
+            assert!(
+                (total / (sigma * nevents as f64 * per_event_of_sigma) - 1.0).abs() < 1e-5,
+                "{norm_name}: the tailed weights' sum {total:e}"
+            );
+            let bulk: Vec<f64> = file.events.iter().map(|e| e.weight).step_by(10).collect();
+            let tail: Vec<f64> = file
+                .events
+                .iter()
+                .skip(9)
+                .step_by(10)
+                .map(|e| e.weight)
+                .collect();
+            assert!(bulk.iter().all(|w| (w / bulk[0] - 1.0).abs() < 1e-6));
+            assert!(tail.iter().all(|w| (w / tail[0] - 1.0).abs() < 1e-6));
+            assert!(
+                bulk[0] < constant && tail[0] > constant,
+                "{norm_name}: tail ordering"
+            );
+            assert!(
+                (tail[0] / bulk[0] - 4.0).abs() < 1e-5,
+                "{norm_name}: the tail keeps its generator weight ratio"
+            );
+        }
+    }
+
     /// A file of several process numbers declares one `<init>` entry per
     /// number, each carrying its process's share of the sample: under `-4` the
     /// share of the written weight, under `+3` the share of the written events —
@@ -1365,6 +1741,44 @@ mod tests {
             .filter(|e| filter(e))
             .map(|e| e.weight)
             .sum::<f64>()
+    }
+
+    /// With several parts each part's written weights are pinned to its own
+    /// integration under every `event_norm`: they sum to `N σₖ` (mean `σₖ`) under
+    /// `average` and to `σₖ` under `sum`, whatever share of the `N` events the
+    /// part drew. A single part cannot tell the part's event count from `N`, so
+    /// the parts here draw unequal shares (two thirds and one third).
+    #[test]
+    fn each_part_is_normalised_to_its_integration_under_every_event_norm() {
+        let weights = vec![1.0, 1.0, 3.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0];
+        let sigmas = [31.0, 9.0];
+        for (norm, per_event) in [(EventNorm::Average, 600.0), (EventNorm::Sum, 1.0)] {
+            let mut source = PartedSource {
+                inner: FixedWeights::new(weights.clone(), 47.0),
+                parts: vec![0, 0, 1],
+                ids: vec![10, 10, 11],
+            };
+            let mut two = plan(600, 40.0);
+            two.parts = sigmas
+                .iter()
+                .map(|&sigma_pb| PartSigma {
+                    sigma_pb,
+                    sigma_err_pb: 0.1,
+                })
+                .collect();
+            two.process_ids = vec![10, 11];
+            two.event_norm = norm;
+            let (text, _) = emit_to_string(&Buffer, &mut source, &two);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            for (id, sigma) in [(10, sigmas[0]), (11, sigmas[1])] {
+                let summed = written_weights(&file, |e| e.process_id == id);
+                assert!(
+                    (summed / (per_event * sigma) - 1.0).abs() < 1e-6,
+                    "{norm:?}: process {id}'s weights sum to {summed}, want {}",
+                    per_event * sigma
+                );
+            }
+        }
     }
 
     /// The buffered file pins every part to its integration: the written weights

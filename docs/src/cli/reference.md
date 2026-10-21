@@ -278,7 +278,7 @@ Options:
           Weight strategy
 
           Possible values:
-          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`)
+          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under the run card's `event_norm = sum` or `unity`)
           - stochastic-rounding: Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit weight (`IDWTUP = +3`)
           
           [default: buffer]
