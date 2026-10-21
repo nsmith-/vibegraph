@@ -23,3 +23,4 @@
 * **C7:** retire `VIBEGRAPH_PDF_DIR`; use `LHAPDF_DATA_PATH` as a colon-separated list, as LHAPDF does; the legacy `LHAPATH` is the design's call.
 * **C8:** remove the `validation/pdf` fallback. **C9:** refuse on a checksum mismatch.
 * C5, C6, C10, C11, C12: pending; the design's recommendations are the working assumption.
+* **C5, C6, C10, C11, C12** (user, 2026-10-21): the recommendations taken: pins carry set_index/num_members; fall through tiers when the lhaid is not covered; the prompt says size and checksum are unknown (no HEAD); always the new version (moot under the split); download tested at library level, consent prompt separately. All twelve original choices are settled; N1–N10 of the split design remain open.
