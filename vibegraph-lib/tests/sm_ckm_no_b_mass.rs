@@ -132,6 +132,36 @@ fn vertex_couplings(model: &UFOModel) -> BTreeMap<String, BTreeSet<String>> {
         .collect()
 }
 
+/// The vertex set MadGraph's unitary-gauge `sm` import holds is 67 of this
+/// crate's 133: the 66 with a ghost or a Goldstone are the ones diagram
+/// enumeration also leaves out. MadGraph's `display interactions` count at this
+/// card is compared with the 67.
+///
+/// Blind spot: a count is the same if one vertex is swapped for another, so this
+/// pins the predicate's reach, not which vertices survive.
+#[test]
+fn unitary_gauge_leaves_67_of_133_vertices() {
+    let model = sm_model(SMRestrict::CkmNoBMass);
+    assert_eq!(model.vertices.len(), 133);
+    let with_ghost = model
+        .vertices
+        .values()
+        .filter(|v| v.particles.iter().any(|&p| model.particles[p].is_ghost()))
+        .count();
+    let goldstone_only = model
+        .vertices
+        .values()
+        .filter(|v| {
+            let legs = || v.particles.iter().map(|&p| &model.particles[p]);
+            legs().any(|p| p.is_goldstone()) && !legs().any(|p| p.is_ghost())
+        })
+        .count();
+    assert_eq!((with_ghost, goldstone_only), (24, 42));
+    assert_eq!(model.unitary_gauge_vertices().count(), 67);
+    // A tree-level Feynman-gauge import keeps Goldstones and drops ghosts.
+    assert_eq!(model.vertices.len() - with_ghost, 109);
+}
+
 #[test]
 fn vendored_card_is_the_cms_genproductions_bytes() {
     let text = SMRestrict::CkmNoBMass.restrict_card_text();

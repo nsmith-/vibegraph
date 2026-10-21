@@ -326,6 +326,14 @@ impl ParsedModel {
 }
 
 impl UFOModel {
+    /// The vertices that survive unitary gauge, the set MadGraph's default `sm`
+    /// import holds and diagram enumeration is built from.
+    pub fn unitary_gauge_vertices(&self) -> impl Iterator<Item = (&String, &Vertex)> {
+        self.vertices
+            .iter()
+            .filter(|(_, v)| v.is_physical(&self.particles))
+    }
+
     /// Load a UFO model from a directory path.
     ///
     /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
