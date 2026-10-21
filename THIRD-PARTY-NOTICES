@@ -50,6 +50,18 @@ above were last regenerated from commit `b7687064b9a013317ca164aa1395bc9c0e39ae1
 of that submodule — rerun `gen_sm_blob` and update that commit reference
 here if the assets are regenerated from a newer checkout).
 
+MadGraph5_aMC@NLO default particle names (input/particles_name_default.txt)
+---------------------------------------------------------------------------
+
+vibegraph also interns `input/particles_name_default.txt` of
+MadGraph5_aMC@NLO, the table of default particle names by PDG code that
+MadGraph's `import model` applies. It is copied verbatim, byte for byte, from
+commit `b7687064b9a013317ca164aa1395bc9c0e39ae1e`, committed at
+`vibegraph-lib/src/ufo/mg_input/particles_name_default.txt`, and compiled
+into every `vibegraph` binary via `include_str!`
+(`vibegraph-lib/src/ufo/names.rs`, which pins its SHA-256). The file states
+that it is subject to the MadGraph5_aMC@NLO license, reproduced below.
+
 The MadGraph5_aMC@NLO license
 ------------------------------
 

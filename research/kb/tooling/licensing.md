@@ -41,6 +41,13 @@ committed at `vibegraph-lib/src/ufo/sm_assets/` and compiled in with
   `couplings.py` and the other `.py` sources), produced by the `gen_sm_blob`
   dev binary. It is a derivative of the UFO model definition.
 
+It also embeds MadGraph's `input/particles_name_default.txt`, the default
+particle names by PDG code that `import model` applies, byte for byte at
+`vibegraph-lib/src/ufo/mg_input/` (`include_str!` in
+`vibegraph-lib/src/ufo/names.rs`, whose test pins its SHA-256). The file's
+header puts it under the same MadGraph5_aMC@NLO licence, so
+`THIRD-PARTY-NOTICES` lists it in a section of its own, at the same commit.
+
 `models/sm` has no licence of its own; it is covered by the mg5amcnlo root
 `LICENSE`, an NCSA-style licence (Copyright (c) 2009, 2013, the MadTeam).
 Clause 2 conditions redistribution in binary form on reproducing the

@@ -174,6 +174,16 @@ impl ReweightPlan {
                 }
             }
         }
+        if let Some((param, _)) = launches
+            .iter()
+            .flat_map(|l| &l.values)
+            .find(|(p, _)| !base.param_values.contains_key(p))
+        {
+            return Err(ReweightError::UnknownParameter {
+                line: 0,
+                what: format!("named `{param}`"),
+            });
+        }
         check_finite(base, &launches)?;
         let generic = generic_point(base, &launches);
         let mut subs = Vec::with_capacity(sets.len());
@@ -422,6 +432,28 @@ impl BoundSub<'_> {
     }
 }
 
+/// Set `name` to `value` in `model`.
+///
+/// Every launch name is checked against the model's parameters at the top of
+/// [`ReweightPlan::new`], before any plan code calls this.
+fn move_parameter(model: &mut EvaluatedModel, name: &str, value: f64) {
+    model
+        .recompute(name, value.into())
+        .expect("launch parameters are checked by ReweightPlan::new");
+}
+
+/// `base` with each `(name, value)` applied.
+fn moved_to<'a>(
+    base: &EvaluatedModel,
+    values: impl IntoIterator<Item = (&'a str, f64)>,
+) -> EvaluatedModel {
+    let mut point = base.clone();
+    for (name, value) in values {
+        move_parameter(&mut point, name, value);
+    }
+    point
+}
+
 /// `base` with every parameter any hypothesis moves set to an unremarkable value.
 fn generic_point(base: &EvaluatedModel, launches: &[Launch]) -> EvaluatedModel {
     let mut generic = base.clone();
@@ -442,7 +474,7 @@ fn generic_point(base: &EvaluatedModel, launches: &[Launch]) -> EvaluatedModel {
         if shifted.abs() < 0.5 * offset * scale {
             shifted = v0 - offset * scale;
         }
-        generic.recompute(name, shifted.into());
+        move_parameter(&mut generic, name, shifted);
     }
     generic
 }
@@ -453,10 +485,7 @@ fn generic_point(base: &EvaluatedModel, launches: &[Launch]) -> EvaluatedModel {
 fn check_finite(base: &EvaluatedModel, launches: &[Launch]) -> Result<(), ReweightError> {
     let at_card: BTreeSet<&str> = base.non_finite().into_iter().collect();
     for launch in launches {
-        let mut point = base.clone();
-        for (name, value) in &launch.values {
-            point.recompute(name, (*value).into());
-        }
+        let point = moved_to(base, launch.values.iter().map(|(n, v)| (n.as_str(), *v)));
         if let Some(name) = point
             .non_finite()
             .into_iter()
@@ -590,10 +619,8 @@ fn plan_subprocess(
                 let mut points = points.into_iter();
                 for node in group.nodes.iter_mut() {
                     if let NodeSource::Slot(slot) = node {
-                        let mut model = base.clone();
-                        for (name, value) in points.next().expect("one point per slot node") {
-                            model.recompute(&name, value.into());
-                        }
+                        let point = points.next().expect("one point per slot node");
+                        let model = moved_to(base, point.iter().map(|(n, v)| (n.as_str(), *v)));
                         *slot = slots.len();
                         slots.push(model);
                     }
@@ -623,11 +650,8 @@ fn plan_subprocess(
             if let Some(&(_, slot)) = exact_points.iter().find(|(p, _)| *p == key) {
                 return (k, slot);
             }
-            let mut point = base.clone();
-            for (name, value) in &launches[k].values {
-                point.recompute(name, (*value).into());
-            }
-            slots.push(point);
+            let values = launches[k].values.iter().map(|(n, v)| (n.as_str(), *v));
+            slots.push(moved_to(base, values));
             exact_points.push((key, slots.len() - 1));
             (k, slots.len() - 1)
         })
@@ -1054,7 +1078,7 @@ mod tests {
         let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
         let mut at = base.clone();
         if let Some(a) = alpha_s {
-            at.set_alpha_s(a);
+            at.set_alpha_s(a).unwrap();
         }
         let mut rw = plan.bind();
         let mut out = Vec::new();
@@ -1302,7 +1326,7 @@ launch --rwgt_name=y4
         let p = &points(&eval, &base, 1000.0)[0];
         let at = |v: f64| {
             let mut point = base.clone();
-            point.recompute("ymt", v.into());
+            point.recompute("ymt", v.into()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&eval, &point);
             let mut scratch = bound.scratch_space();
             bound.eval_m2(p, &mut scratch)
@@ -1390,6 +1414,27 @@ launch --rwgt_name=y4
         }
     }
 
+    /// A launch naming a parameter the model lacks is refused by the plan, naming
+    /// it, whoever built the launch.
+    #[test]
+    fn a_launch_naming_an_unknown_parameter_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        let sets = sets("e+ e- > mu+ mu-", &model);
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let launch = Launch {
+            id: "x".into(),
+            info: String::new(),
+            values: vec![("no_such_parameter".into(), 1.0)],
+        };
+        match ReweightPlan::new(&refs, &[], &model, &base, vec![launch], Default::default()) {
+            Err(ReweightError::UnknownParameter { what, .. }) => {
+                assert!(what.contains("no_such_parameter"), "{what}")
+            }
+            other => panic!("expected a refusal, got {:?}", other.err()),
+        }
+    }
+
     /// The pruning point stays away from zero, where a coupling's contributions
     /// vanish: a card at `ymt = -offset` with a first hypothesis at `ymt = 1` puts
     /// the plain shift `ymt + offset · max(|ymt|, 1)` exactly at zero, which would
@@ -1398,7 +1443,7 @@ launch --rwgt_name=y4
     fn the_pruning_point_avoids_zero() {
         let model = sm_model(SMRestrict::Default);
         let mut base = EvaluatedModel::from_model(model.clone());
-        base.recompute("ymt", (-(0.291_7 + 0.017)).into());
+        base.recompute("ymt", (-(0.291_7 + 0.017)).into()).unwrap();
         let launches = resolve(
             &"launch\n set ymt 1\nlaunch\n set ymt 173\nlaunch\n set ymt 350\n"
                 .parse()
@@ -1589,7 +1634,7 @@ launch --rwgt_name=aew
     fn pruning_keeps_what_a_hypothesis_revives() {
         let model = sm_model(SMRestrict::Default);
         let mut base = EvaluatedModel::from_model(model.clone());
-        base.recompute("ymt", 0.0.into());
+        base.recompute("ymt", 0.0.into()).unwrap();
         let sets = sets("e+ e- > t t~ h", &model);
         let launches = resolve(&YMT_SCAN.parse().unwrap(), &model).unwrap();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
@@ -1612,7 +1657,7 @@ launch --rwgt_name=aew
         let (before, after) = at_card.zeroamp_node_reduction();
         assert!(after < before, "the card's pruning removed nothing");
         let mut point = base.clone();
-        point.recompute("ymt", 173.0.into());
+        point.recompute("ymt", 173.0.into()).unwrap();
         let p = &points(&eval, &base, 1000.0)[0];
         let pruned = BoundAmplitude::<f64>::bind(&at_card, &point);
         let mut scratch = pruned.scratch_space();
