@@ -125,82 +125,11 @@ pub fn eval_rate(stage: &'static str, done: u64, total: Option<u64>, ns_per_eval
 mod tests {
     use super::{eval_rate, stage, unweighting, vegas_iteration, TARGET};
 
-    use std::sync::{Arc, Mutex};
-
-    use tracing::field::{Field, Visit};
-    use tracing::span::{Attributes, Id, Record};
-    use tracing::{Event, Level, Metadata, Subscriber};
-
-    /// One captured event: its target, its level, and its fields as
-    /// `(name, rendered value)` in emission order.
-    #[derive(Debug, Clone, PartialEq)]
-    struct Captured {
-        target: String,
-        level: Level,
-        fields: Vec<(String, String)>,
-    }
-
-    impl Captured {
-        fn field(&self, name: &str) -> Option<&str> {
-            self.fields
-                .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, v)| v.as_str())
-        }
-    }
-
-    #[derive(Default)]
-    struct Recorder(Vec<(String, String)>);
-
-    impl Visit for Recorder {
-        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-            self.0
-                .push((field.name().to_string(), format!("{value:?}")));
-        }
-        fn record_str(&mut self, field: &Field, value: &str) {
-            self.0.push((field.name().to_string(), value.to_string()));
-        }
-        fn record_u64(&mut self, field: &Field, value: u64) {
-            self.0.push((field.name().to_string(), value.to_string()));
-        }
-        fn record_f64(&mut self, field: &Field, value: f64) {
-            self.0.push((field.name().to_string(), value.to_string()));
-        }
-    }
-
-    /// A subscriber that keeps every event it is handed. It enables everything, so
-    /// a field the emitter never records is a field genuinely absent rather than
-    /// one filtered away.
-    #[derive(Clone, Default)]
-    struct Capture(Arc<Mutex<Vec<Captured>>>);
-
-    impl Subscriber for Capture {
-        fn enabled(&self, _: &Metadata<'_>) -> bool {
-            true
-        }
-        fn new_span(&self, _: &Attributes<'_>) -> Id {
-            Id::from_u64(1)
-        }
-        fn record(&self, _: &Id, _: &Record<'_>) {}
-        fn record_follows_from(&self, _: &Id, _: &Id) {}
-        fn event(&self, event: &Event<'_>) {
-            let mut fields = Recorder::default();
-            event.record(&mut fields);
-            self.0.lock().expect("capture").push(Captured {
-                target: event.metadata().target().to_string(),
-                level: *event.metadata().level(),
-                fields: fields.0,
-            });
-        }
-        fn enter(&self, _: &Id) {}
-        fn exit(&self, _: &Id) {}
-    }
+    use crate::test_capture::{capture, Captured};
+    use tracing::Level;
 
     fn captured(emit: impl FnOnce()) -> Vec<Captured> {
-        let capture = Capture::default();
-        tracing::subscriber::with_default(capture.clone(), emit);
-        let events = capture.0.lock().expect("capture").clone();
-        events
+        capture(emit).1
     }
 
     /// The target and the level are the whole reason this stream can be consumed
