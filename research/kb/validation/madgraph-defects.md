@@ -82,6 +82,7 @@ kind is treated.
 | `rambo.py` overflow warning never fires | `rambo.py:218` | no | none needed |
 | VEGAS iterations combined with weight mean²/variance | `dsample.f:1995-1997` | σ low by 0.1–0.2 % on a fixed-beam 2 → 4, shrinking with budget | measured, [own concept](madevent-iteration-weighting-bias.md); references are read with it in mind, never reproduced |
 | **approximation**: identical particles across decays, one pairing kept and the interference between pairings dropped | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
+| written fixed-beam frame decided by one ulp: the lab boost is computed, then `numerical_accuracy` (`pb(0,i).gt.ebeam(i)`) falls back to an identity boost when a boosted beam energy rounds one ulp over (250.00000000000006 > 250 on the banked `p3r3` toy rows) | `unwgt.f:633-717` | no: vibegraph writes the CM frame, as these rows do; another mass/energy pair could round the other way and write lab records | candidate, measured on the banked rows and replayed in float64, not run through MadGraph; [fixed-beam-written-event-frame-unsettled](../backlog/validation/fixed-beam-written-event-frame-unsettled.md); not reported upstream |
 
 **`AQCDUP` with a truncated π.** `unwgt.f` writes
 `aaqcd = g*g/4d0/3.1415926d0` (and `aaqed` alike) while `g = √(4π·αs)` used full

@@ -6,6 +6,7 @@
 
 * [F1: refuse unimplemented cuts before enumeration; let no-op values through](F1.md) - detect_unimplemented runs on the run card alone, before diagram enumeration, naming the cut and value; an upper bound that cannot bind at the collider's energy reads as the default.
 * [F2: the three items filed from this PR (user request)](F2.md) - generate loads the run card first; one tests/common module for the CLI tests; √s for unequal beams correct or refused.
+* [F3: every CLI test file on tests/common](F3.md) - Move the remaining CLI test files' hand-built binary invocations and inline stderr reads onto tests/common, checking each file's environment, so cli-test-helpers-copied-per-file's closes_when holds.
 * [HY1: hygiene review of the early cut refusal and the no-op threshold](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [HY2: hygiene review of F2 (run card first; the shared CLI test module)](HY2.md) - Review F2's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 

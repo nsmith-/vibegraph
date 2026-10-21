@@ -2,6 +2,7 @@
 type: Session Report
 title: "HY2 report: hygiene review of F2"
 description: "Findings table (written before any edit), dispositions, mutation evidence and gates."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-21}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-21}
 ---
 ## Findings (written before any edit)
