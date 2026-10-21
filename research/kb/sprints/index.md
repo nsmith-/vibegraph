@@ -46,6 +46,7 @@
 * [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
+* [unequal-beams](unequal-beams/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)
 * [ux-mini-sprint](ux-mini-sprint/index.md)
 * [v3-backlog](v3-backlog/index.md)
