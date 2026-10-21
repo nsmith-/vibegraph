@@ -34,9 +34,10 @@
 #[path = "../../vibegraph-lib/tests/common/seeds.rs"]
 mod seeds;
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Deserialize;
 use vibegraph::artifact::IntegrateArtifact;
@@ -93,7 +94,7 @@ fn reference() -> Reference {
 /// printed line, whose fixed six decimals do not resolve a femtobarn row.
 fn integrate(dir: &Path, card: &Path, run_card: &Path, seed: u64) -> (f64, f64) {
     let out = dir.join(format!("run_{seed}"));
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph_ambient()
         .arg("integrate")
         .arg(card)
         .arg("--run-card")
@@ -111,7 +112,7 @@ fn integrate(dir: &Path, card: &Path, run_card: &Path, seed: u64) -> (f64, f64) 
         output.status.success(),
         "vibegraph integrate {} failed:\n{}",
         card.display(),
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
     let artifact =
         IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
