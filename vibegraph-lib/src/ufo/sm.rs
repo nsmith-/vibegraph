@@ -12,6 +12,7 @@
 use std::sync::{Arc, OnceLock};
 
 use super::identity::model_digest;
+use super::names::ParticleNaming;
 use super::slha::ParamCard;
 use super::{ParsedModel, UFOModel, UfoError};
 
@@ -161,6 +162,7 @@ pub fn sm_model(restrict: SMRestrict) -> Arc<UFOModel> {
             let model = sm_parsed()
                 .clone()
                 .into_model(Some(&card))
+                .and_then(|m| m.with_particle_naming(ParticleNaming::MadGraphDefaults, "sm"))
                 .expect("build interned SM model");
             Arc::new(model)
         })

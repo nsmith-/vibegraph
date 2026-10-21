@@ -26,6 +26,13 @@ use crate::ufo::UFOModel;
 pub enum ResolveError {
     #[error("no particle '{0}' in the model")]
     UnknownParticle(String),
+    /// A model's own name for a particle that `import model` renamed to
+    /// MadGraph's default name for its PDG code.
+    #[error(
+        "no particle '{name}' in the model: importing the model renames it '{default}', \
+         as MadGraph does; 'import model ... --modelname' keeps the model's own names"
+    )]
+    RenamedParticle { name: String, default: String },
     #[error("no particle with PDG code {0} in the model")]
     UnknownPdg(i64),
     #[error(
@@ -71,14 +78,24 @@ pub enum ResolveError {
 
 // ── Model lookups ─────────────────────────────────────────────────────────────
 
-/// The model particle a name denotes: exact first, then case-insensitive.
+/// The model particle a name denotes, under the names the model was imported
+/// with ([`UFOModel::particle_names`]): exact first, then case-insensitive.
 pub fn particle_by_name<'m>(model: &'m UFOModel, name: &str) -> Option<&'m Particle> {
-    model.particles.get(name).or_else(|| {
-        model
-            .particles
-            .values()
-            .find(|p| p.name.eq_ignore_ascii_case(name))
-    })
+    model
+        .particle_names()
+        .resolve(name)
+        .and_then(|ufo| model.particles.get(ufo))
+}
+
+/// The error for a name no particle answers to.
+fn unknown_particle(model: &UFOModel, name: &str) -> ResolveError {
+    match model.particle_names().renamed_to(name) {
+        Some(default) => ResolveError::RenamedParticle {
+            name: name.to_owned(),
+            default: default.to_owned(),
+        },
+        None => ResolveError::UnknownParticle(name.to_owned()),
+    }
 }
 
 /// The model particle with a PDG code.
@@ -94,7 +111,7 @@ fn member_particle<'m>(model: &'m UFOModel, member: &str) -> Result<&'m Particle
     }
     match member.parse::<i64>() {
         Ok(code) => particle_by_pdg(model, code).ok_or(ResolveError::UnknownPdg(code)),
-        Err(_) => Err(ResolveError::UnknownParticle(member.to_owned())),
+        Err(_) => Err(unknown_particle(model, member)),
     }
 }
 
@@ -123,9 +140,9 @@ fn leg_particles<'m>(
             if token != name && particle_by_name(model, token).is_some() {
                 return Err(ResolveError::AmbiguousRepeat(token.to_owned()));
             }
-            Ok(vec![particle_by_name(model, name).ok_or_else(|| {
-                ResolveError::UnknownParticle(name.clone())
-            })?])
+            Ok(vec![
+                particle_by_name(model, name).ok_or_else(|| unknown_particle(model, name))?
+            ])
         }
     }
 }
@@ -780,6 +797,7 @@ fn mg_orders(
 mod tests {
     use super::*;
     use crate::diagrams::parse::parse_proc_card_ast;
+    use crate::ufo::names::ParticleNaming;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
     fn resolve(card: &str) -> Result<Vec<ResolvedProcess>, ResolveError> {
@@ -899,6 +917,9 @@ mod tests {
         twin.name = "2a".to_owned();
         twin.antiname = "2a".to_owned();
         model.particles.insert("2a".to_owned(), twin);
+        let model = model
+            .with_particle_naming(ParticleNaming::MadGraphDefaults, "sm")
+            .unwrap();
         assert!(matches!(
             resolve_card(&card, &model),
             Err(ResolveError::AmbiguousRepeat(t)) if t == "2a"

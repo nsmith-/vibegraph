@@ -27,7 +27,7 @@
 //! | [`ProcessOption`](Unsupported::ProcessOption) | `--diagram_filter`, `--optimize`, `--standalone` | not planned |
 //! | [`SetOption`](Unsupported::SetOption) | a physics-bearing `set` off its default | per option |
 //! | [`LaunchDialogue`](Unsupported::LaunchDialogue) | run-card edits after `launch` | not planned: the run card is its own file |
-//! | [`ModelOption`](Unsupported::ModelOption) | `import model X -modelname`, `add model` | not planned |
+//! | [`ModelOption`](Unsupported::ModelOption) | `import model X --noprefix`, `add model` | not planned |
 //! | [`Command`](Unsupported::Command) | any other command that could change the card | not planned |
 //!
 //! Two variants are not missing features but MadGraph errors this check is the natural
@@ -296,7 +296,9 @@ pub enum Unsupported {
          card this generator reads instead"
     )]
     LaunchDialogue { lines: String },
-    /// Options on `import model`, or a second model merged in with `add model`.
+    /// Options on `import model` other than `-modelname`/`--modelname` (which
+    /// [`ModelImport::particle_naming`] honours), or a second model merged in
+    /// with `add model`.
     #[error("'{command}': model options and model merging are not supported")]
     ModelOption { command: String },
     /// Any other command that could change what the card means.
@@ -782,6 +784,7 @@ fn narrow(
 mod tests {
     use super::*;
     use crate::diagrams::parse::parse_proc_card_ast;
+    use crate::ufo::names::ParticleNaming;
 
     fn check(card: &str) -> Result<SupportedCard, UnsupportedCard> {
         check_supported(&parse_proc_card_ast(card).expect("the card parses"))
@@ -968,11 +971,29 @@ mod tests {
             [Unsupported::PhotonTag { .. }]
         ));
         for card in [
-            "import model sm --modelname\ngenerate e+ e- > mu+ mu-",
+            "import model sm --noprefix\ngenerate e+ e- > mu+ mu-",
+            "import model sm --modelname --noprefix\ngenerate e+ e- > mu+ mu-",
             "add model taudecay_UFO\ngenerate e+ e- > mu+ mu-",
         ] {
             assert!(
                 matches!(refused(card)[..], [Unsupported::ModelOption { .. }]),
+                "{card}"
+            );
+        }
+    }
+
+    /// `--modelname` is the one `import model` option the check passes, and the
+    /// card's model carries it.
+    #[test]
+    fn modelname_is_accepted() {
+        for card in [
+            "import model sm --modelname\ngenerate e+ e- > mu+ mu-",
+            "import model sm-no_b_mass -modelname\ngenerate e+ e- > mu+ mu-",
+        ] {
+            let checked = check(card).unwrap_or_else(|e| panic!("{card}: {e}"));
+            assert_eq!(
+                checked.model.map(|m| m.particle_naming),
+                Some(ParticleNaming::Model),
                 "{card}"
             );
         }

@@ -22,6 +22,7 @@ use regex::Regex;
 use thiserror::Error;
 
 use super::alias::AliasTable;
+use crate::ufo::names::ParticleNaming;
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,8 @@ pub enum Command {
     /// `import model NAME[-RESTRICT] [options]`. Discards every earlier process.
     ImportModel {
         import: ModelImport,
-        /// Everything after the model name (`-modelname`, `--noprefix`, ...).
+        /// The options other than `-modelname`/`--modelname`, which
+        /// [`ModelImport::particle_naming`] records (`--noprefix`, ...).
         options: Vec<String>,
     },
     /// Any other `import` (`import command FILE`, `import banner FILE`, ...).
@@ -141,7 +143,14 @@ pub struct ModelImport {
     pub name: String,
     /// Optional restrict variant (e.g. "no_b_mass" from "sm-no_b_mass").
     pub restrict_variant: Option<String>,
+    /// The names the model's particles answer to: MadGraph's defaults, or the
+    /// model's own under `-modelname`/`--modelname`.
+    pub particle_naming: ParticleNaming,
 }
+
+/// The `import model` options that keep the model's own particle names; MadGraph
+/// accepts both spellings (`check_import`, `madgraph_interface.py`).
+const MODELNAME_OPTIONS: [&str; 2] = ["-modelname", "--modelname"];
 
 /// A `define` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,13 +421,22 @@ fn parse_command(verb: &str, rest: &str, aliases: &mut AliasTable) -> Result<Com
     Ok(match verb {
         "import" => match args.split_first() {
             Some((kind, rest)) if kind.starts_with("model") => {
+                // `check_import` takes the option out wherever it stands, before
+                // reading the model name.
+                let (keep, rest): (Vec<&String>, Vec<&String>) = rest
+                    .iter()
+                    .partition(|a| MODELNAME_OPTIONS.contains(&a.as_str()));
                 let Some((name, options)) = rest.split_first() else {
                     return Err(ParseError::Import(line()));
                 };
                 aliases.model_import();
+                let mut import = parse_model_import(name);
+                if !keep.is_empty() {
+                    import.particle_naming = ParticleNaming::Model;
+                }
                 Command::ImportModel {
-                    import: parse_model_import(name),
-                    options: options.to_vec(),
+                    import,
+                    options: options.iter().map(|o| (*o).clone()).collect(),
                 }
             }
             Some((kind, rest)) if !rest.is_empty() => Command::Import {
@@ -495,10 +513,12 @@ fn parse_model_import(spec: &str) -> ModelImport {
         Some(dash) => ModelImport {
             name: spec[..dash].to_owned(),
             restrict_variant: Some(spec[dash + 1..].to_owned()),
+            particle_naming: ParticleNaming::default(),
         },
         None => ModelImport {
             name: spec.to_owned(),
             restrict_variant: None,
+            particle_naming: ParticleNaming::default(),
         },
     }
 }
@@ -1267,5 +1287,32 @@ mod tests {
         let m = ast.model().unwrap();
         assert_eq!(m.name, "sm");
         assert_eq!(m.restrict_variant.as_deref(), Some("no_b_mass"));
+        assert_eq!(m.particle_naming, ParticleNaming::MadGraphDefaults);
+    }
+
+    /// Either spelling of `modelname`, wherever it stands, switches the
+    /// renaming off and leaves the other options as written.
+    #[test]
+    fn modelname_option() {
+        for card in [
+            "import model loop_sm-no_b_mass --modelname\n",
+            "import model loop_sm-no_b_mass -modelname\n",
+            "import model --modelname loop_sm-no_b_mass\n",
+        ] {
+            let ast = parse_proc_card_ast(card).unwrap();
+            let Command::ImportModel { import, options } = &ast.commands[0] else {
+                panic!("{card}");
+            };
+            assert_eq!(import.name, "loop_sm", "{card}");
+            assert_eq!(import.restrict_variant.as_deref(), Some("no_b_mass"));
+            assert_eq!(import.particle_naming, ParticleNaming::Model, "{card}");
+            assert!(options.is_empty(), "{card}");
+        }
+        let ast = parse_proc_card_ast("import model sm --noprefix --modelname=x\n").unwrap();
+        let Command::ImportModel { import, options } = &ast.commands[0] else {
+            panic!();
+        };
+        assert_eq!(import.particle_naming, ParticleNaming::MadGraphDefaults);
+        assert_eq!(options, &["--noprefix", "--modelname=x"]);
     }
 }
