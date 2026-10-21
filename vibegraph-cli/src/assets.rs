@@ -243,6 +243,7 @@ mod tests {
         ModelImport {
             name: name.to_string(),
             restrict_variant: None,
+            particle_naming: Default::default(),
         }
     }
 
