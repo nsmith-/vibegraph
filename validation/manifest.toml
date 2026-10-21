@@ -519,6 +519,21 @@ integrals = { tier = "banked", mode = "gate", note = "two cards, both through th
 samples = { tier = "banked", mode = "gate", note = "the two dy13 cards' own runs, which bank their events and their cross section out of one MadGraph invocation, so what this compares against and what the integrals cell gates on cannot drift apart. 200000 MadGraph events per card against 3 x 20000 of ours: minimum KS p 2.2e-2 (y(l-)) and 2.6e-2 (phi(l+)/pi), minimum chi-squared p 2.9e-3 on SPINUP for one seed of the default card against 0.49 and 0.72 on the other two, so not seed-stable. pt(ll) is a constant of the process at this order and is named rather than compared. The row also carries the differential normalisation those p-values are blind to: dsigma/dm_ll in absolute picobarns from the 20 GeV threshold the pt cut implies out to 1 TeV, every judged bin within 2.3 combined errors and no weight below the threshold on either side The incoming legs are compared too, and at proton beams they are not constants of the process: each beam's E is a momentum fraction times the run card's, so the column is a weighted KS against MadGraph's own -- the first comparison of the realised x spectra rather than of the outgoing state. Minimum beam KS p 0.025 on the default card and 0.220 on the 60-120 window card over the three seeds, against the same 1e-4 floor; the massless parton masses agree exactly (0 against a 5e-11 GeV printed tolerance). The reported scales are compared beside the legs, at the seven significant digits rw_events.f writes the <event> line with: MadGraph's Python re-serialisation prints the same fields two digits wider, and those two are padding, so reading the spelling alone would compare against digits the reference never wrote. SCALUP gates and agrees -- an equality at the printed digits, 91.188 against 91.188; AQCDUP gates too, at 0.1300027 against 0.1300027, 1.100e-08 inside the 5.0e-08 the printing allows. Nothing in this matrix element moves with alphas, so no coupling is applied to it, but the record reports alphas(muR) all the same -- off the PDF set's own tabulation, the one the densities were fitted with, which is where MadGraph takes it from on the same card. The cross section is unchanged to the last printed digit." }
 
 [[process]]
+key = "pp_to_ll_beams_6500_4000"
+process = "p p > l+ l-"
+script = "validation/madgraph/gen_hadronic_sigma.sh"
+class = "multi-channel"
+n_final = 2
+status = "planned"
+rationale = "Drell-Yan between proton beams of 6500 and 4000 GeV: the only banked run whose beams differ, so the only place the collision energy 2 sqrt(E1 E2), the parton energies x_i E_i and the lab boost cm_rap = 1/2 ln(x1 E1 / (x2 E2)) reach a comparison with MadGraph. Same process, PDF, scales and cuts as pp_to_ll's dy13_default card, byte for byte apart from ebeam2, so a disagreement is about the beams. At equal beams every one of those quantities is bit-identical to the energy-sum form, which is why no other row can see them."
+artifacts = ["output/dy13_beams_6500_4000", "output/seeded_sigma/dy13_beams_6500_4000", "hadronic_sigma_reference.json", "dy_beams_6500_4000_run_card.dat", "dy13_proc_card.dat", "dy13_param_card.dat"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
+integrals = { tier = "banked", mode = "gate", note = "five seeds a side under the seed policy, gated as pp_to_ll's dy13 cells are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. <measured pull, rel, chi2/dof and MadGraph seed record go here>. Known-wrong control, measured once and recorded here: the build with the energy-sum frames (sqrt(s) = E1 + E2, no cm_rap) must fail this gate. Blind to the direction of the boost: p p is symmetric and the etal cut is |eta|, so swapping the beams leaves sigma unchanged; the samples cell carries that." }
+samples = { tier = "banked", mode = "gate", note = "the same invocation's events. y(l-) and the per-beam incoming-energy KS are the columns that see the boost direction and x_i E_i per beam, which sigma cannot. <measured minimum KS / chi2 p-values go here>" }
+
+[[process]]
 key = "pp_to_ll_qcd0"
 process = "p p > l+ l- QCD=0"
 script = "validation/madgraph/scripts/pp_to_ll_qcd0.mg5"

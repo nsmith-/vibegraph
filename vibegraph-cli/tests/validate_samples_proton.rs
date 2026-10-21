@@ -432,6 +432,7 @@ const ALL_GATE_ROWS: &[&Row] = &[
     &SCALEFACT2_ROW,
     &DY_ROWS[0],
     &DY_ROWS[1],
+    &DY_ROWS[2],
 ];
 
 /// One row: integrate the banked cards once, then generate and compare a sample
@@ -699,6 +700,21 @@ const DY_ROWS: &[Row] = &[
         mode: "gate",
         scans: &[],
     },
+    // Own manifest row rather than a variant of `pp_to_ll`: the beams are the
+    // only difference from the default card, and the cells it fills are the ones
+    // no equal-beam row can see.
+    Row {
+        run: "dy13_beams_6500_4000",
+        events: "run_beams_6500_4000",
+        key: "pp_to_ll_beams_6500_4000",
+        variant: None,
+        process: "p p > e+ e-",
+        run_card: Some("dy_beams_6500_4000_run_card.dat"),
+        neval: DY_NEVAL,
+        niter: DY_NITER,
+        mode: "gate",
+        scans: &[],
+    },
 ];
 
 #[test]
@@ -709,6 +725,21 @@ fn generated_drell_yan_events_agree_with_madgraphs_banked_ones() {
 #[test]
 fn generated_drell_yan_events_in_the_mass_window_agree_with_madgraphs_banked_ones() {
     check_row(&DY_ROWS[1]);
+}
+
+/// Proton beams of 6500 and 4000 GeV, the one banked row whose beams differ: the
+/// events carry the lab boost and the per-beam incoming energies that no
+/// equal-beam row can distinguish from the energy-sum form.
+///
+/// Reports `NOT YET BANKED` and writes no cell while the manifest marks the row
+/// `planned` and its MadGraph run is absent; once the row is banked the gate runs,
+/// and once the manifest status is flipped an absent run fails.
+#[test]
+fn generated_unequal_beam_drell_yan_events_agree_with_madgraphs_banked_ones() {
+    if not_yet_banked(&DY_ROWS[2]) {
+        return;
+    }
+    check_row(&DY_ROWS[2]);
 }
 
 /// [`GEN_SEEDS`] extended to AGENTS.md's five for the headroom census below. The
@@ -741,6 +772,9 @@ fn probe_proton_samples_p_floor_headroom() {
     let mut three: Vec<(f64, String)> = Vec::new();
     let mut five: Vec<(f64, String)> = Vec::new();
     for row_spec in ALL_GATE_ROWS {
+        if not_yet_banked(row_spec) {
+            continue;
+        }
         if !run_present("probe_proton_samples_p_floor_headroom", row_spec.run) {
             continue;
         }
@@ -1162,6 +1196,9 @@ const SPECTRUM_MAX_PULL: f64 = 4.0;
 fn the_drell_yan_mass_spectrum_is_binned_against_madgraph() {
     let mut failures: Vec<String> = Vec::new();
     for row_spec in DY_ROWS {
+        if not_yet_banked(row_spec) {
+            continue;
+        }
         let mg = banked_sample(row_spec.run, row_spec.events);
         let mut theirs = Spectrum::new(MLL_EDGES);
         theirs.fill_from(&mg, "m(e+,e-)", Labelling::Fine);
@@ -1273,6 +1310,27 @@ fn run_present(gate: &str, run: &str) -> bool {
         return false;
     }
     vibegraph::validation::require(gate, "a banked run directory", run);
+}
+
+/// Whether a row is declared `planned` in the manifest and its MadGraph run is
+/// not in this checkout, so there is nothing yet to compare against.
+///
+/// A banked run is always compared, and an absent run of a row that is not
+/// planned still fails in the caller: the declaration, not the absence, is what
+/// permits skipping.
+fn not_yet_banked(row_spec: &Row) -> bool {
+    if run_dir(row_spec.run).join("Cards/run_card.dat").is_file() {
+        return false;
+    }
+    if manifest::planned_rows().contains(row_spec.key) {
+        eprintln!(
+            "[{}] NOT YET BANKED (the manifest marks row {} planned and this checkout has no \
+             run for it, so no cell is written)",
+            row_spec.run, row_spec.key
+        );
+        return true;
+    }
+    false
 }
 
 /// The `p p > j j` sample against MadGraph's banked one — **measured and

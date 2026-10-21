@@ -62,7 +62,6 @@ type V = LorentzVector<f64>;
 
 const MU_F: f64 = 91.1880;
 const SQRT_S_HAD: f64 = 13000.0;
-const BEAMS: ProtonBeams = ProtonBeams::new(SQRT_S_HAD / 2.0, SQRT_S_HAD / 2.0);
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 
 /// The Drell–Yan process both banked run cards were generated for.
@@ -442,14 +441,29 @@ fn adapted_integrand<'a>(
 ) -> ProtonIntegrand<'a> {
     let (survey, adapt_iters, _, _) = budget;
     let mut integ = if bound_transfer {
-        ProtonIntegrand::new_with_maps(groups, amps, evaluated, pdf, BEAMS, MU_F, maps)
+        ProtonIntegrand::new_with_maps(
+            groups,
+            amps,
+            evaluated,
+            pdf,
+            ProtonBeams::from_run_card(rc),
+            MU_F,
+            maps,
+        )
     } else {
         assert_eq!(
             maps,
             MapOptions::default(),
             "the unbounded integrand is built under the default maps only"
         );
-        ProtonIntegrand::new_unbounded(groups, amps, evaluated, pdf, BEAMS, MU_F)
+        ProtonIntegrand::new_unbounded(
+            groups,
+            amps,
+            evaluated,
+            pdf,
+            ProtonBeams::from_run_card(rc),
+            MU_F,
+        )
     }
     .expect("hadronic integrand");
     let report = integ
@@ -518,7 +532,24 @@ fn assert_no_scale_draw_fallbacks(integ: &ProtonIntegrand<'_>) {
 /// measure, which the seed sweep and not the pull is what guards.
 fn check_dy_run(run: &str, card: &str) {
     let clock = Stopwatch::start();
-    let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
+    let row = if run == DY_BEAMS_RUN {
+        DY_BEAMS_ROW
+    } else {
+        "pp_to_ll"
+    };
+    let Some((mg, mg_err)) = banked(run) else {
+        assert!(
+            common::manifest::planned_rows().contains(row),
+            "[{run}] no banked Drell-Yan reference, and the manifest does not declare row {row} \
+             planned: bank it with `validation/madgraph/bank_seeded_sigma.sh`"
+        );
+        eprintln!(
+            "[{run}] NOT YET BANKED (the manifest marks row {row} planned and neither a seed \
+             record nor hadronic_sigma_reference.json carries a reference, so no cell is \
+             written)"
+        );
+        return;
+    };
     let card_path = validation_dir().join(card);
     let rc = RunCard::parse_file(&card_path).expect("parse run card");
 
@@ -579,7 +610,10 @@ fn check_dy_run(run: &str, card: &str) {
     );
 
     let ok = pull.abs() < 3.0 && rel.abs() < DY_MAX_REL;
-    let mut row = IntegralsRow::new("pp_to_ll", DY_PROCESS, "gate").with_variant(run);
+    let mut row = IntegralsRow::new(row, DY_PROCESS, "gate");
+    if row.row == "pp_to_ll" {
+        row = row.with_variant(run);
+    }
     row.status = if ok && chi2 < DY_MAX_CHI2_PER_DOF {
         "pass"
     } else {
@@ -619,6 +653,25 @@ fn sigma_default_cuts_vs_mg() {
 #[test]
 fn sigma_mmll_window_vs_mg() {
     check_dy_run("mmll_60_120", "dy13_mmll_run_card.dat");
+}
+
+/// The run name and manifest row of the unequal-beam Drell-Yan cross section.
+const DY_BEAMS_RUN: &str = "beams_6500_4000";
+const DY_BEAMS_ROW: &str = "pp_to_ll_beams_6500_4000";
+
+/// σ(p p → e⁺e⁻) between proton beams of 6500 and 4000 GeV, against MadGraph's run
+/// on the same card apart from `ebeam2`.
+///
+/// The integrand takes its beams from the card, so this is the one σ comparison
+/// that sees `2√(E₁E₂)`, the parton energies `x_i E_i` and the lab boost. Blind to
+/// the direction of that boost: `p p` is symmetric and the η cut is on `|η|`, so
+/// swapping the beams leaves σ unchanged; the `samples` cell carries that.
+///
+/// Reports `NOT YET BANKED` and writes no cell while the manifest marks the row
+/// `planned` and no reference exists; a reference that exists is gated.
+#[test]
+fn sigma_unequal_beams_vs_mg() {
+    check_dy_run(DY_BEAMS_RUN, "dy_beams_6500_4000_run_card.dat");
 }
 
 /// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton
@@ -720,8 +773,15 @@ fn pointwise_integrand_oracle() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-        .expect("hadronic integrand");
+    let integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
 
     // The oracle's two coupling classes, located by the flavour content of the
     // groups rather than by group order, so a reordering of the decomposition
@@ -1122,8 +1182,15 @@ fn probe_accepted_point_floor_hadronic() {
     eprintln!("-- pp_to_llj_fixed: MG {mg:.3} +- {mg_err:.3} pb, {LLJ_NEVAL} x {LLJ_NITER} --");
     let mut runs: Vec<SeedResult> = Vec::new();
     for &seed in LLJ_SEEDS {
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-            .expect("hadronic integrand");
+        let mut integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::from_run_card(&rc),
+            MU_F,
+        )
+        .expect("hadronic integrand");
         integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
             .expect("run card scale prescription compiles");
@@ -1224,8 +1291,15 @@ fn probe_alpha_survey_budget_hadronic() {
         let mut converged: Vec<(usize, Vec<f64>)> = Vec::new();
         for n_survey in SURVEYS {
             let clock = Stopwatch::start();
-            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-                .expect("hadronic integrand");
+            let mut integ = ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::from_run_card(&rc),
+                MU_F,
+            )
+            .expect("hadronic integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
                 .expect("run card scale prescription compiles");
@@ -2672,8 +2746,15 @@ fn probe_cluster_scale_spread_over_configurations() {
             .iter()
             .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
             .collect();
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-            .expect("hadronic integrand");
+        let mut integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::from_run_card(&rc),
+            MU_F,
+        )
+        .expect("hadronic integrand");
         let report = integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
             .expect("run card scale prescription compiles");
@@ -2849,8 +2930,15 @@ fn madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-        .expect("hadronic integrand");
+    let mut integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -3981,8 +4069,15 @@ fn probe_scale_draw_cost() {
             .collect();
 
         let build = |rc: &RunCard| {
-            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-                .expect("integrand");
+            let mut integ = ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::from_run_card(rc),
+                MU_F,
+            )
+            .expect("integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
                 .expect("scale prescription compiles");
@@ -4320,8 +4415,15 @@ fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
-        .expect("hadronic integrand");
+    let mut integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
