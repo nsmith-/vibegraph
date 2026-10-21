@@ -1289,6 +1289,19 @@ mod tests {
         assert!(plain.scales(&soft).is_ok());
     }
 
+    /// A `pdfwgt` switched off behind `# hidden_parameter` reaches the scale
+    /// setup, as it does when written without the comment.
+    #[test]
+    fn hidden_pdfwgt_line_reaches_the_scale_setup() {
+        let on = ScaleChoice::compile(&card("")).expect("compiled");
+        let hidden =
+            ScaleChoice::compile(&card("False = pdfwgt # hidden_parameter\n")).expect("compiled");
+        let plain = ScaleChoice::compile(&card("False = pdfwgt")).expect("compiled");
+        assert!(on.pdfwgt);
+        assert!(!hidden.pdfwgt);
+        assert!(!plain.pdfwgt);
+    }
+
     /// Without matching, the record's factorisation scale is the densities' and
     /// no configuration is carried, on every channel and every branch the
     /// processes below reach: this is what keeps `SCALUP`, the colour draw and so

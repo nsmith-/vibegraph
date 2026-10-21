@@ -94,6 +94,13 @@ branches never reached at `ickkw = 1`, or CKKW-L bookkeeping), and
 `ktdurham`/`ptlund`/`dparameter` stay refused cuts
 ([run-card/matching-parameters](matching-parameters.md))[^n41-m1].
 
+**The systematics fields are benign for the cross section but warn.**
+`systematics_program`, `systematics_arguments` and the `sys_*` fields only add
+`<rwgt>` weights, so they cannot move a cross section, but a card that asks for
+them (`use_syst` set and any of them off its default) receives none. Parsing
+such a card logs one warning naming the fields (`warn_unwritten_systematics`);
+the card is not refused.
+
 ## The audit method
 
 A literal-name search **under-reports badly**: `Cuts::compile` builds names at

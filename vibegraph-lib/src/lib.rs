@@ -18,6 +18,8 @@ pub mod reweight;
 pub mod runcard;
 pub mod select;
 pub mod stats;
+#[cfg(test)]
+mod test_capture;
 pub mod ufo;
 pub mod unweight;
 // Test support for the banked validation layer, shared by the integration tests
