@@ -46,6 +46,7 @@
 * [sigma-ttx-mlm-at1](sigma-ttx-mlm-at1/index.md)
 * [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
+* [ufo-conditional-params](ufo-conditional-params/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)
 * [ux-mini-sprint](ux-mini-sprint/index.md)
