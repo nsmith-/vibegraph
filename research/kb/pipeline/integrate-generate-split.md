@@ -29,7 +29,7 @@ card, and the PDF lookup, are in
 
 Each `FIELD_CLASSES` row (`runcard/classes.rs`) gains a second column,
 `Stage::Integrate` or `Stage::Generate`, and a test asserts that every
-`PARAM_DEFAULTS` name has one. **Generate** is the 15 fields that reach only
+`PARAM_DEFAULTS` name has one. **Generate** is the 14 fields that reach only
 the event budget or the written record. **Integrate** is every other field.
 That includes the benign job and integrator bookkeeping (`run_tag`,
 `gridpack`, `gseed`, `hel_*`, `survey_*`, …), which nothing reads and which
@@ -40,7 +40,7 @@ rides with the card that trained the grid. The refusal of an
 | field | class today | stage | note |
 |---|---|---|---|
 | `nevents` | Consumed | Generate | `--nevents` overrides it |
-| `iseed` | IgnoredBenign | Generate | recorded but not read; `--seed` is the seed (N4) |
+| `iseed` | IgnoredBenign → Consumed | Integrate | the integration seed when `--seed` is absent and `iseed` is non-zero (N4, decided) |
 | `event_norm` | IgnoredPhysics (Consumed after #66) | Generate | `XWGTUP` and `<init>` normalisation only |
 | `use_syst` | Consumed | **both** | see below |
 | `systematics_program`, `systematics_arguments` | IgnoredBenign | Generate | carried verbatim |
@@ -60,7 +60,7 @@ generations therefore does not move `alpsfact`. That is correct: the grid and
 
 **Ambiguous rows, for the user to confirm:**
 - `use_syst`, split as above.
-- `iseed`, recorded but unused (N4).
+- `iseed`: Integrate, decided (N4).
 - `clusinfo`: the record is generate-time, but it is an MLM input. Today it is
   benign because nothing writes the block.
 - `bias_module` and `bias_parameters`: Integrate, because a bias reshapes the
@@ -129,7 +129,7 @@ simply has no live instance of rules 6 and 7 after H1.
 ```
 vibegraph integrate <PROC_CARD> [--run-card F] [--param-card F] [--out D] [--force]
     [--ufo-dir D] [--seed S] [budget, map, grid-rule and parallel options]
-vibegraph generate <ARTIFACT> [--nevents N] [--seed S] [-o FILE] [--force]
+vibegraph generate <ARTIFACT> --seed S [--nevents N] [-o FILE] [--force]
     [--strategy …] [--scan-points …] [--max-truncation …] [--event-norm …]
     [--reweight-card F] [--reweight-exact] [--reweight-couplings …]
     [--ufo-dir D] [parallel options]
@@ -309,7 +309,7 @@ gated comparison changes:
 - the only proton `nn23lo1` comparison is the ungated `uu_tt` row above;
 - fixed-energy and decay rows are untouched.
 
-## 5. Open choices for the user
+## 5. Choices (decided 2026-10-21)
 
 All twelve C-choices are settled (sprint log, 2026-10-21; summary in [run
 inputs](run-inputs-in-the-artifact.md)). Open, with the recommendation taken
@@ -320,7 +320,7 @@ as the working assumption:
 | N1 | proc card in the artifact | verbatim text, re-parsed and checked against `process` | a serialized parsed card |
 | N2 | generate settings | inside the artifact | a sidecar file beside `grid.bin.zst` |
 | N3 | classification | §1's table, the ambiguous rows as listed | move `clusinfo` or the bookkeeping rows |
-| N4 | seed | `--seed` only; `iseed` recorded, unread | a non-zero `iseed` is the default seed |
+| N4 | seed | **decided otherwise:** `iseed` feeds integrate; `generate` requires `--seed` | – |
 | N5 | `event_norm` at generate | a `--event-norm` flag, default the recorded value | recorded value only |
 | N6 | systematics | verbatim strings | typed fields now |
 | N7 | older artifacts (C3's how) | raise the floor at each step, delete old readers and guards | keep readers; refuse by named thresholds |
@@ -329,6 +329,24 @@ as the working assumption:
 | N10 | library boundary | H1 moves the sampling driver into `vibegraph-lib` | boundary in the CLI crate first |
 | N11 | where `generate` records generate-read PDF files (new, from C1) | the `<vibegraphInputs>` header block only | also a sidecar record file |
 | N12 | a set `$VIBEGRAPH_PDF_DIR` (new, from C7) | one warning naming `LHAPDF_DATA_PATH` | ignored silently; or refused |
+
+**Decided by the user, 2026-10-21.** N1, N2, N3, N5–N12 as recommended. N4
+differs from the recommendation:
+- **`integrate`:** the seed is `--seed` when given, else `iseed` when it is
+  non-zero, else the fixed default. `iseed` is therefore an Integrate field and
+  Consumed. The seed actually used is recorded in the artifact.
+- **`generate`:** `--seed` is required and has no default. A missing
+  `--seed` is refused, with a message saying each generation job needs its own
+  seed. A default would let a batch of grid jobs silently draw identical
+  samples.
+
+N3's "bookkeeping rows" are the job and integrator fields that are
+`IgnoredBenign` today and that nothing reads. They ride with the integrate
+settings:
+- job fields: `run_tag`, `gridpack`, `gseed`, `bypass_check`, `python_seed`,
+  `keep_log`, `issgridfile`, and the compiler flags;
+- integrator fields: `gridrun`, `job_strategy`, the `survey_*` and `refine_*`
+  splitting, `hel_*`, and the vectorisation sizes.
 
 ## 6. PR split
 
