@@ -43,7 +43,7 @@ use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::LorentzVector;
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::{rambo_massive, MapOptions};
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -311,7 +311,7 @@ fn measure_proton(
         &amps,
         evaluated,
         &pdf,
-        rc.ebeam1 + rc.ebeam2,
+        ProtonBeams::from_run_card(&rc),
         rc.dsqrt_q2fact1,
         MapOptions::default(),
     )

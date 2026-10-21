@@ -1189,6 +1189,50 @@ pub struct ProtonSelection {
     pub m2: f64,
 }
 
+/// The laboratory energies of two head-on proton beams, beam 1 along `+z` and
+/// beam 2 along `−z`, taken massless.
+///
+/// The collider invariant is `s = 4E₁E₂` and a parton carrying fraction `xᵢ` of
+/// its beam has lab energy `xᵢEᵢ`. MadGraph's `stot` (`genps.f`) carries the
+/// proton mass instead; the two differ by `m_p²/s`, and only the massless form
+/// returns `E₁ + E₂` exactly for equal beams.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProtonBeams {
+    energies: [f64; 2],
+}
+
+impl ProtonBeams {
+    /// Beams at lab energies `e1` (along `+z`) and `e2` (along `−z`), in GeV.
+    pub const fn new(e1: f64, e2: f64) -> Self {
+        ProtonBeams { energies: [e1, e2] }
+    }
+
+    /// The run card's `ebeam1`, `ebeam2`.
+    pub fn from_run_card(rc: &RunCard) -> Self {
+        Self::new(rc.ebeam1, rc.ebeam2)
+    }
+
+    /// Two beams of energy `√s/2` each.
+    pub fn equal(sqrt_s: f64) -> Self {
+        Self::new(sqrt_s / 2.0, sqrt_s / 2.0)
+    }
+
+    /// The lab energies `[E₁, E₂]`.
+    pub fn energies(self) -> [f64; 2] {
+        self.energies
+    }
+
+    /// The collider energy `√s = 2√(E₁E₂)`.
+    ///
+    /// For equal beams this is `E₁ + E₂` to the bit: in binary floating point
+    /// with round-to-nearest, `√(fl(E·E)) = E` for every `E` whose square
+    /// neither overflows nor underflows, and doubling is exact.
+    pub fn sqrt_s(self) -> f64 {
+        let [e1, e2] = self.energies;
+        2.0 * (e1 * e2).sqrt()
+    }
+}
+
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
 #[derive(Clone, Copy, Debug)]
 pub struct OuterPoint {
@@ -1275,9 +1319,9 @@ pub struct ProtonIntegrand<'a> {
     /// it was built and kept because the built channels are type-erased behind
     /// [`ScaledChannel`] afterwards.
     channel_samplers: Vec<ChannelSampler>,
-    /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
+    /// Total hadronic invariant `s = 4E₁E₂` (head-on beams).
     s_had: f64,
-    sqrt_s_had: f64,
+    beams: ProtonBeams,
     /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
     ln_inv_tau_min: f64,
@@ -1369,7 +1413,8 @@ impl<'a> ProtonIntegrand<'a> {
     ///   separates from a coupling error.
     /// * `model` — the evaluated model the channel trees read pole masses and widths
     ///   from.
-    /// * `sqrt_s_had` — total collider energy `√s = E₁ + E₂`.
+    /// * `beams` — the two beams' lab energies; the collider energy is
+    ///   [`ProtonBeams::sqrt_s`].
     /// * `mu_f` — a constant scale on both beams, replaced by the run card's
     ///   prescription by [`use_run_card_scales`](Self::use_run_card_scales).
     ///
@@ -1391,7 +1436,7 @@ impl<'a> ProtonIntegrand<'a> {
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
         pdf: &'a PdfMember,
-        sqrt_s_had: f64,
+        beams: ProtonBeams,
         mu_f: f64,
     ) -> Result<Self, ProtonError> {
         Self::build(
@@ -1399,7 +1444,7 @@ impl<'a> ProtonIntegrand<'a> {
             amps,
             model,
             pdf,
-            sqrt_s_had,
+            beams,
             mu_f,
             true,
             true,
@@ -1416,11 +1461,11 @@ impl<'a> ProtonIntegrand<'a> {
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
         pdf: &'a PdfMember,
-        sqrt_s_had: f64,
+        beams: ProtonBeams,
         mu_f: f64,
         maps: MapOptions,
     ) -> Result<Self, ProtonError> {
-        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, true, maps)
+        Self::build(groups, amps, model, pdf, beams, mu_f, true, true, maps)
     }
 
     /// [`new_with_maps`](Self::new_with_maps) with one sampling channel per
@@ -1436,13 +1481,11 @@ impl<'a> ProtonIntegrand<'a> {
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
         pdf: &'a PdfMember,
-        sqrt_s_had: f64,
+        beams: ProtonBeams,
         mu_f: f64,
         maps: MapOptions,
     ) -> Result<Self, ProtonError> {
-        Self::build(
-            groups, amps, model, pdf, sqrt_s_had, mu_f, true, false, maps,
-        )
+        Self::build(groups, amps, model, pdf, beams, mu_f, true, false, maps)
     }
 
     /// The maps this integrand samples under, every choice settled — what an
@@ -1462,7 +1505,7 @@ impl<'a> ProtonIntegrand<'a> {
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
         pdf: &'a PdfMember,
-        sqrt_s_had: f64,
+        beams: ProtonBeams,
         mu_f: f64,
     ) -> Result<Self, ProtonError> {
         Self::build(
@@ -1470,7 +1513,7 @@ impl<'a> ProtonIntegrand<'a> {
             amps,
             model,
             pdf,
-            sqrt_s_had,
+            beams,
             mu_f,
             false,
             true,
@@ -1484,7 +1527,7 @@ impl<'a> ProtonIntegrand<'a> {
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
         pdf: &'a PdfMember,
-        sqrt_s_had: f64,
+        beams: ProtonBeams,
         mu_f: f64,
         bound_transfer: bool,
         merge_maps: bool,
@@ -1508,6 +1551,7 @@ impl<'a> ProtonIntegrand<'a> {
             }
         }
 
+        let sqrt_s_had = beams.sqrt_s();
         let shape = process_shape(groups, model, sqrt_s_had);
         let maps = map_options.resolve(&shape);
         tracing::info!(
@@ -1595,7 +1639,7 @@ impl<'a> ProtonIntegrand<'a> {
             channel_members,
             channel_samplers,
             s_had,
-            sqrt_s_had,
+            beams,
             tau_min,
             ln_inv_tau_min: (1.0 / tau_min).ln(),
             maps,
@@ -2009,12 +2053,16 @@ impl<'a> ProtonIntegrand<'a> {
         cm.push(V::new(e_cm, 0.0, 0.0, -e_cm));
         cm.extend_from_slice(out);
 
-        let e_beam = self.sqrt_s_had / 2.0;
-        let beta = (m.x1 - m.x2) / (m.x1 + m.x2);
+        // The partonic system's lab velocity is `tanh` of MadGraph's
+        // `cm_rap = ½ ln(x₁E₁/(x₂E₂))`, written with `r = E₂/E₁` so equal beams
+        // (`r = 1` exactly) reduce to `(x₁ − x₂)/(x₁ + x₂)` bit for bit.
+        let [e1, e2] = self.beams.energies();
+        let r = e2 / e1;
+        let beta = (m.x1 - r * m.x2) / (m.x1 + r * m.x2);
         let mut lab = sc.lab_buf.borrow_mut();
         lab.clear();
-        lab.push(V::new(m.x1 * e_beam, 0.0, 0.0, m.x1 * e_beam));
-        lab.push(V::new(m.x2 * e_beam, 0.0, 0.0, -m.x2 * e_beam));
+        lab.push(V::new(m.x1 * e1, 0.0, 0.0, m.x1 * e1));
+        lab.push(V::new(m.x2 * e2, 0.0, 0.0, -m.x2 * e2));
         lab.extend(out.iter().map(|p| boost_z(*p, beta)));
     }
 
@@ -3056,7 +3104,7 @@ mod tests {
             amps,
             evaluated,
             pdf,
-            SQRT_S_HAD,
+            BEAMS,
             MU_F,
             MapOptions::fixed(MapChoices::LEGACY),
         )
@@ -3920,6 +3968,7 @@ mod tests {
     }
 
     const SQRT_S_HAD: f64 = 13000.0;
+    const BEAMS: ProtonBeams = ProtonBeams::new(SQRT_S_HAD / 2.0, SQRT_S_HAD / 2.0);
     const MU_F: f64 = 91.188;
 
     /// `αs` knots bracketing `m_Z`, so a card that delegates the coupling to the set
@@ -3987,8 +4036,8 @@ mod tests {
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
 
         assert_eq!(integ.channel_count(), 6);
         assert_eq!(integ.channel_grid_ndim(), 2 + 5);
@@ -4207,7 +4256,7 @@ mod tests {
             eprintln!("{process}: {same} equal pairs, {apart} distinct pairs");
 
             let amps = bind_all(&groups, &evaluated);
-            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
                 .expect("integrand");
             assert_eq!(integ.channel_count(), n_maps, "{process}");
             let mut classes: Vec<(MapIdentity, Vec<ChannelId>)> = Vec::new();
@@ -4249,7 +4298,7 @@ mod tests {
                     &amps,
                     &evaluated,
                     &pdf,
-                    SQRT_S_HAD,
+                    BEAMS,
                     MU_F,
                     MapOptions::default(),
                 )
@@ -4259,7 +4308,7 @@ mod tests {
                     &amps,
                     &evaluated,
                     &pdf,
-                    SQRT_S_HAD,
+                    BEAMS,
                     MU_F,
                     MapOptions::default(),
                 )
@@ -4608,8 +4657,7 @@ mod tests {
 
         let mut crossed: Vec<BoundAmplitude<f64>> = bind_all(&groups, &evaluated);
         crossed.swap(0, 1);
-        let err = match ProtonIntegrand::new(&groups, &crossed, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-        {
+        let err = match ProtonIntegrand::new(&groups, &crossed, &evaluated, &pdf, BEAMS, MU_F) {
             Ok(_) => panic!("a crossed amplitude pairing must be refused"),
             Err(e) => e,
         };
@@ -4620,7 +4668,7 @@ mod tests {
 
         let short = &bind_all(&groups, &evaluated)[..2];
         assert!(matches!(
-            ProtonIntegrand::new(&groups, short, &evaluated, &pdf, SQRT_S_HAD, MU_F),
+            ProtonIntegrand::new(&groups, short, &evaluated, &pdf, BEAMS, MU_F),
             Err(ProtonError::AmplitudeCount { amps: 2, groups: 6 })
         ));
     }
@@ -4654,8 +4702,8 @@ mod tests {
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
         let info = probe_alpha_s();
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         integ
             .use_run_card_scales(&m, &evaluated, &card, Some(&info))
             .expect("the dynamical prescription compiles");
@@ -4754,9 +4802,8 @@ mod tests {
             let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
                 .expect("flavour groups");
             let amps = bind_all(&groups, &evaluated);
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
             integ
                 .use_run_card_scales(&m, &evaluated, &card, Some(&info))
                 .expect("the matched prescription compiles");
@@ -4937,9 +4984,8 @@ mod tests {
             let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
                 .expect("flavour groups");
             let amps = bind_all(&groups, &evaluated);
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
             integ
                 .use_run_card_scales(&m, &evaluated, &card, Some(&info))
                 .expect("the clustered prescription compiles");
@@ -5013,8 +5059,8 @@ mod tests {
         let pdf = probe_pdf();
         let info = probe_alpha_s();
 
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         let report = integ
             .use_run_card_scales(&m, &evaluated, &card, Some(&info))
             .expect("the fixed prescription compiles");
@@ -5058,8 +5104,8 @@ mod tests {
              \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n"
         ))
         .expect("dynamical run card");
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         let report = integ
             .use_run_card_scales(&m, &evaluated, &dynamical, Some(&info))
             .expect("the dynamical prescription compiles");
@@ -5126,9 +5172,8 @@ mod tests {
         let pdf = probe_pdf();
         let info = probe_alpha_s();
         let build = |scalefact: &str| {
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
             integ
                 .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
                 .expect("a partly sub-threshold card still compiles");
@@ -5178,9 +5223,8 @@ mod tests {
         let pdf = probe_pdf();
         let info = probe_alpha_s();
         let build = |scalefact: &str| {
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
             integ
                 .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
                 .expect("a partly sub-threshold card still compiles");
@@ -5236,8 +5280,8 @@ mod tests {
         let pdf = probe_pdf();
         let info = probe_alpha_s();
 
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         let err = integ
             .use_run_card_scales(&m, &evaluated, &scaled_llj_card("1e-4"), Some(&info))
             .expect_err("a card with no support above the floor must be refused");
@@ -5252,8 +5296,8 @@ mod tests {
 
         // One decade up there is support left, and the same probe accepts it —
         // so the refusal tracks the support and not merely a small scalefact.
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         integ
             .use_run_card_scales(&m, &evaluated, &scaled_llj_card("1e-3"), Some(&info))
             .expect("a partly sub-threshold card integrates normally");
@@ -5583,8 +5627,8 @@ mod tests {
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
 
         let [uniform, uniform_err] = mixture_estimate(&integ, 30_000, 0x9E77_0001);
         let report = integ.adapt_alphas(0xADAB_7000, 4000, 6, 0.5);
@@ -5732,6 +5776,226 @@ mod tests {
         );
     }
 
+    fn components(p: &V) -> [f64; 4] {
+        [p.e(), p.px(), p.py(), p.pz()]
+    }
+
+    fn rapidity(p: &V) -> f64 {
+        0.5 * ((p.e() + p.pz()) / (p.e() - p.pz())).ln()
+    }
+
+    /// The lab frame `build_frames` fills for `point` and `out`.
+    fn lab_frame(integ: &ProtonIntegrand<'_>, point: &OuterPoint, out: &[V]) -> Vec<V> {
+        let sc = integ.scratch();
+        integ.build_frames(sc, point, out);
+        let lab = sc.lab_buf.borrow().clone();
+        lab
+    }
+
+    /// Equal beams collide at `E₁ + E₂` to the bit, at every beam energy a gate
+    /// or a banked card uses and across a sweep of energies: `2√(E·E)` is exact
+    /// because `√(fl(E·E)) = E` under round-to-nearest. A beam pair built from
+    /// `√s` returns that `√s`.
+    #[test]
+    fn equal_beams_collide_at_the_energy_sum_to_the_bit() {
+        let gate_energies = [6500.0, 4000.0, 500.0, 250.0, 100.0, 86.5, 50.0, 45.6];
+        let mut stream = SubStream::from_stream(0x00BE_A350, 1);
+        let swept = stream
+            .uniforms::<f64>(100_000)
+            .into_iter()
+            .map(|u| 10f64.powf(-2.0 + 7.0 * u));
+        let mut checked = 0;
+        for e in gate_energies.into_iter().chain(swept) {
+            let sum = e + e;
+            assert_eq!(
+                ProtonBeams::new(e, e).sqrt_s().to_bits(),
+                sum.to_bits(),
+                "beams of {e:e} GeV"
+            );
+            assert_eq!(ProtonBeams::equal(sum).sqrt_s().to_bits(), sum.to_bits());
+            checked += 1;
+        }
+        assert_eq!(checked, 100_008);
+    }
+
+    /// Equal beams build the lab frame the energy-sum construction built —
+    /// partons at `xᵢ(E₁ + E₂)/2`, boost `(x₁ − x₂)/(x₁ + x₂)` — to the bit, at
+    /// production points in every channel.
+    #[test]
+    fn equal_beams_build_the_energy_sum_lab_frame_to_the_bit() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, pdf) = llj_setup(&m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+
+        let e_beam = SQRT_S_HAD / 2.0;
+        let mut stream = SubStream::from_stream(0x00BE_A351, 2);
+        let mut asymmetric = 0;
+        for trial in 0..4000 {
+            let u = stream.uniforms::<f64>(integ.channel_grid_ndim());
+            let point = integ.map_point(&u);
+            let drawn = integ.combiner.draw_in_channel_at(
+                trial % integ.channel_count(),
+                point.sqrt_shat,
+                &u[OUTER_NDIM..],
+            );
+            let lab = lab_frame(&integ, &point, &drawn.momenta);
+
+            let beta = (point.x1 - point.x2) / (point.x1 + point.x2);
+            let mut expected = vec![
+                V::new(point.x1 * e_beam, 0.0, 0.0, point.x1 * e_beam),
+                V::new(point.x2 * e_beam, 0.0, 0.0, -point.x2 * e_beam),
+            ];
+            expected.extend(drawn.momenta.iter().map(|p| boost_z(*p, beta)));
+            assert_eq!(lab.len(), expected.len());
+            for (leg, (got, want)) in lab.iter().zip(&expected).enumerate() {
+                assert_eq!(
+                    components(got).map(f64::to_bits),
+                    components(want).map(f64::to_bits),
+                    "trial {trial} leg {leg}"
+                );
+            }
+            asymmetric += usize::from(point.x1 != point.x2);
+        }
+        assert!(asymmetric > 3900, "{asymmetric} boosted points");
+    }
+
+    /// Beams of 6500 and 4000 GeV: `√s = 2√(E₁E₂)`, partons at `xᵢEᵢ`, and the
+    /// outgoing legs boosted by MadGraph's `cm_rap = ½ ln(x₁E₁/(x₂E₂))`
+    /// (`genps.f`). At `x₁ = x₂` the partonic system still moves at `β = 5/21`,
+    /// rapidity `½ ln(13/8)`, which carries a lepton at partonic rapidity 2.4
+    /// past the card's `etal = 2.5`; the same configuration between beams of
+    /// equal energy at the same `√s` stays at rest and passes.
+    #[test]
+    fn unequal_beams_place_and_boost_the_partons_as_madgraph_does() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, pdf) = llj_setup(&m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let (e1, e2) = (6500.0, 4000.0);
+        let beams = ProtonBeams::new(e1, e2);
+        let unequal =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, beams, MU_F).expect("integrand");
+        let e_even = (e1 * e2).sqrt();
+        let even = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e_even, e_even),
+            MU_F,
+        )
+        .expect("integrand");
+
+        // √s = 2√(2.6e7) GeV, not E₁ + E₂ = 10500 GeV.
+        let sqrt_s = 10_198.039_027_185_57;
+        assert!(
+            (beams.sqrt_s() / sqrt_s - 1.0).abs() < 1e-15,
+            "{}",
+            beams.sqrt_s()
+        );
+        assert!(
+            (unequal.s_had / 1.04e8 - 1.0).abs() < 1e-15,
+            "{}",
+            unequal.s_had
+        );
+        assert!((unequal.tau_min / even.tau_min - 1.0).abs() < 1e-15);
+
+        let legs = process_external_legs(groups.groups()[0].evaluator(), &m, &evaluated);
+        let leptons: Vec<usize> = legs[2..]
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| matches!(l.pdg.abs(), 11 | 13))
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(leptons.len(), 2, "{legs:?}");
+        let jet = (0..3).find(|k| !leptons.contains(k)).expect("a jet");
+        let massless = |pt: f64, eta: f64, phi: f64| {
+            V::new(
+                pt * eta.cosh(),
+                pt * phi.cos(),
+                pt * phi.sin(),
+                pt * eta.sinh(),
+            )
+        };
+        let forward = massless(100.0, 2.4, 0.0);
+        let central = massless(100.0, -1.0, std::f64::consts::FRAC_PI_2);
+        let (px, py, pz) = (
+            -(forward.px() + central.px()),
+            -(forward.py() + central.py()),
+            -(forward.pz() + central.pz()),
+        );
+        let mut out = vec![V::new(0.0, 0.0, 0.0, 0.0); 3];
+        out[leptons[0]] = forward;
+        out[leptons[1]] = central;
+        out[jet] = V::new((px * px + py * py + pz * pz).sqrt(), px, py, pz);
+        let sqrt_shat: f64 = out.iter().map(|p| p.e()).sum();
+        let x = sqrt_shat / sqrt_s;
+        let point = OuterPoint {
+            x1: x,
+            x2: x,
+            sqrt_shat,
+            jac: 1.0,
+        };
+
+        let lab = lab_frame(&unequal, &point, &out);
+        assert_eq!(components(&lab[0]), [x * 6500.0, 0.0, 0.0, x * 6500.0]);
+        assert_eq!(components(&lab[1]), [x * 4000.0, 0.0, 0.0, -x * 4000.0]);
+        let shift = 0.5 * (13.0f64 / 8.0).ln();
+        let system_beta = (lab[0].pz() + lab[1].pz()) / (lab[0].e() + lab[1].e());
+        assert!((system_beta - 5.0 / 21.0).abs() < 1e-15, "{system_beta}");
+        for (k, (cm, boosted)) in out.iter().zip(&lab[2..]).enumerate() {
+            assert_eq!([boosted.px(), boosted.py()], [cm.px(), cm.py()], "leg {k}");
+            let moved = rapidity(boosted) - rapidity(cm);
+            assert!((moved - shift).abs() < 1e-12, "leg {k} moved by {moved}");
+        }
+        let fwd = &lab[2 + leptons[0]];
+        let hand = [
+            100.0 * (2.4 + shift).cosh(),
+            100.0,
+            0.0,
+            100.0 * (2.4 + shift).sinh(),
+        ];
+        for (got, want) in components(fwd).into_iter().zip(hand) {
+            assert!((got - want).abs() < 1e-11 * hand[0], "{got} vs {want}");
+        }
+        for c in 0..4 {
+            let into: f64 = lab[..2].iter().map(|p| components(p)[c]).sum();
+            let outof: f64 = lab[2..].iter().map(|p| components(p)[c]).sum();
+            assert!((into - outof).abs() < 1e-12 * sqrt_shat, "component {c}");
+        }
+        assert!(
+            !unequal.cuts.pass(&lab),
+            "a lepton at lab rapidity {} passed etal = 2.5",
+            rapidity(fwd)
+        );
+        let lab_even = lab_frame(&even, &point, &out);
+        assert!(
+            even.cuts.pass(&lab_even),
+            "the configuration at rest fails a cut"
+        );
+
+        // Away from x₁ = x₂ every leg moves by MadGraph's cm_rap itself.
+        let (x1, x2) = (0.3, 0.05);
+        let skewed = OuterPoint {
+            x1,
+            x2,
+            sqrt_shat: (x1 * x2).sqrt() * sqrt_s,
+            jac: 1.0,
+        };
+        let cm_rap = 0.5 * (x1 * e1 / (x2 * e2)).ln();
+        let lab = lab_frame(&unequal, &skewed, &out);
+        for (k, (cm, boosted)) in out.iter().zip(&lab[2..]).enumerate() {
+            let moved = rapidity(boosted) - rapidity(cm);
+            assert!(
+                (moved - cm_rap).abs() < 1e-12,
+                "leg {k}: {moved} vs {cm_rap}"
+            );
+        }
+    }
+
     /// An accepted point has to come back as the point its weight was taken at, in
     /// both frames: the trial loop runs on `value_in_channel` and only the kept
     /// points are reconstructed, so a reconstruction at a different point would
@@ -5742,8 +6006,8 @@ mod tests {
         let evaluated = EvaluatedModel::from_model(m.clone());
         let (groups, pdf) = llj_setup(&m, &evaluated);
         let amps = bind_all(&groups, &evaluated);
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
 
         let e_beam = SQRT_S_HAD / 2.0;
         let mut stream = SubStream::from_stream(0x4E4E_7000, 3);
@@ -5828,8 +6092,8 @@ mod tests {
         let (groups, _) = llj_setup(&m, &evaluated);
         let pdf = beam_asymmetric_pdf();
         let amps = bind_all(&groups, &evaluated);
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
         // Points well off central rapidity, so the two beams sit at different
         // momentum fractions and the shares can tell them apart at all. Whether a
         // given one *resolves* those shares is a property of the event and not of

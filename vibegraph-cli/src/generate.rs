@@ -49,7 +49,7 @@ use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan, Reweighter, SubprocessSummary};
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
@@ -1709,7 +1709,8 @@ fn generate_proton_sample(
     pdf: &PdfMember,
     launches: Option<(Vec<Launch>, ReweightOptions)>,
 ) -> Result<EmitSummary, CliError> {
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
@@ -1758,7 +1759,7 @@ fn generate_proton_sample(
             part_amps,
             evaluated,
             pdf,
-            sqrt_s_had,
+            beams,
             rc.dsqrt_q2fact1,
             maps,
         )

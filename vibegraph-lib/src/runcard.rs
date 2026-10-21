@@ -182,10 +182,12 @@ pub enum RunCardError {
 /// How the incoming state of a run is prepared.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BeamMode {
-    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, √ŝ = x₁x₂ s.
+    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, ŝ = x₁x₂ s with
+    /// s = 4·ebeam1·ebeam2.
     Proton,
     /// Fixed-energy partonic beams (`lpp = 0`): the incoming particles are the
-    /// beam particles themselves, √ŝ = ebeam1 + ebeam2, no PDF convolution.
+    /// beam particles themselves, ŝ = (p₁ + p₂)² of the two beams on their mass
+    /// shells (4·ebeam1·ebeam2 when massless), no PDF convolution.
     FixedEnergy,
 }
 

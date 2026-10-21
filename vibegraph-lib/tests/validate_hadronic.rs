@@ -53,7 +53,7 @@ use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, SplitAngle, TauMap};
-use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -62,6 +62,7 @@ type V = LorentzVector<f64>;
 
 const MU_F: f64 = 91.1880;
 const SQRT_S_HAD: f64 = 13000.0;
+const BEAMS: ProtonBeams = ProtonBeams::new(SQRT_S_HAD / 2.0, SQRT_S_HAD / 2.0);
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 
 /// The Drell–Yan process both banked run cards were generated for.
@@ -441,14 +442,14 @@ fn adapted_integrand<'a>(
 ) -> ProtonIntegrand<'a> {
     let (survey, adapt_iters, _, _) = budget;
     let mut integ = if bound_transfer {
-        ProtonIntegrand::new_with_maps(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F, maps)
+        ProtonIntegrand::new_with_maps(groups, amps, evaluated, pdf, BEAMS, MU_F, maps)
     } else {
         assert_eq!(
             maps,
             MapOptions::default(),
             "the unbounded integrand is built under the default maps only"
         );
-        ProtonIntegrand::new_unbounded(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F)
+        ProtonIntegrand::new_unbounded(groups, amps, evaluated, pdf, BEAMS, MU_F)
     }
     .expect("hadronic integrand");
     let report = integ
@@ -719,7 +720,7 @@ fn pointwise_integrand_oracle() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+    let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
         .expect("hadronic integrand");
 
     // The oracle's two coupling classes, located by the flavour content of the
@@ -1121,7 +1122,7 @@ fn probe_accepted_point_floor_hadronic() {
     eprintln!("-- pp_to_llj_fixed: MG {mg:.3} +- {mg_err:.3} pb, {LLJ_NEVAL} x {LLJ_NITER} --");
     let mut runs: Vec<SeedResult> = Vec::new();
     for &seed in LLJ_SEEDS {
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
             .expect("hadronic integrand");
         integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
@@ -1223,9 +1224,8 @@ fn probe_alpha_survey_budget_hadronic() {
         let mut converged: Vec<(usize, Vec<f64>)> = Vec::new();
         for n_survey in SURVEYS {
             let clock = Stopwatch::start();
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("hadronic integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("hadronic integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
                 .expect("run card scale prescription compiles");
@@ -2672,7 +2672,7 @@ fn probe_cluster_scale_spread_over_configurations() {
             .iter()
             .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
             .collect();
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
             .expect("hadronic integrand");
         let report = integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
@@ -2849,7 +2849,7 @@ fn madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
         .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
@@ -3981,9 +3981,8 @@ fn probe_scale_draw_cost() {
             .collect();
 
         let build = |rc: &RunCard| {
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
                 .expect("scale prescription compiles");
@@ -4321,7 +4320,7 @@ fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
         .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
@@ -4999,7 +4998,8 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
     let evaluated = EvaluatedModel::from_model(model.clone());
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(&rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
     let forbidden = forbidden_onshell_ids(&proc_card, &model).expect("on-shell vetoes");
@@ -5062,7 +5062,7 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
                 part_amps,
                 &evaluated,
                 &pdf,
-                sqrt_s_had,
+                beams,
                 rc.dsqrt_q2fact1,
                 maps,
             )

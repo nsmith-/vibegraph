@@ -483,7 +483,7 @@ mod tests {
     use crate::pdf::PdfMember;
     use crate::phasespace::maps::MapOptions;
     use crate::phasespace::rng::SubStream;
-    use crate::proton::{derive_flavor_groups, FlavorGroups};
+    use crate::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams};
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::ufo::{EvaluatedModel, UFOModel};
     use crate::unweight::{MaxRule, Unweighter};
@@ -569,7 +569,7 @@ mod tests {
             amps,
             evaluated,
             pdf,
-            SQRT_S_HAD,
+            ProtonBeams::equal(SQRT_S_HAD),
             MU_F,
             MapOptions::fixed(MapChoices::LEGACY),
         )
