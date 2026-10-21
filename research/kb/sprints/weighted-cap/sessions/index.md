@@ -7,6 +7,7 @@
 * [F1: the automatic WEIGHTED search cap is MadGraph's](F1.md) - max_w = (n_ext−2) × the largest WEIGHTED of any interaction; a toy UFO with a two-order vertex finds its diagrams above the old cap; SM census and search cost unmoved.
 * [HY1: hygiene review of the MadGraph WEIGHTED search loop](HY1.md) - Review F1 and V1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [V1: what the MadGraph search loop moves, decays first](V1.md) - Check every banked and hermetic decay against the new 1→n rule, confirm the loop against MadGraph's own banked logs where they exist, and finalise the banking request.
+* [V2: reconcile the WEIGHTED trial sequences with the M3 build](V2.md) - MadGraph's measured Trying lines differ from V1's predictions on two rows; explain them from source, check vibegraph picks the same WEIGHTED value, and correct the banking text.
 
 ## Session Report
 
