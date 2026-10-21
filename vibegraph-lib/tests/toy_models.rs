@@ -28,10 +28,10 @@ use std::sync::Arc;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massive;
-use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
 
 /// The two model directories whose rows this file owns, as the manifest spells
 /// them.
@@ -264,9 +264,13 @@ const MERGE_NPCP: (&str, &str, &str) = ("couplings.py", "order={'NPCP': 1}", "or
 const MERGE_NPD: (&str, &str, &str) = ("couplings.py", "order={'NPD': 1}", "order={'NP': 1}");
 
 /// A copy of `vibegraph_toy_UFO` in a fresh scratch directory, with each
-/// `(file, from, to)` replacement applied, loaded under `restrict_all`. Every `from`
-/// must occur in its file.
-fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
+/// `(file, from, to)` replacement applied and each `(file, text)` of `appends`
+/// appended to its file (created if the model has none), loaded under `restrict_all`. Every `from` must occur in its
+/// file.
+fn try_edited_toy_model(
+    edits: &[(&str, &str, &str)],
+    appends: &[(&str, &str)],
+) -> Result<Arc<UFOModel>, UfoError> {
     let src = toy_ufo_dir();
     let scratch = tempfile::tempdir().expect("create a scratch directory");
     let dst = scratch.path();
@@ -284,8 +288,207 @@ fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
         );
         std::fs::write(dst.join(file), text.replace(from, to)).unwrap();
     }
+    for (file, tail) in appends {
+        let text = std::fs::read_to_string(dst.join(file)).unwrap_or_default();
+        std::fs::write(dst.join(file), format!("{text}\n{tail}\n")).unwrap();
+    }
     UFOModel::load(dst, Some(&dst.join("restrict_all.dat")))
-        .unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
+}
+
+fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
+    try_edited_toy_model(edits, &[]).unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
+}
+
+const LV_ON_GL_ALT: (&str, &str, &str) = (
+    "couplings.py",
+    "value='complex(0,1)*gl'",
+    "value='complex(0,1)*gl_alt'",
+);
+
+/// A parameter defined only under `if configuration.<flag>:` / `else:` is refused
+/// at load with an error naming it. The loader cannot know which branch Python
+/// takes (`configuration` is a module the UFO imports, and MadGraph supplies no
+/// default for it), so it never picks one.
+#[test]
+fn parameter_defined_only_under_a_conditional_is_refused_by_name() {
+    let tail = "\
+if configuration.use_alt:
+    gl_alt = Parameter(name='gl_alt', nature='internal', type='real', value='1.5', texname='g')
+else:
+    gl_alt = Parameter(name='gl_alt', nature='internal', type='real', value='2.5', texname='g')
+";
+    let err = try_edited_toy_model(&[LV_ON_GL_ALT], &[("parameters.py", tail)])
+        .err()
+        .expect("a conditionally defined parameter must be refused");
+    assert!(
+        matches!(&err, UfoError::Parameters(_)) && err.to_string().contains("'gl_alt'"),
+        "error does not name the parameter: {err}"
+    );
+}
+
+/// A coupling that names a parameter `parameters.py` never defines is refused at
+/// load, naming both, where evaluation would otherwise have no value to read.
+#[test]
+fn coupling_referencing_an_undefined_parameter_is_refused_by_name() {
+    let edit = (
+        "couplings.py",
+        "value='complex(0,1)*gl'",
+        "value='complex(0,1)*gl_missing'",
+    );
+    let err = try_edited_toy_model(&[edit], &[])
+        .err()
+        .expect("an undefined parameter must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("'gl_missing'") && msg.contains("'GC_LV'"),
+        "error does not name parameter and coupling: {msg}"
+    );
+}
+
+/// An internal parameter whose expression names an undefined parameter is refused
+/// at load, naming both.
+#[test]
+fn internal_parameter_referencing_an_undefined_parameter_is_refused_by_name() {
+    let tail = "gx = Parameter(name='gx', nature='internal', type='real', \
+                value='2*gx_missing', texname='g')";
+    let err = try_edited_toy_model(&[], &[("parameters.py", tail)])
+        .err()
+        .expect("an undefined parameter must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("'gx_missing'") && msg.contains("'gx'"),
+        "error does not name both parameters: {msg}"
+    );
+}
+
+/// An object a UFO file defines only under `if configuration.<flag>:` is refused
+/// at load, naming it and its file, rather than silently left out of the model.
+#[test]
+fn conditional_particle_and_vertex_definitions_are_refused_by_name() {
+    let particle = "\
+if configuration.extra:
+    extra_part = Particle(pdg_code=9000099, name='xx', antiname='xx', spin=1, color=1,
+                          mass=Param.ZERO, width=Param.ZERO, charge=0)
+";
+    let err = try_edited_toy_model(&[], &[("particles.py", particle)])
+        .err()
+        .expect("a conditional particle must be refused");
+    let msg = err.to_string();
+    assert!(
+        matches!(
+            err,
+            UfoError::ConditionalDefinition {
+                file: "particles.py",
+                ..
+            }
+        ) && msg.contains("'extra_part'"),
+        "{msg}"
+    );
+
+    let vertex = "\
+if configuration.extra:
+    V_extra = Vertex(name='V_extra', particles=[], color=['1'], lorentz=[], couplings={})
+";
+    let err = try_edited_toy_model(&[], &[("vertices.py", vertex)])
+        .err()
+        .expect("a conditional vertex must be refused");
+    let msg = err.to_string();
+    assert!(
+        matches!(
+            err,
+            UfoError::ConditionalDefinition {
+                file: "vertices.py",
+                ..
+            }
+        ) && msg.contains("'V_extra'"),
+        "{msg}"
+    );
+}
+
+/// The refusal names its file and the object, whichever of the six files holds it.
+fn assert_refused_in(file: &str, tail: &str, name: &str) {
+    let err = try_edited_toy_model(&[], &[(file, tail)])
+        .err()
+        .unwrap_or_else(|| panic!("a conditional definition in {file} must be refused"));
+    assert!(
+        matches!(&err, UfoError::ConditionalDefinition { file: f, names } if *f == file && names == name),
+        "{file}: {err}"
+    );
+}
+
+/// The same refusal for the remaining files: couplings, Lorentz structures, coupling
+/// orders and propagators (the last absent from the toy model, so appended to a new
+/// file).
+#[test]
+fn conditional_coupling_lorentz_order_and_propagator_definitions_are_refused() {
+    assert_refused_in(
+        "couplings.py",
+        "if configuration.extra:\n    GC_extra = Coupling(name='GC_extra', value='gl', order={'QED': 1})\n",
+        "'GC_extra'",
+    );
+    assert_refused_in(
+        "lorentz.py",
+        "if configuration.extra:\n    L_extra = Lorentz(name='L_extra', spins=[1, 1], structure='Identity(1,2)')\n",
+        "'L_extra'",
+    );
+    assert_refused_in(
+        "coupling_orders.py",
+        "if configuration.extra:\n    NPX = CouplingOrder(name='NPX', expansion_order=1, hierarchy=2)\n",
+        "'NPX'",
+    );
+    assert_refused_in(
+        "propagators.py",
+        "if configuration.extra:\n    P_extra = Propagator(name='P_extra', numerator='1', denominator='1')\n",
+        "'P_extra'",
+    );
+}
+
+/// `recompute` and `set_alpha_s` return an error naming the parameter the model
+/// lacks, rather than panicking.
+#[test]
+fn recompute_of_an_unknown_parameter_is_an_error() {
+    let model = edited_toy_model(&[]);
+    let mut ev = EvaluatedModel::from_model(model);
+    let err = ev
+        .recompute("no_such_parameter", 1.0.into())
+        .expect_err("an unknown parameter must be refused");
+    assert!(err.to_string().contains("'no_such_parameter'"), "{err}");
+    let err = ev.set_alpha_s(0.118).expect_err("the toy model has no aS");
+    assert!(err.to_string().contains("'aS'"), "{err}");
+}
+
+/// A model with no `aS` has no strong coupling to move: a per-event `αs` leaves the
+/// amplitude exactly where it was bound, on the scaling path and without a panic.
+///
+/// Blind to which early return of `ScaleAwareAmplitude::set_alpha_s` fires, since
+/// every pool entry of such a model has power zero and a rescale would multiply
+/// nothing; it sees a path that reaches `EvaluatedModel::set_alpha_s` (an error
+/// for this model) instead.
+#[test]
+fn a_model_without_a_strong_coupling_ignores_the_per_event_alpha_s() {
+    let model = UFOModel::load(
+        &toy_ufo_dir(),
+        Some(&toy_ufo_dir().join("restrict_all.dat")),
+    )
+    .expect("load the toy model");
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    assert!(evaluated.alpha_s().is_none(), "the toy model has an aS");
+    let set = common::generate_with("lt~ lt > qt qt~ NP<=1", model.as_ref()).remove(0);
+    let ev = AmplitudeEvaluator::compile(&set, model.as_ref()).expect("compile");
+    let mut amp = ScaleAwareAmplitude::<f64>::new(&ev, &evaluated);
+    assert!(amp.fallback().is_none(), "{:?}", amp.fallback());
+
+    let mut rng = ChaCha8Rng::seed_from_u64(7);
+    let momenta = toy_point(1000.0, [10.0, 10.0], &[50.0, 50.0], &mut rng);
+    let mut scratch = amp.scratch_space();
+    let before = amp.eval_m2(&momenta, &mut scratch);
+    let pools: Vec<_> = amp.amplitude().pools().0.to_vec();
+    assert!(before > 0.0 && before.is_finite(), "{before}");
+    for alpha_s in [0.3, 0.05, 0.3] {
+        amp.set_alpha_s(alpha_s);
+        assert_eq!(amp.amplitude().pools().0, pools.as_slice());
+        assert_eq!(amp.eval_m2(&momenta, &mut scratch), before);
+    }
 }
 
 /// Incoming momenta along ±z for masses `initial` at `√s`, then the final state

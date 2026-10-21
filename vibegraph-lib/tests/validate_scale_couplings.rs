@@ -186,7 +186,7 @@ fn scaling_path_reproduces_the_reference_path() {
             fast.set_alpha_s(alpha_s);
 
             let mut reference_model = evaluated.clone();
-            reference_model.set_alpha_s(alpha_s);
+            reference_model.set_alpha_s(alpha_s).unwrap();
             let reference = BoundAmplitude::<f64>::bind(&eval, &reference_model);
 
             let (fc, ff) = fast.amplitude().pools();
