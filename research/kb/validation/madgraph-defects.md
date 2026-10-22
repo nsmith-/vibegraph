@@ -29,6 +29,9 @@ sources:
   - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1878-L1960", title: "MadGraph genps.f, get_channel_cut"}
   - {id: mg-286feb8, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/286feb8e606a4e55951f6ea10ea0e3d145213b13", title: "mg5amcnlo commit 286feb8e, change sde_strategy2 to avoid negative weights"}
   - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/rambo.py#L218", title: "MadGraph rambo.py overflow check"}
+  - {id: mg-dsample-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L181-L222", title: "MadGraph dsample.f, passcuts once per point before select_grouping"}
+  - {id: mg-dsig-mirror, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc#L815-L835", title: "MadGraph super_auto_dsig_group_v4.inc, the mirror's CM_RAP flip and the commented-out PASSCUTS"}
+  - {id: mg381-cuts-orient, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/Template/LO/SubProcesses/cuts.f#L24-L98", title: "3.8.1 cuts.f, PASSCUTS with CUTS_ORIENT per beam orientation"}
 ---
 # MadGraph defects found by this project
 
@@ -83,7 +86,46 @@ kind is treated.
 | VEGAS iterations combined with weight mean²/variance | `dsample.f:1995-1997` | σ low by 0.1–0.2 % on a fixed-beam 2 → 4, shrinking with budget | measured, [own concept](madevent-iteration-weighting-bias.md); references are read with it in mind, never reproduced |
 | **approximation**: identical particles across decays, one pairing kept and the interference between pairings dropped | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
 | written fixed-beam frame decided by one ulp: the lab boost is computed, then `numerical_accuracy` (`pb(0,i).gt.ebeam(i)`) falls back to an identity boost when a boosted beam energy rounds one ulp over (250.00000000000006 > 250 on the banked `p3r3` toy rows) | `unwgt.f:633-717` | no: vibegraph writes the CM frame, as these rows do; another mass/energy pair could round the other way and write lab records | candidate, measured on the banked rows and replayed in float64, not run through MadGraph; [fixed-beam-written-event-frame-unsettled](../backlog/validation/fixed-beam-written-event-frame-unsettled.md); not reported upstream |
+| mirrored beam ordering cut on the configuration MadEvent sampled, not the one it writes: grouped MadEvent runs `passcuts` once per point at the sampled `cm_rap`, before `select_grouping` picks `IMIRROR`, and the mirror flips `CM_RAP` only afterwards; at `ebeam1 ≠ ebeam2` the mirrored ordering's lab-rapidity window sits `ln(E₁/E₂)` off | `dsample.f:181`, `:222`; `super_auto_dsig_group_v4.inc:815-829`, its `PASSCUTS` at `:835` commented out; 3.5.17 cuts the mirrored momenta at `−CM_RAP` (`:467`, `:472`), the same window; 3.8.1 cuts each orientation in its own frame (`cuts.f` `CUTS_ORIENT`) | yes, at unequal beams with a rapidity-type cut: σ of `pp_to_ll_beams_6500_4000` +5.26 % here against MadGraph (754.96 ± 0.35 against 717.25 ± 0.145 pb); none at equal beams | **registered deviation (user, 2026-10-22)**: this crate cuts each ordering on its own lab frame; the σ gate emulates MadEvent test-side and reports this crate's own σ, and the samples cell reports the columns it can move; see below |
 | `event_norm = unity` aborts `MultiEventFile.unweight`: `'unity'` is allowed on the card but the branch compares `'unit'`, leaving `new_wgt` unbound | `lhe_parser.py:1232-1238` | no: MadEvent writes no event file under it | observed (`UnboundLocalError` on `new_wgt` at `lhe_parser.py:1238`, run on 3.7.1 at `b7687064`, `e+ e- > mu+ mu-` on the `ee500` card, seed 20261021); `EventNorm::Unity` follows the intended `'unit'` branch and has no MadGraph sample to compare to; not reported upstream |
+
+**The mirrored ordering's cut at unequal beams.** Grouped MadEvent evaluates
+`passcuts(p)` once per phase-space point (`dsample.f:181`), on the sampled
+momenta at the sampled `cm_rap = ½ ln(x₁E₁/(x₂E₂))`, before `select_grouping`
+chooses the beam ordering (`dsample.f:222`)[^mg-dsample-cuts]. For
+`IMIRROR = 2` the mirror rotates the momenta by π about x, swaps `XBK` and sets
+`CM_RAP = −CM_RAP` (`super_auto_dsig_group_v4.inc:815-829`) only afterwards,
+and the `PASSCUTS` call there (`:835`) is commented out[^mg-dsig-mirror]. The
+written mirrored event sits at its own boost `½ ln(x₂E₁/(x₁E₂))`, so its
+leptons are admitted when their lab rapidities lie within `etal` of
+`ln(E₁/E₂)` rather than of zero: `[−2.014, 2.986]` at 6500 × 4000 with
+`etal = 2.5`. The direct ordering is cut correctly, and at equal beams the two
+frames coincide, which is why no equal-beam row sees it.
+
+- **Size.** On `pp_to_ll_beams_6500_4000` (the `dy13` Drell-Yan card with
+  `ebeam2 = 4000`) this crate's σ is 754.96 ± 0.35 pb against MadGraph's seed
+  record 717.25 ± 0.145, +5.26 %. Emulating the defect in this crate gives
+  717.575 ± 0.309 (pull +0.95)[^ub-v3]. The predicted MadGraph σ with the beams
+  exchanged, 4000 × 6500, is about 792 pb, where this crate's is unchanged at
+  755.2: a beam-exchange invariance MadGraph breaks.
+- **Handling.** A registered deviation, decided by the user on 2026-10-22
+  under [the policy](madgraph-defect-policy.md)'s third outcome. This crate
+  keeps the correct cut. `validate_hadronic`'s `sigma_unequal_beams_vs_mg` gates
+  σ with the defect emulated (`ProtonIntegrand::emulate_madevent_mirrored_cut`,
+  compiled only under tests and `extended-validation`) and reports this crate's
+  own σ beside it. `validate_samples_proton`'s unequal-beam row reports the
+  columns the defect can move, gates the ones it cannot, and gates the
+  direct-ordering sub-sample on every column. The row's manifest notes state
+  the deviation.
+- **Upstream.** 3.5.17 (LTS) cuts the rotated momenta at `−CM_RAP` inside
+  `DSIGPROC` (`:467`, `:472`), the same window. 3.8.1 evaluates `PASSCUTS` once
+  per orientation, the mirrored one at `CM_RAP = ln(E₁/E₂) − CM_RAP` on the
+  rotated momenta with `XBK` swapped, and keeps each orientation's result in
+  `CUTS_ORIENT`[^mg381-cuts-orient]. Both readings are of source, not runs.
+  Should the pin move to 3.8.x, the reference no longer carries the defect and
+  the deviation is re-decided ([oracle pinning](madgraph-oracle-pinning.md)).
+  The report draft asks for the fix on the LTS line
+  ([madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md)).
 
 **`AQCDUP` with a truncated π.** `unwgt.f` writes
 `aaqcd = g*g/4d0/3.1415926d0` (and `aaqed` alike) while `g = √(4π·αs)` used full
@@ -241,5 +283,9 @@ here uses it.
 [^n41-15]: Note 41 §1.5 with the M0 census and M1 records that measured each effect.
 [^rw-results]: `validation/madgraph/gen_reweight_oracle.py` docstring and the reweight-cost results note.
 [^mg-rambo]: `rambo.py:218` at `b7687064`.
+[^mg-dsample-cuts]: `dsample.f:181` and `:222` at `b7687064`.
+[^mg-dsig-mirror]: `super_auto_dsig_group_v4.inc:815-835` at `b7687064`; `export_v4.py:5103` sets `passcuts_begin = ""`.
+[^mg381-cuts-orient]: `cuts.f:24-98` at `a5b17913` (3.8.1); the `Found while checking` list of [the drafts index](madgraph-upstream-report-drafts.md) calls the change `e9576dbce`, the mirror-cuts fix.
+[^ub-v3]: [The unequal-beams V3 report](../sprints/unequal-beams/sessions/V3-report.md), measured on `validate_hadronic`'s five seeds; [V4](../sprints/unequal-beams/sessions/V4-report.md) reproduces 717.575 ± 0.309 through the committed emulation.
 [^n29-d]: Note 29 chain D; its Run 0 records `get_channel_cut = 1` for this run in both versions.
 [^n22-close]: Note 22 close-out listed `SCALUP` as a defect; note 35 §10.1 item 9 and `lhef/build.rs` record what it is.

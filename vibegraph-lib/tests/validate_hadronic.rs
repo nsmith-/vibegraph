@@ -362,6 +362,18 @@ fn run_seed_mapped(
     )
 }
 
+/// Where the integrand cuts a group's mirrored beam ordering.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MirroredCut {
+    /// On the lab frame of the event the term is, as this crate integrates.
+    Physical,
+    /// On the configuration MadEvent 3.7.1 sampled the term from, which at
+    /// unequal beams is not the event it writes: MadGraph's defect, emulated
+    /// ([`ProtonIntegrand::emulate_madevent_mirrored_cut`]) so σ can be gated
+    /// against its references.
+    MadEvent,
+}
+
 /// What a run card's scale prescription must resolve to.
 ///
 /// Asserted rather than observed. The fixed-scale and dynamical cards of the same
@@ -413,6 +425,7 @@ fn run_seed_shaped(
         bound_transfer,
         shape,
         MapOptions::default(),
+        MirroredCut::Physical,
     );
     let result = integ.integrate(neval, niter, seed);
     assert_no_scale_draw_fallbacks(&integ);
@@ -438,6 +451,7 @@ fn adapted_integrand<'a>(
     bound_transfer: bool,
     shape: ScaleShape,
     maps: MapOptions,
+    mirrored_cut: MirroredCut,
 ) -> ProtonIntegrand<'a> {
     let (survey, adapt_iters, _, _) = budget;
     let mut integ = if bound_transfer {
@@ -466,6 +480,9 @@ fn adapted_integrand<'a>(
         )
     }
     .expect("hadronic integrand");
+    if mirrored_cut == MirroredCut::MadEvent {
+        integ.emulate_madevent_mirrored_cut();
+    }
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -564,34 +581,25 @@ fn check_dy_run(run: &str, card: &str) {
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
 
+    // The unequal-beam reference carries MadEvent's mirrored-ordering cut, a
+    // registered deviation: σ is gated with that cut emulated, and this crate's
+    // own σ is measured beside it and reported.
+    let cut = if run == DY_BEAMS_RUN {
+        MirroredCut::MadEvent
+    } else {
+        MirroredCut::Physical
+    };
+    let dy = DySetup {
+        groups: &groups,
+        amps: &amps,
+        model: &model,
+        evaluated: &evaluated,
+        set: &set,
+        pdf: &pdf,
+        rc: &rc,
+    };
     let mut summary = Vec::new();
-    let mut runs = Vec::new();
-    for &seed in DY_SEEDS {
-        let (sigma, err) = run_seed(
-            &groups,
-            &amps,
-            &model,
-            &evaluated,
-            &set,
-            &pdf,
-            &rc,
-            (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER),
-            seed,
-            // Drell-Yan at this order carries no strong coupling; a matrix element
-            // that did would need one, and `pdlabel = lhapdf` refuses to supply it.
-            false,
-            &mut summary,
-        );
-        eprintln!(
-            "[{run} seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | rel = {:+.4}",
-            sigma / mg - 1.0
-        );
-        runs.push(SeedResult {
-            seed,
-            sigma_pb: sigma,
-            sigma_err_pb: err,
-        });
-    }
+    let runs = dy.seeds(run, mg, cut, &mut summary);
 
     let SeedMean {
         mean,
@@ -631,6 +639,9 @@ fn check_dy_run(run: &str, card: &str) {
     row.neval = DY_NEVAL;
     row.niter = DY_NITER;
     row.subsampler = summary;
+    if cut == MirroredCut::MadEvent {
+        row.note = Some(dy.registered_deviation(run, (mg, mg_err), (mean, mean_err)));
+    }
     row.duration_s = Some(clock.seconds());
     row.write();
 
@@ -643,6 +654,100 @@ fn check_dy_run(run: &str, card: &str) {
         chi2 < DY_MAX_CHI2_PER_DOF,
         "[{run}] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
     );
+}
+
+/// What one Drell-Yan card's seeds are run on.
+struct DySetup<'a> {
+    groups: &'a FlavorGroups,
+    amps: &'a [BoundAmplitude<'a, f64>],
+    model: &'a UFOModel,
+    evaluated: &'a EvaluatedModel,
+    set: &'a PdfSet,
+    pdf: &'a PdfMember,
+    rc: &'a RunCard,
+}
+
+impl DySetup<'_> {
+    /// [`DY_SEEDS`]' `(σ, Δσ)` at the Drell-Yan budget, each printed against the
+    /// reference `mg`, with the mirrored ordering cut where `cut` says.
+    fn seeds(
+        &self,
+        run: &str,
+        mg: f64,
+        cut: MirroredCut,
+        summary: &mut Vec<ChannelSummary>,
+    ) -> Vec<SeedResult> {
+        let budget = (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER);
+        DY_SEEDS
+            .iter()
+            .map(|&seed| {
+                let integ = adapted_integrand(
+                    self.groups,
+                    self.amps,
+                    self.model,
+                    self.evaluated,
+                    self.set,
+                    self.pdf,
+                    self.rc,
+                    budget,
+                    seed,
+                    // Drell-Yan at this order carries no strong coupling; a matrix
+                    // element that did would need one, and `pdlabel = lhapdf`
+                    // refuses to supply it.
+                    false,
+                    summary,
+                    true,
+                    ScaleShape::FixedAtMz,
+                    MapOptions::default(),
+                    cut,
+                );
+                let (sigma, err) = integ.integrate(DY_NEVAL, DY_NITER, seed);
+                assert_no_scale_draw_fallbacks(&integ);
+                eprintln!(
+                    "[{run} seed {seed} {cut:?} mirrored cut] vibegraph σ = {sigma:.3} ± \
+                     {err:.3} pb | rel = {:+.4}",
+                    sigma / mg - 1.0
+                );
+                SeedResult {
+                    seed,
+                    sigma_pb: sigma,
+                    sigma_err_pb: err,
+                }
+            })
+            .collect()
+    }
+
+    /// This crate's own σ, each ordering cut on its own lab frame, measured on the
+    /// gate's seeds and reported against MadGraph `(mg, mg_err)` and against the
+    /// MadEvent emulation `(emulated, emulated_err)`: the size of the registered
+    /// deviation, as the line the gated row's note carries. Reported, never
+    /// gated.
+    fn registered_deviation(
+        &self,
+        run: &str,
+        (mg, mg_err): (f64, f64),
+        (emulated, emulated_err): (f64, f64),
+    ) -> String {
+        let own = combine(&self.seeds(run, mg, MirroredCut::Physical, &mut Vec::new()));
+        let pull = |a: f64, ea: f64, b: f64, eb: f64| (a - b) / (ea * ea + eb * eb).sqrt();
+        let line = format!(
+            "registered deviation (MadGraph defect: MadEvent 3.7.1 cuts the mirrored beam \
+             ordering on the configuration it sampled, dsample.f:181 before \
+             super_auto_dsig_group_v4.inc:815-829; user, 2026-10-22): the gated sigma emulates \
+             it; this crate's own sigma is {:.3} +- {:.3} pb (chi2/dof {:.2}), rel {:+.4} \
+             (pull {:+.1}) against MadGraph's {mg:.3} +- {mg_err:.3} and rel {:+.4} (pull {:+.1}) \
+             against the emulation's {emulated:.3} +- {emulated_err:.3}; info",
+            own.mean,
+            own.err,
+            own.chi2_per_dof,
+            own.mean / mg - 1.0,
+            pull(own.mean, own.err, mg, mg_err),
+            own.mean / emulated - 1.0,
+            pull(own.mean, own.err, emulated, emulated_err),
+        );
+        eprintln!("[{run}] INFO {line}");
+        line
+    }
 }
 
 #[test]
@@ -663,9 +768,22 @@ const DY_BEAMS_ROW: &str = "pp_to_ll_beams_6500_4000";
 /// on the same card apart from `ebeam2`.
 ///
 /// The integrand takes its beams from the card, so this is the one σ comparison
-/// that sees `2√(E₁E₂)`, the parton energies `x_i E_i` and the lab boost. Blind to
-/// the direction of that boost: `p p` is symmetric and the η cut is on `|η|`, so
-/// swapping the beams leaves σ unchanged; the `samples` cell carries that.
+/// that sees `2√(E₁E₂)`, the parton energies `x_i E_i` and the lab boost.
+///
+/// **A registered deviation.** MadEvent 3.7.1 cuts a group's mirrored beam
+/// ordering on the configuration it sampled rather than on the event it writes,
+/// which at `E₁ ≠ E₂` is the lab frame displaced by `ln(E₁/E₂)` in rapidity
+/// ([`ProtonIntegrand::emulate_madevent_mirrored_cut`]). This crate keeps the
+/// correct cut. The gated σ is integrated with MadEvent's cut emulated; this
+/// crate's own σ is measured on the same seeds and reported in the row's note,
+/// against MadGraph and against the emulation — about `+5.3 %` above MadGraph on
+/// this card. Exchanging the beams leaves this crate's σ unchanged and not
+/// MadGraph's.
+///
+/// What the gate cannot see: the emulation replaces the mirrored ordering's
+/// production cut, so a defect in that cut alone is invisible to it. The reported
+/// σ sees one, at the deviation's own scale; pointwise it is pinned by
+/// `exchanging_unequal_beam_energies_reflects_the_integrand` in `proton.rs`.
 ///
 /// Reports `NOT YET BANKED` and writes no cell while the manifest marks the row
 /// `planned` and no reference exists; a reference that exists is gated.
@@ -4296,6 +4414,7 @@ fn llj_scatter_calibration(
             true,
             shape,
             maps,
+            MirroredCut::Physical,
         );
         let (channels, total) = integ.adapt_grids(LLJ_NEVAL, LLJ_NITER, seed);
         assert_no_scale_draw_fallbacks(&integ);

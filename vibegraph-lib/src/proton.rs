@@ -1366,6 +1366,10 @@ pub struct ProtonIntegrand<'a> {
     /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
     /// configuration draw on `AMP2` alone.
     resonances: &'a [SubprocessResonances],
+    /// Whether the mirrored beam ordering is cut where MadEvent 3.7.1 cuts it
+    /// ([`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut)).
+    #[cfg(any(test, feature = "extended-validation"))]
+    madevent_mirrored_cut: bool,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1400,6 +1404,13 @@ struct ProtonScratch<'a> {
     group_records: RefCell<Vec<[Option<MatchedRecord>; 2]>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
+    /// The configuration MadEvent cuts a point's mirrored term on, and which of
+    /// `[direct, mirrored]` passed the cuts, under
+    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
+    #[cfg(any(test, feature = "extended-validation"))]
+    madevent_lab_buf: RefCell<Vec<V>>,
+    #[cfg(any(test, feature = "extended-validation"))]
+    ordering_passes: Cell<[bool; 2]>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1655,6 +1666,8 @@ impl<'a> ProtonIntegrand<'a> {
             alpha_s_dependent: false,
             vetoes: Vec::new(),
             resonances: &[],
+            #[cfg(any(test, feature = "extended-validation"))]
+            madevent_mirrored_cut: false,
         })
     }
 
@@ -1694,6 +1707,10 @@ impl<'a> ProtonIntegrand<'a> {
                 group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
+                #[cfg(any(test, feature = "extended-validation"))]
+                madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                #[cfg(any(test, feature = "extended-validation"))]
+                ordering_passes: Cell::new([true, true]),
             }
         })
     }
@@ -2083,11 +2100,11 @@ impl<'a> ProtonIntegrand<'a> {
     ) -> f64 {
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
-        {
-            let lab = sc.lab_buf.borrow();
-            if !self.cuts.pass(&lab) {
-                return 0.0;
-            }
+        let passes = self.cuts.pass(&sc.lab_buf.borrow());
+        #[cfg(any(test, feature = "extended-validation"))]
+        let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
+        if !passes {
+            return 0.0;
         }
         let acc = if self.scales.draws_configuration() {
             self.per_group_sum(sc, m, &cm, channel, scale_u)
@@ -2099,6 +2116,74 @@ impl<'a> ProtonIntegrand<'a> {
         }
         let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
         m.jac * flux * self.lips_2pi * acc
+    }
+
+    /// Cut the mirrored beam ordering where MadEvent 3.7.1 cuts it, so a cross
+    /// section can be compared with a MadGraph reference at unequal beam
+    /// energies. Test-side emulation of a MadGraph defect, which this crate keeps
+    /// as a registered deviation: never a production mode.
+    ///
+    /// **The defect** (MadGraph at `b7687064`). Grouped MadEvent evaluates
+    /// `passcuts` once per phase-space point, on the sampled momenta at the
+    /// sampled `cm_rap = ½ ln(x₁E₁/(x₂E₂))` (`dsample.f:181`), before
+    /// `select_grouping` picks the beam ordering (`dsample.f:222`); the mirror
+    /// rotates the momenta, exchanges `x₁` and `x₂` and flips `CM_RAP` only
+    /// afterwards (`super_auto_dsig_group_v4.inc:815-829`), and the `PASSCUTS`
+    /// call there (`:835`) is commented out. A mirrored event is therefore cut
+    /// on the configuration it was sampled from, not on the one it is written
+    /// as. Here the mirrored term at `(x₁, x₂, q)` is the event MadEvent samples
+    /// at `(x₂, x₁, R q)`, `R` the rotation by π about x, so that is the
+    /// configuration its cut reads, boosted at its own `cm_rap`. At equal beams
+    /// the two coincide; at `E₁ ≠ E₂` they differ by `ln(E₁/E₂)` in every
+    /// rapidity.
+    ///
+    /// Cross section only: drawing an event from the integrand panics, as does
+    /// a scale prescription that clusters each term on its own.
+    #[cfg(any(test, feature = "extended-validation"))]
+    pub fn emulate_madevent_mirrored_cut(&mut self) {
+        self.madevent_mirrored_cut = true;
+    }
+
+    /// Whether a point passes the cuts in either ordering under
+    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut),
+    /// recording which ordering passed; `lab_passes` alone without it.
+    #[cfg(any(test, feature = "extended-validation"))]
+    fn cut_orderings_as_madevent(
+        &self,
+        sc: &ProtonScratch<'a>,
+        m: &OuterPoint,
+        out: &[V],
+        lab_passes: bool,
+    ) -> bool {
+        if !self.madevent_mirrored_cut {
+            return lab_passes;
+        }
+        let [e1, e2] = self.beams.energies();
+        let r = e2 / e1;
+        let beta = (m.x2 - r * m.x1) / (m.x2 + r * m.x1);
+        let mut sampled = sc.madevent_lab_buf.borrow_mut();
+        sampled.clear();
+        sampled.push(V::new(m.x2 * e1, 0.0, 0.0, m.x2 * e1));
+        sampled.push(V::new(m.x1 * e2, 0.0, 0.0, -m.x1 * e2));
+        sampled.extend(
+            out.iter()
+                .map(|p| boost_z(V::new(p.e(), p.px(), -p.py(), -p.pz()), beta)),
+        );
+        let mirrored = self.cuts.pass(&sampled);
+        sc.ordering_passes.set([lab_passes, mirrored]);
+        lab_passes || mirrored
+    }
+
+    /// `[direct, mirrored]` with the ordering whose cut failed zeroed, under
+    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut);
+    /// unchanged without it.
+    #[cfg(any(test, feature = "extended-validation"))]
+    fn madevent_cut_luminosities(&self, sc: &ProtonScratch<'a>, lumi: [f64; 2]) -> [f64; 2] {
+        if !self.madevent_mirrored_cut {
+            return lumi;
+        }
+        let passes = sc.ordering_passes.get();
+        [0, 1].map(|o| if passes[o] { lumi[o] } else { 0.0 })
     }
 
     /// The luminosity-weighted sum over groups where every group reads the same
@@ -2180,6 +2265,11 @@ impl<'a> ProtonIntegrand<'a> {
         let &[v] = scale_u else {
             panic!("a configuration-drawing prescription takes one trailing uniform")
         };
+        #[cfg(any(test, feature = "extended-validation"))]
+        assert!(
+            !self.madevent_mirrored_cut,
+            "MadEvent's mirrored-ordering cut is emulated on a shared-scale sum only"
+        );
         let mut out = sc.group_scales.borrow_mut();
         out.clear();
         let mut factors = sc.group_rewgt.borrow_mut();
@@ -2360,6 +2450,8 @@ impl<'a> ProtonIntegrand<'a> {
         f2: &FlavorRow,
     ) -> f64 {
         let [direct, reflected] = g.symmetry_weighted_luminosity_rows(f1, f2);
+        #[cfg(any(test, feature = "extended-validation"))]
+        let [direct, reflected] = self.madevent_cut_luminosities(sc, [direct, reflected]);
         let mut term = 0.0;
         if direct != 0.0 {
             term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
@@ -2613,6 +2705,11 @@ impl<'a> ProtonIntegrand<'a> {
     /// where the cuts reject the point or no group carries luminosity, which is
     /// where the trial would have carried no weight either.
     pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<ProtonEvent> {
+        #[cfg(any(test, feature = "extended-validation"))]
+        assert!(
+            !self.madevent_mirrored_cut,
+            "MadEvent's mirrored-ordering cut is emulated for the cross section only"
+        );
         let (grid_u, scale_u) = self.split_point(u);
         let m = self.map_point(grid_u);
         let point = self
@@ -6085,6 +6182,196 @@ mod tests {
             one_sided > 500,
             "{one_sided} points sit between the two frames' cuts"
         );
+    }
+
+    /// The Drell-Yan flavour groups on the default Drell-Yan cuts between beams of
+    /// 6500 and 4000 GeV, the card of the unequal-beam reference row.
+    fn unequal_beam_drell_yan(m: &UFOModel, evaluated: &EvaluatedModel) -> FlavorGroups {
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  4000.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 10.0 = ptl\n  2.5 = etal\n  0.4 = drll\n  0.0 = mmll\n",
+        )
+        .expect("run card");
+        derive_flavor_groups(enumerate("p p > e+ e-", m), m, evaluated, &card)
+            .expect("flavour groups")
+    }
+
+    /// The two outgoing leptons back to back in the partonic CM at `pT = 100` GeV,
+    /// the first at rapidity `y`.
+    fn back_to_back_leptons(groups: &FlavorGroups, y: f64) -> Vec<V> {
+        let lepton =
+            |eta: f64, sign: f64| V::new(100.0 * eta.cosh(), sign * 100.0, 0.0, 100.0 * eta.sinh());
+        let legs = &groups.groups()[0].members()[0].outgoing;
+        assert_eq!(legs.len(), 2, "{legs:?}");
+        vec![lepton(y, 1.0), lepton(-y, -1.0)]
+    }
+
+    /// The partonic CM frame of `out`: the beams along ±z sharing `√ŝ`.
+    fn cm_frame(point: &OuterPoint, out: &[V]) -> Vec<V> {
+        let e = point.sqrt_shat / 2.0;
+        let mut cm = vec![V::new(e, 0.0, 0.0, e), V::new(e, 0.0, 0.0, -e)];
+        cm.extend_from_slice(out);
+        cm
+    }
+
+    /// The cuts read the lab frame, never the partonic CM: a configuration whose
+    /// leptons sit inside `etal` in the CM and outside it once boosted carries no
+    /// weight, in either beam ordering.
+    ///
+    /// The beam-exchange test above cannot see this: cutting both orderings in the
+    /// partonic CM is symmetric under the reflection it checks. Here
+    /// `x₁ = x₂` at `6500 × 4000` boosts the system by `½ ln(13/8)`, carrying the
+    /// first lepton from `y = 2.4` to `2.64`; the mirrored ordering's physical event
+    /// has the same lab momenta and fails with it. Control: the same
+    /// configuration between beams of equal energy at the same `√s` is at rest,
+    /// passes, and carries weight, so the zero is the cut's.
+    #[test]
+    fn a_configuration_inside_the_cuts_only_in_the_partonic_frame_carries_no_weight() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = unequal_beam_drell_yan(&m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let e_even = (6500.0f64 * 4000.0).sqrt();
+        let build = |e1: f64, e2: f64| {
+            ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::new(e1, e2),
+                MU_F,
+            )
+            .expect("integrand")
+        };
+        let unequal = build(6500.0, 4000.0);
+        let even = build(e_even, e_even);
+
+        let out = back_to_back_leptons(&groups, 2.4);
+        let sqrt_shat: f64 = out.iter().map(|p| p.e()).sum();
+        let x = sqrt_shat / (2.0 * e_even);
+        let point = OuterPoint {
+            x1: x,
+            x2: x,
+            sqrt_shat,
+            jac: 1.0,
+        };
+        assert!(
+            unequal.cuts.pass(&cm_frame(&point, &out)),
+            "the configuration fails a cut in the partonic CM"
+        );
+        let lab = lab_frame(&unequal, &point, &out);
+        assert!(
+            !unequal.cuts.pass(&lab),
+            "the boosted lepton at y = {} passes etal",
+            rapidity(&lab[2])
+        );
+        let at_rest = even.shape(even.scratch(), &point, &out, 0, &[]);
+        assert!(at_rest > 0.0, "the control carries no weight: {at_rest:e}");
+        let boosted = unequal.shape(unequal.scratch(), &point, &out, 0, &[]);
+        assert_eq!(boosted, 0.0, "a lab-frame failure carries weight");
+    }
+
+    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] cuts the mirrored term at
+    /// `(x₁, x₂, q)` on the configuration MadEvent sampled it from, `(x₂, x₁, Rq)`
+    /// at that configuration's `cm_rap`, and leaves the direct term on the lab
+    /// frame.
+    ///
+    /// Two points at `x₁/x₂ = (E₁/E₂)^±1` with the leptons at partonic
+    /// `y = ±2.4`. At `x₁/x₂ = E₁/E₂` the lab frame moves the
+    /// pair by `ln(E₁/E₂) = 0.486`, past `etal`, while MadEvent's sampled
+    /// configuration is at rest: only the emulated mirrored term survives. At
+    /// `x₁/x₂ = E₂/E₁` the lab frame is at rest and MadEvent's configuration
+    /// moves by `0.486`: the emulation keeps the direct term alone, below the
+    /// unemulated value. Control: at equal beams the emulation is bit-identical
+    /// over a sweep of production points, as MadEvent's two frames coincide there.
+    #[test]
+    fn the_emulated_madevent_mirrored_cut_reads_the_sampled_configuration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = unequal_beam_drell_yan(&m, &evaluated);
+        assert!(groups.groups().iter().any(FlavorGroup::has_mirror));
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let build = |e1: f64, e2: f64, emulate: bool| {
+            let mut integ = ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::new(e1, e2),
+                MU_F,
+            )
+            .expect("integrand");
+            if emulate {
+                integ.emulate_madevent_mirrored_cut();
+            }
+            integ
+        };
+        let (plain, emulated) = (build(6500.0, 4000.0, false), build(6500.0, 4000.0, true));
+        let out = back_to_back_leptons(&groups, 2.4);
+        let sqrt_shat: f64 = out.iter().map(|p| p.e()).sum();
+        let sqrt_s = 2.0 * (6500.0f64 * 4000.0).sqrt();
+        let at = |ratio: f64| {
+            let tau_root = sqrt_shat / sqrt_s;
+            OuterPoint {
+                x1: tau_root * ratio.sqrt(),
+                x2: tau_root / ratio.sqrt(),
+                sqrt_shat,
+                jac: 1.0,
+            }
+        };
+        let value = |integ: &ProtonIntegrand<'_>, point: &OuterPoint| {
+            integ.shape(integ.scratch(), point, &out, 0, &[])
+        };
+
+        let forward = at(6500.0 / 4000.0);
+        assert!(!plain.cuts.pass(&lab_frame(&plain, &forward, &out)));
+        assert_eq!(value(&plain, &forward), 0.0);
+        let mirrored_only = value(&emulated, &forward);
+        assert!(
+            mirrored_only > 0.0,
+            "the mirrored term MadEvent keeps is lost: {mirrored_only:e}"
+        );
+
+        let backward = at(4000.0 / 6500.0);
+        assert!(plain.cuts.pass(&lab_frame(&plain, &backward, &out)));
+        let both = value(&plain, &backward);
+        let direct_only = value(&emulated, &backward);
+        assert!(
+            direct_only > 0.0 && direct_only < both * (1.0 - 1e-6),
+            "the emulation kept {direct_only:e} of {both:e}: the mirrored term MadEvent \
+             drops survived, or the direct term went with it"
+        );
+
+        let (even, even_emulated) = (build(6500.0, 6500.0, false), build(6500.0, 6500.0, true));
+        let mut stream = SubStream::from_stream(0x00ED_C0DE, 3);
+        let mut nonzero = 0;
+        for trial in 0..5_000 {
+            let u = stream.uniforms::<f64>(even.channel_grid_ndim());
+            let point = even.map_point(&u);
+            let channel = trial % even.channel_count();
+            let drawn =
+                even.combiner
+                    .draw_in_channel_at(channel, point.sqrt_shat, &u[OUTER_NDIM..]);
+            let a = even.shape(even.scratch(), &point, &drawn.momenta, channel, &[]);
+            let b = even_emulated.shape(
+                even_emulated.scratch(),
+                &point,
+                &drawn.momenta,
+                channel,
+                &[],
+            );
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "trial {trial}: {a:e} against {b:e}"
+            );
+            nonzero += usize::from(a != 0.0);
+        }
+        assert!(nonzero > 1_000, "{nonzero} equal-beam points carry weight");
     }
 
     /// An accepted point has to come back as the point its weight was taken at, in
