@@ -10,3 +10,4 @@
 - 2026-10-21: main merged after #59 landed (49d6802; edge_probe passes ProtonBeams::equal; full workspace green). V2 dispatched to prepare the banking row.
 - 2026-10-21: V2 checked (1e142c3). The card differs only in the two header lines and ebeam2. scales_run_cards and validation-report tests pass. V2 Found 5 is stale: edge_probe was fixed in 49d6802. Banking request posted.
 - 2026-10-22: V3 diagnosis (57475b1): vibegraph is correct. MadEvent cuts the mirrored ordering at the direct ordering's cm_rap when E1 != E2 (dsample.f passcuts before select_grouping; CM_RAP flipped afterwards; the DSIG passcuts commented out). Emulating that gives 717.58 +- 0.31 against MG 717.25. Awaiting the user's policy decision and the M3 eta check.
+- 2026-10-22: the user chose a registered deviation for the MadEvent mirrored-ordering cut defect. V4 dispatched.
