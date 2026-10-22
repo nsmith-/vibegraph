@@ -5999,6 +5999,94 @@ mod tests {
         }
     }
 
+    /// Exchanging the two beams' energies is a reflection `z → −z` of the whole
+    /// collision, so at unequal energies the integrand at `(x₁, x₂, q)` equals the
+    /// integrand with the energies exchanged at `(x₂, x₁, Rq)`, `R` the rotation by
+    /// π about the x axis: each beam ordering's term of one becomes the other
+    /// ordering's term of the other, and a symmetric lab cut sees reflected
+    /// momenta.
+    ///
+    /// The mirrored ordering's term is what this pins at a point: it is a
+    /// different physical event from the direct one (the beams' partons
+    /// exchanged), and its lab-frame cut has to be the one that event's own
+    /// momenta pass. A mirrored term cut in any other frame — the one MadEvent
+    /// cuts in, at `cm_rap` with the beam energies exchanged, among them — breaks
+    /// the symmetry at points near the `etal` edge. Blind to anything symmetric
+    /// under the reflection: a boost of the wrong sign in both orderings, or
+    /// partons placed on the wrong beam in both, pass; the boost's direction is
+    /// [`unequal_beams_place_and_boost_the_partons_as_madgraph_does`]'s.
+    #[test]
+    fn exchanging_unequal_beam_energies_reflects_the_integrand() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  4000.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 10.0 = ptl\n  2.5 = etal\n  0.4 = drll\n  0.0 = mmll\n",
+        )
+        .expect("run card");
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        assert!(groups.groups().iter().any(FlavorGroup::has_mirror));
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let build = |e1: f64, e2: f64| {
+            ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::new(e1, e2),
+                MU_F,
+            )
+            .expect("integrand")
+        };
+        let forward = build(6500.0, 4000.0);
+        let backward = build(4000.0, 6500.0);
+        assert_eq!(forward.point_ndim(), forward.channel_grid_ndim());
+
+        let reflect = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+        let mut stream = SubStream::from_stream(0x00BE_A352, 3);
+        let (mut nonzero, mut one_sided) = (0, 0);
+        for trial in 0..20_000 {
+            let u = stream.uniforms::<f64>(forward.channel_grid_ndim());
+            let point = forward.map_point(&u);
+            let channel = trial % forward.channel_count();
+            let drawn =
+                forward
+                    .combiner
+                    .draw_in_channel_at(channel, point.sqrt_shat, &u[OUTER_NDIM..]);
+            let mirrored = OuterPoint {
+                x1: point.x2,
+                x2: point.x1,
+                ..point
+            };
+            let reflected: Vec<V> = drawn.momenta.iter().map(reflect).collect();
+            let a = forward.shape(forward.scratch(), &point, &drawn.momenta, channel, &[]);
+            let b = backward.shape(backward.scratch(), &mirrored, &reflected, channel, &[]);
+            assert!(
+                (a - b).abs() <= 1e-12 * a.abs().max(b.abs()),
+                "trial {trial}: {a:e} with beams 6500 x 4000, {b:e} exchanged"
+            );
+            nonzero += usize::from(a != 0.0);
+            // A point whose lab frame at the other beams' boost fails the cuts
+            // is one where a mirrored term cut in that frame would be lost.
+            let lab = lab_frame(&forward, &point, &drawn.momenta);
+            let other_beta =
+                (point.x1 - point.x2 * 6500.0 / 4000.0) / (point.x1 + point.x2 * 6500.0 / 4000.0);
+            let mut other = lab[..2].to_vec();
+            other.extend(drawn.momenta.iter().map(|p| boost_z(*p, other_beta)));
+            one_sided += usize::from(forward.cuts.pass(&lab) != forward.cuts.pass(&other));
+        }
+        eprintln!("{nonzero} weighted points, {one_sided} between the two frames' cuts");
+        assert!(nonzero > 5_000, "{nonzero} points carry weight");
+        assert!(
+            one_sided > 500,
+            "{one_sided} points sit between the two frames' cuts"
+        );
+    }
+
     /// An accepted point has to come back as the point its weight was taken at, in
     /// both frames: the trial loop runs on `value_in_channel` and only the kept
     /// points are reconstructed, so a reconstruction at a different point would
