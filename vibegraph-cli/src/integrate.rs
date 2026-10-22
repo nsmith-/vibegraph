@@ -353,9 +353,10 @@ pub(crate) struct IntegrateArgs {
     #[arg(long, default_value = DEFAULT_PDF_SET)]
     pub(crate) pdf_set: String,
 
-    /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
-    /// the `~/.vibegraph` cache (offering to download the set if absent), then
-    /// `validation/pdf` under the current directory.
+    /// Directory containing `<pdf-set>/`; defaults to the first
+    /// `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is
+    /// unset), then the `~/.vibegraph` cache (offering to download the set if
+    /// absent).
     #[arg(long)]
     pub(crate) pdf_dir: Option<PathBuf>,
 

@@ -179,6 +179,8 @@ pub enum RunCardError {
     UnsupportedEventNorm { value: String },
     #[error("run card sets iseed = {iseed}: a seed is 0, for none, or a positive integer")]
     NegativeSeed { iseed: i64 },
+    #[error("run card sets nevents = {nevents}: an event count is 0 or a positive integer")]
+    NegativeEventCount { nevents: i64 },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -378,7 +380,8 @@ impl RunCard {
                 .collect(),
         };
         let settings = GenerateSettings {
-            nevents: u64::try_from(taken["nevents"].as_i64()).unwrap_or(0),
+            nevents: u64::try_from(taken["nevents"].as_i64())
+                .expect("from_values refuses a negative nevents"),
             event_norm,
             systematics,
             clustering_info: taken["clusinfo"].as_bool(),
@@ -625,6 +628,10 @@ impl RunCard {
         let iseed = i("iseed");
         if iseed < 0 {
             return Err(RunCardError::NegativeSeed { iseed });
+        }
+        let nevents = i("nevents");
+        if nevents < 0 {
+            return Err(RunCardError::NegativeEventCount { nevents });
         }
         Ok(RunCard {
             iseed,
@@ -1235,6 +1242,16 @@ mod tests {
             matches!(err, RunCardError::NegativeSeed { iseed: -3 }),
             "{err}"
         );
+    }
+
+    #[test]
+    fn a_negative_nevents_is_refused() {
+        let err = RunCard::parse("  -5 = nevents\n").expect_err("a negative event count");
+        assert!(
+            matches!(err, RunCardError::NegativeEventCount { nevents: -5 }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("nevents = -5"), "{err}");
     }
 
     /// A decay's card derived from an integration card is an integration card:

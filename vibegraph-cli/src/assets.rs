@@ -1,11 +1,13 @@
 //! Locating the data a run needs — PDF sets and UFO models — and deciding, once,
 //! whether anything missing may be downloaded.
 //!
-//! Both kinds resolve the same way (`--flag` → environment → `~/.vibegraph` →
-//! repo-local dev fallback), which is [`cache::resolve::locate`]'s job. What
-//! belongs here is the part that talks to the user: which step is allowed to
-//! reach the network, what it says before it does, and what it says instead when
-//! it may not.
+//! A UFO model resolves `--ufo-dir` → `$VIBEGRAPH_UFO_DIR` → `~/.vibegraph` →
+//! the working directory ([`cache::resolve::locate`]); a PDF set resolves
+//! `--pdf-dir` → each `$LHAPDF_DATA_PATH` entry (or `$LHAPATH`'s) →
+//! `~/.vibegraph`, offering a download last ([`cache::resolve::locate_pdf_set`]).
+//! What belongs here is the part that talks to the user: which step is allowed
+//! to reach the network, what it says before it does, and what it says instead
+//! when it may not.
 //!
 //! # Only one path can download
 //!
@@ -17,11 +19,12 @@
 //! unattended run safe.
 
 use std::path::{Path, PathBuf};
+use std::sync::Once;
 
 use vibegraph::cache::pinned::{ensure_pdf_set, pdf_set_is_cached, pinned_pdf_set, PinnedPdfSet};
-use vibegraph::cache::resolve::{locate, locate_from_env, Located, Source};
+use vibegraph::cache::resolve::{locate, locate_pdf_set, pdf_data_path, Located, Source};
 use vibegraph::cache::store::{Fetch, RefusingFetch};
-use vibegraph::cache::AssetKind;
+use vibegraph::cache::{AssetKind, LHAPATH_VAR, RETIRED_PDF_DIR_VAR};
 use vibegraph::diagrams::ModelImport;
 
 use crate::fetch::HttpFetch;
@@ -29,11 +32,6 @@ use crate::network::{self, Consent, Download, NetworkPolicy};
 
 /// Environment override for the asset cache root, otherwise `~/.vibegraph`.
 pub(crate) const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
-
-/// Repo-local PDF data, tried last. Relative to the working directory, so it
-/// only ever resolves inside a dev checkout and is simply absent for a user
-/// running an installed binary.
-const DEV_PDF_FALLBACK: &str = "validation/pdf";
 
 /// The last resort for a UFO model is `<cwd>/<name>/`, so a checkout with a model
 /// unpacked beside it needs no flag.
@@ -53,7 +51,7 @@ fn not_found_where_named(what: &str, kind: AssetKind, flag: &str, located: &Loca
     let named_by = match located.source {
         Source::Flag => flag.to_string(),
         Source::Env => format!("${}", kind.env_var()),
-        Source::Cache | Source::DevFallback => {
+        Source::DataPath | Source::Cache | Source::DevFallback => {
             unreachable!("only an explicit path is reported as one the user named")
         }
     };
@@ -73,30 +71,34 @@ fn no_home(flag: &str) -> String {
 /// the set into the cache if the resolution order turns up nothing and the user
 /// agrees to it.
 ///
-/// A set reached through `--pdf-dir`, `$VIBEGRAPH_PDF_DIR`, or the dev fallback
-/// is used as found and never checksum-checked: those name data the caller is
-/// pointing at deliberately, which is also what keeps sets this build has no pin
-/// for usable. The cache step is the one that decides on the user's behalf what
-/// a bare set name means, so there the compiled-in pin is authoritative — an
+/// A set reached through `--pdf-dir` or the LHAPDF data path is used as found
+/// and never checksum-checked: those name data the caller is pointing at
+/// deliberately, which is also what keeps sets this build has no pin for
+/// usable. The cache step is the one that decides on the user's behalf what a
+/// bare set name means, so there the compiled-in pin is authoritative — an
 /// entry pinned to anything else is refetched rather than trusted.
 pub(crate) fn resolve_pdf_set_dir(
     pdf_set: &str,
     pdf_dir: Option<&Path>,
     policy: NetworkPolicy,
 ) -> Result<PathBuf, String> {
-    let root = cache_root().ok_or_else(|| no_home("--pdf-dir"))?;
-    let located = locate_from_env(
-        AssetKind::Pdf,
-        pdf_set,
-        pdf_dir,
-        Some(&root),
-        Some(Path::new(DEV_PDF_FALLBACK)),
-    )
-    .ok_or_else(|| "cannot resolve the PDF cache root".to_string())?;
+    warn_on_retired_pdf_dir();
+    let root = cache_root().ok_or_else(|| {
+        format!(
+            "cannot locate a home directory for the asset cache; set ${CACHE_ROOT_VAR}, or put \
+             the PDF set's directory on ${}",
+            AssetKind::Pdf.env_var()
+        )
+    })?;
+    let data_path = pdf_data_path(
+        std::env::var_os(AssetKind::Pdf.env_var()).as_deref(),
+        std::env::var_os(LHAPATH_VAR).as_deref(),
+    );
+    let located = locate_pdf_set(pdf_set, pdf_dir, &data_path, &root);
 
     match located.source {
-        Source::Flag | Source::Env if located.found => return Ok(located.dir),
-        Source::Flag | Source::Env => {
+        Source::Flag if located.found => return Ok(located.dir),
+        Source::Flag => {
             return Err(not_found_where_named(
                 &format!("PDF set {pdf_set}"),
                 AssetKind::Pdf,
@@ -104,7 +106,10 @@ pub(crate) fn resolve_pdf_set_dir(
                 &located,
             ))
         }
-        Source::DevFallback => return Ok(located.dir),
+        Source::DataPath => return Ok(located.dir),
+        Source::Env | Source::DevFallback => {
+            unreachable!("a PDF set resolves through the flag, the data path or the cache")
+        }
         Source::Cache => {}
     }
 
@@ -114,7 +119,7 @@ pub(crate) fn resolve_pdf_set_dir(
         }
         return Err(format!(
             "PDF set {pdf_set} is not present locally and this build has no download pin for it; \
-             fetch it yourself and point --pdf-dir / ${} at the directory containing it",
+             fetch it yourself and add the directory containing it to ${}",
             AssetKind::Pdf.env_var()
         ));
     };
@@ -135,6 +140,29 @@ pub(crate) fn resolve_pdf_set_dir(
         tracing::info!("PDF set cached at {}", ensured.dir.display());
     }
     Ok(ensured.dir)
+}
+
+/// One warning per process when `$VIBEGRAPH_PDF_DIR` is set: it is not read,
+/// and an environment written for it would otherwise resolve a set somewhere
+/// else, or download one, without saying why.
+fn warn_on_retired_pdf_dir() {
+    static WARNED: Once = Once::new();
+    if std::env::var_os(RETIRED_PDF_DIR_VAR).is_none() {
+        return;
+    }
+    WARNED.call_once(|| {
+        tracing::warn!("{}", retired_pdf_dir_warning());
+    });
+}
+
+fn retired_pdf_dir_warning() -> String {
+    format!(
+        "${RETIRED_PDF_DIR_VAR} is set, and vibegraph no longer reads it: PDF sets are found \
+         through ${} (or ${LHAPATH_VAR} when it is unset), then the ~/.vibegraph cache; add the \
+         directory to ${}",
+        AssetKind::Pdf.env_var(),
+        AssetKind::Pdf.env_var()
+    )
 }
 
 fn ask_for(pin: &PinnedPdfSet, destination: &Path, policy: NetworkPolicy) -> Consent {
@@ -342,20 +370,14 @@ mod tests {
             "{by_env}"
         );
         assert!(!by_env.contains("--ufo-dir"), "{by_env}");
+    }
 
-        let pdf = Located {
-            dir: base.join("SomeSet"),
-            source: Source::Env,
-            found: false,
-        };
-        let msg = not_found_where_named("PDF set SomeSet", AssetKind::Pdf, "--pdf-dir", &pdf);
-        assert!(
-            msg.ends_with(&format!(
-                "the directory ${} names",
-                AssetKind::Pdf.env_var()
-            )),
-            "{msg}"
-        );
+    /// The retired variable's warning names the variable that replaced it.
+    #[test]
+    fn the_retired_pdf_dir_warning_names_lhapdf_data_path() {
+        let msg = retired_pdf_dir_warning();
+        assert!(msg.starts_with("$VIBEGRAPH_PDF_DIR is set"), "{msg}");
+        assert!(msg.contains("$LHAPDF_DATA_PATH"), "{msg}");
     }
 
     /// The environment variable is honoured, and the flag outranks it.

@@ -5,8 +5,8 @@
 //! at `validation/ufo/` is the one the validation ladder gates. What is pinned here
 //! is the part of that route no library test sees: that `import model <name>-<card>`
 //! resolves the restrict-card suffix against the model directory, that the artifact
-//! records *which* model it was built from, and that a second command holding the
-//! same grids refuses a different variant of the same model.
+//! records *which* model it was built from, and that `generate` refuses the grids
+//! once the model's files have changed underneath them.
 //!
 //! The cross section is a smoke check only. The number is gated statistically
 //! against MadGraph's banked run by `validate_sigma.rs`'s `ee_to_ttx_smeft` row, at
@@ -115,20 +115,31 @@ fn a_smeft_model_integrates_through_ufo_dir_and_records_its_identity() {
     );
 }
 
-/// `generate` refuses grids trained on a different restrict card of the same
-/// model — the case the process string and the run card cannot see.
+/// `generate` re-reads the model the recorded proc card names and refuses it
+/// when its digest is not the artifact's: here the restrict card of a copy of
+/// the model, edited after `integrate` ran. The name, the directory and the
+/// `generate` line are unchanged, so only the digest can see it.
 ///
-/// The refusal is what is tested, and the matching run above is its control: a
-/// check that refused everything would also refuse this.
+/// The refusal is what is tested, and the matching run before the edit is its
+/// control: a check that refused everything would also refuse that.
 #[test]
-fn generate_refuses_another_restrict_variant_of_the_same_model() {
+fn a_restrict_card_edited_after_integrate_is_refused_by_digest() {
     let tmp = tempfile::tempdir().unwrap();
+    let models = tmp.path().join("models");
+    let model_dir = models.join(MODEL);
+    std::fs::create_dir_all(&model_dir).unwrap();
+    for entry in std::fs::read_dir(ufo_dir().join(MODEL)).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_file() {
+            std::fs::copy(entry.path(), model_dir.join(entry.file_name())).unwrap();
+        }
+    }
     let (proc_path, run_path) = write_cards(tmp.path(), "massless");
     let out = tmp.path().join("out");
     let status = common::vibegraph(tmp.path(), tmp.path())
         .arg("integrate")
         .arg(&proc_path)
-        .args(["--ufo-dir".as_ref(), ufo_dir().as_os_str()])
+        .args(["--ufo-dir".as_ref(), models.as_os_str()])
         .arg("--run-card")
         .arg(&run_path)
         .arg("--out")
@@ -139,28 +150,46 @@ fn generate_refuses_another_restrict_variant_of_the_same_model() {
         .expect("spawn vibegraph");
     assert!(status.success(), "vibegraph integrate exited {status}");
 
-    let (sm_limit, _) = write_cards(tmp.path(), "SMlimit_massless");
-    let refused = common::vibegraph(tmp.path(), tmp.path())
-        .arg("generate")
-        .arg(out.join("grid.bin.zst"))
-        .arg(&sm_limit)
-        .args(["--ufo-dir".as_ref(), ufo_dir().as_os_str()])
-        .arg("--run-card")
-        .arg(&run_path)
-        .args(["--nevents", "10"])
-        .arg("-o")
-        .arg(tmp.path().join("events.lhe"))
-        .output()
-        .expect("spawn vibegraph");
+    let generate = |name: &str| {
+        common::vibegraph(tmp.path(), tmp.path())
+            .arg("generate")
+            .arg(out.join("grid.bin.zst"))
+            .args(["--ufo-dir".as_ref(), models.as_os_str()])
+            .args(["--nevents", "10", "--seed", "5"])
+            .arg("-o")
+            .arg(tmp.path().join(name))
+            .output()
+            .expect("spawn vibegraph")
+    };
+    let matching = generate("matching.lhe");
+    assert!(
+        matching.status.success(),
+        "generate refused the unchanged model:\n{}",
+        common::stderr_of(&matching)
+    );
+
+    std::fs::copy(
+        model_dir.join("restrict_SMlimit_massless.dat"),
+        model_dir.join("restrict_massless.dat"),
+    )
+    .unwrap();
+    let refused = generate("events.lhe");
     assert!(
         !refused.status.success(),
-        "generate accepted grids trained on a different restrict card"
+        "generate accepted grids trained on the model before its restrict card changed"
     );
     let stderr = common::stderr_of(&refused);
+    let want = format!(
+        "model {MODEL}-massless at {} has digest",
+        model_dir.display()
+    );
     assert!(
-        stderr.contains(&format!("{MODEL}-massless"))
-            && stderr.contains(&format!("{MODEL}-SMlimit_massless")),
-        "the refusal must name both variants: {stderr}"
+        stderr.contains(&want) && stderr.contains(&digest_of("massless")),
+        "the refusal must name the model, its directory and the recorded digest: {stderr}"
+    );
+    assert!(
+        stderr.contains("its files changed after vibegraph integrate ran"),
+        "{stderr}"
     );
     assert!(
         !tmp.path().join("events.lhe").exists(),

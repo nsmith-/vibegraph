@@ -22,19 +22,11 @@ mod tui;
 use error::{err, CliError};
 use network::NetworkPolicy;
 
-/// The proc-card argument as every command reads it: the card in the file at
-/// `path`, or, when `path` is `-`, the card on stdin — so a one-process card
-/// can be piped straight in (`echo "generate p p > e+ e-" | vibegraph
-/// integrate -`) rather than written to a file first. A failure names the card
-/// it could not read or parse.
-pub(crate) fn read_proc_card(
-    path: &Path,
-    opts: &ParsingOptions,
-) -> Result<SupportedCard, CliError> {
-    read_proc_card_text(path, opts).map(|(card, _)| card)
-}
-
-/// [`read_proc_card`], with the card's text as read.
+/// The proc-card argument as `integrate` reads it, with the card's text: the
+/// card in the file at `path`, or, when `path` is `-`, the card on stdin — so a
+/// one-process card can be piped straight in (`echo "generate p p > e+ e-" |
+/// vibegraph integrate -`) rather than written to a file first. A failure names
+/// the card it could not read or parse.
 pub(crate) fn read_proc_card_text(
     path: &Path,
     opts: &ParsingOptions,

@@ -9,7 +9,7 @@
 
 ## Design
 
-* [generate: from an integrate artifact to an event file](generate.md) - generate refuses card, model or PDF mismatch, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics.
+* [generate: from an integrate artifact to an event file](generate.md) - generate takes the artifact and no card, re-parses the recorded proc card, refuses a model whose digest moved, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics.
 * [LHEF reader and writer: records, emit, parse, build, and the source-preserving round trip](lhef-io-design.md) - The lhef module's layers: quick-xml owns the document, fixed-format records are written by hand, and parsed blocks keep their source text so both MadGraph dialects round-trip.
 * [The matched event record for the shower](mlm-matched-event-record.md) - What an ickkw = 1 event carries for Pythia's MLM matching: <scales pt_clust_N>, status-2 lines of the clustered configuration, <MGRunCard>, matched SCALUP/AQCDUP.
 * [Each flavour-group member writes its own colour-flow table](per-member-colour-flow-tables.md) - Flavour-group members can carry conjugate or crossed colour reps, so each writes its own ColorFlowTags under a fingerprint-matched flow permutation; ambiguity is refused.

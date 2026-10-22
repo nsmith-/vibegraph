@@ -50,6 +50,7 @@ use crate::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
 use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
+use crate::ufo::identity::ModelIdentity;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter};
 
@@ -146,13 +147,90 @@ pub struct GenerateAssets<'a> {
     pub pdf: Option<(&'a PdfSet, &'a PdfMember)>,
 }
 
-/// Why a generation stopped, as a message for whoever ran it.
+/// Why a generation stopped.
+///
+/// The refusals a front end may want to phrase in its own terms (a flag name,
+/// say) are variants of their own; everything else is a message for whoever ran
+/// the generation.
 #[derive(Debug, Error)]
-#[error("{0}")]
-pub struct GenerateError(String);
+pub enum GenerateError {
+    /// The stochastic-rounding strategy was asked for an `event_norm` other than
+    /// `average`: it writes unit weights under `IDWTUP = +3`, which honours no
+    /// other normalisation.
+    #[error(
+        "the stochastic-rounding strategy writes unit weights (IDWTUP = +3) and cannot honour \
+         event_norm = {}; use the buffer strategy",
+        .norm.as_str()
+    )]
+    RoundingOffAverage { norm: EventNorm },
+    /// The stochastic-rounding strategy was asked to write a sum over several
+    /// final-state multiplicities, whose parts it cannot each normalise to their
+    /// own integrated cross section.
+    #[error(
+        "the stochastic-rounding strategy cannot normalise a sum over {parts} final-state \
+         multiplicities to each one's integrated cross section; use the buffer strategy"
+    )]
+    RoundingOnMixedMultiplicity { parts: usize },
+    /// The artifact's recorded proc card, parsed by this build, does not spell
+    /// the process the artifact records.
+    #[error(
+        "the artifact's proc card parses to `{reparsed}`, but the artifact records the process \
+         `{recorded}`: this build reads the card differently from the one that integrated it; \
+         re-integrate"
+    )]
+    ProcessReparsed { recorded: String, reparsed: String },
+    /// The model the recorded proc card resolves to is not the one the artifact
+    /// was integrated against.
+    #[error(
+        "model {label} at {location} has digest {got}; the grid was integrated against {want}: \
+         its files changed after vibegraph integrate ran; re-integrate, or restore them"
+    )]
+    ModelChanged {
+        label: String,
+        location: String,
+        got: String,
+        want: String,
+    },
+    #[error("{0}")]
+    Other(String),
+}
 
 fn err(msg: impl Into<String>) -> GenerateError {
-    GenerateError(msg.into())
+    GenerateError::Other(msg.into())
+}
+
+/// Refuse an artifact whose recorded proc card no longer parses, in this build,
+/// to the process the artifact records. `reparsed` is the process string of the
+/// recorded card as this build parses it.
+pub fn check_process(artifact: &IntegrateArtifact, reparsed: &str) -> Result<(), GenerateError> {
+    if artifact.process == reparsed {
+        return Ok(());
+    }
+    Err(GenerateError::ProcessReparsed {
+        recorded: artifact.process.clone(),
+        reparsed: reparsed.to_string(),
+    })
+}
+
+/// Refuse a model whose digest is not the one the artifact recorded. `found` is
+/// the identity of the model the recorded proc card resolved to, and `location`
+/// says where it was read from, for the message. The interned Standard Model is
+/// checked the same way, so a build whose compiled-in model differs from the
+/// integrating build's is refused too.
+pub fn check_model(
+    artifact: &IntegrateArtifact,
+    found: &ModelIdentity,
+    location: &str,
+) -> Result<(), GenerateError> {
+    if artifact.model.digest == found.digest {
+        return Ok(());
+    }
+    Err(GenerateError::ModelChanged {
+        label: found.label(),
+        location: location.to_string(),
+        got: found.digest.clone(),
+        want: artifact.model.digest.clone(),
+    })
 }
 
 /// Draw the sample `settings` and `options` describe from `artifact`'s grids
@@ -194,10 +272,7 @@ fn refuse_rounding_on_mixed_multiplicity(
     if parts <= 1 || !matches!(strategy, Strategy::StochasticRounding) {
         return Ok(());
     }
-    Err(err(format!(
-        "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
-         multiplicities to each one's integrated cross section; use --strategy buffer"
-    )))
+    Err(GenerateError::RoundingOnMixedMultiplicity { parts })
 }
 
 /// Stochastic rounding writes unit weights under `IDWTUP = +3`, which is no
@@ -208,11 +283,7 @@ fn refuse_rounding_off_average(strategy: Strategy, norm: EventNorm) -> Result<()
     if !matches!(strategy, Strategy::StochasticRounding) || StochasticRounding::honours(norm) {
         return Ok(());
     }
-    Err(err(format!(
-        "--strategy stochastic-rounding writes unit weights (IDWTUP = +3) and cannot honour the \
-         run card's event_norm = {}; use --strategy buffer",
-        norm.as_str()
-    )))
+    Err(GenerateError::RoundingOffAverage { norm })
 }
 
 /// Build the fixed-beam or decay integrand the artifact describes, unweight
@@ -1295,20 +1366,15 @@ mod tests {
         assert_eq!(source.sigma_pb().to_bits(), sigma.to_bits());
     }
 
-    /// An artifact integrated at proton beams cannot be replayed without the
-    /// parton densities it was integrated with: the entry point refuses it
-    /// before anything is enumerated, and writes no file.
-    #[test]
-    fn a_proton_artifact_without_a_pdf_set_is_refused() {
-        use crate::diagrams::{parse_proc_card, ParsingOptions};
-        use crate::ufo::sm::{sm_model, SMRestrict};
+    const UUBAR_EE: &str = "import model sm\ngenerate u u~ > e+ e-\n";
 
-        let model = sm_model(SMRestrict::Default);
-        let evaluated = EvaluatedModel::from_model(model.clone());
-        let text = "import model sm\ngenerate u u~ > e+ e-\n";
-        let parsed = parse_proc_card(text, &ParsingOptions::default()).unwrap();
+    /// A one-channel artifact of `u u~ > e+ e-` on the default (proton) card,
+    /// against the interned default-restriction SM.
+    fn proton_artifact() -> IntegrateArtifact {
+        use crate::ufo::sm::SMRestrict;
+        let text = UUBAR_EE;
         let (run_card, settings) = RunCard::default().split();
-        let artifact = IntegrateArtifact {
+        IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: "u u~ > e+ e-".to_string(),
             proc_card: text.to_string(),
@@ -1340,7 +1406,96 @@ mod tests {
             chi2_per_dof: 1.0,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
-        };
+        }
+    }
+
+    /// The two stochastic-rounding refusals are phrased in the library's terms:
+    /// they name the strategy and the setting, and no command-line flag.
+    #[test]
+    fn the_rounding_refusals_name_no_flag() {
+        let off_average = refuse_rounding_off_average(Strategy::StochasticRounding, EventNorm::Sum)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            off_average.contains("stochastic-rounding strategy")
+                && off_average.contains("event_norm = sum")
+                && off_average.contains("use the buffer strategy"),
+            "{off_average}"
+        );
+        let mixed = refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 2)
+            .unwrap_err()
+            .to_string();
+        assert!(mixed.contains("a sum over 2 final-state"), "{mixed}");
+        for why in [&off_average, &mixed] {
+            assert!(!why.contains("--"), "a flag name in the library: {why}");
+        }
+    }
+
+    /// The recorded process is checked against the recorded proc card as this
+    /// build parses it: the same string passes, any other is refused naming both.
+    #[test]
+    fn a_proc_card_that_reparses_to_another_process_is_refused() {
+        let artifact = proton_artifact();
+        assert!(check_process(&artifact, "u u~ > e+ e-").is_ok());
+        let why = check_process(&artifact, "u u~ > mu+ mu-")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains("`u u~ > mu+ mu-`")
+                && why.contains("`u u~ > e+ e-`")
+                && why.contains("re-integrate"),
+            "{why}"
+        );
+    }
+
+    /// The model is checked by digest alone. The interned SM at the recorded
+    /// restriction passes; another restriction, and the same label over
+    /// different contents, are both refused with the design's message.
+    #[test]
+    fn a_model_whose_digest_moved_is_refused() {
+        use crate::ufo::sm::SMRestrict;
+        let artifact = proton_artifact();
+        let same = ModelIdentity::interned_sm(SMRestrict::Default);
+        assert!(check_model(&artifact, &same, "(built in)").is_ok());
+
+        let other = ModelIdentity::interned_sm(SMRestrict::NoBMass);
+        let why = check_model(&artifact, &other, "(built in)")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.starts_with("model sm-no_b_mass at (built in) has digest"),
+            "{why}"
+        );
+
+        let mut altered = same.clone();
+        altered.digest = crate::ufo::identity::digest_bytes(b"a different restrict card");
+        let why = check_model(&artifact, &altered, "/models/sm")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            why,
+            format!(
+                "model sm-default at /models/sm has digest {}; the grid was integrated against \
+                 {}: its files changed after vibegraph integrate ran; re-integrate, or restore \
+                 them",
+                altered.digest, artifact.model.digest
+            )
+        );
+    }
+
+    /// An artifact integrated at proton beams cannot be replayed without the
+    /// parton densities it was integrated with: the entry point refuses it
+    /// before anything is enumerated, and writes no file.
+    #[test]
+    fn a_proton_artifact_without_a_pdf_set_is_refused() {
+        use crate::diagrams::{parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let parsed = parse_proc_card(UUBAR_EE, &ParsingOptions::default()).unwrap();
+        let artifact = proton_artifact();
+        let settings = artifact.generate.clone();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("events.lhe");
         let assets = GenerateAssets {
