@@ -41,7 +41,7 @@ Type "vibegraph integrate proc_card.dat --run-card run_card.dat --out ee_to_mumu
 Wait
 Sleep 2s
 
-Type "vibegraph generate ee_to_mumu/grid.bin.zst proc_card.dat --run-card run_card.dat --nevents 10000 --seed 1 -o events.lhe" Sleep 500ms Enter
+Type "vibegraph generate ee_to_mumu/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe" Sleep 500ms Enter
 Wait
 Sleep 2s
 

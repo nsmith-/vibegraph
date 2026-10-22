@@ -141,3 +141,20 @@ default.
 Two massless fermions coupled to the photon, one vertex each, so `u u~ > mu+ mu-`
 is a single s-channel diagram. `object_library.py` and `function_library.py`
 are `vibegraph_toy_UFO`'s.
+
+## `vibegraph_toy_weighted_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | MadGraph's automatic lowest-WEIGHTED search (`find_optimal_process_orders`) on a model whose hierarchies differ: a vertex carrying two orders weighs more than either hierarchy alone, a four-point vertex weighs less per equivalent cubic vertex than its orders say, and a contact term sits below where the search starts |
+
+Hierarchies QED=2 and NP=1 (and an unused QCD=1, declared because MadGraph's
+search reads it by name). Four fields: a Dirac fermion `fw`, a neutral massive
+vector `vw` and two real singlet scalars `xw` and `yw`. Five vertices: `fw~ fw
+vw` (QED), `fw~ fw xw` (QED and NP, WEIGHTED 3), `xw^4` (QED), `xw xw yw` (QED)
+and `yw^4` (QED=2, NP=3: 7 over four legs, 3.5 per cubic vertex, truncated with
+the `fw~ fw xw` vertex's 3 to a cap of 3 per vertex). No restrict card: the
+model is used whole. Diagram counts only; no amplitude is banked from it, so
+the couplings' values are arbitrary and distinct.

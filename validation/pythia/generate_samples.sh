@@ -15,7 +15,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="$ROOT/target/pythia-samples"
-PDF_DIR="$ROOT/validation/pdf"
+# The PDF set is found as LHAPDF finds it, through the data path.
+export LHAPDF_DATA_PATH="$ROOT/validation/pdf"
+unset LHAPATH VIBEGRAPH_PDF_DIR
 BIN="$ROOT/target/release-debug/vibegraph"
 
 # Shared across the samples: one seed for the integration and the generation,
@@ -40,7 +42,6 @@ emit() {
   # so spends however many iterations that takes.
   "$BIN" integrate "$proc_card" \
     --run-card "$run_card" \
-    --pdf-dir "$PDF_DIR" \
     --out "$OUT/$name" \
     --force \
     --fixed-budget \
@@ -48,9 +49,7 @@ emit() {
     "$@"
 
   echo ">>> [$name] unweighting $NEVENTS events ..."
-  "$BIN" generate "$OUT/$name/grid.bin.zst" "$proc_card" \
-    --run-card "$run_card" \
-    --pdf-dir "$PDF_DIR" \
+  "$BIN" generate "$OUT/$name/grid.bin.zst" \
     --nevents "$NEVENTS" \
     --seed "$SEED" \
     --out "$OUT/$name.lhe" \

@@ -47,8 +47,9 @@
 #[path = "../../vibegraph-lib/tests/common/seeds.rs"]
 mod seeds;
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
@@ -202,14 +203,13 @@ fn integrate(
     seed: u64,
     out: &Path,
 ) -> (f64, f64) {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+    let mut cmd = common::vibegraph(dir, dir);
     cmd.arg("integrate")
         .arg(card)
         .arg("--out")
         .arg(out)
         .arg("--force")
-        .args(["--target-rel", TARGET_REL, "--seed", &seed.to_string()])
-        .current_dir(dir);
+        .args(["--target-rel", TARGET_REL, "--seed", &seed.to_string()]);
     if let Some(path) = run_card {
         cmd.arg("--run-card").arg(path);
     }
@@ -218,9 +218,9 @@ fn integrate(
         output.status.success(),
         "vibegraph integrate {} failed:\n{}",
         card.display(),
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
-    parse_width(&String::from_utf8_lossy(&output.stdout))
+    parse_width(&common::stdout_of(&output))
 }
 
 /// The seed policy's reading of equal-budget seeds ([`seeds::combine`]): the
@@ -354,27 +354,22 @@ fn a_two_body_width_is_integrated_once_and_a_three_body_one_is_not() {
     let tmp = tempfile::tempdir().unwrap();
     let run = |process: &str| {
         let card = proc_card(tmp.path(), process);
-        let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let output = common::vibegraph(tmp.path(), tmp.path())
             .arg("integrate")
             .arg(&card)
             .arg("--out")
             .arg(tmp.path().join("grid"))
             .arg("--force")
             .args(["--target-rel", "1e-2", "--seed", "7"])
-            .current_dir(tmp.path())
             .output()
             .expect("spawn vibegraph");
         assert!(
             output.status.success(),
             "{process}: {}",
-            String::from_utf8_lossy(&output.stderr)
+            common::stderr_of(&output)
         );
-        let (width, err) = parse_width(&String::from_utf8_lossy(&output.stdout));
-        (
-            width,
-            err,
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        )
+        let (width, err) = parse_width(&common::stdout_of(&output));
+        (width, err, common::stderr_of(&output))
     };
 
     let (width, err, log) = run("h > b b~");
@@ -443,10 +438,9 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
     let (width, _) = integrate(tmp.path(), &card, None, 7, &out);
 
     let lhe = tmp.path().join("t_bev.lhe");
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph(tmp.path(), tmp.path())
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
-        .arg(&card)
         .args(["--strategy", "stochastic-rounding", "--seed", "20260925"])
         .args(["--nevents", &sample.events.to_string()])
         .arg("-o")
@@ -456,10 +450,10 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
     assert!(
         output.status.success(),
         "vibegraph generate failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
     let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("parses");
-    let check = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let check = common::vibegraph(tmp.path(), tmp.path())
         .arg("check-events")
         .arg(&lhe)
         .output()
@@ -467,7 +461,7 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
     assert!(
         check.status.success(),
         "check-events rejected the decay sample:\n{}",
-        String::from_utf8_lossy(&check.stderr)
+        common::stderr_of(&check)
     );
 
     // <init>: MadEvent's `6 0 1.730000e+02 0.000000e+00 0 0 247000 247000 -4 1`
