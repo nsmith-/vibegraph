@@ -16,3 +16,9 @@ sources:
 R-C.15.
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-C](../../sprints/hygiene/sessions/R-C-report.md).
+
+**A fourth site (2026-10-20).** The [weighted-cap sprint](../../sprints/weighted-cap/sprint.md)
+added `ufo::weighted::order_weight` (the per-interaction value for the
+automatic search's cap and start), with the missing-order rule (counts 0,
+joins no class; MadGraph raises `KeyError`, `base_objects.py:897`, `:1448`)
+stated once there. It is the natural single helper for the other three.
