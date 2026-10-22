@@ -11,8 +11,11 @@
 //!     pixi run -e madgraph generate-hadronic-sigma
 //!     cargo test -p vibegraph --features extended-validation --test cli_integrate
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::validation_dir;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -28,10 +31,6 @@ use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
 
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
 
 fn pdf_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
@@ -60,7 +59,7 @@ fn banked(run: &str) -> Option<(f64, f64)> {
 }
 
 fn run_cli(out_dir: &Path, run_card: &str) -> IntegrateArtifact {
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph_ambient()
         .arg("integrate")
         .arg(validation_dir().join("dy13_proc_card.dat"))
         .arg("--run-card")
@@ -248,7 +247,7 @@ fn integrate_refuses_overwrite_without_force() {
     let proc_card = validation_dir().join("dy13_proc_card.dat");
     let run_card = validation_dir().join("dy13_default_run_card.dat");
 
-    let mut base = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+    let mut base = common::vibegraph_ambient();
     base.arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -295,7 +294,7 @@ fn integrate_is_thread_count_independent() {
     let mut bytes = Vec::new();
     for threads in ["1", "4", "16"] {
         let out = tmp.path().join(format!("out-j{threads}"));
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph_ambient()
             .arg("integrate")
             .arg(validation_dir().join("dy13_proc_card.dat"))
             .arg("--run-card")

@@ -157,6 +157,18 @@
       },
       "total_diagrams": 14
     },
+    "ffx_to_xwxw_toy_weighted": {
+      "diagrams_by_subprocess": {
+        "P1_fwxfw_xwxw": 2
+      },
+      "total_diagrams": 2
+    },
+    "ffx_to_xwxwvw_toy_weighted": {
+      "diagrams_by_subprocess": {
+        "P1_fwxfw_xwxwvw": 6
+      },
+      "total_diagrams": 6
+    },
     "gg_to_gg": {
       "diagrams_by_subprocess": {
         "P1_gg_gg": 6
@@ -353,6 +365,18 @@
         "P1_wpwm_wpwmz": 222
       },
       "total_diagrams": 222
+    },
+    "xwxw_to_xwxw_toy_weighted": {
+      "diagrams_by_subprocess": {
+        "P1_xwxw_xwxw": 4
+      },
+      "total_diagrams": 4
+    },
+    "z_to_uuxddx_decay": {
+      "diagrams_by_subprocess": {
+        "P1_z_qqqq": 17
+      },
+      "total_diagrams": 17
     }
   },
   "schema": 1

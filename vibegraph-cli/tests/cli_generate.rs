@@ -36,6 +36,8 @@
 //! evidence that they share a stream. Reproducibility is checked separately, where
 //! sharing a seed is exactly the point.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
@@ -83,7 +85,7 @@ struct Run {
 fn write_run_card(path: &Path, ebeam1: f64, extra: &str) {
     std::fs::write(
         path,
-        format!("  0 = lpp1\n  0 = lpp2\n  {ebeam1} = ebeam1\n  {EBEAM} = ebeam2\n{extra}"),
+        format!("{}{extra}", common::fixed_beams(ebeam1, EBEAM)),
     )
     .unwrap();
 }
@@ -95,15 +97,34 @@ fn run() -> &'static Run {
 }
 
 fn integrate() -> Run {
+    integrate_with("")
+}
+
+/// The integration of the same card with `event_norm` set to `norm`, run once
+/// per setting for every case that needs it. `average` is the card default, so
+/// it is [`run`]'s own.
+fn run_with_event_norm(norm: &str) -> &'static Run {
+    static SUM: OnceLock<Run> = OnceLock::new();
+    static UNITY: OnceLock<Run> = OnceLock::new();
+    match norm {
+        "average" => run(),
+        "sum" => SUM.get_or_init(|| integrate_with("  sum = event_norm\n")),
+        "unity" => UNITY.get_or_init(|| integrate_with("  unity = event_norm\n")),
+        other => panic!("no such event_norm: {other}"),
+    }
+}
+
+/// An integration whose run card carries `extra` card lines after the beams.
+fn integrate_with(extra: &str) -> Run {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().to_path_buf();
     let proc_card = dir.join("proc_card.dat");
     let run_card = dir.join("run_card.dat");
     std::fs::write(&proc_card, format!("import model sm\ngenerate {PROCESS}\n")).unwrap();
-    write_run_card(&run_card, EBEAM, "");
+    write_run_card(&run_card, EBEAM, extra);
 
     let out = dir.join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -130,7 +151,7 @@ fn integrate() -> Run {
 
 impl Run {
     fn generate_cmd(&self, strategy: &str, seed: &str, nevents: usize, output: &Path) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+        let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
             .arg(&self.proc_card)
@@ -163,9 +184,9 @@ impl Run {
         assert!(
             out.status.success(),
             "vibegraph generate ({strategy}) failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
+            common::stderr_of(&out)
         );
-        eprint!("{}", String::from_utf8_lossy(&out.stdout));
+        eprint!("{}", common::stdout_of(&out));
         let text = std::fs::read_to_string(&output).expect("read the event file");
         let file = LheFile::parse(&text).expect("our own file parses");
         (file, text)
@@ -178,7 +199,7 @@ impl Run {
         let mut cmd = self.generate_cmd("buffer", seed, FEW_EVENTS, &output);
         cmd.args(extra);
         let out = cmd.output().expect("spawn vibegraph");
-        let notices = String::from_utf8_lossy(&out.stderr).into_owned();
+        let notices = common::stderr_of(&out);
         assert!(
             out.status.success(),
             "vibegraph generate {extra:?} failed:\n{notices}"
@@ -192,7 +213,7 @@ impl Run {
 
     /// A `generate` invocation expected to fail, with the cards spelled out.
     fn refuse(&self, proc_card: &Path, run_card: Option<&Path>, name: &str) -> Output {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+        let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
             .arg(proc_card)
@@ -555,11 +576,11 @@ fn a_scan_budget_that_is_not_a_positive_count_is_refused() {
 /// panic, which would also exit non-zero without refusing anything.
 #[track_caller]
 fn expect_refusal(out: Output, because: &str, names: &str) {
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(
         !out.status.success(),
         "generate accepted {because}; it must refuse\nstdout: {}",
-        String::from_utf8_lossy(&out.stdout)
+        common::stdout_of(&out)
     );
     assert!(
         !stderr.contains("panicked"),
@@ -674,7 +695,7 @@ fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
 fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
     let run = run();
     let stale = stale_copy(run, "stale-clustering.bin.zst", 6);
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+    let mut cmd = common::vibegraph_ambient();
     cmd.arg("generate")
         .arg(&stale)
         .arg(&run.proc_card)
@@ -685,12 +706,12 @@ fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
         .arg("-o")
         .arg(run.dir.join("never.lhe"));
     let out = cmd.output().expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(
         !out.status.success(),
         "generate accepted a format-version-6 artifact on a clustering-scale card; it must \
          refuse\nstdout: {}",
-        String::from_utf8_lossy(&out.stdout)
+        common::stdout_of(&out)
     );
     assert!(
         stderr.contains("AMP2") && stderr.contains("format version"),
@@ -716,7 +737,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     );
 
     let out = dir.join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -745,7 +766,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
         .expect("write stale copy");
 
     let output = dir.join("fixed.lhe");
-    let gen_status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let gen_status = common::vibegraph_ambient()
         .arg("generate")
         .arg(&stale)
         .arg(&proc_card)
@@ -760,7 +781,131 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     assert!(
         gen_status.status.success(),
         "a format-version-6 artifact on a fixed-scale card must still load:\n{}",
-        String::from_utf8_lossy(&gen_status.stderr)
+        common::stderr_of(&gen_status)
     );
     assert!(output.exists());
+}
+
+/// One sample per `event_norm`, each from an integration of the same card plus
+/// that line (`average` being the card default): the written weights follow MadGraph's rule for the setting,
+/// and nothing else about the run moves.
+///
+/// MadGraph's rule is `MultiEventFile.unweight` (`lhe_parser.py:1225-1239`) and
+/// `EventFile.unweight` (`lhe_parser.py:519-527`): `sum` writes `IDWTUP = -3` and
+/// weights σ/N, `average` `IDWTUP = -4` and weights σ, `unity` `IDWTUP = -3` and
+/// weights 1. This file keeps an overweight event above the rest where
+/// MadGraph's flattens it, so the weights are compared as ratios to the
+/// `average` sample's own rather than as constants.
+///
+/// What this cannot see: it reads the files with this crate's own parser, so a
+/// weight convention both ends share is invisible; the MadGraph rule it pins
+/// is a reading of the source, not a banked MadGraph file written under `sum`.
+#[test]
+fn event_norm_changes_the_written_weights_and_nothing_else() {
+    let norms = ["average", "sum", "unity"];
+    let runs: Vec<&Run> = norms.iter().map(|norm| run_with_event_norm(norm)).collect();
+    let files: Vec<(LheFile, String)> = runs
+        .iter()
+        .zip(norms)
+        .map(|(run, norm)| run.generate("buffer", SEED_A, FEW_EVENTS, &format!("{norm}.lhe")))
+        .collect();
+    let (average, sum, unity) = (&files[0].0, &files[1].0, &files[2].0);
+    let n = FEW_EVENTS as f64;
+
+    let sigma = runs[0].artifact.sigma_pb;
+    for run in &runs {
+        assert_eq!(
+            run.artifact.sigma_pb, sigma,
+            "the integration moved with event_norm"
+        );
+    }
+
+    assert_eq!(
+        average.init.weight_strategy,
+        WeightStrategy::MeanCrossSectionPb
+    );
+    assert_eq!(sum.init.weight_strategy, WeightStrategy::SumCrossSectionPb);
+    assert_eq!(
+        unity.init.weight_strategy,
+        WeightStrategy::SumCrossSectionPb
+    );
+    for file in [average, sum, unity] {
+        let declared = file.init.processes[0].xsec_pb;
+        assert!(
+            (declared / sigma - 1.0).abs() < 1e-6,
+            "XSECUP {declared:.6e} is not the integration's {sigma:.6e}"
+        );
+        check_record_shape(file, 4, 2);
+    }
+
+    let mean: f64 = average.events.iter().map(|e| e.weight).sum::<f64>() / n;
+    let total: f64 = sum.events.iter().map(|e| e.weight).sum();
+    assert!((mean / sigma - 1.0).abs() < 1e-6, "average: {mean:.6e}");
+    assert!((total / sigma - 1.0).abs() < 1e-6, "sum: {total:.6e}");
+    assert!(unity.events.iter().all(|e| e.weight == 1.0));
+    assert_eq!(unity.init.processes[0].xmax, 1.0);
+
+    // The same seed draws the same events: only the weights differ.
+    for (index, ((a, s), u)) in average
+        .events
+        .iter()
+        .zip(&sum.events)
+        .zip(&unity.events)
+        .enumerate()
+    {
+        for other in [s, u] {
+            assert_eq!(
+                a.particles.iter().map(|p| p.momentum).collect::<Vec<_>>(),
+                other
+                    .particles
+                    .iter()
+                    .map(|p| p.momentum)
+                    .collect::<Vec<_>>(),
+                "event {index}: the kinematics moved with event_norm"
+            );
+        }
+        assert!(
+            (s.weight * n / a.weight - 1.0).abs() < 1e-5,
+            "event {index}: sum weight {:.6e} is not the average weight {:.6e} over {n}",
+            s.weight,
+            a.weight
+        );
+    }
+}
+
+/// A card that asks for a different `event_norm` than the grid was integrated
+/// with is refused like any other differing card parameter: the card is the
+/// artifact's fingerprint, and `event_norm` is not exempt from it.
+#[test]
+fn an_event_norm_that_did_not_train_the_grid_is_refused() {
+    let run = run();
+    let card = run.dir.join("sum_card.dat");
+    write_run_card(&card, EBEAM, "  sum = event_norm\n");
+    let out = run.refuse(&run.proc_card, Some(&card), "event_norm_refused.lhe");
+    expect_refusal(
+        out,
+        "the card is not the one that trained the grid",
+        "event_norm",
+    );
+}
+
+/// Stochastic rounding's `IDWTUP = +3` unit-weight file is no `sum` or `unity`
+/// file, so the combination is refused before anything is drawn.
+#[test]
+fn stochastic_rounding_refuses_an_event_norm_off_average() {
+    let run = run_with_event_norm("sum");
+    let out = run
+        .generate_cmd(
+            "stochastic-rounding",
+            SEED_A,
+            10,
+            &run.dir.join("refused.lhe"),
+        )
+        .output()
+        .expect("spawn vibegraph");
+    expect_refusal(
+        out,
+        "unit weights under event_norm = sum",
+        "--strategy stochastic-rounding writes unit weights",
+    );
 }

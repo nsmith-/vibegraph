@@ -1673,3 +1673,66 @@ diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams, photon and Z;
 amplitudes = { tier = "hermetic", mode = "gate", note = "|M|^2 max_rel 2.8e-14 (grid) / 7.9e-15 (event), per-diagram 2.8e-15, per-flow 2.1e-15, JAMP2 7.2e-15, fitted G = +1i with |G|-1 = 3.8e-15" }
 integrals = { tier = "uncovered", note = "the launch banks a cross section that is not extracted: the row exists for the vertex pruning and amplitudes at this restriction" }
 samples = { tier = "uncovered", note = "the launch's events feed the amplitude table's event points only; no sample is banked for this restriction" }
+
+[[process]]
+key = "ffx_to_xwxw_toy_weighted"
+process = "fw~ fw > xw xw"
+model = "validation/ufo/vibegraph_toy_weighted_UFO"
+script = "validation/madgraph/scripts/ffx_to_xwxw_toy_weighted.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The automatic WEIGHTED search's cap: the only diagrams carry a QED+NP vertex twice (WEIGHTED 6), above (n_ext - 2) times the largest hierarchy (4), so a search capped there finds none; MadGraph's cap is (n_ext - 2) times the largest interaction WEIGHTED per equivalent cubic vertex, int(3.5) = 3, which reaches them."
+artifacts = ["output/ffx_to_xwxw_toy_weighted", "output/ffx_to_xwxw_toy_weighted.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams enumerated against MadGraph's 2 (t and u fermion exchange). MadGraph's build log: Trying coupling order WEIGHTED<=4, <=5; no trial at 6, the loop leaves at the cap 6 and generates there." }
+amplitudes = { tier = "uncovered", note = "A search-cap row: the vertices' Lorentz structures are the toy's plainest and are reached by no new amplitude here." }
+integrals = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+samples = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+
+[[process]]
+key = "ffx_to_xwxwvw_toy_weighted"
+process = "fw~ fw > xw xw vw"
+model = "validation/ufo/vibegraph_toy_weighted_UFO"
+script = "validation/madgraph/scripts/ffx_to_xwxwvw_toy_weighted.mg5"
+class = "single-channel"
+n_final = 3
+bundled = false
+rationale = "The automatic WEIGHTED search stops inside its loop, above the largest hierarchy and below the cap: the six diagrams weigh 3 + 3 + 2 = 8, the search starts at 6, and MadGraph's cap (n_ext - 2) times int(3.5) = 9 is not reached."
+artifacts = ["output/ffx_to_xwxwvw_toy_weighted", "output/ffx_to_xwxwvw_toy_weighted.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "6 diagrams enumerated against MadGraph's 6 (the three emissions in any order along the fermion line, each diagram WEIGHTED 8). MadGraph's build log: Trying coupling order WEIGHTED<=6, <=7, <=8; the trial at 8 succeeds, below the cap 9." }
+amplitudes = { tier = "uncovered", note = "A search-cap row: the vertices' Lorentz structures are the toy's plainest and are reached by no new amplitude here." }
+integrals = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+samples = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+
+[[process]]
+key = "xwxw_to_xwxw_toy_weighted"
+process = "xw xw > xw xw"
+model = "validation/ufo/vibegraph_toy_weighted_UFO"
+script = "validation/madgraph/scripts/xwxw_to_xwxw_toy_weighted.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The automatic WEIGHTED search starts at the sum of the n_ext - 2 largest leg values, 4, not at the lowest WEIGHTED any diagram has (the contact term, 2): the first trial already holds the four diagrams."
+artifacts = ["output/xwxw_to_xwxw_toy_weighted", "output/xwxw_to_xwxw_toy_weighted.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "4 diagrams enumerated against MadGraph's 4 (the contact term and the s, t and u yw exchanges). MadGraph's build log: Trying coupling order WEIGHTED<=4 only; the first trial succeeds, below the cap 6." }
+amplitudes = { tier = "uncovered", note = "A search-cap row: the vertices' Lorentz structures are the toy's plainest and are reached by no new amplitude here." }
+integrals = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+samples = { tier = "uncovered", note = "Counts only; no MadEvent run." }
+
+[[process]]
+key = "z_to_uuxddx_decay"
+process = "z > u u~ d d~"
+script = "validation/madgraph/scripts/z_to_uuxddx_decay.mg5"
+class = "single-channel"
+n_final = 4
+bundled = false
+rationale = "A top-level 1 -> n decay without orders runs no WEIGHTED search in MadGraph (find_optimal_process_orders returns the empty orders for a one-particle process that is not a decay-chain decay), so both orders are kept: the four QCD^2 QED gluon exchanges and the QED^3 photon, Z and W exchanges."
+artifacts = ["output/z_to_uuxddx_decay", "output/z_to_uuxddx_decay.json"]
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "17 diagrams enumerated against MadGraph's 17; a search would have stopped at WEIGHTED<=4 with 4. MadGraph's build log carries no Trying coupling order line." }
+amplitudes = { tier = "uncovered", note = "Counts only." }
+integrals = { tier = "uncovered", note = "Counts only." }
+samples = { tier = "uncovered", note = "Counts only." }

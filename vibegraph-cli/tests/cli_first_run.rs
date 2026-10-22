@@ -21,37 +21,20 @@
 //! sees, and the only way to tell a working cache path from a dev fallback
 //! masking a broken one.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+mod common;
+
+use std::path::Path;
+use std::process::Output;
+
+use common::{fixed_beams, stderr_of, validation_dir, vibegraph_behind_dead_proxy};
 
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::write::LheWriter;
 
-/// A proxy nothing listens on: the belt under the braces described above.
-const DEAD_PROXY: &str = "http://127.0.0.1:1";
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
-
-/// The binary, with every route to data the test did not set up removed.
-fn vibegraph(cwd: &Path, cache_root: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
-    cmd.current_dir(cwd)
-        .env("VIBEGRAPH_HOME", cache_root)
-        .env("ALL_PROXY", DEAD_PROXY)
-        .env_remove("NO_PROXY")
-        .env_remove("no_proxy")
-        .env_remove("VIBEGRAPH_NO_NETWORK")
-        .env_remove("VIBEGRAPH_PDF_DIR")
-        .env_remove("VIBEGRAPH_UFO_DIR");
-    cmd
-}
-
 /// A hadronic run, which needs the PDF set that is not there.
 fn integrate_drell_yan(cwd: &Path, cache_root: &Path, out: &Path, extra: &[&str]) -> Output {
-    vibegraph(cwd, cache_root)
+    vibegraph_behind_dead_proxy(cwd, cache_root)
         .arg("integrate")
         .arg(validation_dir().join("dy13_proc_card.dat"))
         .arg("--run-card")
@@ -62,10 +45,6 @@ fn integrate_drell_yan(cwd: &Path, cache_root: &Path, out: &Path, extra: &[&str]
         .args(extra)
         .output()
         .expect("spawn vibegraph")
-}
-
-fn stderr_of(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
 /// The CI-safety property, end to end: a process with no terminal, under the
@@ -133,7 +112,7 @@ fn the_kill_switch_outranks_explicit_consent() {
     let cwd = tempfile::tempdir().unwrap();
     let out = tempfile::tempdir().unwrap();
 
-    let output = vibegraph(cwd.path(), home.path())
+    let output = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .env("VIBEGRAPH_NO_NETWORK", "1")
         .arg("integrate")
         .arg(validation_dir().join("dy13_proc_card.dat"))
@@ -170,7 +149,7 @@ fn an_unresolvable_model_explains_that_models_are_never_downloaded() {
     )
     .unwrap();
 
-    let output = vibegraph(cwd.path(), home.path())
+    let output = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .arg("integrate")
         .arg(&proc_card)
         .arg("--out")
@@ -207,14 +186,10 @@ fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
     let proc_card = cwd.path().join("proc_card.dat");
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
-    std::fs::write(
-        &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_card, fixed_beams(45.6, 45.6)).unwrap();
 
     let out = cwd.path().join("run");
-    let integrated = vibegraph(cwd.path(), home.path())
+    let integrated = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -231,7 +206,7 @@ fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
     );
 
     let events = cwd.path().join("events.lhe");
-    let generated = vibegraph(cwd.path(), home.path())
+    let generated = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
         .arg(&proc_card)
@@ -248,7 +223,7 @@ fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
         stderr_of(&generated)
     );
 
-    let checked = vibegraph(cwd.path(), home.path())
+    let checked = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .arg("check-events")
         .arg(&events)
         .args(["--min-events", "200"])
@@ -265,7 +240,7 @@ fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
     // GeV — enough to break both momentum balance and that leg's mass shell.
     let damaged = cwd.path().join("damaged.lhe");
     displace_one_leg(&events, &damaged);
-    let rejected = vibegraph(cwd.path(), home.path())
+    let rejected = vibegraph_behind_dead_proxy(cwd.path(), home.path())
         .arg("check-events")
         .arg(&damaged)
         .output()

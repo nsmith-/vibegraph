@@ -7,15 +7,16 @@
 //! or help string fails here until the chapter is regenerated. Hermetic: it
 //! needs only the binary cargo built for this test.
 
+mod common;
+
 use std::path::Path;
-use std::process::Command;
 
 /// The subcommands the chapter documents, in the script's order. `help` is
 /// clap's own and has no page.
 const COMMANDS: [&str; 3] = ["integrate", "generate", "check-events"];
 
 fn help(args: &[&str]) -> String {
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph_ambient()
         .args(args)
         .arg("--help")
         .output()
@@ -24,7 +25,7 @@ fn help(args: &[&str]) -> String {
         output.status.success(),
         "`vibegraph {} --help` failed: {}",
         args.join(" "),
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
     String::from_utf8(output.stdout).expect("help text is UTF-8")
 }

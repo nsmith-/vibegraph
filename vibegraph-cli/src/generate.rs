@@ -53,7 +53,7 @@ use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan, Reweighter, SubprocessSummary};
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
-use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::runcard::{BeamMode, EventNorm, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAULT_EXCESS_SHARE};
@@ -95,7 +95,8 @@ const MAX_TRIALS_PER_EVENT: usize = 5_000_000;
 /// How the accept/reject weights become the file's events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Strategy {
-    /// Hold the sample, write the weights (`IDWTUP = -4`).
+    /// Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under the run card's
+    /// `event_norm = sum` or `unity`).
     Buffer,
     /// Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit
     /// weight (`IDWTUP = +3`).
@@ -440,6 +441,21 @@ fn refuse_rounding_on_mixed_multiplicity(strategy: Strategy, parts: usize) -> Re
     )))
 }
 
+/// Stochastic rounding writes unit weights under `IDWTUP = +3`, which is no
+/// `event_norm` but its own, so a card asking for `sum` or `unity` has no file
+/// to be written. The emitter refuses it too; refusing here does so before the
+/// scan and the draw.
+fn refuse_rounding_off_average(strategy: Strategy, norm: EventNorm) -> Result<(), CliError> {
+    if !matches!(strategy, Strategy::StochasticRounding) || StochasticRounding::honours(norm) {
+        return Ok(());
+    }
+    Err(err(format!(
+        "--strategy stochastic-rounding writes unit weights (IDWTUP = +3) and cannot honour the \
+         run card's event_norm = {}; use --strategy buffer",
+        norm.as_str()
+    )))
+}
+
 /// The accept/reject pass as a replayable source of events.
 ///
 /// Each accepted point is turned straight into a record: the momenta come back
@@ -767,9 +783,6 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
-
     let config = GlobalConfig {
         ufo_search_path: crate::assets::resolve_ufo_search_path(
             parsed.model.as_ref(),
@@ -782,7 +795,12 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
+    // The run card is checked before the artifact is opened, as `integrate` checks
+    // it before enumerating: a card the generator must refuse is the first error
+    // whatever is wrong with the artifact.
     let rc = load_run_card(&config, &parsed)?;
+    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
 
     tui::state::describe_model(
         &model_id.label(),
@@ -801,6 +819,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let pdf_set = if hadronic { &args.pdf_set } else { NO_PDF };
     mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
     refuse_on_mismatch(&mismatches)?;
+    refuse_rounding_off_average(args.strategy, rc.event_norm())?;
     refuse_stale_artifact_on_clustering_scale(&artifact, &rc)?;
 
     let evaluated = EvaluatedModel::from_model(model.clone());
@@ -1028,6 +1047,7 @@ fn generate_sample(
         header_blocks: Vec::new(),
         header: Some(file_header(args, artifact, strategy.as_ref(), observable)),
         reweights: declared_reweights(reweight_plan.as_ref()),
+        event_norm: rc.event_norm(),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -1041,6 +1061,7 @@ fn generate_sample(
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
+        rc.event_norm(),
         observable,
     );
     Ok(summary)
@@ -1867,6 +1888,7 @@ fn generate_proton_sample(
             Observable::CrossSection,
         )),
         reweights: declared_reweights(reweight_plan.as_ref()),
+        event_norm: rc.event_norm(),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -1880,6 +1902,7 @@ fn generate_proton_sample(
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
+        rc.event_norm(),
         Observable::CrossSection,
     );
     Ok(summary)
@@ -2029,6 +2052,7 @@ fn report(
     sample_sigma: f64,
     summary: &EmitSummary,
     strategy: &dyn UnweightStrategy,
+    norm: EventNorm,
     observable: Observable,
 ) {
     let (symbol, unit) = (observable.symbol(), observable.unit());
@@ -2062,7 +2086,7 @@ fn report(
     );
     info!(
         "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",
-        strategy.weight_strategy().as_i32(),
+        strategy.weight_strategy(norm).as_i32(),
         summary.xsec_pb,
         summary.xmax
     );
