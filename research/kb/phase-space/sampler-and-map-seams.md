@@ -10,7 +10,8 @@ sources:
   - {id: tiers, resource: "multi-tier-vegas-and-cut-edges.md", title: "Multi-tier VEGAS, absolute grid coordinates and sharp cut edges (draft)"}
   - {id: m1, resource: "../sprints/vegas-absolute-grid-coords/sessions/M1-report.md", title: "M1: where the weight tail meets the cut edges, per channel"}
   - {id: probe, resource: "vibegraph-lib/src/proton/edge_probe.rs", title: "edge_probe.rs: probe_shared_outer_tier_replay"}
-  - {id: split, resource: "https://github.com/nsmith-/vibegraph/pull/60", title: "PR #60: integrate/generate split and run inputs (artifact versions 13 and 14)"}
+  - {id: h1, resource: "https://github.com/nsmith-/vibegraph/pull/69", title: "PR #69: gridpack generate, the integrate/generate split's H1 (artifact version 13)"}
+  - {id: h2, resource: "https://github.com/nsmith-/vibegraph/pull/60", title: "PR #60: the PDF from the run card, H2 (artifact version 14)"}
 measured:
   - {host: "4-core Linux container", command: "VG_EDGE_ROWS=<row> VG_EDGE_SEEDS=5 VG_EDGE_DRAWS=200000 <lib test binary> --ignored --nocapture --test-threads=1 proton::edge_probe::probe_shared_outer_tier_replay"}
 ---
@@ -30,7 +31,7 @@ either draft disagree, this concept holds. Code is cited at `5bc4a19`.
 | D4 | **The bin-width bound is per coordinate role**, with today's `K = 6` on every role as the default. | no measurement favours a per-role value yet; `bin-width-bound-best-k-per-row` is that study |
 | D5 | **MadSpin-kind decays are a decay stage after the map**, opt-in. The default for a decay request stays the in-process decay chain, trained with the rest of the point. (User, 2026-10-22.) | [decay chains without MadSpin](../performance/decay-chains-without-madspin.md) |
 | D6 | The sampler's draw, weight and accumulate stay generic over `F: Real`, and so do the map's windows. The default path stays byte-identical until a window or kind is switched on. | the [seam](importance-sampler-seam.md)'s contract |
-| D7 | The artifact records the sampler kind, the window set, the per-channel coordinate layout, any non-uniform `K` and the decay stage. It follows the versioning rules PR #60 sets, and lands after it. | #60's [integrate/generate split](#coordination-with-pr-60) |
+| D7 | The artifact records the sampler kind, the window set, the per-channel coordinate layout, any non-uniform `K` and the decay stage. It follows the versioning rules of the integrate/generate split (PRs #69 and #60), and lands after both. | the split's [integrate/generate split](#coordination-with-pr-60) |
 
 ## The point, end to end
 
@@ -313,31 +314,32 @@ its mode.
 
 The kind comes from the artifact, never from a flag.
 
-### Coordination with PR #60
+### Coordination with PRs #69 and #60
 
-PR #60 (sprint D, design approved 2026-10-21, no code yet) changes the rules
-this rests on:
+Sprint D's integrate/generate split (design approved 2026-10-21) lands as H1,
+PR #69 (gridpack `generate`), then H2, PR #60 (the PDF from the run card). It
+changes the rules this rests on:
 
-- **Version numbers.** H1 writes version 13 and H2 writes version 14.
+- **Version numbers.** H1 (#69) writes version 13 and H2 (#60) writes version 14.
 - **Every artifact is written at the current version (C11).** The `version_for`
   write-down goes, so "a VEGAS-only artifact keeps today's version" no longer
   holds.
 - **Each format step raises the readable floor and deletes the old readers
   (N7).**
-- **Gridpack-style `generate` (H1).** `generate` takes the artifact plus
+- **Gridpack-style `generate` (H1, #69).** `generate` takes the artifact plus
   generate-time inputs only, and the sampling driver moves into
   `vibegraph-lib` (N10).
 
 So:
 
-- Each field above lands as one version step, after H2, taking the next free
+- Each field above lands as one version step, after H2 (#60), taking the next free
   number at merge.
 - A VEGAS-only, window-free artifact is still checked for identical replay:
   the same LHE from the same seed. It is no longer checked for identical file
   bytes, because the version number changes.
-- The sampler trait refactor lands after H1, so `Unweighter` and the generate
+- The sampler trait refactor lands after H1 (#69), so `Unweighter` and the generate
   driver move once and are refactored once.
-- The decay request is an integrate input under #60's principle. It defines
+- The decay request is an integrate input under the split's principle. It defines
   the process and σ × BR, as the `madspin_card` does inside a MadGraph
   gridpack.
 
@@ -345,13 +347,15 @@ So:
 
 1. This design. It closes `sampler-and-phase-space-seams-designed-apart`.
    `vegas-grid-coords-not-absolute` closes as refused (D2).
-2. PR #60's H1 and H2 (sprint D).
+2. Sprint D's H1 (#69) and H2 (#60).
 3. [sampler-hardwired-to-vegas-grid](../backlog/feature/sampler-hardwired-to-vegas-grid.md):
    the trait, roles, mergeable accumulators and per-role `K`. Byte-identical.
 4. [artifact-has-no-sampler-kind](../backlog/feature/artifact-has-no-sampler-kind.md),
    then [integrate-cannot-select-a-sampler](../backlog/feature/integrate-cannot-select-a-sampler.md).
-5. The map windows, each its own item and PR. The exact `pp_to_jj` 2 → 2
-   window comes first, then the ℓℓj jet `pT` window. They need only the
+5. The map windows, each its own item and PR:
+   [jj-two-to-two-cut-window-missing](../backlog/performance/jj-two-to-two-cut-window-missing.md)
+   first, then
+   [llj-jet-pt-conditional-window-missing](../backlog/performance/llj-jet-pt-conditional-window-missing.md). They need only the
    `MapChoices` field, so they can run beside 3–4.
 6. [madspin-decays-unsupported](../backlog/feature/madspin-decays-unsupported.md):
    the trailing-stage list, then the factorised mode.
@@ -371,16 +375,24 @@ So:
      `tau-rule-reads-whole-process`.
   8. Non-aligned edges go to the sampler, VEGAS+ first.
 - **Seam draft:** everything stands except where the artifact versioning moved
-  under #60 (D7). This design adds the roles, mergeable accumulators and
+  under the split, #69 and #60 (D7). This design adds the roles, mergeable accumulators and
   product parts.
 
 [^m1]: [M1 report](../sprints/vegas-absolute-grid-coords/sessions/M1-report.md),
     tables M1, M2, M4 and M5.
 
-## Found
+## Follow-up items
 
-- **The trained `τ` grid looks unconverged.** In the replay, a one-shot `√G`
-  refit of the `τ` marginal on 128 bins, from 100 000 frozen-grid points per
-  channel, lowers row variance to 0.85 (jj) and 0.95 (ℓℓj) of the trained grid.
-  Candidates: the damping `α`, the ten-iteration budget, `nbins = 64` on `τ`.
-  It needs an equal-budget test, ≥5 seeds, before any default moves.
+Filed from this session's findings (user, 2026-10-22, all `priority: low`):
+
+- [jj-two-to-two-cut-window-missing](../backlog/performance/jj-two-to-two-cut-window-missing.md)
+  and [llj-jet-pt-conditional-window-missing](../backlog/performance/llj-jet-pt-conditional-window-missing.md):
+  the first two windows under D1.
+- [vegas-tau-grid-unconverged](../backlog/performance/vegas-tau-grid-unconverged.md):
+  the replay's `own` arm, a one-shot refit of the `τ` marginal from 100 000
+  frozen-grid points per channel, lowers row variance to 0.85 (jj) and 0.95
+  (ℓℓj) of the trained grid. Not at equal budget, so an equal-budget,
+  ≥5-seed comparison comes before any default moves.
+- [llj-interior-weight-tail-unlocated](../backlog/performance/llj-interior-weight-tail-unlocated.md)
+  and [mlm-multiplicity-sum-edge-tail-unmeasured](../backlog/performance/mlm-multiplicity-sum-edge-tail-unmeasured.md):
+  M1's two open measurements, which size the sampler route.
