@@ -37,6 +37,24 @@ impl std::fmt::Display for ParticleId {
     }
 }
 
+impl Particle {
+    /// A Goldstone mode or a ghost field: absent from tree-level diagrams in
+    /// unitary gauge, which is the gauge MadGraph's default `sm` import uses.
+    pub fn is_unphysical(&self) -> bool {
+        self.is_ghost() || self.is_goldstone()
+    }
+
+    /// A ghost field (non-zero ghost number).
+    pub fn is_ghost(&self) -> bool {
+        self.ghost_number != 0
+    }
+
+    /// A Goldstone mode of a massive gauge boson.
+    pub fn is_goldstone(&self) -> bool {
+        self.is_goldstone
+    }
+}
+
 impl Index<ParticleId> for IndexMap<String, Particle> {
     type Output = Particle;
 

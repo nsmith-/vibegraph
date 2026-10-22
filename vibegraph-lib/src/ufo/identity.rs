@@ -140,8 +140,8 @@ mod tests {
 
     /// Every interned SM variant has a distinct identity. The digest is over the
     /// variant's *restricted* model, so this checks that the restriction reaches it
-    /// at all — a digest over the shared pre-restriction blob would make all nine
-    /// variants identical.
+    /// at all — a digest over the shared pre-restriction blob would make every
+    /// variant identical.
     #[test]
     fn every_interned_variant_has_its_own_digest() {
         let mut seen = std::collections::HashSet::new();

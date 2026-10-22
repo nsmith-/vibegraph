@@ -101,6 +101,15 @@
         "ee_to_ttx_dipole"
       ]
     },
+    "sm-ckm_no_b_mass": {
+      "interactions": 67,
+      "model": "sm",
+      "restrict": "ckm_no_b_mass",
+      "rows": [
+        "bbx_to_tapta_ckm_no_b_mass",
+        "ubx_to_epve_ckm_no_b_mass"
+      ]
+    },
     "vibegraph_toy_UFO-dcolor": {
       "interactions": 2,
       "model": "validation/ufo/vibegraph_toy_UFO",

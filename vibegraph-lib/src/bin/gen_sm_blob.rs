@@ -2,9 +2,10 @@
 //!
 //! Reads the SM UFO model from the `research/refs/mg5amcnlo` submodule, parses it
 //! with the crate's own parser, and writes the compressed pre-restriction blob plus
-//! the nine restrict cards into the committed source tree. Normal builds only
-//! `include_bytes!`/`include_str!` those files; this binary is the only thing that
-//! reads the submodule.
+//! the restrict cards MadGraph ships into the committed source tree (a card vendored
+//! from elsewhere, such as `restrict_ckm_no_b_mass.dat`, is left untouched). Normal
+//! builds only `include_bytes!`/`include_str!` those files; this binary is the only
+//! thing that reads the submodule.
 //!
 //! Run after the submodule SM model changes:
 //!
@@ -45,9 +46,13 @@ fn main() {
             let blob = out_dir.join("sm_parsed.bin.zst");
             let size = std::fs::metadata(&blob).map(|m| m.len()).unwrap_or(0);
             println!(
-                "Wrote {} ({} bytes) + 9 restrict cards to {}",
+                "Wrote {} ({} bytes) + {} restrict cards to {}",
                 blob.display(),
                 size,
+                sm::SMRestrict::ALL
+                    .into_iter()
+                    .filter(|v| v.ships_with_madgraph())
+                    .count(),
                 out_dir.display()
             );
         }

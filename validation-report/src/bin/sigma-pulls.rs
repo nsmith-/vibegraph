@@ -867,7 +867,8 @@ fn read_cells(report: &Path) -> Result<Vec<Cell>, String> {
     Ok(cells)
 }
 
-/// The manifest's process keys that name a UFO model of their own.
+/// The manifest's process keys that name a UFO model of their own; the interned
+/// Standard Model (`model = "sm"`, under whatever restriction) is not one.
 fn rows_with_model(manifest: &Path) -> Result<Vec<String>, String> {
     let text =
         std::fs::read_to_string(manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
@@ -877,7 +878,11 @@ fn rows_with_model(manifest: &Path) -> Result<Vec<String>, String> {
         .and_then(toml::Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|p| p.get("model").is_some())
+        .filter(|p| {
+            p.get("model")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|m| m != "sm")
+        })
         .filter_map(|p| p.get("key").and_then(toml::Value::as_str).map(String::from))
         .collect())
 }

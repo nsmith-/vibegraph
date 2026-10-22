@@ -75,14 +75,12 @@ pub(crate) fn build_feyngraph_model(
     // Unitary gauge: Goldstone bosons and ghosts never appear in tree-level
     // diagrams (MadGraph excludes them the same way); dropping the particles
     // (and below, their vertices) keeps them out of propagator assignment.
-    let is_unphysical = |p: &Particle| p.is_goldstone || p.ghost_number != 0;
-
     // Add all particles but skip antiparticles since feyngraph's add_particle
     // automatically adds the antiparticle. If we add both, diagram generation
     // misbehaves
     let mut seen_anti = HashSet::new();
     for particle in particles.values() {
-        if is_unphysical(particle) {
+        if particle.is_unphysical() {
             continue;
         }
         if seen_anti.contains(&particle.name) {
@@ -103,11 +101,7 @@ pub(crate) fn build_feyngraph_model(
     }
 
     for (vertex_name, vertex) in vertices {
-        if vertex
-            .particles
-            .iter()
-            .any(|&pid| is_unphysical(&particles[pid]))
-        {
+        if !vertex.is_physical(particles) {
             continue;
         }
         if vertex.lorentz.is_empty() {

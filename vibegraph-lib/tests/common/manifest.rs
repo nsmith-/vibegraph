@@ -133,11 +133,18 @@ pub fn hermetic_amplitude_rows() -> BTreeSet<String> {
         .collect()
 }
 
-/// The UFO model a row's reference was generated against, where it is not the
-/// interned Standard Model.
+/// The `model` spelling for MadGraph's own Standard Model, which this crate
+/// interns: `model = "sm"` with `restrict = "<suffix>"` is `import model
+/// sm-<suffix>` on both sides. A row that names no model is the same model at
+/// its default restriction.
+pub const INTERNED_SM: &str = "sm";
+
+/// The model a row's reference was generated against, where the row names one:
+/// a vendored UFO directory, or [`INTERNED_SM`] under a restrict card of its own.
 #[derive(Debug, Clone)]
 pub struct RowModel {
-    /// Repository-relative UFO directory, as the row's `.mg5` script imports it.
+    /// Repository-relative UFO directory, as the row's `.mg5` script imports it,
+    /// or [`INTERNED_SM`].
     pub dir: String,
     /// The restrict card's name: `restrict_<name>.dat`, as `import model
     /// <dir>-<name>` selects it.
@@ -145,6 +152,14 @@ pub struct RowModel {
 }
 
 impl RowModel {
+    /// Whether the row names the interned Standard Model rather than a UFO
+    /// directory: its restrict card is then one of the interned SM's own, and
+    /// neither [`dir_path`](Self::dir_path) nor
+    /// [`restrict_card`](Self::restrict_card) names a file.
+    pub fn is_interned_sm(&self) -> bool {
+        self.dir == INTERNED_SM
+    }
+
     /// The UFO directory, absolute.
     pub fn dir_path(&self) -> PathBuf {
         repo_root().join(&self.dir)
@@ -184,7 +199,8 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Every row that names a UFO model of its own, by key.
+/// Every row that names a model of its own, by key: a UFO directory, or the
+/// interned Standard Model under a restrict card.
 pub fn row_models() -> BTreeMap<String, RowModel> {
     load_manifest()
         .processes

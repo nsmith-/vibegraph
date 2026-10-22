@@ -6,9 +6,10 @@
 //! class and four categories; a cell's tier) is required, so a key that
 //! disappears from the manifest is a parse error and not a silently empty cell.
 //! The rest is optional where its absence says something: a row with no `model`
-//! is the interned Standard Model, a row with no `bundled` is in the bundle, a
-//! cell with no `blocker`, `rows` or `note` has nothing of that kind to declare,
-//! and the collator reports a cell whose tier needs one of them and lacks it.
+//! is the interned Standard Model at its default restriction, a row with no
+//! `bundled` is in the bundle, a cell with no `blocker`, `rows` or `note` has
+//! nothing of that kind to declare, and the collator reports a cell whose tier
+//! needs one of them and lacks it.
 //!
 //! The closed vocabularies — a row's class, a cell's tier and mode, a standalone
 //! gate's layer — are enums, so a misspelt value is a parse error too.
@@ -52,7 +53,9 @@ pub(crate) struct Process {
     pub(crate) rationale: String,
     /// The UFO model directory the row's reference was generated against, and
     /// the restrict card it was imported with. Absent where the row is the
-    /// interned Standard Model, which is what most of the table is.
+    /// interned Standard Model at its default restriction, which is what most of
+    /// the table is; `"sm"` where it is the interned Standard Model under the
+    /// named restriction.
     #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default)]

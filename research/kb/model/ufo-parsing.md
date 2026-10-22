@@ -78,7 +78,8 @@ predate the rewrite. The current modules are `particles.rs`, `couplings.rs`,
 
 The Standard Model is not read from disk. `import model sm[-<variant>]` deserializes an
 interned blob (`ufo/sm_assets/sm_parsed.bin.zst`, the pre-restriction `ParsedModel`)
-and applies one of nine baked-in restrict cards. The blob is regenerated with the
+and applies one of ten baked-in restrict cards (MadGraph's nine and the
+CMS-supplied `ckm_no_b_mass`). The blob is regenerated with the
 `gen_sm_blob` dev binary; `pixi run check-sm-blob-fresh` (`--features
 extended-validation`) compares it with a fresh parse of the pinned MadGraph submodule.
 Because the blob holds parsed ASTs, an edit to any of the string grammars or to a
