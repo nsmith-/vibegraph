@@ -1047,3 +1047,27 @@ fn integrate_fixed_energy(
         convergence,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Args;
+    use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
+
+    /// `--seed`'s help spells the default seed out, since a doc comment cannot
+    /// name a constant; this keeps the two equal.
+    #[test]
+    fn the_seed_help_names_the_default_integration_seed() {
+        let command = IntegrateArgs::augment_args(clap::Command::new("integrate"));
+        let help = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "seed")
+            .and_then(|arg| arg.get_help())
+            .expect("--seed has help")
+            .to_string();
+        assert!(
+            help.contains(&format!("to {DEFAULT_INTEGRATION_SEED} otherwise")),
+            "{help}"
+        );
+    }
+}

@@ -623,7 +623,8 @@ fn a_card_or_a_pdf_choice_passed_to_generate_is_an_argument_error() {
     for (what, extra) in cases {
         let extra: Vec<&str> = extra.iter().map(String::as_str).collect();
         let out = run.generate_on(&run.artifact_path, &extra, "never.lhe");
-        expect_refusal(out, what, "unexpected argument");
+        // The argument refused is the one under test, not a value it left over.
+        expect_refusal(out, what, &format!("unexpected argument '{}'", extra[0]));
         assert!(!run.dir.join("never.lhe").exists(), "{what} wrote a file");
     }
 }
