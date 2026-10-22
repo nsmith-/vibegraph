@@ -1,0 +1,10 @@
+# MadGraph5 batch script: z > u u~ d d~
+# in the default SM, no restrict card.
+#
+# Why this exact process:
+#   A top-level 1 -> n decay without orders runs no WEIGHTED search in MadGraph
+#   (find_optimal_process_orders returns the empty orders for a one-particle
+#   process that is not a decay-chain decay), so every order is kept: the four
+#   QCD^2 QED gluon exchanges and the QED^3 photon, Z and W exchanges.
+generate z > u u~ d d~
+output z_to_uuxddx_decay -nojpeg

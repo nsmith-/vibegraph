@@ -12,6 +12,7 @@ pub mod slha;
 pub mod sm;
 pub(crate) mod topo;
 pub(crate) mod vertices;
+pub(crate) mod weighted;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
@@ -195,6 +196,10 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
+    /// What the automatic WEIGHTED search reads from the restricted interaction
+    /// set: the cap's largest interaction WEIGHTED and the start's particle
+    /// classes.
+    pub(crate) weighted_search: weighted::WeightedSearchModel,
     /// The names a card may write for the particles; see [`names`].
     pub(crate) names: ParticleNames,
 }
@@ -374,6 +379,25 @@ impl ParsedModel {
             &self.vertices,
         )?;
 
+        let weighted_search = {
+            let interactions: Vec<weighted::Interaction<'_>> = self
+                .vertices
+                .values()
+                .filter_map(|vertex| {
+                    let coupling = vertex.couplings.values().next()?;
+                    Some(weighted::Interaction {
+                        pdg_codes: vertex
+                            .particles
+                            .iter()
+                            .map(|&p| self.particles[p].pdg_code)
+                            .collect(),
+                        orders: &self.couplings[*coupling].orders,
+                    })
+                })
+                .collect();
+            weighted::WeightedSearchModel::new(&interactions, &self.order_hierarchy)
+        };
+
         let names = ParticleNames::of_model(particle_codes(&self.particles));
         Ok(UFOModel {
             names,
@@ -385,6 +409,7 @@ impl ParsedModel {
             topo,
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
+            weighted_search,
         })
     }
 }

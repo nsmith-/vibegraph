@@ -1,0 +1,14 @@
+# MadGraph5 batch script: xw xw > xw xw
+# in vibegraph_toy_weighted_UFO, no restrict card.
+#
+# Why this exact process:
+#   The start of the automatic WEIGHTED search: the first trial, at
+#   (n_ext - 2) times the smallest hierarchy, already generates. No order
+#   bound on purpose: the row is the search.
+#
+# The model path is repo-relative; build.sh rewrites it to the staged copy.
+# `display interactions` puts the interaction count (5) into build.log.
+import model validation/ufo/vibegraph_toy_weighted_UFO
+display interactions
+generate xw xw > xw xw
+output xwxw_to_xwxw_toy_weighted -nojpeg

@@ -353,3 +353,11 @@ pub fn assert_no_scale_draw_fallbacks(fallbacks: u64, what: &str) {
          not normalise"
     );
 }
+
+/// The authored model with the hierarchies QED=2, NP=1 and five vertices, used
+/// by the automatic WEIGHTED search tests.
+pub fn toy_weighted_model() -> Arc<UFOModel> {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/ufo/vibegraph_toy_weighted_UFO");
+    UFOModel::load(&dir, None).expect("the toy WEIGHTED model loads")
+}
