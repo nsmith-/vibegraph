@@ -319,16 +319,17 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         cur = db.execute(
             """INSERT INTO vg_run (gridpack_id, build_id, campaign, attempt, patches, argv, proc_sha256, run_sha256,
                ufo_model_sha256, pdf_set, neval, niter, seed, threads, fixed_budget, started_at, host, wall_s,
-               max_rss_kb, exit_code, timed_out, outcome, refusal_class, sigma_pb, err_pb, chi2_dof, n_evals,
+               max_rss_kb, exit_code, timed_out, outcome, sigma_pb, err_pb, chi2_dof, n_evals,
                n_channels, n_subprocesses, n_diagrams, vg_model_hash, error_text, output_sha256)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (gid, build_id, args.campaign, attempt, json.dumps(patches), json.dumps(cmd),
              gpdb.put_blob(db, proc_text.encode()), gpdb.put_blob(db, run_text.encode()),
              model_sha(staged) if staged else None, pdf_set, args.neval, args.niter, args.seed, args.threads, 1,
-             started, socket.gethostname(), wall, rss, code, int(timed_out), r["outcome"], r["refusal_class"],
+             started, socket.gethostname(), wall, rss, code, int(timed_out), r["outcome"],
              r["sigma_pb"], r["err_pb"], r["chi2_dof"], r["n_evals"], r["n_channels"], r["n_subprocesses"],
              r["n_diagrams"], r["vg_model_hash"], r["error_text"], gpdb.put_blob(db, output.encode())))
         run_id = cur.lastrowid
+        gpdb.put_reasons(db, run_id, r["reasons"])
         if trace_text:
             dest = os.path.join(base, "runs", "%d.trace.log.gz" % run_id)
             with open(trace, "rb") as fi, gzip.open(dest, "wb") as fo:
@@ -348,7 +349,7 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         if os.path.exists(trace):
             os.remove(trace)
         summary = "attempt %d %s%s%s" % (attempt, r["outcome"],
-                                         " " + r["refusal_class"] if r["refusal_class"] else "",
+                                         ": " + r["reasons"][0][0][:90] if r["reasons"] else "",
                                          " σ=%.4g±%.2g pb" % (r["sigma_pb"], r["err_pb"]) if r["sigma_pb"] else "")
         if r["outcome"] in ("ok", "timeout"):
             break

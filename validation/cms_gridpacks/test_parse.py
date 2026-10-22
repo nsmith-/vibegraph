@@ -176,14 +176,49 @@ class VgOutput(unittest.TestCase):
 
     def test_refused(self):
         r = P.parse_vg_output(VG_REFUSED, "", 1, False)
-        self.assertEqual((r["outcome"], r["refusal_class"]), ("refused", "flavour_mixed_mass"))
+        self.assertEqual(r["outcome"], "refused")
+        self.assertEqual(r["reasons"], [(
+            "failed to decompose into flavour groups: subprocesses {} and {} have different outgoing masses, "
+            "so no single phase-space map covers the sum", ["u u > e+ e- u u", "u u > ta+ ta- u u"])])
         self.assertTrue(r["error_text"].startswith("ERROR failed to decompose"))
 
     def test_panic_and_timeout(self):
         r = P.parse_vg_output(VG_PANIC, "", 101, False)
-        self.assertEqual((r["outcome"], r["refusal_class"]), ("panic", None))
+        self.assertEqual(r["outcome"], "panic")
+        self.assertEqual(r["reasons"], [(
+            "panicked at vibegraph-lib/src/helas/eval/run.rs:{}:{}: index out of bounds: the len is {} but the index is {}",
+            ["1354", "21", "0", "0"])])
         self.assertIn("run.rs:1354", r["error_text"])
         self.assertEqual(P.parse_vg_output("", "", None, True)["outcome"], "timeout")
+
+
+class Reasons(unittest.TestCase):
+    def test_names_and_values_become_args(self):
+        t, a = P.normalize_reason("run card activates cut 'htjmax' (= 1200, MG default -1) which is not implemented")
+        self.assertEqual(t, "run card activates cut '{}' (= {}, MG default {}) which is not implemented")
+        self.assertEqual(a, ["htjmax", "1200", "-1"])
+        t, a = P.normalize_reason("run card sets 'pt_min_pdg' (= '{'1023': 100.0}', MG default '')")
+        self.assertEqual((t, a), ("run card sets '{}' (= '{}', MG default '{}')", ["pt_min_pdg", "{'1023': 100.0}", ""]))
+
+    def test_processes_and_paths(self):
+        t, a = P.normalize_reason("cannot load the run card /a/b/run_card.dat: subprocess c C > ~H0 ~H0 E e has an "
+                                  "incoming leg of mass 1.2 GeV")
+        self.assertEqual(t, "cannot load the run card {}: subprocess {} has an incoming leg of mass {} GeV")
+        self.assertEqual(a, ["/a/b/run_card.dat", "c C > ~H0 ~H0 E e", "1.2"])
+        t, a = P.normalize_reason("u d > W-{1,-1} Z{0} u u and d u~ > Z b b~ have |M|^2 in a 3/3̄ pair")
+        self.assertEqual(t, "{} and {} have |M|^2 in a 3/3̄ pair")
+        self.assertEqual(a, ["u d > W-{1,-1} Z{0} u u", "d u~ > Z b b~"])
+
+    def test_each_listed_feature_is_a_reason(self):
+        text = ("ERROR cannot parse the proc card /w/proc_card.dat: the proc card uses 2 unsupported features:\n"
+                "  - 'p p > a j [QCD] @0': '[...]' asks for NLO output\n"
+                "  - 'set complex_mass_scheme ': the complex-mass scheme changes every massive propagator")
+        self.assertEqual(P.error_reasons(text, "refused"), [
+            ("cannot parse the proc card {}: '{}': '{}' asks for NLO output",
+             ["/w/proc_card.dat", "p p > a j [QCD] @0", "[...]"]),
+            ("cannot parse the proc card {}: '{}': the complex-mass scheme changes every massive propagator",
+             ["/w/proc_card.dat", "set complex_mass_scheme "])])
+        self.assertEqual(P.error_reasons(text, "error"), [])
 
 
 class Schema(unittest.TestCase):
@@ -210,6 +245,33 @@ class Schema(unittest.TestCase):
                 db.execute("INSERT INTO mg_xsec VALUES (?, 'gen_log', 2, 'survey', 2.0, 0.1, NULL, 1)", (gid,))
             with self.assertRaises(sqlite3.IntegrityError):  # an unconverged result cannot be the reference
                 db.execute("INSERT INTO mg_xsec VALUES (?, 'gen_log', 3, 'survey', 1.0, 5.0, NULL, 1)", (gid,))
+
+
+    def test_reasons_only_on_refused_or_panicking_runs(self):
+        import sqlite3
+        import tempfile
+
+        import gpdb
+        with tempfile.TemporaryDirectory() as d:
+            db = gpdb.connect(os.path.join(d, "t.sqlite"))
+            gid = db.execute("INSERT INTO gridpack (path, label) VALUES ('p', 'l')").lastrowid
+            bid = db.execute("INSERT INTO vg_build (version, binary_sha256) VALUES ('v', ?)", ("0" * 64,)).lastrowid
+            db.execute("INSERT INTO vg_campaign VALUES ('c', '{}', '2026-01-01T00:00:00')")
+
+            def run(attempt, outcome, code):
+                return db.execute(
+                    "INSERT INTO vg_run (gridpack_id, build_id, campaign, attempt, patches, argv, started_at, "
+                    "exit_code, timed_out, outcome, sigma_pb, err_pb) VALUES (?, ?, 'c', ?, '[]', '[]', "
+                    "'2026-01-01T00:00:00', ?, 0, ?, ?, ?)",
+                    (gid, bid, attempt, code, outcome, *((1.0, 0.1) if outcome == "ok" else (None, None)))).lastrowid
+            refused, ok = run(1, "refused", 1), run(2, "ok", 0)
+            gpdb.put_reasons(db, refused, [("x {}", ["1"])])
+            with self.assertRaises(sqlite3.IntegrityError):
+                gpdb.put_reasons(db, ok, [("x {}", ["2"])])
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("UPDATE vg_run SET outcome = 'error' WHERE run_id = ?", (refused,))
+            db.execute("DELETE FROM vg_run WHERE run_id = ?", (ok,))
+            self.assertEqual(db.execute("SELECT outcome, reason FROM comparison").fetchall(), [("refused", "x {}")])
 
 
 if __name__ == "__main__":

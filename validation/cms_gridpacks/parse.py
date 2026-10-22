@@ -478,31 +478,52 @@ VG_TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z\s+[A-Z]+\s+(\S
 VG_STAGES = ("proc_card", "ufo_load", "enumerate", "compile", "alpha_survey", "vegas")
 UNIT_TO_PB = {"fb": 1e-3, "pb": 1.0, "nb": 1e3, "ub": 1e6, "mb": 1e9}
 
-# Ordered: the first pattern that matches the error text names the class.
-REFUSAL_CLASSES = [
-    ("nlo_bracket", r"\[QCD\]|NLO|loop-induced|\[\s*virt|\[\s*real"),
-    ("restriction_unknown", r"restrict(ion)? (variant|card)|no restriction|unknown restriction"),
-    ("event_norm", r"event_norm"),
-    ("time_of_flight", r"time_of_flight"),
-    ("ht_cuts", r"\b(ihtmin|ihtmax|htjmin|htjmax|ht[234]m(in|ax))\b"),
-    ("unimplemented_cut", r"activates cut"),
-    ("flavour_mixed_mass", r"different outgoing masses"),
-    ("massive_initial_leg", r"incoming leg of mass"),
-    ("me_frame", r"me_frame|polarizes the massive leg"),
-    ("colour_crossing", r"colou?r[- ]basis|crossing"),
-    ("no_diagrams", r"no diagrams|0 diagrams|has no diagram"),
-    ("particle_name", r"unknown particle|no particle named|not a particle"),
-    ("model_load", r"failed to load model|UFO|parse"),
-    ("proc_card_command", r"proc[_ ]card"),
-    ("pdf", r"PDF|lhaid|pdlabel"),
-]
+# A refusal's reason is its message with the run-specific parts (paths, quoted
+# names and values, unquoted process strings, numbers) pulled out as arguments,
+# so the same refusal on different gridpacks shares one template. Process
+# tokens may carry a polarization suffix like W-{1,-1}; the right-hand side of
+# a process stops at the English word that follows it.
+_TOK = r"[A-Za-z~][\w~+\-*]*(?:\{[^}\s]*\})?"
+_STOP = r"(?:and|has|have|share|separate|polarizes|is|from|with)\b"
+REASON_ARG = re.compile(
+    r"(?P<path>(?<![\w/])/(?:[\w.+-]+/)+[\w.+-]*)"
+    r"|(?<![\w'])'(?P<dict>\{[^}]*\})'"
+    r"|(?<![\w'])'(?P<sq>.*?)'(?=[\s:;,.)]|$)"
+    r"|`(?P<bq>[^`]*)`"
+    r"|(?<![\w~+\-}])(?P<proc>(?:%s )?%s > %s(?: (?!%s)%s)*)" % (_TOK, _TOK, _TOK, _STOP, _TOK)
+    + r"|(?<![\w~+\-}])(?P<pol>(?:%s )+%s)(?= polarizes\b)" % (_TOK, _TOK)
+    + r"|(?<![\w./^])(?P<num>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?![\w./])")
 
 
-def classify_error(text):
-    for name, rx in REFUSAL_CLASSES:
-        if re.search(rx, text, re.I):
-            return name
-    return "other"
+def normalize_reason(text):
+    """(template, args): `text` with each REASON_ARG match replaced by {}."""
+    args = []
+
+    def sub(m):
+        args.append(m.group(m.lastgroup))
+        return {"dict": "'{}'", "sq": "'{}'", "bq": "`{}`"}.get(m.lastgroup, "{}")
+    return REASON_ARG.sub(sub, text.strip()), args
+
+
+def error_reasons(error_text, outcome):
+    """The normalized reasons a refused or panicking run gives, in order. A proc
+    card refused for several features lists each as a `- ` line under one
+    header, and each becomes its own reason under the header's context."""
+    lines = [l for l in (error_text or "").splitlines() if l.strip()]
+    if outcome not in ("refused", "panic") or not lines:
+        return []
+    if outcome == "panic":
+        m = re.search(r"panicked at (.*?):?$", lines[0])
+        msg = lines[1] if len(lines) > 1 and not lines[1].startswith("note:") else ""
+        return [normalize_reason("panicked at %s: %s" % (m.group(1) if m else lines[0], msg))]
+    head = re.sub(r"^(ERROR|error:)\s*", "", lines[0])
+    bullets = [l.strip()[2:] for l in lines[1:] if l.lstrip().startswith("- ")]
+    if not bullets:
+        return [normalize_reason(head)]
+    tpl, args = normalize_reason(head)
+    ctx = tpl.split(": ", 1)[0]
+    n = ctx.count("{}")
+    return [(ctx + ": " + t, args[:n] + a) for t, a in map(normalize_reason, bullets)]
 
 
 def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
@@ -512,7 +533,7 @@ def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
     both = stdout_text or ""
     res = {"sigma_pb": None, "err_pb": None, "chi2_dof": None, "n_evals": None, "n_channels": None,
            "n_subprocesses": None, "n_diagrams": None, "vg_model_hash": None, "multiplicities": [],
-           "stages": {}, "error_text": None, "refusal_class": None}
+           "stages": {}, "error_text": None, "reasons": []}
     src = both + "\n" + (trace_text or "")
     sig = list(VG_SIGMA.finditer(both))
     if sig:
@@ -570,6 +591,5 @@ def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
             idx = next((i for i, l in enumerate(lines) if re.search(r"\bERROR\b|^error:", l)), None)
             res["outcome"] = "refused" if idx is not None and exit_code not in (None, 0) else "error"
         res["error_text"] = "\n".join(lines[idx:] if idx is not None else lines[-15:])[:6000]
-        if res["outcome"] == "refused":
-            res["refusal_class"] = classify_error(res["error_text"])
+        res["reasons"] = error_reasons(res["error_text"], res["outcome"])
     return res

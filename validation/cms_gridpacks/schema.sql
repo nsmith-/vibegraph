@@ -313,7 +313,6 @@ CREATE TABLE vg_run (
   exit_code INTEGER,
   timed_out INTEGER NOT NULL CHECK (timed_out IN (0, 1)),
   outcome TEXT NOT NULL CHECK (outcome IN ('ok', 'refused', 'panic', 'timeout', 'error')),
-  refusal_class TEXT,
   sigma_pb REAL,
   err_pb REAL CHECK (err_pb >= 0),
   chi2_dof REAL,
@@ -329,9 +328,38 @@ CREATE TABLE vg_run (
   CHECK (timed_out = (outcome = 'timeout')),
   CHECK (outcome <> 'timeout' OR exit_code IS NULL),
   CHECK (outcome <> 'ok' OR (exit_code = 0 AND sigma_pb IS NOT NULL AND err_pb IS NOT NULL)),
-  CHECK ((refusal_class IS NOT NULL) = (outcome = 'refused')),
   CHECK ((sigma_pb IS NULL) = (err_pb IS NULL))
 ) STRICT;
+
+-- Why a refused or panicking run stopped. A reason is the CLI's message with
+-- its run-specific parts (paths, quoted names and values, process strings,
+-- numbers) replaced by {}; vg_run_reason keeps those parts, in order, as the
+-- run's args. Templates come from parse.error_reasons and are re-derived from
+-- vg_run.error_text by `gpdb reasons --rebuild` when that normalization changes.
+CREATE TABLE vg_reason (
+  reason_id INTEGER PRIMARY KEY,
+  template TEXT NOT NULL UNIQUE CHECK (length(template) > 0)
+) STRICT;
+CREATE TABLE vg_run_reason (
+  run_id INTEGER NOT NULL REFERENCES vg_run ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  reason_id INTEGER NOT NULL REFERENCES vg_reason ON DELETE RESTRICT,
+  args TEXT NOT NULL CHECK (json_valid(args) AND json_type(args) = 'array'),
+  PRIMARY KEY (run_id, ordinal)
+) STRICT;
+CREATE INDEX vg_run_reason_by_reason ON vg_run_reason (reason_id);
+CREATE TRIGGER vg_run_reason_outcome BEFORE INSERT ON vg_run_reason
+WHEN (SELECT outcome FROM vg_run WHERE run_id = NEW.run_id) NOT IN ('refused', 'panic')
+BEGIN
+  SELECT RAISE(ABORT, 'only refused or panicking runs carry reasons');
+END;
+CREATE TRIGGER vg_run_outcome_with_reasons BEFORE UPDATE OF outcome ON vg_run
+WHEN NEW.outcome NOT IN ('refused', 'panic')
+     AND EXISTS (SELECT 1 FROM vg_run_reason WHERE run_id = NEW.run_id)
+BEGIN
+  SELECT RAISE(ABORT, 'a run with reasons must stay refused or panicking');
+END;
+
 CREATE TABLE vg_run_stage (
   run_id INTEGER NOT NULL REFERENCES vg_run ON DELETE CASCADE,
   stage TEXT NOT NULL,
@@ -348,10 +376,12 @@ CREATE TABLE vg_run_multiplicity (
   PRIMARY KEY (run_id, tag)
 ) STRICT;
 
--- The final attempt of each (gridpack, build, campaign), against MG's reference σ.
+-- The final attempt of each (gridpack, build, campaign), against MG's reference σ;
+-- `reason` is the first of the run's reasons.
 CREATE VIEW comparison AS
 SELECT g.gridpack_id, g.label, r.build_id, b.version, r.campaign, r.run_id, r.attempt, r.patches,
-       r.outcome, r.refusal_class, r.wall_s,
+       r.outcome, (SELECT e.template FROM vg_run_reason rr JOIN vg_reason e USING (reason_id)
+                    WHERE rr.run_id = r.run_id AND rr.ordinal = 0) AS reason, r.wall_s,
        r.sigma_pb, r.err_pb,
        m.sigma_pb AS mg_sigma_pb, m.err_pb AS mg_err_pb,
        CASE WHEN r.outcome = 'ok' THEN r.sigma_pb / m.sigma_pb END AS ratio,
@@ -365,5 +395,5 @@ WHERE r.attempt = (SELECT max(attempt) FROM vg_run r2
                    WHERE r2.gridpack_id = r.gridpack_id AND r2.build_id = r.build_id
                      AND r2.campaign = r.campaign);
 
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 COMMIT;

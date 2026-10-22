@@ -15,6 +15,7 @@ Commands, in pipeline order:
   scrape     extract + parse
   run        drive `vibegraph integrate` over a sample (see vgrun.py)
   status     row counts, and the outcome table of the latest runs
+  reasons    the refusal and panic reasons behind the latest runs, by count
 
 Tarball contents are untrusted: they are extracted into per-gridpack cache
 directories, symlinks in them are never followed, and UFO model files are read
@@ -64,7 +65,7 @@ EXTRACT_EXCLUDES = ["*.pyc", "*.pyo", "*__pycache__*", "*.pkl", "mgbasedir/Templ
 
 # --- database ----------------------------------------------------------------
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def connect(path):
@@ -117,6 +118,14 @@ def put_blob(db, data):
                    "ON CONFLICT (sha256) DO NOTHING",
                    (sha, len(data), "zlib" if packed is not data else "raw", packed))
     return sha
+
+
+def put_reasons(db, run_id, reasons):
+    """Record a run's (template, args) reasons, creating each template once."""
+    for i, (template, args) in enumerate(reasons):
+        db.execute("INSERT INTO vg_reason (template) VALUES (?) ON CONFLICT (template) DO NOTHING", (template,))
+        rid = db.execute("SELECT reason_id FROM vg_reason WHERE template = ?", (template,)).fetchone()[0]
+        db.execute("INSERT INTO vg_run_reason VALUES (?, ?, ?, ?)", (run_id, i, rid, json.dumps(args)))
 
 
 def get_blob(db, sha):
@@ -591,10 +600,32 @@ def cmd_status(db, args, scrape_id):
     if bad:
         print("foreign-key violations:", bad[:10], "(%d)" % len(bad))
     print()
-    q = """SELECT build_id, version, campaign, outcome, coalesce(refusal_class, ''), count(*)
-           FROM comparison GROUP BY 1, 2, 3, 4, 5 ORDER BY 1, 3, 6 DESC"""
+    q = """SELECT build_id, version, campaign, outcome, count(*)
+           FROM comparison GROUP BY 1, 2, 3, 4 ORDER BY 1, 3, 5 DESC"""
     for row in db.execute(q):
-        print("%3d %-28s %-14s %-8s %-22s %4d" % row)
+        print("%3d %-28s %-14s %-8s %4d" % row)
+    orphans = db.execute("SELECT count(*) FROM vg_run r WHERE outcome IN ('refused', 'panic') AND NOT EXISTS "
+                         "(SELECT 1 FROM vg_run_reason rr WHERE rr.run_id = r.run_id)").fetchone()[0]
+    if orphans:
+        print("\n%d refused or panicking runs have no reason (gpdb reasons --rebuild)" % orphans)
+
+
+def cmd_reasons(db, args, scrape_id):
+    """Count the final attempts behind each reason; --rebuild first re-derives every
+    run's reasons from its stored error text and drops templates no run uses."""
+    if args.rebuild:
+        db.execute("DELETE FROM vg_run_reason")
+        rows = db.execute("SELECT run_id, outcome, error_text FROM vg_run WHERE outcome IN ('refused', 'panic')")
+        for run_id, outcome, text in rows.fetchall():
+            put_reasons(db, run_id, P.error_reasons(text, outcome))
+        db.execute("DELETE FROM vg_reason WHERE reason_id NOT IN (SELECT reason_id FROM vg_run_reason)")
+        db.commit()
+    where, params = ("WHERE c.campaign = ?", (args.campaign,)) if args.campaign else ("", ())
+    q = """SELECT e.reason_id, count(DISTINCT c.run_id), e.template
+           FROM comparison c JOIN vg_run_reason rr USING (run_id) JOIN vg_reason e USING (reason_id)
+           %s GROUP BY e.reason_id ORDER BY 2 DESC, 1""" % where
+    for rid, n, template in db.execute(q, params):
+        print("%4d %4d  %s" % (rid, n, template))
 
 
 def main(argv=None):
@@ -624,11 +655,15 @@ def main(argv=None):
     vgrun.add_parser(sub)
 
     sub.add_parser("status")
+    p = sub.add_parser("reasons")
+    p.add_argument("--campaign")
+    p.add_argument("--rebuild", action="store_true", help="re-derive every run's reasons from its error text")
     args = ap.parse_args(argv)
     db = connect(args.db)
-    scrape_id = new_scrape(db, sys.argv) if args.cmd != "status" else None
+    scrape_id = new_scrape(db, sys.argv) if args.cmd not in ("status", "reasons") else None
     {"inventory": cmd_inventory, "sample": cmd_sample, "extract": cmd_extract, "parse": cmd_parse,
-     "scrape": cmd_scrape, "run": vgrun.cmd_run, "status": cmd_status}[args.cmd](db, args, scrape_id)
+     "scrape": cmd_scrape, "run": vgrun.cmd_run, "status": cmd_status,
+     "reasons": cmd_reasons}[args.cmd](db, args, scrape_id)
 
 
 if __name__ == "__main__":
