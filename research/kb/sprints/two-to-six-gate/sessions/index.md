@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [B1: why bbx_to_ccx_emmm_qcd0's seed spread grows with budget](B1.md) - Diagnosis: on the M3's 2→6 ladder, bbx's per-seed sd rises from 7.44e-9 (600k) to 1.00e-8 pb (1.2M) with χ²/dof 3.09, against uux's 2.91e-9 → 1.58e-9. Find the outlier seeds, the channels that carry them, and the mechanism.
 * [F1: make the 2 → 6 budget ladder runnable at 20 seeds on the M3](F1.md) - Parameterise probe_2to6_budget_ladder (seeds, rungs, sampler, rows) through environment variables, read the rows' seed records as the reference, and write per-seed results to a file, so the user can run the 20-seed ladder from one documented command.
 * [P1: does stop_scale still explode on few-accepted-point iterations?](P1.md) - Re-measure scaled_rel/achieved_rel on the 2 → 6 rows under pooled_scale; fix in what stop_scale does with few-accepted-point iterations only if the mechanism persists.
 

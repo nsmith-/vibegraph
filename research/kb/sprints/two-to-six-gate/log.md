@@ -20,3 +20,15 @@
   20-seed confirmation; its commands go into this PR's banking comment. The
   low seed χ²/dof (0.10–0.66) stays flagged in the record. F1 makes the probe
   runnable that way.
+
+## 2026-10-22
+* **M3 results** (PR #47 comments, 04:55 and 14:04 UTC):
+  - **The ladder (item 2) is complete**, 20 seeds a rung on both rows. Both rows
+    sit within +0.9σ of their 5-seed MadEvent records at both rungs.
+    - `uux` shrinks with budget: sd 2.91e-9 → 1.58e-9 pb, Δ +0.26σ.
+    - `bbx` **grows**: sd 7.44e-9 → 1.00e-8 pb, and χ²/dof 3.09 at 1.2M.
+  - **The SCATTER confirmation (item 1) stopped after one seed** (92 min). The
+    user has queued it as a dedicated multi-night M3 run. Until it lands, the
+    cells stay `info` per D1's third amendment.
+* **B1 dispatched**: the user wants the `bbx` growth diagnosed
+  ([brief](sessions/B1.md)).
