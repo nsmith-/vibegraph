@@ -1981,7 +1981,7 @@ fn judge(
     println!(
         "  [{name}] '{}' NGRAPHS={} NCOLOR={}: |M|² max_rel grid {:.2e} / event {:.2e}, \
          per-diagram {worst_diagram:.2e}{}, per-flow {worst_flow:.2e}, JAMP2 {worst_jamp2:.2e} \
-         (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
+         (G = {:+.6}{:+.6}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
          {} configurations{}: amplitude {worst_config:.2e}, |k|-1 {worst_config_phase:.1e}, \
          |Im(k/G)| {worst_config_rotation:.1e}, AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
         table.process,
@@ -1990,7 +1990,8 @@ fn judge(
         m2.grid,
         m2.event,
         if per_diagram_fit { "" } else { " (not banked)" },
-        g.im.signum(),
+        g.re,
+        g.im,
         table.amp2_groups.len(),
         if merges {
             " (MadGraph merges some into one accumulator)"
