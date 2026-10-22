@@ -28,3 +28,4 @@
 - 2026-10-21: the user decided N1–N12. N4 differs from the recommendation: iseed feeds the integrate seed (after --seed); generate requires --seed, with no default. N3 approved; the bookkeeping rows are explained in the design §5.
 - 2026-10-21: the user confirmed iseed = 0 means unset, and agreed the bookkeeping rows ride with the integrate settings.
 - 2026-10-22: H1 merged (#69); main merged here (42e1f38). H2 F1 dispatched.
+- 2026-10-22: F1 checked (3de200c). Version 14; pdf::select, the built-in-label refusal and cli_pdf_cache pass. Pushed so CI's banked layer measures whether the lhapdf/247000 default moves any banked proton number (F1 Found 1).
