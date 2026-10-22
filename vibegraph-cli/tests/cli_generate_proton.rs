@@ -852,7 +852,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         .channels
         .iter()
         .any(|c| matches!(c.key, ChannelKey::MergedChannel { .. })));
-    assert_eq!(artifact.format_version, 13);
+    assert_eq!(artifact.format_version, vibegraph::artifact::FORMAT_VERSION);
     let mut sigma = [0.0f64; 2];
     let mut alpha = [0.0f64; 2];
     let mut previous = 0;
