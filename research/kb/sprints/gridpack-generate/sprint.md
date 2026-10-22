@@ -38,5 +38,5 @@ Not in scope:
 |---|---|---|---|---|
 | F1 | feature-dev (Opus) | – | workspace tests | – |
 | F2 | feature-dev (Opus) | F1 | workspace tests | `generate-rereads-integrate-inputs` |
-| V1 | validation-dev | F2 | workspace tests, banked layer in CI | – |
+| V1 | (folded into CI) | F2 | the banked layer runs the proton path, which this container cannot | – |
 | HY1 | hygiene-dev | V1 | workspace tests | – |

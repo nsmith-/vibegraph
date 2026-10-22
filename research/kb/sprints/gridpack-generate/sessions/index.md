@@ -6,6 +6,7 @@
 
 * [F1: the run card split by stage, GenerateSettings and artifact version 13](F1.md) - Library half of gridpack-style generate: the stage column, RunCard::split, GenerateSettings, the iseed integrate seed, artifact v13 with the floor raised, and the generation entry point moved into vibegraph-lib.
 * [F2: the generate command line, the model digest check and LHAPDF_DATA_PATH](F2.md) - CLI half of H1: generate <ARTIFACT> --seed S with no card arguments, the proc card and model checked at generate, LHAPDF_DATA_PATH replacing VIBEGRAPH_PDF_DIR and the validation/pdf fallback, and the migration of every test, script and doc.
+* [HY1: hygiene review of the gridpack-style generate](HY1.md) - Review F1 and F2's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 
 ## Session Report
 
