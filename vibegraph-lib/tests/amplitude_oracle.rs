@@ -643,6 +643,7 @@ const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
     ("ll_to_qqx_toy_yukawa", "-++++"),
     ("pp_to_ll_qcd0", "--"),
     ("tata_to_ttx_tensor4f", "--+"),
+    ("ubx_to_epve_ckm_no_b_mass", "-"),
     ("uux_to_epemg", "----"),
     ("uux_to_mumu", "--"),
     ("uux_to_ztg", "++"),
