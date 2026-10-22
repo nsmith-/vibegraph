@@ -17,6 +17,13 @@
 /validation/pdf/NNPDF31_lo_as_0130/
 /validation/pdf/*.tar.gz
 /validation/pdf/gen_oracle
+
+# The CMS gridpack survey: its database, extract cache, per-run work dirs and
+# traces are rebuilt by `pixi run -e gridpacks gpdb`; only the tool is committed.
+/validation/cms_gridpacks/gridpacks.sqlite*
+/validation/cms_gridpacks/cache/
+/validation/cms_gridpacks/work/
+/validation/cms_gridpacks/runs/
 __pycache__/
 # Agent configuration is committed, but under `.agents/` — the cross-tool
 # location — with `.claude/` holding symlinks into it. Everything else Claude
