@@ -1,6 +1,7 @@
 //! Ignored probes of where each channel's weight tail sits against the run
-//! card's cut edges, how alike the channels' trained `(τ, y)` grids are, and what
-//! a rejected point costs against an accepted one.
+//! card's cut edges, how alike the channels' trained `(τ, y)` grids are, what
+//! a rejected point costs against an accepted one, and what a `(τ, y)` grid
+//! shared across channels would do to each channel's variance.
 //!
 //! They live inside the crate rather than beside the banked gates because a
 //! rejected point's momenta, a trained grid's bin edges and the split of an
@@ -9,7 +10,7 @@
 //!
 //! Inputs are the banked run cards, the fetched NNPDF set and the SM UFO, read by
 //! path. Every probe prints tab-separated `EDGE`/`TAIL`/`REJECT`/`GRID`/`COND`/
-//! `TIME` records for a script to aggregate across seeds.
+//! `TIME`/`REPLAY` records for a script to aggregate across seeds.
 //!
 //! Environment: `VG_EDGE_ROWS` (comma-separated, default every row),
 //! `VG_EDGE_SEEDS` (seed count, default 1), `VG_EDGE_SEED0` (first seed),
@@ -1004,5 +1005,239 @@ fn probe_rejected_point_cost() {
             1e9 * tot_rej / tot_n_rej.max(1) as f64,
             tot_n_acc as f64 / (tot_n_acc + tot_n_rej) as f64
         );
+    }
+}
+
+/// Fine bins a replayed outer density is estimated on, per dimension.
+const REPLAY_BINS: usize = 128;
+
+/// A one-dimensional density on `[0, 1]`, piecewise constant on
+/// [`REPLAY_BINS`] equal bins.
+type FineDensity = Vec<f64>;
+
+fn fine_at(q: &[f64], x: f64) -> f64 {
+    q[((x * q.len() as f64) as usize).min(q.len() - 1)]
+}
+
+/// A trained grid's density at `x` in one dimension, `1/(nbins·Δ)`.
+fn grid_density(edges: &[f64], x: f64) -> f64 {
+    let n = edges.len() - 1;
+    let i = edges.partition_point(|&v| v <= x).clamp(1, n) - 1;
+    1.0 / (n as f64 * (edges[i + 1] - edges[i]))
+}
+
+/// `√s` normalised to a density, then raised to a floor `c` and renormalised so
+/// that no value falls below `1/k`: the fine-bin form of the bin-width bound
+/// `K = k` a trained grid carries (an equal-probability bin is at most `k`
+/// uniform widths wide exactly when the density is at least `1/k`).
+fn bounded_sqrt_density(s: &[f64], k: f64) -> FineDensity {
+    let n = s.len() as f64;
+    let raw: Vec<f64> = s.iter().map(|v| v.max(0.0).sqrt()).collect();
+    let z: f64 = raw.iter().sum::<f64>() / n;
+    if !(z > 0.0) {
+        return vec![1.0; s.len()];
+    }
+    let raw: Vec<f64> = raw.iter().map(|v| v / z).collect();
+    let floored = |c: f64| -> (f64, Vec<f64>) {
+        let v: Vec<f64> = raw.iter().map(|r| r.max(c)).collect();
+        let z = v.iter().sum::<f64>() / n;
+        (z, v)
+    };
+    // c/Z(c) rises from 0 at c = 0 towards 1, so bisect for c/Z(c) = 1/k.
+    let (mut lo, mut hi) = (0.0_f64, k * raw.iter().copied().fold(1.0, f64::max));
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        let (z, _) = floored(mid);
+        if mid / z < 1.0 / k {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let (z, v) = floored(hi);
+    v.into_iter().map(|x| x / z).collect()
+}
+
+/// One channel's replay sample: per point its weight `w = h/(q_j p_j)` and outer
+/// coordinates.
+struct ReplayPoint {
+    w: f64,
+    x: [f64; OUTER_NDIM],
+}
+
+/// The A1 decision's offline replay: each channel's trained-grid points
+/// reweighted from its own outer density `q_j(τ)q_j(y)` to a shared one, and the
+/// per-point variance read at the production allocation `N_j`.
+///
+/// With `u ~ q_j p_j` and `w = h_j/(q_j p_j)`,
+/// `∫ h_j²/(q p_j) = E[w² q_j/q]`, so the variance under a shared `q` needs no
+/// new matrix elements. The shared optimum given the inner grids is
+/// `q* ∝ √(Σ_j G_j/N_j)` with `G_j(x_o) = ∫ h_j²/p_j`, estimated per outer
+/// dimension (the other held at the channel's own grid) from
+/// `E[w² q_{j,d}(x_d) 1{x_d ∈ b}]/|b|` on the even-indexed draws and
+/// evaluated on the odd-indexed ones. Every candidate density is bounded at
+/// `K = 6` like the trained grids. Arms:
+///
+/// * `vegas`: the channel's own trained grid (the baseline, `r = 1`);
+/// * `own`: the same estimator built from channel `j` alone, so the recipe is
+///   compared like for like;
+/// * `pool`: the `N_j`-weighted mixture of the trained grids (M4's pooled
+///   density);
+/// * `shared`: `q*` from every channel;
+///
+/// each applied to `τ` only, `y` only, or both.
+#[test]
+#[ignore]
+fn probe_shared_outer_tier_replay() {
+    let draws = env_usize("VG_EDGE_DRAWS", 200_000);
+    let k = crate::vegas::DEFAULT_MAX_BIN_WIDTH;
+    for row in rows() {
+        let inp = inputs(&row);
+        let pdf = inp.set.member(0).expect("PDF member 0");
+        let amps: Vec<BoundAmplitude<f64>> = inp
+            .groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &inp.evaluated))
+            .collect();
+        for seed in seeds() {
+            let clock = Instant::now();
+            let (integ, channels, total) = trained(&row, &inp, &amps, &pdf, seed);
+            let ndim = integ.channel_grid_ndim();
+            let scale_ndim = integ.scale_draw_ndim();
+            eprintln!(
+                "-- {} seed {seed}: σ̂ = {:.6e} pb, trained in {:.0} s",
+                row.name,
+                total.integral * GEV2_TO_PB,
+                clock.elapsed().as_secs_f64()
+            );
+            let scan_seed = seed ^ 0x5CA4;
+            let samples: Vec<Vec<ReplayPoint>> = channels
+                .iter()
+                .enumerate()
+                .map(|(j, ch)| {
+                    let mut rng = ChaCha8Rng::seed_from_u64(scan_seed);
+                    rng.set_stream(SCAN_STREAM_BASE + j as u64);
+                    let mut trailing =
+                        SubStream::from_stream(scan_seed, SCALE_DRAW_STREAM_BASE + j as u64);
+                    let mut u = vec![0.0f64; ndim + scale_ndim];
+                    (0..draws)
+                        .map(|_| {
+                            let jac = ch.grid.draw(&mut rng, &mut u[..ndim]);
+                            trailing.fill_uniforms(&mut u[ndim..]);
+                            let w = jac * integ.value_in_channel(j, &u);
+                            ReplayPoint {
+                                w: if w > 0.0 { w } else { 0.0 },
+                                x: [u[0], u[1]],
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            let n: Vec<f64> = channels.iter().map(|c| c.neval as f64).collect();
+            let n_total: f64 = n.iter().sum();
+            let own_q = |j: usize, d: usize, x: f64| grid_density(&channels[j].grid.xi()[d], x);
+
+            // G_j per dimension on the fine bins, from the even draws.
+            let g: Vec<[Vec<f64>; OUTER_NDIM]> = samples
+                .iter()
+                .enumerate()
+                .map(|(j, pts)| {
+                    let mut out = [vec![0.0; REPLAY_BINS], vec![0.0; REPLAY_BINS]];
+                    let m = pts.len().div_ceil(2) as f64;
+                    for p in pts.iter().step_by(2) {
+                        for (d, gd) in out.iter_mut().enumerate() {
+                            let b = ((p.x[d] * REPLAY_BINS as f64) as usize).min(REPLAY_BINS - 1);
+                            gd[b] += p.w * p.w * own_q(j, d, p.x[d]) * REPLAY_BINS as f64 / m;
+                        }
+                    }
+                    out
+                })
+                .collect();
+            let shared: Vec<FineDensity> = (0..OUTER_NDIM)
+                .map(|d| {
+                    let s: Vec<f64> = (0..REPLAY_BINS)
+                        .map(|b| (0..channels.len()).map(|j| g[j][d][b] / n[j]).sum())
+                        .collect();
+                    bounded_sqrt_density(&s, k)
+                })
+                .collect();
+            let own: Vec<Vec<FineDensity>> = (0..channels.len())
+                .map(|j| {
+                    (0..OUTER_NDIM)
+                        .map(|d| bounded_sqrt_density(&g[j][d], k))
+                        .collect()
+                })
+                .collect();
+            let pool = |d: usize, x: f64| -> f64 {
+                (0..channels.len())
+                    .map(|j| n[j] / n_total * own_q(j, d, x))
+                    .sum()
+            };
+
+            #[derive(Clone, Copy)]
+            enum Arm {
+                Vegas,
+                Own,
+                Pool,
+                Shared,
+            }
+            let arms = [
+                ("vegas", Arm::Vegas),
+                ("own", Arm::Own),
+                ("pool", Arm::Pool),
+                ("shared", Arm::Shared),
+            ];
+            let dimsets: [(&str, &[usize]); 3] = [("tau", &[0]), ("y", &[1]), ("both", &[0, 1])];
+            let mut row_var = std::collections::BTreeMap::<String, f64>::new();
+            for (j, pts) in samples.iter().enumerate() {
+                let eval: Vec<&ReplayPoint> = pts.iter().skip(1).step_by(2).collect();
+                let m = eval.len() as f64;
+                let mean = eval.iter().map(|p| p.w).sum::<f64>() / m;
+                for (dname, dims) in dimsets {
+                    for (aname, arm) in arms {
+                        if matches!(arm, Arm::Vegas) && dname != "both" {
+                            continue;
+                        }
+                        let mut m2 = 0.0;
+                        let mut m4 = 0.0;
+                        for p in &eval {
+                            let mut r = 1.0;
+                            for &d in dims {
+                                let qd = match arm {
+                                    Arm::Vegas => own_q(j, d, p.x[d]),
+                                    Arm::Own => fine_at(&own[j][d], p.x[d]),
+                                    Arm::Pool => pool(d, p.x[d]),
+                                    Arm::Shared => fine_at(&shared[d], p.x[d]),
+                                };
+                                r *= own_q(j, d, p.x[d]) / qd;
+                            }
+                            let t = p.w * p.w * r;
+                            m2 += t;
+                            m4 += t * t;
+                        }
+                        m2 /= m;
+                        let var = m2 - mean * mean;
+                        // The standard error of the second-moment estimate itself.
+                        let se = ((m4 / m - m2 * m2) / m).max(0.0).sqrt();
+                        let key = format!("{dname}/{aname}");
+                        *row_var.entry(key.clone()).or_default() += var / n[j];
+                        println!(
+                            "REPLAY\t{}\t{seed}\tch={j}\tNtot_over_Nj={:.3}\tarm={key}\tvar={var:.6e}\tm2_se={se:.3e}\tI={mean:.6e}",
+                            row.name,
+                            n_total / n[j],
+                        );
+                    }
+                }
+            }
+            let base = row_var["both/vegas"];
+            for (key, v) in &row_var {
+                println!(
+                    "REPLAYROW\t{}\t{seed}\tarm={key}\tvar_over_N={v:.6e}\tratio_to_vegas={:.4}",
+                    row.name,
+                    v / base
+                );
+            }
+        }
     }
 }
