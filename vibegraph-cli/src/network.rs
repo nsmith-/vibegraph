@@ -110,23 +110,30 @@ fn env_denies(value: Option<&std::ffi::OsStr>) -> bool {
     value.is_some()
 }
 
-/// A download the user is being asked to authorise, in the terms the pin
-/// records it: where it comes from, how big it is, and what it must hash to.
+/// A download the user is being asked to authorise: where it comes from, and,
+/// for a pinned archive, how big it is and what it must hash to. A download
+/// this build pins nothing for has neither to state in advance, and says so.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Download<'a> {
     /// What the bytes are, phrased for a sentence: `"PDF set NNPDF23_…"`.
     pub(crate) what: &'a str,
     pub(crate) url: &'a str,
-    pub(crate) bytes: u64,
-    pub(crate) sha256: &'a str,
-    /// Where the unpacked archive would land, which is also where a user who
+    pub(crate) bytes: Option<u64>,
+    pub(crate) sha256: Option<&'a str>,
+    /// Where the download would land, which is also where a user who
     /// downloads it themselves should put it.
     pub(crate) destination: &'a str,
 }
 
+/// What an unpinned download's prompt states in place of a size or checksum.
+const UNKNOWN: &str = "unknown (not pinned by this build)";
+
 impl Download<'_> {
-    fn megabytes(&self) -> f64 {
-        self.bytes as f64 / (1024.0 * 1024.0)
+    fn size(&self) -> String {
+        match self.bytes {
+            Some(bytes) => format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)),
+            None => UNKNOWN.to_string(),
+        }
     }
 
     /// The URL, size, checksum and destination, one per line. Shown before the
@@ -134,10 +141,10 @@ impl Download<'_> {
     /// let the binary fetch it has everything needed to do it themselves.
     pub(crate) fn terms(&self) -> String {
         format!(
-            "  source:  {}\n  size:    {:.1} MB\n  sha256:  {}\n  unpacks to: {}",
+            "  source:  {}\n  size:    {}\n  sha256:  {}\n  unpacks to: {}",
             self.url,
-            self.megabytes(),
-            self.sha256,
+            self.size(),
+            self.sha256.unwrap_or(UNKNOWN),
             self.destination
         )
     }
@@ -145,7 +152,10 @@ impl Download<'_> {
     /// The question in one line, for a display whose answer row has no room for
     /// the terms — those go into the scrollback as [`Download::notice`].
     pub(crate) fn question(&self) -> String {
-        format!("download {} ({:.1} MB)?", self.what, self.megabytes())
+        match self.bytes {
+            Some(_) => format!("download {} ({})?", self.what, self.size()),
+            None => format!("download {} (size unknown)?", self.what),
+        }
     }
 
     /// What precedes the question, line by line: that the asset is missing, and
@@ -274,10 +284,44 @@ mod tests {
     const PIN: Download<'static> = Download {
         what: "PDF set TestSet",
         url: "https://example.invalid/TestSet.tar.gz",
-        bytes: 27_625_668,
-        sha256: "abc123",
+        bytes: Some(27_625_668),
+        sha256: Some("abc123"),
         destination: "/tmp/vibegraph-home/pdf/TestSet",
     };
+
+    const UNPINNED: Download<'static> = Download {
+        what: "PDF set Other",
+        url: "https://example.invalid/Other.tar.gz",
+        bytes: None,
+        sha256: None,
+        destination: "/tmp/vibegraph-home/pdf/Other",
+    };
+
+    /// A download nothing pins states that its size and checksum are unknown,
+    /// in the prompt, the one-line question and the refusal alike, rather than
+    /// a number it does not have.
+    #[test]
+    fn an_unpinned_download_says_its_size_and_checksum_are_unknown() {
+        let mut input = "n\n".as_bytes();
+        let mut out: Vec<u8> = Vec::new();
+        let consent = decide(NetworkPolicy::Ask, &UNPINNED, true, &mut input, &mut out);
+        let Consent::Refused(msg) = consent else {
+            unreachable!()
+        };
+        let shown = String::from_utf8(out).unwrap();
+        for text in [&shown, &msg] {
+            assert!(
+                text.contains("  size:    unknown (not pinned by this build)")
+                    && text.contains("  sha256:  unknown (not pinned by this build)")
+                    && text.contains(UNPINNED.url),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            UNPINNED.question(),
+            "download PDF set Other (size unknown)?"
+        );
+    }
 
     fn run(policy: NetworkPolicy, interactive: bool, typed: &str) -> (Consent, String) {
         let mut input = typed.as_bytes();
@@ -397,7 +441,7 @@ mod tests {
         let Consent::Refused(msg) = consent else {
             unreachable!()
         };
-        for text in [PIN.url, PIN.sha256, PIN.destination, "26.3 MB"] {
+        for text in [PIN.url, PIN.sha256.unwrap(), PIN.destination, "26.3 MB"] {
             assert!(shown.contains(text), "prompt should state {text}: {shown}");
             assert!(msg.contains(text), "refusal should state {text}: {msg}");
         }
@@ -418,7 +462,7 @@ mod tests {
             notice.starts_with("PDF set TestSet is not available locally"),
             "{notice}"
         );
-        for text in [PIN.url, PIN.sha256, PIN.destination] {
+        for text in [PIN.url, PIN.sha256.unwrap(), PIN.destination] {
             assert!(
                 notice.contains(text),
                 "notice should state {text}: {notice}"

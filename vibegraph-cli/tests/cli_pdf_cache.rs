@@ -112,8 +112,10 @@ fn the_no_network_variable_refuses_at_any_value_in_the_binary_and_the_fetch_scri
     }
 }
 
-/// A set name this build has no pin for, with nothing on disk to satisfy it,
-/// fails with an actionable message instead of guessing at a URL.
+/// A set name this build has no pin for, with nothing on disk to satisfy it, is
+/// offered as a download from the LHAPDF server whose size and checksum the
+/// refusal says are unknown, rather than guessed at; with downloads refused,
+/// nothing is fetched or cached.
 #[test]
 fn an_unpinned_missing_set_is_refused_without_reaching_the_network() {
     let home = tempfile::tempdir().unwrap();
@@ -131,13 +133,92 @@ fn an_unpinned_missing_set_is_refused_without_reaching_the_network() {
         "an unpinned missing set must fail"
     );
     let stderr = common::stderr_of(&output);
+    for expected in [
+        "PDF set NoSuchSet_v99 is not available locally",
+        "https://lhapdfsets.web.cern.ch/current/NoSuchSet_v99.tar.gz",
+        "size:    unknown (not pinned by this build)",
+        "sha256:  unknown (not pinned by this build)",
+        "downloads are disabled by VIBEGRAPH_NO_NETWORK",
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "refusal should mention {expected:?}, got:\n{stderr}"
+        );
+    }
+    assert!(!home.path().join("pdf").join("NoSuchSet_v99").exists());
+}
+
+/// A run card naming an `lhaid` no pinned set holds, with no
+/// `pdfsets.index` anywhere and downloads refused, is refused naming the id and
+/// the index download it would take to look it up.
+#[test]
+fn an_unindexed_lhaid_is_refused_naming_the_id() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let card = cwd.path().join("run_card.dat");
+    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
+        .unwrap()
+        .replace("247000  = lhaid", "999990  = lhaid");
+    assert!(text.contains("999990  = lhaid"));
+    std::fs::write(&card, text).unwrap();
+
+    let output = common::vibegraph(cwd.path(), home.path())
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(&card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--neval", "2000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(!output.status.success());
+    let stderr = common::stderr_of(&output);
+    for expected in [
+        "no LHAPDF set index is available locally to look lhaid 999990 up in",
+        "https://lhapdfsets.web.cern.ch/current/pdfsets.index",
+        "downloads are disabled by VIBEGRAPH_NO_NETWORK",
+    ] {
+        assert!(
+            stderr.contains(expected),
+            "refusal should mention {expected:?}, got:\n{stderr}"
+        );
+    }
+}
+
+/// A proton run card on a built-in `pdlabel` is refused before any set is
+/// looked for, with the message that says to set `pdlabel = lhapdf`.
+#[test]
+fn a_built_in_pdlabel_is_refused_at_integrate() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let card = cwd.path().join("run_card.dat");
+    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
+        .unwrap()
+        .replace("lhapdf  = pdlabel", "nn23lo1  = pdlabel");
+    assert!(text.contains("nn23lo1  = pdlabel"));
+    std::fs::write(&card, text).unwrap();
+
+    let output = common::vibegraph(cwd.path(), home.path())
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(&card)
+        .arg("--out")
+        .arg(out.path())
+        .output()
+        .expect("spawn vibegraph");
+    assert!(!output.status.success());
+    let stderr = common::stderr_of(&output);
     assert!(
-        stderr.contains("no download pin"),
-        "error should say the set is unpinned, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("$LHAPDF_DATA_PATH"),
-        "error should name the variable that would fix it, got:\n{stderr}"
+        stderr.contains("run card sets pdlabel = nn23lo1, MadGraph's built-in parameterisation")
+            && stderr.contains("(247000 is NNPDF23_lo_as_0130_qed")
+            && !stderr.contains("not available locally"),
+        "{stderr}"
     );
 }
 

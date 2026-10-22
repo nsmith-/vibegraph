@@ -81,12 +81,10 @@ Options:
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --pdf-set <PDF_SET>
-          LHAPDF set name (proton beams only)
-          
-          [default: NNPDF23_lo_as_0130_qed]
+          LHAPDF set the run card's `lhaid` lies in (proton beams only); without it the set is looked up in LHAPDF's `pdfsets.index`. Either way the member is `lhaid` minus the set's `SetIndex`
 
       --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to the first `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is unset), then the `~/.vibegraph` cache (offering to download the set if absent)
+          Directory containing the PDF set's directory, searched ahead of `$LHAPDF_DATA_PATH` (`$LHAPATH` when that is unset), CVMFS and the `~/.vibegraph` cache, the last offering to download the set if absent
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse

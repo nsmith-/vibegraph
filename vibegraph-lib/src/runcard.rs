@@ -124,6 +124,47 @@ impl Def {
     }
 }
 
+/// The parton densities a run card reads ([`RunCard::pdf_choice`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfChoice {
+    /// Fixed-energy beams: no density is read.
+    None,
+    /// Proton beams under `pdlabel = lhapdf`: the LHAPDF id the card names.
+    Lhapdf { lhaid: i64 },
+}
+
+/// The `pdlabel`s that name one of MadGraph's built-in parameterisations, or a
+/// lepton or photon flux, rather than an LHAPDF grid (`pdfwrap.f`,
+/// `banner.py`'s `get_pdf_id`).
+const BUILTIN_PDLABELS: &[&str] = &[
+    "nn23lo1", "nn23lo", "nn23nlo", "cteq6l1", "cteq6_m", "cteq6_l", "cteq6_d", "none", "iww",
+    "eva", "edff", "chff",
+];
+
+/// A proton-beam run card whose `pdlabel` is not `lhapdf`.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{}", pdlabel_refusal(.label))]
+pub struct PdLabelRefused {
+    pub label: String,
+}
+
+fn pdlabel_refusal(label: &str) -> String {
+    let what = if BUILTIN_PDLABELS.contains(&label) {
+        ", MadGraph's built-in parameterisation"
+    } else {
+        ""
+    };
+    let hint = if label == "nn23lo1" {
+        " (247000 is NNPDF23_lo_as_0130_qed, the set nn23lo1 is fitted to)"
+    } else {
+        ""
+    };
+    format!(
+        "run card sets pdlabel = {label}{what}; vibegraph reads parton densities only from \
+         LHAPDF6 grids. Set pdlabel = lhapdf and lhaid to the set's LHAPDF id{hint}."
+    )
+}
+
 #[derive(Debug, Error)]
 pub enum RunCardError {
     #[error("run card i/o error on '{path}': {source}")]
@@ -455,10 +496,11 @@ impl RunCard {
     /// the LHAPDF id of the built-in set the label names, `0` for a label naming
     /// none.
     ///
-    /// It is read off `pdlabel` whatever the beams: a fixed-energy card keeps
-    /// the default `nn23lo1` and MadEvent 3.7.1 writes `247000` for it although
-    /// nothing reads a parton density (every such banked run does, `lhaid`
-    /// `230000` notwithstanding).
+    /// It is read off `pdlabel` whatever the beams: a fixed-energy card reads
+    /// no parton density, and a banked MadEvent 3.7.1 lepton-collider run on
+    /// MadGraph's default `nn23lo1` writes `247000`, `lhaid` `230000`
+    /// notwithstanding. The default card here, `lhapdf` at `247000`, writes the
+    /// same.
     pub fn pdfsup(&self) -> i32 {
         match self.pdlabel.as_str() {
             "lhapdf" => i32::try_from(self.lhaid).unwrap_or(0),
@@ -469,6 +511,23 @@ impl RunCard {
             "nn23lo1" => 247000,
             "nn23nlo" => 244800,
             _ => 0,
+        }
+    }
+
+    /// The parton densities this card reads: none on fixed-energy beams, where
+    /// the label is inert (`setrun.f` overwrites it with `none`), and on proton
+    /// beams the LHAPDF id `lhaid` under `pdlabel = lhapdf`. Every other label
+    /// is refused on proton beams: each names a parameterisation of MadGraph's
+    /// own, not an LHAPDF6 grid this crate can read.
+    pub fn pdf_choice(&self) -> Result<PdfChoice, PdLabelRefused> {
+        if self.beam_mode() == BeamMode::FixedEnergy {
+            return Ok(PdfChoice::None);
+        }
+        match self.pdlabel.as_str() {
+            "lhapdf" => Ok(PdfChoice::Lhapdf { lhaid: self.lhaid }),
+            label => Err(PdLabelRefused {
+                label: label.to_string(),
+            }),
         }
     }
 
@@ -814,10 +873,15 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("mass_ion1", Def::F(-1.0)),
     ("mass_ion2", Def::F(-1.0)),
     // ── PDF ──────────────────────────────────────────────────────────────
-    ("pdlabel", Def::S("nn23lo1")),
-    ("pdlabel1", Def::S("nn23lo1")),
-    ("pdlabel2", Def::S("nn23lo1")),
-    ("lhaid", Def::I(230000)),
+    // A departure from MadGraph's template (`nn23lo1`, `230000`): vibegraph
+    // reads parton densities only from LHAPDF6 grids and refuses every built-in
+    // `pdlabel` on proton beams, so a card that names no PDF reads LHAPDF set
+    // 247000, NNPDF23_lo_as_0130_qed, the fit `nn23lo1` parameterises. Its
+    // PDFSUP is 247000 under either spelling.
+    ("pdlabel", Def::S("lhapdf")),
+    ("pdlabel1", Def::S("lhapdf")),
+    ("pdlabel2", Def::S("lhapdf")),
+    ("lhaid", Def::I(247000)),
     // ── scales ───────────────────────────────────────────────────────────
     ("fixed_ren_scale", Def::B(false)),
     ("fixed_fac_scale", Def::B(false)),
@@ -1481,10 +1545,24 @@ mod tests {
         assert_eq!(rc.float("dsqrt_shatmax"), -1.0);
     }
 
+    /// The defaults that depart from MadGraph's on purpose, with MadGraph's own
+    /// value: the PDF rows (see the comment above them in [`PARAM_DEFAULTS`]).
+    fn departures() -> Vec<(&'static str, serde_json::Value)> {
+        let s = |v: &str| serde_json::Value::from(v);
+        vec![
+            ("pdlabel", s("nn23lo1")),
+            ("pdlabel1", s("nn23lo1")),
+            ("pdlabel2", s("nn23lo1")),
+            ("lhaid", serde_json::Value::from(230000)),
+        ]
+    }
+
     /// Transcription oracle: every default in [`PARAM_DEFAULTS`] must
     /// match `RunCardLO.default_setup` as dumped by
-    /// `validation/madgraph/dump_runcard_defaults.py`. Regenerate the JSON with
-    /// `pixi run -e madgraph dump-runcard-defaults` after a MadGraph bump.
+    /// `validation/madgraph/dump_runcard_defaults.py`, except the deliberate
+    /// departures, where the dump must still say what the departure is from.
+    /// Regenerate the JSON with `pixi run -e madgraph dump-runcard-defaults`
+    /// after a MadGraph bump.
     #[test]
     fn defaults_match_banner_py_dump() {
         let path = concat!(
@@ -1500,10 +1578,21 @@ mod tests {
         let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
         let obj = dump.as_object().expect("oracle is a JSON object");
 
+        let departures = departures();
         for (name, def) in PARAM_DEFAULTS {
             let Some(actual) = obj.get(*name) else {
                 panic!("parameter '{name}' absent from banner.py dump");
             };
+            if let Some((_, madgraph)) = departures.iter().find(|(n, _)| n == name) {
+                assert_eq!(actual, madgraph, "'{name}': MadGraph's default moved");
+                let ours = match def {
+                    Def::S(v) => serde_json::Value::from(*v),
+                    Def::I(i) => serde_json::Value::from(*i),
+                    _ => panic!("'{name}': a departure is a string or an integer"),
+                };
+                assert_ne!(&ours, madgraph, "'{name}' no longer departs from MadGraph");
+                continue;
+            }
             match def {
                 Def::F(x) => {
                     let a = actual
@@ -1631,5 +1720,64 @@ mod tests {
             247000
         );
         assert_eq!(card("  cteq6l1 = pdlabel\n").pdfsup(), 10042);
+        assert_eq!(RunCard::default().pdfsup(), 247000);
+    }
+
+    /// The default card names LHAPDF set 247000 on every PDF line, a
+    /// departure from MadGraph's `nn23lo1` / `230000`, so a proton run with no
+    /// card reads a density rather than being refused.
+    #[test]
+    fn the_default_card_reads_lhapdf_247000() {
+        let rc = RunCard::default();
+        assert_eq!((rc.pdlabel.as_str(), rc.lhaid), ("lhapdf", 247000));
+        for name in ["pdlabel1", "pdlabel2"] {
+            assert_eq!(rc.get(name).unwrap().as_str(), "lhapdf", "{name}");
+        }
+        assert_eq!(rc.pdf_choice(), Ok(PdfChoice::Lhapdf { lhaid: 247000 }));
+        assert_eq!(
+            RunCard::parse("  325300 = lhaid\n").unwrap().pdf_choice(),
+            Ok(PdfChoice::Lhapdf { lhaid: 325300 })
+        );
+    }
+
+    /// Every label but `lhapdf` is refused on proton beams with the message
+    /// that says to set `pdlabel = lhapdf`; the `247000` hint is `nn23lo1`'s
+    /// alone. On fixed-energy beams, and so on a decay's card, the same labels
+    /// read nothing and pass, and their `PDFSUP` is unchanged.
+    #[test]
+    fn every_label_but_lhapdf_is_refused_on_proton_beams() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        for label in BUILTIN_PDLABELS.iter().copied().chain(["ct14lo"]) {
+            let proton = card(&format!("  {label} = pdlabel\n"));
+            let why = proton.pdf_choice().unwrap_err().to_string();
+            assert!(
+                why.starts_with(&format!("run card sets pdlabel = {label}"))
+                    && why.contains("Set pdlabel = lhapdf and lhaid to the set's LHAPDF id"),
+                "{why}"
+            );
+            assert_eq!(why.contains("247000"), label == "nn23lo1", "{why}");
+            assert_eq!(
+                why.contains("MadGraph's built-in parameterisation"),
+                label != "ct14lo",
+                "{why}"
+            );
+
+            let fixed = card(&format!("  0 = lpp1\n  0 = lpp2\n  {label} = pdlabel\n"));
+            assert_eq!(fixed.pdf_choice(), Ok(PdfChoice::None), "{label}");
+            assert_eq!(fixed.pdfsup(), proton.pdfsup(), "{label}");
+            let decay = proton.for_decay(125.0);
+            assert_eq!(decay.pdf_choice(), Ok(PdfChoice::None), "{label}");
+            assert_eq!(decay.pdfsup(), proton.pdfsup(), "{label}");
+        }
+        assert_eq!(
+            card("  nn23lo1 = pdlabel\n")
+                .pdf_choice()
+                .unwrap_err()
+                .to_string(),
+            "run card sets pdlabel = nn23lo1, MadGraph's built-in parameterisation; vibegraph \
+             reads parton densities only from LHAPDF6 grids. Set pdlabel = lhapdf and lhaid to \
+             the set's LHAPDF id (247000 is NNPDF23_lo_as_0130_qed, the set nn23lo1 is fitted \
+             to)."
+        );
     }
 }

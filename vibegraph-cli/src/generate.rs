@@ -31,6 +31,7 @@ use vibegraph::generate::{
     check_model, check_process, generate, reads_parton_densities, GenerateAssets, GenerateError,
     GenerateOptions, Strategy as SampleStrategy,
 };
+use vibegraph::pdf::select::load_recorded;
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
@@ -38,8 +39,9 @@ use vibegraph::runcard::EventNorm;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
+use crate::assets;
 use crate::error::{err, CliError};
-use crate::integrate::{forbidden_onshell, load_pdf_set, process_string};
+use crate::integrate::{forbidden_onshell, process_string};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
@@ -368,27 +370,18 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let evaluated = EvaluatedModel::from_model(model.clone());
     let reweight = reweight_launches(args, &parsed, &model)?;
 
-    let set = if reads_parton_densities(&artifact, &parsed) {
-        Some(load_pdf_set(&artifact.pdf_set, None, network)?)
+    let pdf = if reads_parton_densities(&artifact, &parsed) {
+        let tiers = assets::pdf_tiers(None).map_err(err)?;
+        load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
+            .map_err(|e| err(e.to_string()))?
     } else {
         None
     };
-    let member = set
-        .as_ref()
-        .map(|set| {
-            set.member(artifact.pdf_member).map_err(|e| {
-                err(format!(
-                    "cannot load PDF member {} of {}: {e}",
-                    artifact.pdf_member, artifact.pdf_set
-                ))
-            })
-        })
-        .transpose()?;
     let assets = GenerateAssets {
         card: &parsed,
         model: &model,
         evaluated: &evaluated,
-        pdf: set.as_ref().zip(member.as_ref()),
+        pdf: pdf.as_ref().map(|p| (&p.set, &p.member)),
     };
     let options = GenerateOptions {
         seed,

@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
-use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
+use vibegraph::artifact::{ChannelKey, IntegrateArtifact, PdfInput};
 use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
@@ -180,7 +180,11 @@ fn integrate_at(seed: &str) -> Run {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    assert_eq!(artifact.pdf_set, PDF_SET);
+    assert!(
+        matches!(&artifact.inputs.pdf, PdfInput::Lhapdf { set, .. } if set == PDF_SET),
+        "{:?}",
+        artifact.inputs.pdf
+    );
     assert!(
         artifact.channels.iter().all(|c| matches!(
             c.key,

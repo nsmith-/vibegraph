@@ -31,7 +31,7 @@ use std::path::PathBuf;
 use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{
-    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
+    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
@@ -49,10 +49,11 @@ use vibegraph::multiplicity::{
     MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
+use vibegraph::pdf::select::{load_for_run_card, load_named, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::proton::{FlavorGroups, ProtonIntegrand};
-use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::runcard::{BeamMode, PdfChoice, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
@@ -64,12 +65,6 @@ use crate::error::{err, CliError};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
-use vibegraph::cache::pinned::DEFAULT_PDF_SET;
-
-/// PDF member index (central value; error members are not consumed at LO).
-pub(crate) const PDF_MEMBER: u32 = 0;
-/// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
-pub(crate) const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
@@ -349,14 +344,15 @@ pub(crate) struct IntegrateArgs {
     #[arg(long)]
     pub(crate) force: bool,
 
-    /// LHAPDF set name (proton beams only).
-    #[arg(long, default_value = DEFAULT_PDF_SET)]
-    pub(crate) pdf_set: String,
+    /// LHAPDF set the run card's `lhaid` lies in (proton beams only); without
+    /// it the set is looked up in LHAPDF's `pdfsets.index`. Either way the
+    /// member is `lhaid` minus the set's `SetIndex`.
+    #[arg(long)]
+    pub(crate) pdf_set: Option<String>,
 
-    /// Directory containing `<pdf-set>/`; defaults to the first
-    /// `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is
-    /// unset), then the `~/.vibegraph` cache (offering to download the set if
-    /// absent).
+    /// Directory containing the PDF set's directory, searched ahead of
+    /// `$LHAPDF_DATA_PATH` (`$LHAPATH` when that is unset), CVMFS and the
+    /// `~/.vibegraph` cache, the last offering to download the set if absent.
     #[arg(long)]
     pub(crate) pdf_dir: Option<PathBuf>,
 
@@ -492,22 +488,6 @@ impl IntegrateArgs {
     }
 }
 
-/// Locate and load a PDF set by name, which may mean asking to download it.
-pub(crate) fn load_pdf_set(
-    name: &str,
-    pdf_dir: Option<&PathBuf>,
-    network: NetworkPolicy,
-) -> Result<PdfSet, CliError> {
-    let set_dir =
-        assets::resolve_pdf_set_dir(name, pdf_dir.map(|p| p.as_path()), network).map_err(err)?;
-    PdfSet::load(&set_dir, name).map_err(|e| {
-        err(format!(
-            "cannot load PDF set {name} from {}: {e}",
-            set_dir.display()
-        ))
-    })
-}
-
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
 /// removed. A card that activates a cut no stage applies is refused here, ahead
@@ -568,7 +548,8 @@ struct RunOutput {
     process: String,
     /// What the integral measures: a cross section, or a decay's partial width.
     observable: Observable,
-    pdf_set: String,
+    /// The parton densities the run read.
+    pdf: PdfInput,
     mu_f: f64,
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
@@ -680,7 +661,12 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     info!("model:    {} ({})", model_id.label(), model_id.digest);
     match observable {
         Observable::CrossSection => {
-            info!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
+            if let PdfInput::Lhapdf {
+                lhaid, set, member, ..
+            } = &output.pdf
+            {
+                info!("PDF set:  {set} (member {member}, lhaid {lhaid})");
+            }
             info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
         }
         Observable::PartialWidth => {
@@ -760,8 +746,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         process: output.process,
         proc_card,
         model: model_id,
-        pdf_set: output.pdf_set,
-        pdf_member: PDF_MEMBER,
+        inputs: RunInputs::with_pdf(output.pdf),
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
@@ -804,13 +789,30 @@ fn integrate_proton(
     seed: u64,
     network: NetworkPolicy,
 ) -> Result<RunOutput, CliError> {
-    let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
-    let pdf = set
-        .member(PDF_MEMBER)
-        .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
+    let tiers = assets::pdf_tiers(args.pdf_dir.as_deref()).map_err(err)?;
+    let fetch = assets::pdf_fetch(network);
+    let loaded = match &args.pdf_set {
+        Some(name) => {
+            let lhaid = match rc.pdf_choice().map_err(|e| err(e.to_string()))? {
+                PdfChoice::Lhapdf { lhaid } => lhaid,
+                PdfChoice::None => unreachable!("integrate_proton runs on proton beams"),
+            };
+            load_named(lhaid, name, &tiers, &fetch)
+        }
+        None => load_for_run_card(rc, &tiers, &fetch)
+            .map(|loaded| loaded.expect("a proton-beam card reads a density or is refused")),
+    }
+    .map_err(|e| err(e.to_string()))?;
+    let LoadedPdf {
+        set,
+        member,
+        input,
+        tier,
+    } = loaded;
+    tracing::debug!(tier = tier.name(), dir = %set.dir().display(), "PDF set located");
 
     integrate_hadronic(
-        args, parsed, model, evaluated, rc, &set, &pdf, process, seed,
+        args, parsed, model, evaluated, rc, &set, &member, input, process, seed,
     )
 }
 
@@ -849,6 +851,7 @@ fn integrate_hadronic(
     rc: &RunCard,
     set: &PdfSet,
     pdf: &PdfMember,
+    pdf_input: PdfInput,
     process: String,
     seed: u64,
 ) -> Result<RunOutput, CliError> {
@@ -915,7 +918,7 @@ fn integrate_hadronic(
     Ok(RunOutput {
         process,
         observable: Observable::CrossSection,
-        pdf_set: args.pdf_set.clone(),
+        pdf: pdf_input,
         mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
         channels,
@@ -1025,7 +1028,7 @@ fn integrate_fixed_energy(
     Ok(RunOutput {
         process,
         observable: initial.observable(),
-        pdf_set: NO_PDF.to_string(),
+        pdf: PdfInput::None,
         // No parton distributions, so no factorisation scale enters the integral.
         mu_f: 0.0,
         sqrt_s,

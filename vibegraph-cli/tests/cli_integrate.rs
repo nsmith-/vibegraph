@@ -20,7 +20,7 @@ use common::validation_dir;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::artifact::{FileDigest, IntegrateArtifact, PdfInput};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
@@ -105,7 +105,27 @@ fn check_run(test: &str, run: &str, run_card: &str) {
 
     // (2) Metadata round-trips through the artifact.
     assert_eq!(artifact.process, "p p > e+ e-");
-    assert_eq!(artifact.pdf_set, PDF_SET);
+    // The record is the card's `lhaid`, the set and member it names, and the
+    // SHA-256 of the two files on disk the run parsed.
+    let sha = |name: &str| FileDigest {
+        name: name.to_string(),
+        sha256: vibegraph::ufo::identity::digest_bytes(
+            &std::fs::read(pdf_dir().join(PDF_SET).join(name)).unwrap(),
+        ),
+    };
+    assert_eq!(
+        artifact.inputs.pdf,
+        PdfInput::Lhapdf {
+            lhaid: 247000,
+            set: PDF_SET.to_string(),
+            member: 0,
+            files: vec![
+                sha(&format!("{PDF_SET}.info")),
+                sha(&format!("{PDF_SET}_0000.dat")),
+            ],
+        }
+    );
+    assert!(artifact.inputs.params.is_empty());
     assert_eq!(artifact.sqrt_s_had, 13000.0);
     assert_eq!(artifact.mu_f, 91.1880);
 
