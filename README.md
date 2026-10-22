@@ -133,8 +133,7 @@ EOF
 vibegraph integrate proc_card.dat --run-card run_card.dat --out ee_to_mumu/
 #   → σ ± err (pb) on stdout, the adapted grids in ee_to_mumu/grid.bin.zst
 
-vibegraph generate ee_to_mumu/grid.bin.zst proc_card.dat --run-card run_card.dat \
-  --nevents 10000 --seed 1 -o events.lhe
+vibegraph generate ee_to_mumu/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe
 
 vibegraph check-events events.lhe
 ```
@@ -174,7 +173,7 @@ LHAPDF6 grid reader.
 echo 'generate p p > l+ l- j' > proc_card.dat
 
 vibegraph integrate proc_card.dat --out llj/
-vibegraph generate llj/grid.bin.zst proc_card.dat --nevents 10000 --seed 1 -o events.lhe
+vibegraph generate llj/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe
 vibegraph check-events events.lhe
 ```
 

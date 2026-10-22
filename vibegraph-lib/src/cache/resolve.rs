@@ -1,14 +1,18 @@
 //! Resolution order for a named cache asset, independent of how — or whether
 //! — the asset was ever fetched.
 //!
-//! The order is fixed and the same for both asset kinds: an explicit
-//! `--flag` path, then the kind's environment variable, then the
-//! `~/.vibegraph` cache, then a repo-local dev fallback (`validation/pdf`,
-//! for a checked-out dev tree that already has data fetched). The first two
-//! steps are trusted unconditionally — a wrong explicit path surfaces as a
-//! normal "asset not found" error one level up, not a silent fallthrough to
-//! the next step. The last two steps are existence-probed so the order can
-//! actually choose between them.
+//! A UFO model ([`locate`]) is found through an explicit `--flag` path, then
+//! its environment variable, then the `~/.vibegraph` cache, then a dev
+//! fallback directory. The first two steps are trusted unconditionally — a
+//! wrong explicit path surfaces as a normal "asset not found" error one level
+//! up, not a silent fallthrough to the next step. The last two steps are
+//! existence-probed so the order can actually choose between them.
+//!
+//! A PDF set ([`locate_pdf_set`]) is found as LHAPDF finds one: an explicit
+//! `--flag` path (trusted, as above), then each entry of the LHAPDF data path
+//! ([`pdf_data_path`]) in order, then the cache. A data-path entry that lacks
+//! the set is passed over, so a list naming several installations resolves
+//! the first that holds it. Nothing is relative to the working directory.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -20,11 +24,13 @@ use super::AssetKind;
 pub enum Source {
     /// An explicit `--flag` path.
     Flag,
-    /// The kind's environment variable.
+    /// The kind's environment variable (a UFO model's one directory).
     Env,
+    /// An entry of the LHAPDF data path ([`pdf_data_path`]).
+    DataPath,
     /// `<cache_root>/<kind>/<name>/`.
     Cache,
-    /// The repo-local dev fallback directory.
+    /// The dev fallback directory.
     DevFallback,
 }
 
@@ -40,7 +46,7 @@ pub struct Located {
 
 /// Resolve `name`'s directory under `kind`, walking the precedence order
 /// above. `flag` and `env` are base directories containing `<name>/` (the
-/// shape of `--pdf-dir` and `VIBEGRAPH_PDF_DIR`); `cache_root` is
+/// shape of `--ufo-dir` and `VIBEGRAPH_UFO_DIR`); `cache_root` is
 /// the `~/.vibegraph` directory itself (its `<kind>/` subdirectory is
 /// appended here); `dev_fallback`, when given, is also a base directory.
 ///
@@ -98,32 +104,62 @@ pub fn locate(
     }
 }
 
-/// [`locate`] using the process's real `VIBEGRAPH_UFO_DIR`/`VIBEGRAPH_PDF_DIR`
-/// environment variable, so the boilerplate of reading it exists once. The
-/// cache root still has to be supplied explicitly — `None` falls back to
-/// [`super::default_cache_root`], `Some` overrides it (the injection point a
-/// caller's own tests need); this function reads the environment regardless,
-/// so it is not exercised by this crate's own tests, only [`locate`] is.
-pub fn locate_from_env(
-    kind: AssetKind,
+/// The LHAPDF data path, parsed as LHAPDF 6.5.3 parses it (`Paths.cc`,
+/// `paths()`): `lhapdf_data_path` (the value of `$LHAPDF_DATA_PATH`) when it is
+/// set, even to the empty string, and `lhapath` (`$LHAPATH`) only when it is
+/// not; the value is split as a path list (`:` on Unix) and empty entries are
+/// skipped.
+///
+/// LHAPDF also appends its install prefix unless the value ends in `::`. There
+/// is no LHAPDF installation here to append, so neither the prefix nor the
+/// `::` marker means anything.
+pub fn pdf_data_path(lhapdf_data_path: Option<&OsStr>, lhapath: Option<&OsStr>) -> Vec<PathBuf> {
+    let Some(value) = lhapdf_data_path.or(lhapath) else {
+        return Vec::new();
+    };
+    std::env::split_paths(value)
+        .filter(|entry| !entry.as_os_str().is_empty())
+        .collect()
+}
+
+/// Resolve PDF set `name`'s directory: `flag/<name>/` when a flag path is
+/// given, trusted whether or not it exists; else the first `<entry>/<name>/`
+/// that exists, over `data_path` in order; else `<cache_root>/pdf/<name>/`,
+/// marked found or not, so a caller that goes on to fetch the set has its
+/// write target.
+pub fn locate_pdf_set(
     name: &str,
     flag: Option<&Path>,
-    cache_root_override: Option<&Path>,
-    dev_fallback: Option<&Path>,
-) -> Option<Located> {
-    let cache_root = match cache_root_override {
-        Some(p) => p.to_path_buf(),
-        None => super::default_cache_root()?,
-    };
-    let env = std::env::var_os(kind.env_var());
-    Some(locate(
-        kind,
-        name,
-        flag,
-        env.as_deref(),
-        &cache_root,
-        dev_fallback,
-    ))
+    data_path: &[PathBuf],
+    cache_root: &Path,
+) -> Located {
+    if let Some(flag) = flag {
+        let dir = flag.join(name);
+        let found = dir.is_dir();
+        return Located {
+            dir,
+            source: Source::Flag,
+            found,
+        };
+    }
+    if let Some(dir) = data_path
+        .iter()
+        .map(|entry| entry.join(name))
+        .find(|dir| dir.is_dir())
+    {
+        return Located {
+            dir,
+            source: Source::DataPath,
+            found: true,
+        };
+    }
+    let dir = AssetKind::Pdf.entry_dir(cache_root, name);
+    let found = dir.is_dir();
+    Located {
+        dir,
+        source: Source::Cache,
+        found,
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +190,7 @@ mod tests {
         let cache_root = scratch("flag-cache-root");
         let dev = scratch("flag-dev");
         let expected = make_entry(&flag_base, "Foo");
-        make_entry(&cache_root.join("pdf"), "Foo");
+        make_entry(&cache_root.join("ufo"), "Foo");
         make_entry(&dev, "Foo");
 
         let env_base = scratch("flag-env-base");
@@ -162,7 +198,7 @@ mod tests {
         let env_os = env_base.as_os_str();
 
         let got = locate(
-            AssetKind::Pdf,
+            AssetKind::Ufo,
             "Foo",
             Some(&flag_base),
             Some(env_os),
@@ -181,11 +217,11 @@ mod tests {
         let cache_root = scratch("env-cache-root");
         let dev = scratch("env-dev");
         let expected = make_entry(&env_base, "Foo");
-        make_entry(&cache_root.join("pdf"), "Foo");
+        make_entry(&cache_root.join("ufo"), "Foo");
         make_entry(&dev, "Foo");
 
         let got = locate(
-            AssetKind::Pdf,
+            AssetKind::Ufo,
             "Foo",
             None,
             Some(env_base.as_os_str()),
@@ -227,7 +263,7 @@ mod tests {
         let expected = make_entry(&dev, "NNPDF23_lo_as_0130_qed");
 
         let got = locate(
-            AssetKind::Pdf,
+            AssetKind::Ufo,
             "NNPDF23_lo_as_0130_qed",
             None,
             None,
@@ -248,7 +284,7 @@ mod tests {
         let dev = scratch("nothing-dev");
 
         let got = locate(
-            AssetKind::Pdf,
+            AssetKind::Ufo,
             "NoSuchSet",
             None,
             None,
@@ -257,7 +293,7 @@ mod tests {
         );
         assert_eq!(got.source, Source::Cache);
         assert!(!got.found);
-        assert_eq!(got.dir, cache_root.join("pdf").join("NoSuchSet"));
+        assert_eq!(got.dir, cache_root.join("ufo").join("NoSuchSet"));
     }
 
     /// A flag/env path that does not actually exist on disk is still
@@ -292,5 +328,76 @@ mod tests {
         let got = locate(AssetKind::Ufo, "Foo", None, None, &cache_root, None);
         assert_eq!(got.source, Source::Cache);
         assert!(!got.found);
+    }
+
+    fn os(text: &str) -> std::ffi::OsString {
+        std::ffi::OsString::from(text)
+    }
+
+    /// The variable is a `:` list, read in order, with empty entries skipped.
+    #[test]
+    fn the_data_path_is_a_colon_list_without_empty_entries() {
+        let value = os("/a/one::/b/two:");
+        assert_eq!(
+            pdf_data_path(Some(&value), None),
+            vec![PathBuf::from("/a/one"), PathBuf::from("/b/two")]
+        );
+    }
+
+    /// `LHAPATH` is read only when `LHAPDF_DATA_PATH` is unset; set to the
+    /// empty string, `LHAPDF_DATA_PATH` still shadows it, as in LHAPDF.
+    #[test]
+    fn lhapath_is_read_only_when_lhapdf_data_path_is_unset() {
+        let lhapath = os("/from/lhapath");
+        assert_eq!(
+            pdf_data_path(None, Some(&lhapath)),
+            vec![PathBuf::from("/from/lhapath")]
+        );
+        let data = os("/from/data");
+        assert_eq!(
+            pdf_data_path(Some(&data), Some(&lhapath)),
+            vec![PathBuf::from("/from/data")]
+        );
+        let empty = os("");
+        assert!(pdf_data_path(Some(&empty), Some(&lhapath)).is_empty());
+        assert!(pdf_data_path(None, None).is_empty());
+    }
+
+    /// The first data-path entry holding the set wins; an entry without it is
+    /// passed over rather than refused, and the flag outranks the whole list.
+    #[test]
+    fn the_first_data_path_entry_holding_the_set_wins() {
+        let empty = scratch("dp-empty");
+        let first = scratch("dp-first");
+        let second = scratch("dp-second");
+        let cache_root = scratch("dp-cache");
+        make_entry(&cache_root.join("pdf"), "Set");
+        let want = make_entry(&first, "Set");
+        make_entry(&second, "Set");
+        let path = [empty.clone(), first.clone(), second.clone()];
+
+        let got = locate_pdf_set("Set", None, &path, &cache_root);
+        assert_eq!((got.source, got.found), (Source::DataPath, true));
+        assert_eq!(got.dir, want);
+
+        let flag = scratch("dp-flag");
+        let got = locate_pdf_set("Set", Some(&flag), &path, &cache_root);
+        assert_eq!((got.source, got.found), (Source::Flag, false));
+        assert_eq!(got.dir, flag.join("Set"));
+    }
+
+    /// A data path that lacks the set falls through to the cache, found or not.
+    #[test]
+    fn a_data_path_without_the_set_falls_through_to_the_cache() {
+        let empty = scratch("dp-miss");
+        let cache_root = scratch("dp-miss-cache");
+        let got = locate_pdf_set("Set", None, std::slice::from_ref(&empty), &cache_root);
+        assert_eq!((got.source, got.found), (Source::Cache, false));
+        assert_eq!(got.dir, cache_root.join("pdf").join("Set"));
+
+        let cached = make_entry(&cache_root.join("pdf"), "Set");
+        let got = locate_pdf_set("Set", None, &[empty], &cache_root);
+        assert_eq!((got.source, got.found), (Source::Cache, true));
+        assert_eq!(got.dir, cached);
     }
 }

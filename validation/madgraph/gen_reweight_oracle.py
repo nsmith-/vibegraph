@@ -158,6 +158,15 @@ def run(cmd, **kw):
     return r
 
 
+def vibegraph_env():
+    """The environment vibegraph runs in: the PDF set found through the LHAPDF
+    data path at validation/pdf, and nothing else that could resolve one."""
+    env = dict(os.environ, LHAPDF_DATA_PATH=os.path.join(ROOT, "validation", "pdf"))
+    env.pop("LHAPATH", None)
+    env.pop("VIBEGRAPH_PDF_DIR", None)
+    return env
+
+
 def vibegraph_model(row):
     """The `import model` argument vibegraph reads, and its `--ufo-dir` flags."""
     if row["model"] == "sm":
@@ -198,16 +207,15 @@ def vibegraph_events(row, work, binary, seed):
         for hid, lines in row["hypotheses"]:
             f.write(f"launch --rwgt_name={hid}\n" + "".join(f" {l}\n" for l in lines))
     run_card = os.path.join(ROOT, row["run_card"])
-    pdf = ["--pdf-dir", os.path.join(ROOT, "validation", "pdf")]
     grid = os.path.join(work, "integrate")
     neval, niter = row["budget"]
-    run([binary, "integrate", proc, *ufo, "--run-card", run_card, "--out", grid, *pdf,
-         "--fixed-budget", "--neval", neval, "--niter", niter, "--seed", seed])
+    run([binary, "integrate", proc, *ufo, "--run-card", run_card, "--out", grid,
+         "--fixed-budget", "--neval", neval, "--niter", niter, "--seed", seed], env=vibegraph_env())
     lhe = os.path.join(work, "events.lhe")
     extra = ["--reweight-couplings", row["couplings"]] if row["couplings"] else []
-    log = run([binary, "generate", os.path.join(grid, "grid.bin.zst"), proc, *ufo, "--run-card", run_card,
-               *pdf, "--seed", seed, "--nevents", str(row["nevents"]), "--reweight-card", card,
-               *extra, "-o", lhe, "--force"]).stderr
+    log = run([binary, "generate", os.path.join(grid, "grid.bin.zst"), *ufo,
+               "--seed", seed, "--nevents", str(row["nevents"]), "--reweight-card", card,
+               *extra, "-o", lhe, "--force"], env=vibegraph_env()).stderr
     for line in log.splitlines():
         if "reweight:" in line:
             print("   ", line.strip())

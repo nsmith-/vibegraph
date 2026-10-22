@@ -9,7 +9,6 @@ verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L150-L346", title: "artifact.rs: ChannelKey, ChannelSampler, ChannelGrid, IntegrateArtifact"}
   - {id: integrate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/integrate.rs#L585-L710", title: "integrate.rs: building and writing the artifact"}
-  - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L257-L433", title: "generate.rs: card_mismatches, pdf_mismatches and version guards"}
   - {id: generate-keys, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L1460-L1500", title: "generate.rs: check_channel_keys"}
   - {id: n18-h8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L871-L911", title: "Note 18 §5 H8: the first integrate CLI and artifact layout"}
   - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23: model identity in the artifact"}
@@ -20,9 +19,10 @@ sources:
 ---
 `vibegraph integrate` writes one file, `<out>/grid.bin.zst` (`--out` defaults
 to the current directory). It holds the trained VEGAS grids plus every input
-that produced them, so that `vibegraph generate` can refuse a mismatched input
-instead of silently sampling against the wrong grid. The type is
-`IntegrateArtifact` in `vibegraph-lib/src/artifact.rs`, at `FORMAT_VERSION = 11`.
+that produced them, so that `vibegraph generate` needs no card of its own and
+can refuse assets that changed instead of silently sampling against the wrong
+grid. The type is `IntegrateArtifact` in `vibegraph-lib/src/artifact.rs`, at
+`FORMAT_VERSION = 13`, which is also the oldest version read.
 Its encoding and version rules are in
 [artifact format versioning](artifact-format-versioning.md). Replay and event
 writing are in [generate](../events/generate.md).
@@ -42,15 +42,17 @@ writing are in [generate](../events/generate.md).
 
 | Field | Meaning |
 |---|---|
-| `format_version` | The oldest version whose schema holds every channel key this file banks (`version_for`): 9, 10 or 11. |
+| `format_version` | `FORMAT_VERSION` (13); every artifact is written at the current version. |
 | `process` | The canonical process string, every process line with its number. |
+| `proc_card` | The proc card's text, verbatim, which `generate` re-parses. |
 | `model` | `ModelIdentity { name, restrict, digest }`: the `import model` label and a SHA-256 of the restricted model. |
 | `pdf_set`, `pdf_member` | The PDF set name (`"none"` on fixed-energy runs) and member (always 0). |
 | `mu_f` | The fixed factorisation scale when both beams share one constant, else `0`. |
 | `sqrt_s_had` | The collision energy. |
 | `neval` | Evaluations per iteration as requested; each channel's actual share is in its own `neval`. |
 | `niter` | Iterations the run actually made (a convergence stop can end early). |
-| `seed`, `run_card` | The seed, and the whole resolved run card. |
+| `seed`, `run_card` | The integration seed actually used, and the resolved run card narrowed to its integrate fields (`RunCard::split`). |
+| `generate` | `GenerateSettings`: the run card's generate fields (`nevents`, `event_norm`, the systematics request, `clusinfo`), recorded for `generate` to replay. |
 | `channels` | One `ChannelGrid` per phase-space channel, in the combiner's order. |
 | `sigma_pb`, `sigma_err_pb`, `chi2_per_dof` | `Σⱼ σⱼ`, the channel errors in quadrature, and χ²/dof. **On a 1→n decay run this field holds the partial width in GeV**, not a cross section in pb. |
 | `maps` | `MapChoices` (split angle, τ map, rung order): every map choice the run settled. |
@@ -95,23 +97,20 @@ every such run used.[^n37-maps]
 
 ## What `generate` checks before replaying
 
-1. **The version** (rules in [artifact format versioning](artifact-format-versioning.md)).
-   Three guards follow it. A version below 7 on a clustering-scale card is
-   refused, because its `sigma_pb` used another scale rule. A version below 10
-   on a card summing several multiplicities is refused. A version below 11 is
-   refused on a process whose channels merge (`refuse_unmerged_grids`).
-2. **The model, process and run card** (`card_mismatches`), all listed together
-   in one refusal.
-   - The model label is compared first. If the labels agree, the digest is
-     compared.
-   - The process string must match exactly.
-   - Every run-card parameter is compared, including ones no physics reads.
-     Floats are compared for equality, because both sides come from the same
-     parser. The card is a fingerprint of the run, and deciding case by case
-     which differences are harmless is how a mismatched grid gets sampled anyway.
-3. **The PDF set and member** (`pdf_mismatches`). The run card pins an LHAPDF
-   id, but the set actually loaded is named by a flag, so the two can disagree.
-4. **The channels** (`check_channel_keys`). They are compared position by
+`generate` takes no card, so nothing it is given can mismatch the record;
+what it checks are the assets it reads again
+([events/generate](../events/generate.md) lists the steps).
+
+1. **The version.** Below 13 is refused by `UnsupportedVersion`, which says
+   to regenerate with `vibegraph integrate` (rules in
+   [artifact format versioning](artifact-format-versioning.md)).
+2. **The process.** The recorded `proc_card` is re-parsed and its process
+   string must equal `process` (`vibegraph::generate::check_process`).
+3. **The model.** The model the card's `import` resolves to must have the
+   recorded digest (`check_model`), the interned SM included.
+4. **The PDF set.** The recorded `pdf_set` is located by name; no checksum is
+   recorded yet, so a set that changed under its name is not seen.
+5. **The channels** (`check_channel_keys`). They are compared position by
    position: the count, each key, and each grid's dimension. The same keys in
    a different order would install every grid on the wrong channel, and that
    samples a plausible wrong distribution. Comparing counts or key sets would
@@ -181,4 +180,4 @@ would supply the cache's input. It gets its own concept beside this one.
 [^n23-cache]: Note 23, "The compiled-program cache slot"; the same text is the doc comment on `IntegrateArtifact`.
 [^n24-p3]: Note 24, P2d "What P3 must know" items 2–3, and P3's schema section.
 [^n37-maps]: Note 37 §5.
-[^generate-keys]: `vibegraph-cli/src/generate.rs`, `check_channel_keys`.
+[^generate-keys]: `vibegraph-lib/src/generate.rs`, `check_channel_keys`.

@@ -1,11 +1,10 @@
 //! `vibegraph integrate` refusing to resolve a PDF set it cannot legitimately
 //! obtain.
 //!
-//! Every test runs the binary with its working directory set to an empty
-//! temporary directory, so the repo-local `validation/pdf` dev fallback cannot
-//! resolve — what a user running an installed binary sees. That is what lets
-//! these tests tell a working resolution path from a dev fallback masking a
-//! broken one.
+//! Every test runs the binary with its working directory set to a temporary
+//! directory and with `$LHAPDF_DATA_PATH`, `$LHAPATH` and `$VIBEGRAPH_PDF_DIR`
+//! removed unless the test sets one, so nothing resolves a set but the route
+//! under test — what a user running an installed binary sees.
 //!
 //! Nothing here reaches the network or the real `~/.vibegraph`: the cache root
 //! is redirected with `$VIBEGRAPH_HOME` and downloads are refused outright with
@@ -137,8 +136,136 @@ fn an_unpinned_missing_set_is_refused_without_reaching_the_network() {
         "error should say the set is unpinned, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("--pdf-dir"),
-        "error should name the flag that would fix it, got:\n{stderr}"
+        stderr.contains("$LHAPDF_DATA_PATH"),
+        "error should name the variable that would fix it, got:\n{stderr}"
+    );
+}
+
+/// A directory holding a placeholder `<DEFAULT_PDF_SET>/` that no parser
+/// accepts. A run that resolves the set there fails loading it, naming the
+/// directory, which is how a test tells where a set was resolved without
+/// needing a real one.
+fn placeholder_set(base: &Path) -> std::path::PathBuf {
+    let dir = base.join(DEFAULT_PDF_SET);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{DEFAULT_PDF_SET}.info")),
+        "not an LHAPDF info file\n",
+    )
+    .unwrap();
+    dir
+}
+
+/// The message of a run that resolved the set at `dir` and could not load it.
+fn loaded_from(dir: &Path) -> String {
+    format!(
+        "cannot load PDF set {DEFAULT_PDF_SET} from {}",
+        dir.display()
+    )
+}
+
+/// `integrate` on the Drell-Yan cards from `cwd`, downloads refused, with
+/// `env` set on top of the bare environment.
+fn integrate_with_env(cwd: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (bool, String) {
+    let home = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let mut cmd = common::vibegraph(cwd, home.path());
+    cmd.env("VIBEGRAPH_NO_NETWORK", "1")
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(validation_dir().join("dy13_default_run_card.dat"))
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"]);
+    for (name, value) in env {
+        cmd.env(name, value);
+    }
+    let output = cmd.output().expect("spawn vibegraph");
+    (output.status.success(), common::stderr_of(&output))
+}
+
+/// `$LHAPDF_DATA_PATH` is a `:` list read in order: an empty entry and an
+/// entry without the set are passed over, and the first entry holding it is
+/// where the set is read from.
+#[test]
+fn lhapdf_data_path_resolves_the_first_entry_holding_the_set() {
+    let cwd = tempfile::tempdir().unwrap();
+    let without = tempfile::tempdir().unwrap();
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let want = placeholder_set(first.path());
+    placeholder_set(second.path());
+    let value =
+        std::env::join_paths([without.path(), Path::new(""), first.path(), second.path()]).unwrap();
+    let (ok, stderr) = integrate_with_env(cwd.path(), &[("LHAPDF_DATA_PATH", &value)]);
+    assert!(!ok, "a placeholder set loaded:\n{stderr}");
+    assert!(stderr.contains(&loaded_from(&want)), "{stderr}");
+}
+
+/// `$LHAPATH` is read when `$LHAPDF_DATA_PATH` is unset, and not when it is
+/// set, even to the empty string, as LHAPDF reads them.
+#[test]
+fn lhapath_is_read_only_when_lhapdf_data_path_is_unset() {
+    let cwd = tempfile::tempdir().unwrap();
+    let base = tempfile::tempdir().unwrap();
+    let want = placeholder_set(base.path());
+    let lhapath = base.path().as_os_str();
+
+    let (ok, stderr) = integrate_with_env(cwd.path(), &[("LHAPATH", lhapath)]);
+    assert!(!ok && stderr.contains(&loaded_from(&want)), "{stderr}");
+
+    let empty = std::ffi::OsString::new();
+    let (ok, stderr) = integrate_with_env(
+        cwd.path(),
+        &[("LHAPATH", lhapath), ("LHAPDF_DATA_PATH", &empty)],
+    );
+    assert!(!ok, "{stderr}");
+    assert!(
+        !stderr.contains("cannot load PDF set")
+            && stderr.contains("downloads are disabled by VIBEGRAPH_NO_NETWORK"),
+        "an empty $LHAPDF_DATA_PATH did not shadow $LHAPATH:\n{stderr}"
+    );
+}
+
+/// `$VIBEGRAPH_PDF_DIR` is retired: a set reachable only through it is not
+/// resolved, and the run warns once, naming `$LHAPDF_DATA_PATH`.
+#[test]
+fn vibegraph_pdf_dir_resolves_nothing_and_draws_a_warning() {
+    let cwd = tempfile::tempdir().unwrap();
+    let base = tempfile::tempdir().unwrap();
+    placeholder_set(base.path());
+    let (ok, stderr) = integrate_with_env(
+        cwd.path(),
+        &[("VIBEGRAPH_PDF_DIR", base.path().as_os_str())],
+    );
+    assert!(!ok, "{stderr}");
+    assert!(
+        !stderr.contains("cannot load PDF set")
+            && stderr.contains("downloads are disabled by VIBEGRAPH_NO_NETWORK"),
+        "$VIBEGRAPH_PDF_DIR still resolved the set:\n{stderr}"
+    );
+    let warnings: Vec<&str> = stderr
+        .lines()
+        .filter(|l| l.contains("$VIBEGRAPH_PDF_DIR is set"))
+        .collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(warnings[0].contains("$LHAPDF_DATA_PATH"), "{stderr}");
+}
+
+/// A checkout holding `validation/pdf/<set>/`, run from its root with no
+/// variable set, does not resolve the set there: nothing is relative to the
+/// working directory, so the run reaches the download and refuses it.
+#[test]
+fn a_checkouts_validation_pdf_is_not_a_fallback() {
+    let cwd = tempfile::tempdir().unwrap();
+    placeholder_set(&cwd.path().join("validation/pdf"));
+    let (ok, stderr) = integrate_with_env(cwd.path(), &[]);
+    assert!(!ok, "{stderr}");
+    assert!(
+        !stderr.contains("cannot load PDF set")
+            && stderr.contains("downloads are disabled by VIBEGRAPH_NO_NETWORK"),
+        "the working directory's validation/pdf resolved the set:\n{stderr}"
     );
 }
 

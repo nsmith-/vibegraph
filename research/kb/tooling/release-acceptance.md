@@ -49,10 +49,11 @@ Setup:
    and a run card: 13 TeV, `lhapdf`/`247000`, all three scales fixed at 91.188
    (a 2 → 3 dynamical scale would need kT clustering), `mmll 50`, `ptj 20`,
    `ptl 10`, `etaj 5`, `etal 2.5`, `drll 0.4`, `drjl 0.4`.
-3. `VIBEGRAPH_HOME` points at a scratch cache root; `VIBEGRAPH_PDF_DIR`,
-   `VIBEGRAPH_UFO_DIR` and `VIBEGRAPH_NO_NETWORK` are unset; everything runs
-   in a work directory with no `validation/pdf` beside it, so the dev fallback
-   cannot satisfy a resolution that should reach the cache.
+3. `VIBEGRAPH_HOME` points at a scratch cache root; `LHAPDF_DATA_PATH`,
+   `LHAPATH`, `VIBEGRAPH_PDF_DIR`, `VIBEGRAPH_UFO_DIR` and
+   `VIBEGRAPH_NO_NETWORK` are unset, and everything runs in a scratch work
+   directory, so nothing but the cache can satisfy a resolution that should
+   reach it.
 
 The four steps, budget `NEVAL=20000`, `NITER=4`, `NEVENTS=2000`:
 

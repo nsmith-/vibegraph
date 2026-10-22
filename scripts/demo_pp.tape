@@ -26,7 +26,7 @@ Set TypingSpeed 30ms
 Set WaitTimeout 15m
 
 Hide
-Type "export VIBEGRAPH_PDF_DIR=$PWD/validation/pdf && cd $(mktemp -d) && clear" Enter
+Type "export LHAPDF_DATA_PATH=$PWD/validation/pdf && cd $(mktemp -d) && clear" Enter
 Show
 
 Sleep 1s
@@ -37,7 +37,7 @@ Type "vibegraph integrate proc_card.dat --out llj/" Sleep 500ms Enter
 Wait
 Sleep 2s
 
-Type "vibegraph generate llj/grid.bin.zst proc_card.dat --nevents 10000 --seed 1 -o events.lhe" Sleep 500ms Enter
+Type "vibegraph generate llj/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe" Sleep 500ms Enter
 Wait
 Sleep 2s
 

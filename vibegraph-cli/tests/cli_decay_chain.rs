@@ -35,6 +35,7 @@
 mod seeds;
 
 mod common;
+use common::PdfDataPath;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -99,8 +100,7 @@ fn integrate(dir: &Path, card: &Path, run_card: &Path, seed: u64) -> (f64, f64) 
         .arg(card)
         .arg("--run-card")
         .arg(run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .arg("--out")
         .arg(&out)
         .arg("--force")

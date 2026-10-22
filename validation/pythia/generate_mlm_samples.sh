@@ -41,13 +41,17 @@ if [ -z "$BIN" ]; then
 fi
 echo ">>> binary $BIN sha256 $(sha256sum "$BIN" | cut -d' ' -f1)"
 
+# The PDF set is found as LHAPDF finds it, through the data path.
+export LHAPDF_DATA_PATH="$ROOT/validation/pdf"
+unset LHAPATH VIBEGRAPH_PDF_DIR
+
 for seed in $SEEDS; do
   art="$OUT/vg-$seed"
   echo ">>> [$seed] integrating ..."
-  "$BIN" integrate "$PROC" --run-card "$RUN_CARD" --pdf-dir "$ROOT/validation/pdf" \
+  "$BIN" integrate "$PROC" --run-card "$RUN_CARD" \
     --out "$art" --force --fixed-budget --allocate neyman --neval 200000 --niter 8 --seed "$seed"
   echo ">>> [$seed] generating $NEVENTS events ..."
-  "$BIN" generate "$art/grid.bin.zst" "$PROC" --run-card "$RUN_CARD" --pdf-dir "$ROOT/validation/pdf" \
+  "$BIN" generate "$art/grid.bin.zst" \
     --nevents "$NEVENTS" --seed "$seed" --force -o "$OUT/vg-$seed.lhe"
 done
 echo ">>> done"

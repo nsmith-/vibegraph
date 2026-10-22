@@ -12,6 +12,7 @@
 //!     cargo test -p vibegraph --features extended-validation --test cli_integrate
 
 mod common;
+use common::PdfDataPath;
 
 use std::path::{Path, PathBuf};
 
@@ -64,8 +65,7 @@ fn run_cli(out_dir: &Path, run_card: &str) -> IntegrateArtifact {
         .arg(validation_dir().join("dy13_proc_card.dat"))
         .arg("--run-card")
         .arg(validation_dir().join(run_card))
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .arg("--out")
         .arg(out_dir)
         .status()
@@ -252,8 +252,7 @@ fn integrate_refuses_overwrite_without_force() {
         .arg(&proc_card)
         .arg("--run-card")
         .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .arg("--out")
         .arg(tmp.path())
         // Keep it cheap: a single tiny iteration is enough to write the artifact.
@@ -299,8 +298,7 @@ fn integrate_is_thread_count_independent() {
             .arg(validation_dir().join("dy13_proc_card.dat"))
             .arg("--run-card")
             .arg(validation_dir().join("dy13_default_run_card.dat"))
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .arg("--out")
             .arg(&out)
             .arg("--fixed-budget")

@@ -329,7 +329,7 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
 
     assert_eq!(DEFAULT_MAX_BIN_WIDTH, 6.0);
     assert_eq!(default.grid_rule, Some(GridRule::default()));
-    assert_eq!(default.format_version, 12);
+    assert_eq!(default.format_version, 13);
     assert!(default_bytes == six_bytes, "the default is not K = 6");
     assert!(
         widest(&default) <= DEFAULT_MAX_BIN_WIDTH * (1.0 + 1e-9),
@@ -338,7 +338,7 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
     );
 
     assert_eq!(unbounded.grid_rule, Some(GridRule::UNBOUNDED));
-    assert_eq!(unbounded.format_version, 9);
+    assert_eq!(unbounded.format_version, 13);
     assert!(
         widest(&unbounded) > DEFAULT_MAX_BIN_WIDTH,
         "the unbounded grid's widest bin is {} uniform widths, so the bound does not bind here",

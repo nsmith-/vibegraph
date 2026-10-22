@@ -5,7 +5,9 @@
 ## Design
 
 * [The integrate artifact and the compiled-program cache](integrate-artifact.md) - What vibegraph integrate persists (per-channel grids, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built.
+* [Integrate and generate split by data dependency](integrate-generate-split.md) - generate takes the artifact plus generate-time inputs only; the run card splits into integrate settings and generate settings, each run-card field classified; artifact version 13; the CLI and its migration; PR split.
 * [Release scope and the hard-error rule](release-scope.md) - How the release scope is enforced: every card surface vibegraph does not honour is refused at parse time, never silently accepted; where each refusal lives and how a feature leaves the list.
+* [Run inputs the integrate artifact records (PDF set and param card)](run-inputs-in-the-artifact.md) - What the integrate artifact records of the PDF (lhaid, set, member, per-file SHA-256) and the param card (moved parameters); how generate re-reads them as checked assets; lhaid lookup across five tiers.
 
 ## Design Decision
 

@@ -1836,9 +1836,8 @@ fn same_card_value(a: &str, b: &str) -> bool {
 /// field against the one in the header of M0's banked MadEvent file. The four
 /// fields Pythia's `JetMatching:setMad` reads (`ickkw`, `xqcut`,
 /// `maxjetflavor`, `alpsfact`) must be present on both sides and agree, and so
-/// must every other field both carry except `iseed`: MadEvent records the seed
-/// it ran with, this crate the card's (its own generator seed is a command-line
-/// flag, and names a different random stream). The fields either side alone
+/// must every other field both carry except `iseed`: each side records the seed
+/// it generated with, and the two name different random streams. The fields either side alone
 /// carries are reported: MadEvent writes only the template's visible block and
 /// the hidden parameters a card sets, this crate every parameter it resolved.
 #[test]
@@ -1870,9 +1869,13 @@ fn mg_run_card_matches_madevents_banner() {
                 .to_string()
         };
         let theirs = run_card_fields(&body(&text));
-        let card = RunCard::parse_file(&madgraph_dir().join(format!("{name}_run_card.dat")))
-            .expect("run card");
-        let ours = run_card_fields(&body(&vibegraph::lhef::write::mg_run_card(&card)));
+        let (card, settings) =
+            RunCard::parse_file(&madgraph_dir().join(format!("{name}_run_card.dat")))
+                .expect("run card")
+                .split();
+        let ours = run_card_fields(&body(&vibegraph::lhef::write::mg_run_card(
+            &card, &settings, 0,
+        )));
         let mut agree = 0;
         let mut differ = Vec::new();
         for (field, value) in &theirs {

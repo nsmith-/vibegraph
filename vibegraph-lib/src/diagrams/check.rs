@@ -60,6 +60,14 @@ pub struct SupportedCard {
     pub processes: Vec<SupportedProcess>,
 }
 
+impl SupportedCard {
+    /// Whether the card's processes are `1 → n` decays, which the check
+    /// guarantees all of them are when the first is.
+    pub fn is_decay(&self) -> bool {
+        self.processes.first().is_some_and(|p| p.initial.len() == 1)
+    }
+}
+
 /// One process line of a [`SupportedCard`].
 #[derive(Debug, Clone)]
 pub struct SupportedProcess {

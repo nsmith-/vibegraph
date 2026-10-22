@@ -86,7 +86,7 @@ Options:
           [default: NNPDF23_lo_as_0130_qed]
 
       --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then the `~/.vibegraph` cache (offering to download the set if absent), then `validation/pdf` under the current directory
+          Directory containing `<pdf-set>/`; defaults to the first `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is unset), then the `~/.vibegraph` cache (offering to download the set if absent)
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
@@ -167,9 +167,7 @@ Options:
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
       --seed <SEED>
-          RNG seed for the integration
-          
-          [default: 20260719]
+          RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
 
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
@@ -241,27 +239,18 @@ Options:
 ```text
 Generate an unweighted event sample from a saved grid, as a Les Houches file
 
-Usage: vibegraph generate [OPTIONS] <ARTIFACT> <PROC_CARD>
+Usage: vibegraph generate [OPTIONS] <ARTIFACT>
 
 Arguments:
   <ARTIFACT>
           Grid artifact from a completed `vibegraph integrate` run
 
-  <PROC_CARD>
-          The same process card the artifact was integrated from; `-` reads the card from stdin
-
 Options:
-      --run-card <RUN_CARD>
-          The same run card the artifact was integrated with; absent → MadGraph LO defaults. A card that differs from the banked one is refused
-
-      --ufo-dir <UFO_DIR>
-          Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
+      --seed <SEED>
+          RNG seed for the generation; required. Same artifact, settings and seed, same sample, so each generation job from one grid needs its own seed
 
       --nevents <NEVENTS>
-          Events to write; defaults to the run card's `nevents`
-
-      --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+          Events to write; defaults to the `nevents` the artifact recorded
 
   -o, --out <OUT>
           Output Les Houches file
@@ -271,17 +260,28 @@ Options:
       --force
           Overwrite an existing event file
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --strategy <STRATEGY>
           Weight strategy
 
           Possible values:
-          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under the run card's `event_norm = sum` or `unity`)
+          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under `event_norm = sum` or `unity`)
           - stochastic-rounding: Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit weight (`IDWTUP = +3`)
           
           [default: buffer]
+
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
+      --event-norm <EVENT_NORM>
+          How the written weights are normalised; defaults to the `event_norm` the artifact recorded. It moves the weights and the `<init>` block, not the events drawn
+
+          Possible values:
+          - average: The weights' mean is the cross section (`IDWTUP = -4`)
+          - sum:     The weights' sum is the cross section (`IDWTUP = -3`)
+          - unity:   Every weight is one (`IDWTUP = -3`)
 
   -v, --verbose...
           Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
@@ -289,47 +289,37 @@ Options:
   -q, --quiet
           Report only warnings and errors
 
-      --seed <SEED>
-          RNG seed for the generation. Same seed, same sample
-          
-          [default: 20260728]
+      --ufo-dir <UFO_DIR>
+          Directory containing the recorded proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model. The model found must be the one the artifact was integrated against
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --pdf-set <PDF_SET>
-          LHAPDF set name (proton beams only). A set other than the one the artifact was integrated with is refused
+      --scan-points <N|share>
+          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
           
-          [default: NNPDF23_lo_as_0130_qed]
+          [default: share]
 
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
-      --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then the `~/.vibegraph` cache (offering to download the set if absent), then `validation/pdf` under the current directory
-
-      --scan-points <N|share>
-          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
-          
-          [default: share]
-
-      --tui
-          Draw the live status pane even where one would not be drawn by default
-
       --max-truncation <SHARE>
           Share of each channel's scanned cross section its maximum may leave above itself. `0` takes the largest weight the scan saw instead; a larger share lowers the maxima, accepting more trials and giving more of the accepted events a weight above one
           
           [default: 0.01]
 
-      --no-tui
-          Never draw the live status pane; report in plain lines
-
       --reweight-card <REWEIGHT_CARD>
           MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
+
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --reweight-exact
           Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking

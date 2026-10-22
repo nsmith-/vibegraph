@@ -92,6 +92,12 @@ committed file or test consumes a banked integrate artifact: every test writes
 its own with `vibegraph integrate`. So raising the floor breaks only users'
 files, and they are told to regenerate.
 
+The integrate artifact's floor is its current version, 13: no older file
+records a proc card, so `generate`, which takes none, has nothing to replay
+from one. The `v3`–`v9` readers, `version_for` and the threshold constants
+went with the versions they served, so rules 5–7 have no live instance in it;
+the examples above are their history.
+
 The interned SM model blob (`ufo/sm_assets/sm_parsed.bin.zst`) is a build input,
 not a run artifact, and carries no version. It is regenerated from the pinned
 submodule by `gen_sm_blob`, and the test `interned_blob_matches_submodule_exactly`

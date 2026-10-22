@@ -5,6 +5,7 @@ pub mod config;
 pub mod coupling;
 pub mod cuts;
 pub mod diagrams;
+pub mod generate;
 pub mod hadronic;
 pub mod helas;
 pub mod lhef;

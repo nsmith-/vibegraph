@@ -1,7 +1,7 @@
 ---
 type: Design
 title: ~/.vibegraph asset resolution and pinned fetch
-description: "PDF sets and UFO models resolve flag → env → ~/.vibegraph → dev fallback; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded."
+description: "PDF sets resolve flag → LHAPDF_DATA_PATH (or LHAPATH) → ~/.vibegraph, UFO models flag → env → ~/.vibegraph → cwd; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded."
 status: draft
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [cli, cache, pdf, ufo, distribution]
@@ -18,8 +18,9 @@ sources:
 
 A run needs two kinds of external data: a PDF set (hadronic beams only) and,
 for any model other than the interned Standard Model, a UFO model directory.
-Both are found through one resolution order. Only a PDF set this build has a
-compiled-in pin for can be downloaded; UFO models never are.
+A PDF set is found the way LHAPDF finds one; a UFO model through vibegraph's
+own order. Only a PDF set this build has a compiled-in pin for can be
+downloaded; UFO models never are.
 
 ## Layout and resolution order
 
@@ -28,27 +29,36 @@ The cache root is `$VIBEGRAPH_HOME` if set, otherwise `~/.vibegraph`
 `dirs::home_dir().join(".vibegraph")`). Entries live at
 `<cache_root>/{pdf,ufo}/<name>/`.
 
-`cache::resolve::locate(kind, name, flag, env, cache_root, dev_fallback)` walks
-the same order for both kinds and returns `Located { dir, source, found }`:
+`cache::resolve::locate_pdf_set(name, flag, data_path, cache_root)` and
+`cache::resolve::locate(kind, name, flag, env, cache_root, dev_fallback)` (UFO)
+return `Located { dir, source, found }`:
 
 | step | PDF set | UFO model | existence checked? |
 |---|---|---|---|
-| 1. flag | `--pdf-dir <base>` → `<base>/<name>/` | `--ufo-dir <base>` → `<base>/<name>/` | reported, never blocks: an explicit path is returned even if absent |
-| 2. env | `$VIBEGRAPH_PDF_DIR/<name>/` | `$VIBEGRAPH_UFO_DIR/<name>/` | same as the flag |
+| 1. flag | `--pdf-dir <base>` → `<base>/<name>/` (`integrate` only) | `--ufo-dir <base>` → `<base>/<name>/` | reported, never blocks: an explicit path is returned even if absent |
+| 2. env | each entry of `$LHAPDF_DATA_PATH`, else of `$LHAPATH`, → `<entry>/<name>/` | `$VIBEGRAPH_UFO_DIR/<name>/` | PDF: the first entry holding the set, a miss passes to the next entry and then the cache; UFO: as the flag |
 | 3. cache | `<root>/pdf/<name>/` | `<root>/ufo/<name>/` | taken only if the directory exists |
-| 4. dev fallback | `validation/pdf/<name>/` relative to the cwd | `./<name>/` (the cwd) | taken only if it exists |
+| 4. last | a download, with consent (below) | `./<name>/` (the cwd) | UFO: taken only if it exists |
 | nothing found | `found: false`, `dir` = the cache path, as the write target for a fetch | same | — |
 
-Flag and env take the step even when the directory is missing, so "explicit
-but wrong path" is an error naming that path rather than a silent fall-through.
-`locate` reads no environment and no home directory; every input is a
-parameter, and seven unit tests in `cache::resolve::tests` each pin one
-precedence edge. `locate_from_env` is the thin wrapper that reads the real
-variables; it is deliberately untested, since testing it would mean mutating
-process environment across parallel tests.
+The PDF variables are parsed as LHAPDF 6.5.3 parses them
+(`cache::resolve::pdf_data_path`): `$LHAPDF_DATA_PATH` when it is set, even
+to the empty string, otherwise `$LHAPATH`, split as a path list, with empty
+entries skipped. LHAPDF's install-prefix entry and the `::` that suppresses it
+are not copied, since there is no LHAPDF installation to append. A user whose
+LHAPDF works resolves the same sets here as their MadGraph does. Nothing in
+the PDF order is relative to the working directory: a checkout's
+`validation/pdf` is reached only by naming it in `$LHAPDF_DATA_PATH`, which is
+how the tests and scripts reach it. `$VIBEGRAPH_PDF_DIR` is not read; when it
+is set, the first PDF resolution of a run warns once, naming
+`$LHAPDF_DATA_PATH` (`assets::warn_on_retired_pdf_dir`).
 
-The dev fallback is relative to the working directory, so it only ever
-resolves inside a checkout. A user running an installed binary never reaches it.
+The flag takes its step even when the directory is missing, so "explicit but
+wrong path" is an error naming that path rather than a silent fall-through.
+Neither function reads the environment or the home directory; every input is
+a parameter, and the unit tests in `cache::resolve::tests` each pin one
+precedence edge. The CLI reads the variables once per resolution and is
+exercised end to end by `cli_pdf_cache`.
 
 ## PDF sets: what is pinned and when it binds
 
@@ -72,8 +82,7 @@ Why the set is fetched rather than embedded is
 [the pinned PDF set](../scales-pdf/pinned-pdf-set.md).
 
 **The pin binds only on the cache step.** `assets::resolve_pdf_set_dir` returns
-a set reached through `--pdf-dir`, `$VIBEGRAPH_PDF_DIR` or the dev fallback as
-found, with no checksum check: those name data the caller points at
+a set reached through `--pdf-dir` or the LHAPDF data path as found, with no checksum check: those name data the caller points at
 deliberately, and that is also what keeps sets with no pin usable at all. The
 cache step is the only one that decides on the user's behalf what a bare set
 name means, so there the pin is authoritative:
@@ -83,12 +92,13 @@ name means, so there the pin is authoritative:
   (`pinned::is_current`). An entry with a missing or different sidecar, from an
   interrupted write or a build pinning other data, is refetched, not trusted.
 - A set with no pin is used from the cache if present; if absent, the run fails
-  telling the user to fetch it and point `--pdf-dir` / `$VIBEGRAPH_PDF_DIR` at it.
+  telling the user to fetch it and add its directory to `$LHAPDF_DATA_PATH`.
 - `pdf_set_is_cached(root, name)` answers "would `ensure_pdf_set` fetch?"
   without side effects; it gates whether the consent question is asked.
 
 Only `integrate` and `generate` resolve PDF sets (`integrate.rs`, and
-`generate.rs` through `load_pdf_set`), both through this path.
+`generate.rs` through `load_pdf_set`), both through this path; `generate`
+resolves the set the artifact recorded, by name, and takes no PDF flag.
 
 ## The fetch seam
 

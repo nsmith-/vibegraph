@@ -8,7 +8,7 @@
 
 ## Design
 
-* [~/.vibegraph asset resolution and pinned fetch](asset-resolution.md) - PDF sets and UFO models resolve flag → env → ~/.vibegraph → dev fallback; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded.
+* [~/.vibegraph asset resolution and pinned fetch](asset-resolution.md) - PDF sets resolve flag → LHAPDF_DATA_PATH (or LHAPATH) → ~/.vibegraph, UFO models flag → env → ~/.vibegraph → cwd; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded.
 * [Cargo profiles, target directories and load-bearing feature flags](cargo-configuration.md) - dev profile at opt-level 2 keeps debug assertions; release (fat LTO) and release-debug (thin LTO, debug info) profiles; a shared CARGO_TARGET_DIR breaks worktrees; serde_json float_roundtrip.
 * [Logging and the terminal UI](logging-and-tui.md) - tracing events under vibegraph::* targets, the progress contract, plain/TUI/file layers, inline-viewport footer, stdout for results only, and graceful stop on q/Ctrl-C.
 * [Network consent policy](network-consent.md) - NetworkPolicy Deny/Ask/Allow from --no-network, $VIBEGRAPH_NO_NETWORK and --yes; refusal outranks consent; no terminal means refusal; HttpFetch is built in one place.
