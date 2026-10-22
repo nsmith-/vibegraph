@@ -51,4 +51,5 @@ Consumers waiting on it:
 [sampler-draw-not-lane-generic](sampler-draw-not-lane-generic.md) (draw,
 accumulate, refine over bins), [jet-clustering-f64-only](jet-clustering-f64-only.md),
 [pdf-lookup-f64-only](pdf-lookup-f64-only.md),
-[per-point-branches-f64-only](per-point-branches-f64-only.md) (cuts).
+[per-point-branches-f64-only](per-point-branches-f64-only.md) (cuts), and the map's
+cut-aware windows ([seam design](../../phase-space/sampler-and-map-seams.md) D6).
