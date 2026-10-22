@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: split mixed-mass flavour groups instead of refusing them](F1.md) - Group subprocesses by outgoing masses as well as matrix element, so each group gets a map that fits its masses; leave the map code untouched and record any change it would need.
+
+## Session Report
+
+* [F1 report: a mixed-mass card splits into one integrand per set of outgoing masses](F1-report.md) - Subprocesses with different outgoing masses are split before flavour grouping, one proton integrand each, combined like a sum over multiplicities; no map code changed. A one-flavour part matches MadGraph, and the total needs a banked run.
