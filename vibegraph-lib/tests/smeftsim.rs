@@ -343,6 +343,12 @@ fn expansion_order_is_declared_but_caps_nothing() {
 /// than on the two shipped cards, because the per-class cards are where a card
 /// zeroes most of the model and a pruning error has room to show.
 ///
+/// An interned-SM pair is compared over [`UFOModel::unitary_gauge_vertices`],
+/// because MadGraph's `sm` import is unitary gauge and its list has no ghost or
+/// Goldstone interaction. A count agrees even if one vertex is swapped for
+/// another of the same kind, so it checks the split and the pruning, not which
+/// vertices survive.
+///
 /// A pair whose model this crate cannot read at all is reported by name with the
 /// refusal rather than failing, and only where the manifest already says so:
 /// enforcement follows the pair's rows, so a pair carrying an enforced
@@ -365,11 +371,19 @@ fn restricted_interaction_counts_match_madgraph() {
             }
             Err(e) => panic!("[{pair}] load the model row '{}' names: {e}", rows[0]),
         };
-        assert_eq!(
-            model.vertices.len(),
-            *want,
-            "[{pair}] interactions after restriction"
-        );
+        // MadGraph's default `sm` import is unitary gauge: its interaction list
+        // holds no ghost or Goldstone vertex, which this crate's vertex set does.
+        // The count is taken over the vertices diagram enumeration uses. A
+        // UFO-directory model keeps every vertex it has.
+        let interned_sm = common::manifest::row_models()
+            .get(&rows[0])
+            .is_some_and(|m| m.is_interned_sm());
+        let got = if interned_sm {
+            model.unitary_gauge_vertices().count()
+        } else {
+            model.vertices.len()
+        };
+        assert_eq!(got, *want, "[{pair}] interactions after restriction");
     }
 }
 
