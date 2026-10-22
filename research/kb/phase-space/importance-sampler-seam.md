@@ -14,6 +14,12 @@ sources:
   - {id: pr48, resource: "https://github.com/nsmith-/vibegraph/pull/48", title: "vegas-low-acceptance-bins: GridRule, ChannelIntegrand::grid_rule, hill_tail_index"}
 ---
 
+> **Amended by [the joint seam design](sampler-and-map-seams.md) (2026-10-22).**
+> The trait below stands, plus coordinate roles, mergeable accumulators,
+> product parts and a per-role bin-width bound; the sampler never sees a
+> coordinate window. The artifact versioning in "serialise" follows PR #60's
+> rules (every artifact at the current version), not `version_for`.
+
 Every adaptive density in the crate is a `VegasGrid`. This concept records
 where that is assumed, the seam that would let another importance sampler
 replace it per run, and what each candidate needs from that seam. It is a
