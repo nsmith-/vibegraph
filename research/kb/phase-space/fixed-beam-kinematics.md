@@ -96,7 +96,7 @@ this closed form).
 | What | Frame | MadGraph | vibegraph |
 |---|---|---|---|
 | Momentum generation, `|M|²`, channel maps | partonic CM | `genps.f` | `FixedBeams::momenta` |
-| Event record | partonic CM (banked `p3 r3` events have `Σ pz = 0` at unequal beam energies) | — | record writes the CM beams with their masses |
+| Event record | partonic CM: `Σ pz = 0` on every event at masses 60/70 (banked `p3 r3`), 50/80 and 30/90 (MadGraph 3.7.1, ebeam 250/250, 2026-10-22) | — | record writes the CM beams with their masses, pinned to MadGraph's records by `tests/fixed_beam_frame.rs` |
 | Rapidity cuts | laboratory | `rap()` adds `cm_rap` (`kin_functions.f:132`, `cm_rap` set at `genps.f:388`)[^mg-rap] | `passes_cuts` boosts by `lab_beta` first, skipped when it is exactly 0 |
 | `<init>` `EBMUP` | — | `ebeam(i)` | run card's `ebeam1/2` |
 
