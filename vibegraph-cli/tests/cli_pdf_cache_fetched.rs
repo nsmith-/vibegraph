@@ -3,9 +3,9 @@
 //! The refusal paths — a missing pinned set, an unpinned name — need no data and
 //! stay in `cli_pdf_cache.rs`. What needs a set is the other half: that a cache
 //! entry actually serves an `integrate` run, and that an explicit `--pdf-dir`
-//! still wins over the cache. Both run the binary from an empty working
-//! directory so the repo-local dev fallback cannot resolve, which is what lets
-//! them tell a working cache path from a dev fallback masking a broken one.
+//! and `$LHAPDF_DATA_PATH` both serve one ahead of the cache. Each runs the
+//! binary from an empty working directory with no PDF variable set unless it
+//! sets one, so only the route under test can resolve the set.
 //!
 //! Nothing here reaches the network: `$VIBEGRAPH_NO_NETWORK` refuses downloads
 //! outright, and the cache entry is published from the fetched set's own bytes
@@ -20,7 +20,7 @@ mod common;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use common::integrate_from_bare_cwd;
+use common::{integrate_from_bare_cwd, validation_dir, PdfDataPath};
 
 use vibegraph::cache::pinned::{ensure_pdf_set_pinned, DEFAULT_PDF_SET};
 use vibegraph::cache::store::FixedFetch;
@@ -102,13 +102,6 @@ fn a_cached_pdf_set_serves_integrate_with_no_dev_checkout() {
         "the cache entry must land where resolution looks for it"
     );
 
-    // The dev fallback is a relative path, so an empty working directory is
-    // exactly the "installed binary, no checkout" situation.
-    assert!(
-        !cwd.path().join("validation/pdf").exists(),
-        "the working directory must not offer a dev fallback"
-    );
-
     let output = integrate_from_bare_cwd(
         cwd.path(),
         home.path(),
@@ -145,5 +138,36 @@ fn an_explicit_pdf_dir_still_takes_precedence() {
     assert!(
         !home.path().join("pdf").exists(),
         "an explicit --pdf-dir must not populate the cache:\n{stderr}"
+    );
+}
+
+/// `$LHAPDF_DATA_PATH` naming the fetched set's directory serves the run as
+/// found, and leaves the cache untouched.
+#[test]
+fn lhapdf_data_path_serves_a_run_without_touching_the_cache() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let output = common::vibegraph(cwd.path(), home.path())
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .pdf_data_path(dev_pdf_dir())
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(validation_dir().join("dy13_default_run_card.dat"))
+        .arg("--out")
+        .arg(out.path())
+        .args(["--neval", "2000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&output);
+    assert!(
+        output.status.success(),
+        "a run on $LHAPDF_DATA_PATH failed:\n{stderr}"
+    );
+    assert!(
+        !home.path().join("pdf").exists(),
+        "a set on $LHAPDF_DATA_PATH must not populate the cache:\n{stderr}"
     );
 }

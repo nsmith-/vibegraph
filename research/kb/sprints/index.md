@@ -10,6 +10,7 @@
 
 * [amplitude-signs](amplitude-signs/index.md)
 * [banked-open-ends](banked-open-ends/index.md)
+* [ckm-no-b-mass](ckm-no-b-mass/index.md)
 * [color-flow](color-flow/index.md)
 * [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md)
 * [cut-refusal](cut-refusal/index.md)
@@ -24,6 +25,7 @@
 * [event-norm-sum](event-norm-sum/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
 * [fnv-refusal](fnv-refusal/index.md)
+* [gridpack-generate](gridpack-generate/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)
 * [hygiene](hygiene/index.md)
 * [kt-spine](kt-spine/index.md)
@@ -32,6 +34,7 @@
 * [mlm](mlm/index.md)
 * [mlm-pythia-tolerance](mlm-pythia-tolerance/index.md)
 * [note-29-validation](note-29-validation/index.md)
+* [pdf-from-run-card](pdf-from-run-card/index.md)
 * [perf-3-addendum](perf-3-addendum/index.md)
 * [perf-sprint-3](perf-sprint-3/index.md)
 * [process-grammar](process-grammar/index.md)
@@ -61,3 +64,4 @@
 * [vegas-absolute-grid-coords](vegas-absolute-grid-coords/index.md)
 * [vegas-constant-integrand](vegas-constant-integrand/index.md)
 * [vegas-low-acceptance-bins](vegas-low-acceptance-bins/index.md)
+* [weighted-cap](weighted-cap/index.md)

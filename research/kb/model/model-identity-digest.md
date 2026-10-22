@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: "Model identity: SHA-256 over the serialized restricted model"
-description: "The integrate artifact banks the import label and a SHA-256 of the restricted ParsedModel's bincode bytes, so a different model under the same process string is refused."
+description: "The integrate artifact banks the import label and a SHA-256 of the restricted ParsedModel's bincode bytes, so generate refuses a model whose files changed after integrate."
 status: draft
 tags: [artifact, model, identity, digest, generate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -9,11 +9,10 @@ verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23, model identity in the artifact"}
   - {id: code-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/identity.rs", title: "vibegraph-lib/src/ufo/identity.rs"}
-  - {id: code-generate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L274-L330", title: "vibegraph-cli/src/generate.rs card_mismatches"}
 ---
 
 `vibegraph generate` replays the grids an `integrate` run trained, so it must refuse a
-card that would describe a different integrand. A process string does not name a model:
+model that would describe a different integrand. A process string does not name a model:
 `import model sm-no_b_mass` with a byte-identical `generate` line and run card is a
 different model from `import model sm`. The integrate artifact therefore banks a
 **model identity** beside the process and run card. [^n23-identity]
@@ -66,30 +65,30 @@ and comparing it in another.
 
 ## How a mismatch is reported
 
-`card_mismatches` (`vibegraph-cli/src/generate.rs`) compares the banked identity with the
-loaded one [^code-generate]:
-
-- a differing **label** is reported as `model`, by name;
-- with equal labels, a differing **digest** is reported as ``model `<label>` contents``.
-  This is the case a name provably cannot see: a restrict card regenerated with
-  different contents under an unchanged name.
-
-The process string and every run-card parameter are compared in the same pass.
+`generate` takes no proc card: it re-parses the one the artifact recorded, so
+the model label it resolves is the recorded one. What can still move is the
+model's files. `vibegraph::generate::check_model` compares the digest of the
+model actually loaded with the banked one, and refuses with
+`model {label} at {dir} has digest {got}; the grid was integrated against
+{want}: its files changed after vibegraph integrate ran; re-integrate, or
+restore them`. The interned SM goes through the same check, at `(built in)`,
+so a build whose compiled-in model differs from the integrating build's is
+refused too.
 
 ## Tests and their blind spots
 
 | Test | Pins | Blind to |
 |---|---|---|
-| `generate::tests::a_different_restrict_variant_is_refused` | `sm` vs `sm-no_b_mass` under an identical process and run card is refused, as `model` | a digest wrong the same way on both sides |
-| `generate::tests::a_restrict_card_that_changed_under_its_name_is_refused` | same label, different digest is refused | whether the digest's inputs are the right bytes (it plants the digest) |
+| `generate::tests::a_model_whose_digest_moved_is_refused` (library) | another restrict variant and a planted digest under the same label are both refused, with the message above | whether the digest's inputs are the right bytes (it plants the digest) |
+| `cli_generate::a_model_whose_digest_moved_is_refused` | end to end: an artifact whose recorded digest is not the interned SM's is refused by the binary | a digest wrong the same way on both sides |
+| `cli_ufo_model::a_restrict_card_edited_after_integrate_is_refused_by_digest` | end to end: a UFO model's restrict card replaced after `integrate` is refused, naming the model directory; the unchanged model is accepted first | a change the digest does not cover (comments, files outside the parsed model) |
 | `ufo::identity::every_interned_variant_has_its_own_digest` | the restrict card reaches the SM digest | a stale blob (`interned_blob_matches_submodule_exactly` covers that) |
 | `ufo::identity::a_changed_model_digests_differently`, `interned_identity_is_reproducible` | a model change moves the digest; the same model gives the same digest | collisions in general |
 | `config::identity_follows_the_resolved_variant` | the identity returned is the variant resolved | a digest wrong the same way on both sides |
-| `cli_generate::a_card_that_did_not_train_the_grid_is_refused` | end to end: a card importing another restrict variant is refused by the binary | — |
 
-With both comparisons deleted, the end-to-end test fails, and the accepted wrong-model run
-wrote events at σ = 2061.99 pb against the banked 2022.62 pb (+1.95%): that is the size
-of error the check stands in front of. [^n23-identity]
+When the check was a comparison of a caller-supplied card, deleting it let a
+wrong-model run write events at σ = 2061.99 pb against the banked 2022.62 pb
+(+1.95%): that is the size of error the check stands in front of. [^n23-identity]
 
 ## What the identity does not cover
 
@@ -98,8 +97,8 @@ of error the check stands in front of. [^n23-identity]
   the restriction's defaults
   ([backlog](../backlog/feature/cli-has-no-param-card-option.md)); when one is added, the
   artifact has to record the card beside the identity.
-- **A self-contained replay.** A worker still needs the cards, the PDF set and, for a
-  non-SM model, the UFO directory
+- **A self-contained replay.** A worker still needs the PDF set and, for a non-SM
+  model, the UFO directory
   ([backlog](../backlog/feature/generate-artifact-not-self-contained.md)).
 
 Related: [restrict-card semantics](restriction-semantics.md), which defines what the
@@ -107,4 +106,3 @@ restriction bakes in.
 
 [^n23-identity]: Note 23, "model identity in the artifact": the gap, the digest design, the determinism defect it exposed, the test and mutation tables.
 [^code-identity]: `vibegraph-lib/src/ufo/identity.rs` module documentation and `model_digest`.
-[^code-generate]: `vibegraph-cli/src/generate.rs` `card_mismatches`.

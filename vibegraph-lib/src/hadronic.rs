@@ -897,6 +897,19 @@ pub enum InitialState {
     Decay(DecayAtRest),
 }
 
+impl InitialState {
+    /// The initial state a compiled process and the run card describe: the
+    /// decaying particle at rest for a `1 → n` process, otherwise the card's two
+    /// fixed-energy beams on the incoming legs' mass shells.
+    pub fn from_run_card(rc: &RunCard, legs: &[ExternalLeg]) -> Result<Self, HadronicError> {
+        if legs.iter().filter(|l| !l.is_final).count() == 1 {
+            Ok(DecayAtRest::from_legs(legs)?.into())
+        } else {
+            Ok(FixedBeams::from_run_card(rc, legs).into())
+        }
+    }
+}
+
 impl From<FixedBeams> for InitialState {
     fn from(beams: FixedBeams) -> Self {
         InitialState::Beams(beams)

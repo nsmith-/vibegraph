@@ -7,19 +7,22 @@
 //! helper that some binary leaves unused carries its own `allow(dead_code)`; an
 //! item added without one is reported by the first binary that does not call it.
 
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 /// The binary in `cwd`, with `VIBEGRAPH_HOME` pointed at `home` so `cache_root()`
 /// never touches the real `$HOME`, and none of the environment's overrides of
-/// the network policy, the PDF directory or the UFO directory.
+/// the network policy, the PDF data path or the UFO directory.
 #[allow(dead_code)]
 pub fn vibegraph(cwd: &Path, home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
     cmd.current_dir(cwd)
         .env("VIBEGRAPH_HOME", home)
         .env_remove("VIBEGRAPH_NO_NETWORK")
+        .env_remove("LHAPDF_DATA_PATH")
+        .env_remove("LHAPATH")
         .env_remove("VIBEGRAPH_PDF_DIR")
         .env_remove("VIBEGRAPH_UFO_DIR");
     cmd
@@ -27,8 +30,8 @@ pub fn vibegraph(cwd: &Path, home: &Path) -> Command {
 
 /// The binary in the test process's own working directory and environment,
 /// untouched. For tests that read the ambient configuration on purpose and name
-/// their data with explicit flags (`--pdf-dir`); a test with no such need uses
-/// [`vibegraph`].
+/// their data explicitly (`--pdf-dir`, `$LHAPDF_DATA_PATH`); a test with no
+/// such need uses [`vibegraph`].
 #[allow(dead_code)]
 pub fn vibegraph_ambient() -> Command {
     Command::new(env!("CARGO_BIN_EXE_vibegraph"))
@@ -45,6 +48,23 @@ pub fn vibegraph_behind_dead_proxy(cwd: &Path, home: &Path) -> Command {
         .env_remove("NO_PROXY")
         .env_remove("no_proxy");
     cmd
+}
+
+/// Pointing a command's PDF lookup at one directory, the way a user's LHAPDF
+/// installation does: `$LHAPDF_DATA_PATH` set to it, and the other variables
+/// that could resolve a set (`$LHAPATH`, the retired `$VIBEGRAPH_PDF_DIR`)
+/// removed.
+#[allow(dead_code)]
+pub trait PdfDataPath {
+    fn pdf_data_path(&mut self, dir: impl AsRef<OsStr>) -> &mut Self;
+}
+
+impl PdfDataPath for Command {
+    fn pdf_data_path(&mut self, dir: impl AsRef<OsStr>) -> &mut Self {
+        self.env("LHAPDF_DATA_PATH", dir)
+            .env_remove("LHAPATH")
+            .env_remove("VIBEGRAPH_PDF_DIR")
+    }
 }
 
 #[allow(dead_code)]

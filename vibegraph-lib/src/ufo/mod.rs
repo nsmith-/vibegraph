@@ -12,6 +12,7 @@ pub mod slha;
 pub mod sm;
 pub(crate) mod topo;
 pub(crate) mod vertices;
+pub(crate) mod weighted;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
@@ -195,6 +196,10 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
+    /// What the automatic WEIGHTED search reads from the restricted interaction
+    /// set: the cap's largest interaction WEIGHTED and the start's particle
+    /// classes.
+    pub(crate) weighted_search: weighted::WeightedSearchModel,
     /// The names a card may write for the particles; see [`names`].
     pub(crate) names: ParticleNames,
 }
@@ -374,6 +379,25 @@ impl ParsedModel {
             &self.vertices,
         )?;
 
+        let weighted_search = {
+            let interactions: Vec<weighted::Interaction<'_>> = self
+                .vertices
+                .values()
+                .filter_map(|vertex| {
+                    let coupling = vertex.couplings.values().next()?;
+                    Some(weighted::Interaction {
+                        pdg_codes: vertex
+                            .particles
+                            .iter()
+                            .map(|&p| self.particles[p].pdg_code)
+                            .collect(),
+                        orders: &self.couplings[*coupling].orders,
+                    })
+                })
+                .collect();
+            weighted::WeightedSearchModel::new(&interactions, &self.order_hierarchy)
+        };
+
         let names = ParticleNames::of_model(particle_codes(&self.particles));
         Ok(UFOModel {
             names,
@@ -385,11 +409,20 @@ impl ParsedModel {
             topo,
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
+            weighted_search,
         })
     }
 }
 
 impl UFOModel {
+    /// The vertices that survive unitary gauge, the set MadGraph's default `sm`
+    /// import holds and diagram enumeration is built from.
+    pub fn unitary_gauge_vertices(&self) -> impl Iterator<Item = (&String, &Vertex)> {
+        self.vertices
+            .iter()
+            .filter(|(_, v)| v.is_physical(&self.particles))
+    }
+
     /// Load a UFO model from a directory path.
     ///
     /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
@@ -519,6 +552,105 @@ impl UFOModel {
 
     pub(crate) fn vertex_def(&self, id: VertexId) -> &Vertex {
         &self.vertices[id.0]
+    }
+
+    /// The coupling a diagram vertex bound to `vertex` carries on its `key` term.
+    ///
+    /// Diagram enumeration binds a vertex by its particles read all-incoming; a UFO
+    /// interaction lists them all-outgoing, which is how MadGraph binds it. The two
+    /// readings name Hermitian-conjugate interactions, so a diagram vertex bound to
+    /// `[b~, u, W-]` stands for the interaction the UFO writes as `[u~, b, W+]`, and
+    /// its coupling is that one's (`∝ conj(CKM1x3)`, where the bound vertex carries
+    /// `∝ CKM1x3`). The Lorentz side of the exchange is carried by the rooting's
+    /// crossing and reversal corrections, which evaluate the bound structure on the
+    /// conjugate interaction's spinor slots.
+    ///
+    /// The exchange is made for a charged vector current
+    /// ([`conjugate_vector_current`](Self::conjugate_vector_current)), where the
+    /// conjugate interaction's term `key` has the same structure. Every other vertex
+    /// keeps its own coupling: a self-conjugate one binds the same interaction either
+    /// way, and for the rest the term correspondence depends on the structure (a
+    /// chiral scalar or tensor term conjugates into the opposite chirality).
+    pub(crate) fn bound_coupling(&self, vertex: VertexId, key: (usize, usize)) -> CouplingId {
+        let target = self.conjugate_vector_current(vertex).unwrap_or(vertex);
+        self.vertex_def(target).couplings[&key]
+    }
+
+    /// The Hermitian-conjugate interaction of a charged fermion–fermion–vector vertex
+    /// whose every Lorentz structure is a vector current (one `γ^μ`, with only `P_L`,
+    /// `P_R`, `γ⁵` or the identity beside it), when the model has exactly one.
+    ///
+    /// Such a structure is its own conjugate (`(ψ̄₁γ^μP_χψ₂)† = ψ̄₂γ^μP_χψ₁`), so the
+    /// conjugate interaction is the vertex with the antiparticles of `vertex`'s
+    /// particles and the same Lorentz structures, colour structures, coupling keys
+    /// and per-key coupling orders. `None` for a self-conjugate vertex, any other
+    /// structure, or no unique conjugate.
+    pub(crate) fn conjugate_vector_current(&self, vertex: VertexId) -> Option<VertexId> {
+        use lorentz::LorentzOp;
+        let v = self.vertex_def(vertex);
+        let spin_count = |s: i32| {
+            v.particles
+                .iter()
+                .filter(|&&p| self.particle(p).spin == s)
+                .count()
+        };
+        if v.particles.len() != 3 || spin_count(2) != 2 || spin_count(3) != 1 {
+            return None;
+        }
+        let vector_current = v.lorentz.iter().all(|&l| {
+            self.lorentz_struct(l).expr.iter().all(|term| {
+                let gammas = term
+                    .ops
+                    .iter()
+                    .filter(|op| matches!(op, LorentzOp::Gamma { .. }))
+                    .count();
+                gammas == 1
+                    && term.ops.iter().all(|op| {
+                        matches!(
+                            op,
+                            LorentzOp::Gamma { .. }
+                                | LorentzOp::ProjM { .. }
+                                | LorentzOp::ProjP { .. }
+                                | LorentzOp::Gamma5 { .. }
+                                | LorentzOp::Identity { .. }
+                        )
+                    })
+            })
+        });
+        if !vector_current {
+            return None;
+        }
+        let sorted = |mut ids: Vec<ParticleId>| {
+            ids.sort_by_key(|p| p.index());
+            ids
+        };
+        let own = sorted(v.particles.clone());
+        let anti = sorted(
+            v.particles
+                .iter()
+                .map(|&p| self.particle_id(&self.particle(p).antiname))
+                .collect::<Option<Vec<_>>>()?,
+        );
+        if own == anti {
+            return None;
+        }
+        let orders = |w: &Vertex| -> Vec<&BTreeMap<String, usize>> {
+            w.couplings
+                .values()
+                .map(|&c| &self.coupling_def(c).orders)
+                .collect()
+        };
+        let mut candidates = self.vertices.values().enumerate().filter(|(_, w)| {
+            sorted(w.particles.clone()) == anti
+                && w.lorentz == v.lorentz
+                && w.color == v.color
+                && w.couplings.keys().eq(v.couplings.keys())
+                && orders(w) == orders(v)
+        });
+        match (candidates.next(), candidates.next()) {
+            (Some((i, _)), None) => Some(VertexId(i)),
+            _ => None,
+        }
     }
 }
 
@@ -885,6 +1017,86 @@ fn split_vertices_by_coupling_order(
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    /// Every W–quark vertex of the CKM model carries, as bound by diagram
+    /// enumeration (particles read all-incoming), the coupling the Lagrangian
+    /// `(g/√2) ū_i γ^μ P_L V_ij d_j W⁺_μ + h.c.` gives it: an all-incoming
+    /// `{u~_i, d_j, W+}` is the `ū_i d_j W⁺` operator, `∝ V_ij`, and an all-incoming
+    /// `{d~_j, u_i, W-}` is its conjugate, `∝ conj(V_ij)`. `V` is the leading-order
+    /// Wolfenstein matrix `parameters.py` declares, read from the card's
+    /// `Wolfenstein` block. Only `V_ub` and `V_td` are complex there, and those are
+    /// the vertices this test can tell apart from the conjugate convention.
+    #[test]
+    fn ckm_vertices_bind_the_lagrangian_orientation() {
+        let model = sm::sm_model(sm::SMRestrict::CkmNoBMass);
+        let ev = EvaluatedModel::from_model(model.clone());
+        let p = |name: &str| ev.param_values[name].re;
+        let (lam, a, rho, eta) = (p("lamWS"), p("AWS"), p("rhoWS"), p("etaWS"));
+        assert!(eta != 0.0, "the card has no CKM phase");
+        let c = |re: f64, im: f64| Complex64::new(re, im);
+        let ckm = [
+            [
+                c(1.0 - lam * lam / 2.0, 0.0),
+                c(lam, 0.0),
+                c(rho, -eta) * a * lam.powi(3),
+            ],
+            [
+                c(-lam, 0.0),
+                c(1.0 - lam * lam / 2.0, 0.0),
+                c(a * lam * lam, 0.0),
+            ],
+            [
+                c(1.0 - rho, -eta) * a * lam.powi(3),
+                c(-a * lam * lam, 0.0),
+                c(1.0, 0.0),
+            ],
+        ];
+        let g = Complex64::i() * p("ee") / (p("sw") * 2f64.sqrt());
+        let generation = |name: &str, names: [&str; 3]| names.iter().position(|n| *n == name);
+        let (ups, downs) = (["u", "c", "t"], ["d", "s", "b"]);
+
+        let mut checked = 0;
+        let mut complex = 0;
+        for (i, v) in model.vertices.values().enumerate() {
+            let names: Vec<&str> = v
+                .particles
+                .iter()
+                .map(|&q| model.particle(q).name.as_str())
+                .collect();
+            let [f1, f2, w] = names.as_slice() else {
+                continue;
+            };
+            let expected = match (*w, f1.strip_suffix('~')) {
+                ("W+", Some(bar)) => match (generation(bar, ups), generation(f2, downs)) {
+                    (Some(u), Some(d)) => g * ckm[u][d],
+                    _ => continue,
+                },
+                ("W-", Some(bar)) => match (generation(bar, downs), generation(f2, ups)) {
+                    (Some(d), Some(u)) => g * ckm[u][d].conj(),
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            assert_eq!(v.couplings.len(), 1, "{}", v.name);
+            let got = ev.coupling(model.bound_coupling(VertexId(i), (0, 0)));
+            let rel = (got - expected).norm() / expected.norm();
+            assert!(
+                rel < 1e-13,
+                "{} {names:?} carries {got} where the Lagrangian gives {expected} \
+                 (relative deviation {rel:.3e})",
+                v.name
+            );
+            checked += 1;
+            if expected.re.abs() > 1e-6 * expected.norm() {
+                complex += 1;
+            }
+        }
+        assert_eq!(checked, 18, "W–quark vertices checked");
+        assert_eq!(
+            complex, 4,
+            "W–quark vertices whose coupling has a CKM phase"
+        );
+    }
 
     #[test]
     fn test_load_sm_ufo() {

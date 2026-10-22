@@ -186,7 +186,7 @@ fn cli_a_run_card_that_does_not_parse_is_named() {
 }
 
 /// A generation run asked for no events says where the zero came from: the
-/// flag, or the run card the artifact recorded when the flag is absent.
+/// flag, or the `nevents` the artifact recorded when the flag is absent.
 #[test]
 fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
     let home = tempfile::tempdir().unwrap();
@@ -223,9 +223,7 @@ fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
             .arg("--no-network")
             .arg("generate")
             .arg(&artifact)
-            .arg(&proc_card)
-            .arg("--run-card")
-            .arg(&run_card)
+            .args(["--seed", "1"])
             .arg("-o")
             .arg(cwd.path().join("never.lhe"))
             .args(extra)
@@ -240,8 +238,7 @@ fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
         (
             &[][..],
             format!(
-                "no events requested: --nevents is absent and the run card recorded in {} \
-                 asks for nevents = 0",
+                "no events requested: --nevents is absent and {} recorded nevents = 0",
                 artifact.display()
             ),
         ),
@@ -533,110 +530,12 @@ fn cli_an_unbindable_maximum_is_let_through_and_a_bindable_one_refused() {
     );
 }
 
-#[test]
-fn cli_generate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
-    let home = tempfile::tempdir().unwrap();
-    let cwd = tempfile::tempdir().unwrap();
-    let proc_card = cwd.path().join("proc_card.dat");
-    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
-    let clean_card = cwd.path().join("clean_run_card.dat");
-    std::fs::write(&clean_card, cut_beams()).unwrap();
-    let out = cwd.path().join("out");
-    let integrated = vibegraph(cwd.path(), home.path())
-        .arg("--no-network")
-        .arg("integrate")
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&clean_card)
-        .arg("--out")
-        .arg(&out)
-        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
-        .output()
-        .expect("spawn vibegraph");
-    assert!(
-        integrated.status.success(),
-        "got:\n{}",
-        stderr_of(&integrated)
-    );
-
-    let cut_card = cwd.path().join("cut_run_card.dat");
-    std::fs::write(&cut_card, format!("{}  30 = ptj1min\n", cut_beams())).unwrap();
-    let artifact = std::fs::read_dir(&out)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| p.is_file())
-        .expect("an artifact");
-    let output = vibegraph(cwd.path(), home.path())
-        .arg("--no-network")
-        .arg("generate")
-        .arg(&artifact)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&cut_card)
-        .args(["--nevents", "10", "-o"])
-        .arg(cwd.path().join("events.lhe"))
-        .output()
-        .expect("spawn vibegraph");
-    assert!(!output.status.success());
-    let stderr = stderr_of(&output);
-    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
-    assert!(
-        !stderr.contains("flavour groups") && !stderr.contains("cut compilation failed"),
-        "got:\n{stderr}"
-    );
-}
-
-// `generate` reads the run card before the artifact, as `integrate` reads it
-// before enumerating: a refusable run card is the first refusal either command
-// gives, whatever is wrong with the artifact.
-#[test]
-fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
-    let home = tempfile::tempdir().unwrap();
-    let cwd = tempfile::tempdir().unwrap();
-    let proc_card = cwd.path().join("proc_card.dat");
-    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
-    let artifact = cwd.path().join("not_an_artifact.json");
-    std::fs::write(&artifact, "not an artifact").unwrap();
-    let generate_with = |card: &str| {
-        let run_card = cwd.path().join("run_card.dat");
-        std::fs::write(&run_card, card).unwrap();
-        vibegraph(cwd.path(), home.path())
-            .arg("--no-network")
-            .arg("generate")
-            .arg(&artifact)
-            .arg(&proc_card)
-            .arg("--run-card")
-            .arg(&run_card)
-            .args(["--nevents", "10", "-o"])
-            .arg(cwd.path().join("events.lhe"))
-            .output()
-            .expect("spawn vibegraph")
-    };
-
-    let control = generate_with(&cut_beams());
-    assert!(!control.status.success());
-    let control_stderr = stderr_of(&control);
-    assert!(
-        control_stderr.contains("cannot read") && control_stderr.contains("not_an_artifact"),
-        "the clean card must fail on the artifact, got:\n{control_stderr}"
-    );
-
-    let output = generate_with(&format!("{}  30 = ptj1min\n", cut_beams()));
-    assert!(!output.status.success());
-    let stderr = stderr_of(&output);
-    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
-    assert!(
-        !stderr.contains("not_an_artifact"),
-        "the artifact was read before the run card:\n{stderr}"
-    );
-}
-
-/// `generate` on a proton card refuses an artifact whose recorded collider energy
-/// is not the `2√(E₁E₂)` the card's beams give, naming both energies: an artifact
-/// edited to record `E₁ + E₂` at 6500 × 4000 GeV, as one integrated before
-/// unequal beams were supported would. The same artifact recording `2√(E₁E₂)`, and
-/// an equal-beam one recording `E₁ + E₂`, pass this check and stop later, on the
-/// parton distributions this hermetic run cannot read.
+/// `generate` refuses a proton artifact whose recorded collider energy is not the
+/// `2√(E₁E₂)` its recorded run card's beams give, naming both energies: an
+/// artifact edited to record `E₁ + E₂` at 6500 × 4000 GeV, as one integrated
+/// before unequal beams were supported would. The same artifact recording
+/// `2√(E₁E₂)`, and an equal-beam one recording `E₁ + E₂`, pass this check and
+/// stop later, on the parton distributions this hermetic run cannot read.
 #[test]
 fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     let home = tempfile::tempdir().unwrap();
@@ -665,10 +564,9 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     let integrated = IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).unwrap();
 
     let generate_at = |name: &str, beams: &str, sqrt_s_had: f64| {
-        let run_card = cwd.path().join(format!("{name}_run_card.dat"));
-        std::fs::write(&run_card, beams).unwrap();
         let mut artifact = integrated.clone();
-        artifact.run_card = RunCard::parse(beams).unwrap();
+        let (run_card, _) = RunCard::parse(beams).unwrap().split();
+        artifact.run_card = run_card;
         artifact.pdf_set = DEFAULT_PDF_SET.to_string();
         artifact.pdf_member = 0;
         artifact.sqrt_s_had = sqrt_s_had;
@@ -678,10 +576,7 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
             .arg("--no-network")
             .arg("generate")
             .arg(&path)
-            .arg(&proc_card)
-            .arg("--run-card")
-            .arg(&run_card)
-            .args(["--nevents", "10", "-o"])
+            .args(["--seed", "1", "--nevents", "10", "-o"])
             .arg(cwd.path().join("never.lhe"))
             .output()
             .expect("spawn vibegraph");
@@ -696,6 +591,7 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     assert!(
         stale.contains(refusal)
             && stale.contains("sqrt(s) = 10500 GeV")
+            && stale.contains("beams of 6500 and 4000 GeV")
             && stale.contains("= 10198.03902718557 GeV"),
         "{stale}"
     );

@@ -46,6 +46,7 @@
 //! than compared on its own.
 
 mod common;
+use common::PdfDataPath;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -496,8 +497,6 @@ struct Generator {
     /// Held for its `Drop`: everything below lives inside it.
     _tmp: tempfile::TempDir,
     dir: PathBuf,
-    proc_card: PathBuf,
-    run_card: PathBuf,
     artifact: PathBuf,
 }
 
@@ -534,8 +533,7 @@ impl Generator {
             .arg(&run_card)
             .arg("--out")
             .arg(&out)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .args([
                 "--neval",
                 row_spec.neval,
@@ -556,8 +554,6 @@ impl Generator {
             artifact: out.join("grid.bin.zst"),
             _tmp: tmp,
             dir,
-            proc_card,
-            run_card,
         }
     }
 
@@ -567,11 +563,7 @@ impl Generator {
         let generate = common::vibegraph_ambient()
             .arg("generate")
             .arg(&self.artifact)
-            .arg(&self.proc_card)
-            .arg("--run-card")
-            .arg(&self.run_card)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .arg("--seed")
             .arg(seed.to_string())
             .arg("--nevents")

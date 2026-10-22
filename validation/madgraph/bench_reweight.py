@@ -49,11 +49,11 @@ SEED = "20261005"
 DEFAULT_OUT = os.path.join(HERE, "output", "reweight_bench")
 
 
-def timed(cmd, log=None):
+def timed(cmd, log=None, env=None):
     """Wall and child CPU seconds of one command, and its stderr."""
     r0 = resource.getrusage(resource.RUSAGE_CHILDREN)
     t0 = time.perf_counter()
-    p = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    p = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     wall = time.perf_counter() - t0
     r1 = resource.getrusage(resource.RUSAGE_CHILDREN)
     if log:
@@ -70,8 +70,7 @@ def vibegraph(binary, row, work, out, nevents, reps):
     """Per variant: median wall and CPU of `generate`, and the plan it logged."""
     model, ufo = oracle.vibegraph_model(row)
     card = os.path.join(work, "reweight_card.dat")
-    base = [binary, "generate", os.path.join(work, "integrate", "grid.bin.zst"), os.path.join(work, "proc_card.dat"),
-            *ufo, "--run-card", os.path.join(ROOT, row["run_card"]), "--pdf-dir", os.path.join(ROOT, "validation", "pdf"),
+    base = [binary, "generate", os.path.join(work, "integrate", "grid.bin.zst"), *ufo,
             "--seed", SEED, "--nevents", str(nevents), "--force", "-o", os.path.join(out, "events.lhe")]
     variants = {
         "none": [],
@@ -85,7 +84,7 @@ def vibegraph(binary, row, work, out, nevents, reps):
     # Interleaved, so a drift in the host's speed lands on every variant alike.
     for _ in range(reps):
         for name, extra in variants.items():
-            wall, cpu, err = timed(base + extra)
+            wall, cpu, err = timed(base + extra, env=oracle.vibegraph_env())
             runs[name].append((wall, cpu))
             plans[name] = [l.split("INFO ", 1)[-1].strip() for l in err.splitlines() if "evaluations per event" in l]
     return {

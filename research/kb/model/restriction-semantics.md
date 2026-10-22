@@ -21,8 +21,9 @@ A restrict card is an SLHA parameter card (`ufo/slha.rs`, `ParamCard`) that MadG
 applies when a model is imported. `import model <name>-<variant>` selects
 `restrict_<variant>.dat` from the model directory; a bare `import model <name>` uses
 `restrict_default.dat` when the directory has one (`UFOModel::load_with_digest`). The
-Standard Model is interned with its nine restrict cards baked in as text
-(`ufo/sm.rs`, `SMRestrict`).
+Standard Model is interned with ten restrict cards baked in as text: MadGraph's
+nine and CMS genproductions' `ckm_no_b_mass` (`ufo/sm.rs`, `SMRestrict`;
+`SMRestrict::ships_with_madgraph` tells them apart).
 
 A restriction does two things: it sets the model's parameters, and it prunes what
 vanishes under them.
