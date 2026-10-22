@@ -228,7 +228,7 @@ Open items it named:
   ([backlog](../backlog/performance/soft-gluon-map-shapes-missing.md));
 - MadEvent bins each invariant on the absolute dimensionless invariant, where
   this code bins the window-relative position
-  ([backlog](../backlog/performance/vegas-grid-coords-not-absolute.md)); the
+  (refused: [the joint seam design](sampler-and-map-seams.md#decisions), D2); the
   per-channel grids are [phase-space/per-channel-vegas-grids](per-channel-vegas-grids.md).
 
 [^n37-survey]: Note 37 §1: MadEvent's maps against ours, at the pinned tree.

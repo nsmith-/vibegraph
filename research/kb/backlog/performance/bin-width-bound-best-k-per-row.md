@@ -16,4 +16,9 @@ sources:
 P2's grids are in the scratchpad of the session that ran it, not in the
 repository; re-running P2's driver regenerates them.
 
+The mechanism is settled: the VEGAS config addresses the bound per coordinate
+role, with `K = 6` on every role by default
+([joint seam design](../../phase-space/sampler-and-map-seams.md), D4); this
+study reads P2's grids by role and decides whether any override is worth it.
+
 Filed at the close-out of [vegas-low-acceptance-bins](../../sprints/vegas-low-acceptance-bins/sprint.md).
