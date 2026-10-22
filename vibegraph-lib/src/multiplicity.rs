@@ -35,7 +35,7 @@ use crate::vegas::{GridRule, IterationCombination, VegasResult};
 /// Split a proc card's enumeration by final-state multiplicity, in increasing
 /// order of outgoing legs, each part keeping the enumeration's own order.
 ///
-/// Empty sets are dropped, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
+/// Empty sets are dropped, as [`derive_flavor_groups`]
 /// drops them; an enumeration with no diagram at all comes back whole, as one
 /// part, for that function to refuse by name.
 ///

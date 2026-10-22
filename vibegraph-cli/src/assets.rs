@@ -2,9 +2,9 @@
 //! whether anything missing may be downloaded.
 //!
 //! A UFO model resolves `--ufo-dir` → `$VIBEGRAPH_UFO_DIR` → `~/.vibegraph` →
-//! the working directory ([`cache::resolve::locate`]); a PDF set resolves
-//! `--pdf-dir` → each `$LHAPDF_DATA_PATH` entry (or `$LHAPATH`'s) →
-//! `~/.vibegraph`, offering a download last ([`cache::resolve::locate_pdf_set`]).
+//! the working directory ([`locate`]); a PDF set resolves `--pdf-dir` → each
+//! `$LHAPDF_DATA_PATH` entry (or `$LHAPATH`'s) → `~/.vibegraph`, offering a
+//! download last ([`locate_pdf_set`]).
 //! What belongs here is the part that talks to the user: which step is allowed
 //! to reach the network, what it says before it does, and what it says instead
 //! when it may not.

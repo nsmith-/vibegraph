@@ -628,8 +628,8 @@ mod tests {
     /// written record: a row moved between stages fails here by name.
     ///
     /// What this cannot see is a field whose stage is wrong in both the table
-    /// and this list; the list is written from the design's classification, not
-    /// derived from the table.
+    /// and this list; the list is written out by hand, not derived from the
+    /// table.
     #[test]
     fn every_run_card_field_has_one_stage_and_fourteen_are_generate() {
         for (name, _) in PARAM_DEFAULTS {

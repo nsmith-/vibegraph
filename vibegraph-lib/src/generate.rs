@@ -115,6 +115,7 @@ pub enum Strategy {
 pub struct GenerateOptions<'a> {
     /// The generation seed. Same artifact, settings and seed, same sample.
     pub seed: u64,
+    /// How the accepted points become the file's events.
     pub strategy: Strategy,
     /// Points the frozen `w_max` scan spends on each channel.
     pub scan_points: ScanBudget,
@@ -139,11 +140,14 @@ pub struct GenerateOptions<'a> {
 /// parsed proc card, the model, and on proton beams the parton densities.
 #[derive(Clone, Copy)]
 pub struct GenerateAssets<'a> {
+    /// The artifact's recorded proc card, as this build parses it.
     pub card: &'a SupportedCard,
+    /// The model that card names, at the digest the artifact records.
     pub model: &'a UFOModel,
+    /// `model` evaluated at its own parameters.
     pub evaluated: &'a EvaluatedModel,
-    /// The PDF set and the member the artifact was integrated with; required on
-    /// proton beams, unread otherwise.
+    /// The PDF set and the member the artifact was integrated with; required
+    /// where [`reads_parton_densities`], unread otherwise.
     pub pdf: Option<(&'a PdfSet, &'a PdfMember)>,
 }
 
@@ -191,6 +195,7 @@ pub enum GenerateError {
         got: String,
         want: String,
     },
+    /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
 }
@@ -247,8 +252,7 @@ pub fn generate(
     options: &GenerateOptions<'_>,
 ) -> Result<EmitSummary, GenerateError> {
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
-    let hadronic = !assets.card.is_decay() && artifact.run_card.beam_mode() == BeamMode::Proton;
-    if hadronic {
+    if reads_parton_densities(artifact, assets.card) {
         let Some((set, pdf)) = assets.pdf else {
             return Err(err(
                 "the artifact was integrated at proton beams, and no PDF set was given to \
@@ -259,6 +263,14 @@ pub fn generate(
     } else {
         generate_sample(artifact, assets, settings, options)
     }
+}
+
+/// Whether a generation from `artifact`, whose recorded proc card parses to
+/// `card`, convolves with parton densities, and so needs
+/// [`GenerateAssets::pdf`]: a scattering integrated at proton beams. A decay is
+/// at rest whatever the card's beams.
+pub fn reads_parton_densities(artifact: &IntegrateArtifact, card: &SupportedCard) -> bool {
+    !card.is_decay() && artifact.run_card.beam_mode() == BeamMode::Proton
 }
 
 /// Stochastic rounding writes unit weights, so on a sum over several
@@ -1145,14 +1157,14 @@ fn report(
     );
 }
 
-/// Whether any process line of the card carries decays, which is when an event
-/// record lists its resonances.
 /// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
 /// without them.
 fn forbidden_onshell(parsed: &SupportedCard, model: &UFOModel) -> Result<Vec<i64>, GenerateError> {
     forbidden_onshell_ids(parsed, model).map_err(|e| err(e.to_string()))
 }
 
+/// Whether any process line of the card carries decays, which is when an event
+/// record lists its resonances.
 fn has_decay_chains(parsed: &SupportedCard) -> bool {
     parsed.processes.iter().any(|p| !p.decays.is_empty())
 }
@@ -1450,7 +1462,8 @@ mod tests {
 
     /// The model is checked by digest alone. The interned SM at the recorded
     /// restriction passes; another restriction, and the same label over
-    /// different contents, are both refused with the design's message.
+    /// different contents, are both refused, naming the model, where it was
+    /// read and both digests.
     #[test]
     fn a_model_whose_digest_moved_is_refused() {
         use crate::ufo::sm::SMRestrict;

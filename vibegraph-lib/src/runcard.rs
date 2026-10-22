@@ -240,8 +240,10 @@ impl EventNorm {
 pub const DEFAULT_INTEGRATION_SEED: u64 = 20_260_719;
 
 /// A parameter value as a card line spells it: the text MadGraph's own record
-/// of the card writes for it.
-fn card_text(value: &ParamValue) -> String {
+/// of the card writes for it: a real in its shortest round-tripping form with a
+/// decimal point (`20.0`), a flag as `True` or `False`, and a list or string as
+/// its text.
+pub(crate) fn card_text(value: &ParamValue) -> String {
     match value {
         ParamValue::Float(x) => format!("{x:?}"),
         ParamValue::Int(i) => i.to_string(),

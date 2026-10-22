@@ -19,7 +19,7 @@ use super::parse::{
 use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
 use crate::generate::GenerateSettings;
-use crate::runcard::{ParamValue, RunCard};
+use crate::runcard::{card_text, RunCard};
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -288,13 +288,7 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 pub fn mg_run_card(card: &RunCard, settings: &GenerateSettings, seed: u64) -> String {
     let mut body = String::from("\n");
     for (name, value) in &card.banner_with(settings, seed) {
-        let text = match value {
-            ParamValue::Float(x) => format!("{x:?}"),
-            ParamValue::Int(i) => i.to_string(),
-            ParamValue::Bool(true) => "True".to_string(),
-            ParamValue::Bool(false) => "False".to_string(),
-            ParamValue::Str(s) | ParamValue::Opaque(s) => s.clone(),
-        };
+        let text = card_text(value);
         if text.trim().is_empty() {
             continue;
         }
@@ -456,6 +450,7 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runcard::ParamValue;
 
     #[test]
     fn reweight_markup_has_madgraphs_layout() {

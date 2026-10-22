@@ -28,13 +28,13 @@ use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
-    check_model, check_process, generate, GenerateAssets, GenerateError, GenerateOptions,
-    Strategy as SampleStrategy,
+    check_model, check_process, generate, reads_parton_densities, GenerateAssets, GenerateError,
+    GenerateOptions, Strategy as SampleStrategy,
 };
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
-use vibegraph::runcard::{BeamMode, EventNorm};
+use vibegraph::runcard::EventNorm;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
@@ -368,8 +368,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let evaluated = EvaluatedModel::from_model(model.clone());
     let reweight = reweight_launches(args, &parsed, &model)?;
 
-    let hadronic = !parsed.is_decay() && artifact.run_card.beam_mode() == BeamMode::Proton;
-    let set = if hadronic {
+    let set = if reads_parton_densities(&artifact, &parsed) {
         Some(load_pdf_set(&artifact.pdf_set, None, network)?)
     } else {
         None
@@ -412,7 +411,6 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vibegraph::runcard::EventNorm;
 
     /// The CLI names the flag that fixes a rounding refusal; the library's own
     /// text names none.
