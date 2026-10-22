@@ -35,6 +35,7 @@
 //! MadGraph-reweight oracle, not here.
 
 mod common;
+use common::PdfDataPath;
 
 use std::path::{Path, PathBuf};
 
@@ -158,8 +159,7 @@ fn reweighted_sample(
         .arg(run_card)
         .arg("--out")
         .arg(&out)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .args(["--fixed-budget", "--neval", budget[0], "--niter", budget[1]])
         .args(["--seed", SEED])
         .output()
@@ -173,11 +173,7 @@ fn reweighted_sample(
     let generate = common::vibegraph_ambient()
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .args(["--seed", SEED, "--nevents", &nevents.to_string()])
         .arg("--reweight-card")
         .arg(&rw_card)

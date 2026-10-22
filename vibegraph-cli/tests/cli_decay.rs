@@ -441,7 +441,6 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
     let output = common::vibegraph(tmp.path(), tmp.path())
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
-        .arg(&card)
         .args(["--strategy", "stochastic-rounding", "--seed", "20260925"])
         .args(["--nevents", &sample.events.to_string()])
         .arg("-o")

@@ -18,7 +18,8 @@ use super::parse::{
 };
 use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
-use crate::runcard::{ParamValue, RunCard};
+use crate::generate::GenerateSettings;
+use crate::runcard::{card_text, RunCard};
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -265,7 +266,9 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 
 /// The `<MGRunCard>` element MadGraph puts in an event file's header
 /// (`banner.py:69-86`): the run card, one `value = name` line per parameter,
-/// as MadGraph records it ([`RunCard::banner_values`]).
+/// as MadGraph records it. The card is the integration's, joined with the
+/// generation's `settings` and its `seed` as `iseed` (`RunCard::banner_with`),
+/// so the record is the run as it was drawn.
 ///
 /// The body is element text, with `<`, `>` and `&` escaped, and not the CDATA
 /// section MadGraph wraps it in: Pythia 8.312's reader drops a CDATA
@@ -282,16 +285,10 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 /// round-tripping form with a decimal point (`20.0`), a flag as `True` or
 /// `False`, and a list or string as its text; a parameter whose value is
 /// empty (an unset list) is left out.
-pub fn mg_run_card(card: &RunCard) -> String {
+pub fn mg_run_card(card: &RunCard, settings: &GenerateSettings, seed: u64) -> String {
     let mut body = String::from("\n");
-    for (name, value) in card.banner_values() {
-        let text = match value {
-            ParamValue::Float(x) => format!("{x:?}"),
-            ParamValue::Int(i) => i.to_string(),
-            ParamValue::Bool(true) => "True".to_string(),
-            ParamValue::Bool(false) => "False".to_string(),
-            ParamValue::Str(s) | ParamValue::Opaque(s) => s.clone(),
-        };
+    for (name, value) in &card.banner_with(settings, seed) {
+        let text = card_text(value);
         if text.trim().is_empty() {
             continue;
         }
@@ -453,6 +450,7 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runcard::ParamValue;
 
     #[test]
     fn reweight_markup_has_madgraphs_layout() {
@@ -798,12 +796,17 @@ mod tests {
     /// rewrites under `xqcut` keep the card's values.
     #[test]
     fn mg_run_card_carries_what_set_mad_reads() {
-        let card = RunCard::parse(
+        let parsed = RunCard::parse(
             "1 = ickkw\n30 = xqcut\n45 = ptj\n0.4 = drjj\nTrue = use_syst\n2 = alpsfact\n",
         )
         .expect("card");
-        assert_eq!(card.float("ptj"), 30.0, "the resolved card is setcuts.f's");
-        let block = mg_run_card(&card);
+        assert_eq!(
+            parsed.float("ptj"),
+            30.0,
+            "the resolved card is setcuts.f's"
+        );
+        let (card, settings) = parsed.clone().split();
+        let block = mg_run_card(&card, &settings, 20261021);
         assert!(block.starts_with("<MGRunCard>\n\n  "));
         assert!(block.ends_with("\n\n</MGRunCard>"));
         assert!(!block.contains("CDATA"));
@@ -825,7 +828,43 @@ mod tests {
         assert_eq!(number("ptj"), 45.0);
         assert_eq!(number("mmjj"), 0.0);
         assert_eq!(fields["use_syst"], "True");
-        assert_eq!(fields.len(), card.iter().filter(|(_, v)| !matches!(v, ParamValue::Opaque(s) | ParamValue::Str(s) if s.trim().is_empty())).count());
+        assert_eq!(fields["nevents"], "10000");
+        assert_eq!(fields["event_norm"], "average");
+        assert_eq!(
+            fields["iseed"], "20261021",
+            "iseed is the generation's seed"
+        );
+        assert_eq!(fields.len(), parsed.iter().filter(|(_, v)| !matches!(v, ParamValue::Opaque(s) | ParamValue::Str(s) if s.trim().is_empty())).count());
+    }
+
+    /// The record joins the integration card with the generation's settings as
+    /// used: a setting changed after the split is what the record says, every
+    /// integration field keeps the card's value, and a seed beyond MadGraph's
+    /// 32-bit `iseed` leaves the card's own.
+    #[test]
+    fn mg_run_card_records_the_generation_as_drawn() {
+        let parsed = RunCard::parse("7 = iseed\n500 = nevents\n").expect("card");
+        let (card, mut settings) = parsed.split();
+        settings.nevents = 42;
+        settings.event_norm = crate::runcard::EventNorm::Sum;
+        settings.systematics.enabled = false;
+        let field = |block: &str, name: &str| -> String {
+            block
+                .lines()
+                .filter_map(|l| l.split_once('='))
+                .find(|(_, n)| n.trim() == name)
+                .map(|(v, _)| v.trim().to_string())
+                .unwrap_or_else(|| panic!("{name} is not recorded"))
+        };
+        let block = mg_run_card(&card, &settings, 9);
+        assert_eq!(field(&block, "nevents"), "42");
+        assert_eq!(field(&block, "event_norm"), "sum");
+        assert_eq!(field(&block, "use_syst"), "False");
+        assert_eq!(field(&block, "iseed"), "9");
+        assert_eq!(field(&block, "ebeam1"), "6500.0");
+        assert_eq!(field(&block, "time_of_flight"), "-1.0");
+        let wide = mg_run_card(&card, &settings, u64::from(u32::MAX));
+        assert_eq!(field(&wide, "iseed"), "7");
     }
 
     /// A header with no blocks is the header [`LheWriter::begin`] always

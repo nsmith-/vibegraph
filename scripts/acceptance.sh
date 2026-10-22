@@ -180,12 +180,12 @@ EOF
 # A scratch cache root, so this never reads or writes the caller's real
 # ~/.vibegraph and every run starts from "nothing is cached".
 export VIBEGRAPH_HOME="$work/home"
-unset VIBEGRAPH_PDF_DIR VIBEGRAPH_UFO_DIR VIBEGRAPH_NO_NETWORK
+unset LHAPDF_DATA_PATH LHAPATH VIBEGRAPH_PDF_DIR VIBEGRAPH_UFO_DIR VIBEGRAPH_NO_NETWORK
 mkdir -p "$VIBEGRAPH_HOME"
 echo "cache root: $VIBEGRAPH_HOME"
 
-# Every run happens somewhere with no `validation/pdf` beside it, so the dev
-# fallback cannot quietly satisfy a resolution that ought to reach the cache.
+# Every run happens in the scratch directory, with no LHAPDF data path set, so
+# nothing but the cache can satisfy a resolution that ought to reach it.
 cd "$work"
 
 # ------------------------------------------------------------- the four steps
@@ -228,11 +228,11 @@ step "with consent, the PDF set is downloaded, verified and cached"
 grep -q "^σ = " "$work/integrate.out" || fail "the run printed no cross section"
 
 step "generating events, with the PDF set served from the cache"
-# `--no-network`, and generation needs the same PDF set the integration used: if
-# the cache did not take, nothing is allowed to fetch it and this fails. That is
-# the cache-hit check and the event generation in one command.
-"$binary" --no-network generate "$work/llj/grid.bin.zst" "$cards/proc_card.dat" \
-  --run-card "$cards/run_card.dat" --nevents "$NEVENTS" --seed 1 \
+# `--no-network`, and generation needs the PDF set the artifact recorded: if the
+# cache did not take, nothing is allowed to fetch it and this fails. That is the
+# cache-hit check and the event generation in one command.
+"$binary" --no-network generate "$work/llj/grid.bin.zst" \
+  --nevents "$NEVENTS" --seed 1 \
   -o "$work/events.lhe" 2>&1 | tee "$work/gen.out" \
   || fail "event generation failed (a cached PDF set is part of what this needs)"
 [ -s "$work/events.lhe" ] || fail "the event file is empty"

@@ -43,11 +43,9 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
-use vibegraph::vegas::GridRule;
 
 /// A process with a resonance in reach of the beams, so the multichannel sampler
 /// has something to resolve and the artifact banks more than one channel.
@@ -76,8 +74,6 @@ const SHAPE_PULL_LIMIT: f64 = 4.0;
 struct Run {
     _tmp: tempfile::TempDir,
     dir: PathBuf,
-    proc_card: PathBuf,
-    run_card: PathBuf,
     artifact_path: PathBuf,
     artifact: IntegrateArtifact,
 }
@@ -142,8 +138,6 @@ fn integrate_with(extra: &str) -> Run {
     Run {
         _tmp: tmp,
         dir,
-        proc_card,
-        run_card,
         artifact_path,
         artifact,
     }
@@ -154,9 +148,6 @@ impl Run {
         let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
-            .arg(&self.proc_card)
-            .arg("--run-card")
-            .arg(&self.run_card)
             .arg("--strategy")
             .arg(strategy)
             .arg("--seed")
@@ -211,20 +202,28 @@ impl Run {
         )
     }
 
-    /// A `generate` invocation expected to fail, with the cards spelled out.
-    fn refuse(&self, proc_card: &Path, run_card: Option<&Path>, name: &str) -> Output {
-        let mut cmd = common::vibegraph_ambient();
-        cmd.arg("generate")
-            .arg(&self.artifact_path)
-            .arg(proc_card)
-            .arg("--nevents")
-            .arg("10")
-            .arg("-o")
-            .arg(self.dir.join(name));
-        if let Some(path) = run_card {
-            cmd.arg("--run-card").arg(path);
-        }
-        cmd.output().expect("spawn vibegraph")
+    /// `generate` on `artifact` with only the flags that every run needs, and
+    /// `extra` after them.
+    fn generate_on(&self, artifact: &Path, extra: &[&str], name: &str) -> Output {
+        common::vibegraph_ambient()
+            .arg("generate")
+            .arg(artifact)
+            .args(["--seed", SEED_A, "--nevents", "10", "-o"])
+            .arg(self.dir.join(name))
+            .args(extra)
+            .output()
+            .expect("spawn vibegraph")
+    }
+
+    /// A copy of this run's artifact, changed by `edit` and written to `name`.
+    fn edited_artifact(&self, name: &str, edit: impl FnOnce(&mut IntegrateArtifact)) -> PathBuf {
+        let mut artifact = self.artifact.clone();
+        edit(&mut artifact);
+        let path = self.dir.join(name);
+        artifact
+            .write_to_path(&path, true)
+            .expect("write the edited artifact");
+        path
     }
 }
 
@@ -592,198 +591,150 @@ fn expect_refusal(out: Output, because: &str, names: &str) {
     );
 }
 
-/// The refusal is the feature, so the refusal is what is tested. A matching pair
-/// is checked first only so that a check which refuses everything cannot pass as
-/// one that works.
+/// `generate` takes no card and no PDF choice: the artifact recorded both. A
+/// proc card, a run card, a PDF set or a PDF directory handed to it is an
+/// argument error, refused before anything is read.
 #[test]
-fn a_card_that_did_not_train_the_grid_is_refused() {
+fn a_card_or_a_pdf_choice_passed_to_generate_is_an_argument_error() {
     let run = run();
+    let proc_card = run.dir.join("proc_card.dat");
+    let run_card = run.dir.join("run_card.dat");
+    let cases: [(&str, Vec<String>); 4] = [
+        (
+            "a positional proc card",
+            vec![proc_card.display().to_string()],
+        ),
+        (
+            "--run-card",
+            vec!["--run-card".to_string(), run_card.display().to_string()],
+        ),
+        (
+            "--pdf-set",
+            vec![
+                "--pdf-set".to_string(),
+                "NNPDF23_lo_as_0130_qed".to_string(),
+            ],
+        ),
+        (
+            "--pdf-dir",
+            vec!["--pdf-dir".to_string(), run.dir.display().to_string()],
+        ),
+    ];
+    for (what, extra) in cases {
+        let extra: Vec<&str> = extra.iter().map(String::as_str).collect();
+        let out = run.generate_on(&run.artifact_path, &extra, "never.lhe");
+        // The argument refused is the one under test, not a value it left over.
+        expect_refusal(out, what, &format!("unexpected argument '{}'", extra[0]));
+        assert!(!run.dir.join("never.lhe").exists(), "{what} wrote a file");
+    }
+}
 
-    let (matching, _) = run.generate("buffer", SEED_A, FEW_EVENTS, "matching.lhe");
-    assert_eq!(matching.events.len(), FEW_EVENTS);
-
-    // A run card at a different beam energy: the grids were trained at another √s
-    // and would sample a plausible-looking wrong distribution.
-    let moved = run.dir.join("moved_run_card.dat");
-    write_run_card(&moved, 60.0, "");
+/// A missing `--seed` is refused, saying why: two jobs on one grid under one
+/// seed would write the same events.
+#[test]
+fn a_missing_seed_is_refused() {
+    let run = run();
+    let out = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(&run.artifact_path)
+        .args(["--nevents", "10", "-o"])
+        .arg(run.dir.join("unseeded.lhe"))
+        .output()
+        .expect("spawn vibegraph");
     expect_refusal(
-        run.refuse(&run.proc_card, Some(&moved), "never.lhe"),
-        "a run card with a different beam energy",
-        "run card `ebeam1`: artifact has",
+        out,
+        "a generation without --seed",
+        "each generation job needs its own seed",
     );
+    assert!(!run.dir.join("unseeded.lhe").exists());
+}
 
-    // A cut threshold moves no beam and no scale but changes which points the grid
-    // was trained on.
-    let recut = run.dir.join("recut_run_card.dat");
-    write_run_card(&recut, EBEAM, "  25.0 = ptl\n");
+/// The recorded proc card is parsed again and must spell the recorded
+/// process. The artifact is `run()`'s own with only the card's text changed,
+/// as a build that parsed the card differently would see it.
+#[test]
+fn a_recorded_proc_card_that_parses_to_another_process_is_refused() {
+    let run = run();
+    let edited = run.edited_artifact("reparsed.bin.zst", |a| {
+        a.proc_card = "import model sm\ngenerate e+ e- > ta+ ta-\n".to_string();
+    });
+    let out = run.generate_on(&edited, &[], "never.lhe");
+    let stderr = common::stderr_of(&out);
     expect_refusal(
-        run.refuse(&run.proc_card, Some(&recut), "never.lhe"),
-        "a run card with a different lepton pT cut",
-        "run card `ptl`: artifact has",
+        out,
+        "a recorded proc card for another process",
+        "parses to `e+ e- > ta+ ta-`",
     );
+    assert!(stderr.contains("re-integrate"), "{stderr}");
+}
 
-    // A different process entirely.
-    let other_proc = run.dir.join("other_proc_card.dat");
-    std::fs::write(&other_proc, "import model sm\ngenerate e+ e- > ta+ ta-\n").unwrap();
+/// The model the recorded proc card resolves to is checked by digest against
+/// the artifact's, the interned SM included. The artifact is `run()`'s own
+/// with only the recorded digest changed, so the digest is all that can refuse
+/// it.
+#[test]
+fn a_model_whose_digest_moved_is_refused() {
+    let run = run();
+    let edited = run.edited_artifact("moved-model.bin.zst", |a| {
+        a.model.digest = vibegraph::ufo::identity::digest_bytes(b"another model");
+    });
+    let out = run.generate_on(&edited, &[], "never.lhe");
+    let stderr = common::stderr_of(&out);
     expect_refusal(
-        run.refuse(&other_proc, Some(&run.run_card), "never.lhe"),
-        "a proc card for a different process",
-        "process: artifact has",
+        out,
+        "a model whose digest moved",
+        "model sm-default at (built in) has digest",
     );
-
-    // The same `generate` line under a different model: nothing the process string
-    // or the run card can see moves, only the model does. The artifact's own model
-    // identity is the only thing standing between this and a sample produced from
-    // a different model than the grids were trained on.
-    let other_model = run.dir.join("other_model_proc_card.dat");
-    std::fs::write(
-        &other_model,
-        format!("import model sm-no_b_mass\ngenerate {PROCESS}\n"),
-    )
-    .unwrap();
-    expect_refusal(
-        run.refuse(&other_model, Some(&run.run_card), "never.lhe"),
-        "a proc card importing a different restrict variant",
-        "model: artifact has",
+    assert!(
+        stderr.contains("its files changed after vibegraph integrate ran"),
+        "{stderr}"
     );
+}
 
-    // An omitted run card resolves to the MadGraph LO defaults — proton beams —
-    // and must not pass as "no card given, so nothing to disagree with".
+/// An existing output file is not clobbered.
+#[test]
+fn an_existing_event_file_is_left_alone() {
+    let run = run();
+    let (_, written) = run.generate("buffer", SEED_A, FEW_EVENTS, "existing.lhe");
     expect_refusal(
-        run.refuse(&run.proc_card, None, "never.lhe"),
-        "an omitted run card",
-        "run card `lpp1`: artifact has",
-    );
-
-    // And an existing output file is not clobbered.
-    expect_refusal(
-        run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("matching.lhe"))
+        run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("existing.lhe"))
             .output()
             .expect("spawn"),
         "an existing output file without --force",
         "already exists (pass --force to overwrite)",
     );
-    let untouched = std::fs::read_to_string(run.dir.join("matching.lhe")).expect("read back");
+    let untouched = std::fs::read_to_string(run.dir.join("existing.lhe")).expect("read back");
     assert_eq!(
-        LheFile::parse(&untouched).expect("parse").events.len(),
-        FEW_EVENTS,
-        "the refused run must leave the existing file alone"
+        untouched, written,
+        "the refused run must leave the file alone"
     );
 }
 
-/// A copy of `run()`'s artifact, stamped with an older format version so the
-/// stale-artifact guard has something to refuse or admit.
-fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
-    let mut artifact = run.artifact.clone();
-    artifact.format_version = format_version;
-    // A file that old records no grid rule and reads back as the unbounded one.
-    artifact.grid_rule = Some(GridRule::UNBOUNDED);
-    let path = run.dir.join(name);
-    artifact
-        .write_to_path(&path, true)
-        .expect("write stale copy");
-    path
-}
-
-/// `run()`'s own card selects the clustering scale (`dynamical_scale_choice = -1`
-/// is the default and nothing here fixes it), so a copy of its artifact stamped
-/// with format version 6 must be refused: version 6's `sigma_pb` was computed
-/// with the scale read from the sampler's own channel, and this build draws that
-/// channel's configuration from `AMP2` per point instead, which is a different
-/// rule for the same run card.
+/// An artifact written before version 13 records no proc card for a
+/// generation to replay, so `generate` refuses it by its version and says to
+/// re-integrate. The file is `run()`'s own payload with its version stamped
+/// down to 12: everything after the version decodes, so only the version can be
+/// what refuses it.
 #[test]
-fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
+fn a_version_12_artifact_is_refused() {
     let run = run();
-    let stale = stale_copy(run, "stale-clustering.bin.zst", 6);
-    let mut cmd = common::vibegraph_ambient();
-    cmd.arg("generate")
-        .arg(&stale)
-        .arg(&run.proc_card)
-        .arg("--run-card")
-        .arg(&run.run_card)
-        .arg("--nevents")
-        .arg("10")
-        .arg("-o")
-        .arg(run.dir.join("never.lhe"));
-    let out = cmd.output().expect("spawn vibegraph");
+    let mut raw = zstd::decode_all(
+        std::fs::read(&run.artifact_path)
+            .expect("read the artifact")
+            .as_slice(),
+    )
+    .expect("decompress the artifact");
+    raw[..4].copy_from_slice(&12u32.to_le_bytes());
+    let stale = run.dir.join("v12.bin.zst");
+    std::fs::write(&stale, zstd::encode_all(raw.as_slice(), 19).unwrap()).unwrap();
+
+    let out = run.generate_on(&stale, &[], "never.lhe");
     let stderr = common::stderr_of(&out);
+    expect_refusal(out, "a version-12 artifact", "artifact format version 12");
     assert!(
-        !out.status.success(),
-        "generate accepted a format-version-6 artifact on a clustering-scale card; it must \
-         refuse\nstdout: {}",
-        common::stdout_of(&out)
+        stderr.contains("regenerate it with `vibegraph integrate`"),
+        "the refusal does not say to re-integrate:\n{stderr}"
     );
-    assert!(
-        stderr.contains("AMP2") && stderr.contains("format version"),
-        "the refusal must name the scale rule and the version, got: {stderr}"
-    );
-}
-
-/// The same stale artifact, on a card that fixes every scale: `is_fully_fixed`
-/// takes the clustering branch out of the picture entirely (`ScaleChoice::
-/// needs_channels`), so the version-6 `sigma_pb` was computed by the same closed
-/// form this run would use and the guard must not fire.
-#[test]
-fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().to_path_buf();
-    let proc_card = dir.join("proc_card.dat");
-    let run_card = dir.join("run_card.dat");
-    std::fs::write(&proc_card, format!("import model sm\ngenerate {PROCESS}\n")).unwrap();
-    write_run_card(
-        &run_card,
-        EBEAM,
-        "True = fixed_ren_scale\nTrue = fixed_fac_scale\n",
-    );
-
-    let out = dir.join("out");
-    let status = common::vibegraph_ambient()
-        .arg("integrate")
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--out")
-        .arg(&out)
-        .args(["--neval", NEVAL, "--niter", NITER])
-        .status()
-        .expect("spawn vibegraph");
-    assert!(status.success(), "vibegraph integrate exited non-zero");
-
-    let artifact_path = out.join("grid.bin.zst");
-    let mut artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    let choice = ScaleChoice::from_run_card(&artifact.run_card).expect("scale choice compiles");
-    assert!(
-        !choice.needs_channels(),
-        "the fixture card must actually be fully fixed, or this test is not exercising the \
-         branch it claims to"
-    );
-    artifact.format_version = 6;
-    // A file that old records no grid rule and reads back as the unbounded one.
-    artifact.grid_rule = Some(GridRule::UNBOUNDED);
-    let stale = dir.join("stale-fixed.bin.zst");
-    artifact
-        .write_to_path(&stale, true)
-        .expect("write stale copy");
-
-    let output = dir.join("fixed.lhe");
-    let gen_status = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--nevents")
-        .arg("10")
-        .arg("-o")
-        .arg(&output)
-        .output()
-        .expect("spawn vibegraph");
-    assert!(
-        gen_status.status.success(),
-        "a format-version-6 artifact on a fixed-scale card must still load:\n{}",
-        common::stderr_of(&gen_status)
-    );
-    assert!(output.exists());
 }
 
 /// One sample per `event_norm`, each from an integration of the same card plus
@@ -873,20 +824,26 @@ fn event_norm_changes_the_written_weights_and_nothing_else() {
     }
 }
 
-/// A card that asks for a different `event_norm` than the grid was integrated
-/// with is refused like any other differing card parameter: the card is the
-/// artifact's fingerprint, and `event_norm` is not exempt from it.
+/// `--event-norm` overrides the recorded `event_norm` and moves only the
+/// weights: the `average` artifact under `--event-norm sum` writes the events,
+/// `<init>` and weights the `sum` artifact writes under its own recorded value.
+/// The two integrations are the same (`event_norm` trains nothing), so the
+/// files differ only in the header line naming the artifact.
 #[test]
-fn an_event_norm_that_did_not_train_the_grid_is_refused() {
-    let run = run();
-    let card = run.dir.join("sum_card.dat");
-    write_run_card(&card, EBEAM, "  sum = event_norm\n");
-    let out = run.refuse(&run.proc_card, Some(&card), "event_norm_refused.lhe");
-    expect_refusal(
-        out,
-        "the card is not the one that trained the grid",
-        "event_norm",
+fn the_event_norm_flag_overrides_the_recorded_value() {
+    let recorded = run_with_event_norm("sum");
+    let (from_record, _) = recorded.generate("buffer", SEED_A, FEW_EVENTS, "recorded-sum.lhe");
+    let (from_flag, _) = run().generate_with(&["--event-norm", "sum"], SEED_A, "flag-sum.lhe");
+    let from_flag = LheFile::parse(&from_flag).expect("our own file parses");
+    assert_eq!(
+        from_flag.init.weight_strategy,
+        WeightStrategy::SumCrossSectionPb
     );
+    assert_eq!(from_flag.init, from_record.init);
+    assert_eq!(from_flag.events.len(), from_record.events.len());
+    for (index, (a, b)) in from_flag.events.iter().zip(&from_record.events).enumerate() {
+        assert_eq!(a, b, "event {index} moved between the flag and the record");
+    }
 }
 
 /// Stochastic rounding's `IDWTUP = +3` unit-weight file is no `sum` or `unity`

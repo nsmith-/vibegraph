@@ -1506,7 +1506,7 @@ key = "cli-pdf-cache-fetched"
 layer = "banked"
 targets = ["vibegraph-cli/tests/cli_pdf_cache_fetched.rs"]
 inputs = ["fetched PDF set"]
-rationale = "The cache and --pdf-dir resolution routes exercised with a real PDF set, from a working directory where no dev fallback can resolve. The refusal paths need no set and stay hermetic."
+rationale = "The cache, --pdf-dir and LHAPDF_DATA_PATH resolution routes exercised with a real PDF set, from an empty working directory with no other PDF variable set. The refusal paths need no set and stay hermetic."
 
 [[standalone]]
 key = "vegas-sigma"

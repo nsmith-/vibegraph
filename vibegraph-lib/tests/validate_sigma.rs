@@ -5368,7 +5368,7 @@ fn check_grammar_card(entry: &GrammarEntry, row: &SeededRow) {
         let banked = match key {
             "ebeam1" => card.ebeam1,
             "ebeam2" => card.ebeam2,
-            "nevents" => card.nevents as f64,
+            "nevents" => card.int("nevents") as f64,
             other => panic!("[{}] no check for the override {other}", entry.reference),
         };
         assert_eq!(
