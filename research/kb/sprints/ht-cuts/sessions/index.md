@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: compile MadGraph's HT cuts](F1.md) - Implement htjmin, htjmax, ihtmin and ihtmax with cuts.f's definitions, remove them from UNIMPLEMENTED_CUTS, test them per event, and validate σ on an HT-binned card.
+
+## Session Report
+
+* [F1 report: MadGraph's HT cuts compiled](F1-report.md) - cuts.f's htj and iht definitions with citations, the implementation, per-event tests with mutation evidence, local σ runs and the MadGraph banking request.
