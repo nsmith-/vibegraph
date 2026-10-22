@@ -9,3 +9,4 @@
 ## Session Report
 
 * [F1 report: a mixed-mass card splits into one integrand per set of outgoing masses](F1-report.md) - Subprocesses with different outgoing masses are split before flavour grouping, one proton integrand each, combined like a sum over multiplicities; no map code changed. A one-flavour part matches MadGraph, and the total needs a banked run.
+* [V1 report: the mixed-mass Drell-Yan row prepared for banking](V1-report.md) - The seeded-bank entry, the planned manifest row, the collator waiting on a planned row, the per-directory gate in validate_hadronic and the banking request for p p > l+ l- with l = e, ta. MadGraph was not run; the row's cells are planned.

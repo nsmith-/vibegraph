@@ -73,7 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::cells::{RowFile, Status};
-use crate::manifest::{Category, Layer, Manifest, Mode, Process, Tier, CATEGORIES};
+use crate::manifest::{Category, Layer, Manifest, Mode, Process, ProcessStatus, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
 pub(crate) struct ResolvedCell {
@@ -358,6 +358,15 @@ fn resolve_cell(
             cell.body = "awaiting the bundle".to_string();
             return cell;
         }
+        // A planned row's reference run does not exist yet, so its gates have
+        // nothing to measure and write no cell. The cell waits for the run; once
+        // the run is banked and the gate writes a cell it is rendered from it
+        // whatever the status says.
+        if process.status == Some(ProcessStatus::Planned) {
+            cell.mark = "⏳";
+            cell.body = "planned: no reference run yet".to_string();
+            return cell;
+        }
         problems.push(format!(
             "{where_} is declared '{}' and no gate wrote it — the cell is missing, not empty",
             declared.tier.as_str()
@@ -483,6 +492,32 @@ fn number_notes(resolved: &mut [ResolvedRow]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The mixed-mass Drell-Yan row is declared `planned` with banked cells and no gate
+    /// has written one: the collator waits on it without a problem. The same
+    /// row declared as an ordinary row is a missing cell.
+    #[test]
+    fn a_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        let resolve = |text: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == "pp_to_ll_etau")
+                .expect("the mixed-mass row");
+            let declared = process.categories.get(Category::Integrals);
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, problems)
+        };
+        let (mark, problems) = resolve(&text);
+        assert_eq!((mark, problems.len()), ("⏳", 0), "{problems:?}");
+        let (mark, problems) = resolve(&text.replace("status = \"planned\"\n", ""));
+        assert_eq!((mark, problems.len()), ("❌", 1), "{problems:?}");
+    }
 
     fn standalone(row: Option<&str>, mode: Option<&str>) -> manifest::Standalone {
         let mut text =
