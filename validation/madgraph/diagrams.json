@@ -13,6 +13,12 @@
       },
       "total_diagrams": 2
     },
+    "bbx_to_tapta_ckm_no_b_mass": {
+      "diagrams_by_subprocess": {
+        "P1_qq_taptam": 2
+      },
+      "total_diagrams": 2
+    },
     "ddx_to_epemg": {
       "diagrams_by_subprocess": {
         "P1_qq_llg": 4
@@ -293,6 +299,12 @@
         "P1_taptam_ttx": 4
       },
       "total_diagrams": 4
+    },
+    "ubx_to_epve_ckm_no_b_mass": {
+      "diagrams_by_subprocess": {
+        "P1_qq_lvl": 1
+      },
+      "total_diagrams": 1
     },
     "ud_to_epemud_qcd0": {
       "diagrams_by_subprocess": {

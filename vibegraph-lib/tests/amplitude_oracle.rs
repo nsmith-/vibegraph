@@ -613,6 +613,7 @@ const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
 /// row must be listed, and a listed row must be compared.
 const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
     ("bbx_to_h_identity", "++"),
+    ("bbx_to_tapta_ckm_no_b_mass", "--"),
     ("ddx_to_epemg", "----"),
     ("ee_to_ee", "----"),
     ("ee_to_mumu", "--"),
