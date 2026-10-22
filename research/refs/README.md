@@ -87,6 +87,7 @@ bash research/refs/fetch-papers.sh
 | `helas` | HELAS manual (KEK-91-11, scanned PDF) | PDF |
 | `vegas` | VEGAS+ adaptive importance sampling | markdown |
 | `mcreview` | Monte Carlo methods review | markdown |
+| `pyamplicol` | pyAmpliCol: colour-ordered Berends–Giele recursion, DDM basis and symmetric-group FFT colour sums (arXiv:2610.10729) | markdown |
 | `egglog` | egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332) | markdown |
 | `egg` | egg: Fast and Extensible Equality Saturation (arXiv:2004.03082) | markdown |
 | `madgraph5_beyond` | MadGraph 5: Going Beyond (arXiv:1106.0522) | markdown |

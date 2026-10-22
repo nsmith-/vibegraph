@@ -45,6 +45,9 @@ PAPERS=(
   "iflow|https://ar5iv.org/html/2001.05486|i-flow: integration and sampling with normalizing flows (arXiv:2001.05486)"
   "nis|https://ar5iv.org/html/2001.05478|Exploring phase space with Neural Importance Sampling (arXiv:2001.05478)"
   "madnis|https://ar5iv.org/html/2212.06172|MadNIS: neural multi-channel importance sampling (arXiv:2212.06172)"
+  # Tree-level amplitude methods:
+  # arxiv.org/html, not ar5iv, which lags new submissions.
+  "pyamplicol|https://arxiv.org/html/2610.10729|pyAmpliCol: fast tree-level matrix elements, colour-ordered Berends-Giele recursion with symmetric-group FFT colour sums (arXiv:2610.10729)"
   # Equality saturation / term rewriting:
   "egglog|https://ar5iv.org/html/2304.04332|egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332)"
   "egg|https://ar5iv.org/html/2004.03082|egg: Fast and Extensible Equality Saturation (arXiv:2004.03082)"
