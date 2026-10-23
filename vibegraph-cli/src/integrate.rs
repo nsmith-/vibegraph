@@ -30,27 +30,32 @@ use std::path::PathBuf;
 
 use clap::Args;
 use tracing::{info, warn};
-use vibegraph::artifact::{ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact};
+use vibegraph::artifact::{
+    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
+};
 use vibegraph::config::GlobalConfig;
-use vibegraph::cuts::{Cuts, ForcedResonances};
+use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, ParsingOptions,
-    SupportedCard,
+    forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
 };
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, ChannelIntegration, DecayAtRest, FixedBeamIntegrand, FixedBeams,
-    InitialState, Observable, RunningCouplingReport,
+    refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
+    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
-use vibegraph::multiplicity::{split_by_multiplicity, union_shape, MultiplicitySum};
-use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes, OnShellVeto};
+use vibegraph::multiplicity::{
+    multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
+    MultiplicitySum,
+};
+use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
-use vibegraph::proton::{derive_flavor_groups, process_shape, FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::vegas::VegasResult;
+use vibegraph::unweight::ChannelIntegrand;
+use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -148,8 +153,7 @@ impl From<Allocation> for BlockAllocation {
 /// ([`SplitAngle`]); `auto` lets the rule read the process.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum SplitAngleArg {
-    /// `soft-emission` where some split has a gluon or photon daughter,
-    /// `isotropic` otherwise.
+    /// `soft-all`.
     Auto,
     /// Flat in `cos θ` and `φ` against the collision-CM axes.
     Isotropic,
@@ -163,9 +167,10 @@ pub(crate) enum SplitAngleArg {
     SoftAll,
 }
 
-/// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is `log`.
+/// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is MadEvent's rule.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum TauMapArg {
+    /// `inverse-square`, or `log` where a resonance spans the whole final state.
     Auto,
     /// Density `∝ 1/τ` above the cut-implied `τ_min`.
     Log,
@@ -192,23 +197,23 @@ pub(crate) struct MapArgs {
     /// How each 2-body split of the decay tree draws its decay angle.
     ///
     /// Every choice is a parametrisation of the same phase space — none moves the
-    /// cross section, only the evaluations needed to reach an accuracy. `auto`
-    /// picks `soft-emission` where the process has a split it shapes (0.67× the
-    /// evaluations on `u u~ > g g g`) and `isotropic` elsewhere. `soft-all`
-    /// measures better still where it differs — half the evaluations on
-    /// `p p > l+ l- j`, 0.85× on `g u > e+ e- u` — and is worth asking for on
-    /// processes with a lepton pair or other boosted decay. On a `2 → 2` process
-    /// no split moves and every choice is the same map. The choice is recorded in
-    /// the artifact and replayed by `vibegraph generate`.
+    /// cross section, only the evaluations needed to reach an accuracy. `auto` is
+    /// `soft-all`, which measures half the evaluations of `isotropic` on
+    /// `p p > l+ l- j`, 0.85× on `g u > e+ e- u` and 0.67× on `u u~ > g g g`,
+    /// where every moving split has a gluon daughter and it is the
+    /// `soft-emission` map. On a `2 → 2` process no split moves and every choice
+    /// is the same map. The choice is recorded in the artifact and replayed by
+    /// `vibegraph generate`.
     #[arg(long = "map-split-angle", value_enum, default_value_t = SplitAngleArg::Auto)]
     pub(crate) split_angle: SplitAngleArg,
 
     /// How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
     ///
-    /// `auto` is `log`, the map every banked hadronic row was integrated under.
-    /// `inverse-square` is MadEvent's choice when no resonance spans the final
-    /// state, and measures better there (0.77× the evaluations on `p p > j j`,
-    /// 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
+    /// `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance
+    /// spans the whole final state, and `log` where one does. `inverse-square`
+    /// measures better where it applies (0.77× the evaluations on `p p > j j`,
+    /// 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the
+    /// resonance's peak sits in the `τ` draw.
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
     pub(crate) tau: TauMapArg,
 
@@ -244,6 +249,88 @@ impl MapArgs {
     }
 }
 
+/// What a point adds to its bins of a VEGAS grid's refinement histogram
+/// ([`BinWeight`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum BinWeightArg {
+    /// The point's squared weight `(f·w)²`.
+    Squared,
+    /// The point's weight `|f·w|`, as MadEvent accumulates it.
+    Absolute,
+}
+
+/// A bin-width bound as the command line spells it: a multiple of the uniform
+/// width, or `none` for no bound.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct MaxBinWidthArg(pub(crate) Option<f64>);
+
+impl std::str::FromStr for MaxBinWidthArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("none") {
+            return Ok(MaxBinWidthArg(None));
+        }
+        s.parse::<f64>()
+            .map(|k| MaxBinWidthArg(Some(k)))
+            .map_err(|_| format!("expected a number or `none`, got `{s}`"))
+    }
+}
+
+impl std::fmt::Display for MaxBinWidthArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(k) => write!(f, "{k}"),
+            None => f.write_str("none"),
+        }
+    }
+}
+
+/// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are
+/// [`GridRule::default`]; the rule a run used is recorded in its artifact.
+#[derive(Args, Debug, Clone, Copy)]
+pub(crate) struct GridRuleArgs {
+    /// What each point adds to its bins of the refinement histogram.
+    #[arg(long = "grid-bin-weight", value_enum, default_value_t = BinWeightArg::Squared)]
+    pub(crate) bin_weight: BinWeightArg,
+
+    /// Credit each bin with the mean of its accepted points: multiply its
+    /// histogram entry by the iteration's accepted points over the bin's, capped
+    /// at 10⁴, as MadEvent does while its grid adapts.
+    #[arg(long = "grid-acceptance-rescale")]
+    pub(crate) acceptance_rescale: bool,
+
+    /// Bound every refined bin's width at this multiple of the uniform width,
+    /// which must exceed 1; `none` leaves the width unbounded.
+    #[arg(
+        long = "grid-max-bin-width",
+        value_name = "K",
+        default_value_t = MaxBinWidthArg(GridRule::default().max_bin_width)
+    )]
+    pub(crate) max_bin_width: MaxBinWidthArg,
+}
+
+impl GridRuleArgs {
+    /// The rule the flags spell.
+    pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
+        if let Some(k) = self.max_bin_width.0 {
+            if !(k > 1.0 && k.is_finite()) {
+                return Err(err(format!(
+                    "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
+                )));
+            }
+        }
+        Ok(GridRule {
+            weight: match self.bin_weight {
+                BinWeightArg::Squared => BinWeight::Squared,
+                BinWeightArg::Absolute => BinWeight::Absolute,
+            },
+            acceptance_rescale: self.acceptance_rescale,
+            max_bin_width: self.max_bin_width.0,
+        })
+    }
+}
+
 #[derive(Args, Debug)]
 pub(crate) struct IntegrateArgs {
     /// Process card selecting the model and process (`import model` +
@@ -266,9 +353,10 @@ pub(crate) struct IntegrateArgs {
     #[arg(long, default_value = DEFAULT_PDF_SET)]
     pub(crate) pdf_set: String,
 
-    /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
-    /// the `~/.vibegraph` cache (offering to download the set if absent), then
-    /// `validation/pdf` under the current directory.
+    /// Directory containing `<pdf-set>/`; defaults to the first
+    /// `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is
+    /// unset), then the `~/.vibegraph` cache (offering to download the set if
+    /// absent).
     #[arg(long)]
     pub(crate) pdf_dir: Option<PathBuf>,
 
@@ -343,15 +431,20 @@ pub(crate) struct IntegrateArgs {
     #[arg(long, value_enum)]
     pub(crate) allocate: Option<Allocation>,
 
-    /// RNG seed for the integration.
-    #[arg(long, default_value_t = 20_260_719)]
-    pub(crate) seed: u64,
+    /// RNG seed for the integration; defaults to the run card's `iseed` when it
+    /// is not 0, and to 20260719 otherwise. The seed used is recorded in the
+    /// artifact.
+    #[arg(long)]
+    pub(crate) seed: Option<u64>,
 
     #[command(flatten)]
     pub(crate) parallel: ParallelArgs,
 
     #[command(flatten)]
     pub(crate) maps: MapArgs,
+
+    #[command(flatten)]
+    pub(crate) grid: GridRuleArgs,
 }
 
 /// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
@@ -415,31 +508,25 @@ pub(crate) fn load_pdf_set(
     })
 }
 
-/// Whether the card's processes are `1 → n` decays, which the check guarantees
-/// all of them are when the first is.
-pub(crate) fn is_decay(parsed: &SupportedCard) -> bool {
-    parsed
-        .processes
-        .first()
-        .is_some_and(|p| p.initial.len() == 1)
-}
-
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
-/// removed.
+/// removed. A card that activates a cut no stage applies is refused here, ahead
+/// of every stage that costs anything.
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
 ) -> Result<RunCard, CliError> {
-    let card = if is_decay(parsed) {
+    let card = if parsed.is_decay() {
         config.load_decay_run_card()
     } else {
         config.load_run_card()
     };
-    card.map_err(|e| match &config.run_card_path {
+    let rc = card.map_err(|e| match &config.run_card_path {
         Some(path) => err(format!("cannot load the run card {}: {e}", path.display())),
         None => err(format!("cannot build the default run card: {e}")),
-    })
+    })?;
+    detect_unimplemented(&rc).map_err(|e| err(e.to_string()))?;
+    Ok(rc)
 }
 
 /// The canonical string of the proc card's processes, for artifact metadata: the
@@ -488,6 +575,8 @@ struct RunOutput {
     channels: Vec<ChannelGrid>,
     /// The phase-space maps the run integrated under, every choice settled.
     maps: MapChoices,
+    /// The rule the integrand refined its grids under.
+    grid_rule: GridRule,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -525,8 +614,13 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         )));
     }
 
+    let grid_rule = args.grid.rule()?;
+    if !grid_rule.is_default() {
+        info!("VEGAS grid rule: {grid_rule:?}");
+    }
+
     let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
+    let (parsed, proc_card) = crate::read_proc_card_text(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
@@ -541,7 +635,8 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let rc = load_run_card(&config, &parsed)?;
+    let (rc, generate_settings) = load_run_card(&config, &parsed)?.split();
+    let seed = rc.integration_seed(args.seed);
     tui::state::describe_model(
         &model_id.label(),
         &model_id.digest,
@@ -554,14 +649,14 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let evaluated = EvaluatedModel::from_model(model.clone());
 
     let output = match rc.beam_mode() {
-        _ if is_decay(&parsed) => {
-            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
+        _ if parsed.is_decay() => {
+            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
         }
-        BeamMode::Proton => {
-            integrate_proton(args, &parsed, &model, &evaluated, &rc, process, network)?
-        }
+        BeamMode::Proton => integrate_proton(
+            args, &parsed, &model, &evaluated, &rc, process, seed, network,
+        )?,
         BeamMode::FixedEnergy => {
-            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
+            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
         }
     };
 
@@ -598,7 +693,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let conv = &output.convergence;
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
-        conv.points, conv.iterations, args.seed, output.result.chi2_per_dof
+        conv.points, conv.iterations, seed, output.result.chi2_per_dof
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
@@ -661,8 +756,9 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
 
     let artifact = IntegrateArtifact {
-        format_version: IntegrateArtifact::version_for(&output.channels),
+        format_version: FORMAT_VERSION,
         process: output.process,
+        proc_card,
         model: model_id,
         pdf_set: output.pdf_set,
         pdf_member: PDF_MEMBER,
@@ -670,13 +766,15 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
         niter: output.convergence.iterations,
-        seed: args.seed,
+        seed,
         run_card: rc,
+        generate: generate_settings,
         channels: output.channels,
         sigma_pb,
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
         maps: output.maps,
+        grid_rule: Some(output.grid_rule),
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -695,6 +793,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 
 /// Proton beams (`lpp = 1`): load the PDF set and integrate over the flavour
 /// decomposition.
+#[allow(clippy::too_many_arguments)]
 fn integrate_proton(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
@@ -702,6 +801,7 @@ fn integrate_proton(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
+    seed: u64,
     network: NetworkPolicy,
 ) -> Result<RunOutput, CliError> {
     let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
@@ -709,63 +809,9 @@ fn integrate_proton(
         .member(PDF_MEMBER)
         .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
 
-    integrate_hadronic(args, parsed, model, evaluated, rc, &set, &pdf, process)
-}
-
-/// A proton-beam card's flavour decomposition, one per final-state multiplicity
-/// in increasing order ([`split_by_multiplicity`]), each with its groups'
-/// on-shell vetoes.
-pub(crate) struct MultiplicityGroups {
-    pub(crate) groups: Vec<FlavorGroups>,
-    pub(crate) vetoes: Vec<Vec<Option<OnShellVeto>>>,
-}
-
-/// Enumerate the card and decompose each final-state multiplicity into flavour
-/// groups.
-pub(crate) fn multiplicity_groups(
-    parsed: &SupportedCard,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    rc: &RunCard,
-    enumeration: EnumerationPool,
-) -> Result<MultiplicityGroups, CliError> {
-    let sets = generate_from_proc_card_in(parsed, model, enumeration)
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    let forbidden = forbidden_onshell(parsed, model)?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
-    let mut out = MultiplicityGroups {
-        groups: Vec::new(),
-        vetoes: Vec::new(),
-    };
-    for part in split_by_multiplicity(sets, rc) {
-        let groups = derive_flavor_groups(part, model, evaluated, rc)
-            .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
-        let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-            .map_err(|e| err(e.to_string()))?;
-        out.groups.push(groups);
-        out.vetoes.push(vetoes);
-    }
-    Ok(out)
-}
-
-/// The maps every multiplicity is built under: `options` as given for a card of
-/// one multiplicity, and for several, `options` settled once over the union of
-/// their shapes ([`union_shape`]), since an artifact banks one set of choices.
-pub(crate) fn multiplicity_maps(
-    groups: &[FlavorGroups],
-    evaluated: &EvaluatedModel,
-    sqrt_s_had: f64,
-    options: MapOptions,
-) -> MapOptions {
-    if groups.len() == 1 {
-        return options;
-    }
-    let shape = union_shape(
-        groups
-            .iter()
-            .map(|g| process_shape(g, evaluated, sqrt_s_had)),
-    );
-    MapOptions::fixed(options.resolve(&shape))
+    integrate_hadronic(
+        args, parsed, model, evaluated, rc, &set, &pdf, process, seed,
+    )
 }
 
 /// The process numbers (`@N`) of every subprocess of one multiplicity's groups,
@@ -779,32 +825,6 @@ pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
     ids.sort_unstable();
     ids.dedup();
     ids
-}
-
-/// Refuse a card of several final-state multiplicities on a path that has one
-/// phase space: fixed-energy beams and decays. Only proton beams sum
-/// multiplicities ([`MultiplicitySum`]).
-pub(crate) fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), CliError> {
-    let mut counts: Vec<usize> = sets
-        .iter()
-        .filter(|s| !s.diagrams.is_empty())
-        .map(|s| s.particles_out.len())
-        .collect();
-    counts.sort_unstable();
-    counts.dedup();
-    if counts.len() > 1 {
-        return Err(err(format!(
-            "the processes have different final-state multiplicities ({} outgoing legs); a sum \
-             over multiplicities is integrated at proton beams (lpp = 1) only, and this run has \
-             fixed-energy beams or is a decay",
-            counts
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
-    }
-    Ok(())
 }
 
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
@@ -830,11 +850,13 @@ fn integrate_hadronic(
     set: &PdfSet,
     pdf: &PdfMember,
     process: String,
+    seed: u64,
 ) -> Result<RunOutput, CliError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     let MultiplicityGroups { groups, vetoes } =
-        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
+        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
+            .map_err(err)?;
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
         .map(|part| {
@@ -871,18 +893,15 @@ fn integrate_hadronic(
     }
     let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
+    integ.set_grid_rule(args.grid.rule()?);
 
     tui::state::note_channels(integ.channel_count());
 
     let n_survey = survey_points(args.neval);
-    integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
+    integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
-    let (per_channel, result, convergence) = integ.adapt_grids_budget(
-        args.budget()?,
-        args.allocation(),
-        args.seed,
-        &tui::stop_signal(),
-    );
+    let (per_channel, result, convergence) =
+        integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
     if groups.len() > 1 {
         report_multiplicities(&integ, &groups, &per_channel, convergence.iterations);
     }
@@ -901,6 +920,7 @@ fn integrate_hadronic(
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })
@@ -945,10 +965,11 @@ fn integrate_fixed_energy(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
+    seed: u64,
 ) -> Result<RunOutput, CliError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    refuse_mixed_multiplicity(&sets)?;
+    refuse_mixed_multiplicity(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
@@ -967,7 +988,7 @@ fn integrate_fixed_energy(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
-    let initial = initial_state(rc, &legs)?;
+    let initial = InitialState::from_run_card(rc, &legs).map_err(|e| err(e.to_string()))?;
     let sqrt_s = initial.sqrt_s();
     let diagrams: Vec<_> = sets
         .iter()
@@ -985,6 +1006,7 @@ fn integrate_fixed_energy(
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
+    integ.set_grid_rule(args.grid.rule()?);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
@@ -993,17 +1015,13 @@ fn integrate_fixed_energy(
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
     let n_survey = survey_points(args.neval);
-    integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
+    integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
     // A process with no diagram to map keeps flat RAMBO, which draws its angles
     // isotropically and has no chain: the legacy choices describe it exactly.
     let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
-    let (per_channel, result, convergence) = integ.adapt_grids_budget(
-        args.budget()?,
-        args.allocation(),
-        args.seed,
-        &tui::stop_signal(),
-    );
+    let (per_channel, result, convergence) =
+        integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
     Ok(RunOutput {
         process,
         observable: initial.observable(),
@@ -1024,22 +1042,32 @@ fn integrate_fixed_energy(
             })
             .collect(),
         maps,
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })
 }
 
-/// The initial state a compiled process and the run card describe: the decaying
-/// particle at rest for a `1 → n` process, otherwise the card's two fixed-energy
-/// beams on the incoming legs' mass shells.
-pub(crate) fn initial_state(
-    rc: &RunCard,
-    legs: &[vibegraph::cuts::ExternalLeg],
-) -> Result<InitialState, CliError> {
-    if legs.iter().filter(|l| !l.is_final).count() == 1 {
-        let decay = DecayAtRest::from_legs(legs).map_err(|e| err(e.to_string()))?;
-        Ok(decay.into())
-    } else {
-        Ok(FixedBeams::from_run_card(rc, legs).into())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Args;
+    use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
+
+    /// `--seed`'s help spells the default seed out, since a doc comment cannot
+    /// name a constant; this keeps the two equal.
+    #[test]
+    fn the_seed_help_names_the_default_integration_seed() {
+        let command = IntegrateArgs::augment_args(clap::Command::new("integrate"));
+        let help = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "seed")
+            .and_then(|arg| arg.get_help())
+            .expect("--seed has help")
+            .to_string();
+        assert!(
+            help.contains(&format!("to {DEFAULT_INTEGRATION_SEED} otherwise")),
+            "{help}"
+        );
     }
 }

@@ -3029,6 +3029,9 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 }
 
 #[cfg(test)]
+mod edge_probe;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;
@@ -4141,7 +4144,7 @@ mod tests {
         let pdf = probe_pdf();
         for (process, card, n_pairs, n_maps) in [
             (LLJ, llj_card(), 24, 6),
-            ("p p > e+ e- j j", matched_llj_card(), 336, 36),
+            ("p p > e+ e- j j", matched_llj_card(), 336, 30),
         ] {
             let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
                 .expect("flavour groups");
@@ -4275,7 +4278,7 @@ mod tests {
         assert_eq!(merged.point_ndim(), unmerged.point_ndim());
         let mut stream = SubStream::from_stream(0x5EED_F8, 3);
         let (mut nonzero, mut worst) = (0usize, 0.0f64);
-        for _ in 0..600 {
+        for _ in 0..1000 {
             let u = stream.uniforms::<f64>(merged.point_ndim());
             for (k, members) in merged.channel_members().iter().enumerate() {
                 let lhs = merged.value_in_channel(k, &u);
@@ -5748,7 +5751,7 @@ mod tests {
         let e_beam = SQRT_S_HAD / 2.0;
         let mut stream = SubStream::from_stream(0x4E4E_7000, 3);
         let (mut kept, mut empty, mut worst_balance, mut worst_shat) = (0, 0, 0.0f64, 0.0f64);
-        for trial in 0..400 {
+        for trial in 0..800 {
             let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
             let value = integ.value_in_channel(channel, &u);

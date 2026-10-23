@@ -45,9 +45,13 @@
 //! per-mille of the cross section is pooled into the χ²'s residual category rather
 //! than compared on its own.
 
+mod common;
+use common::PdfDataPath;
+
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::validation_dir;
 
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
@@ -150,10 +154,6 @@ type Scan = (
     fn(&Row, &EventSample) -> (usize, usize),
 );
 
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
-
 /// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
 ///
 /// Reference-free: it reads the emitted record against the Les Houches convention
@@ -210,14 +210,18 @@ struct Generator {
     /// Held for its `Drop`: everything below lives inside it.
     _tmp: tempfile::TempDir,
     dir: PathBuf,
-    proc_card: PathBuf,
-    run_card: PathBuf,
     artifact: PathBuf,
 }
 
 impl Generator {
     /// Integrate the row's process against its card, at the row's budget.
     fn integrate(row_spec: &Row) -> Self {
+        Self::integrate_with(row_spec, INTEGRATION_SEED, &[])
+    }
+
+    /// [`integrate`](Self::integrate) at another integration seed, with `extra`
+    /// appended to the `integrate` command line (a map option, say).
+    fn integrate_with(row_spec: &Row, seed: &str, extra: &[&str]) -> Self {
         let tmp = tempfile::tempdir().expect("temporary directory");
         let dir = tmp.path().to_path_buf();
         let proc_card = dir.join("proc_card.dat");
@@ -235,50 +239,44 @@ impl Generator {
         };
 
         let out = dir.join("out");
-        let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let integrate = common::vibegraph_ambient()
             .arg("integrate")
             .arg(&proc_card)
             .arg("--run-card")
             .arg(&run_card)
             .arg("--out")
             .arg(&out)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .args([
                 "--neval",
                 row_spec.neval,
                 "--niter",
                 row_spec.niter,
                 "--seed",
-                INTEGRATION_SEED,
+                seed,
             ])
+            .args(extra)
             .output()
             .expect("spawn vibegraph");
         assert!(
             integrate.status.success(),
             "vibegraph integrate failed:\n{}",
-            String::from_utf8_lossy(&integrate.stderr)
+            common::stderr_of(&integrate)
         );
         Generator {
             artifact: out.join("grid.bin.zst"),
             _tmp: tmp,
             dir,
-            proc_card,
-            run_card,
         }
     }
 
     /// One unweighted sample from those grids, at `seed`.
     fn sample(&self, seed: u64) -> EventSample {
         let file = self.dir.join(format!("events_{seed:#x}.lhe"));
-        let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let generate = common::vibegraph_ambient()
             .arg("generate")
             .arg(&self.artifact)
-            .arg(&self.proc_card)
-            .arg("--run-card")
-            .arg(&self.run_card)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .arg("--seed")
             .arg(seed.to_string())
             .arg("--nevents")
@@ -291,7 +289,7 @@ impl Generator {
         assert!(
             generate.status.success(),
             "vibegraph generate failed:\n{}",
-            String::from_utf8_lossy(&generate.stderr)
+            common::stderr_of(&generate)
         );
         let text = std::fs::read_to_string(&file).expect("read the emitted event file");
         let ours = EventSample::from_lhe(LheFile::parse(&text).expect("our own file parses"));
@@ -801,6 +799,302 @@ fn probe_proton_samples_p_floor_headroom() {
         p3 / P_FLOOR,
         p5 / P_FLOOR,
     );
+}
+
+/// The dijet flavour calibration's integration seeds: the gate's own grid, then
+/// an independent one, so a frozen grid's own draw is not read as its map's.
+const JJ_CALIBRATION_GRIDS: [&str; 2] = [INTEGRATION_SEED, "20260741"];
+
+/// Generation seeds per calibration grid: the gate's own on the gate's grid, and
+/// seeds of their own on the second.
+///
+/// The second grid cannot reuse the first's seeds. A generation seed fixes the
+/// whole trial stream — channel, point and acceptance uniforms — and two grids
+/// trained on the same cards differ only slightly, so the same seed replayed off
+/// both draws largely the same events: the two samples are correlated, and a χ²
+/// between them reads below its null.
+const JJ_CALIBRATION_GEN_SEEDS: [[u64; 5]; 2] = [
+    HEADROOM_GEN_SEEDS,
+    [
+        0x5A_4D_2001,
+        0x5A_4D_2002,
+        0x5A_4D_2003,
+        0x5A_4D_2004,
+        0x5A_4D_2005,
+    ],
+];
+
+/// A second, independent grid pair for the calibration's null, with generation
+/// seeds of their own: the null of [`JJ_CALIBRATION_GRIDS`] reads each grid's
+/// samples against the other's, so one pair's readings share its two grids, and
+/// a second pair is the independent repeat.
+const JJ_SECOND_PAIR_GRIDS: [&str; 2] = ["20260751", "20260761"];
+
+/// Generation seeds for [`JJ_SECOND_PAIR_GRIDS`], disjoint from every other
+/// calibration grid's.
+const JJ_SECOND_PAIR_GEN_SEEDS: [[u64; 5]; 2] = [
+    [
+        0x5A_4D_3001,
+        0x5A_4D_3002,
+        0x5A_4D_3003,
+        0x5A_4D_3004,
+        0x5A_4D_3005,
+    ],
+    [
+        0x5A_4D_4001,
+        0x5A_4D_4002,
+        0x5A_4D_4003,
+        0x5A_4D_4004,
+        0x5A_4D_4005,
+    ],
+];
+
+/// The seed of the permutations the calibration splits samples with.
+const JJ_SPLIT_SEED: u64 = 0x5A_4D_5E11;
+
+/// Random halvings of MadGraph's banked dijet sample in its null.
+const MG_HALF_SPLITS: usize = 1000;
+
+/// The `pp_to_jj` samples cell's χ² columns, and the null they would read under,
+/// on the `τ` map `map`.
+///
+/// Two grids — [`JJ_CALIBRATION_GRIDS`] — each generating five samples of
+/// [`NEVENTS`] at its own [`JJ_CALIBRATION_GEN_SEEDS`], all under
+/// `--map-tau map`.
+/// Against MadGraph's banked sample it records every seed's χ² columns (the
+/// gate's statistic) and the pooled sample of the first three and of all five
+/// seeds (one χ² each). Then the null, where the two sides cannot differ: each
+/// grid's samples, singly and pooled, against random 10 000-event halves of the
+/// *other* grid's samples, the reference size the gate compares against. Every
+/// reading is one `JJREC` line.
+///
+/// What it cannot detect: anything common to both grids — the null is this
+/// side's own, so it calibrates the statistic, not this side's physics.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_calibration_log() {
+    jj_flavour_calibration("log", JJ_CALIBRATION_GRIDS, JJ_CALIBRATION_GEN_SEEDS);
+}
+
+/// [`probe_jj_flavour_chi2_calibration_log`] under MadEvent's `τ` rule.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_calibration_inverse_square() {
+    jj_flavour_calibration(
+        "inverse-square",
+        JJ_CALIBRATION_GRIDS,
+        JJ_CALIBRATION_GEN_SEEDS,
+    );
+}
+
+/// [`probe_jj_flavour_chi2_calibration_log`] on [`JJ_SECOND_PAIR_GRIDS`]: the
+/// grid-against-grid null repeated on two grids that share nothing with the
+/// first pair.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_second_grid_pair_log() {
+    jj_flavour_calibration("log", JJ_SECOND_PAIR_GRIDS, JJ_SECOND_PAIR_GEN_SEEDS);
+}
+
+/// [`probe_jj_flavour_chi2_second_grid_pair_log`] under MadEvent's `τ` rule.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_second_grid_pair_inverse_square() {
+    jj_flavour_calibration(
+        "inverse-square",
+        JJ_SECOND_PAIR_GRIDS,
+        JJ_SECOND_PAIR_GEN_SEEDS,
+    );
+}
+
+/// MadGraph's banked dijet sample against itself: [`MG_HALF_SPLITS`] random
+/// halvings, each half of 5 000 compared with the other, one `JJREC` line each.
+///
+/// A random halving of one sample is a draw from the null of the two-sample χ²
+/// conditioned on the sample's own composition, so its distribution is what the
+/// statistic reads where the two sides cannot differ, with no generator of ours
+/// in it. The file's own event order is MadGraph's per-channel concatenation, so
+/// a split along it would compare channels, not halves.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_mg_half_splits() {
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+
+    if !run_present("probe_jj_flavour_chi2_mg_half_splits", JJ_ROW.run) {
+        return;
+    }
+    let mg = banked_sample(JJ_ROW.run, JJ_ROW.events);
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(JJ_SPLIT_SEED);
+    let mut order: Vec<usize> = (0..mg.len()).collect();
+    for split in 0..MG_HALF_SPLITS {
+        order.shuffle(&mut rng);
+        let (a, b) = order.split_at(mg.len() / 2);
+        let (a, b) = (subsample(&mg, a), subsample(&mg, b));
+        let found = compare(&a, &b, labelling_for(&a, &b));
+        print_chi2_records(
+            "mg",
+            "null-mg",
+            &format!("mg-half-{split}"),
+            "mg-half",
+            &found,
+            a.len(),
+            b.len(),
+        );
+    }
+}
+
+/// The calibration run behind the map probes above, on the grid pair `grids`
+/// with generation seeds `gen_seeds`.
+fn jj_flavour_calibration(map: &str, grids: [&str; 2], gen_seeds: [[u64; 5]; 2]) {
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+
+    if !run_present("probe_jj_flavour_chi2_calibration", JJ_ROW.run) {
+        return;
+    }
+    let mg = banked_sample(JJ_ROW.run, JJ_ROW.events);
+    let samples: Vec<Vec<EventSample>> = grids
+        .iter()
+        .zip(&gen_seeds)
+        .map(|(&grid, seeds)| {
+            let clock = Stopwatch::start();
+            let generator = Generator::integrate_with(&JJ_ROW, grid, &["--map-tau", map]);
+            eprintln!(
+                "  [{map}] grid {grid} integrated in {:.0}s",
+                clock.seconds()
+            );
+            seeds
+                .iter()
+                .map(|&seed| {
+                    let clock = Stopwatch::start();
+                    let ours = generator.sample(seed);
+                    eprintln!(
+                        "  [{map}] grid {grid} seed {seed:#010x}: {} events (n_eff {:.0}) in \
+                         {:.0}s",
+                        ours.len(),
+                        ours.effective_size(),
+                        clock.seconds()
+                    );
+                    ours
+                })
+                .collect()
+        })
+        .collect();
+
+    for (g, grid) in grids.iter().enumerate() {
+        for (sample, seed) in samples[g].iter().zip(gen_seeds[g]) {
+            let found = compare(sample, &mg, labelling_for(sample, &mg));
+            print_chi2_records(
+                map,
+                "mg",
+                grid,
+                &format!("{seed:#010x}"),
+                &found,
+                sample.len(),
+                mg.len(),
+            );
+        }
+        for k in [GEN_SEEDS.len(), HEADROOM_GEN_SEEDS.len()] {
+            let pool = pooled(&samples[g][..k]);
+            let found = compare(&pool, &mg, labelling_for(&pool, &mg));
+            print_chi2_records(
+                map,
+                "mg",
+                grid,
+                &format!("pool{k}"),
+                &found,
+                pool.len(),
+                mg.len(),
+            );
+        }
+    }
+
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(JJ_SPLIT_SEED);
+    for (g, grid) in grids.iter().enumerate() {
+        let other = 1 - g;
+        for (r, reference) in samples[other].iter().enumerate() {
+            let mut order: Vec<usize> = (0..reference.len()).collect();
+            order.shuffle(&mut rng);
+            for (h, half) in order.chunks(reference.len() / 2).enumerate() {
+                let half = subsample(reference, half);
+                let tag = format!("null-{}-{r}-{h}", grids[other]);
+                for (sample, seed) in samples[g].iter().zip(gen_seeds[g]) {
+                    let found = compare(sample, &half, labelling_for(sample, &half));
+                    print_chi2_records(
+                        map,
+                        &tag,
+                        grid,
+                        &format!("{seed:#010x}"),
+                        &found,
+                        sample.len(),
+                        half.len(),
+                    );
+                }
+                for k in [GEN_SEEDS.len(), HEADROOM_GEN_SEEDS.len()] {
+                    let pool = pooled(&samples[g][..k]);
+                    let found = compare(&pool, &half, labelling_for(&pool, &half));
+                    print_chi2_records(
+                        map,
+                        &tag,
+                        grid,
+                        &format!("pool{k}"),
+                        &found,
+                        pool.len(),
+                        half.len(),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// One `JJREC` line per χ² column of `found`, and one for its smallest KS `p`.
+fn print_chi2_records(
+    map: &str,
+    reference: &str,
+    grid: &str,
+    sample: &str,
+    found: &vibegraph::validation::samples::Comparison,
+    n_ours: usize,
+    n_reference: usize,
+) {
+    for cell in &found.chi2 {
+        eprintln!(
+            "JJREC map={map} ref={reference} grid={grid} sample={sample} column={} \
+             chi2={:.3} dof={} p={:.4e} pooled_share={:.4} n={n_ours} n_ref={n_reference}",
+            cell.column, cell.chi2, cell.dof, cell.p, cell.pooled_share
+        );
+    }
+    if let Some(worst) = found.worst_ks() {
+        eprintln!(
+            "JJREC map={map} ref={reference} grid={grid} sample={sample} column=KS:{} \
+             chi2=0 dof=0 p={:.4e} pooled_share=0 n={n_ours} n_ref={n_reference}",
+            worst.observable, worst.p
+        );
+    }
+}
+
+/// The events of `sample` at `indices`, with their weights.
+fn subsample(sample: &EventSample, indices: &[usize]) -> EventSample {
+    EventSample {
+        events: indices.iter().map(|&i| sample.events[i].clone()).collect(),
+        weights: indices.iter().map(|&i| sample.weights[i]).collect(),
+        sigma_pb: sample.sigma_pb,
+    }
+}
+
+/// Samples generated off one grid, as one sample.
+fn pooled(samples: &[EventSample]) -> EventSample {
+    EventSample {
+        events: samples.iter().flat_map(|s| s.events.clone()).collect(),
+        weights: samples.iter().flat_map(|s| s.weights.clone()).collect(),
+        sigma_pb: samples.iter().map(|s| s.sigma_pb).sum::<f64>() / samples.len() as f64,
+    }
 }
 
 /// Bin edges for `dσ/dm_ll`, in GeV.

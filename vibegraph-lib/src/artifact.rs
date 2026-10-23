@@ -1,7 +1,8 @@
 //! On-disk artifact for a completed `vibegraph integrate` run: the adapted
-//! VEGAS grids plus enough run metadata (seed, evaluation counts, process,
-//! model, PDF set, the resolved run card) for a later phase to detect a mismatched
-//! input rather than silently sampling against the wrong grid.
+//! VEGAS grids plus everything the run was integrated from (the proc card, the
+//! model's identity, the PDF set, the integration's run card and the
+//! generation settings it recorded), so a later step reads them back rather than
+//! asking for them again.
 //!
 //! Encoding is bincode, zstd-compressed — the same pairing already used for
 //! the interned SM model blob ([`crate::ufo::sm`]).
@@ -12,109 +13,25 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::generate::GenerateSettings;
 use crate::phasespace::maps::MapChoices;
 use crate::runcard::RunCard;
 use crate::ufo::identity::ModelIdentity;
-use crate::vegas::VegasGrid;
+use crate::vegas::{GridRule, VegasGrid};
 
-/// Bumped whenever [`IntegrateArtifact`]'s shape changes in a way that would
-/// break decoding an older file.
+/// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
+/// artifact is written at this version.
 ///
-/// `2` carries one grid per phase-space channel in place of the single grid over
-/// the channel mixture, with each channel's selection weight and its share of the
-/// integral alongside — so a reader can neither mistake a channel's grid for the
-/// whole map nor reweight a term without its `αⱼ`.
-///
-/// `3` adds [`IntegrateArtifact::model`], so a later phase can tell which model the
-/// grids were trained under instead of inferring it from a process string that two
-/// different models spell the same way.
-///
-/// `4` adds [`ChannelGrid::key`], naming the channel space each grid belongs to.
-///
-/// `5` adds [`ChannelGrid::sampler`], the summary of what the rule-based channel
-/// composition chose for that channel — the map it draws through and the
-/// propagator poles that map is shaped by. Versions 3 and 4 are still read,
-/// through [`v3`] and [`v4`], and upgrade with no sampler recorded (`None`),
-/// which is what those writers knew.
-///
-/// `6` replaces `ChannelSampler`'s single spine pole with
-/// [`ChannelSampler::spine_poles_gev2`], one entry per rung in chain order: a
-/// peripheral channel is a chain of rungs, and a scalar could only report the
-/// first of them. A version-5 file records exactly that first pole, so it upgrades
-/// to a one-entry list, which for the ladder-free processes a version-5 writer
-/// could produce is the whole chain.
-///
-/// `7` changes no field at all: a version-6 file decodes through the same struct
-/// as a version-7 one. What changed is what [`IntegrateArtifact::sigma_pb`] means
-/// on a run whose scale needs a channel — `dynamical_scale_choice = -1` and not
-/// every scale fixed. A version-6 writer read that channel from the sampler; from
-/// this version, it is drawn per point from the per-configuration `AMP2`, so a
-/// version-6 `sigma_pb` is a different run's answer, not a stale copy of this
-/// one's. Because the schema did not move, [`read_from_path`](IntegrateArtifact::read_from_path)
-/// decodes a version-6 file directly rather than through an `upgrade`, and, as
-/// every upgrade does, it leaves the file's own recorded version in place, so a
-/// caller can tell a pre-draw artifact from a post-draw one by
-/// [`IntegrateArtifact::format_version`] alone. `vibegraph generate` is that
-/// caller: it refuses to replay a `format_version < 7` artifact's `sigma_pb` as
-/// `XSECUP` when the run card selects the clustering scale
-/// ([`crate::coupling::scales::ScaleChoice::needs_channels`]); that threshold is
-/// [`SCALE_DRAW_VERSION`].
-///
-/// `8` changes no field either. What moved is what a [`ChannelKey`]'s index
-/// counts: the channels are now one per integration configuration of MadGraph's
-/// channel mapping rather than one per diagram, so on a process where that
-/// mapping merges diagrams or drops a contact one, a version-7 file's grids
-/// belong to channels this build does not have. That shows up as a channel-count
-/// mismatch at replay wherever the two differ, and where they do not the grids
-/// still describe the same channels — so, as with `7`, a version-7 file decodes
-/// and keeps its own recorded version.
-///
-/// `9` adds [`IntegrateArtifact::maps`]: the phase-space map choices the run
-/// integrated under, so a generator rebuilds its channels and its `τ` draw from
-/// what the grids were trained on rather than from the current default. A file
-/// of version 6 through 8 was written before any choice existed, under
-/// [`MapChoices::LEGACY`], which its upgrade records.
-///
-/// `10` adds [`ChannelKey::MultiplicityChannel`], the key of a channel of a sum
-/// over final-state multiplicities, whose grids are over as many coordinates as
-/// their own multiplicity's phase space needs. The schema is version 9's with one
-/// more key, so a version-9 file decodes directly. A writer records the oldest
-/// version whose schema holds every key it banks
-/// ([`IntegrateArtifact::version_for`]): an artifact of one multiplicity is
-/// still a version-9 file, byte for byte what a version-9 writer produced and
-/// readable by one, while one of several multiplicities is a version-10 file,
-/// which an older reader refuses by its version rather than failing on the key.
-///
-/// `11` adds [`ChannelKey::MergedChannel`]: a hadronic channel whose map serves
-/// several `(group, diagram)` pairs, because their maps are one function. The
-/// schema is version 10's with one more key, and the writer again records the
-/// oldest version that holds its keys, so an artifact in which no two pairs
-/// share a map is still a version-9 or version-10 file, byte for byte. A reader
-/// refuses to replay an older artifact on a process whose channels merge
-/// ([`IntegrateArtifact::refuse_unmerged_grids`]): its grids were trained one per
-/// pair.
-pub const FORMAT_VERSION: u32 = 11;
+/// `13` adds [`IntegrateArtifact::proc_card`], the proc card's text, and
+/// [`IntegrateArtifact::generate`], the generation settings of the run card;
+/// [`IntegrateArtifact::run_card`] holds only the integration's fields
+/// ([`RunCard::split`]) and MadGraph's own record of them. No older file
+/// carries a proc card, so none can be replayed from its own record, and
+/// [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 13;
 
-/// The first version that records the phase-space map choices
-/// ([`IntegrateArtifact::maps`]), and the oldest whose schema is the current
-/// one (see the version-9 entry in [`FORMAT_VERSION`]'s doc).
-pub(crate) const MAP_CHOICES_VERSION: u32 = 9;
-
-/// The first version whose artifacts can hold a sum over final-state
-/// multiplicities (see the version-10 entry in [`FORMAT_VERSION`]'s doc).
-pub const MULTIPLICITY_VERSION: u32 = 10;
-
-/// The first version whose hadronic channels are one per distinct map rather
-/// than one per `(group, diagram)` pair (see the version-11 entry in
-/// [`FORMAT_VERSION`]'s doc).
-pub(crate) const MERGED_CHANNEL_VERSION: u32 = 11;
-
-/// The first version whose `sigma_pb` was formed with the per-point `AMP2`
-/// scale-configuration draw (see the version-7 entry in [`FORMAT_VERSION`]'s doc).
-pub const SCALE_DRAW_VERSION: u32 = 7;
-
-/// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 3;
+/// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 13;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -286,8 +203,7 @@ pub struct ChannelGrid {
     pub sigma_err_pb: f64,
     pub chi2_per_dof: f64,
     /// What the rule-based composition chose for this channel, where the writer
-    /// knew it. `None` in a file upgraded from a schema version that predates the
-    /// field — a writer that recorded nothing, not a channel with no composition.
+    /// knew it.
     pub sampler: Option<ChannelSampler>,
 }
 
@@ -330,6 +246,9 @@ pub struct IntegrateArtifact {
     pub format_version: u32,
     /// The process string this artifact was integrated for (`"p p > e+ e-"`).
     pub process: String,
+    /// The proc card the run was integrated from, as its text: the process
+    /// string is what this build made of it, and the card is what was asked for.
+    pub proc_card: String,
     /// The model the amplitudes were compiled from. A process string is not a
     /// model: `import model sm` and `import model sm-no_b_mass` spell the same
     /// `generate` line while giving different physics, so the model is banked and
@@ -345,8 +264,13 @@ pub struct IntegrateArtifact {
     /// this across its channels by `αⱼ` (see [`ChannelGrid::neval`]).
     pub neval: usize,
     pub niter: usize,
+    /// The seed the integration ran at.
     pub seed: u64,
+    /// The run card's integration fields, as resolved.
     pub run_card: RunCard,
+    /// The run card's generation fields, recorded for a generation to replay.
+    /// Nothing in the integration reads them.
+    pub generate: GenerateSettings,
     /// One entry per phase-space channel, in the combiner's channel order.
     pub channels: Vec<ChannelGrid>,
     /// The summed cross section: `Σⱼ σⱼ`, with the channel errors in quadrature.
@@ -354,9 +278,13 @@ pub struct IntegrateArtifact {
     pub sigma_err_pb: f64,
     pub chi2_per_dof: f64,
     /// The phase-space maps the run integrated under, every choice settled. A
-    /// generator rebuilds its channels from these; a file older than version 9
-    /// reads back [`MapChoices::LEGACY`], the maps every such run used.
+    /// generator rebuilds its channels from these.
     pub maps: MapChoices,
+    /// The rule every channel's [`VegasGrid`] was refined under, recorded for
+    /// provenance: replaying a trained grid does not refine it, so no reader
+    /// needs the rule to sample. `None` is an artifact whose channels were
+    /// trained by no VEGAS grid; no writer produces one yet.
+    pub grid_rule: Option<GridRule>,
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -366,380 +294,7 @@ struct VersionHeader {
     format_version: u32,
 }
 
-/// Schema version 3, kept so artifacts banked before the channel key exists still
-/// load.
-///
-/// A version-3 file could only have been written by one of two paths: the
-/// Drell–Yan integrand, which banks a single grid over the whole map, or the
-/// fixed-energy per-diagram multichannel, which banks one grid per diagram in
-/// diagram order. The upgrade reads the key off that, which is exactly as much as
-/// the older file knows — it is not a guess about a hadronic run, because no
-/// version-3 writer could produce one.
-pub(crate) mod v3 {
-    use serde::Deserialize;
-
-    use crate::runcard::RunCard;
-    use crate::ufo::identity::ModelIdentity;
-    use crate::vegas::VegasGrid;
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct ChannelGrid {
-        pub(crate) alpha: f64,
-        pub(crate) neval: usize,
-        pub(crate) grid: VegasGrid,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct IntegrateArtifact {
-        /// The version this file was actually written at, carried through the
-        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
-        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
-        /// the file's own version, not the version the in-memory struct now matches.
-        pub(crate) format_version: u32,
-        pub(crate) process: String,
-        pub(crate) model: ModelIdentity,
-        pub(crate) pdf_set: String,
-        pub(crate) pdf_member: u32,
-        pub(crate) mu_f: f64,
-        pub(crate) sqrt_s_had: f64,
-        pub(crate) neval: usize,
-        pub(crate) niter: usize,
-        pub(crate) seed: u64,
-        pub(crate) run_card: RunCard,
-        pub(crate) channels: Vec<ChannelGrid>,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-}
-
-/// Schema version 4, kept so artifacts banked before the sampler summary exists
-/// still load. Every field is version 5's but for [`ChannelGrid::sampler`], which
-/// a version-4 writer did not record and the upgrade therefore leaves `None`.
-pub(crate) mod v4 {
-    use serde::Deserialize;
-
-    use super::ChannelKey;
-    use crate::runcard::RunCard;
-    use crate::ufo::identity::ModelIdentity;
-    use crate::vegas::VegasGrid;
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct ChannelGrid {
-        pub(crate) key: ChannelKey,
-        pub(crate) alpha: f64,
-        pub(crate) neval: usize,
-        pub(crate) grid: VegasGrid,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct IntegrateArtifact {
-        /// The version this file was actually written at, carried through the
-        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
-        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
-        /// the file's own version, not the version the in-memory struct now matches.
-        pub(crate) format_version: u32,
-        pub(crate) process: String,
-        pub(crate) model: ModelIdentity,
-        pub(crate) pdf_set: String,
-        pub(crate) pdf_member: u32,
-        pub(crate) mu_f: f64,
-        pub(crate) sqrt_s_had: f64,
-        pub(crate) neval: usize,
-        pub(crate) niter: usize,
-        pub(crate) seed: u64,
-        pub(crate) run_card: RunCard,
-        pub(crate) channels: Vec<ChannelGrid>,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-}
-
-/// Schema versions 6 through 8, kept so artifacts banked before the map choices
-/// were recorded still load. Every field is version 9's but for
-/// [`IntegrateArtifact::maps`], which such a writer could only have integrated
-/// under [`MapChoices::LEGACY`], and the upgrade records exactly that.
-pub(crate) mod v7 {
-    use serde::Deserialize;
-
-    use super::ChannelGrid;
-    use crate::runcard::RunCard;
-    use crate::ufo::identity::ModelIdentity;
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct IntegrateArtifact {
-        /// The version this file was actually written at, carried through the
-        /// upgrade unchanged: `vibegraph generate`'s artifact-age guard reads the
-        /// file's own version.
-        pub(crate) format_version: u32,
-        pub(crate) process: String,
-        pub(crate) model: ModelIdentity,
-        pub(crate) pdf_set: String,
-        pub(crate) pdf_member: u32,
-        pub(crate) mu_f: f64,
-        pub(crate) sqrt_s_had: f64,
-        pub(crate) neval: usize,
-        pub(crate) niter: usize,
-        pub(crate) seed: u64,
-        pub(crate) run_card: RunCard,
-        pub(crate) channels: Vec<ChannelGrid>,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-}
-
-impl v7::IntegrateArtifact {
-    fn upgrade(self) -> IntegrateArtifact {
-        IntegrateArtifact {
-            format_version: self.format_version,
-            process: self.process,
-            model: self.model,
-            pdf_set: self.pdf_set,
-            pdf_member: self.pdf_member,
-            mu_f: self.mu_f,
-            sqrt_s_had: self.sqrt_s_had,
-            neval: self.neval,
-            niter: self.niter,
-            seed: self.seed,
-            run_card: self.run_card,
-            channels: self.channels,
-            sigma_pb: self.sigma_pb,
-            sigma_err_pb: self.sigma_err_pb,
-            chi2_per_dof: self.chi2_per_dof,
-            maps: MapChoices::LEGACY,
-        }
-    }
-}
-
-/// Schema version 5, kept so artifacts banked before the rung chain still load.
-/// Every field is version 6's but for the sampler's spine pole, which a version-5
-/// writer recorded as a single `Option<f64>`.
-///
-/// That scalar is the whole chain, not a truncation of one: a version-5 writer
-/// left every diagram with more than one spacelike line on the all-timelike tree,
-/// so a file with a pole recorded has exactly one rung and the upgrade to a list
-/// loses nothing.
-pub(crate) mod v5 {
-    use serde::Deserialize;
-
-    use super::{ChannelKey, SamplerPole, SamplerTopology};
-    use crate::runcard::RunCard;
-    use crate::ufo::identity::ModelIdentity;
-    use crate::vegas::VegasGrid;
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct ChannelSampler {
-        pub(crate) topology: SamplerTopology,
-        pub(crate) resonances: Vec<SamplerPole>,
-        pub(crate) t_channels: Vec<SamplerPole>,
-        pub(crate) spine_pole_gev2: Option<f64>,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct ChannelGrid {
-        pub(crate) key: ChannelKey,
-        pub(crate) alpha: f64,
-        pub(crate) neval: usize,
-        pub(crate) grid: VegasGrid,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-        pub(crate) sampler: Option<ChannelSampler>,
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct IntegrateArtifact {
-        /// The version this file was actually written at, carried through the
-        /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
-        /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
-        /// the file's own version, not the version the in-memory struct now matches.
-        pub(crate) format_version: u32,
-        pub(crate) process: String,
-        pub(crate) model: ModelIdentity,
-        pub(crate) pdf_set: String,
-        pub(crate) pdf_member: u32,
-        pub(crate) mu_f: f64,
-        pub(crate) sqrt_s_had: f64,
-        pub(crate) neval: usize,
-        pub(crate) niter: usize,
-        pub(crate) seed: u64,
-        pub(crate) run_card: RunCard,
-        pub(crate) channels: Vec<ChannelGrid>,
-        pub(crate) sigma_pb: f64,
-        pub(crate) sigma_err_pb: f64,
-        pub(crate) chi2_per_dof: f64,
-    }
-}
-
-impl v5::IntegrateArtifact {
-    fn upgrade(self) -> IntegrateArtifact {
-        IntegrateArtifact {
-            format_version: self.format_version,
-            process: self.process,
-            model: self.model,
-            pdf_set: self.pdf_set,
-            pdf_member: self.pdf_member,
-            mu_f: self.mu_f,
-            sqrt_s_had: self.sqrt_s_had,
-            neval: self.neval,
-            niter: self.niter,
-            seed: self.seed,
-            run_card: self.run_card,
-            channels: self
-                .channels
-                .into_iter()
-                .map(|c| ChannelGrid {
-                    key: c.key,
-                    alpha: c.alpha,
-                    neval: c.neval,
-                    grid: c.grid,
-                    sigma_pb: c.sigma_pb,
-                    sigma_err_pb: c.sigma_err_pb,
-                    chi2_per_dof: c.chi2_per_dof,
-                    sampler: c.sampler.map(|s| ChannelSampler {
-                        topology: s.topology,
-                        resonances: s.resonances,
-                        t_channels: s.t_channels,
-                        spine_poles_gev2: s.spine_pole_gev2.into_iter().collect(),
-                    }),
-                })
-                .collect(),
-            sigma_pb: self.sigma_pb,
-            sigma_err_pb: self.sigma_err_pb,
-            chi2_per_dof: self.chi2_per_dof,
-            maps: MapChoices::LEGACY,
-        }
-    }
-}
-
-impl v4::IntegrateArtifact {
-    fn upgrade(self) -> IntegrateArtifact {
-        IntegrateArtifact {
-            format_version: self.format_version,
-            process: self.process,
-            model: self.model,
-            pdf_set: self.pdf_set,
-            pdf_member: self.pdf_member,
-            mu_f: self.mu_f,
-            sqrt_s_had: self.sqrt_s_had,
-            neval: self.neval,
-            niter: self.niter,
-            seed: self.seed,
-            run_card: self.run_card,
-            channels: self
-                .channels
-                .into_iter()
-                .map(|c| ChannelGrid {
-                    key: c.key,
-                    alpha: c.alpha,
-                    neval: c.neval,
-                    grid: c.grid,
-                    sigma_pb: c.sigma_pb,
-                    sigma_err_pb: c.sigma_err_pb,
-                    chi2_per_dof: c.chi2_per_dof,
-                    sampler: None,
-                })
-                .collect(),
-            sigma_pb: self.sigma_pb,
-            sigma_err_pb: self.sigma_err_pb,
-            chi2_per_dof: self.chi2_per_dof,
-            maps: MapChoices::LEGACY,
-        }
-    }
-}
-
-impl v3::IntegrateArtifact {
-    fn upgrade(self) -> IntegrateArtifact {
-        let sole = self.channels.len() == 1;
-        IntegrateArtifact {
-            format_version: self.format_version,
-            process: self.process,
-            model: self.model,
-            pdf_set: self.pdf_set,
-            pdf_member: self.pdf_member,
-            mu_f: self.mu_f,
-            sqrt_s_had: self.sqrt_s_had,
-            neval: self.neval,
-            niter: self.niter,
-            seed: self.seed,
-            run_card: self.run_card,
-            channels: self
-                .channels
-                .into_iter()
-                .enumerate()
-                .map(|(j, c)| ChannelGrid {
-                    key: if sole {
-                        ChannelKey::Whole
-                    } else {
-                        ChannelKey::Channel { channel: j }
-                    },
-                    alpha: c.alpha,
-                    neval: c.neval,
-                    grid: c.grid,
-                    sigma_pb: c.sigma_pb,
-                    sigma_err_pb: c.sigma_err_pb,
-                    chi2_per_dof: c.chi2_per_dof,
-                    sampler: None,
-                })
-                .collect(),
-            sigma_pb: self.sigma_pb,
-            sigma_err_pb: self.sigma_err_pb,
-            chi2_per_dof: self.chi2_per_dof,
-            maps: MapChoices::LEGACY,
-        }
-    }
-}
-
 impl IntegrateArtifact {
-    /// The version an artifact banking `channels` records: the oldest whose
-    /// schema holds every key among them. A [`ChannelKey::MergedChannel`] needs
-    /// [`MERGED_CHANNEL_VERSION`], a [`ChannelKey::MultiplicityChannel`]
-    /// [`MULTIPLICITY_VERSION`]; every other key is [`MAP_CHOICES_VERSION`]'s.
-    pub fn version_for(channels: &[ChannelGrid]) -> u32 {
-        channels
-            .iter()
-            .map(|c| match c.key {
-                ChannelKey::MergedChannel { .. } => MERGED_CHANNEL_VERSION,
-                ChannelKey::MultiplicityChannel { .. } => MULTIPLICITY_VERSION,
-                _ => MAP_CHOICES_VERSION,
-            })
-            .max()
-            .unwrap_or(MAP_CHOICES_VERSION)
-    }
-
-    /// Refuse to replay this artifact on a process whose derived channel keys
-    /// `derived` merge pairs, when the artifact predates merged channels: its
-    /// grids were trained one per `(group, diagram)` pair, on channels this
-    /// build no longer has.
-    pub fn refuse_unmerged_grids(&self, derived: &[ChannelKey]) -> Result<(), String> {
-        if self.format_version >= MERGED_CHANNEL_VERSION {
-            return Ok(());
-        }
-        let (merged, pairs) = derived.iter().fold((0, 0), |(m, p), key| match key {
-            ChannelKey::MergedChannel { pairs, .. } => (m + 1, p + pairs),
-            _ => (m, p),
-        });
-        if merged == 0 {
-            return Ok(());
-        }
-        Err(format!(
-            "this process's channels merge {pairs} (group, diagram) pairs into {merged} shared \
-             phase-space maps, which artifacts hold from format version \
-             {MERGED_CHANNEL_VERSION} on; this artifact was written at version {}, one grid \
-             per pair, so its grids do not belong to this build's channels: re-run \
-             `vibegraph integrate`",
-            self.format_version
-        ))
-    }
-
     /// The single trained grid of a run that was not split across channels.
     #[cfg(test)]
     pub(crate) fn sole_grid(&self) -> Option<&VegasGrid> {
@@ -777,10 +332,9 @@ impl IntegrateArtifact {
 
     /// Read and decode a previously written artifact.
     ///
-    /// The format version is read from the payload's prefix and dispatched on before
-    /// the body is decoded, so a file written by another schema version is either
-    /// decoded through that version's own reader or refused by name — never misread
-    /// into whatever the current field order happens to accept.
+    /// The format version is read from the payload's prefix before the body is
+    /// decoded, so a file written by another schema version is refused by name —
+    /// never misread into whatever the current field order happens to accept.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
         let compressed = std::fs::read(path).map_err(|source| ArtifactError::Io {
             path: path.display().to_string(),
@@ -789,24 +343,7 @@ impl IntegrateArtifact {
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
-            // 9 through 11 share one schema; each later version only adds a key.
-            MAP_CHOICES_VERSION | MULTIPLICITY_VERSION | MERGED_CHANNEL_VERSION => {
-                bincode::deserialize(&raw).map_err(ArtifactError::Decode)
-            }
-            // 6 through 8 share one schema (see `FORMAT_VERSION`'s doc); the upgrade
-            // adds the map choices and keeps the file's own recorded `format_version`.
-            6..=8 => bincode::deserialize::<v7::IntegrateArtifact>(&raw)
-                .map_err(ArtifactError::Decode)
-                .map(v7::IntegrateArtifact::upgrade),
-            5 => bincode::deserialize::<v5::IntegrateArtifact>(&raw)
-                .map_err(ArtifactError::Decode)
-                .map(v5::IntegrateArtifact::upgrade),
-            4 => bincode::deserialize::<v4::IntegrateArtifact>(&raw)
-                .map_err(ArtifactError::Decode)
-                .map(v4::IntegrateArtifact::upgrade),
-            3 => bincode::deserialize::<v3::IntegrateArtifact>(&raw)
-                .map_err(ArtifactError::Decode)
-                .map(v3::IntegrateArtifact::upgrade),
+            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
             found => Err(ArtifactError::UnsupportedVersion {
                 found,
                 oldest: OLDEST_READABLE_VERSION,
@@ -841,6 +378,7 @@ mod tests {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: "p p > e+ e-".to_string(),
+            proc_card: "import model sm\ngenerate p p > e+ e-\n".to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
             pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
             pdf_member: 0,
@@ -849,75 +387,18 @@ mod tests {
             neval: 1000,
             niter: 2,
             seed: 42,
-            run_card: RunCard::default(),
+            run_card: RunCard::default().split().0,
+            generate: RunCard::default().split().1,
             channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
             maps: MapChoices::LEGACY,
+            grid_rule: Some(GridRule::UNBOUNDED),
         }
     }
 
     /// A file written at version 6, 7 or 8 carries no map choices; it reads back
-    /// under the maps every such run used, with its own version intact.
-    #[test]
-    fn a_pre_maps_artifact_reads_back_under_the_legacy_maps() {
-        #[derive(Serialize)]
-        struct V7Artifact {
-            format_version: u32,
-            process: String,
-            model: ModelIdentity,
-            pdf_set: String,
-            pdf_member: u32,
-            mu_f: f64,
-            sqrt_s_had: f64,
-            neval: usize,
-            niter: usize,
-            seed: u64,
-            run_card: RunCard,
-            channels: Vec<ChannelGrid>,
-            sigma_pb: f64,
-            sigma_err_pb: f64,
-            chi2_per_dof: f64,
-        }
-        let a = sample_artifact();
-        let dir =
-            std::env::temp_dir().join(format!("vibegraph-artifact-test-v7-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // 7 and 8 are the versions a reader that matched only the current version
-        // and 6 would refuse; 6 is the oldest of the shared schema.
-        for version in 6..=8 {
-            let old = V7Artifact {
-                format_version: version,
-                process: a.process.clone(),
-                model: a.model.clone(),
-                pdf_set: a.pdf_set.clone(),
-                pdf_member: a.pdf_member,
-                mu_f: a.mu_f,
-                sqrt_s_had: a.sqrt_s_had,
-                neval: a.neval,
-                niter: a.niter,
-                seed: a.seed,
-                run_card: a.run_card.clone(),
-                channels: a.channels.clone(),
-                sigma_pb: a.sigma_pb,
-                sigma_err_pb: a.sigma_err_pb,
-                chi2_per_dof: a.chi2_per_dof,
-            };
-            let path = dir.join(format!("v{version}.bin.zst"));
-            let raw = bincode::serialize(&old).unwrap();
-            std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
-
-            let reloaded = IntegrateArtifact::read_from_path(&path)
-                .unwrap_or_else(|e| panic!("version {version} does not read: {e}"));
-            assert_eq!(reloaded.format_version, version);
-            assert_eq!(reloaded.maps, MapChoices::LEGACY);
-            assert_eq!(reloaded.sigma_pb.to_bits(), a.sigma_pb.to_bits());
-            assert_eq!(reloaded.channels.len(), 1);
-            std::fs::remove_file(&path).ok();
-        }
-        std::fs::remove_dir(&dir).ok();
-    }
 
     #[test]
     fn round_trips_through_bincode_zstd() {
@@ -933,6 +414,8 @@ mod tests {
 
         assert_eq!(reloaded.format_version, artifact.format_version);
         assert_eq!(reloaded.process, artifact.process);
+        assert_eq!(reloaded.proc_card, artifact.proc_card);
+        assert_eq!(reloaded.generate, artifact.generate);
         assert_eq!(reloaded.model, artifact.model);
         assert_eq!(reloaded.pdf_set, artifact.pdf_set);
         assert_eq!(reloaded.pdf_member, artifact.pdf_member);
@@ -954,10 +437,14 @@ mod tests {
                 }
             }
         }
-        assert_eq!(
-            reloaded.run_card.ebeam1.to_bits(),
-            artifact.run_card.ebeam1.to_bits()
-        );
+        let card = |a: &IntegrateArtifact| -> Vec<(String, crate::runcard::ParamValue)> {
+            a.run_card
+                .iter()
+                .map(|(n, v)| (n.to_string(), v.clone()))
+                .collect()
+        };
+        assert_eq!(card(&reloaded), card(&artifact));
+        assert!(reloaded.run_card.get("nevents").is_none());
         assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
 
         std::fs::remove_file(&path).ok();
@@ -968,103 +455,6 @@ mod tests {
     /// over multiplicities is a version-10 file, with grids of two dimensions
     /// that read back as written; everything else is a version-9 file, which
     /// decodes as it always did and keeps its version.
-    #[test]
-    fn a_sum_over_multiplicities_is_a_version_10_file_and_nothing_else_is() {
-        let key = |final_state, channel| ChannelKey::MultiplicityChannel {
-            final_state,
-            group: 0,
-            channel,
-        };
-        let mut sum = sample_artifact();
-        sum.channels = vec![
-            ChannelGrid {
-                key: key(2, 0),
-                ..one_channel(VegasGrid::new(4, 16, 1.5))
-            },
-            ChannelGrid {
-                key: key(3, 0),
-                ..one_channel(VegasGrid::new(7, 16, 1.5))
-            },
-        ];
-        assert_eq!(IntegrateArtifact::version_for(&sum.channels), 10);
-        sum.format_version = IntegrateArtifact::version_for(&sum.channels);
-
-        let mut single = sample_artifact();
-        single.channels[0].key = ChannelKey::GroupChannel {
-            group: 1,
-            channel: 2,
-        };
-        assert_eq!(IntegrateArtifact::version_for(&single.channels), 9);
-        single.format_version = IntegrateArtifact::version_for(&single.channels);
-
-        let dir = scratch_dir("v10");
-        for (name, artifact) in [("sum", &sum), ("single", &single)] {
-            let path = dir.join(format!("{name}.bin.zst"));
-            artifact.write_to_path(&path, true).expect("write");
-            let back = IntegrateArtifact::read_from_path(&path).expect("read");
-            assert_eq!(back.format_version, artifact.format_version, "{name}");
-            let keys: Vec<ChannelKey> = back.channels.iter().map(|c| c.key).collect();
-            let want: Vec<ChannelKey> = artifact.channels.iter().map(|c| c.key).collect();
-            assert_eq!(keys, want, "{name}");
-            let dims: Vec<usize> = back.channels.iter().map(|c| c.grid.ndim()).collect();
-            let want: Vec<usize> = artifact.channels.iter().map(|c| c.grid.ndim()).collect();
-            assert_eq!(dims, want, "{name}");
-        }
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// A merged channel makes a version-11 file that reads back key for key,
-    /// and an artifact older than version 11 is refused on a process whose
-    /// channels merge, naming both versions, while a process that merges nothing
-    /// replays it as before.
-    #[test]
-    fn a_merged_channel_is_a_version_11_file_and_older_grids_are_refused_on_one() {
-        let merged = ChannelKey::MergedChannel {
-            final_state: 3,
-            group: 0,
-            channel: 1,
-            pairs: 6,
-        };
-        let plain = ChannelKey::MultiplicityChannel {
-            final_state: 2,
-            group: 0,
-            channel: 0,
-        };
-        let mut artifact = sample_artifact();
-        artifact.channels = vec![
-            ChannelGrid {
-                key: plain,
-                ..one_channel(VegasGrid::new(4, 16, 1.5))
-            },
-            ChannelGrid {
-                key: merged,
-                ..one_channel(VegasGrid::new(7, 16, 1.5))
-            },
-        ];
-        assert_eq!(IntegrateArtifact::version_for(&artifact.channels), 11);
-        artifact.format_version = IntegrateArtifact::version_for(&artifact.channels);
-        let dir = scratch_dir("v11");
-        let path = dir.join("merged.bin.zst");
-        artifact.write_to_path(&path, true).expect("write");
-        let back = IntegrateArtifact::read_from_path(&path).expect("read");
-        assert_eq!(back.format_version, MERGED_CHANNEL_VERSION);
-        let keys: Vec<ChannelKey> = back.channels.iter().map(|c| c.key).collect();
-        assert_eq!(keys, vec![plain, merged]);
-        std::fs::remove_dir_all(&dir).ok();
-
-        let derived = [plain, merged];
-        assert!(back.refuse_unmerged_grids(&derived).is_ok());
-        let mut stale = back.clone();
-        stale.format_version = MULTIPLICITY_VERSION;
-        let msg = stale
-            .refuse_unmerged_grids(&derived)
-            .expect_err("pre-merge grids on a merging process");
-        assert!(
-            msg.contains("version 11") && msg.contains("version 10") && msg.contains("6 (group"),
-            "{msg}"
-        );
-        assert!(stale.refuse_unmerged_grids(&[plain]).is_ok());
-    }
 
     #[test]
     fn refuses_to_overwrite_without_force() {
@@ -1191,71 +581,6 @@ mod tests {
         std::fs::remove_dir(&dir).ok();
     }
 
-    /// Version 3's channel record, so the tests below can write a genuine version-3
-    /// payload rather than the current one with a stamped-down version number.
-    #[derive(Serialize)]
-    struct V3ChannelGrid {
-        alpha: f64,
-        neval: usize,
-        grid: VegasGrid,
-        sigma_pb: f64,
-        sigma_err_pb: f64,
-        chi2_per_dof: f64,
-    }
-
-    #[derive(Serialize)]
-    struct V3Artifact {
-        format_version: u32,
-        process: String,
-        model: ModelIdentity,
-        pdf_set: String,
-        pdf_member: u32,
-        mu_f: f64,
-        sqrt_s_had: f64,
-        neval: usize,
-        niter: usize,
-        seed: u64,
-        run_card: RunCard,
-        channels: Vec<V3ChannelGrid>,
-        sigma_pb: f64,
-        sigma_err_pb: f64,
-        chi2_per_dof: f64,
-    }
-
-    fn v3_channel(alpha: f64, grid: VegasGrid) -> V3ChannelGrid {
-        V3ChannelGrid {
-            alpha,
-            neval: 1000,
-            grid,
-            sigma_pb: 934.42,
-            sigma_err_pb: 0.87,
-            chi2_per_dof: 1.02,
-        }
-    }
-
-    fn write_v3(path: &Path, channels: Vec<V3ChannelGrid>) {
-        let legacy = V3Artifact {
-            format_version: 3,
-            process: "p p > e+ e-".to_string(),
-            model: ModelIdentity::interned_sm(SMRestrict::Default),
-            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
-            pdf_member: 0,
-            mu_f: 91.1880,
-            sqrt_s_had: 13000.0,
-            neval: 1000,
-            niter: 2,
-            seed: 42,
-            run_card: RunCard::default(),
-            channels,
-            sigma_pb: 934.42,
-            sigma_err_pb: 0.87,
-            chi2_per_dof: 1.02,
-        };
-        let raw = bincode::serialize(&legacy).unwrap();
-        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
-        std::fs::write(path, compressed).unwrap();
-    }
-
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "vibegraph-artifact-test-{tag}-{}",
@@ -1265,304 +590,6 @@ mod tests {
         dir
     }
 
-    /// A version-3 artifact still loads, and its channels take the key the writer
-    /// that produced it implies: a lone grid is the whole map, several are one
-    /// subprocess's diagrams in diagram order. Nothing older could have written a
-    /// hadronic decomposition, so no version-3 channel upgrades to one.
-    #[test]
-    fn a_version_3_artifact_upgrades_to_the_current_schema() {
-        let dir = scratch_dir("v3");
-
-        let sole = dir.join("v3-sole.bin.zst");
-        write_v3(&sole, vec![v3_channel(1.0, VegasGrid::new(3, 64, 1.5))]);
-        let upgraded = IntegrateArtifact::read_from_path(&sole).expect("version 3 reads");
-        // The schema is current; the recorded version is the file's own, not
-        // normalised, so a reader downstream can still tell this artifact predates
-        // the per-point AMP2 configuration draw introduced at format version 7.
-        assert_eq!(upgraded.format_version, 3);
-        assert_eq!(upgraded.channels[0].key, ChannelKey::Whole);
-        assert!(upgraded.sole_grid().is_some());
-        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
-
-        let multi = dir.join("v3-multi.bin.zst");
-        write_v3(
-            &multi,
-            (0..3)
-                .map(|j| v3_channel(0.25 * (j + 1) as f64, VegasGrid::new(5, 16, 0.5)))
-                .collect(),
-        );
-        let upgraded = IntegrateArtifact::read_from_path(&multi).expect("version 3 reads");
-        let keys: Vec<ChannelKey> = upgraded.channels.iter().map(|c| c.key).collect();
-        assert_eq!(
-            keys,
-            vec![
-                ChannelKey::Channel { channel: 0 },
-                ChannelKey::Channel { channel: 1 },
-                ChannelKey::Channel { channel: 2 },
-            ]
-        );
-        for (j, c) in upgraded.channels.iter().enumerate() {
-            assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
-        }
-
-        std::fs::remove_file(&sole).ok();
-        std::fs::remove_file(&multi).ok();
-        std::fs::remove_dir(&dir).ok();
-    }
-
-    /// A version-4 artifact still loads. Every field it carried survives; the
-    /// sampler summary it never held reads back as `None`, which says the writer
-    /// recorded nothing rather than that the channel had no composition.
-    #[test]
-    fn a_version_4_artifact_upgrades_to_the_current_schema() {
-        #[derive(Serialize)]
-        struct V4ChannelGrid {
-            key: ChannelKey,
-            alpha: f64,
-            neval: usize,
-            grid: VegasGrid,
-            sigma_pb: f64,
-            sigma_err_pb: f64,
-            chi2_per_dof: f64,
-        }
-
-        #[derive(Serialize)]
-        struct V4Artifact {
-            format_version: u32,
-            process: String,
-            model: ModelIdentity,
-            pdf_set: String,
-            pdf_member: u32,
-            mu_f: f64,
-            sqrt_s_had: f64,
-            neval: usize,
-            niter: usize,
-            seed: u64,
-            run_card: RunCard,
-            channels: Vec<V4ChannelGrid>,
-            sigma_pb: f64,
-            sigma_err_pb: f64,
-            chi2_per_dof: f64,
-        }
-
-        let legacy = V4Artifact {
-            format_version: 4,
-            process: "p p > e+ e-".to_string(),
-            model: ModelIdentity::interned_sm(SMRestrict::Default),
-            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
-            pdf_member: 0,
-            mu_f: 91.1880,
-            sqrt_s_had: 13000.0,
-            neval: 1000,
-            niter: 2,
-            seed: 42,
-            run_card: RunCard::default(),
-            channels: (0..3)
-                .map(|j| V4ChannelGrid {
-                    key: ChannelKey::GroupChannel {
-                        group: j / 2,
-                        channel: j % 2,
-                    },
-                    alpha: 0.25 * (j + 1) as f64,
-                    neval: 1000,
-                    grid: VegasGrid::new(4, 16, 0.5),
-                    sigma_pb: 934.42,
-                    sigma_err_pb: 0.87,
-                    chi2_per_dof: 1.02,
-                })
-                .collect(),
-            sigma_pb: 934.42,
-            sigma_err_pb: 0.87,
-            chi2_per_dof: 1.02,
-        };
-
-        let dir = scratch_dir("v4");
-        let path = dir.join("v4.bin.zst");
-        let raw = bincode::serialize(&legacy).unwrap();
-        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
-        std::fs::write(&path, compressed).unwrap();
-
-        let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 4 reads");
-        assert_eq!(upgraded.format_version, 4);
-        assert_eq!(upgraded.channels.len(), 3);
-        for (j, c) in upgraded.channels.iter().enumerate() {
-            assert_eq!(
-                c.key,
-                ChannelKey::GroupChannel {
-                    group: j / 2,
-                    channel: j % 2
-                }
-            );
-            assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
-            assert_eq!(c.sampler, None, "channel {j}");
-        }
-        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
-
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&dir).ok();
-    }
-
-    /// A version-5 artifact still loads, and its single spine pole becomes a
-    /// one-rung chain — while a channel that recorded no pole comes back with an
-    /// empty chain rather than a chain holding a zero, which is the one way this
-    /// upgrade could quietly turn an all-timelike tree into a peripheral one.
-    #[test]
-    fn a_version_5_artifact_upgrades_to_the_current_schema() {
-        #[derive(Serialize)]
-        struct V5ChannelSampler {
-            topology: SamplerTopology,
-            resonances: Vec<SamplerPole>,
-            t_channels: Vec<SamplerPole>,
-            spine_pole_gev2: Option<f64>,
-        }
-
-        #[derive(Serialize)]
-        struct V5ChannelGrid {
-            key: ChannelKey,
-            alpha: f64,
-            neval: usize,
-            grid: VegasGrid,
-            sigma_pb: f64,
-            sigma_err_pb: f64,
-            chi2_per_dof: f64,
-            sampler: Option<V5ChannelSampler>,
-        }
-
-        #[derive(Serialize)]
-        struct V5Artifact {
-            format_version: u32,
-            process: String,
-            model: ModelIdentity,
-            pdf_set: String,
-            pdf_member: u32,
-            mu_f: f64,
-            sqrt_s_had: f64,
-            neval: usize,
-            niter: usize,
-            seed: u64,
-            run_card: RunCard,
-            channels: Vec<V5ChannelGrid>,
-            sigma_pb: f64,
-            sigma_err_pb: f64,
-            chi2_per_dof: f64,
-        }
-
-        let sampler = |spine: Option<f64>| V5ChannelSampler {
-            topology: match spine {
-                Some(_) => SamplerTopology::Spine,
-                None => SamplerTopology::Timelike,
-            },
-            resonances: vec![SamplerPole {
-                mass: 91.1876,
-                width: 2.4952,
-            }],
-            t_channels: spine
-                .map(|_| {
-                    vec![SamplerPole {
-                        mass: 0.0,
-                        width: 0.0,
-                    }]
-                })
-                .unwrap_or_default(),
-            spine_pole_gev2: spine,
-        };
-
-        let legacy = V5Artifact {
-            format_version: 5,
-            process: "p p > e+ e- j".to_string(),
-            model: ModelIdentity::interned_sm(SMRestrict::Default),
-            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
-            pdf_member: 0,
-            mu_f: 91.1880,
-            sqrt_s_had: 13000.0,
-            neval: 1000,
-            niter: 2,
-            seed: 42,
-            run_card: RunCard::default(),
-            channels: vec![
-                V5ChannelGrid {
-                    key: ChannelKey::GroupChannel {
-                        group: 0,
-                        channel: 0,
-                    },
-                    alpha: 0.25,
-                    neval: 1000,
-                    grid: VegasGrid::new(4, 16, 0.5),
-                    sigma_pb: 934.42,
-                    sigma_err_pb: 0.87,
-                    chi2_per_dof: 1.02,
-                    sampler: Some(sampler(Some(0.4))),
-                },
-                V5ChannelGrid {
-                    key: ChannelKey::GroupChannel {
-                        group: 0,
-                        channel: 1,
-                    },
-                    alpha: 0.75,
-                    neval: 1000,
-                    grid: VegasGrid::new(4, 16, 0.5),
-                    sigma_pb: 934.42,
-                    sigma_err_pb: 0.87,
-                    chi2_per_dof: 1.02,
-                    sampler: Some(sampler(None)),
-                },
-            ],
-            sigma_pb: 934.42,
-            sigma_err_pb: 0.87,
-            chi2_per_dof: 1.02,
-        };
-
-        let dir = scratch_dir("v5");
-        let path = dir.join("v5.bin.zst");
-        let raw = bincode::serialize(&legacy).unwrap();
-        let compressed = zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap();
-        std::fs::write(&path, compressed).unwrap();
-
-        let upgraded = IntegrateArtifact::read_from_path(&path).expect("version 5 reads");
-        assert_eq!(upgraded.format_version, 5);
-        let peripheral = upgraded.channels[0].sampler.as_ref().expect("sampler");
-        assert_eq!(peripheral.topology, SamplerTopology::Spine);
-        assert_eq!(peripheral.spine_poles_gev2, vec![0.4]);
-        let timelike = upgraded.channels[1].sampler.as_ref().expect("sampler");
-        assert_eq!(timelike.topology, SamplerTopology::Timelike);
-        assert!(timelike.spine_poles_gev2.is_empty());
-        assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
-
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&dir).ok();
-    }
-
-    /// Every version from [`OLDEST_READABLE_VERSION`] through [`FORMAT_VERSION`]
-    /// has a reader, and every one from [`MAP_CHOICES_VERSION`] on decodes the
-    /// current schema back field for field. Bumping [`FORMAT_VERSION`] without
-    /// a reader arm for the new version, or replacing an arm's constant so that
-    /// a version still written drops out, fails here for the version it drops.
-    #[test]
-    fn every_version_this_build_writes_or_upgrades_has_a_reader() {
-        let dir = scratch_dir("every-version");
-        for version in OLDEST_READABLE_VERSION..=FORMAT_VERSION {
-            let mut artifact = sample_artifact();
-            artifact.format_version = version;
-            let path = dir.join(format!("v{version}.bin.zst"));
-            artifact.write_to_path(&path, true).expect("write");
-            let read = IntegrateArtifact::read_from_path(&path);
-            assert!(
-                !matches!(read, Err(ArtifactError::UnsupportedVersion { .. })),
-                "version {version} has no reader"
-            );
-            if version >= MAP_CHOICES_VERSION {
-                let back = read.unwrap_or_else(|e| panic!("version {version}: {e}"));
-                assert_eq!(back.format_version, version);
-                assert_eq!(back.maps, artifact.maps, "version {version}");
-                assert_eq!(back.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
-            }
-            std::fs::remove_file(&path).ok();
-        }
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// The writer refuses a version its own reader would refuse, and leaves no
-    /// file behind.
     #[test]
     fn write_refuses_a_version_this_build_cannot_read() {
         let dir = scratch_dir("unwritable");
@@ -1597,6 +624,15 @@ mod tests {
     #[test]
     fn read_refuses_a_format_version_with_no_reader() {
         #[derive(Serialize)]
+        struct V3ChannelGrid {
+            alpha: f64,
+            neval: usize,
+            grid: VegasGrid,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+        }
+        #[derive(Serialize)]
         struct V2Artifact {
             format_version: u32,
             process: String,
@@ -1625,7 +661,14 @@ mod tests {
             niter: 2,
             seed: 42,
             run_card: RunCard::default(),
-            channels: vec![v3_channel(1.0, VegasGrid::new(3, 64, 1.5))],
+            channels: vec![V3ChannelGrid {
+                alpha: 1.0,
+                neval: 1000,
+                grid: VegasGrid::new(3, 64, 1.5),
+                sigma_pb: 934.42,
+                sigma_err_pb: 0.87,
+                chi2_per_dof: 1.02,
+            }],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
@@ -1652,5 +695,37 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
+    }
+
+    /// A version-12 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode: it carries no proc
+    /// card for a generation to replay. The file is this build's own payload
+    /// with the version stamped down, so a reader that decoded by shape would
+    /// accept it.
+    #[test]
+    fn a_version_12_artifact_is_refused() {
+        let dir = scratch_dir("v12");
+        let path = dir.join("v12.bin.zst");
+        sample_artifact().write_to_path(&path, true).unwrap();
+        let mut raw = zstd::decode_all(std::fs::read(&path).unwrap().as_slice()).unwrap();
+        raw[..4].copy_from_slice(&12u32.to_le_bytes());
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-12 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 12,
+                    oldest: 13,
+                    expected: 13
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

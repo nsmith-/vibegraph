@@ -1,4 +1,6 @@
-use super::ast_util::{constructor_calls, extract_int, kwarg_float, kwarg_str, parse_stmts};
+use super::ast_util::{
+    conditional_definitions, constructor_calls, extract_int, kwarg_float, kwarg_str, parse_stmts,
+};
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
 use num_complex::Complex64;
@@ -16,6 +18,15 @@ pub enum ParameterError {
     CyclicDep,
     #[error("Expression parse error for parameter '{name}': {cause}")]
     ExprParse { name: String, cause: String },
+    #[error(
+        "parameter(s) {names} are defined only inside an `if` branch of parameters.py; \
+         which branch runs depends on Python evaluated at import time, which the loader does not run"
+    )]
+    ConditionalDefinition { names: String },
+    #[error(
+        "internal parameter '{user}' references '{name}', which parameters.py does not define"
+    )]
+    UnknownParameter { name: String, user: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,6 +65,14 @@ pub struct ParameterSet {
 }
 
 impl ParameterSet {
+    /// Whether `name` is an external or internal parameter of the set.
+    pub(crate) fn defines(&self, name: &str) -> bool {
+        self.externals
+            .iter()
+            .chain(&self.internals)
+            .any(|p| p.name == name)
+    }
+
     /// Evaluate all parameters using the given param_card for external inputs.
     pub(crate) fn evaluate(&self, slha: &ParamCard) -> HashMap<String, Complex64> {
         let mut values: HashMap<String, Complex64> = HashMap::new();
@@ -178,6 +197,10 @@ impl ParameterSet {
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
+    if let Some(names) = conditional_definitions(&stmts, "Parameter") {
+        return Err(ParameterError::ConditionalDefinition { names });
+    }
+
     let mut externals: Vec<Parameter> = Vec::new();
     let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new();
 
@@ -212,6 +235,20 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
                 collect_deps(&expr, &mut deps);
                 raw_internals.push((name, is_complex, expr, deps));
             }
+        }
+    }
+
+    let defined: HashSet<&str> = externals
+        .iter()
+        .map(|p| p.name.as_str())
+        .chain(raw_internals.iter().map(|(name, ..)| name.as_str()))
+        .collect();
+    for (user, _, _, deps) in &raw_internals {
+        if let Some(name) = deps.iter().find(|d| !defined.contains(d.as_str())) {
+            return Err(ParameterError::UnknownParameter {
+                name: name.clone(),
+                user: user.clone(),
+            });
         }
     }
 
@@ -465,5 +502,43 @@ MZ2 = Parameter(name = 'MZ2',
         let ps = parse_parameters(SM_PARAMS_FRAGMENT).unwrap();
         let g_deps = &ps.rdeps["aS"];
         assert!(g_deps.contains(&"G".to_owned()));
+    }
+
+    #[test]
+    fn conditional_definitions_are_refused_by_name_at_any_depth() {
+        let src = r"
+if configuration.a:
+    MW = Parameter(name = 'MW', nature = 'internal', type = 'real', value = '80.0')
+elif configuration.b:
+    if configuration.c:
+        MZ = Parameter(name = 'MZ', nature = 'internal', type = 'real', value = '91.0')
+";
+        let err = parse_parameters(src).unwrap_err();
+        assert!(
+            matches!(&err, ParameterError::ConditionalDefinition { names } if names == "'MW', 'MZ'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn conditional_non_parameter_statements_are_not_refused() {
+        let src = r"
+if configuration.a:
+    helper = Helper(value = 1.0)
+    plain = 1.0
+ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0')
+";
+        assert_eq!(parse_parameters(src).unwrap().internals.len(), 1);
+    }
+
+    #[test]
+    fn internal_expression_naming_an_undefined_parameter_is_refused() {
+        let src = r"
+a = Parameter(name = 'a', nature = 'internal', type = 'real', value = '2*b')
+";
+        assert!(matches!(
+            parse_parameters(src).unwrap_err(),
+            ParameterError::UnknownParameter { ref name, ref user } if name == "b" && user == "a"
+        ));
     }
 }

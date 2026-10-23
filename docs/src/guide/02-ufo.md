@@ -102,10 +102,12 @@ Parsing a UFO directory needs the directory, and a user of a bare binary has
 none. The SM UFO from the MadGraph distribution is parsed once by a
 developer tool, serialised with `bincode`, compressed with `zstd`, and
 compiled into the library as a byte blob together with its nine restriction
-cards. `import model sm` and its variants deserialise the blob and apply the
-card, touching no file. The `sm_interned_blob` validation test regenerates
-the blob from the pinned MadGraph submodule and fails when the committed one
-has drifted.
+cards, plus `ckm_no_b_mass`, which CMS genproductions adds to its copy of the
+model and MadGraph does not ship (`restrict_ckm` with a massless b and a tau
+width of 2.27e-12 GeV). `import model sm` and its variants deserialise the
+blob and apply the card, touching no file. The `sm_interned_blob` validation
+test regenerates the blob from the pinned MadGraph submodule and fails when
+the committed one has drifted; the CMS card is pinned by its SHA-256.
 
 Any other model is a directory: `import model <name>` resolves it through
 the [cache](../cli/overview.md#data-the-binary-does-not-carry), and

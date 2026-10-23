@@ -65,7 +65,7 @@ use crate::runcard::{RunCard, RunCardError};
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
-use crate::vegas::{IterationCombination, VegasGrid, VegasResult};
+use crate::vegas::{GridRule, IterationCombination, VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
@@ -897,6 +897,19 @@ pub enum InitialState {
     Decay(DecayAtRest),
 }
 
+impl InitialState {
+    /// The initial state a compiled process and the run card describe: the
+    /// decaying particle at rest for a `1 → n` process, otherwise the card's two
+    /// fixed-energy beams on the incoming legs' mass shells.
+    pub fn from_run_card(rc: &RunCard, legs: &[ExternalLeg]) -> Result<Self, HadronicError> {
+        if legs.iter().filter(|l| !l.is_final).count() == 1 {
+            Ok(DecayAtRest::from_legs(legs)?.into())
+        } else {
+            Ok(FixedBeams::from_run_card(rc, legs).into())
+        }
+    }
+}
+
 impl From<FixedBeams> for InitialState {
     fn from(beams: FixedBeams) -> Self {
         InitialState::Beams(beams)
@@ -1700,6 +1713,8 @@ pub struct FixedBeamIntegrand<'a> {
     /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
     /// configuration draw on `AMP2` alone.
     resonances: &'a [SubprocessResonances],
+    /// How a per-channel adaptation refines the channels' grids.
+    grid_rule: GridRule,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1967,6 +1982,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             maps: None,
             vetoes: Vec::new(),
             resonances: &[],
+            grid_rule: GridRule::default(),
         }
     }
 
@@ -2033,6 +2049,13 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// diagrams then. Has no effect on a map already installed.
     pub fn set_map_options(&mut self, options: MapOptions) {
         self.map_options = options;
+    }
+
+    /// Refine the channels' grids under `rule` in every per-channel adaptation:
+    /// [`adapt_grids`](Self::adapt_grids), [`adapt_grids_with`](Self::adapt_grids_with)
+    /// and [`adapt_grids_budget`](Self::adapt_grids_budget).
+    pub fn set_grid_rule(&mut self, rule: GridRule) {
+        self.grid_rule = rule;
     }
 
     /// The maps the installed multichannel map was built under — what an artifact
@@ -3128,6 +3151,10 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         FixedBeamIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn grid_rule(&self) -> GridRule {
+        self.grid_rule
     }
 }
 

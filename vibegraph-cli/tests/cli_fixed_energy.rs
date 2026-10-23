@@ -10,8 +10,11 @@
 //! only to be finite and positive, since the reference holds no point at its
 //! beam energy.
 
+mod common;
+
 use std::path::Path;
-use std::process::Command;
+
+use common::fixed_beams;
 
 use vibegraph::artifact::IntegrateArtifact;
 
@@ -26,15 +29,11 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, format!("import model sm\ngenerate {process}\n")).unwrap();
     // Fixed-energy partonic beams; MG default cuts otherwise.
-    std::fs::write(
-        &run_path,
-        format!("  0 = lpp1\n  0 = lpp2\n  {ebeam} = ebeam1\n  {ebeam} = ebeam2\n"),
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(ebeam, ebeam)).unwrap();
     let sqrt_s = 2.0 * ebeam;
 
     let out = tmp.path().join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph(tmp.path(), tmp.path())
         .arg("integrate")
         .arg(&proc_path)
         .arg("--run-card")
@@ -160,16 +159,12 @@ fn integrate_is_thread_count_independent() {
     let proc_path = tmp.path().join("proc_card.dat");
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(100, 100)).unwrap();
 
     let mut bytes = Vec::new();
     for threads in ["1", "16"] {
         let out = tmp.path().join(format!("out-j{threads}"));
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph(tmp.path(), tmp.path())
             .args(["integrate"])
             .arg(&proc_path)
             .arg("--run-card")
@@ -215,14 +210,10 @@ fn integrate_spends_iterations_to_reach_a_target() {
     let proc_path = tmp.path().join("proc_card.dat");
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(100, 100)).unwrap();
 
     let integrate = |target: &str, out: &std::path::Path| {
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph(tmp.path(), tmp.path())
             .args(["integrate"])
             .arg(&proc_path)
             .arg("--run-card")
@@ -279,5 +270,78 @@ fn integrate_spends_iterations_to_reach_a_target() {
     assert!(
         spread < 5.0,
         "the two runs disagree: {lo} vs {hi} pb ({spread:.1}σ)"
+    );
+}
+
+/// `integrate` bounds every bin at the library's default width unless
+/// `--grid-max-bin-width none` asks for the unbounded grid, and the artifact
+/// records the rule the grids were refined under: the default rule's artifact
+/// is the one an explicit `--grid-max-bin-width 6` writes, byte for byte, with
+/// no bin wider than six uniform widths; the unbounded one is a version-9 file
+/// whose grids exceed that width.
+#[test]
+fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
+    use vibegraph::vegas::{GridRule, DEFAULT_MAX_BIN_WIDTH};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_path = tmp.path().join("proc_card.dat");
+    let run_path = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > mu+ mu- a\n").unwrap();
+    std::fs::write(&run_path, fixed_beams(250, 250)).unwrap();
+    let integrate = |name: &str, flags: &[&str]| {
+        let out = tmp.path().join(name);
+        let status = common::vibegraph(tmp.path(), tmp.path())
+            .arg("integrate")
+            .arg(&proc_path)
+            .arg("--run-card")
+            .arg(&run_path)
+            .arg("--out")
+            .arg(&out)
+            .args(["--fixed-budget", "--neval", "20000", "--niter", "4"])
+            .args(flags)
+            .status()
+            .expect("spawn vibegraph");
+        assert!(status.success(), "[{name}] integrate exited non-zero");
+        let path = out.join("grid.bin.zst");
+        let bytes = std::fs::read(&path).unwrap();
+        let artifact = IntegrateArtifact::read_from_path(&path).expect("reload artifact");
+        (bytes, artifact)
+    };
+    // The widest bin of any channel's grid, in uniform widths, read off the
+    // grid's serialized edges.
+    let widest = |a: &IntegrateArtifact| {
+        a.channels
+            .iter()
+            .flat_map(|c| {
+                let grid = serde_json::to_value(&c.grid).unwrap();
+                let nbins = grid["nbins"].as_f64().unwrap();
+                let xi: Vec<Vec<f64>> = serde_json::from_value(grid["xi"].clone()).unwrap();
+                xi.iter()
+                    .flat_map(|edges| edges.windows(2).map(|w| (w[1] - w[0]) * nbins))
+                    .collect::<Vec<_>>()
+            })
+            .fold(0.0_f64, f64::max)
+    };
+
+    let (default_bytes, default) = integrate("default", &[]);
+    let (six_bytes, _) = integrate("six", &["--grid-max-bin-width", "6"]);
+    let (_, unbounded) = integrate("none", &["--grid-max-bin-width", "none"]);
+
+    assert_eq!(DEFAULT_MAX_BIN_WIDTH, 6.0);
+    assert_eq!(default.grid_rule, Some(GridRule::default()));
+    assert_eq!(default.format_version, 13);
+    assert!(default_bytes == six_bytes, "the default is not K = 6");
+    assert!(
+        widest(&default) <= DEFAULT_MAX_BIN_WIDTH * (1.0 + 1e-9),
+        "a default-rule bin is {} uniform widths wide",
+        widest(&default)
+    );
+
+    assert_eq!(unbounded.grid_rule, Some(GridRule::UNBOUNDED));
+    assert_eq!(unbounded.format_version, 13);
+    assert!(
+        widest(&unbounded) > DEFAULT_MAX_BIN_WIDTH,
+        "the unbounded grid's widest bin is {} uniform widths, so the bound does not bind here",
+        widest(&unbounded)
     );
 }

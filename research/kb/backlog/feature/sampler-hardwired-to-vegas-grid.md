@@ -3,10 +3,10 @@ type: Backlog Item
 title: Integration, the w_max scan and unweighting are hard-wired to VegasGrid
 description: "No seam separates draw, accumulate, refine and freeze from the VEGAS grid; every other sampler, and later lane-batched drawing, needs one, bit-for-bit inert on VEGAS."
 area: feature
-state: open
+state: blocked
 priority: medium
 closes_when: "A sampler trait whose draw, weight and accumulate signatures are generic over F: Real (scalar and batch draw, point-order accumulate, refine, freeze), implemented and tested at F = f64 only, has VegasGrid and a no-adaptation uniform sampler as implementors, drives integrate_channels, adapt_blocks_iteration, scan_channel and Unweighter, and the default path's grid.bin.zst, LHE and validation report are byte-identical before and after."
-blocked_by: []
+blocked_by: [sampler-and-phase-space-seams-designed-apart]
 opened: 2026-10-17
 tags: [vegas, sampler, refactor, integration, unweighting, simd, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}

@@ -93,7 +93,8 @@ class Process:
     profile_npoints: int = 10_000
     # The UFO model directory the row's .mg5 script imports, and the restrict
     # card it imports it with. Absent for a row generated against MadGraph's
-    # default `sm`, which is what the manifest saying nothing means.
+    # default `sm`, which is what the manifest saying nothing means; "sm" for
+    # MadGraph's `sm` under the named restrict card.
     model: str | None = None
     restrict: str | None = None
 

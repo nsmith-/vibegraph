@@ -1,0 +1,16 @@
+# MadGraph5 batch script: fw~ fw > xw xw
+# in vibegraph_toy_weighted_UFO, no restrict card.
+#
+# Why this exact process:
+#   Its only diagrams carry the QED+NP vertex fw~ fw xw twice (WEIGHTED 6),
+#   above (n_ext - 2) times the model's largest hierarchy (4) and at
+#   (n_ext - 2) times the largest interaction WEIGHTED per equivalent cubic
+#   vertex (3): MadGraph's automatic WEIGHTED search finds them only because its
+#   cap is the latter. No order bound on purpose: the row is the search.
+#
+# The model path is repo-relative; build.sh rewrites it to the staged copy.
+# `display interactions` puts the interaction count (5) into build.log.
+import model validation/ufo/vibegraph_toy_weighted_UFO
+display interactions
+generate fw~ fw > xw xw
+output ffx_to_xwxw_toy_weighted -nojpeg

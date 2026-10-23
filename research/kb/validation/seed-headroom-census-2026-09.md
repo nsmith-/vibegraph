@@ -2,7 +2,8 @@
 type: Measurement
 title: Seed-sweep headroom of the enforced gate statistics (base 0538e2d)
 description: "Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce."
-status: draft
+status: deprecated
+superseded_by: seed-headroom-census-2026-10
 tags: [validation, seed-sweep, tolerances, statistics, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
@@ -21,6 +22,12 @@ sources:
   - {id: f-g2-report, resource: "../sprints/hygiene/sessions/F-G2-report.md", title: "Hygiene sprint F-G2 report, Found 1 (the 2026-10 re-read)"}
   - {id: n36a-thin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L326-L397", title: "Note 36a §7–8 (the thin list; downstream)"}
 ---
+
+**Superseded** for the σ gates by the
+[2026-10 census](seed-headroom-census-2026-10.md), measured against refdata-10's
+seed records under today's map defaults and bin bound, which also records what
+moved this page's figures. The `validate_samples.rs`, unweighting and
+`cli_generate_proton` sections below were not re-measured there.
 
 A census of every enforced statistic in the banked validation layer: for each,
 how many seeds form it, how many calibrated its threshold, and how far the
@@ -102,7 +109,7 @@ Findings:[^n36a-sigma]
   commits (`f85718d`, `c48fc69`, `f3d6e8b`). The falsifier for that attribution
   is one run of `probe_gate_row_seed_headroom` at `f85718d^`, not yet run. The
   re-record is
-  [σ calibration comments stale](../backlog/validation/sigma-calibration-comments-stale.md).
+  σ calibration comments stale (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md)).
 
 **Re-read, 2026-10-10.** `probe_gate_row_seed_headroom` at `3f401f0` no longer
 gives this page's readings: worst-of-five |rel| on `ee_to_ee` is 3.24e-3
@@ -111,7 +118,7 @@ against 1.44e-3 here (χ²/dof 2.31), `gg_to_gg` 2.66e-3 against 1.97e-3, and
 before the hygiene sprint, is identical line for line over its 68 rows, so the
 drift predates that sprint. The tables above are the census as measured; the
 re-record and the cause are
-[σ seed calibrations drifted](../backlog/validation/sigma-seed-calibrations-drifted.md)[^f-g2-report].
+σ seed calibrations drifted (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md))[^f-g2-report].
 
 ## `validate_samples.rs`: `P_FLOOR`
 
@@ -189,7 +196,7 @@ No threshold was widened.[^n36a-thin]
 | unweighting `SIGMA_PULL_LIMIT` | 1.77× at 4 seeds | 2.2× | `GEN_SEEDS` 4 → 5: the fifth seed buys the denominator of a pull whose error comes from the same seeds |
 
 The budget decision for the two σ rows is
-[σ cells thin budget headroom](../backlog/validation/sigma-cells-thin-budget-headroom.md).
+σ cells thin budget headroom (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md)).
 The general seed and ladder protocol is
 [seed sweeps and budget ladders](seed-sweeps-and-budget-ladders.md).
 

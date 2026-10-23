@@ -68,7 +68,7 @@ the difference is not isolated; the channel-restricted re-cluster of the jet mem
 
 ## Size
 
-**MadGraph-only reproducer** (`validation/madgraph/repro/permuted_first_call/`):
+**MadGraph-only reproducer** (`research/upstream/madgraph-grouped-first-call-unpermuted/`):
 `define q = u d; generate u q > z u q` at 13 TeV, grouped against
 `group_subprocesses False`, and grouped with the one-line fix
 `validation/madgraph/patches/first-call-unpermuted-momenta.patch`

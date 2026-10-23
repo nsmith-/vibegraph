@@ -51,6 +51,13 @@ place. The cards the model ships travel with the copy; the ones this repository
 authors are added to it from `cards/`. The manifest row's `model` and `restrict`
 fields say the same thing to the Rust side, and the gates compare the two.
 
+A script that imports the built-in `sm` under another restrict card writes
+`import model sm-<card>`, and its row says `model = "sm"`, `restrict = "<card>"`:
+MadGraph resolves the card from its own `models/sm` and the Rust side from the
+interned SM's cards. A card MadGraph does not ship (the CMS `ckm_no_b_mass`) is
+never added to the submodule: the run uses a copy of the pinned tree carrying it,
+named by `VG_MG5_ROOT`, which `mg5_pinned.sh` and `gen_couplings.py` both honour.
+
 **Which MadGraph.** Every run in this directory comes from the pinned
 `research/refs/mg5amcnlo` submodule by way of `mg5_pinned.sh`, not from whatever
 `mg5_aMC` a `pixi run -e madgraph` shell puts on `PATH` (packaged 3.5.7). That

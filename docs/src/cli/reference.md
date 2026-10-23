@@ -86,7 +86,7 @@ Options:
           [default: NNPDF23_lo_as_0130_qed]
 
       --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then the `~/.vibegraph` cache (offering to download the set if absent), then `validation/pdf` under the current directory
+          Directory containing `<pdf-set>/`; defaults to the first `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is unset), then the `~/.vibegraph` cache (offering to download the set if absent)
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
@@ -167,9 +167,7 @@ Options:
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
       --seed <SEED>
-          RNG seed for the integration
-          
-          [default: 20260719]
+          RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
 
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
@@ -180,10 +178,10 @@ Options:
       --map-split-angle <SPLIT_ANGLE>
           How each 2-body split of the decay tree draws its decay angle.
           
-          Every choice is a parametrisation of the same phase space — none moves the cross section, only the evaluations needed to reach an accuracy. `auto` picks `soft-emission` where the process has a split it shapes (0.67× the evaluations on `u u~ > g g g`) and `isotropic` elsewhere. `soft-all` measures better still where it differs — half the evaluations on `p p > l+ l- j`, 0.85× on `g u > e+ e- u` — and is worth asking for on processes with a lepton pair or other boosted decay. On a `2 → 2` process no split moves and every choice is the same map. The choice is recorded in the artifact and replayed by `vibegraph generate`.
+          Every choice is a parametrisation of the same phase space — none moves the cross section, only the evaluations needed to reach an accuracy. `auto` is `soft-all`, which measures half the evaluations of `isotropic` on `p p > l+ l- j`, 0.85× on `g u > e+ e- u` and 0.67× on `u u~ > g g g`, where every moving split has a gluon daughter and it is the `soft-emission` map. On a `2 → 2` process no split moves and every choice is the same map. The choice is recorded in the artifact and replayed by `vibegraph generate`.
 
           Possible values:
-          - auto:          `soft-emission` where some split has a gluon or photon daughter, `isotropic` otherwise
+          - auto:          `soft-all`
           - isotropic:     Flat in `cos θ` and `φ` against the collision-CM axes
           - windowed:      Flat in `cos θ*` from the parent's flight direction, confined to the window the cut-implied energy floors admit, on every split
           - soft-emission: Density `∝ 1/(E₁E₂)` — a splitting kernel's `1/(z(1−z))` — on the splits with a single gluon or photon daughter
@@ -194,10 +192,10 @@ Options:
       --map-tau <TAU>
           How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
           
-          `auto` is `log`, the map every banked hadronic row was integrated under. `inverse-square` is MadEvent's choice when no resonance spans the final state, and measures better there (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
+          `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance spans the whole final state, and `log` where one does. `inverse-square` measures better where it applies (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the resonance's peak sits in the `τ` draw.
 
           Possible values:
-          - auto
+          - auto:           `inverse-square`, or `log` where a resonance spans the whole final state
           - log:            Density `∝ 1/τ` above the cut-implied `τ_min`
           - inverse-square: Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance spanning the whole final state
           
@@ -215,6 +213,23 @@ Options:
           
           [default: auto]
 
+      --grid-bin-weight <BIN_WEIGHT>
+          What each point adds to its bins of the refinement histogram
+
+          Possible values:
+          - squared:  The point's squared weight `(f·w)²`
+          - absolute: The point's weight `|f·w|`, as MadEvent accumulates it
+          
+          [default: squared]
+
+      --grid-acceptance-rescale
+          Credit each bin with the mean of its accepted points: multiply its histogram entry by the iteration's accepted points over the bin's, capped at 10⁴, as MadEvent does while its grid adapts
+
+      --grid-max-bin-width <K>
+          Bound every refined bin's width at this multiple of the uniform width, which must exceed 1; `none` leaves the width unbounded
+          
+          [default: 6]
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -224,27 +239,18 @@ Options:
 ```text
 Generate an unweighted event sample from a saved grid, as a Les Houches file
 
-Usage: vibegraph generate [OPTIONS] <ARTIFACT> <PROC_CARD>
+Usage: vibegraph generate [OPTIONS] <ARTIFACT>
 
 Arguments:
   <ARTIFACT>
           Grid artifact from a completed `vibegraph integrate` run
 
-  <PROC_CARD>
-          The same process card the artifact was integrated from; `-` reads the card from stdin
-
 Options:
-      --run-card <RUN_CARD>
-          The same run card the artifact was integrated with; absent → MadGraph LO defaults. A card that differs from the banked one is refused
-
-      --ufo-dir <UFO_DIR>
-          Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
+      --seed <SEED>
+          RNG seed for the generation; required. Same artifact, settings and seed, same sample, so each generation job from one grid needs its own seed
 
       --nevents <NEVENTS>
-          Events to write; defaults to the run card's `nevents`
-
-      --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+          Events to write; defaults to the `nevents` the artifact recorded
 
   -o, --out <OUT>
           Output Les Houches file
@@ -254,17 +260,28 @@ Options:
       --force
           Overwrite an existing event file
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --strategy <STRATEGY>
           Weight strategy
 
           Possible values:
-          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`)
+          - buffer:              Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under `event_norm = sum` or `unity`)
           - stochastic-rounding: Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit weight (`IDWTUP = +3`)
           
           [default: buffer]
+
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
+      --event-norm <EVENT_NORM>
+          How the written weights are normalised; defaults to the `event_norm` the artifact recorded. It moves the weights and the `<init>` block, not the events drawn
+
+          Possible values:
+          - average: The weights' mean is the cross section (`IDWTUP = -4`)
+          - sum:     The weights' sum is the cross section (`IDWTUP = -3`)
+          - unity:   Every weight is one (`IDWTUP = -3`)
 
   -v, --verbose...
           Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
@@ -272,47 +289,37 @@ Options:
   -q, --quiet
           Report only warnings and errors
 
-      --seed <SEED>
-          RNG seed for the generation. Same seed, same sample
-          
-          [default: 20260728]
+      --ufo-dir <UFO_DIR>
+          Directory containing the recorded proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model. The model found must be the one the artifact was integrated against
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --pdf-set <PDF_SET>
-          LHAPDF set name (proton beams only). A set other than the one the artifact was integrated with is refused
+      --scan-points <N|share>
+          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
           
-          [default: NNPDF23_lo_as_0130_qed]
+          [default: share]
 
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
-      --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then the `~/.vibegraph` cache (offering to download the set if absent), then `validation/pdf` under the current directory
-
-      --scan-points <N|share>
-          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
-          
-          [default: share]
-
-      --tui
-          Draw the live status pane even where one would not be drawn by default
-
       --max-truncation <SHARE>
           Share of each channel's scanned cross section its maximum may leave above itself. `0` takes the largest weight the scan saw instead; a larger share lowers the maxima, accepting more trials and giving more of the accepted events a weight above one
           
           [default: 0.01]
 
-      --no-tui
-          Never draw the live status pane; report in plain lines
-
       --reweight-card <REWEIGHT_CARD>
           MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
+
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --reweight-exact
           Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking

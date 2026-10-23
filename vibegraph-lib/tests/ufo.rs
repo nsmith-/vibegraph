@@ -112,7 +112,8 @@ fn test_recompute_propagates() {
     let mut ev = EvaluatedModel::from_model(model.clone());
 
     let new_as = 0.130f64;
-    ev.recompute("aS", num_complex::Complex64::new(new_as, 0.0));
+    ev.recompute("aS", num_complex::Complex64::new(new_as, 0.0))
+        .unwrap();
 
     let expected_g = 2.0 * new_as.sqrt() * PI.sqrt();
     let g_val = ev.param_values["G"].re;

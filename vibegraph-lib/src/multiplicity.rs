@@ -17,19 +17,25 @@
 
 use crate::artifact::{ChannelKey, ChannelSampler};
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
-use crate::diagrams::DiagramSet;
+use crate::diagrams::{
+    forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
+};
 use crate::hadronic::{combine_channels, ChannelIntegration};
+use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
-use crate::phasespace::maps::{MapChoices, ProcessShape};
-use crate::proton::{ProtonEvent, ProtonIntegrand};
+use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
+use crate::proton::{
+    derive_flavor_groups, process_shape, FlavorGroups, ProtonEvent, ProtonIntegrand,
+};
 use crate::runcard::RunCard;
+use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
-use crate::vegas::{IterationCombination, VegasResult};
+use crate::vegas::{GridRule, IterationCombination, VegasResult};
 
 /// Split a proc card's enumeration by final-state multiplicity, in increasing
 /// order of outgoing legs, each part keeping the enumeration's own order.
 ///
-/// Empty sets are dropped, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
+/// Empty sets are dropped, as [`derive_flavor_groups`]
 /// drops them; an enumeration with no diagram at all comes back whole, as one
 /// part, for that function to refuse by name.
 ///
@@ -69,13 +75,96 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
     parts.into_iter().map(|(_, part)| part).collect()
 }
 
+/// A proton-beam card's flavour decomposition, one per final-state multiplicity
+/// in increasing order ([`split_by_multiplicity`]), each with its groups'
+/// on-shell vetoes.
+pub struct MultiplicityGroups {
+    pub groups: Vec<FlavorGroups>,
+    pub vetoes: Vec<Vec<Option<OnShellVeto>>>,
+}
+
+/// Enumerate the card and decompose each final-state multiplicity into flavour
+/// groups.
+pub fn multiplicity_groups(
+    parsed: &SupportedCard,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    enumeration: EnumerationPool,
+) -> Result<MultiplicityGroups, String> {
+    let sets = generate_from_proc_card_in(parsed, model, enumeration)
+        .map_err(|e| format!("failed to enumerate process: {e}"))?;
+    let forbidden = forbidden_onshell_ids(parsed, model).map_err(|e| e.to_string())?;
+    let markings = subprocess_markings(&sets, &forbidden, model);
+    let mut out = MultiplicityGroups {
+        groups: Vec::new(),
+        vetoes: Vec::new(),
+    };
+    for part in split_by_multiplicity(sets, rc) {
+        let groups = derive_flavor_groups(part, model, evaluated, rc)
+            .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
+        let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
+            .map_err(|e| e.to_string())?;
+        out.groups.push(groups);
+        out.vetoes.push(vetoes);
+    }
+    Ok(out)
+}
+
+/// The maps every multiplicity is built under: `options` as given for a card of
+/// one multiplicity, and for several, `options` settled once over the union of
+/// their shapes ([`union_shape`]), since an artifact banks one set of choices.
+pub fn multiplicity_maps(
+    groups: &[FlavorGroups],
+    evaluated: &EvaluatedModel,
+    sqrt_s_had: f64,
+    options: MapOptions,
+) -> MapOptions {
+    if groups.len() == 1 {
+        return options;
+    }
+    let shape = union_shape(
+        groups
+            .iter()
+            .map(|g| process_shape(g, evaluated, sqrt_s_had)),
+    );
+    MapOptions::fixed(options.resolve(&shape))
+}
+
+/// Refuse a card of several final-state multiplicities on a path that has one
+/// phase space: fixed-energy beams and decays. Only proton beams sum
+/// multiplicities ([`MultiplicitySum`]).
+pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
+    let mut counts: Vec<usize> = sets
+        .iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .map(|s| s.particles_out.len())
+        .collect();
+    counts.sort_unstable();
+    counts.dedup();
+    if counts.len() > 1 {
+        return Err(format!(
+            "the processes have different final-state multiplicities ({} outgoing legs); a sum \
+             over multiplicities is integrated at proton beams (lpp = 1) only, and this run has \
+             fixed-energy beams or is a decay",
+            counts
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Ok(())
+}
+
 /// The shape the map rule settles its choices on for a card of several
 /// multiplicities: every part's shape, summed as if one channel set.
 ///
 /// The choices are one per run, and an artifact banks one. The only choice the
-/// rule reads off the shape is the split angle, taken as the soft-emission map
-/// wherever any channel has a soft-emission split; on a part with none that map
-/// shapes nothing, so the union settles each part where it would settle alone.
+/// rule reads off the shape is the `τ` map, which keeps the log map wherever any
+/// part carries a resonance spanning its whole final state: a Drell–Yan part
+/// keeps the map its peak needs, and the parts above it, which would take
+/// `1/τ²` alone, take the log map with it.
 pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessShape {
     shapes
         .into_iter()
@@ -103,6 +192,8 @@ pub struct MultiplicitySum<'a> {
     offsets: Vec<usize>,
     /// Each part's share of the per-iteration budget, summing to one.
     budget_shares: Vec<f64>,
+    /// How a per-channel adaptation refines the channels' grids.
+    grid_rule: GridRule,
 }
 
 impl<'a> MultiplicitySum<'a> {
@@ -138,7 +229,14 @@ impl<'a> MultiplicitySum<'a> {
             parts,
             offsets,
             budget_shares: vec![1.0 / n as f64; n],
+            grid_rule: GridRule::default(),
         }
+    }
+
+    /// Refine the channels' grids under `rule` in
+    /// [`adapt_grids_budget`](Self::adapt_grids_budget).
+    pub fn set_grid_rule(&mut self, rule: GridRule) {
+        self.grid_rule = rule;
     }
 
     /// The parts, in increasing multiplicity.
@@ -422,6 +520,10 @@ impl ChannelIntegrand for MultiplicitySum<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         MultiplicitySum::value_in_channel(self, channel, u)
+    }
+
+    fn grid_rule(&self) -> GridRule {
+        self.grid_rule
     }
 }
 
