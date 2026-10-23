@@ -635,6 +635,36 @@ integrals = { tier = "banked", mode = "gate", note = "the canonical leading-orde
 samples = { tier = "banked", mode = "gate", note = "the event side of the canonical QCD row, generated through the shipped binary and compared by distribution, never by bytes -- this run's five subprocess groups make MadGraph's own unweighting draw scheduling-sensitive, so a re-run of the same card is a different, equally valid sample. Three seeds of 20000 events against the banked 10000: every column clears the 1e-4 floor -- worst KS p 7.9e-2 (phi(j1)), ICOLUP chi-squared p 0.123 / 0.265 / 0.020 over the three seeds, and the row's minimum is the flavour chi-squared at 1.4e-3 -- which is also the minimum over every proton sample file, and still more than an order of magnitude above the floor. ICOLUP read p ~ 0 while every member of a flavour group borrowed the group representative's colour-flow table (two subprocesses can share a matrix element and a CF matrix while routing colour between different legs); each member now carries its own subprocess's table, reordered into the representative's flow indexing by a permutation matched on the colour algebra, with ICOLAMP asserted to carry over elementwise. Two further statements are enforced beside the chi-squared, each blind to the other's failure: every leg's occupied ICOLUP slots are ones its own colour rep allows (0 of 80000 legs, from 4758 before, judged against the Les Houches convention with no reference in it), and every event's (roles, connectivity) pattern is one the run's own leshouche.inc admits, at zero tolerance -- both scans read 0 on MadGraph's own banked events first. Blind to correlations between columns, to a discrepancy confined to a small tail, and to the ordering of outgoing legs within an assignment, since canonical() sorts them by class label and then by pT The incoming legs are compared too, and at proton beams they are not constants of the process: each beam's E is a momentum fraction times the run card's, so the column is a weighted KS against MadGraph's own -- the first comparison of the realised x spectra rather than of the outgoing state. Minimum beam KS p 0.429 over the three seeds, against the same 1e-4 floor; the massless parton masses agree exactly (0 against a 5e-11 GeV printed tolerance). The reported scales are compared beside the legs, at the seven significant digits rw_events.f writes the <event> line with: MadGraph's Python re-serialisation prints the same fields two digits wider, and those two are padding, so reading the spelling alone would compare against digits the reference never wrote. Both vary per event here and the smallest KS p over three seeds and both fields is 0.515 at worst D 0.01, taken after rounding both sides onto that grid. Without that rounding the same columns read D 0.29 and worse: MadGraph's records pile a large share of their events on one printed value -- the run's default scale, 2796 of gu_to_epemu's 10000 events and all 10000 of uux_to_uux's -- and an exact-value KS reads that whole share as the gap whenever the two sides agree to every digit the reference wrote and differ in the one after it." }
 
 [[process]]
+key = "pp_to_jj_ht"
+process = "p p > j j"
+script = "validation/madgraph/scripts/pp_to_jj_ht.mg5"
+bundled = false
+class = "multi-channel"
+n_final = 2
+rationale = "The first HT-binned row: pp_to_jj's card with htjmin = 300 and htjmax = 800, the QCD shape the CMS survey's HT samples bin in. htj sums the jet-class legs' transverse momenta (cuts.f:876-892); with two jets it is 2 pT, so the window is aligned with a ptj window and the row reads the cut's edges and the shat floor it implies, not which jets a sum of three or more takes."
+artifacts = ["output/pp_to_jj_ht", "output/pp_to_jj_ht/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_jj"] }
+amplitudes = { tier = "covered-by", rows = ["gg_to_gg", "uux_to_uux"] }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Both sides apply htjmin = 300 and htjmax = 800 to the jet-class legs' scalar pT sum (cuts.f:876-892); with two jets that is 2 pT, so the window is also reachable through ptj / ptjmax, and the cut's twin on the gated pp_to_jj card agrees with it to 0.05% on this side. Measured: 2.134238e5 +- 2.005e2 pb (5 seeds, chi2/dof 0.64) against the MadGraph seed record output/seeded_sigma/pp_to_jj_ht (2.135160e5 +- 1.758e2 pb, 5 seeds and 2 at 4x), pull -0.35, rel -0.0004" }
+samples = { tier = "uncovered", note = "no sample comparison is planned; the cut acts on the cross section and the pT spectrum pp_to_jj's samples already compare" }
+
+[[process]]
+key = "pp_to_bb_iht"
+process = "p p > b b~"
+script = "validation/madgraph/scripts/pp_to_bb_iht.mg5"
+bundled = false
+class = "multi-channel"
+n_final = 2
+rationale = "pp_to_bb's card with ihtmin = 200 and ihtmax = 500 at maxjetflavor = 4, where the b quarks are b-class: outside the jet sum htj and inside the inclusive sum iht (cuts.f:898-906). The window is the final state's only cut, so the row reads whether the inclusive sum takes the b-class legs."
+artifacts = ["output/pp_to_bb_iht", "output/pp_to_bb_iht/Events/run_01/unweighted_events.lhe.gz"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_bb"] }
+amplitudes = { tier = "uncovered", note = "as pp_to_bb: no banked b b~ parton row exists" }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. The window is the final state's only cut, so the cross section moves with whether iht takes the b-class legs (maxjetflavor = 4: outside htj, inside iht; cuts.f:898-906). Measured: 4.844779e3 +- 4.722 pb (5 seeds, chi2/dof 1.66) against the MadGraph seed record output/seeded_sigma/pp_to_bb_iht (4.845030e3 +- 1.644 pb: 20 seeds at the budget and 20 at 4x), pull -0.05, rel -0.0001. The budget ladder, 20 + 20 seeds: 4845.03 pb (seed sd 6.00) at 1x against 4845.63 pb (seed sd 3.01) at 4x, +0.40 sigma, so the row stays at 1x. SCATTER at 20 seeds flags one channel, P1_gg_bbx/G1 (chi2/dof 555 on 19 dof, 0.0% of sigma), not seen at 5 seeds" }
+samples = { tier = "uncovered", note = "no sample comparison is planned" }
+
+[[process]]
 key = "pp_to_ll_scalefact2"
 process = "p p > l+ l-"
 script = "validation/madgraph/scripts/pp_to_ll_scalefact2.mg5"

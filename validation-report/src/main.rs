@@ -73,7 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::cells::{RowFile, Status};
-use crate::manifest::{Category, Layer, Manifest, Mode, Process, Tier, CATEGORIES};
+use crate::manifest::{Category, Layer, Manifest, Mode, Process, ProcessStatus, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
 pub(crate) struct ResolvedCell {
@@ -358,6 +358,15 @@ fn resolve_cell(
             cell.body = "awaiting the bundle".to_string();
             return cell;
         }
+        // A planned row's reference run does not exist yet, so its gates have
+        // nothing to measure and write no cell. The cell waits for the run; once
+        // the run is banked and the gate writes a cell it is rendered from it
+        // whatever the status says.
+        if process.status == Some(ProcessStatus::Planned) {
+            cell.mark = "⏳";
+            cell.body = "planned: no reference run yet".to_string();
+            return cell;
+        }
         problems.push(format!(
             "{where_} is declared '{}' and no gate wrote it — the cell is missing, not empty",
             declared.tier.as_str()
@@ -567,6 +576,54 @@ mod tests {
                     "{written}"
                 );
             }
+        }
+    }
+
+    /// The two HT rows with no gate output, each declared three ways from its
+    /// committed text: as committed (`bundled = false`) it waits on the bundle; with
+    /// `bundled = false` swapped for `status = "planned"` it waits on its reference
+    /// run; with neither it is a missing cell. Each declaration is spliced into that
+    /// row alone, and the splice is asserted to have happened. `bundled = false` is
+    /// gone from the planned declaration because an unbundled row also waits, and
+    /// would pass the planned half without the planned rule.
+    #[test]
+    fn an_unbundled_or_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        let resolve = |text: &str, key: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == key)
+                .expect("the row");
+            let declared = process.categories.get(Category::Integrals);
+            assert_eq!(declared.tier, Tier::Banked, "{key}");
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, cell.body, problems.len())
+        };
+        for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
+            let script = format!("script = \"validation/madgraph/scripts/{key}.mg5\"\n");
+            let committed = format!("{script}bundled = false\n");
+            assert_eq!(text.matches(&committed).count(), 1, "{key}");
+            let declared_as = |line: &str| text.replace(&committed, &format!("{script}{line}"));
+            assert_eq!(
+                resolve(&text, key),
+                ("⏳", "awaiting the bundle".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as("status = \"planned\"\n"), key),
+                ("⏳", "planned: no reference run yet".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as(""), key),
+                ("❌", "not measured".to_string(), 1),
+                "{key}"
+            );
         }
     }
 }
