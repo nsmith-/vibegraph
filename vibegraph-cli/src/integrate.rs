@@ -52,7 +52,7 @@ use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
-use vibegraph::proton::{FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
@@ -834,7 +834,8 @@ fn integrate_hadronic(
     process: String,
     seed: u64,
 ) -> Result<RunOutput, CliError> {
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
@@ -858,7 +859,7 @@ fn integrate_hadronic(
             part_amps,
             evaluated,
             pdf,
-            sqrt_s_had,
+            beams,
             rc.dsqrt_q2fact1,
             maps,
         )

@@ -46,7 +46,7 @@ use crate::multiplicity::{
 use crate::onshell::subprocess_vetoes;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
-use crate::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
+use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
@@ -197,6 +197,22 @@ pub enum GenerateError {
         got: String,
         want: String,
     },
+    /// A proton artifact's recorded collider energy is not the `2√(E₁E₂)` its
+    /// recorded beams give: its grids were trained on the frames of another
+    /// collision energy.
+    #[error(
+        "this artifact records a collider energy sqrt(s) = {recorded} GeV, and its run card's \
+         proton beams of {} and {} GeV collide at sqrt(s) = 2*sqrt(ebeam1*ebeam2) = {rebuilt} \
+         GeV; its grids were trained at a different collision energy. Re-integrate with the \
+         current build",
+        .beams[0],
+        .beams[1]
+    )]
+    ColliderEnergyChanged {
+        recorded: f64,
+        rebuilt: f64,
+        beams: [f64; 2],
+    },
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -240,13 +256,43 @@ pub fn check_model(
     })
 }
 
+/// Refuse a proton artifact whose recorded collider energy is not the one its
+/// recorded run card's beams give, `2√(E₁E₂)`, to the bit.
+///
+/// An artifact that recorded `E₁ + E₂` at unequal beams had its grids trained
+/// on the frames that energy implies, and replaying them under the current
+/// frames would sample a plausible-looking wrong distribution. At equal beams
+/// the two expressions agree to the bit, so such an artifact passes. A
+/// generation that convolves with no parton densities (fixed beams, a decay)
+/// is not checked: its frames never read the recorded `sqrt_s_had`.
+pub fn check_collider_energy(
+    artifact: &IntegrateArtifact,
+    card: &SupportedCard,
+) -> Result<(), GenerateError> {
+    if !reads_parton_densities(artifact, card) {
+        return Ok(());
+    }
+    let beams = ProtonBeams::from_run_card(&artifact.run_card);
+    let rebuilt = beams.sqrt_s();
+    if artifact.sqrt_s_had.to_bits() == rebuilt.to_bits() {
+        return Ok(());
+    }
+    Err(GenerateError::ColliderEnergyChanged {
+        recorded: artifact.sqrt_s_had,
+        rebuilt,
+        beams: beams.energies(),
+    })
+}
+
 /// Draw the sample `settings` and `options` describe from `artifact`'s grids
 /// and write it to [`GenerateOptions::out`].
 ///
 /// The integrand is rebuilt from `assets` under the artifact's recorded run card
 /// and phase-space maps, and the artifact's channel selection weights are
 /// installed rather than re-surveyed; a process whose channels do not match the
-/// banked grids, position by position, is refused.
+/// banked grids, position by position, is refused, and so is a proton artifact
+/// whose recorded collider energy its recorded beams no longer give
+/// ([`check_collider_energy`]).
 pub fn generate(
     artifact: &IntegrateArtifact,
     assets: &GenerateAssets<'_>,
@@ -254,6 +300,7 @@ pub fn generate(
     options: &GenerateOptions<'_>,
 ) -> Result<EmitSummary, GenerateError> {
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
+    check_collider_energy(artifact, assets.card)?;
     if reads_parton_densities(artifact, assets.card) {
         let Some((set, pdf)) = assets.pdf else {
             return Err(err(
@@ -801,7 +848,8 @@ fn generate_proton_sample(
     let rc = &artifact.run_card;
     let nevents = settings.nevents as usize;
     let launches = options.reweight.clone();
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, options.enumeration).map_err(err)?;
@@ -849,7 +897,7 @@ fn generate_proton_sample(
             part_amps,
             evaluated,
             pdf,
-            sqrt_s_had,
+            beams,
             rc.dsqrt_q2fact1,
             maps,
         )
@@ -1506,9 +1554,50 @@ mod tests {
         );
     }
 
+    /// A proton artifact that recorded `E₁ + E₂` at unequal beams is refused,
+    /// naming both energies; one that recorded `2√(E₁E₂)` passes, and so does an
+    /// equal-beam artifact that recorded `E₁ + E₂`, which is the same number. A
+    /// decay of the same artifact is not checked.
+    #[test]
+    fn a_proton_artifact_at_a_stale_collider_energy_is_refused() {
+        use crate::diagrams::{parse_proc_card, ParsingOptions};
+
+        let parsed = parse_proc_card(UUBAR_EE, &ParsingOptions::default()).unwrap();
+        let mut unequal = proton_artifact();
+        unequal.run_card.ebeam1 = 6500.0;
+        unequal.run_card.ebeam2 = 4000.0;
+
+        unequal.sqrt_s_had = 6500.0 + 4000.0;
+        let why = check_collider_energy(&unequal, &parsed)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains("sqrt(s) = 10500 GeV")
+                && why.contains("beams of 6500 and 4000 GeV")
+                && why.contains("= 10198.03902718557 GeV"),
+            "{why}"
+        );
+        let decay = parse_proc_card(
+            "import model sm\ngenerate t > w+ b\n",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        assert!(check_collider_energy(&unequal, &decay).is_ok());
+
+        unequal.sqrt_s_had = 2.0 * (6500.0_f64 * 4000.0).sqrt();
+        assert!(check_collider_energy(&unequal, &parsed).is_ok());
+
+        let mut equal = proton_artifact();
+        equal.run_card.ebeam1 = 6500.0;
+        equal.run_card.ebeam2 = 6500.0;
+        equal.sqrt_s_had = 6500.0 + 6500.0;
+        assert!(check_collider_energy(&equal, &parsed).is_ok());
+    }
+
     /// An artifact integrated at proton beams cannot be replayed without the
-    /// parton densities it was integrated with: the entry point refuses it
-    /// before anything is enumerated, and writes no file.
+    /// parton densities it was integrated with, nor at a collider energy its
+    /// beams no longer give: the entry point refuses each before anything is
+    /// enumerated, and writes no file.
     #[test]
     fn a_proton_artifact_without_a_pdf_set_is_refused() {
         use crate::diagrams::{parse_proc_card, ParsingOptions};
@@ -1547,6 +1636,19 @@ mod tests {
             .expect_err("no parton densities")
             .to_string();
         assert!(why.contains("no PDF set"), "{why}");
+        assert!(!out.exists());
+
+        // The entry point checks the recorded collider energy itself, whatever
+        // its caller checked, and before it asks for the parton densities.
+        let mut stale = artifact.clone();
+        stale.run_card.ebeam1 = 6500.0;
+        stale.run_card.ebeam2 = 4000.0;
+        stale.sqrt_s_had = 6500.0 + 4000.0;
+        let why = generate(&stale, &assets, &settings, &options).expect_err("a stale sqrt(s)");
+        assert!(
+            matches!(why, GenerateError::ColliderEnergyChanged { .. }),
+            "{why}"
+        );
         assert!(!out.exists());
     }
 }
