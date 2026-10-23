@@ -465,8 +465,9 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
     );
 
     // <init>: MadEvent's `6 0 1.730000e+02 0.000000e+00 0 0 247000 247000 -4 1`
-    // on its first line. PDFSUP is `get_pdf_id(pdlabel)` of the card, the
-    // default `nn23lo1`'s 247000, even though a decay reads no parton density.
+    // on its first line. PDFSUP is 247000 although a decay reads no parton
+    // density: MadEvent's `get_pdf_id` of the template's `nn23lo1` for a card
+    // with no `pdlabel` line.
     let mg_beams: Vec<f64> = sample.init[0]
         .split_whitespace()
         .map(|f| f.parse().unwrap())

@@ -22,16 +22,16 @@ use crate::vegas::{GridRule, VegasGrid};
 /// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
 /// artifact is written at this version.
 ///
-/// `13` adds [`IntegrateArtifact::proc_card`], the proc card's text, and
-/// [`IntegrateArtifact::generate`], the generation settings of the run card;
-/// [`IntegrateArtifact::run_card`] holds only the integration's fields
-/// ([`RunCard::split`]) and MadGraph's own record of them. No older file
-/// carries a proc card, so none can be replayed from its own record, and
-/// [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 13;
+/// `14` records the run's external inputs as [`IntegrateArtifact::inputs`]:
+/// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
+/// integration parsed. A version-13 file names its PDF set but records no
+/// checksum, so a generation could not tell whether the densities it reads are
+/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
+/// version.
+pub const FORMAT_VERSION: u32 = 14;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 13;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -65,6 +65,75 @@ pub enum ArtifactError {
     },
     #[error("zstd (de)compression failed: {0}")]
     Zstd(io::Error),
+    #[error(
+        "the artifact records {count} model parameter(s) moved off the model's defaults, and \
+         this build binds none from an artifact"
+    )]
+    MovedParams { count: usize },
+}
+
+/// One file a run read, by its name in the set directory, and the lowercase-hex
+/// SHA-256 of exactly the bytes that were parsed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileDigest {
+    pub name: String,
+    pub sha256: String,
+}
+
+/// The parton densities an integration read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PdfInput {
+    /// Fixed-energy beams, or a decay: no density was read.
+    None,
+    /// LHAPDF id `lhaid`, which is member `member` of set `set`
+    /// (`SetIndex + member = lhaid`). `files` are the set's `.info` and the
+    /// member's `.dat`, in the order they were loaded.
+    Lhapdf {
+        lhaid: i64,
+        set: String,
+        member: u32,
+        files: Vec<FileDigest>,
+    },
+}
+
+/// A model parameter an integration bound away from the restricted model's
+/// default: its name, its parameter-card block and code, and the value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MovedParam {
+    pub name: String,
+    pub block: String,
+    pub code: Vec<i32>,
+    pub value: f64,
+}
+
+/// What an integration read besides its cards: the parton densities and the
+/// model parameters that differ from the model's defaults.
+///
+/// No integration binds a parameter card yet, so `params` is empty in every
+/// artifact this build writes, and one that is not is refused on writing and on
+/// reading: a reader that dropped the list would replay the grid at the wrong
+/// parameter point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunInputs {
+    pub pdf: PdfInput,
+    pub params: Vec<MovedParam>,
+}
+
+impl RunInputs {
+    /// The inputs of a run that read `pdf` and moved no parameter.
+    pub fn with_pdf(pdf: PdfInput) -> Self {
+        RunInputs {
+            pdf,
+            params: Vec::new(),
+        }
+    }
+
+    fn refuse_moved_params(&self) -> Result<(), ArtifactError> {
+        match self.params.len() {
+            0 => Ok(()),
+            count => Err(ArtifactError::MovedParams { count }),
+        }
+    }
 }
 
 /// Which channel of which decomposition a banked grid was trained on.
@@ -254,8 +323,8 @@ pub struct IntegrateArtifact {
     /// `generate` line while giving different physics, so the model is banked and
     /// compared rather than assumed.
     pub model: ModelIdentity,
-    pub pdf_set: String,
-    pub pdf_member: u32,
+    /// The parton densities and parameters the integration read.
+    pub inputs: RunInputs,
     /// Factorization scale μF (GeV).
     pub mu_f: f64,
     /// Total hadronic collision energy √s (GeV).
@@ -316,6 +385,7 @@ impl IntegrateArtifact {
                 expected: FORMAT_VERSION,
             });
         }
+        self.inputs.refuse_moved_params()?;
         if !force && path.exists() {
             return Err(ArtifactError::AlreadyExists {
                 path: path.display().to_string(),
@@ -336,14 +406,25 @@ impl IntegrateArtifact {
     /// decoded, so a file written by another schema version is refused by name —
     /// never misread into whatever the current field order happens to accept.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
+        Self::read_hashed(path).map(|(artifact, _)| artifact)
+    }
+
+    /// [`read_from_path`](Self::read_from_path), with the SHA-256 of the file's
+    /// bytes as read: the digest and the decoded artifact come from one read.
+    pub fn read_hashed(path: &Path) -> Result<(Self, String), ArtifactError> {
         let compressed = std::fs::read(path).map_err(|source| ArtifactError::Io {
             path: path.display().to_string(),
             source,
         })?;
+        let sha256 = crate::ufo::identity::digest_bytes(&compressed);
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
-            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            FORMAT_VERSION => {
+                let artifact: Self = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
+                artifact.inputs.refuse_moved_params()?;
+                Ok((artifact, sha256))
+            }
             found => Err(ArtifactError::UnsupportedVersion {
                 found,
                 oldest: OLDEST_READABLE_VERSION,
@@ -380,8 +461,21 @@ mod tests {
             process: "p p > e+ e-".to_string(),
             proc_card: "import model sm\ngenerate p p > e+ e-\n".to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
-            pdf_set: "NNPDF23_lo_as_0130_qed".to_string(),
-            pdf_member: 0,
+            inputs: RunInputs::with_pdf(PdfInput::Lhapdf {
+                lhaid: 247000,
+                set: "NNPDF23_lo_as_0130_qed".to_string(),
+                member: 0,
+                files: vec![
+                    FileDigest {
+                        name: "NNPDF23_lo_as_0130_qed.info".to_string(),
+                        sha256: "f961a1".to_string(),
+                    },
+                    FileDigest {
+                        name: "NNPDF23_lo_as_0130_qed_0000.dat".to_string(),
+                        sha256: "5ac949".to_string(),
+                    },
+                ],
+            }),
             mu_f: 91.1880,
             sqrt_s_had: 13000.0,
             neval: 1000,
@@ -397,8 +491,6 @@ mod tests {
             grid_rule: Some(GridRule::UNBOUNDED),
         }
     }
-
-    /// A file written at version 6, 7 or 8 carries no map choices; it reads back
 
     #[test]
     fn round_trips_through_bincode_zstd() {
@@ -417,8 +509,7 @@ mod tests {
         assert_eq!(reloaded.proc_card, artifact.proc_card);
         assert_eq!(reloaded.generate, artifact.generate);
         assert_eq!(reloaded.model, artifact.model);
-        assert_eq!(reloaded.pdf_set, artifact.pdf_set);
-        assert_eq!(reloaded.pdf_member, artifact.pdf_member);
+        assert_eq!(reloaded.inputs, artifact.inputs);
         assert_eq!(reloaded.mu_f.to_bits(), artifact.mu_f.to_bits());
         assert_eq!(reloaded.sqrt_s_had.to_bits(), artifact.sqrt_s_had.to_bits());
         assert_eq!(reloaded.neval, artifact.neval);
@@ -450,11 +541,6 @@ mod tests {
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
     }
-
-    /// An artifact records the oldest version whose schema holds its keys: a sum
-    /// over multiplicities is a version-10 file, with grids of two dimensions
-    /// that read back as written; everything else is a version-9 file, which
-    /// decodes as it always did and keeps its version.
 
     #[test]
     fn refuses_to_overwrite_without_force() {
@@ -697,28 +783,32 @@ mod tests {
         std::fs::remove_dir(&dir).ok();
     }
 
-    /// A version-12 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it carries no proc
-    /// card for a generation to replay. The file is this build's own payload
-    /// with the version stamped down, so a reader that decoded by shape would
-    /// accept it.
-    #[test]
-    fn a_version_12_artifact_is_refused() {
-        let dir = scratch_dir("v12");
-        let path = dir.join("v12.bin.zst");
-        sample_artifact().write_to_path(&path, true).unwrap();
+    /// The file with its version stamped down to `version`, its body otherwise
+    /// this build's own, so a reader that decoded by shape would accept it.
+    fn stamped(artifact: &IntegrateArtifact, dir: &Path, version: u32) -> PathBuf {
+        let path = dir.join(format!("v{version}.bin.zst"));
+        artifact.write_to_path(&path, true).unwrap();
         let mut raw = zstd::decode_all(std::fs::read(&path).unwrap().as_slice()).unwrap();
-        raw[..4].copy_from_slice(&12u32.to_le_bytes());
+        raw[..4].copy_from_slice(&version.to_le_bytes());
         std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        path
+    }
 
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-12 file");
+    /// A version-13 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode: it records no
+    /// checksum of the PDF files it was integrated with.
+    #[test]
+    fn a_version_13_artifact_is_refused() {
+        let dir = scratch_dir("v13");
+        let path = stamped(&sample_artifact(), &dir, 13);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
         assert!(
             matches!(
                 err,
                 ArtifactError::UnsupportedVersion {
-                    found: 12,
-                    oldest: 13,
-                    expected: 13
+                    found: 13,
+                    oldest: 14,
+                    expected: 14
                 }
             ),
             "{err}"
@@ -726,6 +816,49 @@ mod tests {
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The fixed-energy record round-trips too, as `PdfInput::None`.
+    #[test]
+    fn an_artifact_that_read_no_density_records_none() {
+        let dir = scratch_dir("nopdf");
+        let mut artifact = sample_artifact();
+        artifact.inputs = RunInputs::with_pdf(PdfInput::None);
+        let path = dir.join("nopdf.bin.zst");
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.inputs, artifact.inputs);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A moved parameter is refused on writing, and on reading a file that
+    /// carries one, since nothing here binds it.
+    #[test]
+    fn moved_parameters_are_refused_on_writing_and_reading() {
+        let dir = scratch_dir("params");
+        let mut artifact = sample_artifact();
+        artifact.inputs.params.push(MovedParam {
+            name: "MZ".to_string(),
+            block: "MASS".to_string(),
+            code: vec![23],
+            value: 91.0,
+        });
+        let path = dir.join("params.bin.zst");
+        let err = artifact.write_to_path(&path, true).unwrap_err();
+        assert!(
+            matches!(err, ArtifactError::MovedParams { count: 1 }),
+            "{err}"
+        );
+        assert!(!path.exists());
+
+        let raw = bincode::serialize(&artifact).unwrap();
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).unwrap_err();
+        assert!(
+            matches!(err, ArtifactError::MovedParams { count: 1 }),
+            "{err}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -34,7 +34,9 @@ differ. Points outside the tabulated range go through LHAPDF's continuation
 rule for the same reason. A set also carries the $\alpha_s(M_Z)$ it was
 fitted with, which is the coupling a run reading its densities has to use.
 
-The default set is `NNPDF23_lo_as_0130_qed`, MadGraph's LO default. The
+The default set is `NNPDF23_lo_as_0130_qed` (`pdlabel = lhapdf`,
+`lhaid = 247000`), the LHAPDF grid of the fit behind MadGraph's LO default
+`nn23lo1`, whose built-in parameterisation vibegraph does not read. The
 [command line](../cli/overview.md#data-the-binary-does-not-carry) page
 describes how sets are fetched and pinned.
 

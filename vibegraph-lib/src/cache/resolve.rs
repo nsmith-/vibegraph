@@ -8,11 +8,8 @@
 //! up, not a silent fallthrough to the next step. The last two steps are
 //! existence-probed so the order can actually choose between them.
 //!
-//! A PDF set ([`locate_pdf_set`]) is found as LHAPDF finds one: an explicit
-//! `--flag` path (trusted, as above), then each entry of the LHAPDF data path
-//! ([`pdf_data_path`]) in order, then the cache. A data-path entry that lacks
-//! the set is passed over, so a list naming several installations resolves
-//! the first that holds it. Nothing is relative to the working directory.
+//! A PDF set is found through [`super::lhapdf`], whose first tier is the
+//! LHAPDF data path as [`pdf_data_path`] reads it.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -26,8 +23,6 @@ pub enum Source {
     Flag,
     /// The kind's environment variable (a UFO model's one directory).
     Env,
-    /// An entry of the LHAPDF data path ([`pdf_data_path`]).
-    DataPath,
     /// `<cache_root>/<kind>/<name>/`.
     Cache,
     /// The dev fallback directory.
@@ -120,46 +115,6 @@ pub fn pdf_data_path(lhapdf_data_path: Option<&OsStr>, lhapath: Option<&OsStr>) 
     std::env::split_paths(value)
         .filter(|entry| !entry.as_os_str().is_empty())
         .collect()
-}
-
-/// Resolve PDF set `name`'s directory: `flag/<name>/` when a flag path is
-/// given, trusted whether or not it exists; else the first `<entry>/<name>/`
-/// that exists, over `data_path` in order; else `<cache_root>/pdf/<name>/`,
-/// marked found or not, so a caller that goes on to fetch the set has its
-/// write target.
-pub fn locate_pdf_set(
-    name: &str,
-    flag: Option<&Path>,
-    data_path: &[PathBuf],
-    cache_root: &Path,
-) -> Located {
-    if let Some(flag) = flag {
-        let dir = flag.join(name);
-        let found = dir.is_dir();
-        return Located {
-            dir,
-            source: Source::Flag,
-            found,
-        };
-    }
-    if let Some(dir) = data_path
-        .iter()
-        .map(|entry| entry.join(name))
-        .find(|dir| dir.is_dir())
-    {
-        return Located {
-            dir,
-            source: Source::DataPath,
-            found: true,
-        };
-    }
-    let dir = AssetKind::Pdf.entry_dir(cache_root, name);
-    let found = dir.is_dir();
-    Located {
-        dir,
-        source: Source::Cache,
-        found,
-    }
 }
 
 #[cfg(test)]
@@ -361,43 +316,5 @@ mod tests {
         let empty = os("");
         assert!(pdf_data_path(Some(&empty), Some(&lhapath)).is_empty());
         assert!(pdf_data_path(None, None).is_empty());
-    }
-
-    /// The first data-path entry holding the set wins; an entry without it is
-    /// passed over rather than refused, and the flag outranks the whole list.
-    #[test]
-    fn the_first_data_path_entry_holding_the_set_wins() {
-        let empty = scratch("dp-empty");
-        let first = scratch("dp-first");
-        let second = scratch("dp-second");
-        let cache_root = scratch("dp-cache");
-        make_entry(&cache_root.join("pdf"), "Set");
-        let want = make_entry(&first, "Set");
-        make_entry(&second, "Set");
-        let path = [empty.clone(), first.clone(), second.clone()];
-
-        let got = locate_pdf_set("Set", None, &path, &cache_root);
-        assert_eq!((got.source, got.found), (Source::DataPath, true));
-        assert_eq!(got.dir, want);
-
-        let flag = scratch("dp-flag");
-        let got = locate_pdf_set("Set", Some(&flag), &path, &cache_root);
-        assert_eq!((got.source, got.found), (Source::Flag, false));
-        assert_eq!(got.dir, flag.join("Set"));
-    }
-
-    /// A data path that lacks the set falls through to the cache, found or not.
-    #[test]
-    fn a_data_path_without_the_set_falls_through_to_the_cache() {
-        let empty = scratch("dp-miss");
-        let cache_root = scratch("dp-miss-cache");
-        let got = locate_pdf_set("Set", None, std::slice::from_ref(&empty), &cache_root);
-        assert_eq!((got.source, got.found), (Source::Cache, false));
-        assert_eq!(got.dir, cache_root.join("pdf").join("Set"));
-
-        let cached = make_entry(&cache_root.join("pdf"), "Set");
-        let got = locate_pdf_set("Set", None, &[empty], &cache_root);
-        assert_eq!((got.source, got.found), (Source::Cache, true));
-        assert_eq!(got.dir, cached);
     }
 }
