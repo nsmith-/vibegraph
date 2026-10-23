@@ -33,11 +33,28 @@ pub struct Subprocess {
     pub flows: Vec<Vec<[u32; 2]>>,
 }
 
+/// The statements of a fixed-form Fortran source: a physical line with a
+/// non-blank, non-zero character in column 6 continues the statement before it,
+/// which is how MadGraph wraps a `DATA` list of five or more legs.
+fn logical_lines(content: &str) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let continuation = line.len() > 6
+            && line.starts_with("     ")
+            && !matches!(line.as_bytes()[5], b' ' | b'0');
+        match lines.last_mut() {
+            Some(previous) if continuation => previous.push_str(line[6..].trim_start()),
+            _ => lines.push(line.to_string()),
+        }
+    }
+    lines
+}
+
 /// Parse every subprocess of one `leshouche.inc`, in `isproc` order.
 pub fn parse(path: &Path) -> Result<Vec<Subprocess>, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
     let mut subprocs: Vec<Subprocess> = Vec::new();
-    for line in content.lines() {
+    for line in &logical_lines(&content) {
         let trimmed = line.trim_start();
         let (name, rest) = if let Some(rest) = trimmed.strip_prefix("DATA (ICOLUP(") {
             ("ICOLUP", rest)
