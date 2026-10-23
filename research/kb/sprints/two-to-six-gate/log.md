@@ -32,3 +32,13 @@
     cells stay `info` per D1's third amendment.
 * **B1 dispatched**: the user wants the `bbx` growth diagnosed
   ([brief](sessions/B1.md)).
+* **B1 done** ([report](sessions/B1-report.md)). The `bbx` spread does not grow
+  with budget. On the M3's tree, single points in floor-bound channel 551 carry
+  the excess at both rungs. 551–585 of the 615 channels draw bit-identical
+  points at 600k and 1.2M for a given seed. Neutralising 551 gives sd 3.98e-9
+  and χ²/dof 1.03 at 1.2M.
+  - On current main (with #48 and #51), the 551 and 564 tails are gone: 600k
+    reads sd 2.69e-9, χ²/dof 0.79, and 1.2M reads 3.34e-9, χ²/dof 1.44. One
+    non-floor-bound tail remains, in channel 613 on seed 55.
+  - Proposed fix, untested: Neyman allocation, then a floor that scales with
+    neval.
