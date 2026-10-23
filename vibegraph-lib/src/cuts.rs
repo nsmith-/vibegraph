@@ -2281,7 +2281,10 @@ mod tests {
 
     #[test]
     fn unbindable_value_does_not_excuse_other_cuts() {
-        assert!(detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")).is_err());
+        match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")) {
+            Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "ht2max"),
+            Ok(()) => panic!("ht2max = 1e5 is an active partial-sum cut"),
+        }
         assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
     }
 
@@ -2810,22 +2813,10 @@ mod tests {
 
     // ── HT ──────────────────────────────────────────────────────────────
 
-    /// Massless leg at transverse momentum `pt` along `+x`, at rapidity `y`: its
-    /// computed `p_T` is `pt` to the bit, so a sum can be placed exactly on a
-    /// threshold.
-    fn along_x(pt: f64, y: f64) -> V {
-        V::new(pt * y.cosh(), pt, 0.0, pt * y.sinh())
-    }
-
-    /// Massless leg at transverse momentum `pt` along `+y`, at rapidity `y`.
-    fn along_y(pt: f64, y: f64) -> V {
-        V::new(pt * y.cosh(), 0.0, pt, pt * y.sinh())
-    }
-
-    /// Massless leg at transverse momentum `pt` along `−x`, at rapidity `y`.
-    fn along_minus_x(pt: f64, y: f64) -> V {
-        V::new(pt * y.cosh(), -pt, 0.0, pt * y.sinh())
-    }
+    // The HT tests place massless legs with `lep` at azimuth 0, π/2 or π, where
+    // the computed `p_T` is `pt` to the bit, so a sum can sit exactly on a
+    // threshold.
+    use std::f64::consts::{FRAC_PI_2, PI};
 
     fn legs(incoming: [i32; 2], outgoing: &[i32]) -> Vec<ExternalLeg> {
         incoming
@@ -2842,11 +2833,11 @@ mod tests {
 
     /// `htj` is a scalar sum: two jets of `p_T = 150` at right angles sum to 300,
     /// where their vector sum would be 212. The minimum passes at equality and
-    /// the maximum at equality (`cuts.f:908`'s `<` and `>`).
+    /// the maximum at equality (`cuts.f:892`'s `<` and `>`).
     #[test]
     fn htj_is_the_scalar_jet_sum_with_inclusive_edges() {
         let jj = legs([21, 21], &[21, 21]);
-        let point = |a: f64, b: f64| with_beams(&[along_x(a, -1.0), along_y(b, 1.0)]);
+        let point = |a: f64, b: f64| with_beams(&[lep(a, -1.0, 0.0), lep(b, 1.0, FRAC_PI_2)]);
         let min = Cuts::compile(&card("300 = htjmin\n"), &jj).unwrap();
         assert!(min.pass(&point(150.0, 150.0)));
         assert!(!min.pass(&point(150.0, 149.99)));
@@ -2861,7 +2852,7 @@ mod tests {
     #[test]
     fn iht_has_the_same_edges() {
         let jj = legs([21, 21], &[21, 21]);
-        let point = |a: f64, b: f64| with_beams(&[along_x(a, -1.0), along_y(b, 1.0)]);
+        let point = |a: f64, b: f64| with_beams(&[lep(a, -1.0, 0.0), lep(b, 1.0, FRAC_PI_2)]);
         let min = Cuts::compile(&card("300 = ihtmin\n"), &jj).unwrap();
         assert!(min.pass(&point(150.0, 150.0)));
         assert!(!min.pass(&point(150.0, 149.99)));
@@ -2878,7 +2869,11 @@ mod tests {
     fn b_quarks_count_for_iht_and_for_htj_only_as_jets() {
         let gbb = legs([21, 21], &[21, 5, -5]);
         let point = |pt_g: f64, pt_b: f64| {
-            with_beams(&[along_x(pt_g, 0.0), along_x(pt_b, -1.5), along_x(pt_b, 1.5)])
+            with_beams(&[
+                lep(pt_g, 0.0, 0.0),
+                lep(pt_b, -1.5, 0.0),
+                lep(pt_b, 1.5, 0.0),
+            ])
         };
         let at = |mjf: i32, cut: &str| {
             Cuts::compile(&card(&format!("{mjf} = maxjetflavor\n{cut}\n")), &gbb).unwrap()
@@ -2903,7 +2898,7 @@ mod tests {
     #[test]
     fn charm_leaves_htj_below_maxjetflavor_four() {
         let gcc = legs([21, 21], &[4, -4]);
-        let point = with_beams(&[along_x(150.0, -1.0), along_x(150.0, 1.0)]);
+        let point = with_beams(&[lep(150.0, -1.0, 0.0), lep(150.0, 1.0, 0.0)]);
         let at = |mjf: i32, cut: &str| {
             Cuts::compile(&card(&format!("{mjf} = maxjetflavor\n{cut}\n")), &gcc).unwrap()
         };
@@ -2918,10 +2913,10 @@ mod tests {
     fn leptons_and_photons_are_in_neither_sum() {
         let lla = legs([2, -2], &[11, -11, 22, 21]);
         let point = with_beams(&[
-            along_x(200.0, -1.0),
-            along_y(200.0, 1.0),
-            along_x(200.0, 2.0),
-            along_x(50.0, 0.0),
+            lep(200.0, -1.0, 0.0),
+            lep(200.0, 1.0, FRAC_PI_2),
+            lep(200.0, 2.0, 0.0),
+            lep(50.0, 0.0, 0.0),
         ]);
         assert!(Cuts::compile(&card("50 = ihtmin\n"), &lla)
             .unwrap()
@@ -2964,7 +2959,7 @@ mod tests {
         };
         // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
         let half = 40.2;
-        let point = with_beams(&[along_x(half, 0.0), along_minus_x(half, 0.0)]);
+        let point = with_beams(&[lep(half, 0.0, 0.0), lep(half, 0.0, PI)]);
         let compile = |cut: &str| {
             Cuts::compile_with(
                 &card(&format!("F = cut_decays\n50 = ptj\n{cut}\n")),
@@ -3057,7 +3052,7 @@ mod tests {
         assert_eq!(cuts.shat_min(), 400.0 * 400.0);
         let tight = Cuts::compile(&card("300 = htjmin\n"), &jj).unwrap();
         assert_eq!(tight.shat_min(), 300.0 * 300.0);
-        let finals = [along_x(150.0, 0.0), along_minus_x(150.0, 0.0)];
+        let finals = [lep(150.0, 0.0, 0.0), lep(150.0, 0.0, PI)];
         assert!(tight.pass(&with_beams(&finals)));
         assert_eq!((finals[0] + finals[1]).m2(), 300.0 * 300.0);
 
