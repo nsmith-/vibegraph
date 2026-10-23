@@ -646,7 +646,7 @@ artifacts = ["output/pp_to_jj_ht", "output/pp_to_jj_ht/Events/run_01/unweighted_
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_jj"] }
 amplitudes = { tier = "covered-by", rows = ["gg_to_gg", "uux_to_uux"] }
-integrals = { tier = "blocked", blocker = "the MadGraph reference run: build-diagrams for scripts/pp_to_jj_ht.mg5, then ROWS=pp_to_jj_ht bank-seeded-sigma" }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Both sides apply htjmin = 300 and htjmax = 800 to the jet-class legs' scalar pT sum (cuts.f:876-892); with two jets that is 2 pT, so the window is also reachable through ptj / ptjmax, and the cut's twin on the gated pp_to_jj card agrees with it to 0.05% on this side. <measured pull, rel, chi2/dof and the MadGraph seed record go here>" }
 samples = { tier = "uncovered", note = "no sample comparison is planned; the cut acts on the cross section and the pT spectrum pp_to_jj's samples already compare" }
 
 [[process]]
@@ -661,7 +661,7 @@ artifacts = ["output/pp_to_bb_iht", "output/pp_to_bb_iht/Events/run_01/unweighte
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_bb"] }
 amplitudes = { tier = "uncovered", note = "as pp_to_bb: no banked b b~ parton row exists" }
-integrals = { tier = "blocked", blocker = "the MadGraph reference run: build-diagrams for scripts/pp_to_bb_iht.mg5, then ROWS=pp_to_bb_iht bank-seeded-sigma" }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. The window is the final state's only cut, so the cross section moves with whether iht takes the b-class legs (maxjetflavor = 4: outside htj, inside iht; cuts.f:898-906). <measured pull, rel, chi2/dof, the MadGraph seed record and its 20 + 20 budget ladder go here>" }
 samples = { tier = "uncovered", note = "no sample comparison is planned" }
 
 [[process]]

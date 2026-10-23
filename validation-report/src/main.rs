@@ -73,7 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::cells::{RowFile, Status};
-use crate::manifest::{Category, Layer, Manifest, Mode, Process, Tier, CATEGORIES};
+use crate::manifest::{Category, Layer, Manifest, Mode, Process, ProcessStatus, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
 pub(crate) struct ResolvedCell {
@@ -358,6 +358,15 @@ fn resolve_cell(
             cell.body = "awaiting the bundle".to_string();
             return cell;
         }
+        // A planned row's reference run does not exist yet, so its gates have
+        // nothing to measure and write no cell. The cell waits for the run; once
+        // the run is banked and the gate writes a cell it is rendered from it
+        // whatever the status says.
+        if process.status == Some(ProcessStatus::Planned) {
+            cell.mark = "⏳";
+            cell.body = "planned: no reference run yet".to_string();
+            return cell;
+        }
         problems.push(format!(
             "{where_} is declared '{}' and no gate wrote it — the cell is missing, not empty",
             declared.tier.as_str()
@@ -567,6 +576,48 @@ mod tests {
                     "{written}"
                 );
             }
+        }
+    }
+
+    /// Every row the committed manifest declares `planned` with a declared
+    /// `integrals` cell and no gate output waits without a problem. The same row
+    /// declared as an ordinary row is a missing cell.
+    #[test]
+    fn each_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        let manifest = toml::from_str::<Manifest>(&text).unwrap();
+        let planned: Vec<&str> = manifest
+            .processes
+            .iter()
+            .filter(|p| p.status == Some(ProcessStatus::Planned))
+            .filter(|p| p.categories.get(Category::Integrals).tier == Tier::Banked)
+            .map(|p| p.key.as_str())
+            .collect();
+        for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
+            assert!(planned.contains(&key), "{key} is not a planned banked row");
+        }
+        let resolve = |text: &str, key: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == key)
+                .expect("the row");
+            let declared = process.categories.get(Category::Integrals);
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, problems)
+        };
+        for key in planned {
+            let (mark, problems) = resolve(&text, key);
+            assert_eq!((mark, problems.len()), ("⏳", 0), "{key}: {problems:?}");
+        }
+        let ordinary = text.replace("status = \"planned\"\n", "");
+        for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
+            let (mark, problems) = resolve(&ordinary, key);
+            assert_eq!((mark, problems.len()), ("❌", 1), "{key}: {problems:?}");
         }
     }
 }
