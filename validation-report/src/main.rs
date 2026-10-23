@@ -503,10 +503,13 @@ mod tests {
         let text = std::fs::read_to_string(path).expect("the committed manifest");
         // The row is planned only until its reference run is banked, so the test
         // declares it planned itself instead of reading the committed status.
+        // `bundled = false` is stripped too: an unbundled row with no cell also
+        // waits, and would satisfy the planned half without the planned rule.
         let line = "key = \"pp_to_ll_beams_6500_4000\"\n";
         assert_eq!(text.matches(line).count(), 1);
         let text = text
             .replace("status = \"planned\"\n", "")
+            .replace("bundled = false\n", "")
             .replace(line, &format!("{line}status = \"planned\"\n"));
         let resolve = |text: &str| {
             let manifest = toml::from_str::<Manifest>(text).unwrap();
@@ -522,11 +525,7 @@ mod tests {
         };
         let (mark, problems) = resolve(&text);
         assert_eq!((mark, problems.len()), ("⏳", 0), "{problems:?}");
-        let (mark, problems) = resolve(
-            &text
-                .replace("status = \"planned\"\n", "")
-                .replace("bundled = false\n", ""),
-        );
+        let (mark, problems) = resolve(&text.replace("status = \"planned\"\n", ""));
         assert_eq!((mark, problems.len()), ("❌", 1), "{problems:?}");
     }
 
