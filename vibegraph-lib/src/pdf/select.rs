@@ -312,20 +312,6 @@ fn load_member(set: &PdfSet, member: u32, found: &FoundSet) -> Result<PdfMember,
         .map_err(PdfSelectError::from)
 }
 
-/// The member of the set named `name` that `lhaid` names, taking the set's
-/// first id from its own `.info` rather than from an index.
-pub fn load_named(
-    lhaid: i64,
-    name: &str,
-    tiers: &Tiers,
-    fetch: &FetchFactory<'_>,
-) -> Result<LoadedPdf, PdfSelectError> {
-    let found = locate_set(name, tiers, fetch)?;
-    let set = open(name, &found)?;
-    let set_index = set_index_of(&set, &found, lhaid)?;
-    load_member_of(lhaid, set, set_index, found)
-}
-
 /// Load the member of set `name`, found at `found`, that `lhaid` names, given
 /// that `listed_by` lists the set at `listed` (an index, or this build's pin).
 /// The set's own `.info` has to agree with that listing, and `lhaid` has to be
@@ -768,31 +754,6 @@ mod tests {
             }
         ));
         assert!(factory.asked().is_empty(), "{:?}", factory.asked());
-    }
-
-    /// A set named outright takes its first id from its own `.info`, and the
-    /// id still has to be one of its members.
-    #[test]
-    fn a_named_set_checks_the_id_against_its_own_range() {
-        let root = tempfile::tempdir().unwrap();
-        let (t, data) = data_tiers(root.path());
-        write_set(&data, SET, &info(Some("900000"), 3), 3);
-        let factory = Factory::refusing();
-        let fetch = factory.callback();
-        let got = load_named(900002, SET, &t, &fetch).unwrap();
-        assert!(matches!(got.input, PdfInput::Lhapdf { member: 2, .. }));
-        let err = load_named(900003, SET, &t, &fetch).unwrap_err();
-        assert!(
-            matches!(
-                err.kind(),
-                SelectFailure::MemberOutOfRange {
-                    member: 3,
-                    members: 3,
-                    ..
-                }
-            ),
-            "{err}"
-        );
     }
 
     /// A proton card's built-in label is refused before anything is looked

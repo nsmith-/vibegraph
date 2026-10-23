@@ -123,6 +123,8 @@ pub(crate) struct Download<'a> {
     /// Where the download would land, which is also where a user who
     /// downloads it themselves should put it.
     pub(crate) destination: &'a str,
+    /// An archive unpacked into `destination`, rather than one file saved as it.
+    pub(crate) archive: bool,
 }
 
 /// What an unpinned download's prompt states in place of a size or checksum.
@@ -140,8 +142,13 @@ impl Download<'_> {
     /// question and repeated in every refusal, so a user who cannot or will not
     /// let the binary fetch it has everything needed to do it themselves.
     pub(crate) fn terms(&self) -> String {
+        let lands = if self.archive {
+            "unpacks to"
+        } else {
+            "saved as"
+        };
         format!(
-            "  source:  {}\n  size:    {}\n  sha256:  {}\n  unpacks to: {}",
+            "  source:  {}\n  size:    {}\n  sha256:  {}\n  {lands}: {}",
             self.url,
             self.size(),
             self.sha256.unwrap_or(UNKNOWN),
@@ -287,6 +294,7 @@ mod tests {
         bytes: Some(27_625_668),
         sha256: Some("abc123"),
         destination: "/tmp/vibegraph-home/pdf/TestSet",
+        archive: true,
     };
 
     const UNPINNED: Download<'static> = Download {
@@ -295,7 +303,32 @@ mod tests {
         bytes: None,
         sha256: None,
         destination: "/tmp/vibegraph-home/pdf/Other",
+        archive: true,
     };
+
+    const INDEX: Download<'static> = Download {
+        what: "the LHAPDF set index pdfsets.index",
+        url: "https://example.invalid/pdfsets.index",
+        bytes: None,
+        sha256: None,
+        destination: "/tmp/vibegraph-home/pdf/pdfsets.index",
+        archive: false,
+    };
+
+    /// A set archive says where it unpacks; the index, one plain file, says
+    /// where it is saved instead.
+    #[test]
+    fn the_index_download_is_saved_and_a_set_archive_unpacks() {
+        assert!(UNPINNED
+            .terms()
+            .ends_with("  unpacks to: /tmp/vibegraph-home/pdf/Other"));
+        let terms = INDEX.terms();
+        assert!(
+            terms.ends_with("  saved as: /tmp/vibegraph-home/pdf/pdfsets.index"),
+            "{terms}"
+        );
+        assert!(!terms.contains("unpacks"), "{terms}");
+    }
 
     /// A download nothing pins states that its size and checksum are unknown,
     /// in the prompt, the one-line question and the refusal alike, rather than

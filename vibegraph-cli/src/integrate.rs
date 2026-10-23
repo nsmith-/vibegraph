@@ -49,11 +49,11 @@ use vibegraph::multiplicity::{
     MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
-use vibegraph::pdf::select::{load_for_run_card, load_named, LoadedPdf};
+use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::proton::{FlavorGroups, ProtonIntegrand};
-use vibegraph::runcard::{BeamMode, PdfChoice, RunCard};
+use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
@@ -343,18 +343,6 @@ pub(crate) struct IntegrateArgs {
     /// Overwrite an existing artifact.
     #[arg(long)]
     pub(crate) force: bool,
-
-    /// LHAPDF set the run card's `lhaid` lies in (proton beams only); without
-    /// it the set is looked up in LHAPDF's `pdfsets.index`. Either way the
-    /// member is `lhaid` minus the set's `SetIndex`.
-    #[arg(long)]
-    pub(crate) pdf_set: Option<String>,
-
-    /// Directory containing the PDF set's directory, searched ahead of
-    /// `$LHAPDF_DATA_PATH` (`$LHAPATH` when that is unset), CVMFS and the
-    /// `~/.vibegraph` cache, the last offering to download the set if absent.
-    #[arg(long)]
-    pub(crate) pdf_dir: Option<PathBuf>,
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
@@ -789,20 +777,11 @@ fn integrate_proton(
     seed: u64,
     network: NetworkPolicy,
 ) -> Result<RunOutput, CliError> {
-    let tiers = assets::pdf_tiers(args.pdf_dir.as_deref()).map_err(err)?;
+    let tiers = assets::pdf_tiers().map_err(err)?;
     let fetch = assets::pdf_fetch(network);
-    let loaded = match &args.pdf_set {
-        Some(name) => {
-            let lhaid = match rc.pdf_choice().map_err(|e| err(e.to_string()))? {
-                PdfChoice::Lhapdf { lhaid } => lhaid,
-                PdfChoice::None => unreachable!("integrate_proton runs on proton beams"),
-            };
-            load_named(lhaid, name, &tiers, &fetch)
-        }
-        None => load_for_run_card(rc, &tiers, &fetch)
-            .map(|loaded| loaded.expect("a proton-beam card reads a density or is refused")),
-    }
-    .map_err(|e| err(e.to_string()))?;
+    let loaded = load_for_run_card(rc, &tiers, &fetch)
+        .map_err(|e| err(e.to_string()))?
+        .expect("a proton-beam card reads a density or is refused");
     let LoadedPdf {
         set,
         member,

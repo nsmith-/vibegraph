@@ -140,6 +140,9 @@ pub struct DownloadRequest {
     /// Where the download lands, which is also where a user who fetches it
     /// themselves should put it.
     pub destination: PathBuf,
+    /// Whether the download is an archive unpacked into `destination`, rather
+    /// than one file saved as it.
+    pub archive: bool,
 }
 
 /// The caller's answer to a [`DownloadRequest`]: something to fetch through,
@@ -248,6 +251,7 @@ pub fn locate_set(
         bytes: pin.map(|p| p.archive_bytes),
         sha256: pin.map(|p| p.sha256.to_string()),
         destination,
+        archive: true,
     };
     let fetcher = fetch(&request).map_err(LookupError::Refused)?;
     let obtain = |source| LookupError::Obtain {
@@ -284,6 +288,7 @@ pub fn fetch_index(tiers: &Tiers, fetch: &FetchFactory<'_>) -> Result<PathBuf, L
         bytes: None,
         sha256: None,
         destination: destination.clone(),
+        archive: false,
     };
     let fetcher = fetch(&request).map_err(LookupError::Refused)?;
     let bytes = fetcher
@@ -594,6 +599,7 @@ pub(crate) mod tests {
         let err = locate_set(DEFAULT_PDF_SET, &t, &factory.callback()).unwrap_err();
         assert!(matches!(err, LookupError::Refused(_)), "{err}");
         assert_eq!(factory.asked().len(), 1);
+        assert!(factory.asked()[0].archive, "a set download is an archive");
     }
 
     /// The index is fetched with consent into the cache, replacing a stale copy,
@@ -616,6 +622,7 @@ pub(crate) mod tests {
         assert_eq!(asked.len(), 1);
         assert_eq!(asked[0].url, url);
         assert_eq!((asked[0].bytes, asked[0].sha256.as_deref()), (None, None));
+        assert!(!asked[0].archive, "the index is one file, not an archive");
 
         let err = fetch_index(&t, &Factory::refusing().callback()).unwrap_err();
         assert!(matches!(err, LookupError::Refused(_)), "{err}");

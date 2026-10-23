@@ -31,6 +31,7 @@ use vibegraph::generate::{
     check_model, check_process, generate, reads_parton_densities, GenerateAssets, GenerateError,
     GenerateOptions, Strategy as SampleStrategy,
 };
+use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
@@ -316,7 +317,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         )));
     }
 
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+    let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact)
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
         err(format!(
@@ -371,17 +372,22 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let reweight = reweight_launches(args, &parsed, &model)?;
 
     let pdf = if reads_parton_densities(&artifact, &parsed) {
-        let tiers = assets::pdf_tiers(None).map_err(err)?;
+        let tiers = assets::pdf_tiers().map_err(err)?;
         load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
             .map_err(|e| err(e.to_string()))?
     } else {
         None
+    };
+    let inputs = InputsRead {
+        pdf: pdf.as_ref().map(|p| (p.input.clone(), p.tier)),
+        grid_sha256,
     };
     let assets = GenerateAssets {
         card: &parsed,
         model: &model,
         evaluated: &evaluated,
         pdf: pdf.as_ref().map(|p| (&p.set, &p.member)),
+        inputs: &inputs,
     };
     let options = GenerateOptions {
         seed,

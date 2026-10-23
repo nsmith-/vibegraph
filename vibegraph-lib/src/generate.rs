@@ -38,7 +38,7 @@ use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
-use crate::lhef::write::{generator_element, mg_run_card};
+use crate::lhef::write::{generator_element, mg_run_card, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
     MultiplicitySum,
@@ -149,6 +149,8 @@ pub struct GenerateAssets<'a> {
     /// The PDF set and the member the artifact was integrated with; required
     /// where [`reads_parton_densities`], unread otherwise.
     pub pdf: Option<(&'a PdfSet, &'a PdfMember)>,
+    /// What was read to build these, written to the event file's header.
+    pub inputs: &'a InputsRead,
 }
 
 /// Why a generation stopped.
@@ -495,7 +497,7 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header_blocks: Vec::new(),
+        header_blocks: vec![assets.inputs.header_block()],
         header: Some(file_header(
             options,
             artifact,
@@ -940,11 +942,15 @@ fn generate_proton_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        // The card a shower's MLM matching reads its parameters from.
+        // The card a shower's MLM matching reads its parameters from, then
+        // what the weights were computed from.
         header_blocks: if matched {
-            vec![mg_run_card(rc, settings, options.seed)]
+            vec![
+                mg_run_card(rc, settings, options.seed),
+                assets.inputs.header_block(),
+            ]
         } else {
-            Vec::new()
+            vec![assets.inputs.header_block()]
         },
         header: Some(file_header(
             options,
@@ -1515,11 +1521,16 @@ mod tests {
         let settings = artifact.generate.clone();
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("events.lhe");
+        let inputs = InputsRead {
+            pdf: None,
+            grid_sha256: String::new(),
+        };
         let assets = GenerateAssets {
             card: &parsed,
             model: &model,
             evaluated: &evaluated,
             pdf: None,
+            inputs: &inputs,
         };
         let options = GenerateOptions {
             seed: 1,

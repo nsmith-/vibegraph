@@ -112,22 +112,45 @@ fn the_no_network_variable_refuses_at_any_value_in_the_binary_and_the_fetch_scri
     }
 }
 
-/// A set name this build has no pin for, with nothing on disk to satisfy it, is
-/// offered as a download from the LHAPDF server whose size and checksum the
-/// refusal says are unknown, rather than guessed at; with downloads refused,
-/// nothing is fetched or cached.
+/// The Drell-Yan run card with `lhaid` moved to `lhaid`, written into `dir`.
+fn run_card_at_lhaid(dir: &Path, lhaid: i64) -> std::path::PathBuf {
+    let card = dir.join("run_card.dat");
+    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
+        .unwrap()
+        .replace("247000  = lhaid", &format!("{lhaid}  = lhaid"));
+    assert!(text.contains(&format!("{lhaid}  = lhaid")));
+    std::fs::write(&card, text).unwrap();
+    card
+}
+
+/// A set this build has no pin for, named by the cache's own `pdfsets.index`
+/// for the card's `lhaid` and with nothing on disk to satisfy it, is offered as
+/// a download from the LHAPDF server whose size and checksum the refusal says
+/// are unknown, rather than guessed at; with downloads refused, nothing is
+/// fetched or cached.
 #[test]
 fn an_unpinned_missing_set_is_refused_without_reaching_the_network() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let out = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join("pdf")).unwrap();
+    std::fs::write(
+        home.path().join("pdf/pdfsets.index"),
+        "999990 NoSuchSet_v99 1\n",
+    )
+    .unwrap();
 
-    let output = integrate_from_bare_cwd(
-        cwd.path(),
-        home.path(),
-        out.path(),
-        &["--pdf-set", "NoSuchSet_v99"],
-    );
+    let output = common::vibegraph(cwd.path(), home.path())
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(run_card_at_lhaid(cwd.path(), 999990))
+        .arg("--out")
+        .arg(out.path())
+        .args(["--neval", "2000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
     assert!(
         !output.status.success(),
         "an unpinned missing set must fail"
@@ -156,12 +179,7 @@ fn an_unindexed_lhaid_is_refused_naming_the_id() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
     let out = tempfile::tempdir().unwrap();
-    let card = cwd.path().join("run_card.dat");
-    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
-        .unwrap()
-        .replace("247000  = lhaid", "999990  = lhaid");
-    assert!(text.contains("999990  = lhaid"));
-    std::fs::write(&card, text).unwrap();
+    let card = run_card_at_lhaid(cwd.path(), 999990);
 
     let output = common::vibegraph(cwd.path(), home.path())
         .env("VIBEGRAPH_NO_NETWORK", "1")
@@ -184,6 +202,30 @@ fn an_unindexed_lhaid_is_refused_naming_the_id() {
         assert!(
             stderr.contains(expected),
             "refusal should mention {expected:?}, got:\n{stderr}"
+        );
+    }
+}
+
+/// `integrate` takes no PDF option: the run card's `lhaid` names the set and
+/// member, and the environment and the lookup tiers say where it is found. A
+/// `--pdf-set` or `--pdf-dir` is an argument error, refused before anything is
+/// read.
+#[test]
+fn a_pdf_option_passed_to_integrate_is_an_argument_error() {
+    for flag in ["--pdf-set", "--pdf-dir"] {
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let output = integrate_from_bare_cwd(cwd.path(), home.path(), out.path(), &[flag, "x"]);
+        assert!(!output.status.success(), "{flag} was accepted");
+        let stderr = common::stderr_of(&output);
+        assert!(
+            stderr.contains(&format!("unexpected argument '{flag}'")),
+            "{flag}: {stderr}"
+        );
+        assert!(
+            !out.path().join("grid.bin.zst").exists(),
+            "{flag} wrote a grid"
         );
     }
 }

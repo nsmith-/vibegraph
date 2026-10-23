@@ -406,17 +406,24 @@ impl IntegrateArtifact {
     /// decoded, so a file written by another schema version is refused by name —
     /// never misread into whatever the current field order happens to accept.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
+        Self::read_hashed(path).map(|(artifact, _)| artifact)
+    }
+
+    /// [`read_from_path`](Self::read_from_path), with the SHA-256 of the file's
+    /// bytes as read: the digest and the decoded artifact come from one read.
+    pub fn read_hashed(path: &Path) -> Result<(Self, String), ArtifactError> {
         let compressed = std::fs::read(path).map_err(|source| ArtifactError::Io {
             path: path.display().to_string(),
             source,
         })?;
+        let sha256 = crate::ufo::identity::digest_bytes(&compressed);
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
             FORMAT_VERSION => {
                 let artifact: Self = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
                 artifact.inputs.refuse_moved_params()?;
-                Ok(artifact)
+                Ok((artifact, sha256))
             }
             found => Err(ArtifactError::UnsupportedVersion {
                 found,

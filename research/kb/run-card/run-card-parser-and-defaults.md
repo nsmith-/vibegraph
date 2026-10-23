@@ -120,9 +120,17 @@ fixes it, both μF fixed at the card's values). The out-of-the-box
 (`ickkw = 1`, `xqcut = 30`) on mixed-multiplicity jet cards is MadGraph's
 card-writing step; vibegraph reads only the card it is given.
 
-`RunCard::pdfsup` gives the `PDFSUP` MadEvent writes for the card
-(`get_pdf_id(pdlabel)`), read off `pdlabel` whatever the beams
+`RunCard::pdfsup` gives the `PDFSUP` for the card: the `lhaid` read on proton
+beams, and on fixed-energy beams MadEvent's `get_pdf_id` of the card's own
+`pdlabel` line, or of the template's `nn23lo1` when the card has none
 ([events/lhef-record-conventions](../events/lhef-record-conventions.md)).
+
+**Departure from MadGraph's defaults.** `pdlabel`, `pdlabel1` and `pdlabel2`
+default to `lhapdf` and `lhaid` to 247000, where MadGraph's template has
+`nn23lo1` and 230000: vibegraph reads densities only from LHAPDF6 grids and
+refuses every built-in label on proton beams, so a card naming no PDF reads
+`NNPDF23_lo_as_0130_qed`. The `banner.py` oracle test records the four
+departures and still checks MadGraph's own values.
 
 ## The lhaid trap
 

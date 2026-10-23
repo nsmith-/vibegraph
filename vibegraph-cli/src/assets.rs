@@ -68,9 +68,8 @@ fn no_home(flag: &str) -> String {
 }
 
 /// The tiers a PDF set and LHAPDF's index are looked for through, from this
-/// process's environment. `pdf_dir`, the directory `--pdf-dir` names, is read
-/// ahead of the LHAPDF data path.
-pub(crate) fn pdf_tiers(pdf_dir: Option<&Path>) -> Result<Tiers, String> {
+/// process's environment.
+pub(crate) fn pdf_tiers() -> Result<Tiers, String> {
     warn_on_retired_pdf_dir();
     let root = cache_root().ok_or_else(|| {
         format!(
@@ -79,11 +78,7 @@ pub(crate) fn pdf_tiers(pdf_dir: Option<&Path>) -> Result<Tiers, String> {
             AssetKind::Pdf.env_var()
         )
     })?;
-    let mut tiers = Tiers::from_env(root);
-    if let Some(dir) = pdf_dir {
-        tiers.lhapdf_data_path.insert(0, dir.to_path_buf());
-    }
-    Ok(tiers)
+    Ok(Tiers::from_env(root))
 }
 
 /// The fetch factory a PDF lookup asks before any download: it puts the
@@ -100,6 +95,7 @@ pub(crate) fn pdf_fetch(
             bytes: request.bytes,
             sha256: request.sha256.as_deref(),
             destination: &destination,
+            archive: request.archive,
         };
         match network::confirm(policy, &download) {
             Consent::Granted => Ok(Box::new(HttpFetch::default()) as Box<dyn Fetch>),
