@@ -599,7 +599,7 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     ] {
         let stderr = generate_at(name, beams, sqrt_s_had);
         assert!(
-            !stderr.contains(refusal) && stderr.contains(DEFAULT_PDF_SET),
+            !stderr.contains(refusal) && stderr.contains("no PDF set was given"),
             "{name}: must pass the collider-energy check and stop on the PDF set:\n{stderr}"
         );
     }

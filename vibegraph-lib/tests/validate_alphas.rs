@@ -101,9 +101,11 @@ fn banked_runs() -> Vec<(String, PathBuf)> {
 /// changed source shows up as a failure rather than as a quiet reclassification.
 const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb",
+    "pp_to_bb_iht",
     "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_0j2j_mlm",
     "pp_to_ll_qcd0",
@@ -350,6 +352,7 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// those stay outside. Their `AQCDUP` is reproduced at `μR` event by event, worst
 /// `3e-16`, by `validate_mlm_dumps`, which reads `μR` from MadEvent's own dump.
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
+    "bbx_to_tapta_ckm_no_b_mass",
     "ddx_to_epemg",
     "ee_to_ee",
     "ee_to_ee_nsz",
@@ -385,19 +388,22 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ll_to_qqx_toy_yukawa",
     "pp_to_bb",
     "pp_to_bb_fixed",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
+    "pp_to_ll_scalefact2",
     "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
     "pp_to_llj_mlm",
     "pp_to_llj_mlm_alps2",
     "pp_to_llj_xqcut_only",
-    "pp_to_ll_scalefact2",
     "qqx_to_o8o8_toy_dcolor",
     "tata_to_ttx_tensor4f",
+    "ubx_to_epve_ckm_no_b_mass",
     "ud_to_epemud_qcd0",
     "uux_to_epemg",
     "uux_to_mumu",
