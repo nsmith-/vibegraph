@@ -136,11 +136,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 10
-archive = "vibegraph-refdata-10.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-10/vibegraph-refdata-10.tar.zst"
-sha256 = "dcc91e154282b0c9530f33f7a2c6d98de34d449ae38c009933fcd1a6017983e4"
-size_bytes = 167428206
+version = 11
+archive = "vibegraph-refdata-11.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-11/vibegraph-refdata-11.tar.zst"
+sha256 = "637cb81f10a65aad72d0a5a129e51302f7e0156f3b1d86b992d0e6310c8acb6a"
+size_bytes = 195555578
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -198,6 +198,20 @@ unpacks_to = "validation/madgraph/output"
 # 20261112). `ud_to_epemud_qcd0` takes 20261106 in place of 20261105, whose run
 # writes 9969 of its 10000 events at any attempt. They were generated on macOS
 # 15 by the pinned 3.7.1 submodule (b7687064); hadron beams use `lhaid 247000`.
+#
+# Cut 11 is cut 10's 14737 files with the 30 files of `pp_to_ll` and
+# `pp_to_ll_qcd0` replaced and the other 14707 byte-identical, plus 1137 files:
+# the unequal-beam Drell-Yan run (`dy13_beams_6500_4000`), the two HT-cut rows
+# (`pp_to_jj_ht`, `pp_to_bb_iht`), the two CKM rows (`ubx_to_epve_ckm_no_b_mass`,
+# `bbx_to_tapta_ckm_no_b_mass`), the three weighted-search rows and the `z` decay
+# row, with their amplitude CSVs, and four more `seeded_sigma/` records
+# (`dy13_beams_6500_4000`, `dy13_etau_default`, `pp_to_jj_ht`, `pp_to_bb_iht`).
+# The two replaced rows are re-carded from `pdlabel = nn23lo1` onto
+# `pdlabel = lhapdf` at `lhaid = 247000`, as cut 5 did for four others: `<init>`
+# PDFSUP is unchanged, `alpha_s` comes from the grid, and their integrated
+# weight moves from 1686.34 pb to 1686.48 pb. `pp_to_bb_iht`'s record is 20 seeds
+# at the budget and 20 at four times it. Generated on macOS 15 by the pinned
+# 3.7.1 submodule (b7687064).
 #
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
@@ -524,7 +538,6 @@ process = "p p > l+ l-"
 script = "validation/madgraph/gen_hadronic_sigma.sh"
 class = "multi-channel"
 n_final = 2
-bundled = false
 rationale = "Drell-Yan between proton beams of 6500 and 4000 GeV: the only banked run whose beams differ, so the only place the collision energy 2 sqrt(E1 E2), the parton energies x_i E_i and the lab boost cm_rap = 1/2 ln(x1 E1 / (x2 E2)) reach a comparison with MadGraph. Same process, PDF, scales and cuts as pp_to_ll's dy13_default card, byte for byte apart from ebeam2, so a disagreement is about the beams. At equal beams every one of those quantities is bit-identical to the energy-sum form, which is why no other row can see them."
 artifacts = ["output/dy13_beams_6500_4000", "output/seeded_sigma/dy13_beams_6500_4000", "hadronic_sigma_reference.json", "dy_beams_6500_4000_run_card.dat", "dy13_proc_card.dat", "dy13_param_card.dat"]
 [process.categories]
@@ -539,7 +552,6 @@ process = "p p > l+ l-"
 script = "validation/madgraph/bank_seeded_sigma.sh"
 class = "multi-channel"
 n_final = 2
-bundled = false
 rationale = "Drell-Yan with l = e, ta on the dy13 default card: one multiplicity whose subprocesses differ in outgoing masses (ta at 1.777 GeV, e massless), so it is the only row that integrates two phase spaces of the same leg count as two parts and sums them. MadGraph keys its subprocess groups on every leg's mass (group_subprocs.py find_process_classes) and puts the two in separate P directories; this crate splits them before flavour grouping (multiplicity::split_by_outgoing_masses). The e part is pp_to_ll's dy13_default process on the same card, so a disagreement in the ta part or the total is about the split."
 artifacts = ["output/seeded_sigma/dy13_etau_default", "dy13_default_run_card.dat", "dy13_param_card.dat"]
 [process.categories]
@@ -668,7 +680,6 @@ samples = { tier = "banked", mode = "gate", note = "the event side of the canoni
 key = "pp_to_jj_ht"
 process = "p p > j j"
 script = "validation/madgraph/scripts/pp_to_jj_ht.mg5"
-bundled = false
 class = "multi-channel"
 n_final = 2
 rationale = "The first HT-binned row: pp_to_jj's card with htjmin = 300 and htjmax = 800, the QCD shape the CMS survey's HT samples bin in. htj sums the jet-class legs' transverse momenta (cuts.f:876-892); with two jets it is 2 pT, so the window is aligned with a ptj window and the row reads the cut's edges and the shat floor it implies, not which jets a sum of three or more takes."
@@ -683,7 +694,6 @@ samples = { tier = "uncovered", note = "no sample comparison is planned; the cut
 key = "pp_to_bb_iht"
 process = "p p > b b~"
 script = "validation/madgraph/scripts/pp_to_bb_iht.mg5"
-bundled = false
 class = "multi-channel"
 n_final = 2
 rationale = "pp_to_bb's card with ihtmin = 200 and ihtmax = 500 at maxjetflavor = 4, where the b quarks are b-class: outside the jet sum htj and inside the inclusive sum iht (cuts.f:898-906). The window is the final state's only cut, so the row reads whether the inclusive sum takes the b-class legs."
@@ -1706,7 +1716,6 @@ restrict = "ckm_no_b_mass"
 script = "validation/madgraph/scripts/ubx_to_epve_ckm_no_b_mass.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
 rationale = "The Standard Model under the CMS genproductions card restrict_ckm_no_b_mass.dat, which MadGraph does not ship: a five-flavour CKM model with MB = ymb = 0 and the tau width kept. One s-channel W+ whose quark vertex carries V_ub, which carries the Wolfenstein phase at leading order, on a massless b; its coupling table is MadGraph's whole coupling_dict at this card."
 artifacts = ["output/ubx_to_epve_ckm_no_b_mass", "output/ubx_to_epve_ckm_no_b_mass.json", "output/ubx_to_epve_ckm_no_b_mass_amplitude.csv", "amplitudes/ubx_to_epve_ckm_no_b_mass.json", "couplings/ubx_to_epve_ckm_no_b_mass.json"]
 mg_amplitude = { process = "u b~ > e+ ve", pdgs_in = [2, -5], pdgs_out = [-11, 12], sqrt_s_list = [10.0, 80.0, 200.0, 500.0], npoints = 10, seed = 277 }
@@ -1724,7 +1733,6 @@ restrict = "ckm_no_b_mass"
 script = "validation/madgraph/scripts/bbx_to_tapta_ckm_no_b_mass.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
 rationale = "The b sector of the CMS ckm_no_b_mass card: ymb = 0 removes the h b b~ vertex, so b b~ > ta+ ta- is the photon and Z exchanges alone, two diagrams where the default restriction has three, on massless b spinors."
 artifacts = ["output/bbx_to_tapta_ckm_no_b_mass", "output/bbx_to_tapta_ckm_no_b_mass.json", "output/bbx_to_tapta_ckm_no_b_mass_amplitude.csv", "amplitudes/bbx_to_tapta_ckm_no_b_mass.json", "couplings/bbx_to_tapta_ckm_no_b_mass.json"]
 mg_amplitude = { process = "b b~ > ta+ ta-", pdgs_in = [5, -5], pdgs_out = [-15, 15], sqrt_s_list = [10.0, 91.188, 200.0, 500.0], npoints = 10, seed = 281 }
@@ -1741,7 +1749,6 @@ model = "validation/ufo/vibegraph_toy_weighted_UFO"
 script = "validation/madgraph/scripts/ffx_to_xwxw_toy_weighted.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
 rationale = "The automatic WEIGHTED search's cap: the only diagrams carry a QED+NP vertex twice (WEIGHTED 6), above (n_ext - 2) times the largest hierarchy (4), so a search capped there finds none; MadGraph's cap is (n_ext - 2) times the largest interaction WEIGHTED per equivalent cubic vertex, int(3.5) = 3, which reaches them."
 artifacts = ["output/ffx_to_xwxw_toy_weighted", "output/ffx_to_xwxw_toy_weighted.json"]
 [process.categories]
@@ -1757,7 +1764,6 @@ model = "validation/ufo/vibegraph_toy_weighted_UFO"
 script = "validation/madgraph/scripts/ffx_to_xwxwvw_toy_weighted.mg5"
 class = "single-channel"
 n_final = 3
-bundled = false
 rationale = "The automatic WEIGHTED search stops inside its loop, above the largest hierarchy and below the cap: the six diagrams weigh 3 + 3 + 2 = 8, the search starts at 6, and MadGraph's cap (n_ext - 2) times int(3.5) = 9 is not reached."
 artifacts = ["output/ffx_to_xwxwvw_toy_weighted", "output/ffx_to_xwxwvw_toy_weighted.json"]
 [process.categories]
@@ -1773,7 +1779,6 @@ model = "validation/ufo/vibegraph_toy_weighted_UFO"
 script = "validation/madgraph/scripts/xwxw_to_xwxw_toy_weighted.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
 rationale = "The automatic WEIGHTED search starts at the sum of the n_ext - 2 largest leg values, 4, not at the lowest WEIGHTED any diagram has (the contact term, 2): the first trial already holds the four diagrams."
 artifacts = ["output/xwxw_to_xwxw_toy_weighted", "output/xwxw_to_xwxw_toy_weighted.json"]
 [process.categories]
@@ -1788,7 +1793,6 @@ process = "z > u u~ d d~"
 script = "validation/madgraph/scripts/z_to_uuxddx_decay.mg5"
 class = "single-channel"
 n_final = 4
-bundled = false
 rationale = "A top-level 1 -> n decay without orders runs no WEIGHTED search in MadGraph (find_optimal_process_orders returns the empty orders for a one-particle process that is not a decay-chain decay), so both orders are kept: the four QCD^2 QED gluon exchanges and the QED^3 photon, Z and W exchanges."
 artifacts = ["output/z_to_uuxddx_decay", "output/z_to_uuxddx_decay.json"]
 [process.categories]
