@@ -32,6 +32,7 @@ Three settings rest on measurements made under rules the sampler no longer uses:
 None of these changes a cross section beyond its error: they set cost and stop
 behaviour. Re-measure before the next tuning decision rests on them. The
 comments citing these tunings now say they predate the pooled stop
-([F-D report](../../sprints/hygiene/sessions/F-D-report.md)); the stop-rule item is
-[stop-scale-inflated-by-few-accepted-iterations](stop-scale-inflated-by-few-accepted-iterations.md).
+([F-D report](../../sprints/hygiene/sessions/F-D-report.md)); the pooled stop's few-accepted-point
+inflation was re-measured and does not persist
+([two-to-six-gate P1](../../sprints/two-to-six-gate/sessions/P1-report.md)).
 Found by drafter D7 and verifier V6.

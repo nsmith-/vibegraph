@@ -131,9 +131,13 @@ projection and the log line ("consistency-scaled") changed.
   positive variance; there are no all-points-cut iterations. Under the χ²
   factor, `scaled_rel/achieved_rel` spanned ×3.4–×758 after the accepted-point
   floor, so a 1% target fires on some seeds and 0.2% cannot, while the plain
-  quoted error tracked the seed spread.[^n34-w1][^n34-s3] This has not been
-  re-measured under the pooled factor, and `budget.rs` has no minimum-accepted
-  qualification ([backlog](../backlog/performance/stop-scale-inflated-by-few-accepted-iterations.md)).
+  quoted error tracked the seed spread.[^n34-w1][^n34-s3] Re-measured under the
+  pooled factor (2026-10-17), it does not persist: no kept channel-iteration on
+  either 2→6 row holds fewer than 49 accepted points, and the stop factor is
+  ×1.01–1.12 at 600k and ×1.00–1.35 at 1.2M
+  ([two-to-six-gate P1](../sprints/two-to-six-gate/sessions/P1-report.md),
+  [B1](../sprints/two-to-six-gate/sessions/B1-report.md)), so `budget.rs` needs
+  no minimum-accepted qualification.
 
 ## `pp_to_llj` converges, at 140–156 iterations
 
