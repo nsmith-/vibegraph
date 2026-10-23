@@ -333,7 +333,15 @@ pub struct RunCard {
     /// from the resolved one ([`banner_values`](Self::banner_values)). Recorded
     /// with the card, since the resolved values alone do not determine them.
     banner_overrides: BTreeMap<String, ParamValue>,
+    /// Whether the card spelled `pdlabel` on a line of its own. MadGraph's
+    /// `PDFSUP` reads that line and nothing else, so on fixed-energy beams a
+    /// card without it reports MadGraph's template label ([`RunCard::pdfsup`]).
+    pdlabel_written: bool,
 }
+
+/// The `pdlabel` of MadGraph's LO template (`banner.py:4253`), which its
+/// event-file `<init>` reports for a card with no `pdlabel` line.
+const MADGRAPH_TEMPLATE_PDLABEL: &str = "nn23lo1";
 
 impl Default for RunCard {
     /// The MadGraph LO out-of-the-box configuration (an empty run card).
@@ -491,18 +499,25 @@ impl RunCard {
         frame_id_of(raw)
     }
 
-    /// The `PDFSUP` MadEvent writes for this card: `get_pdf_id(pdlabel)`
-    /// (`banner.py:3839`), the `lhaid` when `pdlabel` is `lhapdf` and otherwise
-    /// the LHAPDF id of the built-in set the label names, `0` for a label naming
-    /// none.
+    /// The `PDFSUP` this card's event file reports.
     ///
-    /// It is read off `pdlabel` whatever the beams: a fixed-energy card reads
-    /// no parton density, and a banked MadEvent 3.7.1 lepton-collider run on
-    /// MadGraph's default `nn23lo1` writes `247000`, `lhaid` `230000`
-    /// notwithstanding. The default card here, `lhapdf` at `247000`, writes the
-    /// same.
+    /// On proton beams it is the LHAPDF id the densities are read from
+    /// ([`pdf_choice`](Self::pdf_choice)). On fixed-energy beams, which read no
+    /// density, it is what MadEvent writes: the `<init>` line comes from
+    /// `get_banner_init_information` (`banner.py:3824-3837`) over the banner's
+    /// run card, which `charge_card` reads with `consistency=False`
+    /// (`banner.py:538`), so `PDLabelBlock` never folds the per-beam labels into
+    /// `pdlabel`. `PDFSUP` is then `get_pdf_id(pdlabel)` (`banner.py:3839-3853`)
+    /// of the card's own `pdlabel` line, or of the template's `nn23lo1` when
+    /// the card has none: `247000` on every banked MadEvent 3.7.1
+    /// lepton-collider card, which spells `none` per beam and `lhaid = 230000`.
     pub fn pdfsup(&self) -> i32 {
-        match self.pdlabel.as_str() {
+        let label = match self.pdf_choice() {
+            Ok(PdfChoice::Lhapdf { lhaid }) => return i32::try_from(lhaid).unwrap_or(0),
+            Ok(PdfChoice::None) if !self.pdlabel_written => MADGRAPH_TEMPLATE_PDLABEL,
+            _ => self.pdlabel.as_str(),
+        };
+        match label {
             "lhapdf" => i32::try_from(self.lhaid).unwrap_or(0),
             "cteq6_m" => 10000,
             "cteq6_l" => 10041,
@@ -538,6 +553,7 @@ impl RunCard {
 
     /// Parse a run card from text.
     pub fn parse(text: &str) -> Result<Self, RunCardError> {
+        let mut pdlabel_written = false;
         let mut values = BTreeMap::new();
         for (name, default) in PARAM_DEFAULTS {
             values.insert((*name).to_string(), default.to_value());
@@ -563,10 +579,13 @@ impl RunCard {
                 value: value_tok.to_string(),
                 line: line_no,
             })?;
+            pdlabel_written |= canonical == "pdlabel";
             values.insert(canonical.to_string(), parsed);
         }
 
-        Self::from_values(values)
+        let mut card = Self::from_values(values)?;
+        card.pdlabel_written = pdlabel_written;
+        Ok(card)
     }
 
     /// Parse a run card from a file path.
@@ -635,6 +654,7 @@ impl RunCard {
         card.values.retain(|name, _| self.values.contains_key(name));
         card.banner_overrides
             .retain(|name, _| self.values.contains_key(name));
+        card.pdlabel_written = self.pdlabel_written;
         card
     }
 
@@ -709,6 +729,7 @@ impl RunCard {
             dsqrt_q2fact2: f("dsqrt_q2fact2"),
             maxjetflavor: i("maxjetflavor"),
             banner_overrides: matching::banner_overrides(&as_parsed, &values),
+            pdlabel_written: false,
             values,
         })
     }
@@ -1721,6 +1742,36 @@ mod tests {
         );
         assert_eq!(card("  cteq6l1 = pdlabel\n").pdfsup(), 10042);
         assert_eq!(RunCard::default().pdfsup(), 247000);
+    }
+
+    /// The banked MadEvent 3.7.1 lepton-collider cards (`ee_to_ee` and every
+    /// other `ee_*` row) spell the PDF per beam as `none`, keep `lhaid` at
+    /// MadGraph's `230000` and carry no `pdlabel` line; their `<init>` reports
+    /// `247000`, the template `nn23lo1`'s id. A fixed-energy card that does
+    /// write `pdlabel = lhapdf` reports its `lhaid`, as `get_pdf_id` does.
+    #[test]
+    fn a_madgraph_fixed_energy_card_reports_the_template_pdfsup() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        let banked_ee = "  0\t= lpp1 ! beam 1 type\n  0\t= lpp2 ! beam 2 type\n     \
+                         none    = pdlabel1     ! PDF type for beam #1\n     \
+                         none    = pdlabel2     ! PDF type for beam #2\n  \
+                         230000\t= lhaid ! if pdlabel=lhapdf, this is the lhapdf number\n";
+        assert_eq!(card(banked_ee).pdfsup(), 247000);
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  nn23lo1 = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            247000
+        );
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  lhapdf = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            230000
+        );
+        // A decay's card keeps whether the integration card wrote the line.
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  325300 = lhaid\n")
+                .for_decay(125.0)
+                .pdfsup(),
+            325300
+        );
     }
 
     /// The default card names LHAPDF set 247000 on every PDF line, a

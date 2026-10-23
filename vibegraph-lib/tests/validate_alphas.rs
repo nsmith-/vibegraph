@@ -136,6 +136,46 @@ fn present(list: &[&str], runs: &[(String, PathBuf)]) -> Vec<String> {
     names
 }
 
+/// The declared runs of `list` this machine has and that are compared: those
+/// [`common::AWAITING_REBANK_RUNS`] holds back are reported by
+/// [`skip_awaiting_rebank`] instead.
+fn compared(list: &[&str], runs: &[(String, PathBuf)]) -> Vec<String> {
+    present(list, runs)
+        .into_iter()
+        .filter(|name| {
+            !common::AWAITING_REBANK_RUNS
+                .iter()
+                .any(|(row, _)| row == name)
+        })
+        .collect()
+}
+
+/// Whether `name` is held back by [`common::AWAITING_REBANK_RUNS`], recording
+/// it in `awaiting` so the caller can assert every declared one was seen.
+fn skip_awaiting_rebank(name: &str, run: &Path, awaiting: &mut Vec<String>) -> bool {
+    let card = RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card");
+    if !common::awaiting_rebank(name, &card) {
+        return false;
+    }
+    awaiting.push(name.to_string());
+    true
+}
+
+/// Every run [`common::AWAITING_REBANK_RUNS`] declares that this machine has
+/// was reported as awaiting its rebank, not dropped.
+fn assert_awaiting_reported(mut awaiting: Vec<String>, runs: &[(String, PathBuf)]) {
+    awaiting.sort();
+    let declared: Vec<&str> = common::AWAITING_REBANK_RUNS
+        .iter()
+        .map(|(row, _)| *row)
+        .collect();
+    assert_eq!(
+        awaiting,
+        present(&declared, runs),
+        "the runs reported as awaiting a rebank changed"
+    );
+}
+
 /// How far this crate's reading of the set's `αs` knots is allowed to sit from
 /// the value MadGraph's LHAPDF call returned at `M_Z`.
 ///
@@ -415,9 +455,10 @@ fn banked_events_reproduce_aqcdup() {
     let mut total_events = 0usize;
     let mut worst_fraction = 0.0f64;
     let mut worst_run = String::new();
+    let mut awaiting: Vec<String> = Vec::new();
 
     for (name, run) in &runs {
-        if refused_card(name, run) {
+        if refused_card(name, run) || skip_awaiting_rebank(name, run, &mut awaiting) {
             continue;
         }
         let running = resolve(name, run).source;
@@ -465,9 +506,10 @@ fn banked_events_reproduce_aqcdup() {
     agreeing_runs.sort();
     assert_eq!(
         agreeing_runs,
-        present(SCALUP_IS_THE_RENORMALISATION_SCALE, &runs),
+        compared(SCALUP_IS_THE_RENORMALISATION_SCALE, &runs),
         "the set of runs whose AQCDUP is reproduced from SCALUP changed"
     );
+    assert_awaiting_reported(awaiting, &runs);
     println!(
         "AQCDUP: {total_events} events across {} runs within their printing budget, \
          worst {worst_fraction:.3} of budget (in {worst_run})",
@@ -504,8 +546,9 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
     let runs = banked_runs();
     let mut checked = 0usize;
     let mut grid_runs: Vec<String> = Vec::new();
+    let mut awaiting: Vec<String> = Vec::new();
     for (name, run) in &runs {
-        if refused_card(name, run) {
+        if refused_card(name, run) || skip_awaiting_rebank(name, run, &mut awaiting) {
             continue;
         }
         let Some(log) = find_run_log(run) else {
@@ -599,6 +642,7 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
         present(GRID_ALPHA_S_RUNS, &runs),
         "the set of runs whose log reports a PDF-grid alpha_s changed"
     );
+    assert_awaiting_reported(awaiting, &runs);
     println!("alpha_s source rule pinned against {checked} MadGraph run logs");
 }
 
