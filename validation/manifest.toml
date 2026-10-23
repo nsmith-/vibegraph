@@ -638,7 +638,7 @@ samples = { tier = "banked", mode = "gate", note = "the event side of the canoni
 key = "pp_to_jj_ht"
 process = "p p > j j"
 script = "validation/madgraph/scripts/pp_to_jj_ht.mg5"
-status = "planned"
+bundled = false
 class = "multi-channel"
 n_final = 2
 rationale = "The first HT-binned row: pp_to_jj's card with htjmin = 300 and htjmax = 800, the QCD shape the CMS survey's HT samples bin in. htj sums the jet-class legs' transverse momenta (cuts.f:876-892); with two jets it is 2 pT, so the window is aligned with a ptj window and the row reads the cut's edges and the shat floor it implies, not which jets a sum of three or more takes."
@@ -646,14 +646,14 @@ artifacts = ["output/pp_to_jj_ht", "output/pp_to_jj_ht/Events/run_01/unweighted_
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_jj"] }
 amplitudes = { tier = "covered-by", rows = ["gg_to_gg", "uux_to_uux"] }
-integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Both sides apply htjmin = 300 and htjmax = 800 to the jet-class legs' scalar pT sum (cuts.f:876-892); with two jets that is 2 pT, so the window is also reachable through ptj / ptjmax, and the cut's twin on the gated pp_to_jj card agrees with it to 0.05% on this side. <measured pull, rel, chi2/dof and the MadGraph seed record go here>" }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Both sides apply htjmin = 300 and htjmax = 800 to the jet-class legs' scalar pT sum (cuts.f:876-892); with two jets that is 2 pT, so the window is also reachable through ptj / ptjmax, and the cut's twin on the gated pp_to_jj card agrees with it to 0.05% on this side. Measured: 2.134238e5 +- 2.005e2 pb (5 seeds, chi2/dof 0.64) against the MadGraph seed record output/seeded_sigma/pp_to_jj_ht (2.135160e5 +- 1.758e2 pb, 5 seeds and 2 at 4x), pull -0.35, rel -0.0004" }
 samples = { tier = "uncovered", note = "no sample comparison is planned; the cut acts on the cross section and the pT spectrum pp_to_jj's samples already compare" }
 
 [[process]]
 key = "pp_to_bb_iht"
 process = "p p > b b~"
 script = "validation/madgraph/scripts/pp_to_bb_iht.mg5"
-status = "planned"
+bundled = false
 class = "multi-channel"
 n_final = 2
 rationale = "pp_to_bb's card with ihtmin = 200 and ihtmax = 500 at maxjetflavor = 4, where the b quarks are b-class: outside the jet sum htj and inside the inclusive sum iht (cuts.f:898-906). The window is the final state's only cut, so the row reads whether the inclusive sum takes the b-class legs."
@@ -661,7 +661,7 @@ artifacts = ["output/pp_to_bb_iht", "output/pp_to_bb_iht/Events/run_01/unweighte
 [process.categories]
 diagrams = { tier = "covered-by", rows = ["pp_to_bb"] }
 amplitudes = { tier = "uncovered", note = "as pp_to_bb: no banked b b~ parton row exists" }
-integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. The window is the final state's only cut, so the cross section moves with whether iht takes the b-class legs (maxjetflavor = 4: outside htj, inside iht; cuts.f:898-906). <measured pull, rel, chi2/dof, the MadGraph seed record and its 20 + 20 budget ladder go here>" }
+integrals = { tier = "banked", mode = "gate", note = "sigma over five seeds at 75000 x 10 against the row's seed record under the seed policy, gated as the re-carded rows are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. The window is the final state's only cut, so the cross section moves with whether iht takes the b-class legs (maxjetflavor = 4: outside htj, inside iht; cuts.f:898-906). Measured: 4.844779e3 +- 4.722 pb (5 seeds, chi2/dof 1.66) against the MadGraph seed record output/seeded_sigma/pp_to_bb_iht (4.845030e3 +- 1.644 pb: 20 seeds at the budget and 20 at 4x), pull -0.05, rel -0.0001. The budget ladder, 20 + 20 seeds: 4845.03 pb (seed sd 6.00) at 1x against 4845.63 pb (seed sd 3.01) at 4x, +0.40 sigma, so the row stays at 1x. SCATTER at 20 seeds flags one channel, P1_gg_bbx/G1 (chi2/dof 555 on 19 dof, 0.0% of sigma), not seen at 5 seeds" }
 samples = { tier = "uncovered", note = "no sample comparison is planned" }
 
 [[process]]
