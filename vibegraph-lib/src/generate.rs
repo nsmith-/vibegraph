@@ -170,11 +170,12 @@ pub enum GenerateError {
     )]
     RoundingOffAverage { norm: EventNorm },
     /// The stochastic-rounding strategy was asked to write a sum over several
-    /// final-state multiplicities, whose parts it cannot each normalise to their
-    /// own integrated cross section.
+    /// phase spaces (final-state multiplicities, or sets of outgoing masses),
+    /// whose parts it cannot each normalise to their own integrated cross section.
     #[error(
         "the stochastic-rounding strategy cannot normalise a sum over {parts} final-state \
-         multiplicities to each one's integrated cross section; use the buffer strategy"
+         phase spaces (multiplicities or sets of outgoing masses) to each one's integrated \
+         cross section; use the buffer strategy"
     )]
     RoundingOnMixedMultiplicity { parts: usize },
     /// The artifact's recorded proc card, parsed by this build, does not spell
@@ -323,7 +324,7 @@ pub fn reads_parton_densities(artifact: &IntegrateArtifact, card: &SupportedCard
 }
 
 /// Stochastic rounding writes unit weights, so on a sum over several
-/// multiplicities each part's share of the file would be the sample's own rather
+/// phase spaces each part's share of the file would be the sample's own rather
 /// than its integration's. The emitter refuses it too; refusing here does so
 /// before the scan and the draw.
 fn refuse_rounding_on_mixed_multiplicity(
@@ -1027,7 +1028,7 @@ fn generate_proton_sample(
     Ok(summary)
 }
 
-/// Each final-state multiplicity's integrated cross section, from its channels'
+/// Each part's integrated cross section, from its channels'
 /// banked terms (`offsets[k]..offsets[k + 1]` in the artifact's channel order),
 /// for a sum over several; empty for one, whose part is the whole integration.
 fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma> {
@@ -1495,7 +1496,10 @@ mod tests {
         let mixed = refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 2)
             .unwrap_err()
             .to_string();
-        assert!(mixed.contains("a sum over 2 final-state"), "{mixed}");
+        assert!(
+            mixed.contains("a sum over 2 final-state phase spaces"),
+            "{mixed}"
+        );
         for why in [&off_average, &mixed] {
             assert!(!why.contains("--"), "a flag name in the library: {why}");
         }

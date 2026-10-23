@@ -301,7 +301,8 @@ fn cli_error(e: GenerateError) -> CliError {
         )),
         GenerateError::RoundingOnMixedMultiplicity { parts } => err(format!(
             "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
-             multiplicities to each one's integrated cross section; use --strategy buffer"
+             phase spaces (multiplicities or sets of outgoing masses) to each one's integrated \
+             cross section; use --strategy buffer"
         )),
         other => err(other.to_string()),
     }

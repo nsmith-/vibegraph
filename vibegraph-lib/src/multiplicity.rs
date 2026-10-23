@@ -14,6 +14,20 @@
 //! Padding every channel to the widest dimension would need no composite, but it
 //! would give most grids axes nothing depends on and change the uniform stream
 //! every channel draws.
+//!
+//! # Outgoing masses
+//!
+//! A part is one phase space, and the outgoing pole masses fix a phase space as
+//! much as the leg count does: `p p > l+ l-` with `l` holding `ta` puts `ta+ ta-`
+//! on the `m = 1.777` GeV mass shell and `e+ e-` on the light cone. A
+//! [`ProtonIntegrand`] evaluates every group's `|M|²` at every point its channels
+//! draw, and weighs the point by the density of every channel, so its groups must
+//! share their outgoing masses. A multiplicity whose subprocesses differ in them
+//! is therefore split further, one part per set of outgoing masses
+//! ([`split_by_outgoing_masses`]). MadGraph separates them the same way: its
+//! subprocess-group class (`group_subprocs.py`, `find_process_classes`) carries
+//! every leg's mass, so such subprocesses never share a `P` directory, and each
+//! directory is integrated over its own channels.
 
 use crate::artifact::{ChannelKey, ChannelSampler};
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
@@ -75,16 +89,60 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
     parts.into_iter().map(|(_, part)| part).collect()
 }
 
-/// A proton-beam card's flavour decomposition, one per final-state multiplicity
-/// in increasing order ([`split_by_multiplicity`]), each with its groups'
-/// on-shell vetoes.
+/// Split one multiplicity's subprocesses by their outgoing pole masses: one part
+/// per multiset of masses, in the order the enumeration first reaches each, every
+/// part keeping the enumeration's own order.
+///
+/// The key is the multiset rather than the masses in leg order, because two lines
+/// listing the same final state in different orders (`p p > w+ j` and
+/// `add process p p > j w-`) are one phase space once their legs are paired by
+/// content, which [`derive_flavor_groups`] does. A name the model does not know
+/// keys alone, for the decomposition to refuse by name, and an empty part comes
+/// back whole, as one part, for the same reason.
+pub fn split_by_outgoing_masses(
+    part: Vec<DiagramSet>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<Vec<DiagramSet>> {
+    let key = |set: &DiagramSet| -> Vec<u64> {
+        let mut masses: Vec<u64> = set
+            .particles_out
+            .iter()
+            .map(|name| {
+                model
+                    .particle_id(name)
+                    .map_or(f64::NAN, |id| evaluated.mass(id))
+                    .to_bits()
+            })
+            .collect();
+        masses.sort_unstable();
+        masses
+    };
+    if part.is_empty() {
+        return vec![part];
+    }
+    let mut parts: Vec<(Vec<u64>, Vec<DiagramSet>)> = Vec::new();
+    for set in part {
+        let k = key(&set);
+        match parts.iter_mut().find(|(other, _)| *other == k) {
+            Some((_, p)) => p.push(set),
+            None => parts.push((k, vec![set])),
+        }
+    }
+    parts.into_iter().map(|(_, p)| p).collect()
+}
+
+/// A proton-beam card's flavour decomposition, one per phase space: per
+/// final-state multiplicity in increasing order ([`split_by_multiplicity`]), and
+/// within one, per set of outgoing masses ([`split_by_outgoing_masses`]), each
+/// with its groups' on-shell vetoes.
 pub struct MultiplicityGroups {
     pub groups: Vec<FlavorGroups>,
     pub vetoes: Vec<Vec<Option<OnShellVeto>>>,
 }
 
-/// Enumerate the card and decompose each final-state multiplicity into flavour
-/// groups.
+/// Enumerate the card and decompose each of its phase spaces — a final-state
+/// multiplicity and a set of outgoing masses — into flavour groups.
 pub fn multiplicity_groups(
     parsed: &SupportedCard,
     model: &UFOModel,
@@ -100,13 +158,24 @@ pub fn multiplicity_groups(
         groups: Vec::new(),
         vetoes: Vec::new(),
     };
-    for part in split_by_multiplicity(sets, rc) {
-        let groups = derive_flavor_groups(part, model, evaluated, rc)
-            .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
-        let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-            .map_err(|e| e.to_string())?;
-        out.groups.push(groups);
-        out.vetoes.push(vetoes);
+    for multiplicity in split_by_multiplicity(sets, rc) {
+        let parts = split_by_outgoing_masses(multiplicity, model, evaluated);
+        if parts.len() > 1 {
+            tracing::info!(
+                "the {}-leg final states have {} different sets of outgoing masses; each is \
+                 integrated over channels of its own and the cross sections are summed",
+                parts[0][0].particles_out.len(),
+                parts.len()
+            );
+        }
+        for part in parts {
+            let groups = derive_flavor_groups(part, model, evaluated, rc)
+                .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
+            let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
+                .map_err(|e| e.to_string())?;
+            out.groups.push(groups);
+            out.vetoes.push(vetoes);
+        }
     }
     Ok(out)
 }
@@ -175,11 +244,12 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
         })
 }
 
-/// A hadronic cross section summed over final-state multiplicities: one
-/// [`ProtonIntegrand`] per multiplicity, their channels exposed as one list.
+/// A hadronic cross section summed over phase spaces: one [`ProtonIntegrand`]
+/// per final-state multiplicity and set of outgoing masses, their channels
+/// exposed as one list.
 ///
 /// Channel `c` is channel `c − offset(k)` of part `k`, where the parts are in
-/// increasing multiplicity and `offset(k)` counts the channels of the parts
+/// non-decreasing multiplicity and `offset(k)` counts the channels of the parts
 /// before it. Each part keeps its own channel selection weights, normalised over
 /// its own channels — a term's `αⱼ` is its own mixture's, so the terms of each
 /// part sum to that part's cross section and all of them to the total.
@@ -197,19 +267,29 @@ pub struct MultiplicitySum<'a> {
 }
 
 impl<'a> MultiplicitySum<'a> {
-    /// Compose the parts, which must be in increasing final-state multiplicity.
+    /// Compose the parts, which must be in non-decreasing final-state
+    /// multiplicity, one per phase space.
     ///
     /// # Panics
     ///
-    /// If there is no part, if two parts share a multiplicity or are out of
-    /// order, or if the parts were built under different maps — the artifact banks
-    /// one set of choices, and a replay rebuilds every part under it.
+    /// If there is no part, if the parts are out of multiplicity order, if two
+    /// parts share both a multiplicity and a set of outgoing masses, or if the
+    /// parts were built under different maps — the artifact banks one set of
+    /// choices, and a replay rebuilds every part under it.
     pub fn new(parts: Vec<ProtonIntegrand<'a>>) -> Self {
         assert!(!parts.is_empty(), "a multiplicity sum needs a part");
+        for (i, a) in parts.iter().enumerate() {
+            for b in &parts[i + 1..] {
+                assert!(
+                    sorted_final_masses(a) != sorted_final_masses(b),
+                    "the parts are one per phase space"
+                );
+            }
+        }
         for pair in parts.windows(2) {
             assert!(
-                final_state_count(&pair[0]) < final_state_count(&pair[1]),
-                "the parts are one per multiplicity, in increasing order"
+                final_state_count(&pair[0]) <= final_state_count(&pair[1]),
+                "the parts are in increasing multiplicity"
             );
             assert_eq!(
                 pair[0].maps(),
@@ -316,32 +396,51 @@ impl<'a> MultiplicitySum<'a> {
     /// the one a single-multiplicity card has always written. A channel whose map
     /// serves several `(group, diagram)` pairs is a [`ChannelKey::MergedChannel`]
     /// whatever the part count.
+    ///
+    /// A key's group counts every group of its multiplicity, across the parts
+    /// that multiplicity is split into by outgoing masses, in part order, so two
+    /// parts of one multiplicity never bank a channel under the same key.
     pub fn channel_keys(&self) -> Vec<ChannelKey> {
         let single = self.parts.len() == 1;
+        let group_offsets: Vec<usize> = self
+            .parts
+            .iter()
+            .enumerate()
+            .map(|(k, part)| {
+                let final_state = final_state_count(part);
+                self.parts[..k]
+                    .iter()
+                    .filter(|p| final_state_count(p) == final_state)
+                    .map(|p| p.groups().groups().len())
+                    .sum()
+            })
+            .collect();
         self.parts
             .iter()
-            .flat_map(|part| {
+            .zip(group_offsets)
+            .flat_map(|(part, group_offset)| {
                 let final_state = final_state_count(part);
                 part.channel_ids()
                     .iter()
                     .zip(part.channel_members())
                     .map(move |(id, members)| {
+                        let group = group_offset + id.group;
                         if members.len() > 1 {
                             ChannelKey::MergedChannel {
                                 final_state,
-                                group: id.group,
+                                group,
                                 channel: id.channel,
                                 pairs: members.len(),
                             }
                         } else if single {
                             ChannelKey::GroupChannel {
-                                group: id.group,
+                                group,
                                 channel: id.channel,
                             }
                         } else {
                             ChannelKey::MultiplicityChannel {
                                 final_state,
-                                group: id.group,
+                                group,
                                 channel: id.channel,
                             }
                         }
@@ -423,9 +522,10 @@ impl<'a> MultiplicitySum<'a> {
             self.budget_shares = normalised_or_uniform(&sd);
             for (k, share) in self.budget_shares.iter().enumerate() {
                 tracing::info!(
-                    "{} outgoing legs: {} channels, survey mean {:.3e}, estimator spread {:.3e}, \
-                     {:.1}% of the budget",
+                    "{} outgoing legs (masses {:?} GeV): {} channels, survey mean {:.3e}, \
+                     estimator spread {:.3e}, {:.1}% of the budget",
                     self.final_state_count(k),
+                    self.parts[k].groups().groups()[0].final_masses(),
                     self.parts[k].channel_count(),
                     self.parts[k].survey_mean(),
                     sd[k],
@@ -531,6 +631,17 @@ fn final_state_count(part: &ProtonIntegrand<'_>) -> usize {
     part.groups().groups()[0].final_masses().len()
 }
 
+/// A part's outgoing pole masses as a multiset, the key it was split off by.
+fn sorted_final_masses(part: &ProtonIntegrand<'_>) -> Vec<u64> {
+    let mut masses: Vec<u64> = part.groups().groups()[0]
+        .final_masses()
+        .iter()
+        .map(|m| m.to_bits())
+        .collect();
+    masses.sort_unstable();
+    masses
+}
+
 /// The standard deviation of the mixture estimator `f/g` over an adaptation's
 /// final survey, `√(Σⱼ αⱼ Wⱼ − mean²)`, where `Σⱼ αⱼ Wⱼ = E[(f/g)²]` under the
 /// weights that survey drew with.
@@ -565,13 +676,15 @@ fn normalised_or_uniform(x: &[f64]) -> Vec<f64> {
 mod tests {
     use super::*;
     use crate::budget::StopSignal;
-    use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::diagrams::{
+        generate_from_proc_card, parse_proc_card, EnumerationPool, ParsingOptions,
+    };
     use crate::helas::eval::BoundAmplitude;
     use crate::pdf::grid::SubGrid;
     use crate::pdf::PdfMember;
     use crate::phasespace::maps::MapOptions;
     use crate::phasespace::rng::SubStream;
-    use crate::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams};
+    use crate::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonError};
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::ufo::{EvaluatedModel, UFOModel};
     use crate::unweight::{MaxRule, Unweighter};
@@ -828,6 +941,144 @@ mod tests {
                 "a trained grid differs"
             );
         }
+    }
+
+    /// Drell–Yan over three lepton flavours: `ta` is massive in the default
+    /// Standard Model (1.777 GeV), `e` and `mu` are not, so one multiplicity
+    /// holds two phase spaces.
+    const MIXED_MASSES: &str =
+        "define l+ = e+ mu+ ta+\ndefine l- = e- mu- ta-\ngenerate p p > l+ l-\n";
+
+    fn mixed_mass_groups(model: &UFOModel, evaluated: &EvaluatedModel) -> MultiplicityGroups {
+        let parsed = parse_proc_card(MIXED_MASSES, &ParsingOptions::default()).expect("proc card");
+        multiplicity_groups(&parsed, model, evaluated, &card(), EnumerationPool::Serial)
+            .expect("a card of mixed outgoing masses decomposes")
+    }
+
+    /// A multiplicity whose subprocesses differ in outgoing masses comes back as
+    /// one decomposition per set of masses: every group of a part shares its
+    /// masses, the parts hold every subprocess once between them, and each part
+    /// holds exactly the flavours its masses admit.
+    ///
+    /// Handed the same subprocesses unsplit, the decomposition still refuses them:
+    /// one decomposition is one phase space, since every group of it is evaluated
+    /// at every point its channels draw.
+    #[test]
+    fn mixed_outgoing_masses_split_into_one_decomposition_per_mass_set() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let mta = evaluated.mass(model.particle_id("ta-").expect("ta-"));
+        assert!(
+            mta > 1.0,
+            "the default Standard Model's tau is massive: {mta}"
+        );
+
+        let MultiplicityGroups { groups, vetoes } = mixed_mass_groups(&model, &evaluated);
+        assert_eq!(groups.len(), 2, "one part per set of outgoing masses");
+        assert_eq!(vetoes.len(), 2);
+        let counts: Vec<usize> = groups.iter().map(|g| g.groups().len()).collect();
+        eprintln!("groups per part: {counts:?}");
+        assert_eq!(
+            counts,
+            [2, 2],
+            "up-type and down-type initial states per part"
+        );
+        for (part, want) in groups.iter().zip([[0.0, 0.0], [mta, mta]]) {
+            for g in part.groups() {
+                assert_eq!(g.final_masses(), want);
+                for m in g.members() {
+                    let tau = m.outgoing.iter().all(|p| p.abs() == 15);
+                    let light = m.outgoing.iter().all(|p| matches!(p.abs(), 11 | 13));
+                    assert!(
+                        if want[0] == 0.0 { light } else { tau },
+                        "{:?} in the part of masses {want:?}",
+                        m.outgoing
+                    );
+                }
+            }
+        }
+        let members: usize = groups
+            .iter()
+            .flat_map(FlavorGroups::groups)
+            .map(|g| g.members().len())
+            .sum();
+        let enumerated = enumerate(MIXED_MASSES, &model)
+            .iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .count();
+        assert_eq!(members, enumerated);
+
+        let unsplit = split_by_multiplicity(enumerate(MIXED_MASSES, &model), &card());
+        assert_eq!(unsplit.len(), 1);
+        let refused = derive_flavor_groups(
+            unsplit.into_iter().next().expect("one multiplicity"),
+            &model,
+            &evaluated,
+            &card(),
+        );
+        assert!(
+            matches!(refused, Err(ProtonError::UnequalFinalMasses { .. })),
+            "an unsplit mixed-mass multiplicity must be refused"
+        );
+    }
+
+    /// The two phase spaces integrate as two parts of one sum, banking every
+    /// channel under a key of its own, and the massive part carries the cross
+    /// section one lepton flavour of the massless part does.
+    ///
+    /// `ta+ ta-` against `e+ e-` plus `mu+ mu-` at `m_ll > 50 GeV` is a ratio of
+    /// one half up to the tau mass, an `O(m_τ²/m_ll²) ~ 1e-3` correction, under the
+    /// lepton cuts all three share. A part evaluated on the other's mass shell, a
+    /// part dropped or counted twice, or a channel's weight read in the other
+    /// part's mixture moves the ratio off one half by far more than its error.
+    #[test]
+    fn mixed_mass_parts_integrate_to_one_flavour_each() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let pdf = pdf();
+        let MultiplicityGroups { groups, .. } = mixed_mass_groups(&model, &evaluated);
+        let amps: Vec<_> = groups.iter().map(|g| bind_all(g, &evaluated)).collect();
+        let sum = MultiplicitySum::new(
+            groups
+                .iter()
+                .zip(&amps)
+                .map(|(g, a)| part(g, a, &evaluated, &pdf))
+                .collect(),
+        );
+        assert_eq!((sum.final_state_count(0), sum.final_state_count(1)), (2, 2));
+
+        let keys = sum.channel_keys();
+        let distinct: std::collections::HashSet<_> =
+            keys.iter().map(|k| format!("{k:?}")).collect();
+        assert_eq!(
+            distinct.len(),
+            keys.len(),
+            "two channels share a key: {keys:?}"
+        );
+
+        let budget = Budget::Fixed {
+            neval: 30_000,
+            niter: 5,
+        };
+        let stop = StopSignal::default();
+        let (per_channel, total, report) =
+            sum.adapt_grids_budget(budget, BlockAllocation::ByAlpha, 5, &stop);
+        let parts = sum.part_results(&per_channel, report.iterations);
+        let summed: f64 = parts.iter().map(|p| p.integral).sum();
+        assert!((summed / total.integral - 1.0).abs() < 1e-12);
+        let (light, tau) = (&parts[0], &parts[1]);
+        let ratio = tau.integral / light.integral;
+        let err = ratio
+            * ((tau.std_dev / tau.integral).powi(2) + (light.std_dev / light.integral).powi(2))
+                .sqrt();
+        eprintln!(
+            "e/mu part {:.6e} ± {:.1e}, tau part {:.6e} ± {:.1e}, ratio {ratio:.5} ± {err:.5}",
+            light.integral, light.std_dev, tau.integral, tau.std_dev
+        );
+        assert!(
+            (ratio - 0.5).abs() < 5.0 * err + 0.002,
+            "ratio {ratio} ± {err}"
+        );
     }
 
     fn bincode_bytes(grid: &crate::vegas::VegasGrid) -> Vec<u8> {

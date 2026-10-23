@@ -43,16 +43,23 @@
 
 mod common;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
+use common::seed_record::SeedRun;
 use common::seeds::{combine, SeedMean};
+use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+use vibegraph::diagrams::EnumerationPool;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
+use vibegraph::multiplicity::{
+    multiplicity_groups, multiplicity_maps, MultiplicityGroups, MultiplicitySum,
+};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, SplitAngle, TauMap};
+use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
@@ -790,6 +797,337 @@ const DY_BEAMS_ROW: &str = "pp_to_ll_beams_6500_4000";
 #[test]
 fn sigma_unequal_beams_vs_mg() {
     check_dy_run(DY_BEAMS_RUN, "dy_beams_6500_4000_run_card.dat");
+}
+
+/// The manifest row, and the seed-record row, of Drell–Yan over `l = e, ta`.
+const MIXED_MASS_ROW: &str = "pp_to_ll_etau";
+const MIXED_MASS_RECORD: &str = "dy13_etau_default";
+
+/// `p p > l+ l-` with the tau in the lepton multiparticle: one final-state
+/// multiplicity holding two sets of outgoing masses.
+const MIXED_MASS_PROC: &str = "define l+ = e+ ta+\ndefine l- = e- ta-\ngenerate p p > l+ l-\n";
+
+/// Which of the two lepton masses a MadEvent `P` directory integrates.
+///
+/// MadEvent names a directory `P<N>_<initial>_<final>` after the first process of
+/// its subprocess group, spelling each leg by the label the card wrote: a
+/// multiparticle label (`ll`) stays a label, a particle prints its name. The seed
+/// record carries no process line or PDG list per directory, so the final-state
+/// token is the identification. MadGraph splits groups on every leg's mass, so a
+/// directory's token names its mass: `ll` is the multiparticle label of the
+/// massless-lepton group, whose first process was written with the label, and
+/// `taptam` the tau group, whose process was written with the particle names. Any
+/// other token is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LeptonPart {
+    Light,
+    Tau,
+}
+
+fn lepton_part_of(directory: &str) -> LeptonPart {
+    match directory.rsplit('_').next() {
+        Some("ll" | "epem" | "emep") => LeptonPart::Light,
+        Some("taptam" | "tamtap") => LeptonPart::Tau,
+        _ => panic!("cannot tell which lepton mass the directory {directory} integrates"),
+    }
+}
+
+#[test]
+fn lepton_part_follows_the_directory_names_madgraph_wrote() {
+    assert_eq!(lepton_part_of("P1_qq_ll"), LeptonPart::Light);
+    assert_eq!(lepton_part_of("P1_qq_taptam"), LeptonPart::Tau);
+    assert_eq!(lepton_part_of("P1_qq_epem"), LeptonPart::Light);
+    assert_eq!(lepton_part_of("P2_qq_taptam"), LeptonPart::Tau);
+}
+
+#[test]
+#[should_panic(expected = "cannot tell which lepton mass the directory P1_qq_mupmum integrates")]
+fn lepton_part_refuses_an_unknown_directory_name() {
+    lepton_part_of("P1_qq_mupmum");
+}
+
+/// One seed's channel results summed per `P` directory: the directory's `(σ, Δσ)`
+/// in pb, the errors in quadrature. `by_channel` keys are `P<dir>/G<tag>`
+/// (`w<k>/P<dir>/G<tag>` in a window).
+fn directory_sums(seed: &SeedRun) -> BTreeMap<String, (f64, f64)> {
+    let mut sums: BTreeMap<String, (f64, f64)> = BTreeMap::new();
+    for (key, channel) in &seed.by_channel {
+        let directory = key
+            .split('/')
+            .find(|c| c.starts_with('P'))
+            .unwrap_or_else(|| panic!("channel key {key} names no P directory"));
+        let entry = sums.entry(directory.to_string()).or_default();
+        entry.0 += channel.value_pb;
+        entry.1 = entry.1.hypot(channel.err_pb);
+    }
+    sums
+}
+
+/// σ(p p → ℓ⁺ℓ⁻), ℓ = e, τ, through the sum over phase spaces, against MadEvent's
+/// two `P` directories and its combined result.
+///
+/// The card's subprocesses differ in outgoing masses (the tau is massive, the
+/// electron is not), so [`multiplicity_groups`] splits them into two parts and
+/// [`MultiplicitySum`] integrates both. MadGraph keys its subprocess groups on
+/// every leg's mass and so writes one `P` directory per mass. Compared: each
+/// part's σ with the sum of the matching directory's channel results, and the
+/// total with `SubProcesses/results.dat`. A total alone would hide two offsetting
+/// errors; the per-directory comparison is what sees one part drifting.
+///
+/// Blind to: an error both sides share inside a part (the single-mass Drell–Yan
+/// row covers the electron one), and to a mis-sampled region of small measure,
+/// which five seeds and their χ²/dof, not a pull, guard.
+///
+/// The structure of the split (two parts, their masses, the two flavour sets) is
+/// checked before the reference is looked for, so it holds without a banked run.
+/// While the manifest marks the row `planned` and no seed record exists, the
+/// measurement is reported as not yet banked; an absent record on a row that is
+/// not planned fails. The three cells gate on |pull| < 3, |rel| < 0.005 and the
+/// seeds' χ²/dof < 4. Beside them a known-wrong control is printed and asserted:
+/// the ta directory read against the e part (a massless tau) must be outside
+/// those bounds, so the comparison provably sees the tau mass.
+#[test]
+fn sigma_mixed_outgoing_masses_vs_mg() {
+    let clock = Stopwatch::start();
+    let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat"))
+        .expect("parse run card");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let mta = evaluated.mass(model.particle_id("ta-").expect("ta-"));
+    assert!(
+        mta > 1.0,
+        "the default Standard Model's tau is massive: {mta}"
+    );
+
+    let parsed = parse_proc_card(MIXED_MASS_PROC, &ParsingOptions::default()).expect("proc card");
+    let MultiplicityGroups { groups, vetoes } =
+        multiplicity_groups(&parsed, &model, &evaluated, &rc, EnumerationPool::Serial)
+            .expect("a card of mixed outgoing masses decomposes");
+    assert_eq!(groups.len(), 2, "one part per set of outgoing masses");
+    for (part, masses) in groups.iter().zip([[0.0, 0.0], [mta, mta]]) {
+        assert!(part.groups().iter().all(|g| g.final_masses() == masses));
+    }
+    let part_kinds = [LeptonPart::Light, LeptonPart::Tau];
+    // A massless tau has the e part's matrix element and phase space, which is
+    // what lets the e part's σ stand in for the ta part on massless channels: the
+    // two parts carry the same groups, members and diagram content, and differ in
+    // the outgoing mass alone.
+    assert_eq!(groups[0].groups().len(), groups[1].groups().len());
+    for (e_group, ta_group) in groups[0].groups().iter().zip(groups[1].groups()) {
+        assert_eq!(e_group.members().len(), ta_group.members().len());
+        assert_eq!(e_group.diagrams().len(), ta_group.diagrams().len());
+        assert_eq!(e_group.evaluator().n_in(), ta_group.evaluator().n_in());
+    }
+
+    let Some(record) =
+        common::seed_record::read(&validation_dir().join("output"), MIXED_MASS_RECORD)
+    else {
+        if common::manifest::planned_rows().contains(MIXED_MASS_ROW) {
+            eprintln!(
+                "[{MIXED_MASS_ROW}] NOT YET BANKED (the manifest marks this row planned and this \
+                 checkout has no seed record for {MIXED_MASS_RECORD}; the split into two parts is \
+                 checked, no cell is written)"
+            );
+            return;
+        }
+        vibegraph::validation::require(
+            "sigma_mixed_outgoing_masses_vs_mg",
+            "a banked seed record",
+            MIXED_MASS_RECORD,
+        );
+    };
+    assert!(
+        !record.validated_ew,
+        "[{MIXED_MASS_RECORD}] the per-directory values read are MadEvent's reported ones"
+    );
+
+    let at_budget = record.at_budget();
+    let mut directories: BTreeMap<LeptonPart, Vec<(f64, f64)>> = BTreeMap::new();
+    for seed in &at_budget {
+        let sums = directory_sums(seed);
+        assert_eq!(
+            sums.len(),
+            2,
+            "[{MIXED_MASS_RECORD}] seed {} holds P directories {:?}; one per lepton mass is expected",
+            seed.iseed,
+            sums.keys().collect::<Vec<_>>()
+        );
+        let dir_total: f64 = sums.values().map(|v| v.0).sum();
+        eprintln!(
+            "[{MIXED_MASS_RECORD} seed {}] directories {:?} sum {dir_total:.3} pb | results.dat \
+             {:.3} pb",
+            seed.iseed, sums, seed.reported_pb
+        );
+        let mut seen = BTreeMap::new();
+        for (dir, v) in &sums {
+            assert!(
+                seen.insert(lepton_part_of(dir), *v).is_none(),
+                "two directories integrate the same lepton mass: {:?}",
+                sums.keys().collect::<Vec<_>>()
+            );
+        }
+        for (kind, v) in seen {
+            directories.entry(kind).or_default().push(v);
+        }
+    }
+    let mg_parts: Vec<SeedMean> = part_kinds
+        .iter()
+        .map(|k| combine(&directories[k]))
+        .collect();
+    let mg_total = record.reference();
+
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
+        .iter()
+        .map(|part| {
+            part.groups()
+                .iter()
+                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+                .collect()
+        })
+        .collect();
+    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let maps = multiplicity_maps(&groups, &evaluated, sqrt_s_had, MapOptions::default());
+
+    let mut part_runs: Vec<Vec<SeedResult>> = vec![Vec::new(); 2];
+    let mut total_runs = Vec::new();
+    for &seed in DY_SEEDS {
+        let mut parts = Vec::new();
+        for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
+            let mut integ = ProtonIntegrand::new_with_maps(
+                part_groups,
+                part_amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::from_run_card(&rc),
+                rc.dsqrt_q2fact1,
+                maps,
+            )
+            .expect("hadronic integrand");
+            integ.use_onshell_veto(part_vetoes, &evaluated);
+            integ
+                .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+                .expect("run card scale prescription compiles");
+            parts.push(integ);
+        }
+        let mut sum = MultiplicitySum::new(parts);
+        sum.adapt_alphas(seed, DY_ADAPT_SURVEY, DY_ADAPT_ITERS, 0.5);
+        let (per_channel, total, report) = sum.adapt_grids_budget(
+            Budget::Fixed {
+                neval: DY_NEVAL,
+                niter: DY_NITER,
+            },
+            BlockAllocation::ByAlpha,
+            seed,
+            &StopSignal::default(),
+        );
+        for (runs, part) in part_runs
+            .iter_mut()
+            .zip(sum.part_results(&per_channel, report.iterations))
+        {
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: part.integral * GEV2_TO_PB,
+                sigma_err_pb: part.std_dev * GEV2_TO_PB,
+            });
+        }
+        total_runs.push(SeedResult {
+            seed,
+            sigma_pb: total.integral * GEV2_TO_PB,
+            sigma_err_pb: total.std_dev * GEV2_TO_PB,
+        });
+        eprintln!(
+            "[{MIXED_MASS_ROW} seed {seed}] parts {:.3} / {:.3} pb, total {:.3} pb",
+            part_runs[0].last().unwrap().sigma_pb,
+            part_runs[1].last().unwrap().sigma_pb,
+            total_runs.last().unwrap().sigma_pb
+        );
+    }
+
+    let comparisons = [
+        (
+            "e_part",
+            &part_runs[0],
+            mg_parts[0].mean,
+            mg_parts[0].err,
+            true,
+        ),
+        (
+            "ta_part",
+            &part_runs[1],
+            mg_parts[1].mean,
+            mg_parts[1].err,
+            true,
+        ),
+        ("total", &total_runs, mg_total.mean(), mg_total.err(), true),
+        // Known-wrong control, not a manifest cell: the ta directory read against
+        // the e part, which is the ta part integrated on massless channels (the
+        // structure assertion above pins that the two bind the same content).
+        (
+            "ta_part_on_massless_channels",
+            &part_runs[0],
+            mg_parts[1].mean,
+            mg_parts[1].err,
+            false,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (variant, runs, mg, mg_err, gated) in comparisons {
+        let SeedMean {
+            mean,
+            err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(runs);
+        let pull = (mean - mg) / (err * err + mg_err * mg_err).sqrt();
+        let rel = mean / mg - 1.0;
+        let within = pull.abs() < 3.0 && rel.abs() < DY_MAX_REL && chi2 < DY_MAX_CHI2_PER_DOF;
+        eprintln!(
+            "[{MIXED_MASS_ROW} {variant}] vibegraph σ = {mean:.3} ± {err:.3} pb ({} seeds, χ²/dof \
+             = {chi2:.2}) | MadEvent σ = {mg:.3} ± {mg_err:.3} pb | pull = {pull:+.2} | rel = \
+             {rel:+.4} | {}: {}",
+            runs.len(),
+            if gated { "gate" } else { "control" },
+            if within {
+                "within the gate's tolerance"
+            } else {
+                "outside the gate's tolerance"
+            }
+        );
+        if !gated {
+            // The comparison must see the tau mass: the control has to miss the
+            // ta directory by more than the gate's bounds.
+            if pull.abs() < 3.0 || rel.abs() < DY_MAX_REL {
+                failures.push(format!(
+                    "{variant} is not seen as wrong (pull {pull:+.2}, rel {rel:+.4})"
+                ));
+            }
+            continue;
+        }
+        if !within {
+            failures.push(format!(
+                "{variant}: pull {pull:+.2}, rel {rel:+.4}, χ²/dof {chi2:.2}"
+            ));
+        }
+        let mut row =
+            IntegralsRow::new(MIXED_MASS_ROW, "p p > l+ l-", "gate").with_variant(variant);
+        row.status = if within { "pass" } else { "fail" };
+        row.sigma_vg_pb = mean;
+        row.sigma_vg_err_pb = err;
+        row.sigma_mg_pb = mg;
+        row.sigma_mg_err_pb = mg_err;
+        row.pull = pull;
+        row.rel = rel;
+        row.chi2_dof = chi2;
+        row.seeds = runs.iter().map(|r| r.seed).collect();
+        row.per_seed = runs.clone();
+        row.neval = DY_NEVAL;
+        row.niter = DY_NITER;
+        row.duration_s = Some(clock.seconds());
+        row.write();
+    }
+    assert!(failures.is_empty(), "[{MIXED_MASS_ROW}] {failures:?}");
 }
 
 /// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton

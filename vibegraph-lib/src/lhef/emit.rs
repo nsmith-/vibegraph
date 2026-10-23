@@ -68,8 +68,8 @@ pub struct WeightedEvent {
     pub record: LheEvent,
     pub weight: f64,
     /// The index into [`EmitPlan::parts`] of the integrated part this event was
-    /// drawn from: its final-state multiplicity in a sum over several, `0`
-    /// otherwise.
+    /// drawn from: its phase space (final-state multiplicity, or set of
+    /// outgoing masses) in a sum over several, `0` otherwise.
     pub part: usize,
     pub reweights: Vec<f64>,
 }
@@ -110,7 +110,7 @@ pub struct EmitPlan {
     pub sigma_pb: f64,
     pub sigma_err_pb: f64,
     /// The integration's cross section per part of the sample, one entry per
-    /// final-state multiplicity of a sum over several, in the integrand's part
+    /// phase space of a sum over several, in the integrand's part
     /// order; every event names its entry by [`WeightedEvent::part`]. Empty
     /// means one part, the whole integration (`sigma_pb ± sigma_err_pb`).
     pub parts: Vec<PartSigma>,
