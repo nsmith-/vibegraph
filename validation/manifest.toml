@@ -524,7 +524,7 @@ process = "p p > l+ l-"
 script = "validation/madgraph/bank_seeded_sigma.sh"
 class = "multi-channel"
 n_final = 2
-status = "planned"
+bundled = false
 rationale = "Drell-Yan with l = e, ta on the dy13 default card: one multiplicity whose subprocesses differ in outgoing masses (ta at 1.777 GeV, e massless), so it is the only row that integrates two phase spaces of the same leg count as two parts and sums them. MadGraph keys its subprocess groups on every leg's mass (group_subprocs.py find_process_classes) and puts the two in separate P directories; this crate splits them before flavour grouping (multiplicity::split_by_outgoing_masses). The e part is pp_to_ll's dy13_default process on the same card, so a disagreement in the ta part or the total is about the split."
 artifacts = ["output/seeded_sigma/dy13_etau_default", "dy13_default_run_card.dat", "dy13_param_card.dat"]
 [process.categories]
