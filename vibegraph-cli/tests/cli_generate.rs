@@ -629,6 +629,24 @@ fn a_card_or_a_pdf_choice_passed_to_generate_is_an_argument_error() {
     }
 }
 
+/// The event file's `<vibegraphInputs>` block records the SHA-256 of the
+/// artifact file it was generated from, and no PDF entry for a run that reads no
+/// parton density.
+#[test]
+fn the_header_records_the_grid_it_was_generated_from() {
+    let run = run();
+    let (text, _) = run.generate_with(&[], SEED_A, "inputs.lhe");
+    let sha = vibegraph::ufo::identity::digest_bytes(
+        &std::fs::read(&run.artifact_path).expect("read the artifact"),
+    );
+    let block = format!("<vibegraphInputs>\n  <grid sha256=\"{sha}\"/>\n</vibegraphInputs>");
+    assert!(
+        text.contains(&block),
+        "expected\n{block}\nin the header of\n{}",
+        &text[..text.find("<init>").unwrap_or(text.len())]
+    );
+}
+
 /// A missing `--seed` is refused, saying why: two jobs on one grid under one
 /// seed would write the same events.
 #[test]

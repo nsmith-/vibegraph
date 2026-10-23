@@ -74,12 +74,14 @@ the host libm's last-ulp differences.[^n22-close]
 | beams | `asmz` | `nloop` |
 |---|---|---|
 | `lpp = 0` | parameter card `aS` (via `G`) | 2 |
-| any `lpp ≠ 0` | **the PDF label's tabulated value** (`pdfwrap.f`), e.g. `nn23lo1 → 0.130` | 2 unless the label overrides |
+| any `lpp ≠ 0` | **the PDF label's tabulated value** (`pdfwrap.f`), e.g. `nn23lo1 → 0.130`; under `pdlabel = lhapdf` the set's own grid | 2 unless the label overrides |
 
 With a PDF, MadGraph **overrides the parameter card's `aS(M_Z)`**. A hadronic
 QCD comparison that used the card's `0.118` would be wrong by ~10 % per power of
-`αs` in σ before any running. A label `pdfwrap.f` does not know falls back to `0.118` in MadGraph;
-vibegraph refuses it (`AlphaSError::UnknownPdLabel`).[^n22-11]
+`αs` in σ before any running. A label `pdfwrap.f` does not know falls back to `0.118` in MadGraph.
+vibegraph refuses every built-in label on proton beams (`RunCard::pdf_choice`),
+so on proton beams its `αs` is always the set's grid (`GridAlphaS`) and the
+label table is not transcribed.[^n22-11]
 
 **Below the perturbative solve.** Once `Q` approaches the `nf = 3` divergence the
 Newton seed stops being positive: below about `0.40` GeV at two loops and `0.51`

@@ -626,7 +626,7 @@ process = "p p > j j"
 script = "validation/madgraph/scripts/pp_to_jj.mg5"
 class = "multi-channel"
 n_final = 2
-rationale = "The canonical leading-order QCD process on MadGraph's shipped run-card defaults — the run card departs from them in pdlabel and lhaid alone, because the MG-internal nn23lo1 is not an LHAPDF6 grid this crate's PDF layer can read. The only row whose flavour group mixes subprocesses with unequal identical-particle symmetry factors (g g > g g and q q~ > g g carry 1/2 where q g > q g and g g > q q~ carry 1), and its scale is the general clustering case rather than a degenerate one: a 2 -> 2 core of massless coloured legs where no closed form collapses the prescription."
+rationale = "The canonical leading-order QCD process on MadGraph's shipped run-card defaults — the run card departs from them in pdlabel and lhaid alone, because the MG-internal nn23lo1 is not an LHAPDF6 grid this crate's PDF layer can read, and those two lines (lhapdf, 247000) are vibegraph's own default card. The only row whose flavour group mixes subprocesses with unequal identical-particle symmetry factors (g g > g g and q q~ > g g carry 1/2 where q g > q g and g g > q q~ carry 1), and its scale is the general clustering case rather than a degenerate one: a 2 -> 2 core of massless coloured legs where no closed form collapses the prescription."
 artifacts = ["output/pp_to_jj", "output/pp_to_jj/Events/run_01/unweighted_events.lhe.gz"]
 [process.categories]
 diagrams = { tier = "uncovered", note = "the run's counts are not in diagrams.json: enumerated against them this side finds 15 unique topologies to MadGraph's 17, the whole deficit being g g > g g (4 against 6) -- the four-gluon contact term written once here and once per colour structure there, the same difference gg_to_gg carries informationally and pins with its per-flow amplitude gate. Banking the counts would mean declaring the row informational for the same reason. What is compared, and enforced, is the concrete-subprocess set: jj_subprocesses_are_madgraphs_own reads the run's own leshouche.inc and finds the 65 assignments equal entry for entry, each with its outgoing legs in MadGraph's own order. That set equality is what keeps the two cells below honest about what they sum over, and this is the row where the enumeration's unordered-outgoing rule bites: 52 of the 65 have two different outgoing flavours, and neither side lists the swap" }
@@ -1506,7 +1506,7 @@ key = "cli-pdf-cache-fetched"
 layer = "banked"
 targets = ["vibegraph-cli/tests/cli_pdf_cache_fetched.rs"]
 inputs = ["fetched PDF set"]
-rationale = "The cache, --pdf-dir and LHAPDF_DATA_PATH resolution routes exercised with a real PDF set, from an empty working directory with no other PDF variable set. The refusal paths need no set and stay hermetic."
+rationale = "The cache and LHAPDF_DATA_PATH resolution routes, and LHAPDF_DATA_PATH taking precedence over the cache, exercised with a real PDF set reached through a pdfsets.index for the run card's lhaid, from an empty working directory with no other PDF variable set. The refusal paths need no set and stay hermetic."
 
 [[standalone]]
 key = "vegas-sigma"
