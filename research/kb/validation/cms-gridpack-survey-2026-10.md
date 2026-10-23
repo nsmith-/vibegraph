@@ -200,9 +200,9 @@ Systematics:
   `systematics_*` and `sys_*` fields as benign.
 
 Other refusals:
-- `htjmin`/`ihtmin`/`htjmax` are refused only after full enumeration (up to
+- `htjmin`/`ihtmin`/`htjmax` were refused only after full enumeration (up to
   92 s), under a misleading "failed to decompose into flavour groups: cut
-  compilation failed" prefix.
+  compilation failed" prefix. They are now compiled as cuts.
 - No-op cut values (`missetmax`, `ptj1max…ptj4max` = 1e5) are refused as
   active cuts.
 - Massive incoming partons: 4 cards. Mixed outgoing masses in one flavour
