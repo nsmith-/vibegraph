@@ -587,6 +587,16 @@ mod tests {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
         let text = std::fs::read_to_string(path).expect("the committed manifest");
+        // A row is planned only until its reference run is banked, so the test
+        // declares these rows planned itself instead of reading the committed status.
+        let text = ["pp_to_jj_ht", "pp_to_bb_iht"].iter().fold(
+            text.replace("status = \"planned\"\n", ""),
+            |text, key| {
+                let line = format!("key = \"{key}\"\n");
+                assert_eq!(text.matches(&line).count(), 1);
+                text.replace(&line, &format!("{line}status = \"planned\"\n"))
+            },
+        );
         let manifest = toml::from_str::<Manifest>(&text).unwrap();
         let planned: Vec<&str> = manifest
             .processes
@@ -614,7 +624,9 @@ mod tests {
             let (mark, problems) = resolve(&text, key);
             assert_eq!((mark, problems.len()), ("⏳", 0), "{key}: {problems:?}");
         }
-        let ordinary = text.replace("status = \"planned\"\n", "");
+        let ordinary = text
+            .replace("status = \"planned\"\n", "")
+            .replace("bundled = false\n", "");
         for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
             let (mark, problems) = resolve(&ordinary, key);
             assert_eq!((mark, problems.len()), ("❌", 1), "{key}: {problems:?}");
