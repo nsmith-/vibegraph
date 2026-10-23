@@ -579,35 +579,18 @@ mod tests {
         }
     }
 
-    /// Every row the committed manifest declares `planned` with a declared
-    /// `integrals` cell and no gate output waits without a problem. The same row
-    /// declared as an ordinary row is a missing cell.
+    /// The two HT rows with no gate output, each declared three ways from its
+    /// committed text: as committed (`bundled = false`) it waits on the bundle; with
+    /// `bundled = false` swapped for `status = "planned"` it waits on its reference
+    /// run; with neither it is a missing cell. Each declaration is spliced into that
+    /// row alone, and the splice is asserted to have happened. `bundled = false` is
+    /// gone from the planned declaration because an unbundled row also waits, and
+    /// would pass the planned half without the planned rule.
     #[test]
-    fn each_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+    fn an_unbundled_or_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
         let text = std::fs::read_to_string(path).expect("the committed manifest");
-        // A row is planned only until its reference run is banked, so the test
-        // declares these rows planned itself instead of reading the committed status.
-        let text = ["pp_to_jj_ht", "pp_to_bb_iht"].iter().fold(
-            text.replace("status = \"planned\"\n", ""),
-            |text, key| {
-                let line = format!("key = \"{key}\"\n");
-                assert_eq!(text.matches(&line).count(), 1);
-                text.replace(&line, &format!("{line}status = \"planned\"\n"))
-            },
-        );
-        let manifest = toml::from_str::<Manifest>(&text).unwrap();
-        let planned: Vec<&str> = manifest
-            .processes
-            .iter()
-            .filter(|p| p.status == Some(ProcessStatus::Planned))
-            .filter(|p| p.categories.get(Category::Integrals).tier == Tier::Banked)
-            .map(|p| p.key.as_str())
-            .collect();
-        for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
-            assert!(planned.contains(&key), "{key} is not a planned banked row");
-        }
         let resolve = |text: &str, key: &str| {
             let manifest = toml::from_str::<Manifest>(text).unwrap();
             let process = manifest
@@ -616,20 +599,31 @@ mod tests {
                 .find(|p| p.key == key)
                 .expect("the row");
             let declared = process.categories.get(Category::Integrals);
+            assert_eq!(declared.tier, Tier::Banked, "{key}");
             let mut problems = Vec::new();
             let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
-            (cell.mark, problems)
+            (cell.mark, cell.body, problems.len())
         };
-        for key in planned {
-            let (mark, problems) = resolve(&text, key);
-            assert_eq!((mark, problems.len()), ("⏳", 0), "{key}: {problems:?}");
-        }
-        let ordinary = text
-            .replace("status = \"planned\"\n", "")
-            .replace("bundled = false\n", "");
         for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
-            let (mark, problems) = resolve(&ordinary, key);
-            assert_eq!((mark, problems.len()), ("❌", 1), "{key}: {problems:?}");
+            let script = format!("script = \"validation/madgraph/scripts/{key}.mg5\"\n");
+            let committed = format!("{script}bundled = false\n");
+            assert_eq!(text.matches(&committed).count(), 1, "{key}");
+            let declared_as = |line: &str| text.replace(&committed, &format!("{script}{line}"));
+            assert_eq!(
+                resolve(&text, key),
+                ("⏳", "awaiting the bundle".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as("status = \"planned\"\n"), key),
+                ("⏳", "planned: no reference run yet".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as(""), key),
+                ("❌", "not measured".to_string(), 1),
+                "{key}"
+            );
         }
     }
 }
