@@ -1720,15 +1720,25 @@ fn run_present(gate: &str, run: &str) -> bool {
     vibegraph::validation::require(gate, "a banked run directory", run);
 }
 
-/// Whether a row is declared `planned` in the manifest and its MadGraph run is
-/// not in this checkout, so there is nothing yet to compare against.
+/// Whether a row's MadGraph run is not in this checkout and the manifest
+/// declares why: the row is `planned` (no reference run yet) or `bundled = false`
+/// (the run exists but the pinned bundle does not carry it). Either way there is
+/// nothing to compare against here.
 ///
-/// A banked run is always compared, and an absent run of a row that is not
-/// planned still fails in the caller: the declaration, not the absence, is what
-/// permits skipping.
+/// A banked run is always compared, and an absent run of a row with neither
+/// declaration still fails in the caller: the declaration, not the absence, is
+/// what permits skipping.
 fn not_yet_banked(row_spec: &Row) -> bool {
     if run_dir(row_spec.run).join("Cards/run_card.dat").is_file() {
         return false;
+    }
+    if manifest::unbundled_rows().contains(row_spec.key) {
+        eprintln!(
+            "[{}] AWAITING BUNDLE (the manifest marks row {} bundled = false and this \
+             checkout does not have its run, so no cell is written)",
+            row_spec.run, row_spec.key
+        );
+        return true;
     }
     if manifest::planned_rows().contains(row_spec.key) {
         eprintln!(

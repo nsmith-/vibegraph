@@ -555,6 +555,13 @@ fn check_dy_run(run: &str, card: &str) {
         "pp_to_ll"
     };
     let Some((mg, mg_err)) = banked(run) else {
+        if common::manifest::unbundled_rows().contains(row) {
+            eprintln!(
+                "[{run}] AWAITING BUNDLE (the manifest marks row {row} bundled = false and this \
+                 checkout has no reference for it, so no cell is written)"
+            );
+            return;
+        }
         assert!(
             common::manifest::planned_rows().contains(row),
             "[{run}] no banked Drell-Yan reference, and the manifest does not declare row {row} \
