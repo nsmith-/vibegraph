@@ -30,3 +30,4 @@
 - 2026-10-22: H1 merged (#69); main merged here (42e1f38). H2 F1 dispatched.
 - 2026-10-22: F1 checked (3de200c). Version 14; pdf::select, the built-in-label refusal and cli_pdf_cache pass. Pushed so CI's banked layer measures whether the lhapdf/247000 default moves any banked proton number (F1 Found 1).
 - 2026-10-23: banked on 9e413af fails validate_alphas (lhaid 230000 reaches the LHAPDF table). F2 dispatched with the CI fix first.
+- 2026-10-23: F2 stopped on a false design claim. pp_to_ll and pp_to_ll_qcd0 are banked proton nn23lo1/230000 runs in the alphas and scales gates, not only uu_tt; the D1c correction was wrong. The user decided: re-card both to lhapdf/247000 and rebank them with uu_tt on the M3; add --no-fail-fast to the banked CI job in this PR. Also found a pdfsup() regression on MadGraph-written fixed-energy cards (230000 where MadGraph writes 247000).
