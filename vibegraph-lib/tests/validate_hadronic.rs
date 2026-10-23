@@ -3349,22 +3349,19 @@ const HT_ROWS: &[(&str, &str, usize)] = &[
     ("pp_to_bb_iht", "p p > b b~", 75_000),
 ];
 
-/// Whether the bundle carries the seed record `gate` reads for `row`.
+/// Whether this checkout carries both `row`'s banked run and the seed record
+/// `gate` reads for it.
 ///
-/// A row the manifest marks `planned` without a record reports `NOT YET BANKED`
-/// and writes no cell; any other row without one fails, since the single run's
-/// own `results.dat` is not the seed policy's reading.
+/// A row the manifest marks `bundled = false` whose run is absent reports
+/// `AWAITING BUNDLE` and writes no cell, as [`dyn_run_present`] decides for every
+/// such row. A run without its seed record fails, since the single run's own
+/// `results.dat` is not the seed policy's reading.
 fn seed_record_banked(gate: &str, row: &str) -> bool {
-    let output = validation_dir().join("output");
-    if common::seed_record::read(&output, row).is_some() {
-        return true;
-    }
-    if common::manifest::planned_rows().contains(row) {
-        eprintln!(
-            "[{row}] NOT YET BANKED (the manifest marks this row planned and this checkout has \
-             no seed record for it, so no cell is written)"
-        );
+    if !dyn_run_present(gate, row) {
         return false;
+    }
+    if common::seed_record::read(&validation_dir().join("output"), row).is_some() {
+        return true;
     }
     vibegraph::validation::require(gate, "a banked seed record", row);
 }
