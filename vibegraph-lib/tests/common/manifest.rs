@@ -11,7 +11,7 @@
 //! needs the manifest, because nothing else in the tree records which rows the
 //! bundle carries.
 //!
-//! `key`, `bundled`, `status`, `model`, `restrict` and each category cell's `tier` and
+//! `key`, `bundled`, `model`, `restrict` and each category cell's `tier` and
 //! `mode` are read. The report collator parses the whole manifest and is the
 //! authority on its shape; these are the fields a gate has to agree with it
 //! about, so they are deserialised the same way — `bundled` defaulting to true,
@@ -42,8 +42,6 @@ struct Process {
     key: String,
     #[serde(default = "bundled_by_default")]
     bundled: bool,
-    #[serde(default)]
-    status: Option<String>,
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
@@ -99,19 +97,6 @@ pub fn unbundled_rows() -> BTreeSet<String> {
         .processes
         .into_iter()
         .filter(|p| !p.bundled)
-        .map(|p| p.key)
-        .collect()
-}
-
-/// The keys of every row declared `status = "planned"`: its reference run does
-/// not exist yet, so a gate reading it that finds no reference reports the row as
-/// not yet banked instead of failing. A row leaves this set when its status is
-/// flipped, and from then on a missing reference fails like any other.
-pub fn planned_rows() -> BTreeSet<String> {
-    load_manifest()
-        .processes
-        .into_iter()
-        .filter(|p| p.status.as_deref() == Some("planned"))
         .map(|p| p.key)
         .collect()
 }

@@ -47,16 +47,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
-use common::seed_record::SeedRun;
+use common::seed_record::{SeedRecord, SeedRun};
 use common::seeds::{combine, SeedMean};
 use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
 use vibegraph::diagrams::EnumerationPool;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+use vibegraph::hadronic::RunningCouplingReport;
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::multiplicity::{
     multiplicity_groups, multiplicity_maps, MultiplicityGroups, MultiplicitySum,
 };
+use vibegraph::onshell::OnShellVeto;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, SplitAngle, TauMap};
 use vibegraph::phasespace::GEV2_TO_PB;
@@ -461,6 +463,18 @@ fn adapted_integrand<'a>(
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
+    assert_scale_report(&report, shape, expect_alpha_s);
+    if summary.is_empty() {
+        *summary = subsampler_summary(&integ);
+    }
+    integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
+    integ
+}
+
+/// The run card's scale prescription has the `shape` the reference run card
+/// declares, and the matrix element depends on the strong coupling exactly when
+/// `expect_alpha_s` says the process's diagram content does.
+fn assert_scale_report(report: &RunningCouplingReport, shape: ScaleShape, expect_alpha_s: bool) {
     match shape {
         ScaleShape::FixedAtMz => {
             let constant = report.constant_scales.unwrap_or_else(|| {
@@ -488,11 +502,6 @@ fn adapted_integrand<'a>(
         "the matrix element's dependence on the strong coupling is not what this \
          process's diagram content implies"
     );
-    if summary.is_empty() {
-        *summary = subsampler_summary(&integ);
-    }
-    integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
-    integ
 }
 
 /// The per-point scale-configuration draw falls back to the sampling channel when
@@ -708,12 +717,13 @@ fn directory_sums(seed: &SeedRun) -> BTreeMap<String, (f64, f64)> {
 ///
 /// The structure of the split (two parts, their masses, the two flavour sets) is
 /// checked before the reference is looked for, so it holds without a banked run.
-/// While the manifest marks the row `planned` and no seed record exists, the
-/// measurement is reported as not yet banked; an absent record on a row that is
-/// not planned fails. The three cells gate on |pull| < 3, |rel| < 0.005 and the
-/// seeds' χ²/dof < 4. Beside them a known-wrong control is printed and asserted:
-/// the ta directory read against the e part (a massless tau) must be outside
-/// those bounds, so the comparison provably sees the tau mass.
+/// A checkout without the seed record passes over the measurement only while the
+/// manifest marks the row `bundled = false`, as every banked gate does; on a
+/// bundled row an absent record fails. The three cells gate on |pull| < 3,
+/// |rel| < 0.005 and the seeds' χ²/dof < 4. Beside them a known-wrong control is
+/// printed and asserted: the ta directory read against the e part (a massless
+/// tau) must be outside those bounds, so the comparison provably sees the tau
+/// mass.
 #[test]
 fn sigma_mixed_outgoing_masses_vs_mg() {
     let clock = Stopwatch::start();
@@ -735,7 +745,6 @@ fn sigma_mixed_outgoing_masses_vs_mg() {
     for (part, masses) in groups.iter().zip([[0.0, 0.0], [mta, mta]]) {
         assert!(part.groups().iter().all(|g| g.final_masses() == masses));
     }
-    let part_kinds = [LeptonPart::Light, LeptonPart::Tau];
     // A massless tau has the e part's matrix element and phase space, which is
     // what lets the e part's σ stand in for the ta part on massless channels: the
     // two parts carry the same groups, members and diagram content, and differ in
@@ -750,11 +759,11 @@ fn sigma_mixed_outgoing_masses_vs_mg() {
     let Some(record) =
         common::seed_record::read(&validation_dir().join("output"), MIXED_MASS_RECORD)
     else {
-        if common::manifest::planned_rows().contains(MIXED_MASS_ROW) {
+        if common::manifest::unbundled_rows().contains(MIXED_MASS_ROW) {
             eprintln!(
-                "[{MIXED_MASS_ROW}] NOT YET BANKED (the manifest marks this row planned and this \
-                 checkout has no seed record for {MIXED_MASS_RECORD}; the split into two parts is \
-                 checked, no cell is written)"
+                "[{MIXED_MASS_ROW}] AWAITING BUNDLE (the manifest marks this row bundled = false \
+                 and this checkout has no seed record for {MIXED_MASS_RECORD}; the split into two \
+                 parts is checked, no cell is written)"
             );
             return;
         }
@@ -764,151 +773,37 @@ fn sigma_mixed_outgoing_masses_vs_mg() {
             MIXED_MASS_RECORD,
         );
     };
-    assert!(
-        !record.validated_ew,
-        "[{MIXED_MASS_RECORD}] the per-directory values read are MadEvent's reported ones"
-    );
-
-    let at_budget = record.at_budget();
-    let mut directories: BTreeMap<LeptonPart, Vec<(f64, f64)>> = BTreeMap::new();
-    for seed in &at_budget {
-        let sums = directory_sums(seed);
-        assert_eq!(
-            sums.len(),
-            2,
-            "[{MIXED_MASS_RECORD}] seed {} holds P directories {:?}; one per lepton mass is expected",
-            seed.iseed,
-            sums.keys().collect::<Vec<_>>()
-        );
-        let dir_total: f64 = sums.values().map(|v| v.0).sum();
-        eprintln!(
-            "[{MIXED_MASS_RECORD} seed {}] directories {:?} sum {dir_total:.3} pb | results.dat \
-             {:.3} pb",
-            seed.iseed, sums, seed.reported_pb
-        );
-        let mut seen = BTreeMap::new();
-        for (dir, v) in &sums {
-            assert!(
-                seen.insert(lepton_part_of(dir), *v).is_none(),
-                "two directories integrate the same lepton mass: {:?}",
-                sums.keys().collect::<Vec<_>>()
-            );
-        }
-        for (kind, v) in seen {
-            directories.entry(kind).or_default().push(v);
-        }
-    }
-    let mg_parts: Vec<SeedMean> = part_kinds
-        .iter()
-        .map(|k| combine(&directories[k]))
-        .collect();
+    let [mg_light, mg_tau] = mixed_mass_directory_means(&record);
     let mg_total = record.reference();
 
-    let set = load_pdf_set();
-    let pdf = set.member(0).expect("PDF member 0");
-    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
-        .iter()
-        .map(|part| {
-            part.groups()
-                .iter()
-                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
-                .collect()
-        })
-        .collect();
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
-    let maps = multiplicity_maps(&groups, &evaluated, sqrt_s_had, MapOptions::default());
-
-    let mut part_runs: Vec<Vec<SeedResult>> = vec![Vec::new(); 2];
-    let mut total_runs = Vec::new();
-    for &seed in DY_SEEDS {
-        let mut parts = Vec::new();
-        for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
-            let mut integ = ProtonIntegrand::new_with_maps(
-                part_groups,
-                part_amps,
-                &evaluated,
-                &pdf,
-                sqrt_s_had,
-                rc.dsqrt_q2fact1,
-                maps,
-            )
-            .expect("hadronic integrand");
-            integ.use_onshell_veto(part_vetoes, &evaluated);
-            integ
-                .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
-                .expect("run card scale prescription compiles");
-            parts.push(integ);
-        }
-        let mut sum = MultiplicitySum::new(parts);
-        sum.adapt_alphas(seed, DY_ADAPT_SURVEY, DY_ADAPT_ITERS, 0.5);
-        let (per_channel, total, report) = sum.adapt_grids_budget(
-            Budget::Fixed {
-                neval: DY_NEVAL,
-                niter: DY_NITER,
-            },
-            BlockAllocation::ByAlpha,
-            seed,
-            &StopSignal::default(),
-        );
-        for (runs, part) in part_runs
-            .iter_mut()
-            .zip(sum.part_results(&per_channel, report.iterations))
-        {
-            runs.push(SeedResult {
-                seed,
-                sigma_pb: part.integral * GEV2_TO_PB,
-                sigma_err_pb: part.std_dev * GEV2_TO_PB,
-            });
-        }
-        total_runs.push(SeedResult {
-            seed,
-            sigma_pb: total.integral * GEV2_TO_PB,
-            sigma_err_pb: total.std_dev * GEV2_TO_PB,
-        });
-        eprintln!(
-            "[{MIXED_MASS_ROW} seed {seed}] parts {:.3} / {:.3} pb, total {:.3} pb",
-            part_runs[0].last().unwrap().sigma_pb,
-            part_runs[1].last().unwrap().sigma_pb,
-            total_runs.last().unwrap().sigma_pb
-        );
-    }
+    let ([light_runs, tau_runs], total_runs) =
+        mixed_mass_runs(&groups, &vetoes, &model, &evaluated, &rc);
 
     let comparisons = [
-        (
-            "e_part",
-            &part_runs[0],
-            mg_parts[0].mean,
-            mg_parts[0].err,
-            true,
-        ),
-        (
-            "ta_part",
-            &part_runs[1],
-            mg_parts[1].mean,
-            mg_parts[1].err,
-            true,
-        ),
+        ("e_part", &light_runs, mg_light.mean, mg_light.err, true),
+        ("ta_part", &tau_runs, mg_tau.mean, mg_tau.err, true),
         ("total", &total_runs, mg_total.mean(), mg_total.err(), true),
         // Known-wrong control, not a manifest cell: the ta directory read against
         // the e part, which is the ta part integrated on massless channels (the
         // structure assertion above pins that the two bind the same content).
         (
             "ta_part_on_massless_channels",
-            &part_runs[0],
-            mg_parts[1].mean,
-            mg_parts[1].err,
+            &light_runs,
+            mg_tau.mean,
+            mg_tau.err,
             false,
         ),
     ];
     let mut failures = Vec::new();
     for (variant, runs, mg, mg_err, gated) in comparisons {
+        let seeds = combine(runs);
         let SeedMean {
             mean,
             err,
             chi2_per_dof: chi2,
             ..
-        } = combine(runs);
-        let pull = (mean - mg) / (err * err + mg_err * mg_err).sqrt();
+        } = seeds;
+        let pull = seeds.pull(mg, mg_err);
         let rel = mean / mg - 1.0;
         let within = pull.abs() < 3.0 && rel.abs() < DY_MAX_REL && chi2 < DY_MAX_CHI2_PER_DOF;
         eprintln!(
@@ -956,6 +851,129 @@ fn sigma_mixed_outgoing_masses_vs_mg() {
         row.write();
     }
     assert!(failures.is_empty(), "[{MIXED_MASS_ROW}] {failures:?}");
+}
+
+/// MadEvent's two `P` directories of the mixed-mass record, the massless one
+/// first, each read under the seed policy over the seeds at the record's budget.
+fn mixed_mass_directory_means(record: &SeedRecord) -> [SeedMean; 2] {
+    assert!(
+        !record.validated_ew,
+        "[{MIXED_MASS_RECORD}] the per-directory values read are MadEvent's reported ones"
+    );
+    let mut directories: BTreeMap<LeptonPart, Vec<(f64, f64)>> = BTreeMap::new();
+    for seed in record.at_budget() {
+        let sums = directory_sums(seed);
+        assert_eq!(
+            sums.len(),
+            2,
+            "[{MIXED_MASS_RECORD}] seed {} holds P directories {:?}; one per lepton mass is expected",
+            seed.iseed,
+            sums.keys().collect::<Vec<_>>()
+        );
+        let dir_total: f64 = sums.values().map(|v| v.0).sum();
+        eprintln!(
+            "[{MIXED_MASS_RECORD} seed {}] directories {:?} sum {dir_total:.3} pb | results.dat \
+             {:.3} pb",
+            seed.iseed, sums, seed.reported_pb
+        );
+        let mut seen = BTreeMap::new();
+        for (dir, v) in &sums {
+            assert!(
+                seen.insert(lepton_part_of(dir), *v).is_none(),
+                "two directories integrate the same lepton mass: {:?}",
+                sums.keys().collect::<Vec<_>>()
+            );
+        }
+        for (kind, v) in seen {
+            directories.entry(kind).or_default().push(v);
+        }
+    }
+    [LeptonPart::Light, LeptonPart::Tau].map(|k| combine(&directories[&k]))
+}
+
+/// This crate's side of the mixed-mass row: the card's parts integrated as one
+/// [`MultiplicitySum`] over [`DY_SEEDS`], built as the CLI builds it (the parts'
+/// shared maps, their on-shell vetoes, the run card's scales), with each part's σ
+/// per seed, the massless part first, and the total's.
+fn mixed_mass_runs(
+    groups: &[FlavorGroups],
+    vetoes: &[Vec<Option<OnShellVeto>>],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+) -> ([Vec<SeedResult>; 2], Vec<SeedResult>) {
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
+        .iter()
+        .map(|part| {
+            part.groups()
+                .iter()
+                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+                .collect()
+        })
+        .collect();
+    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let maps = multiplicity_maps(groups, evaluated, sqrt_s_had, MapOptions::default());
+
+    let mut part_runs: [Vec<SeedResult>; 2] = Default::default();
+    let mut total_runs = Vec::new();
+    for &seed in DY_SEEDS {
+        let mut parts = Vec::new();
+        for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(vetoes) {
+            let mut integ = ProtonIntegrand::new_with_maps(
+                part_groups,
+                part_amps,
+                evaluated,
+                &pdf,
+                sqrt_s_had,
+                rc.dsqrt_q2fact1,
+                maps,
+            )
+            .expect("hadronic integrand");
+            integ.use_onshell_veto(part_vetoes, evaluated);
+            let report = integ
+                .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+                .expect("run card scale prescription compiles");
+            // The default Drell-Yan card, as `pp_to_ll` reads it: both scales fixed
+            // at m_Z and no strong coupling in the matrix element.
+            assert_scale_report(&report, ScaleShape::FixedAtMz, false);
+            parts.push(integ);
+        }
+        let mut sum = MultiplicitySum::new(parts);
+        sum.adapt_alphas(seed, DY_ADAPT_SURVEY, DY_ADAPT_ITERS, 0.5);
+        let (per_channel, total, report) = sum.adapt_grids_budget(
+            Budget::Fixed {
+                neval: DY_NEVAL,
+                niter: DY_NITER,
+            },
+            BlockAllocation::ByAlpha,
+            seed,
+            &StopSignal::default(),
+        );
+        for (runs, part) in part_runs
+            .iter_mut()
+            .zip(sum.part_results(&per_channel, report.iterations))
+        {
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: part.integral * GEV2_TO_PB,
+                sigma_err_pb: part.std_dev * GEV2_TO_PB,
+            });
+        }
+        total_runs.push(SeedResult {
+            seed,
+            sigma_pb: total.integral * GEV2_TO_PB,
+            sigma_err_pb: total.std_dev * GEV2_TO_PB,
+        });
+        eprintln!(
+            "[{MIXED_MASS_ROW} seed {seed}] parts {:.3} / {:.3} pb, total {:.3} pb",
+            part_runs[0].last().unwrap().sigma_pb,
+            part_runs[1].last().unwrap().sigma_pb,
+            total_runs.last().unwrap().sigma_pb
+        );
+    }
+    (part_runs, total_runs)
 }
 
 /// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton
