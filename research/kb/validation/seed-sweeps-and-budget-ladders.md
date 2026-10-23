@@ -139,7 +139,7 @@ Worked cases:
   budget, not merely move them. The accepted-point floor since cut the worst
   single-seed swing below 1%, but at one budget only, so that falsifier is
   still unclaimed and the cells stay `info`
-  ([2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md);
+  ([2→6 integrals info on scattering references](../backlog/validation/two-to-six-integrals-info-on-scattering-references.md);
   [sigma-row gating exceptions](sigma-row-gating-exceptions.md)).
 
 ## Rung-to-rung differences need the measured spread

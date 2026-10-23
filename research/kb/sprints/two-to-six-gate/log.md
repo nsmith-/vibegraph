@@ -60,3 +60,22 @@
       +2.39σ against reported, +1.34σ against equal-weight.
   - Per D1's third amendment the cells stay `info` against MadEvent, since the
     references' own channels scatter.
+* **Close-out, the user's decision (2026-10-23): #47 closes, and the next steps
+  go to the backlog.**
+  - Both claimed items are deleted:
+    - `stop-scale-inflated-by-few-accepted-iterations` closed on P1's
+      measurement (×1.01–1.12 at 600k, ×1.00–1.35 at 1.2M per B1).
+    - `two-to-six-integrals-not-enforced` closes with the record saying why
+      the cells do not gate. Single-seed swings do not shrink with budget,
+      because floor-bound channels draw the same points at both rungs (B1), and
+      the references scatter.
+  - Filed:
+    - `floor-bound-channels-ignore-budget` (the Neyman / scaling-floor fix);
+    - `two-to-six-integrals-info-on-scattering-references` (the gating path,
+      blocked on that fix);
+    - `two-to-six-tail-point-unlocated` (where the tail sits; #48 or #51 as the
+      cause);
+    - `chi2-per-own-sigma-misreads-heavy-tails` (P1 Found 1, B1 Found 4);
+    - `per-channel-stop-record-missing` (P1 Found 2).
+  - The #42 `validated_ew` pull difference is noted on
+    `validated-ew-awaits-refdata-11`.

@@ -3,7 +3,7 @@ type: Sprint
 title: "2 → 6 integrals cells: budget ladder and stop scale"
 description: "Re-measure stop_scale's few-accepted-point inflation, re-run the 2 → 6 budget ladder under the accepted-point floor with 20+ seeds on the deciding rungs, and gate both integrals cells or record why not."
 status: draft
-active: true
+active: false
 tags: [two-to-six, multichannel, heavy-tail, seed-sweep, budget-ladder, gate-promotion]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
