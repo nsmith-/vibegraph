@@ -96,27 +96,26 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// The key is the multiset rather than the masses in leg order, because two lines
 /// listing the same final state in different orders (`p p > w+ j` and
 /// `add process p p > j w-`) are one phase space once their legs are paired by
-/// content, which [`derive_flavor_groups`] does. A name the model does not know
-/// keys alone, for the decomposition to refuse by name, and an empty part comes
-/// back whole, as one part, for the same reason.
-pub fn split_by_outgoing_masses(
+/// content, which [`derive_flavor_groups`] does.
+///
+/// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
+/// compares them: two subprocesses share a part only when every outgoing mass is
+/// the same value, which it is when the legs read equal parameters. So no part
+/// this returns is one the decomposition refuses for its masses. A name the model
+/// does not know keys as NaN, apart from every mass the model has, for the
+/// decomposition to refuse by name, and an empty part comes back whole, as one
+/// part, for the same reason.
+pub(crate) fn split_by_outgoing_masses(
     part: Vec<DiagramSet>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Vec<DiagramSet>> {
-    let key = |set: &DiagramSet| -> Vec<u64> {
-        let mut masses: Vec<u64> = set
-            .particles_out
-            .iter()
-            .map(|name| {
-                model
-                    .particle_id(name)
-                    .map_or(f64::NAN, |id| evaluated.mass(id))
-                    .to_bits()
-            })
-            .collect();
-        masses.sort_unstable();
-        masses
+    let key = |set: &DiagramSet| {
+        mass_multiset(set.particles_out.iter().map(|name| {
+            model
+                .particle_id(name)
+                .map_or(f64::NAN, |id| evaluated.mass(id))
+        }))
     };
     if part.is_empty() {
         return vec![part];
@@ -180,9 +179,9 @@ pub fn multiplicity_groups(
     Ok(out)
 }
 
-/// The maps every multiplicity is built under: `options` as given for a card of
-/// one multiplicity, and for several, `options` settled once over the union of
-/// their shapes ([`union_shape`]), since an artifact banks one set of choices.
+/// The maps every part is built under: `options` as given for a card of one
+/// part (one multiplicity and one set of outgoing masses), and for several,
+/// `options` settled once over the union of their shapes ([`union_shape`]), since an artifact banks one set of choices.
 pub fn multiplicity_maps(
     groups: &[FlavorGroups],
     evaluated: &EvaluatedModel,
@@ -289,7 +288,7 @@ impl<'a> MultiplicitySum<'a> {
         for pair in parts.windows(2) {
             assert!(
                 final_state_count(&pair[0]) <= final_state_count(&pair[1]),
-                "the parts are in increasing multiplicity"
+                "the parts are in non-decreasing multiplicity"
             );
             assert_eq!(
                 pair[0].maps(),
@@ -319,7 +318,7 @@ impl<'a> MultiplicitySum<'a> {
         self.grid_rule = rule;
     }
 
-    /// The parts, in increasing multiplicity.
+    /// The parts, in non-decreasing multiplicity.
     pub fn parts(&self) -> &[ProtonIntegrand<'a>] {
         &self.parts
     }
@@ -633,13 +632,15 @@ fn final_state_count(part: &ProtonIntegrand<'_>) -> usize {
 
 /// A part's outgoing pole masses as a multiset, the key it was split off by.
 fn sorted_final_masses(part: &ProtonIntegrand<'_>) -> Vec<u64> {
-    let mut masses: Vec<u64> = part.groups().groups()[0]
-        .final_masses()
-        .iter()
-        .map(|m| m.to_bits())
-        .collect();
-    masses.sort_unstable();
-    masses
+    mass_multiset(part.groups().groups()[0].final_masses())
+}
+
+/// Outgoing masses as a multiset, compared exactly: each mass's bit pattern,
+/// sorted ([`split_by_outgoing_masses`]).
+fn mass_multiset(masses: impl IntoIterator<Item = f64>) -> Vec<u64> {
+    let mut bits: Vec<u64> = masses.into_iter().map(f64::to_bits).collect();
+    bits.sort_unstable();
+    bits
 }
 
 /// The standard deviation of the mixture estimator `f/g` over an adaptation's
@@ -1022,15 +1023,37 @@ mod tests {
         );
     }
 
+    /// Two parts of one phase space (one multiplicity, one set of outgoing masses)
+    /// are refused: the sum would integrate that phase space twice.
+    #[test]
+    #[should_panic(expected = "the parts are one per phase space")]
+    fn a_sum_refuses_two_parts_of_one_phase_space() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let pdf = pdf();
+        let groups = part_groups("generate p p > e+ e-\n", &model, &evaluated);
+        let amps = bind_all(&groups[0], &evaluated);
+        MultiplicitySum::new(vec![
+            part(&groups[0], &amps, &evaluated, &pdf),
+            part(&groups[0], &amps, &evaluated, &pdf),
+        ]);
+    }
+
     /// The two phase spaces integrate as two parts of one sum, banking every
     /// channel under a key of its own, and the massive part carries the cross
     /// section one lepton flavour of the massless part does.
     ///
     /// `ta+ ta-` against `e+ e-` plus `mu+ mu-` at `m_ll > 50 GeV` is a ratio of
-    /// one half up to the tau mass, an `O(m_τ²/m_ll²) ~ 1e-3` correction, under the
-    /// lepton cuts all three share. A part evaluated on the other's mass shell, a
-    /// part dropped or counted twice, or a channel's weight read in the other
-    /// part's mixture moves the ratio off one half by far more than its error.
+    /// one half up to the tau mass, under the lepton cuts all three share. A part
+    /// dropped or counted twice moves the ratio to zero, a quarter or one, far
+    /// outside its bound; two parts banking a channel under one key fail the key
+    /// check.
+    ///
+    /// Blind to the tau mass itself: the ratio's error at this budget is about
+    /// 0.004 and its bound `5σ + 0.002` about ±0.024, while the tau mass moves σ by
+    /// about 1% (−1.15% on the dy13 default card), so an error of that size, such
+    /// as the tau part read on the massless channels, passes here. The banked
+    /// mixed-mass gate's known-wrong control is what sees it.
     #[test]
     fn mixed_mass_parts_integrate_to_one_flavour_each() {
         let model = sm_model(SMRestrict::Default);

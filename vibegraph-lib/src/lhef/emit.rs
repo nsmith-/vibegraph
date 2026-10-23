@@ -242,8 +242,8 @@ impl std::fmt::Display for EmitError {
             EmitError::PartsUnsupported { strategy, parts } => write!(
                 f,
                 "{strategy} cannot normalise a sample of {parts} integrated parts (a sum over \
-                 final-state multiplicities) to each part's own cross section; use the buffered \
-                 strategy"
+                 final-state phase spaces: multiplicities or sets of outgoing masses) to each \
+                 part's own cross section; use the buffered strategy"
             ),
         }
     }
@@ -886,7 +886,7 @@ impl UnweightStrategy for StochasticRounding {
             });
         }
         // Unit weights leave each part's share of the file to the realised sample,
-        // so a sum over multiplicities would not carry each part's integration.
+        // so a sum over phase spaces would not carry each part's integration.
         if plan.parts.len() > 1 {
             return Err(EmitError::PartsUnsupported {
                 strategy: "stochastic rounding",
