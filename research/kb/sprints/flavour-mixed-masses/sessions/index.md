@@ -5,8 +5,10 @@
 ## Session Brief
 
 * [F1: split mixed-mass flavour groups instead of refusing them](F1.md) - Group subprocesses by outgoing masses as well as matrix element, so each group gets a map that fits its masses; leave the map code untouched and record any change it would need.
+* [V2: the mixed-mass Drell-Yan row from banked to gated](V2.md) - Classify MadGraph's P1_qq_ll directory, add the known-wrong control, and flip pp_to_ll_etau's integrals cell to gate on the M3's measurement; the M3 re-cuts the bundle and removes planned.
 
 ## Session Report
 
 * [F1 report: a mixed-mass card splits into one integrand per set of outgoing masses](F1-report.md) - Subprocesses with different outgoing masses are split before flavour grouping, one proton integrand each, combined like a sum over multiplicities; no map code changed. A one-flavour part matches MadGraph, and the total needs a banked run.
 * [V1 report: the mixed-mass Drell-Yan row prepared for banking](V1-report.md) - The seeded-bank entry, the planned manifest row, the collator waiting on a planned row, the per-directory gate in validate_hadronic and the banking request for p p > l+ l- with l = e, ta. MadGraph was not run; the row's cells are planned.
+* [V2 report: the mixed-mass Drell-Yan row gated on the M3's measurement](V2-report.md) - P1_qq_ll classified as the massless part, the known-wrong massless-tau control printed and asserted beside the three readings, the integrals cell flipped to gate. The record exists only on the M3, so the row stays planned and the measurement is not reproduced here.
