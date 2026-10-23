@@ -136,6 +136,7 @@ const CLOSED_FORM_RUNS: &[(&str, i64)] = &[("gg_to_gg_cg", 3)];
 
 /// Every run whose scales come out of the clustering, replayed event by event.
 const CLUSTERED_RUNS: &[&str] = &[
+    "bbx_to_tapta_ckm_no_b_mass",
     "ddx_to_epemg",
     "ee_to_ee",
     "ee_to_ee_nsz",
@@ -171,8 +172,10 @@ const CLUSTERED_RUNS: &[&str] = &[
     "p3r3_to_p3r3_toy_epsilon",
     "p3r3_to_p3r3_toy_sextet",
     "pp_to_bb",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
@@ -180,6 +183,7 @@ const CLUSTERED_RUNS: &[&str] = &[
     "pp_to_llj_dyn",
     "qqx_to_o8o8_toy_dcolor",
     "tata_to_ttx_tensor4f",
+    "ubx_to_epve_ckm_no_b_mass",
     "uux_to_epemg",
     "uux_to_mumu",
     "uux_to_ttx_4f",
@@ -257,8 +261,10 @@ const DECLINED_RUNS: &[(&str, Declined)] = &[
 const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb",
     "pp_to_bb_fixed",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
@@ -1768,8 +1774,10 @@ fn banked_run_cards_are_accepted() {
 /// a re-bank that adds one cannot slip past.
 const FLOOR_REACHABLE_RUNS: &[&str] = &[
     "pp_to_bb",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
