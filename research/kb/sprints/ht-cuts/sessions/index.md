@@ -9,3 +9,4 @@
 ## Session Report
 
 * [F1 report: MadGraph's HT cuts compiled](F1-report.md) - cuts.f's htj and iht definitions with citations, the implementation, per-event tests with mutation evidence, local σ runs and the MadGraph banking request.
+* [V1 report: the HT σ gates](V1-report.md) - The two σ gates for the HT-binned rows, their planned-row handling, the synthetic-record measurement and the mutations on the planned/absent guard.
