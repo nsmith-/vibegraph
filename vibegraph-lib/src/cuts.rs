@@ -55,9 +55,17 @@
 //!   it descends from a forced line in every diagram, which is the same set on a
 //!   card without identical particles across its decays.
 //!
+//! - **HT** (`cuts.f:874-913`): `htj` is the scalar sum of the transverse
+//!   momenta of the jet-class legs, `iht` that sum plus the b-class legs, so
+//!   which partons each counts moves with `maxjetflavor`. No pT or rapidity
+//!   preselection applies, and `do_cuts` is not read: decay products and heavy
+//!   jet-class legs count. A sum below its minimum fails (`<`), above a maximum
+//!   `≥ 0` fails (`>`). Transverse momenta are boost-invariant along the beam,
+//!   so the frame does not matter.
+//!
 //! Cut families implemented here: ŝ window, single-leg pT/E/η (classes
-//! j/b/a/l), pairwise ΔR and invariant mass, `ptll`, `mmnl`, and the
-//! decay-chain Breit–Wigner windows. Every other
+//! j/b/a/l), pairwise ΔR and invariant mass, `ptll`, `mmnl`, `htj` and `iht`,
+//! and the decay-chain Breit–Wigner windows. Every other
 //! `cut=`-tagged parameter is parse-and-detect: [`Cuts::compile`] hard-errors
 //! with [`CutError::UnimplementedCutActive`] if its value deviates from the MG
 //! default, so an active but unimplemented cut is never silently ignored.
@@ -319,6 +327,27 @@ struct MmnlCut {
     members: Vec<usize>,
 }
 
+/// The scalar-sum transverse-momentum cuts (`cuts.f:874-913`): `htj`, the sum
+/// over the jet-class legs, and the inclusive `iht`, that sum plus the b-class
+/// legs. Membership is the leg's class alone, not its `do_cuts` flag, because
+/// `cuts.f:524-534` fills the sums from `is_a_j` / `is_a_b` without reading it:
+/// decay products under `cut_decays = F` and legs above 20 GeV count.
+#[derive(Clone, Debug, PartialEq)]
+struct HtCut {
+    /// Indices of the jet-class final legs.
+    jets: Vec<usize>,
+    /// Indices of the b-class final legs.
+    bjets: Vec<usize>,
+    /// `htjmin`; a sum below it fails (`<`, so the threshold itself passes).
+    htj_min: f64,
+    /// `htjmax`; < 0 = inactive.
+    htj_max: f64,
+    /// `ihtmin`.
+    iht_min: f64,
+    /// `ihtmax`; < 0 = inactive.
+    iht_max: f64,
+}
+
 /// A compiled, process-specific cut filter.
 ///
 /// Equality is equality of the filter, not of the process it was compiled for:
@@ -338,6 +367,7 @@ pub struct Cuts {
     single: Vec<SingleLegCut>,
     pairs: Vec<PairCut>,
     mmnl: Option<MmnlCut>,
+    ht: Option<HtCut>,
     shat_min_hint: f64,
     /// The decay-chain windows, one list per set of lines some diagram forces; a
     /// point passes when every window of one list holds. Empty without a decay
@@ -376,10 +406,6 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "ptl3max",
     "ptl4min",
     "ptl4max",
-    "htjmin",
-    "htjmax",
-    "ihtmin",
-    "ihtmax",
     "ht2min",
     "ht3min",
     "ht4min",
@@ -536,6 +562,35 @@ fn mmnl_cut(rc: &RunCard, infos: &[LegInfo]) -> Option<MmnlCut> {
     })
 }
 
+/// The HT cuts, or `None` when every threshold is at a value no event fails:
+/// `htjmin` and `ihtmin` at or below zero (a sum of transverse momenta is never
+/// negative) and `htjmax` and `ihtmax` negative (`cuts.f` reads a maximum only
+/// when it is `≥ 0`). The MadGraph defaults `0, -1, 0, -1` are that case.
+fn ht_cut(rc: &RunCard, infos: &[LegInfo]) -> Option<HtCut> {
+    let htj_min = rc.float("htjmin");
+    let htj_max = rc.float("htjmax");
+    let iht_min = rc.float("ihtmin");
+    let iht_max = rc.float("ihtmax");
+    if !(htj_min > 0.0 || htj_max >= 0.0 || iht_min > 0.0 || iht_max >= 0.0) {
+        return None;
+    }
+    let of = |letter: Letter| -> Vec<usize> {
+        infos
+            .iter()
+            .filter(|i| i.letter == Some(letter))
+            .map(|i| i.idx)
+            .collect()
+    };
+    Some(HtCut {
+        jets: of(Letter::Jet),
+        bjets: of(Letter::B),
+        htj_min,
+        htj_max,
+        iht_min,
+        iht_max,
+    })
+}
+
 impl Cuts {
     /// Compile the run card's cuts for a specific external-leg assignment of a
     /// process without decay chains.
@@ -586,17 +641,20 @@ impl Cuts {
         let single = single_leg_cuts(rc, &infos);
         let pairs = pair_cuts(rc, &infos);
         let mmnl_cut = mmnl_cut(rc, &infos);
+        let ht = ht_cut(rc, &infos);
 
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
         let two_incoming = incoming.len() == 2;
-        let shat_min_hint =
-            shat_min_hint(rc, legs, &infos, &single).max(forced_shat_floor(legs, forced, bwcutoff));
+        let shat_min_hint = shat_min_hint(rc, legs, &infos, &single)
+            .max(ht_shat_floor(ht.as_ref()))
+            .max(forced_shat_floor(legs, forced, bwcutoff));
 
         tracing::debug!(
             single_leg = single.len(),
             pairs = pairs.len(),
             mmnl = mmnl_cut.is_some(),
+            ht = ht.is_some(),
             sqrt_shat_min = dsqrt_shat,
             sqrt_shat_max = dsqrt_shatmax,
             "compiled cuts"
@@ -618,6 +676,7 @@ impl Cuts {
             single,
             pairs,
             mmnl: mmnl_cut,
+            ht,
             shat_min_hint,
             windows,
             bwcutoff,
@@ -824,8 +883,8 @@ impl Cuts {
     }
 
     /// Whether the compiled filter admits every point of every phase space: no ŝ
-    /// window, no decay-chain window, no lepton-plus-neutrino mass window, no
-    /// pairwise threshold, and every single-leg threshold at a value no momentum
+    /// window, no decay-chain window, no lepton-plus-neutrino mass window, no HT
+    /// threshold, no pairwise threshold, and every single-leg threshold at a value no momentum
     /// fails.
     ///
     /// A sufficient condition, read off the thresholds and not off any sample: a
@@ -844,6 +903,7 @@ impl Cuts {
             single,
             pairs,
             mmnl,
+            ht,
             // A sampling aid derived from the thresholds above; it rejects nothing.
             shat_min_hint: _,
             windows,
@@ -854,6 +914,7 @@ impl Cuts {
             && *shat_max_sq < 0.0
             && pairs.is_empty()
             && mmnl.is_none()
+            && ht.is_none()
             && windows.is_empty()
             && single.iter().all(|s| {
                 let SingleLegCut {
@@ -968,8 +1029,49 @@ impl Cuts {
             }
         }
 
+        if let Some(h) = &self.ht {
+            if !ht_ok(h, momenta) {
+                return false;
+            }
+        }
+
         true
     }
+}
+
+/// The HT cuts on one point (`cuts.f:874-913`). With no jet-class leg `htj` is
+/// zero, which reproduces `cuts.f`'s separate branch: `htjmin > 0` rejects
+/// (`cuts.f:817`) and the `htj` maximum is never read (`:842`). The inclusive sum
+/// is checked whether or not a jet is present (`:908`).
+fn ht_ok<F: Real>(h: &HtCut, momenta: &[LorentzVector<F>]) -> bool {
+    let sum = |legs: &[usize]| {
+        legs.iter()
+            .fold(F::zero(), |acc, &i| acc + transverse(momenta[i]))
+    };
+    let htj = sum(&h.jets);
+    if htj < c::<F>(h.htj_min) || (h.htj_max >= 0.0 && htj > c::<F>(h.htj_max)) {
+        return false;
+    }
+    let iht = htj + sum(&h.bjets);
+    !(iht < c::<F>(h.iht_min) || (h.iht_max >= 0.0 && iht > c::<F>(h.iht_max)))
+}
+
+/// A lower bound on ŝ from the HT minima. In the partonic centre of mass
+/// `√ŝ = Σ E ≥ Σ p_T` over any subset of the final legs, since `E ≥ p_T` for each
+/// and `p_T` is invariant under the boost along the beam; an accepted point has
+/// `iht ≥ htj ≥ htjmin` and `iht ≥ ihtmin`. A minimum whose sum has no leg to run
+/// over rejects every point and is left out, so the bound never exceeds what an
+/// empty sum would let through. Zero without HT cuts.
+fn ht_shat_floor(ht: Option<&HtCut>) -> f64 {
+    let Some(h) = ht else { return 0.0 };
+    let mut floor = 0.0f64;
+    if !h.jets.is_empty() {
+        floor = floor.max(h.htj_min);
+    }
+    if !h.jets.is_empty() || !h.bjets.is_empty() {
+        floor = floor.max(h.iht_min);
+    }
+    floor * floor
 }
 
 /// Whether every forced line of one set sits inside its window,
@@ -1445,6 +1547,10 @@ mod tests {
             "50 = mmllmax",
             "1 = mmnl",
             "50 = mmnlmax",
+            "1 = htjmin",
+            "50 = htjmax",
+            "1 = ihtmin",
+            "50 = ihtmax",
         ] {
             let cuts = Cuts::compile(&card(&format!("{LEPTON_CUTS_OFF}{on}\n")), &legs).unwrap();
             assert!(!cuts.admits_every_point(), "{on}");
@@ -2175,7 +2281,7 @@ mod tests {
 
     #[test]
     fn unbindable_value_does_not_excuse_other_cuts() {
-        assert!(detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = htjmax\n")).is_err());
+        assert!(detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")).is_err());
         assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
     }
 
@@ -2700,5 +2806,266 @@ mod tests {
             .iter()
             .any(|l| l.slots == t && (l.mass - 173.0).abs() < 1.0));
         assert_eq!(f.decay_products(), (1 << set.particles_out.len()) - 1);
+    }
+
+    // ── HT ──────────────────────────────────────────────────────────────
+
+    /// Massless leg at transverse momentum `pt` along `+x`, at rapidity `y`: its
+    /// computed `p_T` is `pt` to the bit, so a sum can be placed exactly on a
+    /// threshold.
+    fn along_x(pt: f64, y: f64) -> V {
+        V::new(pt * y.cosh(), pt, 0.0, pt * y.sinh())
+    }
+
+    /// Massless leg at transverse momentum `pt` along `+y`, at rapidity `y`.
+    fn along_y(pt: f64, y: f64) -> V {
+        V::new(pt * y.cosh(), 0.0, pt, pt * y.sinh())
+    }
+
+    /// Massless leg at transverse momentum `pt` along `−x`, at rapidity `y`.
+    fn along_minus_x(pt: f64, y: f64) -> V {
+        V::new(pt * y.cosh(), -pt, 0.0, pt * y.sinh())
+    }
+
+    fn legs(incoming: [i32; 2], outgoing: &[i32]) -> Vec<ExternalLeg> {
+        incoming
+            .iter()
+            .map(|&p| ExternalLeg::incoming(p, 0.0))
+            .chain(outgoing.iter().map(|&p| ExternalLeg::outgoing(p, 0.0)))
+            .collect()
+    }
+
+    fn with_beams(finals: &[V]) -> Vec<V> {
+        let (b1, b2) = beams(3000.0);
+        [b1, b2].into_iter().chain(finals.iter().copied()).collect()
+    }
+
+    /// `htj` is a scalar sum: two jets of `p_T = 150` at right angles sum to 300,
+    /// where their vector sum would be 212. The minimum passes at equality and
+    /// the maximum at equality (`cuts.f:908`'s `<` and `>`).
+    #[test]
+    fn htj_is_the_scalar_jet_sum_with_inclusive_edges() {
+        let jj = legs([21, 21], &[21, 21]);
+        let point = |a: f64, b: f64| with_beams(&[along_x(a, -1.0), along_y(b, 1.0)]);
+        let min = Cuts::compile(&card("300 = htjmin\n"), &jj).unwrap();
+        assert!(min.pass(&point(150.0, 150.0)));
+        assert!(!min.pass(&point(150.0, 149.99)));
+        assert!(min.pass(&point(150.0, 150.01)));
+        let max = Cuts::compile(&card("300 = htjmax\n"), &jj).unwrap();
+        assert!(max.pass(&point(150.0, 150.0)));
+        assert!(max.pass(&point(150.0, 149.99)));
+        assert!(!max.pass(&point(150.0, 150.01)));
+    }
+
+    /// The same edges for the inclusive sum, here over jets alone.
+    #[test]
+    fn iht_has_the_same_edges() {
+        let jj = legs([21, 21], &[21, 21]);
+        let point = |a: f64, b: f64| with_beams(&[along_x(a, -1.0), along_y(b, 1.0)]);
+        let min = Cuts::compile(&card("300 = ihtmin\n"), &jj).unwrap();
+        assert!(min.pass(&point(150.0, 150.0)));
+        assert!(!min.pass(&point(150.0, 149.99)));
+        let max = Cuts::compile(&card("300 = ihtmax\n"), &jj).unwrap();
+        assert!(max.pass(&point(150.0, 150.0)));
+        assert!(!max.pass(&point(150.0, 150.01)));
+    }
+
+    /// `g g > g b b~`, each leg at `p_T = 100`. At `maxjetflavor = 4` the b quarks
+    /// are b-class: `htj = 100` and `iht = 300`, so they count for the inclusive
+    /// sum and not for the jet sum. At `maxjetflavor = 5` they are jets and both
+    /// sums are 300.
+    #[test]
+    fn b_quarks_count_for_iht_and_for_htj_only_as_jets() {
+        let gbb = legs([21, 21], &[21, 5, -5]);
+        let point = |pt_g: f64, pt_b: f64| {
+            with_beams(&[along_x(pt_g, 0.0), along_x(pt_b, -1.5), along_x(pt_b, 1.5)])
+        };
+        let at = |mjf: i32, cut: &str| {
+            Cuts::compile(&card(&format!("{mjf} = maxjetflavor\n{cut}\n")), &gbb).unwrap()
+        };
+
+        assert!(at(4, "100 = htjmin").pass(&point(100.0, 100.0)));
+        assert!(!at(4, "100.01 = htjmin").pass(&point(100.0, 100.0)));
+        assert!(!at(4, "300 = htjmin").pass(&point(100.0, 100.0)));
+        assert!(at(4, "300 = ihtmin").pass(&point(100.0, 100.0)));
+        assert!(!at(4, "300 = ihtmin").pass(&point(100.0, 99.99)));
+        assert!(at(4, "100 = htjmax").pass(&point(100.0, 400.0)));
+        assert!(!at(4, "300 = ihtmax").pass(&point(100.0, 100.01)));
+
+        assert!(at(5, "300 = htjmin").pass(&point(100.0, 100.0)));
+        assert!(!at(5, "300 = htjmin").pass(&point(100.0, 99.99)));
+        assert!(!at(5, "100 = htjmax").pass(&point(100.0, 100.0)));
+        assert!(at(5, "300 = ihtmin").pass(&point(100.0, 100.0)));
+    }
+
+    /// `maxjetflavor = 3` files the charm quark under the b class too, so it
+    /// leaves the jet sum and stays in the inclusive one.
+    #[test]
+    fn charm_leaves_htj_below_maxjetflavor_four() {
+        let gcc = legs([21, 21], &[4, -4]);
+        let point = with_beams(&[along_x(150.0, -1.0), along_x(150.0, 1.0)]);
+        let at = |mjf: i32, cut: &str| {
+            Cuts::compile(&card(&format!("{mjf} = maxjetflavor\n{cut}\n")), &gcc).unwrap()
+        };
+        assert!(at(4, "300 = htjmin").pass(&point));
+        assert!(!at(3, "300 = htjmin").pass(&point));
+        assert!(at(3, "300 = ihtmin").pass(&point));
+    }
+
+    /// Leptons and photons are in neither sum: the inclusive HT is over jets and
+    /// b's, not over every visible leg.
+    #[test]
+    fn leptons_and_photons_are_in_neither_sum() {
+        let lla = legs([2, -2], &[11, -11, 22, 21]);
+        let point = with_beams(&[
+            along_x(200.0, -1.0),
+            along_y(200.0, 1.0),
+            along_x(200.0, 2.0),
+            along_x(50.0, 0.0),
+        ]);
+        assert!(Cuts::compile(&card("50 = ihtmin\n"), &lla)
+            .unwrap()
+            .pass(&point));
+        assert!(!Cuts::compile(&card("50.01 = ihtmin\n"), &lla)
+            .unwrap()
+            .pass(&point));
+        assert!(!Cuts::compile(&card("50.01 = htjmin\n"), &lla)
+            .unwrap()
+            .pass(&point));
+    }
+
+    /// Without a jet the jet sum is zero: a positive `htjmin` rejects every point
+    /// (`cuts.f:817`), a maximum rejects none, and the inclusive minimum still
+    /// applies (`cuts.f:908` sits outside the `njets > 0` branch).
+    #[test]
+    fn a_process_without_jets_fails_every_positive_minimum() {
+        let point = dy_momenta(lep(40.0, 0.5, 0.0), lep(40.0, -0.5, 3.0));
+        let dy = |cut: &str| Cuts::compile(&card(&format!("{cut}\n")), &dy_legs()).unwrap();
+        assert!(dy("").pass(&point));
+        assert!(!dy("1e-9 = htjmin").pass(&point));
+        assert!(!dy("1e-9 = ihtmin").pass(&point));
+        assert!(dy("0 = htjmax").pass(&point));
+        assert!(dy("0 = ihtmax").pass(&point));
+        assert!(dy("-5 = htjmin").pass(&point));
+    }
+
+    /// The sums read the leg's class and not its `do_cuts` flag (`cuts.f:524-534`):
+    /// the two jets of a forced `W` under `cut_decays = F` take no `ptj` cut, yet
+    /// count for HT.
+    #[test]
+    fn decay_products_count_for_ht() {
+        let udx = legs([2, -1], &[2, -1]);
+        let forced = ForcedResonances {
+            patterns: vec![vec![ForcedLine {
+                slots: 0b11,
+                mass: 80.4,
+                width: 2.0,
+            }]],
+        };
+        // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
+        let half = 40.2;
+        let point = with_beams(&[along_x(half, 0.0), along_minus_x(half, 0.0)]);
+        let compile = |cut: &str| {
+            Cuts::compile_with(
+                &card(&format!("F = cut_decays\n50 = ptj\n{cut}\n")),
+                &udx,
+                &forced,
+            )
+            .unwrap()
+        };
+        assert!(compile("").pass(&point), "ptj is off on the decay products");
+        assert!(compile("80 = htjmin").pass(&point));
+        assert!(!compile("81 = htjmin").pass(&point));
+        assert!(!compile("81 = ihtmin").pass(&point));
+    }
+
+    /// A jet-class leg above 20 GeV gets no single-leg cut and still counts:
+    /// a top quark at `maxjetflavor = 6`.
+    #[test]
+    fn a_heavy_jet_class_leg_counts_for_ht() {
+        let tt = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(6, 173.0),
+            ExternalLeg::outgoing(-6, 173.0),
+        ];
+        let top = |px: f64| {
+            let e = (px * px + 173.0f64 * 173.0).sqrt();
+            V::new(e, px, 0.0, 0.0)
+        };
+        let point = with_beams(&[top(150.0), top(-150.0)]);
+        let at = |cut: &str| {
+            Cuts::compile(&card(&format!("6 = maxjetflavor\n200 = ptj\n{cut}\n")), &tt).unwrap()
+        };
+        assert!(at("").pass(&point), "ptj is off on a leg above 20 GeV");
+        assert!(at("300 = htjmin").pass(&point));
+        assert!(!at("300.01 = htjmin").pass(&point));
+    }
+
+    /// The defaults, and any minimum at or below zero with any negative maximum,
+    /// compile no HT cut: the filter is the one a card without the four names
+    /// compiles to.
+    #[test]
+    fn ht_defaults_compile_no_cut() {
+        let jj = legs([21, 21], &[21, 21]);
+        let bare = Cuts::compile(&card(""), &jj).unwrap();
+        assert!(bare.ht.is_none());
+        for off in [
+            "0 = htjmin\n-1 = htjmax\n0 = ihtmin\n-1 = ihtmax\n",
+            "-10 = htjmin\n-0.5 = htjmax\n-3 = ihtmin\n-2 = ihtmax\n",
+        ] {
+            assert_eq!(Cuts::compile(&card(off), &jj).unwrap(), bare, "{off}");
+        }
+        for on in ["1 = htjmin", "0 = htjmax", "1 = ihtmin", "0 = ihtmax"] {
+            assert!(Cuts::compile(&card(&format!("{on}\n")), &jj)
+                .unwrap()
+                .ht
+                .is_some());
+        }
+    }
+
+    /// The four HT names are compiled, not refused; the partial sums `ht2min`..
+    /// `ht4max` still are.
+    #[test]
+    fn ht_minima_and_maxima_are_not_refused() {
+        for on in [
+            "300 = htjmin",
+            "900 = htjmax",
+            "300 = ihtmin",
+            "900 = ihtmax",
+        ] {
+            assert!(
+                detect_unimplemented(&lhc(&format!("{on}\n"))).is_ok(),
+                "{on}"
+            );
+        }
+        for name in ["ht2min", "ht3min", "ht4min", "ht2max", "ht3max", "ht4max"] {
+            assert!(
+                detect_unimplemented(&lhc(&format!("100 = {name}\n"))).is_err(),
+                "{name}"
+            );
+        }
+    }
+
+    /// `√ŝ ≥ Σ p_T`, so the larger HT minimum bounds ŝ, and the bound is reached:
+    /// two jets back to back at `y = 0` with `htj = htjmin` have `ŝ = htjmin²`. A
+    /// minimum with no leg to sum over contributes nothing.
+    #[test]
+    fn ht_minima_bound_shat() {
+        let jj = legs([21, 21], &[21, 21]);
+        let cuts = Cuts::compile(&card("300 = htjmin\n400 = ihtmin\n"), &jj).unwrap();
+        assert_eq!(cuts.shat_min(), 400.0 * 400.0);
+        let tight = Cuts::compile(&card("300 = htjmin\n"), &jj).unwrap();
+        assert_eq!(tight.shat_min(), 300.0 * 300.0);
+        let finals = [along_x(150.0, 0.0), along_minus_x(150.0, 0.0)];
+        assert!(tight.pass(&with_beams(&finals)));
+        assert_eq!((finals[0] + finals[1]).m2(), 300.0 * 300.0);
+
+        let bb = legs([21, 21], &[5, -5]);
+        let only_b = Cuts::compile(&card("300 = htjmin\n400 = ihtmin\n"), &bb).unwrap();
+        assert_eq!(only_b.shat_min(), 400.0 * 400.0);
+        let none = Cuts::compile(&card("300 = htjmin\n400 = ihtmin\n"), &dy_legs()).unwrap();
+        let bare = Cuts::compile(&card(""), &dy_legs()).unwrap();
+        assert_eq!(none.shat_min(), bare.shat_min());
     }
 }

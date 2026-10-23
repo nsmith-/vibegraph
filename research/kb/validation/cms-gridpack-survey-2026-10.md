@@ -243,7 +243,7 @@ Other refusals:
   and the silent drop of a systematics request (now a warning),
   `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
   `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
-  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
+  HT cuts (`ht-cuts-unimplemented`, since closed; their late refusal is
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
