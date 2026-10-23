@@ -42,3 +42,21 @@
     non-floor-bound tail remains, in channel 613 on seed 55.
   - Proposed fix, untested: Neyman allocation, then a floor that scales with
     neval.
+
+## 2026-10-23
+* **M3: 20-seed MadEvent references (item 1) done** (PR #47 comments, 14:34 UTC).
+  SCATTER is **confirmed on both rows**, with look-elsewhere p < 1e-300 (uux)
+  and 4.6e-150 (bbx). Every flagged channel carries 0.0% of σ. The records are
+  in the M3's local refdata-11 candidate bundle; they are not pushed.
+
+  | row | reported (20) | equal-weight (20) | EW − reported |
+  |---|---|---|---|
+  | uux | 7.175795e-7 ± 5.84e-10 | 7.180603e-7 ± 7.14e-10 | +0.067% ± 0.080% |
+  | bbx | 1.686455e-6 ± 1.31e-9 | 1.687758e-6 ± 1.52e-9 | +0.077% ± 0.051% |
+
+  - The manager's reading against vibegraph's 20-seed rungs:
+    - uux, sprint tree: 600k +0.29σ and 1.2M +0.67σ against reported.
+    - bbx, main tree (`784582d` + main, B1), 600k at 1.689996e-6 ± 6.94e-10:
+      +2.39σ against reported, +1.34σ against equal-weight.
+  - Per D1's third amendment the cells stay `info` against MadEvent, since the
+    references' own channels scatter.
