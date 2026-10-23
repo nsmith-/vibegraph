@@ -259,6 +259,8 @@ const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_ll",
+    "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
     "pp_to_llj",
     "pp_to_llj_dyn",

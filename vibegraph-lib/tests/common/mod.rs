@@ -55,18 +55,7 @@ pub const UNDECLARED_ALPHA_S_RUNS: &[&str] = &[
 /// `nn23lo1` coupling alive for them. Each entry is a measurement
 /// ([`awaiting_rebank`]): a rebanked card stops being refused and fails the
 /// gate until its row is removed from this list.
-pub const AWAITING_REBANK_RUNS: &[(&str, &str)] = &[
-    (
-        "pp_to_ll",
-        "banked on pdlabel = nn23lo1 (lhaid 230000), which this crate refuses; \
-         awaiting re-card to pdlabel = lhapdf, lhaid = 247000 and a rebank",
-    ),
-    (
-        "pp_to_ll_qcd0",
-        "banked on pdlabel = nn23lo1 (lhaid 230000), which this crate refuses; \
-         awaiting re-card to pdlabel = lhapdf, lhaid = 247000 and a rebank",
-    ),
-];
+pub const AWAITING_REBANK_RUNS: &[(&str, &str)] = &[];
 
 /// Whether the banked run `name` is one [`AWAITING_REBANK_RUNS`] declares, and
 /// if so prints why it is not compared. The declaration is asserted rather than
