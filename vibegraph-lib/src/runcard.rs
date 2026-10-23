@@ -124,7 +124,6 @@ impl Def {
     }
 }
 
-<<<<<<< HEAD
 /// The parton densities a run card reads ([`RunCard::pdf_choice`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfChoice {
@@ -165,11 +164,10 @@ fn pdlabel_refusal(label: &str) -> String {
          LHAPDF6 grids. Set pdlabel = lhapdf and lhaid to the set's LHAPDF id{hint}."
     )
 }
-=======
+
 /// The proton mass MadGraph gives a proton beam (`lpp = 1`): `banner.py` refuses
 /// a lower beam energy and `genps.f` builds `stot` from beams of this mass.
 const PROTON_BEAM_MASS: f64 = 0.938;
->>>>>>> origin/sprintd-unequal-beams
 
 #[derive(Debug, Error)]
 pub enum RunCardError {
