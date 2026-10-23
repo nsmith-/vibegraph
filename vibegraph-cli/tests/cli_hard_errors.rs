@@ -10,7 +10,6 @@ use std::process::Output;
 
 use common::{fixed_beams, stderr_of, vibegraph};
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::runcard::RunCard;
 
 #[test]
