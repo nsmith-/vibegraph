@@ -6,6 +6,7 @@
 
 * [D1: the run inputs an integrate artifact records (PDF set and param card)](D1.md) - Design, no code: which PDF and param-card fields the integrate artifact gains, how generate checks them, the artifact version step, and the PDF lookup and consent flow.
 * [F1: the PDF from the run card (H2, library half)](F1.md) - RunInputs and artifact version 14, the lhaid → (set, member) resolution, the refusal of every built-in pdlabel, per-file SHA-256 of the loaded set, and the four-tier lookup with an injected fetch.
+* [F2: the PDF from the run card (H2, CLI half, migration, CI fix)](F2.md) - Remove --pdf-set/--pdf-dir from integrate, migrate every test and script, write the <vibegraphInputs> LHE header entry, carry out the nn23lo1 migration, and fix the banked-layer failure on lhaid 230000.
 
 ## Session Report
 
