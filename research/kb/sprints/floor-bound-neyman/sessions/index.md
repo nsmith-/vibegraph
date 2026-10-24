@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [P1: does Neyman allocation let budget reach the floor-bound channels?](P1.md) - Add an allocation knob to probe_2to6_budget_ladder, then run bbx_to_ccx_emmm_qcd0 at 600k and 1.2M over 20 seeds under ByAlpha and Neyman on one tree, and read the rungs as paired per-seed differences.
+
+## Session Report
+
+* [P1 report: Neyman's ladder passes only through its biased iteration weights](P1-report.md) - On bbx_to_ccx_emmm_qcd0, 20 paired seeds at 600k and 1.2M, Neyman reads seed sd 2.71e-9 → 1.76e-9 (ratio 0.65) with χ²/dof 1.14 / 0.76, against ByAlpha's 2.69e-9 → 3.34e-9. But it sits 1.7e-9 and 2.4e-9 pb below ByAlpha (paired t −2.4, −2.8), and recombining its own iterations as a plain mean removes both the shift (t −0.3) and the gain (ratio 1.18, χ²/dof 1.51 / 1.67). The point-weighted combine, whose weights Neyman sets from earlier iterations, down-weights tail iterations: variance bought with bias. Neyman moves no budget above the floors, and 551–575 of 615 channels still draw identical points at both rungs.
