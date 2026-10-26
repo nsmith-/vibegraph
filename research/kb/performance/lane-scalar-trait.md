@@ -171,16 +171,40 @@ map's comparisons in `diagram_channel.rs` are per point, so they become
 ## Equality and `num_complex`
 
 [code] `C<F>` is `num_complex::Complex<F>`. Its arithmetic needs `F: Num`, and
-`Num` requires `PartialEq`. Its `norm`, `arg`, `exp` and `sqrt` need `Float`,
-but the generic code calls `.norm()` only in tests, at `f64`. Two ways:
+`Num` requires `PartialEq`, so keeping `num_complex` keeps `==` on `F`. Two
+ways:
 
-- **Keep `Num` (recommended for the first step).** `==` survives on `F`. On
-  `LaneField` it becomes "uniform or panic" (option 2, for equality only). The
-  equality sites are mostly checks against card constants (`mass == 0`), which
-  are uniform by construction.
-- **Own complex type.** It removes `==` entirely, at the cost of replacing
-  every `Complex` operation the evaluator uses, which is many. Revisit only if
-  the equality tripwire ever fires.
+- **Keep `Num`.** `==` survives on `F`. On `LaneField` it becomes "uniform or
+  panic" (option 2, for equality only). Most equality sites compare against
+  card constants (`mass == 0`), which are uniform by construction.
+- **Own complex type.** `F` then needs no `PartialEq`, and the remaining
+  equality sites become `eq_lanes` with `select` or `uniform()`.
+
+**The lift, measured.** [measured] In a throwaway worktree at `d57fbb1`,
+`C<F>` was replaced by a bare `struct Cx<F> { re, im }` and
+`cargo check -p vibegraph-lib --tests` was run. It reports 936 errors, almost
+all of them the struct lacking an operation, so they measure the API surface,
+not call sites to rewrite:
+
+- **Methods:** `new` 90, `norm` 58, `zero` 33, `norm_sqr` 16, `one` 14,
+  `conj` 10, `i` 9, `scale` 6, `is_zero` 1.
+- **Operators:** `C ± C` 140, unary `−` 58, and mixed operands with `F`,
+  `WaveformSlot` and the Lorentz types (≈ 40). Also `Sum`, `Display`,
+  `LowerExp`, `From<F>`, and `==` on `Cx<f64>` (18, in tests).
+- **Files:** `helas/vertex.rs` 348, `helas/repr/lorentz.rs` 266,
+  `helas/eval/run.rs` 102, `helas/eval/kernel.rs` 75, the rest ≤ 35.
+- **The `f64` boundary:** 10 files use `Complex64` directly, notably the UFO
+  layer (`ufo/expr.rs`, `ufo/mod.rs`), which is `f64`-only and can keep
+  `num_complex` with a conversion where couplings enter the evaluator.
+
+[inferred] Mirroring `num_complex`'s names keeps call sites unchanged. The
+work is one module of operator impls (macro-generated: `C∘C`, `C∘F`, `F∘C`,
+the assign forms, `Neg`, `Sum`, the formatting traits), roughly 300–400
+lines, plus the `Complex64` conversions. The risk is bit identity: `*` and `/`
+must copy `num_complex`'s formulas exactly, and `norm` is `re.hypot(im)`, not
+`norm_sqr().sqrt()` (`num-complex-0.4.6/src/lib.rs:217`). A test pins every
+operation bit-for-bit against `num_complex` at `f64` on random and edge-case
+inputs (zeros, infinities, subnormals). One PR, inside stage B2.
 
 ## Jet clustering, from FlashJet
 
@@ -210,9 +234,26 @@ What that means for our clustering, 2–8 partons per point:
 - [inferred] **Fixed slots and an alive mask** replace the left shift of
   `lines` (`kt.rs:776-779`). They must keep the visit order; a test has to pin
   that, because the code tests positions (`iwin < 3`).
-- **Per-lane graph narrowing** (`kt.rs:688-698`) has no FlashJet counterpart.
-  It is either a per-lane bitset (an integer lane type) or a scalar fallback
-  when `!(winner == winner[0]).all()`. This is open (question 3).
+- **Per-lane graph narrowing** has no FlashJet counterpart. [code] Like
+  MadGraph's `cluster.f`, a pair is admissible only if some diagram of the
+  process still contains a line with that leg set. `graphs`, the diagrams
+  consistent with every merge so far, is narrowed after each winning merge
+  (`kt.rs:684-694`). The narrowing is an intersection of sorted lists of
+  diagram indices (`MergeTable::narrow`, `graph.rs:159`), and the table
+  `id_cl` maps a leg set to its diagrams (`graph.rs:96-98`). Lanes that merged
+  different pairs hold different lists, so the next step's admissibility
+  differs per lane. Two ways:
+  - **A per-lane bitset (recommended).** `graphs` becomes `⌈G/64⌉` `u64`
+    words per lane, with `G` the process's diagram count, and `id_cl` a bitset
+    per leg set. Narrowing is a word-wise AND, admissibility is "any word
+    non-zero", and both are lane-wise integer operations with no branch. It
+    needs an integer lane type beside `Index`.
+  - **A scalar fallback on disagreement.** Run the batch in lanes while every
+    lane picks the same winner, and unpack to scalar on the first
+    disagreement. [inferred] The winner depends on each point's kinematics, so
+    in a batch of random points the lanes disagree at the first step almost
+    always once `n ≥ 4`. The fallback would then be the common path, and the
+    lanes would buy little.
 - **FMA.** ΔR² and the `kt` measures must use `mul_add_fast` consistently at
   every site, or lanes and scalar diverge on ties.
 
@@ -254,7 +295,7 @@ What that means for our clustering, 2–8 partons per point:
 - **A. Option 3 in one step.** Rewrite `Real` and classify the 95 comparison
   sites in one PR. It is byte-identical at `f64` and gated by the existing lane
   test. It is a large diff, mostly mechanical.
-- **B. Two steps (recommended).**
+- **B. Two steps (chosen by the user, 2026-10-26).**
   1. Add the mask vocabulary as a companion trait implemented for `f64` and
      `LaneField`, and add the debug "uniform or panic" check to `LaneField`'s
      `PartialOrd`, `PartialEq` and `ToPrimitive`. This is small, catches misuse
@@ -268,11 +309,10 @@ through the trait's scalar parameter.
 
 ## Open questions
 
-1. Staging: A or B?
-2. Equality: keep `Num` (with `==` uniform-or-panic on lanes) for now, or own
-   the complex type?
-3. Clustering's per-lane graph narrowing: a per-lane bitset or a scalar
-   fallback on disagreement?
+1. Staging: **B**, decided 2026-10-26.
+2. Equality: keep `Num`, or own the complex type (measured lift above)?
+3. Clustering's per-lane graph narrowing: a per-lane bitset (recommended) or
+   a scalar fallback on disagreement?
 4. The index lane: `[u32; N]` (gather-friendly), or `usize` lanes?
 5. `Mask::uniform` in release builds: lane 0's answer (no cost), or keep the
    check (one reduction per fork)?
