@@ -300,7 +300,8 @@ implemented and tested at `f64` first. Windows are written over `F` in the
 maps, which are already generic. From the lane-primitives design
 ([real-has-no-lane-masks-or-bin-search](../backlog/performance/real-has-no-lane-masks-or-bin-search.md)),
 a window needs lane-wise `min`, `max` and select, plus a select between
-intervals for a union. It needs no bin search. That design owns the interface.
+intervals for a union. It needs no bin search. That design owns the interface; its draft is
+[lane-scalar-trait](../performance/lane-scalar-trait.md).
 
 **Byte identity.** The seam refactor, the roles and the trailing-stage list
 move no draw and no sum. They close on byte identity:
