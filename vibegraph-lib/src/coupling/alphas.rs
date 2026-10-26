@@ -21,10 +21,12 @@
 //!
 //! # Where the inputs come from
 //!
-//! `αs(M_Z)` and the loop order are *not* read from the parameter card in
-//! general. `Source/setrun.f` recovers a candidate from the model's strong
-//! coupling, and then, whenever a beam carries a PDF, `Source/PDF/pdfwrap.f`
-//! **overrides** it with the value tabulated for the PDF label. See
+//! Without a PDF on either beam, `αs(M_Z)` comes from the parameter card:
+//! `Source/setrun.f` recovers it from the model's strong coupling. With one,
+//! the coupling is the PDF set's own tabulation, since every proton-beam card
+//! this crate accepts says `pdlabel = lhapdf` (MadGraph's built-in labels, for
+//! which `Source/PDF/pdfwrap.f` would impose a tabulated `αs(M_Z)` of its own,
+//! are refused by [`RunCard::pdf_choice`]). See
 //! [`RunningAlphaS::from_run_card`].
 //!
 //! # Below the perturbative solve
@@ -61,7 +63,7 @@ use thiserror::Error;
 
 use crate::pdf::alphas::{GridAlphaS, GridAlphaSError};
 use crate::pdf::grid::AlphaSInfo;
-use crate::runcard::RunCard;
+use crate::runcard::{PdLabelRefused, PdfChoice, RunCard};
 
 /// Charm threshold used for `nf = 4 → 3` switching (`COMMON/QMASS/`, `CMASS`).
 pub const CMASS: f64 = 1.42;
@@ -128,12 +130,8 @@ pub enum AlphaSError {
          the grid's own running, not the beta-function solve implemented here"
     )]
     LhapdfRunning { lhaid: i64 },
-    #[error(
-        "run card selects pdlabel = '{label}', for which pdfwrap.f names no alpha_s(M_Z): \
-         MadGraph falls back to 0.118 at two loops for any unrecognized label, which is a \
-         plausible-looking value for an arbitrary set and is not adopted here"
-    )]
-    UnknownPdLabel { label: String },
+    #[error(transparent)]
+    PdLabel(#[from] PdLabelRefused),
     #[error(
         "run card selects pdlabel = 'lhapdf' (lhaid {lhaid}), so alpha_s belongs to the PDF set \
          the beams read, but no set's alpha_s metadata was supplied"
@@ -232,20 +230,14 @@ impl RunningAlphaS {
     /// Mirrors `Source/setrun.f`: with no PDF on either beam the parameter card
     /// supplies `αs(M_Z)` and the order is forced to two loops (the card's
     /// `pdlabel` is ignored entirely — `setrun.f` overwrites it with `none`).
-    /// As soon as either beam carries a PDF, `Source/PDF/pdfwrap.f` replaces the
-    /// parameter-card value with the one tabulated for the PDF label, and may
-    /// change the order with it.
-    ///
-    /// Note that the override is silent in MadGraph and worth roughly 10% on a
-    /// QCD cross section: a hadronic run whose card says `aS = 0.118` while
-    /// `pdlabel = nn23lo1` runs at `0.130`.
+    /// With a PDF, the coupling is the set's own
+    /// ([`AlphaSError::LhapdfRunning`]) under `pdlabel = lhapdf`, and every
+    /// other label is refused ([`RunCard::pdf_choice`]).
     pub fn from_run_card(card: &RunCard, param_card_as: f64) -> Result<Self, AlphaSError> {
-        let param_card_asmz = asmz_from_param_card(param_card_as);
-        if card.lpp1 == 0 && card.lpp2 == 0 {
-            return RunningAlphaS::new(param_card_asmz, NLoop::Two);
+        match card.pdf_choice()? {
+            PdfChoice::None => RunningAlphaS::new(asmz_from_param_card(param_card_as), NLoop::Two),
+            PdfChoice::Lhapdf { lhaid } => Err(AlphaSError::LhapdfRunning { lhaid }),
         }
-        let (asmz, nloop) = pdf_label_alpha_s(&card.pdlabel, card.lhaid, param_card_asmz)?;
-        RunningAlphaS::new(asmz, nloop)
     }
 }
 
@@ -266,32 +258,6 @@ pub fn asmz_from_param_card(a_s: f64) -> f64 {
     const PI: f64 = 3.141592653589793;
     let g = (4.0 * PI * a_s).sqrt();
     g * g / (16.0 * 1.0f64.atan())
-}
-
-/// `Source/PDF/pdfwrap.f`: the `(asmz, nloop)` a PDF label imposes once a beam
-/// carries a PDF. `param_card_asmz` is returned for the labels that leave the
-/// value alone.
-///
-/// Labels the Fortran does not name reach its `else` branch, which sets `0.118`
-/// at two loops so that an arbitrary set added for a lepton collider does not
-/// crash the run. That is a guess, not a property of the set, so it is reported
-/// as [`AlphaSError::UnknownPdLabel`] instead of being adopted.
-fn pdf_label_alpha_s(
-    label: &str,
-    lhaid: i64,
-    param_card_asmz: f64,
-) -> Result<(f64, NLoop), AlphaSError> {
-    match label {
-        "cteq6_m" | "cteq6_d" | "cteq6_l" => Ok((0.118, NLoop::Two)),
-        "cteq6l1" => Ok((0.130, NLoop::One)),
-        "nn23lo" | "nn23nlo" => Ok((0.119, NLoop::Two)),
-        "nn23lo1" => Ok((0.130, NLoop::Two)),
-        "eva" | "iww" | "none" => Ok((param_card_asmz, NLoop::Two)),
-        "lhapdf" => Err(AlphaSError::LhapdfRunning { lhaid }),
-        other => Err(AlphaSError::UnknownPdLabel {
-            label: other.to_string(),
-        }),
-    }
 }
 
 /// One `nloop`-order evolution step: given `a_in` at some scale and the
@@ -555,18 +521,21 @@ mod tests {
         assert_eq!(asmz_from_param_card(0.118), 0.118);
     }
 
-    /// At PDF beams the running coupling starts from the PDF set's `αs(M_Z)`, not
-    /// the parameter card's. Every banked MadGraph run has a parameter card already
-    /// holding the PDF's value, so no banked event can see the override; this is
-    /// the test that would fail if it were dropped.
+    /// A built-in label on proton beams is refused rather than mapped to the
+    /// `αs(M_Z)` `pdfwrap.f` tabulates for it, whatever the parameter card says;
+    /// without a PDF the same label is inert and the parameter card's value
+    /// stands.
     #[test]
-    fn a_pdf_beam_overrides_the_param_card_alpha_s() {
-        let hadronic = card("1 = lpp1\n1 = lpp2\nnn23lo1 = pdlabel\n");
-        let running = RunningAlphaS::from_run_card(&hadronic, 0.118).unwrap();
-        assert_eq!(running.asmz(), 0.130);
-        assert_eq!(running.nloop(), NLoop::Two);
-
-        // The same parameter card without a PDF keeps its own value.
+    fn a_built_in_label_on_proton_beams_is_refused() {
+        for label in ["nn23lo1", "cteq6l1", "ct14lo"] {
+            let hadronic = card(&format!("1 = lpp1\n1 = lpp2\n{label} = pdlabel\n"));
+            assert_eq!(
+                RunningAlphaS::from_run_card(&hadronic, 0.118),
+                Err(AlphaSError::PdLabel(PdLabelRefused {
+                    label: label.to_string()
+                }))
+            );
+        }
         let partonic = card("0 = lpp1\n0 = lpp2\nnn23lo1 = pdlabel\n");
         let running = RunningAlphaS::from_run_card(&partonic, 0.118).unwrap();
         assert_eq!(running.asmz(), 0.118);
@@ -586,30 +555,11 @@ mod tests {
     }
 
     #[test]
-    fn cteq6l1_also_drops_the_running_to_one_loop() {
-        let c = card("1 = lpp1\n1 = lpp2\ncteq6l1 = pdlabel\n");
-        let running = RunningAlphaS::from_run_card(&c, 0.118).unwrap();
-        assert_eq!(running.asmz(), 0.130);
-        assert_eq!(running.nloop(), NLoop::One);
-    }
-
-    #[test]
     fn lhapdf_is_refused_rather_than_run_through_this_rge() {
         let c = card("1 = lpp1\n1 = lpp2\nlhapdf = pdlabel\n230000 = lhaid\n");
         assert_eq!(
             RunningAlphaS::from_run_card(&c, 0.118),
             Err(AlphaSError::LhapdfRunning { lhaid: 230000 })
-        );
-    }
-
-    #[test]
-    fn an_unnamed_pdf_label_is_refused_rather_than_defaulted() {
-        let c = card("1 = lpp1\n1 = lpp2\nct14lo = pdlabel\n");
-        assert_eq!(
-            RunningAlphaS::from_run_card(&c, 0.118),
-            Err(AlphaSError::UnknownPdLabel {
-                label: "ct14lo".to_string()
-            })
         );
     }
 
@@ -641,20 +591,17 @@ mod tests {
         assert_eq!(source.grid().unwrap().knots(), 3);
     }
 
-    /// Every other label keeps the beta-function solve, and supplying a set does
-    /// not divert it: the run card decides the source, not what the caller has
-    /// loaded.
+    /// A built-in label is refused with a set at hand too: the run card
+    /// decides the source, not what the caller has loaded.
     #[test]
-    fn a_named_label_keeps_the_beta_function_solve_even_with_a_set_at_hand() {
+    fn a_built_in_label_is_refused_even_with_a_set_at_hand() {
         let c = card("1 = lpp1\n1 = lpp2\nnn23lo1 = pdlabel\n");
         let info = grid_info();
         for grid in [None, Some(&info)] {
-            let source = AlphaSSource::from_run_card(&c, 0.118, grid).unwrap();
-            assert_eq!(source.running().unwrap().asmz(), 0.130);
-            assert_eq!(
-                source.eval(ZMASS),
-                RunningAlphaS::new(0.130, NLoop::Two).unwrap().eval(ZMASS)
-            );
+            assert!(matches!(
+                AlphaSSource::from_run_card(&c, 0.118, grid),
+                Err(AlphaSError::PdLabel(_))
+            ));
         }
     }
 

@@ -22,4 +22,6 @@ output pp_to_ll -nojpeg
 launch
   set ebeam1 6500
   set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
   done

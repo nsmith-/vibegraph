@@ -29,8 +29,9 @@ use crate::ufo::identity::digest_bytes;
 use super::store::{self, Fetch, FetchError, StoreError};
 use super::AssetKind;
 
-/// The PDF set used when a run does not name one: MG5's LO default `nn23lo1`,
-/// LHAPDF ID 247000.
+/// The PDF set a run card that does not name one reads: LHAPDF id 247000,
+/// the run-card default `lhaid`, and the set MadGraph's built-in `nn23lo1`
+/// parameterisation is fitted to.
 pub const DEFAULT_PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
 
 /// One set's download pin.
@@ -48,6 +49,11 @@ pub struct PinnedPdfSet {
     /// Archive size, so a caller can tell a user what a fetch will cost before
     /// starting it.
     pub archive_bytes: u64,
+    /// The set's `SetIndex` and `NumMembers`: its LHAPDF ids are
+    /// `set_index .. set_index + num_members`, so an id in that range resolves
+    /// to this set without reading `pdfsets.index`.
+    pub set_index: i64,
+    pub num_members: u32,
 }
 
 /// Every set this build can fetch by name.
@@ -56,6 +62,8 @@ pub const PINNED_PDF_SETS: &[PinnedPdfSet] = &[PinnedPdfSet {
     url: "https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz",
     sha256: "60d3c1df1c31e5840f91f4217163ae30a256b9291a5adc894882e86607ef5d63",
     archive_bytes: 27_625_668,
+    set_index: 247000,
+    num_members: 101,
 }];
 
 /// The pin for `name`, or `None` if this build has none.
@@ -165,9 +173,11 @@ fn is_current(cache_root: &Path, name: &str, expected_sha256: &str) -> bool {
     dir.is_dir() && store::read_pin(&dir).as_deref() == Some(expected_sha256)
 }
 
-/// Whether [`ensure_pdf_set`] would return without fetching anything.
+/// Whether the cache holds `name` as a lookup may use it without fetching: at
+/// this build's pin for a pinned set, and for any other set with the sidecar
+/// a completed extraction leaves.
 pub fn pdf_set_is_cached(cache_root: &Path, name: &str) -> bool {
-    pinned_pdf_set(name).is_some_and(|pin| is_current(cache_root, name, pin.sha256))
+    super::lhapdf::cached_set_is_current(cache_root, name)
 }
 
 /// Make `name` available under `cache_root`, fetching it only if the cache does
@@ -281,11 +291,36 @@ mod tests {
         }
     }
 
+    /// The default set is pinned with the id range its `.info` states
+    /// (`SetIndex: 247000`, `NumMembers: 101`), so the run-card default `lhaid`
+    /// needs no index.
     #[test]
     fn the_default_set_is_pinned() {
         let pin = pinned_pdf_set(DEFAULT_PDF_SET).expect("default set must have a download pin");
         assert_eq!(pin.name, DEFAULT_PDF_SET);
         assert!(pin.archive_bytes > 0);
+        assert_eq!((pin.set_index, pin.num_members), (247000, 101));
+        assert_eq!(crate::runcard::RunCard::default().lhaid, pin.set_index);
+    }
+
+    /// An unpinned set counts as cached once its sidecar exists, and not
+    /// before; a pinned one only at its pin.
+    #[test]
+    fn cached_means_at_the_pin_or_completely_extracted() {
+        let cache_root = scratch("is-cached");
+        let dir = AssetKind::Pdf.entry_dir(&cache_root, "Unpinned");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!pdf_set_is_cached(&cache_root, "Unpinned"));
+        std::fs::write(dir.join(store::PIN_FILENAME), "abc").unwrap();
+        assert!(pdf_set_is_cached(&cache_root, "Unpinned"));
+
+        let pin = pinned_pdf_set(DEFAULT_PDF_SET).unwrap();
+        let dir = AssetKind::Pdf.entry_dir(&cache_root, DEFAULT_PDF_SET);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(store::PIN_FILENAME), "abc").unwrap();
+        assert!(!pdf_set_is_cached(&cache_root, DEFAULT_PDF_SET));
+        std::fs::write(dir.join(store::PIN_FILENAME), pin.sha256).unwrap();
+        assert!(pdf_set_is_cached(&cache_root, DEFAULT_PDF_SET));
     }
 
     /// Every pin's checksum is a well-formed lowercase-hex SHA-256, and every

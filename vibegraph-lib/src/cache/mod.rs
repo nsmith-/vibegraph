@@ -4,12 +4,13 @@
 //! Both asset kinds share one layout, `<cache_root>/{ufo,pdf}/<name>/`
 //! ([`AssetKind::entry_dir`]). A UFO model resolves through an explicit path,
 //! an environment variable, the cache, then a dev fallback
-//! ([`resolve::locate`]); a PDF set through an explicit path, the LHAPDF data
-//! path, then the cache ([`resolve::locate_pdf_set`]).
+//! ([`resolve::locate`]); a PDF set, and LHAPDF's `pdfsets.index`, through the
+//! LHAPDF data path, CVMFS, the cache, then a download ([`lhapdf`]).
 //!
-//! Only PDF sets are fetched ([`store`]), each pinned by the SHA-256 of the
-//! archive it was fetched as. A UFO model is resolved and never fetched, so one
-//! in the cache was placed there by hand. No download URL can be derived from a
+//! Only PDF sets and the index are fetched ([`store`], [`lhapdf`]). A set is
+//! cached beside the SHA-256 of the archive it was fetched as, and a set this
+//! build pins ([`pinned`]) must match its pin. A UFO model is resolved and
+//! never fetched, so one in the cache was placed there by hand. No download URL can be derived from a
 //! model name: UFO models are published on the FeynRules wiki as files attached
 //! by hand, `/raw-attachment/wiki/<page>/<file>`, where the page is not the
 //! model name and the file follows no rule. The 2HDM page alone carries
@@ -21,13 +22,16 @@
 //! semantically identical tarball is not taken for a different model.
 //!
 //! Network I/O is absent from this module: [`store::Fetch`] is the seam a
-//! caller supplies bytes through, so the interaction policy around *when* to
-//! fetch (prompting, a `--no-network` refusal) lives with the caller, not here.
+//! caller supplies bytes through, and [`lhapdf::FetchFactory`] the one it is
+//! asked for a fetch through, so the interaction policy around *when* to fetch
+//! (prompting, a `--no-network` refusal) lives with the caller, not here.
 //!
 //! [`pinned`] adds the other half of that seam: which URL a known set name
 //! downloads from and what its archive must hash to, compiled in rather than
 //! configured.
 
+pub mod index;
+pub mod lhapdf;
 pub mod pinned;
 pub mod resolve;
 pub mod store;

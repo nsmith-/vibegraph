@@ -266,15 +266,21 @@ card becomes `pdlabel = lhapdf`, `lhaid = 247000`
   This list was not run here.
   - `cli_decay.rs:475`: only a comment changes, since `PDFSUP` stays 247000.
 - **Validation cards.**
-  - `validation/madgraph/onshell_uu_run_card.dat` is the only proton
-    `nn23lo1` card a test reads. It is the `uu_tt` row of `cli_onshell_veto`,
-    which is reported, not gated, and is also read by `gen_onshell_veto.sh`
-    and `bank_seeded_sigma.sh:416`.
-
-    Plan: re-card it to `lhapdf`/247000 and file a banking request to
-    regenerate the MadGraph row. Until that lands, the test overrides the two
-    lines in the copy it writes (`cli_onshell_veto.rs:90-120`). The row stays
-    informational, with the reason recorded.
+  - `validation/madgraph/onshell_uu_run_card.dat` is the only committed
+    proton `nn23lo1` card, but no run reads it on proton beams: every row
+    that uses it (`uu_tt`, `uu_tt_mg371` and `uu_full` in
+    `gen_onshell_veto.sh`, `cli_onshell_veto` and `bank_seeded_sigma.sh:416`)
+    overrides `lpp1 = lpp2 = 0` at √s = 500, so the label is inert, nothing
+    is refused, and neither the card nor those MadGraph rows need re-carding.
+  - Two banked runs are proton `nn23lo1`/230000, and gated tests read them:
+    `pp_to_ll` and `pp_to_ll_qcd0` (their own `Events/run_01`, not the
+    `dy13_*` cards their σ and sample cells use). `validate_alphas` reproduces
+    their `AQCDUP` and `validate_scales` replays their `AQCDUP` from the
+    computed scale, both through the `nn23lo1` αs table that C4 removes.
+    Decided (user, 2026-10-23): re-card both to `lhapdf`/247000 and rebank
+    them. Until then both gates report them as awaiting that rebank
+    (`AWAITING_REBANK_RUNS` in `vibegraph-lib/tests/common/mod.rs`); their
+    scales are still replayed, since no density or αs enters that.
   - These cards are fixed-energy or decays, read no density, and are not
     refused, so they stay as they are: `onshell_ee_run_card.dat` (`lpp = 0`),
     and `onshell_t_bev_run_card.dat`, `decay_h4l_cuts_run_card.dat`,
@@ -295,19 +301,24 @@ card becomes `pdlabel = lhapdf`, `lhaid = 247000`
   - `run-card/run-card-parser-and-defaults.md`: the defaults list.
   - `events/lhef-record-conventions.md:36`.
 
-**No gate's comparison changes, but not for the reason the log gives.** The
-log says the banked references used MadGraph's internal `nn23lo1` grid. They
-did not. Every banked proton σ and sample row was carded at `pdlabel = lhapdf`,
+**No σ or sample comparison changes; two αs comparisons are held back.** The
+log says the banked references used MadGraph's internal `nn23lo1` grid. For
+the σ and sample rows they did not. Every banked proton σ and sample row was carded at `pdlabel = lhapdf`,
 `lhaid = 247000` on the MadGraph side ([MadGraph oracle
 pinning](../validation/madgraph-oracle-pinning.md); `manifest.toml:151`: the
 four `nn23lo1` rows were re-carded at cut 5), and vibegraph reads those same
 cards. So both sides were already LHAPDF 247000 with the grid's αs, and no
-gated comparison changes:
+σ or sample comparison changes:
 
 - the default-card change touches only cards that omit `pdlabel`, and no
   gated MadGraph card does;
-- the only proton `nn23lo1` comparison is the ungated `uu_tt` row above;
-- fixed-energy and decay rows are untouched.
+- the only proton `nn23lo1` comparisons are the `AQCDUP` cells of
+  `pp_to_ll` and `pp_to_ll_qcd0` above, held back until the rebank (the
+  `uu_tt` row runs on fixed-energy beams);
+- fixed-energy and decay rows are untouched, though a MadGraph-written
+  fixed-energy card (`none` per beam, `lhaid = 230000`, no `pdlabel` line)
+  must keep its `PDFSUP` at MadGraph's 247000 under the new default
+  (`RunCard::pdfsup`).
 
 ## 5. Choices (decided 2026-10-21)
 

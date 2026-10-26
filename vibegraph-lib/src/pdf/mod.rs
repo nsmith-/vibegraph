@@ -26,8 +26,12 @@ pub mod alphas;
 pub(crate) mod extrap;
 pub mod grid;
 pub(crate) mod interp;
+pub mod select;
 
 use std::path::{Path, PathBuf};
+
+use crate::artifact::FileDigest;
+use crate::ufo::identity::digest_bytes;
 
 use extrap::{Continuation, Extrapolate2D, PdfPointError};
 use grid::{GridError, SetInfo, SubGrid};
@@ -77,6 +81,24 @@ impl SubGrid {
     }
 }
 
+/// Read `path` once, returning its text for a parser and the SHA-256 of the
+/// same bytes, so that what is recorded of a file is what was parsed from it.
+fn read_hashed(path: &Path) -> Result<(String, FileDigest), GridError> {
+    let io = |source| GridError::Io {
+        path: path.display().to_string(),
+        source,
+    };
+    let bytes = std::fs::read(path).map_err(io)?;
+    let sha256 = digest_bytes(&bytes);
+    let text = String::from_utf8(bytes)
+        .map_err(|e| io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok((text, FileDigest { name, sha256 }))
+}
+
 /// A loaded LHAPDF6 PDF set: `.info` metadata plus the directory members are
 /// loaded from.
 #[derive(Debug)]
@@ -84,6 +106,20 @@ pub struct PdfSet {
     pub info: SetInfo,
     dir: PathBuf,
     name: String,
+    /// The `.info` file as it was parsed.
+    info_file: FileDigest,
+}
+
+impl SetInfo {
+    /// `SetIndex`, the LHAPDF id of member 0, if the `.info` gives one.
+    pub fn set_index(&self) -> Option<i64> {
+        self.set_index
+    }
+
+    /// `NumMembers`.
+    pub fn num_members(&self) -> u32 {
+        self.num_members
+    }
 }
 
 impl PdfSet {
@@ -91,7 +127,8 @@ impl PdfSet {
     /// members are loaded lazily via [`PdfSet::member`].
     pub fn load(dir: &Path, name: &str) -> Result<Self, GridError> {
         let info_path = dir.join(format!("{name}.info"));
-        let info = grid::parse_info_file(&info_path)?;
+        let (text, info_file) = read_hashed(&info_path)?;
+        let info = grid::parse_info(&text, &info_path.display().to_string())?;
         tracing::info!("PDF set {name} ({} members)", info.num_members);
         tracing::debug!(
             x_min = info.x_min,
@@ -106,7 +143,23 @@ impl PdfSet {
             info,
             dir: dir.to_path_buf(),
             name: name.to_owned(),
+            info_file,
         })
+    }
+
+    /// The set's name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The directory the set was loaded from.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// The `.info` file's name and the SHA-256 of the bytes parsed from it.
+    pub fn info_file(&self) -> &FileDigest {
+        &self.info_file
     }
 
     /// Load member `id`'s subgrids from `<dir>/<name>_{id:04}.dat`.
@@ -119,7 +172,8 @@ impl PdfSet {
             });
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
-        let subgrids = grid::parse_member_dat(&dat_path)?;
+        let (text, file) = read_hashed(&dat_path)?;
+        let subgrids = grid::parse_member_dat(&text, &dat_path.display().to_string())?;
         tracing::info!("PDF member {id} of {} loaded", self.name);
         tracing::debug!(
             subgrids = subgrids.len(),
@@ -130,7 +184,10 @@ impl PdfSet {
             force_positive = self.info.force_positive,
             "PDF interpolation setup"
         );
-        Ok(PdfMember::from_subgrids(subgrids).with_force_positive(self.info.force_positive))
+        let mut member =
+            PdfMember::from_subgrids(subgrids).with_force_positive(self.info.force_positive);
+        member.file = Some(file);
+        Ok(member)
     }
 }
 
@@ -143,6 +200,8 @@ pub struct PdfMember {
     interp: LogBicubic,
     extrap: Continuation,
     force_positive: i32,
+    /// The `.dat` file the member was parsed from, if it came from one.
+    file: Option<FileDigest>,
 }
 
 impl PdfMember {
@@ -157,7 +216,14 @@ impl PdfMember {
             interp,
             extrap: Continuation,
             force_positive: 0,
+            file: None,
         }
+    }
+
+    /// The `.dat` file's name and the SHA-256 of the bytes parsed from it;
+    /// `None` for a member built in memory.
+    pub fn file(&self) -> Option<&FileDigest> {
+        self.file.as_ref()
     }
 
     /// The parsed subgrids, in file order.
@@ -429,6 +495,42 @@ mod tests {
         let dir = std::env::temp_dir().join("vibegraph_pdf_test_missing_set");
         let err = PdfSet::load(&dir, "NoSuchSet").unwrap_err();
         assert!(matches!(err, GridError::Io { .. }), "{err:?}");
+    }
+
+    /// The digests a loaded set carries are the SHA-256 of the files' bytes as
+    /// they are on disk, and a byte that changes no parsed value still
+    /// changes the member's digest.
+    #[test]
+    fn a_loaded_set_records_the_digest_of_the_bytes_it_parsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = "SetDesc: \"test\"\nSetIndex: 900000\nFormat: lhagrid1\nNumMembers: 1\n\
+Particle: 2212\nFlavors: [21]\nOrderQCD: 0\nErrorType: none\nXMin: 0.01\nXMax: 1\nQMin: 1\n\
+QMax: 100\nAlphaS_MZ: 0.118\nAlphaS_OrderQCD: 0\nAlphaS_Type: ipol\nAlphaS_Qs: [1.0]\n\
+AlphaS_Vals: [0.5]\nAlphaS_Lambda4: 0.3\nAlphaS_Lambda5: 0.2\n";
+        let dat = "PdfType: central\nFormat: lhagrid1\n---\n0.01 1\n1 100\n21\n1\n2\n3\n4\n---\n";
+        std::fs::write(dir.path().join("T.info"), info).unwrap();
+        std::fs::write(dir.path().join("T_0000.dat"), dat).unwrap();
+
+        let set = PdfSet::load(dir.path(), "T").unwrap();
+        assert_eq!(set.info_file().name, "T.info");
+        assert_eq!(set.info_file().sha256, digest_bytes(info.as_bytes()));
+        assert_eq!(set.info.set_index(), Some(900000));
+        let member = set.member(0).unwrap();
+        let file = member.file().unwrap();
+        assert_eq!(file.name, "T_0000.dat");
+        assert_eq!(file.sha256, digest_bytes(dat.as_bytes()));
+
+        let commented = format!("# a comment\n{dat}");
+        std::fs::write(dir.path().join("T_0000.dat"), &commented).unwrap();
+        let again = set.member(0).unwrap();
+        assert_eq!(again.subgrids(), member.subgrids());
+        assert_eq!(
+            again.file().unwrap().sha256,
+            digest_bytes(commented.as_bytes())
+        );
+        assert!(PdfMember::from_subgrids(member.subgrids().to_vec())
+            .file()
+            .is_none());
     }
 
     #[test]

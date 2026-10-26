@@ -136,6 +136,7 @@ const CLOSED_FORM_RUNS: &[(&str, i64)] = &[("gg_to_gg_cg", 3)];
 
 /// Every run whose scales come out of the clustering, replayed event by event.
 const CLUSTERED_RUNS: &[&str] = &[
+    "bbx_to_tapta_ckm_no_b_mass",
     "ddx_to_epemg",
     "ee_to_ee",
     "ee_to_ee_nsz",
@@ -171,8 +172,10 @@ const CLUSTERED_RUNS: &[&str] = &[
     "p3r3_to_p3r3_toy_epsilon",
     "p3r3_to_p3r3_toy_sextet",
     "pp_to_bb",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
@@ -180,6 +183,7 @@ const CLUSTERED_RUNS: &[&str] = &[
     "pp_to_llj_dyn",
     "qqx_to_o8o8_toy_dcolor",
     "tata_to_ttx_tensor4f",
+    "ubx_to_epve_ckm_no_b_mass",
     "uux_to_epemg",
     "uux_to_mumu",
     "uux_to_ttx_4f",
@@ -257,8 +261,12 @@ const DECLINED_RUNS: &[(&str, Declined)] = &[
 const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb",
     "pp_to_bb_fixed",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
+    "pp_to_ll",
+    "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",
     "pp_to_llj",
     "pp_to_llj_dyn",
@@ -1065,11 +1073,16 @@ fn checks(name: &str, event: &Event, spread: MuTriple) -> Vec<ScaleCheck> {
 /// [`AlphaSSource`] rather than the evolution: the reading their beams' PDF
 /// set was fitted with, which closes cluster scale → `μR` → `αs(μR)` in one
 /// per-event comparison for them too instead of skipping them.
+///
+/// Runs [`common::AWAITING_REBANK_RUNS`] declares have no `αs` source until
+/// they are rebanked; they are reported, and their scales are still replayed
+/// by [`banked_events_reproduce_every_printed_scale`].
 #[test]
 fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     let mut runs_checked = 0usize;
     let mut events_checked = 0usize;
     let mut worst = (0.0f64, String::new());
+    let mut awaiting: Vec<String> = Vec::new();
 
     let runs = banked_runs();
     for (name, run) in &runs {
@@ -1079,6 +1092,10 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
             Coverage::Clustered => Some(channels_for(name, run)),
         };
         let card = run_card(run);
+        if common::awaiting_rebank(name, &card) {
+            awaiting.push(name.clone());
+            continue;
+        }
         let choice = ScaleChoice::from_run_card_for(&card, ClosedForms::Honour).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
 
@@ -1121,8 +1138,18 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     // Every declared run except the two the LHE cannot replay and the
     // byte-identical duplicate.
     let closed: Vec<&str> = CLOSED_FORM_RUNS.iter().map(|(name, _)| *name).collect();
+    let declared_awaiting: Vec<&str> = common::AWAITING_REBANK_RUNS
+        .iter()
+        .map(|(name, _)| *name)
+        .collect();
+    awaiting.sort();
     assert_eq!(
-        runs_checked,
+        awaiting,
+        present(&declared_awaiting, &runs),
+        "the runs reported as awaiting a rebank changed"
+    );
+    assert_eq!(
+        runs_checked + awaiting.len(),
         present(CLUSTERED_RUNS, &runs).len()
             + present(FIXED_SCALE_RUNS, &runs).len()
             + present(&closed, &runs).len()
@@ -1747,8 +1774,10 @@ fn banked_run_cards_are_accepted() {
 /// a re-bank that adds one cannot slip past.
 const FLOOR_REACHABLE_RUNS: &[&str] = &[
     "pp_to_bb",
+    "pp_to_bb_iht",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_jj_ht",
     "pp_to_ll",
     "pp_to_ll_qcd0",
     "pp_to_ll_scalefact2",

@@ -21,7 +21,8 @@ sources:
 
 Every reference cross section on proton beams is computed with **`NNPDF23_lo_as_0130_qed`,
 LHAPDF id 247000**, member 0. It is MadGraph 5's LO default (`nn23lo1` names it), and it is
-vibegraph's default PDF set (`cache::pinned::DEFAULT_PDF_SET`; the CLI's `--pdf-set`).
+vibegraph's default PDF set (`cache::pinned::DEFAULT_PDF_SET`; the default run card's
+`pdlabel = lhapdf`, `lhaid = 247000`).
 Fetching and caching it is [tooling/pdf-set-distribution](../tooling/pdf-set-distribution.md),
 and the paper is [references/papers/nnpdf23-qed](https://arxiv.org/abs/1308.0598).[^n18-22]
 
@@ -60,16 +61,21 @@ runs once banked at `nn23lo1` (`pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_llj`,
 comparable with the earlier `nn23lo1` banks
 ([validation/refdata-sigma-comparability](../validation/refdata-sigma-comparability.md)).
 
-What vibegraph does with a `nn23lo1` card:
+What vibegraph does with a `nn23lo1` card
+([run inputs in the artifact](../pipeline/run-inputs-in-the-artifact.md) §4):
 
-- **Densities.** The CLI loads the set `--pdf-set` names (default 247000), whatever
-  `pdlabel` says; it does not map a label to a grid.
-- **`α_s`.** It follows MadGraph's label table (`pdf_label_alpha_s`, `coupling/alphas.rs`):
-  `nn23lo1` gives `αs(M_Z) = 0.130` at two loops, overriding the parameter card's value
-  on proton beams. On fixed-energy beams `setrun.f` overwrites `pdlabel` with `none`, so
-  the parameter card's value stands.[^alphas-rs]
-- **`PDFSUP`.** MadEvent 3.7.1 writes `247000` for `nn23lo1`, even on fixed-energy beams
-  that read no density; `RunCard::pdfsup` does the same.
+- **Proton beams: refused.** Every built-in `pdlabel` is refused where a density is
+  read (`RunCard::pdf_choice`), with a message to set `pdlabel = lhapdf` and an
+  `lhaid` (247000 for `nn23lo1`). The densities come from the set the card's
+  `lhaid` names, and `α_s` from that set's own grid; there is no label table.
+  The default card is `pdlabel = lhapdf`, `lhaid = 247000`, a documented departure
+  from MadGraph's template.
+- **Fixed-energy beams: inert.** `setrun.f` overwrites `pdlabel` with `none`, so
+  the parameter card's `α_s` stands.[^alphas-rs]
+- **`PDFSUP`.** MadEvent 3.7.1 writes `get_pdf_id` of the card's `pdlabel` line, or
+  of the template's `nn23lo1` when there is none: `247000` on every banked
+  fixed-energy run, `lhaid = 230000` notwithstanding; `RunCard::pdfsup` does the
+  same there, and on proton beams reports the `lhaid` read.
 
 How the strong coupling is sourced in each case, including the grid's own `α_s` for
 `pdlabel = lhapdf`, is [scales-pdf/alpha-s-sources](alpha-s-sources.md).

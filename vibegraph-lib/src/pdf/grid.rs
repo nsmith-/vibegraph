@@ -4,7 +4,6 @@
 //! [`SubGrid`]; no interpolation happens here.
 
 use std::collections::HashMap;
-use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -78,6 +77,8 @@ pub struct AlphaSInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetInfo {
     pub(crate) set_desc: String,
+    /// `SetIndex`, the LHAPDF id of member 0; `None` where the file has none.
+    pub(crate) set_index: Option<i64>,
     pub(crate) format: String,
     pub(crate) num_members: u32,
     /// Beam particle PDG code the set is defined for (2212 = proton).
@@ -288,8 +289,14 @@ pub(crate) fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError
         )?,
     };
 
+    let set_index = map
+        .get("SetIndex")
+        .map(|v| parse_num(path, "SetIndex", v, "integer"))
+        .transpose()?;
+
     Ok(SetInfo {
         set_desc: unquote(require(&map, path, "SetDesc")?),
+        set_index,
         format: unquote(require(&map, path, "Format")?),
         num_members: parse_num(
             path,
@@ -323,15 +330,6 @@ pub(crate) fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError
         alpha_s,
         force_positive,
     })
-}
-
-pub(crate) fn parse_info_file(path: &Path) -> Result<SetInfo, GridError> {
-    let path_str = path.display().to_string();
-    let content = std::fs::read_to_string(path).map_err(|e| GridError::Io {
-        path: path_str.clone(),
-        source: e,
-    })?;
-    parse_info(&content, &path_str)
 }
 
 // ── member `.dat` parsing ───────────────────────────────────────────────────
@@ -441,7 +439,9 @@ fn parse_subgrid_block(block: &str, path: &str, index: usize) -> Result<SubGrid,
     Ok(SubGrid { x, q2, flavors, xf })
 }
 
-fn parse_member_dat_str(content: &str, path: &str) -> Result<Vec<SubGrid>, GridError> {
+/// Parse a member `.dat` file's content (the caller supplies `path` only for
+/// error messages).
+pub(crate) fn parse_member_dat(content: &str, path: &str) -> Result<Vec<SubGrid>, GridError> {
     let blocks = split_dat_blocks(content);
     if blocks.is_empty() {
         return Err(GridError::NoSubgrids {
@@ -481,15 +481,6 @@ fn parse_member_dat_str(content: &str, path: &str) -> Result<Vec<SubGrid>, GridE
         .collect()
 }
 
-pub(crate) fn parse_member_dat(path: &Path) -> Result<Vec<SubGrid>, GridError> {
-    let path_str = path.display().to_string();
-    let content = std::fs::read_to_string(path).map_err(|e| GridError::Io {
-        path: path_str.clone(),
-        source: e,
-    })?;
-    parse_member_dat_str(&content, &path_str)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,6 +517,7 @@ AlphaS_Lambda5: 0.165831
     fn parses_full_info() {
         let info = parse_info(SAMPLE_INFO, "test.info").unwrap();
         assert_eq!(info.num_members, 101);
+        assert_eq!(info.set_index, Some(247000));
         assert_eq!(info.particle, 2212);
         assert_eq!(
             info.flavors,
@@ -587,9 +579,28 @@ AlphaS_Lambda5: 0.165831
 0.7 0.8\n\
 ---\n";
 
+    /// `SetIndex` is read trimmed, so CVMFS's 325300 `.info`, which writes it
+    /// with a trailing space, reads as written; a file without one reads as
+    /// `None`, and one that is not an integer is refused.
+    #[test]
+    fn set_index_is_trimmed_optional_and_typed() {
+        let with_space = SAMPLE_INFO.replace("SetIndex: 247000\n", "SetIndex: 325300 \n");
+        assert_eq!(
+            parse_info(&with_space, "t.info").unwrap().set_index,
+            Some(325300)
+        );
+        let without = SAMPLE_INFO.replace("SetIndex: 247000\n", "");
+        assert_eq!(parse_info(&without, "t.info").unwrap().set_index, None);
+        let bad = SAMPLE_INFO.replace("SetIndex: 247000\n", "SetIndex: x\n");
+        assert!(matches!(
+            parse_info(&bad, "t.info"),
+            Err(GridError::InvalidValue { .. })
+        ));
+    }
+
     #[test]
     fn parses_single_subgrid() {
-        let subgrids = parse_member_dat_str(SAMPLE_DAT_SINGLE, "test.dat").unwrap();
+        let subgrids = parse_member_dat(SAMPLE_DAT_SINGLE, "test.dat").unwrap();
         assert_eq!(subgrids.len(), 1);
         let sg = &subgrids[0];
         assert_eq!(sg.x, vec![1.0, 2.0]);
@@ -628,7 +639,7 @@ AlphaS_Lambda5: 0.165831
 
     #[test]
     fn parses_multiple_subgrids() {
-        let subgrids = parse_member_dat_str(SAMPLE_DAT_MULTI, "test.dat").unwrap();
+        let subgrids = parse_member_dat(SAMPLE_DAT_MULTI, "test.dat").unwrap();
         assert_eq!(subgrids.len(), 2);
         assert_eq!(subgrids[0].q2, vec![100.0, 400.0]);
         assert_eq!(subgrids[1].q2, vec![400.0, 900.0]);
@@ -637,7 +648,7 @@ AlphaS_Lambda5: 0.165831
     #[test]
     fn row_length_mismatch_is_typed_error() {
         let bad = SAMPLE_DAT_SINGLE.replacen("0.1 0.2\n", "0.1\n", 1);
-        let err = parse_member_dat_str(&bad, "bad.dat").unwrap_err();
+        let err = parse_member_dat(&bad, "bad.dat").unwrap_err();
         assert!(matches!(err, GridError::RowLength { .. }), "{err:?}");
     }
 
@@ -645,14 +656,14 @@ AlphaS_Lambda5: 0.165831
     fn shape_mismatch_is_typed_error() {
         // Drop one data row: nx*nq = 4 declared, only 3 rows present.
         let bad = SAMPLE_DAT_SINGLE.replacen("0.7 0.8\n", "", 1);
-        let err = parse_member_dat_str(&bad, "bad.dat").unwrap_err();
+        let err = parse_member_dat(&bad, "bad.dat").unwrap_err();
         assert!(matches!(err, GridError::ShapeMismatch { .. }), "{err:?}");
     }
 
     #[test]
     fn unsupported_format_is_typed_error() {
         let bad = SAMPLE_DAT_SINGLE.replace("Format: lhagrid1", "Format: lhagrid2");
-        let err = parse_member_dat_str(&bad, "bad.dat").unwrap_err();
+        let err = parse_member_dat(&bad, "bad.dat").unwrap_err();
         assert!(
             matches!(err, GridError::UnsupportedFormat { .. }),
             "{err:?}"
@@ -661,7 +672,7 @@ AlphaS_Lambda5: 0.165831
 
     #[test]
     fn empty_content_is_typed_error() {
-        let err = parse_member_dat_str("", "empty.dat").unwrap_err();
+        let err = parse_member_dat("", "empty.dat").unwrap_err();
         assert!(
             matches!(err, GridError::UnsupportedFormat { .. }),
             "{err:?}"

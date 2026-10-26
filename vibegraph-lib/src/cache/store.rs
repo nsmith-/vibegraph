@@ -57,9 +57,8 @@ fn io_err(dir: &Path, source: std::io::Error) -> StoreError {
 
 /// The LHAPDF data-server URL for a set's `.tar.gz` — exactly the pattern
 /// `validation/pdf/fetch.sh` already fetches by hand.
-#[cfg(any(test, doc))]
 pub(crate) fn lhapdf_download_url(set_name: &str) -> String {
-    format!("https://lhapdfsets.web.cern.ch/current/{set_name}.tar.gz")
+    format!("{}/{set_name}.tar.gz", super::lhapdf::LHAPDF_SETS_URL)
 }
 
 /// A cached entry after a successful fetch: its directory and the checksum

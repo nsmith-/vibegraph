@@ -10,7 +10,6 @@ use std::process::Output;
 
 use common::{fixed_beams, stderr_of, vibegraph};
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::runcard::RunCard;
 
 #[test]
@@ -567,8 +566,6 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
         let mut artifact = integrated.clone();
         let (run_card, _) = RunCard::parse(beams).unwrap().split();
         artifact.run_card = run_card;
-        artifact.pdf_set = DEFAULT_PDF_SET.to_string();
-        artifact.pdf_member = 0;
         artifact.sqrt_s_had = sqrt_s_had;
         let path = cwd.path().join(format!("{name}.bin.zst"));
         artifact.write_to_path(&path, true).unwrap();
@@ -601,7 +598,7 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     ] {
         let stderr = generate_at(name, beams, sqrt_s_had);
         assert!(
-            !stderr.contains(refusal) && stderr.contains(DEFAULT_PDF_SET),
+            !stderr.contains(refusal) && stderr.contains("no PDF set was given"),
             "{name}: must pass the collider-energy check and stop on the PDF set:\n{stderr}"
         );
     }

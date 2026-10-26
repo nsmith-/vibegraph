@@ -231,7 +231,7 @@ Other refusals:
 
 - Silent σ changes: run-card `# hidden_parameter` lines dropped (fixed: `split_line` strips `#` comments),
   [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
-  [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
+  PDF set not taken from the run card (`pdf-set-not-taken-from-run-card`, since closed).
 - Bugs and panics: WEIGHTED search cap (closed by [the weighted-cap sprint](../sprints/weighted-cap/sprint.md)),
   UFO `if configuration` branches (closed: refused by name at load),
   [fermion-number violation panics](../sprints/fnv-refusal/sprint.md) (closed: now refused),

@@ -2,9 +2,9 @@
 //! whether anything missing may be downloaded.
 //!
 //! A UFO model resolves `--ufo-dir` → `$VIBEGRAPH_UFO_DIR` → `~/.vibegraph` →
-//! the working directory ([`locate`]); a PDF set resolves `--pdf-dir` → each
-//! `$LHAPDF_DATA_PATH` entry (or `$LHAPATH`'s) → `~/.vibegraph`, offering a
-//! download last ([`locate_pdf_set`]).
+//! the working directory ([`locate`]); a PDF set, and LHAPDF's index, resolve
+//! through the tiers of [`vibegraph::cache::lhapdf`], whose last is a download
+//! this module is asked to authorise ([`pdf_fetch`]).
 //! What belongs here is the part that talks to the user: which step is allowed
 //! to reach the network, what it says before it does, and what it says instead
 //! when it may not.
@@ -12,18 +12,18 @@
 //! # Only one path can download
 //!
 //! A [`HttpFetch`] is constructed in exactly one place in this file: immediately
-//! after [`network::confirm`] returned [`Consent::Granted`]. Every other call
-//! into the cache layer passes [`RefusingFetch`], so a resolution step that was
-//! not supposed to fetch cannot fetch even if its "is it already cached?"
-//! predicate is wrong. That structure, not the predicate, is what makes an
-//! unattended run safe.
+//! after [`network::confirm`] returned [`Consent::Granted`], inside the fetch
+//! factory [`pdf_fetch`] hands the library. The library asks that factory only
+//! for a download no local tier can replace, and nothing else in the binary can
+//! construct a fetch that reaches the network. That structure, not a predicate
+//! on what is cached, is what makes an unattended run safe.
 
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
-use vibegraph::cache::pinned::{ensure_pdf_set, pdf_set_is_cached, pinned_pdf_set, PinnedPdfSet};
-use vibegraph::cache::resolve::{locate, locate_pdf_set, pdf_data_path, Located, Source};
-use vibegraph::cache::store::{Fetch, RefusingFetch};
+use vibegraph::cache::lhapdf::{DownloadRequest, Tiers};
+use vibegraph::cache::resolve::{locate, Located, Source};
+use vibegraph::cache::store::Fetch;
 use vibegraph::cache::{AssetKind, LHAPATH_VAR, RETIRED_PDF_DIR_VAR};
 use vibegraph::diagrams::ModelImport;
 
@@ -51,7 +51,7 @@ fn not_found_where_named(what: &str, kind: AssetKind, flag: &str, located: &Loca
     let named_by = match located.source {
         Source::Flag => flag.to_string(),
         Source::Env => format!("${}", kind.env_var()),
-        Source::DataPath | Source::Cache | Source::DevFallback => {
+        Source::Cache | Source::DevFallback => {
             unreachable!("only an explicit path is reported as one the user named")
         }
     };
@@ -67,21 +67,9 @@ fn no_home(flag: &str) -> String {
     )
 }
 
-/// Resolve the directory holding `<pdf_set>.info` and its members, downloading
-/// the set into the cache if the resolution order turns up nothing and the user
-/// agrees to it.
-///
-/// A set reached through `--pdf-dir` or the LHAPDF data path is used as found
-/// and never checksum-checked: those name data the caller is pointing at
-/// deliberately, which is also what keeps sets this build has no pin for
-/// usable. The cache step is the one that decides on the user's behalf what a
-/// bare set name means, so there the compiled-in pin is authoritative — an
-/// entry pinned to anything else is refetched rather than trusted.
-pub(crate) fn resolve_pdf_set_dir(
-    pdf_set: &str,
-    pdf_dir: Option<&Path>,
-    policy: NetworkPolicy,
-) -> Result<PathBuf, String> {
+/// The tiers a PDF set and LHAPDF's index are looked for through, from this
+/// process's environment.
+pub(crate) fn pdf_tiers() -> Result<Tiers, String> {
     warn_on_retired_pdf_dir();
     let root = cache_root().ok_or_else(|| {
         format!(
@@ -90,56 +78,30 @@ pub(crate) fn resolve_pdf_set_dir(
             AssetKind::Pdf.env_var()
         )
     })?;
-    let data_path = pdf_data_path(
-        std::env::var_os(AssetKind::Pdf.env_var()).as_deref(),
-        std::env::var_os(LHAPATH_VAR).as_deref(),
-    );
-    let located = locate_pdf_set(pdf_set, pdf_dir, &data_path, &root);
+    Ok(Tiers::from_env(root))
+}
 
-    match located.source {
-        Source::Flag if located.found => return Ok(located.dir),
-        Source::Flag => {
-            return Err(not_found_where_named(
-                &format!("PDF set {pdf_set}"),
-                AssetKind::Pdf,
-                "--pdf-dir",
-                &located,
-            ))
+/// The fetch factory a PDF lookup asks before any download: it puts the
+/// request to the user under `policy`, and only on consent constructs the
+/// fetch that reaches the network.
+pub(crate) fn pdf_fetch(
+    policy: NetworkPolicy,
+) -> impl Fn(&DownloadRequest) -> Result<Box<dyn Fetch>, String> {
+    move |request: &DownloadRequest| {
+        let destination = request.destination.display().to_string();
+        let download = Download {
+            what: &request.what,
+            url: &request.url,
+            bytes: request.bytes,
+            sha256: request.sha256.as_deref(),
+            destination: &destination,
+            archive: request.archive,
+        };
+        match network::confirm(policy, &download) {
+            Consent::Granted => Ok(Box::new(HttpFetch::default()) as Box<dyn Fetch>),
+            Consent::Refused(why) => Err(why),
         }
-        Source::DataPath => return Ok(located.dir),
-        Source::Env | Source::DevFallback => {
-            unreachable!("a PDF set resolves through the flag, the data path or the cache")
-        }
-        Source::Cache => {}
     }
-
-    let Some(pin) = pinned_pdf_set(pdf_set) else {
-        if located.found {
-            return Ok(located.dir);
-        }
-        return Err(format!(
-            "PDF set {pdf_set} is not present locally and this build has no download pin for it; \
-             fetch it yourself and add the directory containing it to ${}",
-            AssetKind::Pdf.env_var()
-        ));
-    };
-
-    let fetcher: Box<dyn Fetch> = if pdf_set_is_cached(&root, pdf_set) {
-        // Already there: nothing to authorise, and nothing that may fetch.
-        Box::new(RefusingFetch)
-    } else {
-        match ask_for(pin, &located.dir, policy) {
-            Consent::Granted => Box::new(HttpFetch::default()),
-            Consent::Refused(why) => return Err(why),
-        }
-    };
-
-    let ensured = ensure_pdf_set(&root, pdf_set, fetcher.as_ref())
-        .map_err(|e| format!("cannot obtain PDF set {pdf_set}: {e}"))?;
-    if ensured.fetched {
-        tracing::info!("PDF set cached at {}", ensured.dir.display());
-    }
-    Ok(ensured.dir)
 }
 
 /// One warning per process when `$VIBEGRAPH_PDF_DIR` is set: it is not read,
@@ -162,21 +124,6 @@ fn retired_pdf_dir_warning() -> String {
          directory to ${}",
         AssetKind::Pdf.env_var(),
         AssetKind::Pdf.env_var()
-    )
-}
-
-fn ask_for(pin: &PinnedPdfSet, destination: &Path, policy: NetworkPolicy) -> Consent {
-    let what = format!("PDF set {}", pin.name);
-    let destination = destination.display().to_string();
-    network::confirm(
-        policy,
-        &Download {
-            what: &what,
-            url: pin.url,
-            bytes: pin.archive_bytes,
-            sha256: pin.sha256,
-            destination: &destination,
-        },
     )
 }
 

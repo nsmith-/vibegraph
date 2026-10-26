@@ -152,8 +152,8 @@ The failure and blind-spot statements are the design's own[^n29-c27].
 wrote this field" and "the field differs from its default" are one predicate,
 so a card writing a field *at* its default reads as one omitting it. For a
 refused field that is correct. It bites in one constructed case: a hand-written
-card setting both `pdlabel` and `pdlabel1 = pdlabel2 = nn23lo1` (the default)
-resolves to `pdlabel`, where MadGraph would take `nn23lo1`; MadGraph's own
+card setting both `pdlabel` and `pdlabel1 = pdlabel2 = lhapdf` (vibegraph's
+default) resolves to `pdlabel`, where MadGraph would take `lhapdf`; MadGraph's own
 writer never emits both[^n29-c29].
 
 **Opaque defaults.** Every opaque field stores the default `banner.py`
