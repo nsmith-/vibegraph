@@ -300,7 +300,7 @@ CREATE TABLE vg_run (
   proc_sha256 TEXT REFERENCES blob,
   run_sha256 TEXT REFERENCES blob,
   ufo_model_sha256 TEXT CHECK (length(ufo_model_sha256) = 64 AND ufo_model_sha256 NOT GLOB '*[^0-9a-f]*'),
-  pdf_set TEXT,
+  pdf_set TEXT,  -- the --pdf-set passed, for CLI builds that took one; NULL when the run card's lhaid picks it
   neval INTEGER CHECK (neval >= 1),
   niter INTEGER CHECK (niter >= 1),
   seed INTEGER,

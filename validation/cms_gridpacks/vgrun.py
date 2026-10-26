@@ -1,6 +1,6 @@
 """Drive the vibegraph CLI over a scraped sample and record every attempt.
 
-    gpdb run <sample> --campaign NAME [--adapt gpmodel,strip,runpatch] [--bake] [--gridpack-pdf]
+    gpdb run <sample> --campaign NAME [--adapt gpmodel,strip,runpatch] [--bake]
 
 Attempt 1 runs the gridpack's own proc card with the run card MadGraph used.
 `--adapt` lets later attempts react to the previous refusal, cumulatively:
@@ -11,9 +11,10 @@ Attempt 1 runs the gridpack's own proc card with the run card MadGraph used.
             `launch` on)
   runpatch  reset the run-card field a refusal names to the MadGraph default
             the refusal quotes
-Two changes apply up front instead: `--bake` writes the gridpack's param card
+One change applies up front instead: `--bake` writes the gridpack's param card
 into a copy of its model's external parameters (the CLI has no param-card
-option), and `--gridpack-pdf` passes the run card's lhaid as `--pdf-set`.
+option). The run card's lhaid picks the PDF set; the CLI finds it under
+`--lhapdf-data-path`, passed to it as LHAPDF_DATA_PATH.
 Every change made is listed in the attempt's `patches`, so `patches = '[]'`
 marks an as-shipped result.
 """
@@ -49,9 +50,8 @@ def add_parser(sub):
     p.add_argument("--only", nargs="*", help="label prefixes")
     p.add_argument("--adapt", default="", help="comma list of gpmodel,strip,runpatch")
     p.add_argument("--bake", action="store_true", help="bake the gridpack param card into its model")
-    p.add_argument("--gridpack-pdf", action="store_true", help="run with the PDF set the run card's lhaid names")
-    p.add_argument("--pdf-dir", default=CVMFS_PDF if os.path.isdir(CVMFS_PDF) else
-                   os.path.join(gpdb.REPO, "validation", "pdf"))
+    p.add_argument("--lhapdf-data-path", default=CVMFS_PDF if os.path.isdir(CVMFS_PDF) else
+                   os.path.join(gpdb.REPO, "validation", "pdf"), help="LHAPDF_DATA_PATH for the CLI")
     p.add_argument("--neval", type=int, default=10000)
     p.add_argument("--niter", type=int, default=3)
     p.add_argument("--seed", type=int, default=1)
@@ -177,11 +177,12 @@ def model_sha(model_dir):
     return P.model_identity({r: sha_file(p) for r, p in files.items() if r.endswith(".py")})
 
 
-def execute(cmd, out_path, timeout):
+def execute(cmd, out_path, timeout, env=None):
     """Run cmd with output to out_path; -> (exit code or None, timed_out, wall_s, max_rss_kb)."""
     t0 = time.monotonic()
     with open(out_path, "w") as fh:
-        p = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+        p = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True,
+                             env=env)
         while True:
             pid, status, ru = os.wait4(p.pid, os.WNOHANG)
             if pid:
@@ -208,7 +209,7 @@ def gridpack_inputs(base, cache_rel):
 def register_campaign(db, args):
     """A campaign name is bound to the policy it was first run with."""
     policy = json.dumps({"adapt": sorted(a for a in args.adapt.split(",") if a), "bake": args.bake,
-                         "gridpack_pdf": args.gridpack_pdf, "pdf_dir": args.pdf_dir, "neval": args.neval,
+                         "lhapdf_data_path": args.lhapdf_data_path, "neval": args.neval,
                          "niter": args.niter, "seed": args.seed, "threads": args.threads, "timeout": args.timeout,
                          "max_attempts": args.max_attempts, "allow_network": args.allow_network,
                          "extra": args.extra}, sort_keys=True)
@@ -279,13 +280,7 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         else:
             staged = stage_model(inp["ufomodel"], models, imp[0].rsplit("/", 1)[-1], imp[1])
         ufo_dir = models
-    pdf_set = None
-    if args.gridpack_pdf:
-        if pdf_name:
-            pdf_set = pdf_name
-            patches.append("pdf:%s" % pdf_name)
-        else:
-            patches.append("pdf:unresolved lhaid %s" % lhaid)
+    env = dict(os.environ, LHAPDF_DATA_PATH=args.lhapdf_data_path)
 
     summary = None
     for attempt in range(1, args.max_attempts + 1):
@@ -295,17 +290,15 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         open(pc, "w").write(proc_text)
         open(rc, "w").write(run_text)
         out_dir, trace = os.path.join(adir, "out"), os.path.join(adir, "trace.log")
-        cmd = [args.binary, "integrate", pc, "--run-card", rc, "--pdf-dir", args.pdf_dir,
+        cmd = [args.binary, "integrate", pc, "--run-card", rc,
                "--neval", str(args.neval), "--niter", str(args.niter), "--fixed-budget", "--seed", str(args.seed),
                "-j", str(args.threads), "--parallel-diagrams", "--no-tui", "--out", out_dir, "--log-file", trace]
         cmd += ["--yes"] if args.allow_network else ["--no-network"]
         if ufo_dir:
             cmd += ["--ufo-dir", ufo_dir]
-        if pdf_set:
-            cmd += ["--pdf-set", pdf_set]
         cmd += args.extra
         started = gpdb.now()
-        code, timed_out, wall, rss = execute(cmd, os.path.join(adir, "output.txt"), args.timeout)
+        code, timed_out, wall, rss = execute(cmd, os.path.join(adir, "output.txt"), args.timeout, env)
         if replace and attempt == 1:
             # --rerun: the old rows go in the same transaction that records the new
             # attempt, so an interrupted rerun leaves the earlier history intact.
@@ -324,7 +317,7 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (gid, build_id, args.campaign, attempt, json.dumps(patches), json.dumps(cmd),
              gpdb.put_blob(db, proc_text.encode()), gpdb.put_blob(db, run_text.encode()),
-             model_sha(staged) if staged else None, pdf_set, args.neval, args.niter, args.seed, args.threads, 1,
+             model_sha(staged) if staged else None, None, args.neval, args.niter, args.seed, args.threads, 1,
              started, socket.gethostname(), wall, rss, code, int(timed_out), r["outcome"],
              r["sigma_pb"], r["err_pb"], r["chi2_dof"], r["n_evals"], r["n_channels"], r["n_subprocesses"],
              r["n_diagrams"], r["vg_model_hash"], r["error_text"], gpdb.put_blob(db, output.encode())))
