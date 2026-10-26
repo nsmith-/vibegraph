@@ -14,6 +14,11 @@ partons are the massive `t` and `t~`, `ktdurham = 500` removes 34 % of σ.
 
 **Filed** as [mg5amcnlo/mg5amcnlo#455](https://github.com/mg5amcnlo/mg5amcnlo/issues/455) on 2026-10-19.
 
+**Fixed upstream for 3.5.18** (closed 2026-10-24) with the draft's change at
+both places: [PR #461](https://github.com/mg5amcnlo/mg5amcnlo/pull/461),
+[`a5ea00e4`](https://github.com/mg5amcnlo/mg5amcnlo/commit/a5ea00e464fd4da1eecf9148249e71aeed5824ea). Not yet on the
+3.8.2 branch (head `e76e9458`, checked 2026-10-26).
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. The report draft is
 [`report-draft.md`](report-draft.md).

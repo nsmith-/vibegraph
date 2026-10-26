@@ -14,6 +14,13 @@ order in which the process lists its legs:
 
 **Filed** as [mg5amcnlo/mg5amcnlo#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458) on 2026-10-19.
 
+**Fixed upstream for 3.5.18** (closed 2026-10-24) with the draft's change:
+[PR #464](https://github.com/mg5amcnlo/mg5amcnlo/pull/464) ([`9e96a2d9`](https://github.com/mg5amcnlo/mg5amcnlo/commit/9e96a2d982f6fabd23bed43526001edb98a0e5db);
+the fix commit is [`72dd753d`](https://github.com/mg5amcnlo/mg5amcnlo/commit/72dd753d7db0df0a406766d2cd3e73376e47ea1b)).
+Its commit message reports σ within 1σ with and without the fix, and an
+unchanged refine cost. Not yet on the 3.8.2 branch (head `e76e9458`, checked
+2026-10-26).
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. It affects the
 integration grids only. The report draft is [`report-draft.md`](report-draft.md).

@@ -1,7 +1,7 @@
 ---
 type: Audit
 title: MadGraph upstream report drafts
-description: "Index of the MadGraph defects this project found, each checked against the latest release (3.8.1), with a folder per defect under research/upstream/ holding its MadGraph-only reproducer and, if still present, a report draft; filing is the user's step."
+description: "Index of the MadGraph defects this project found, each checked against the latest release (3.8.1), with a folder per defect under research/upstream/ holding its MadGraph-only reproducer and, if still present, a report draft; filing is the user's step, and upstream's response is recorded per report."
 status: draft
 tags: [madgraph, defects, upstream-report, mlm, h1]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
@@ -21,6 +21,9 @@ sources:
   - {id: mg381-rewgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/Template/LO/SubProcesses/reweight.f#L1534-L1538", title: "3.8.1 reweight.f, rewgt's jet labels"}
   - {id: mg-pr428, resource: "https://github.com/mg5amcnlo/mg5amcnlo/pull/428", title: "mg5amcnlo PR #428, fix the dead $ veto on outgoing-fermion propagators"}
   - {id: mg381-cuts-orient, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/Template/LO/SubProcesses/cuts.f#L24-L98", title: "3.8.1 cuts.f, PASSCUTS per beam orientation (CUTS_ORIENT)"}
+  - {id: mg-pr462, resource: "https://github.com/mg5amcnlo/mg5amcnlo/pull/462", title: "mg5amcnlo PR #462, fix #453 (3.8.2)"}
+  - {id: mg-pr463, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/010a59f1c39376d4ebff123e503f888e04efdbc0", title: "mg5amcnlo PR #463 merge, the #456 refusals (3.5.18)"}
+  - {id: mg-pr465, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/61e680834eb9f265405389f2b6b36425c30b66ed", title: "mg5amcnlo PR #465 merge, fix #457 (3.5.18)"}
   - {id: mg-ebbdc97, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/ebbdc974c7f697071cf3a90f0981a3047c4597b4", title: "mg5amcnlo commit ebbdc974, move back to refine_grid=False"}
 ---
 # MadGraph upstream report drafts
@@ -39,7 +42,9 @@ nothing from vibegraph. It holds:
 [#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458)**; the index row gives each
 link. The user chose not to file the unreachable `addmothers` one, nor, for now,
 the low-priority `AQCDUP` and `rambo.py` ones, whose drafts stay ready in their
-folders. Filing is the
+folders. **Upstream answered all six by 2026-10-25**: five are fixed on
+the development branches and #456 was closed as an unsupported setup, now
+refused ([Upstream response](#upstream-response)). Filing is the
 user's step
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
 A filed report's link goes in its row below. What each defect means for this
@@ -59,17 +64,51 @@ issue.
 
 | defect | folder | severity | 3.5.17 (LTS) | 3.8.1 | file:line (3.8.1) | draft | filed |
 |---|---|---|---|---|---|---|---|
-| H1: grouped first `setclscales` on the unpermuted point | [`madgraph-grouped-first-call-unpermuted`](../../upstream/madgraph-grouped-first-call-unpermuted/README.md) | 1 high | not affected (ran; the call came in 3.6.0) | affected (ran) | `super_auto_dsig_group_v4.inc:856` | yes | [#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) |
-| `scalefact` skipped with only `fixed_fac_scale1` set | [`madgraph-fixed-fac-scale-precedence`](../../upstream/madgraph-fixed-fac-scale-precedence/README.md) | 2 medium | affected (ran) | affected (ran) | `reweight.f:1138` | yes | [#454](https://github.com/mg5amcnlo/mg5amcnlo/issues/454) |
-| `setxqcuts` tests `iforest(2)` twice | [`madgraph-setxqcuts-duplicate-test`](../../upstream/madgraph-setxqcuts-duplicate-test/README.md) | 6 low | affected (ran) | affected (ran) | `setcuts.f:948-951` | yes | [#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458) |
-| `NMASSLESS` `.and.`/`.or.` precedence (`ktdurham`, `ptlund`) | [`madgraph-nmassless-precedence`](../../upstream/madgraph-nmassless-precedence/README.md) | 3 medium | affected (ran) | affected (ran) | `cuts.f:643-644`, `:745-746` | yes | [#455](https://github.com/mg5amcnlo/mg5amcnlo/issues/455) |
+| H1: grouped first `setclscales` on the unpermuted point | [`madgraph-grouped-first-call-unpermuted`](../../upstream/madgraph-grouped-first-call-unpermuted/README.md) | 1 high | not affected (ran; the call came in 3.6.0) | affected (ran) | `super_auto_dsig_group_v4.inc:856` | yes | [#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453), fixed for 3.8.2 |
+| `scalefact` skipped with only `fixed_fac_scale1` set | [`madgraph-fixed-fac-scale-precedence`](../../upstream/madgraph-fixed-fac-scale-precedence/README.md) | 2 medium | affected (ran) | affected (ran) | `reweight.f:1138` | yes | [#454](https://github.com/mg5amcnlo/mg5amcnlo/issues/454), fixed for 3.5.18 and 3.8.2 |
+| `setxqcuts` tests `iforest(2)` twice | [`madgraph-setxqcuts-duplicate-test`](../../upstream/madgraph-setxqcuts-duplicate-test/README.md) | 6 low | affected (ran) | affected (ran) | `setcuts.f:948-951` | yes | [#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458), fixed for 3.5.18 |
+| `NMASSLESS` `.and.`/`.or.` precedence (`ktdurham`, `ptlund`) | [`madgraph-nmassless-precedence`](../../upstream/madgraph-nmassless-precedence/README.md) | 3 medium | affected (ran) | affected (ran) | `cuts.f:643-644`, `:745-746` | yes | [#455](https://github.com/mg5amcnlo/mg5amcnlo/issues/455), fixed for 3.5.18 |
 | `addmothers` compares `igraphs(1)` to a stale loop index | [`madgraph-addmothers-stale-index`](../../upstream/madgraph-addmothers-stale-index/README.md) | 9 trivial | not affected (read; no such code) | present, unreachable at runtime (read) | `addmothers.f:115` | yes (code quality) | not filed (user's decision, 2026-10-19) |
-| `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | 5 low | affected (ran, code level) | affected (ran, code level) | `banner.py:1831` | yes | [#457](https://github.com/mg5amcnlo/mg5amcnlo/issues/457) |
-| `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | 4 medium | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | [#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) |
+| `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | 5 low | affected (ran, code level) | affected (ran, code level) | `banner.py:1831` | yes | [#457](https://github.com/mg5amcnlo/mg5amcnlo/issues/457), fixed for 3.5.18 |
+| `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | 4 medium | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | [#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456), closed as unsupported; setup refused for 3.5.18 |
 | ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | — (fixed) | not affected (ran; no `P1D` for `$`, fix backported) | **fixed** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
 | `AQCDUP`/`AQEDUP` divide by `3.1415926` | [`madgraph-aqcdup-truncated-pi`](../../upstream/madgraph-aqcdup-truncated-pi/README.md) | 7 low | affected (ran) | affected (ran) | `unwgt.f:768-769` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
 | mirrored beam ordering cut in the sampled frame at `ebeam1 ≠ ebeam2` | [`madgraph-mirrored-cut-unequal-beams`](../../upstream/madgraph-mirrored-cut-unequal-beams/README.md) | medium, unranked | affected (read) | **fixed** (read; `CUTS_ORIENT`) | `cuts.f:24-98` (the fix); 3.5.17 `super_auto_dsig_group_v4.inc:467`, `:472` | yes (asks for the LTS backport; reproducer not yet run) | not filed |
 | `rambo.py` massive overflow warning tests `iwarn[4] > 5` | [`madgraph-rambo-massive-overflow-warning`](../../upstream/madgraph-rambo-massive-overflow-warning/README.md) | 8 trivial | affected (ran, code level) | affected (ran, code level) | `rambo.py:218` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
+
+## Upstream response
+
+Olivier Mattelaer answered every filed report between 2026-10-20 and
+2026-10-25. The fixes were read in the upstream repository on 2026-10-26.
+Nothing is released yet: 3.5.18 (LTS) and 3.8.2 are development branches.
+
+| issue | outcome | against the draft | 3.5.18 branch | 3.8.2 branch |
+|---|---|---|---|---|
+| #453 H1 | fixed, [PR #462](https://github.com/mg5amcnlo/mg5amcnlo/pull/462) | the draft's scalar fix, plus the vectorised path the draft left untested | not needed (LTS unaffected) | yes |
+| #454 `scalefact` | fixed | identical | yes | yes |
+| #455 `NMASSLESS` | fixed, PR #461 | identical, both places | yes | not yet |
+| #456 `rewgt` | closed as an unsupported setup; refused | no code fix: refusal at launch and at the first `setclscales` | yes | not yet |
+| #457 Rivet | fixed, PR #465, with unit tests | broader; the draft's fix would have named the weight `30.0`, not `30.000` | yes | not yet |
+| #458 `setxqcuts` | fixed, PR #464 | identical | yes | not yet |
+
+"Not yet" is the 3.8.2 branch at `e76e9458` on 2026-10-26. The #458 issue page
+says it closes once the fix reaches `3.x`, so the LTS fixes are expected to be
+merged forward before 3.8.2 is released.
+
+- **#456.** The maintainer called the report a false positive. A massless `b`
+  outside the jet definition has no collinear regulator under MLM, so the
+  setup is unphysical and should be refused. The user accepted this. By
+  reading, the new launch check also refuses a massless `b` that appears only
+  as a decay product, which is finite and not merged. vibegraph's refusal is
+  [mlm-massless-non-jet-quark-accepted](../backlog/feature/mlm-massless-non-jet-quark-accepted.md).
+- **#457.** The maintainer says `Weight_MERGING=%.3f` is the HepMC name that
+  `MG5aMC_PY8_interface` writes. That interface is outside the MadGraph
+  repository and was not checked here.
+- **#453.** PR #462 also keeps `q2bck` per event in the vectorised path and
+  fixes a `coupl.inc` sizing crash at `vector_size > 1`. It reports grouped σ
+  about 3 % low before the fix, against 3.7–3.9 % here.
+
+Each folder's README gives the commits.
 
 ## Versions
 

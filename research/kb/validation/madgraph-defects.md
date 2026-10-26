@@ -57,7 +57,13 @@ mg5amcnlo/mg5amcnlo
 - `setxqcuts`.
 
 The index, [madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md),
-maps each report to its issue. The unreachable `addmothers` report was not
+maps each report to its issue and records upstream's response. By 2026-10-25
+five were fixed on the 3.5.18 and 3.8.2 development branches. #456 (`rewgt`)
+was closed as an unsupported setup: a massless quark outside the jet
+definition is now refused, as
+[mlm-massless-non-jet-quark-accepted](../backlog/feature/mlm-massless-non-jet-quark-accepted.md)
+proposes here. No fix is released yet, and the pinned 3.7.1 reference carries
+every one of them. The unreachable `addmothers` report was not
 filed. The ALOHA `P1D` defect is fixed upstream (PR #428). The `AQCDUP` and
 `rambo.py` reports are drafted in the same form. The user has not filed them,
 since their priority is too low for now. The remaining unfiled candidate is
@@ -227,7 +233,8 @@ our σ tracked exactly, since every gate reads `αs` from the run's own card
 ([refdata-sigma-comparability](refdata-sigma-comparability.md)).
 
 **The MLM path** (read off the source while porting `ickkw = 1`; every one is
-still present in 3.8.1, and each has a report draft)[^n41-15]:
+still present in 3.8.1, and each has a report draft; upstream's fixes are in the
+index)[^n41-15]:
 
 | where | defect | effect here |
 |---|---|---|
@@ -236,7 +243,7 @@ still present in 3.8.1, and each has a report draft)[^n41-15]:
 | `cuts.f:565` (and `:667`, ptlund) | `ktdurham` `.and.`/`.or.` precedence | CKKW-L, out of scope |
 | `addmothers.f:115` | compares `igraphs(1)` to a stale loop index | unreachable on the banked MLM rows: `vec_igraph` is never 0 on their written events (M0 census) |
 | `banner.py:1706` | `setWeightName` raises when `ickkw ≠ 0` (`"…".str(…)`) | Rivet on a matched sample only |
-| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty on the banked MLM rows: none has an `IPROC` mixing jet and non-jet final-state flavours (`mlm_census.json`); reached by a five-flavour `p p > z j` at `maxjetflavor = 4` |
+| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty on the banked MLM rows: none has an `IPROC` mixing jet and non-jet final-state flavours (`mlm_census.json`); reached by a five-flavour `p p > z j` at `maxjetflavor = 4`, a setup upstream now refuses as unphysical (#456) |
 
 **The reweight module.** `launch` blocks after the first in one card each
 rewrite `events_out.lhe` from the unmodified input, so a multi-launch card keeps

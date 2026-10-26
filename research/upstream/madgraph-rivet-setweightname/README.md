@@ -14,6 +14,20 @@ are unaffected.
 
 **Filed** as [mg5amcnlo/mg5amcnlo#457](https://github.com/mg5amcnlo/mg5amcnlo/issues/457) on 2026-10-19.
 
+**Fixed upstream for 3.5.18** (closed 2026-10-24) by [PR #465](https://github.com/mg5amcnlo/mg5amcnlo/pull/465)
+([`61e68083`](https://github.com/mg5amcnlo/mg5amcnlo/commit/61e680834eb9f265405389f2b6b36425c30b66ed)), with unit tests.
+The fix goes beyond the draft's.
+- It writes `Weight_MERGING=%.3f`. The maintainer says that is the name
+  `MG5aMC_PY8_interface` writes in the HepMC file (`fixed, setprecision(3)`);
+  that interface is not in the MadGraph repository and was not checked here.
+  The draft's suggested `.format(round(…, 3))` would have written `30.0`
+  instead of `30.000`, so it was incomplete.
+- It resolves the automatic `qCut = -1` to `1.5·xqcut`, as `do_pythia8` does.
+- It handles CKKW-L through `Merging:TMS`, and NLO run cards, which have no
+  `ktdurham`/`ptlund`.
+
+Not yet on the 3.8.2 branch (head `e76e9458`, checked 2026-10-26).
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran, code level). It is
 also present in 3.7.1. The report
 draft is [`report-draft.md`](report-draft.md).

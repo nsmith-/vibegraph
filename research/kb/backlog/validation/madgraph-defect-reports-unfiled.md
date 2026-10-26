@@ -15,7 +15,8 @@ sources:
 ---
 Six reports were filed on 2026-10-19 as mg5amcnlo/mg5amcnlo #453–#458.
 [madgraph-upstream-report-drafts](../../validation/madgraph-upstream-report-drafts.md)
-maps each to its issue. The user declined to file three:
+maps each to its issue and records upstream's response (all six answered by
+2026-10-25). The user declined to file three:
 - the unreachable `addmothers` one;
 - for now, the low-priority `AQCDUP` π truncation and `rambo.py` overflow
   warning. Their drafts stay ready in their folders.

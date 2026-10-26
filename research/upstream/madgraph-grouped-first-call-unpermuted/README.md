@@ -20,6 +20,22 @@ On 3.7.1 the fixed grouped output agrees with the non-grouped output.
 
 **Filed** as [mg5amcnlo/mg5amcnlo#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) on 2026-10-19.
 
+**Fixed upstream for 3.8.2** (closed 2026-10-25). [PR #462](https://github.com/mg5amcnlo/mg5amcnlo/pull/462)
+(merge [`e76e9458`](https://github.com/mg5amcnlo/mg5amcnlo/commit/e76e94580c2a6c2cd312ec578181f477c1436d78)) is on the
+3.8.2 development branch; no LTS change is needed.
+- The scalar path takes the draft's one-line fix,
+  `update_scale_coupling(p1, wgt)` ([`fdfe9483`](https://github.com/mg5amcnlo/mg5amcnlo/commit/fdfe9483dfbb3160ed2906add6f4ffbe6f88c618)).
+- The vectorised path, which the draft flagged untested, now sets the scales
+  per warp in `DSIGPROC_VEC` after the permutation and mirror
+  ([`0612d849`](https://github.com/mg5amcnlo/mg5amcnlo/commit/0612d849e212628c5c232a7ab3446b86b752bd30)). The same commit
+  keeps `q2bck` per event, which every event of a batch used to share.
+- `coupl.inc` now sizes `all_G`/`all_mu_r` by `VECSIZE_MEMMAX`, fixing a crash
+  when `vector_size` is raised after output
+  ([`3ce090e6`](https://github.com/mg5amcnlo/mg5amcnlo/commit/3ce090e661a16ce1e3309f9c5f964df825ba8688)).
+- A new acceptance test, `test_group_subprocess_permuted_scale`, compares
+  grouped (scalar and vector) with non-grouped output. The PR reports grouped σ
+  about 3 % low before the fix, against 3.7–3.9 % here.
+
 **Present in 3.8.1** (ran). It is also present in 3.7.1.
 - **Absent from the 3.5.17 LTS release** (ran).
 - **Introduced in 3.6.0.** The unpermuted `update_scale_coupling(pp, wgt)` call

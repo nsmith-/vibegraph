@@ -18,6 +18,26 @@ Take a five-flavour `p p > z j` at `maxjetflavor = 4`. On 3.7.1, 93 of 97
 
 **Filed** as [mg5amcnlo/mg5amcnlo#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) on 2026-10-19.
 
+**Closed upstream as an unsupported setup** (2026-10-24). The maintainer
+called the report a false positive: a massless `b` outside the jet definition
+has nothing regulating its collinear region, so the setup is unphysical and
+MadGraph should refuse it rather than support it. The user accepted this on
+2026-10-26. [PR #463](https://github.com/mg5amcnlo/mg5amcnlo/pull/463)
+([`010a59f1`](https://github.com/mg5amcnlo/mg5amcnlo/commit/010a59f1c39376d4ebff123e503f888e04efdbc0), 3.5.18) adds two
+refusals:
+- at launch, an `InvalidRunCard` for `ickkw = 1` with any massless quark with
+  `maxjetflavor < |pdg| ≤ 5` on any external leg (`08053b88`, `cbdf16f1`);
+- at the first `setclscales` call, a stop when `ickkw > 0` and a subprocess
+  groups flavour combinations that disagree on which legs are jets
+  (`4d8a83bb`, which reverted the PR's earlier relabelling rewrite).
+
+By reading, the launch check also refuses a massless `b` that appears only as
+a decay product. That case is finite and not merged, so the check is broader
+than the physics needs. This reproducer's control (`g b > z b` alone) is
+refused too. Not yet on the 3.8.2 branch (head `e76e9458`, checked
+2026-10-26). vibegraph's matching refusal is
+[mlm-massless-non-jet-quark-accepted](../../kb/backlog/feature/mlm-massless-non-jet-quark-accepted.md).
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. The report draft is
 [`report-draft.md`](report-draft.md). No one-line fix exists (see "Root

@@ -15,6 +15,11 @@ With `fixed_fac_scale1 = T`, `fixed_fac_scale2 = F` and a clustering scale
 
 **Filed** as [mg5amcnlo/mg5amcnlo#454](https://github.com/mg5amcnlo/mg5amcnlo/issues/454) on 2026-10-19.
 
+**Fixed upstream** (closed 2026-10-20) with the draft's one-line change, on
+both development branches: 3.5.18
+([`21347fa5`](https://github.com/mg5amcnlo/mg5amcnlo/commit/21347fa56f6e731303a6e9eeabb6e4d2abe2994e)) and 3.8.2
+([PR #460](https://github.com/mg5amcnlo/mg5amcnlo/pull/460), [`ea02267b`](https://github.com/mg5amcnlo/mg5amcnlo/commit/ea02267b4a67c1cba46a358293139bf97b71ac44)). Neither is released yet.
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. The report draft is
 [`report-draft.md`](report-draft.md).
