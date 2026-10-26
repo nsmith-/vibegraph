@@ -18,7 +18,7 @@ measured:
 # Run inputs the integrate artifact records
 
 Two PRs add run inputs to `IntegrateArtifact`:
-[pdf-set-not-taken-from-run-card](../backlog/feature/pdf-set-not-taken-from-run-card.md)
+`pdf-set-not-taken-from-run-card` (closed)
 (the run card picks the PDF) and
 [cli-has-no-param-card-option](../backlog/feature/cli-has-no-param-card-option.md)
 (`integrate --param-card`). This concept fixes what the artifact records of
