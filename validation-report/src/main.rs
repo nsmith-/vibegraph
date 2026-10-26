@@ -493,6 +493,42 @@ fn number_notes(resolved: &mut [ResolvedRow]) {
 mod tests {
     use super::*;
 
+    /// The unequal-beam row is declared `planned` with banked cells and no gate
+    /// has written one: the collator waits on it without a problem. The same
+    /// row declared as an ordinary row is a missing cell.
+    #[test]
+    fn a_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        // The row is planned only until its reference run is banked, so the test
+        // declares it planned itself instead of reading the committed status.
+        // `bundled = false` is stripped too: an unbundled row with no cell also
+        // waits, and would satisfy the planned half without the planned rule.
+        let line = "key = \"pp_to_ll_beams_6500_4000\"\n";
+        assert_eq!(text.matches(line).count(), 1);
+        let text = text
+            .replace("status = \"planned\"\n", "")
+            .replace("bundled = false\n", "")
+            .replace(line, &format!("{line}status = \"planned\"\n"));
+        let resolve = |text: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == "pp_to_ll_beams_6500_4000")
+                .expect("the unequal-beam row");
+            let declared = process.categories.get(Category::Integrals);
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, problems)
+        };
+        let (mark, problems) = resolve(&text);
+        assert_eq!((mark, problems.len()), ("⏳", 0), "{problems:?}");
+        let (mark, problems) = resolve(&text.replace("status = \"planned\"\n", ""));
+        assert_eq!((mark, problems.len()), ("❌", 1), "{problems:?}");
+    }
+
     fn standalone(row: Option<&str>, mode: Option<&str>) -> manifest::Standalone {
         let mut text =
             String::from("key = \"gate-under-test\"\nlayer = \"oracle\"\nrationale = \"r\"\n");

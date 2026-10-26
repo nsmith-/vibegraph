@@ -1141,10 +1141,10 @@ fn forced_shat_floor(legs: &[ExternalLeg], forced: &ForcedResonances, bwcutoff: 
 /// Such a momentum cannot reach half the partonic centre-of-mass energy: in the
 /// partonic rest frame the object's momentum balances the rest of the final
 /// state, so `|p| <= E_object` and `|p| <= E_rest` give `|p| <= sqrt(s_hat)/2`,
-/// and the transverse momentum is boost-invariant along the beam. With
-/// `s_hat <= s` and the collider's `sqrt(s)` taken as `ebeam1 + ebeam2` (as the
-/// generator does), a bound at or above `(ebeam1 + ebeam2) / 2` cannot exclude
-/// any point and reads as the default.
+/// and the transverse momentum is boost-invariant along the beam. Head-on beams
+/// collide at `sqrt(s_hat) <= ebeam1 + ebeam2` whatever their masses (`2 sqrt(ebeam1
+/// ebeam2)` for massless proton beams, which is no larger), so a bound at or above
+/// `(ebeam1 + ebeam2) / 2` cannot exclude any point and reads as the default.
 const SINGLE_PT_MAXIMA: &[&str] = &[
     "missetmax",
     "ptj1max",

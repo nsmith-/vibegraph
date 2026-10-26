@@ -26,7 +26,7 @@ use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
@@ -132,7 +132,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         &amps,
         &evaluated,
         &pdf,
-        artifact.sqrt_s_had,
+        ProtonBeams::from_run_card(&rc),
         artifact.mu_f,
         MapOptions::fixed(artifact.maps),
     )

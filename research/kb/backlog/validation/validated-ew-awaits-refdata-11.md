@@ -26,3 +26,10 @@ the banking request on PR #42. Expected pulls afterwards: +0.81, +0.00, +0.23.
 `ee_to_mumu_tata_qcd0` is included on the family call, not on its own
 estimate. Its record has two channels at seed χ²/dof 4.2 and 3.0 (corrected
 p 0.045), and a fixed-density 2 → 4 check on it would cover 28 channels.
+
+Progress 2026-10-22 (M3, relayed by the planner): `seed-record --validated-ew`
+re-recorded the three rows into the local refdata-11 candidate. The gate
+passes, but the pulls read −0.14, −0.10 and −0.56 (uux, ddx, ee_to_mumu_tata),
+against the expected +0.81, +0.00 and +0.23. Explain the difference before the
+bundle is pinned. The first suspect is which reference each expected pull was
+read against.
