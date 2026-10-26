@@ -200,9 +200,9 @@ Systematics:
   `systematics_*` and `sys_*` fields as benign.
 
 Other refusals:
-- `htjmin`/`ihtmin`/`htjmax` are refused only after full enumeration (up to
+- `htjmin`/`ihtmin`/`htjmax` were refused only after full enumeration (up to
   92 s), under a misleading "failed to decompose into flavour groups: cut
-  compilation failed" prefix.
+  compilation failed" prefix. They are now compiled as cuts.
 - No-op cut values (`missetmax`, `ptj1max…ptj4max` = 1e5) are refused as
   active cuts.
 - Massive incoming partons: 4 cards. Mixed outgoing masses in one flavour
@@ -231,7 +231,7 @@ Other refusals:
 
 - Silent σ changes: run-card `# hidden_parameter` lines dropped (fixed: `split_line` strips `#` comments),
   [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
-  [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
+  PDF set not taken from the run card (`pdf-set-not-taken-from-run-card`, since closed).
 - Bugs and panics: WEIGHTED search cap (closed by [the weighted-cap sprint](../sprints/weighted-cap/sprint.md)),
   UFO `if configuration` branches (closed: refused by name at load),
   [fermion-number violation panics](../sprints/fnv-refusal/sprint.md) (closed: now refused),
@@ -241,12 +241,12 @@ Other refusals:
   [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
 - Feature gaps: [variation weights](../backlog/feature/systematics-variation-weights-not-written.md)
   and the silent drop of a systematics request (now a warning),
-  [`ckm_no_b_mass`](../backlog/feature/sm-lacks-ckm-no-b-mass-restriction.md),
+  `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
   `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
-  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
+  HT cuts (`ht-cuts-unimplemented`, since closed; their late refusal is
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
   [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
-  [mixed outgoing masses in a group](../backlog/feature/flavour-group-mixed-outgoing-masses-refused.md),
+  mixed outgoing masses in a group (`flavour-group-mixed-outgoing-masses-refused`, since closed),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

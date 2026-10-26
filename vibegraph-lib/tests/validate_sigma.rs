@@ -2067,7 +2067,7 @@ fn probe_2to6_density_decomposition() {
 /// integral and its quoted error together. What tells
 /// the two apart is whether σ moves with the budget and whether the seeds scatter
 /// by more than they claim, so the rungs are printed rather than summarised and
-/// each carries five independent seeds.
+/// each carries independent seeds.
 ///
 /// Both samplers are laddered because the choice between them is what this
 /// measurement decides. Flat RAMBO draws a 24-dimensional uniform and has no idea
@@ -2077,12 +2077,61 @@ fn probe_2to6_density_decomposition() {
 /// rungs differ per sampler for that reason: a multichannel budget under the floor
 /// is not a rung, it is the floor again.
 ///
+/// # Parameters
+///
+/// Every parameter is an environment variable; unset, the probe runs both rows,
+/// both samplers, the default rungs, five seeds and 8 iterations.
+///
+/// * `VG_2TO6_ROWS`: comma list of rows, by full name or by `uux` / `bbx`.
+/// * `VG_2TO6_SAMPLERS`: comma list from `flat`, `multi`.
+/// * `VG_2TO6_RUNGS`: comma list of `neval` applied to every selected sampler,
+///   or `flat=a,b;multi=c,d` for per-sampler lists (a sampler left out keeps its
+///   default rungs).
+/// * `VG_2TO6_SEEDS`: a single integer `N` is a count, giving `SEED` followed by
+///   `11 k` for `k = 1..N` (`N = 5` is `SEED, 11, 22, 33, 44`, today's seeds); a
+///   comma list is taken verbatim.
+/// * `VG_2TO6_NITER`: iterations per run.
+/// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
+///   so a killed run keeps what it measured. Columns: `row sampler neval niter
+///   seed sigma_pb err_pb wall_s`. Rerunning with the same path appends; remove
+///   the file to start over.
+///
+/// # Output
+///
+/// Per seed, a progress line. Per rung, a summary: the unweighted mean, the
+/// error `max(quoted, spread/√n)`, χ²/dof, and the pull against both the row's
+/// MadEvent seed record (read the way the gates read it) and the single-run
+/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler,
+/// the separation of the means against `√(s₁²/n₁ + s₂²/n₂)` from the measured
+/// seed spreads, printed as information.
+///
+/// # Running the 20-seed multichannel ladder
+///
+/// Both rows, the 600k and 1.2M rungs, 20 seeds each, detached (the whole run is
+/// many hours; at roughly 900 s a 600k seed and 1800 s a 1.2M seed per row on a
+/// loaded 4-core host it is about 30 h there, scale by the host's speed):
+///
+/// ```text
+/// cargo test -p vibegraph-lib --profile release-debug --features extended-validation \
+///     --test validate_sigma --no-run
+/// VG_2TO6_SAMPLERS=multi VG_2TO6_RUNGS=600000,1200000 VG_2TO6_SEEDS=20 \
+///     VG_2TO6_OUT=$PWD/ladder-2to6.tsv \
+///     nohup setsid cargo test -p vibegraph-lib --profile release-debug \
+///     --features extended-validation --test validate_sigma -- --ignored \
+///     --nocapture --exact probe_2to6_budget_ladder > ladder-2to6.log 2>&1 &
+/// ```
+///
+/// `ladder-2to6.tsv` holds the per-seed values and `ladder-2to6.log` the
+/// summaries. `pixi run ladder-2to6` runs the same probe and reads the same
+/// variables.
+///
 /// Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_2to6_budget_ladder() {
-    const NITER: usize = 8;
-    const SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+    use std::io::Write;
+
+    const DEFAULT_NITER: usize = 8;
     const FLAT_RUNGS: [usize; 4] = [100_000, 200_000, 400_000, 800_000];
     // A fourfold range starting at the floor. Both rows' channel sets put
     // `n_channels x MIN_CHANNEL_NEVAL` — 296 448 and 314 880 — under every
@@ -2090,68 +2139,202 @@ fn probe_2to6_budget_ladder() {
     // floor restated, and the range runs up from there rather than down to it.
     const MULTI_RUNGS: [usize; 3] = [300_000, 600_000, 1_200_000];
 
+    fn var_list(name: &str) -> Option<Vec<String>> {
+        let v = std::env::var(name).ok()?;
+        let items: Vec<String> = v
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        (!items.is_empty()).then_some(items)
+    }
+    fn parse_usize(s: &str, what: &str) -> usize {
+        s.replace('_', "")
+            .parse()
+            .unwrap_or_else(|_| panic!("{what}: `{s}` is not an integer"))
+    }
+
+    let rows: Vec<&'static str> = match var_list("VG_2TO6_ROWS") {
+        None => TWO_TO_SIX.to_vec(),
+        Some(names) => names
+            .iter()
+            .map(|n| {
+                *TWO_TO_SIX
+                    .iter()
+                    .find(|d| *d == n || d.starts_with(&format!("{n}_to_")))
+                    .unwrap_or_else(|| panic!("VG_2TO6_ROWS: `{n}` is not one of {TWO_TO_SIX:?}"))
+            })
+            .collect(),
+    };
+    let samplers: Vec<&str> = match var_list("VG_2TO6_SAMPLERS") {
+        None => vec!["flat", "multi"],
+        Some(names) => names
+            .iter()
+            .map(|n| match n.as_str() {
+                "flat" => "flat",
+                "multi" => "multi",
+                other => panic!("VG_2TO6_SAMPLERS: `{other}` is not `flat` or `multi`"),
+            })
+            .collect(),
+    };
+    let rungs_for = {
+        let mut flat = FLAT_RUNGS.to_vec();
+        let mut multi = MULTI_RUNGS.to_vec();
+        if let Ok(spec) = std::env::var("VG_2TO6_RUNGS") {
+            let parse = |s: &str| -> Vec<usize> {
+                s.split(',')
+                    .filter(|t| !t.trim().is_empty())
+                    .map(|t| parse_usize(t.trim(), "VG_2TO6_RUNGS"))
+                    .collect()
+            };
+            if spec.contains('=') {
+                for part in spec.split(';').filter(|p| !p.trim().is_empty()) {
+                    let (key, list) = part
+                        .split_once('=')
+                        .unwrap_or_else(|| panic!("VG_2TO6_RUNGS: `{part}` lacks `=`"));
+                    match key.trim() {
+                        "flat" => flat = parse(list),
+                        "multi" => multi = parse(list),
+                        other => panic!("VG_2TO6_RUNGS: unknown sampler `{other}`"),
+                    }
+                }
+            } else {
+                flat = parse(&spec);
+                multi = flat.clone();
+            }
+        }
+        move |sampler: &str| {
+            if sampler == "flat" {
+                flat.clone()
+            } else {
+                multi.clone()
+            }
+        }
+    };
+    let seeds: Vec<u64> = match var_list("VG_2TO6_SEEDS") {
+        None => vec![SEED, 11, 22, 33, 44],
+        Some(items) if items.len() == 1 => {
+            let n = parse_usize(&items[0], "VG_2TO6_SEEDS");
+            (0..n as u64)
+                .map(|k| if k == 0 { SEED } else { 11 * k })
+                .collect()
+        }
+        Some(items) => items
+            .iter()
+            .map(|s| {
+                s.parse()
+                    .unwrap_or_else(|_| panic!("VG_2TO6_SEEDS: `{s}` is not a seed"))
+            })
+            .collect(),
+    };
+    assert!(seeds.len() >= 2, "the seed combination needs two seeds");
+    let niter = std::env::var("VG_2TO6_NITER")
+        .map(|s| parse_usize(&s, "VG_2TO6_NITER"))
+        .unwrap_or(DEFAULT_NITER);
+    let mut out = std::env::var("VG_2TO6_OUT").ok().map(|path| {
+        let fresh = std::fs::metadata(&path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap_or_else(|e| panic!("VG_2TO6_OUT {path}: {e}"));
+        if fresh {
+            writeln!(
+                file,
+                "row\tsampler\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s"
+            )
+            .and_then(|_| file.flush())
+            .expect("TSV header writable");
+        }
+        file
+    });
+
     let ref_path = reference_path();
     let text = std::fs::read_to_string(&ref_path).expect("sigma reference readable");
     let banked: BTreeMap<String, BankedSigma> =
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
-    for dir in TWO_TO_SIX {
+    eprintln!(
+        "ladder: rows {rows:?}, samplers {samplers:?}, {} seeds {seeds:?}, niter {niter}",
+        seeds.len(),
+    );
+    for dir in rows {
         let entry = &banked[dir];
         eprintln!(
-            "── {dir}: MG {:.6e} ± {:.3e} pb ({:+.2}%) ──",
+            "── {dir}: single-run MG {:.6e} ± {:.3e} pb ({:+.2}%) ──",
             entry.sigma_pb,
             entry.sigma_err_pb,
             100.0 * entry.sigma_err_pb / entry.sigma_pb,
         );
-        for (label, n_survey, n_adapt, rungs) in [
-            ("flat RAMBO  ", 0, 0, &FLAT_RUNGS[..]),
-            (
-                "multichannel",
-                MULTICHANNEL_SURVEY,
-                MULTICHANNEL_ITERS,
-                &MULTI_RUNGS[..],
-            ),
-        ] {
-            for &neval in rungs {
+        let seeded = common::seed_record::reference(&output_dir(), dir);
+        for sampler in &samplers {
+            let (label, n_survey, n_adapt) = match *sampler {
+                "flat" => ("flat RAMBO  ", 0, 0),
+                _ => ("multichannel", MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS),
+            };
+            let mut previous: Option<(usize, SeedMean)> = None;
+            for neval in rungs_for(sampler) {
                 let clock = Stopwatch::start();
-                let runs: Vec<SeedResult> = SEEDS
-                    .iter()
-                    .map(|&seed| {
-                        let (sigma_pb, sigma_err_pb, _, _) = integrate_with(
-                            dir,
-                            &entry.process,
-                            neval,
-                            NITER,
-                            seed,
-                            n_survey,
-                            n_adapt,
-                        );
-                        SeedResult {
-                            seed,
-                            sigma_pb,
-                            sigma_err_pb,
-                        }
-                    })
-                    .collect();
-                let SeedMean {
-                    mean,
-                    err: mean_err,
-                    chi2_per_dof: chi2,
-                    ..
-                } = combine(&runs);
-                let pull = (mean - entry.sigma_pb)
-                    / (mean_err * mean_err + entry.sigma_err_pb * entry.sigma_err_pb).sqrt();
+                let mut runs: Vec<SeedResult> = Vec::new();
+                for &seed in &seeds {
+                    let seed_clock = Stopwatch::start();
+                    let (sigma_pb, sigma_err_pb, _, _) =
+                        integrate_with(dir, &entry.process, neval, niter, seed, n_survey, n_adapt);
+                    let wall = seed_clock.seconds();
+                    eprintln!(
+                        "    {label} {neval:>9} x {niter} seed {seed:>10}: σ {sigma_pb:.6e} \
+                         ± {sigma_err_pb:.3e} pb | rel vs single run {:+.2e} | {wall:6.0} s",
+                        sigma_pb / entry.sigma_pb - 1.0,
+                    );
+                    if let Some(file) = out.as_mut() {
+                        writeln!(
+                            file,
+                            "{dir}\t{sampler}\t{neval}\t{niter}\t{seed}\t{sigma_pb:.9e}\t\
+                             {sigma_err_pb:.6e}\t{wall:.1}",
+                        )
+                        .and_then(|_| file.flush())
+                        .expect("TSV line writable");
+                    }
+                    runs.push(SeedResult {
+                        seed,
+                        sigma_pb,
+                        sigma_err_pb,
+                    });
+                }
+                let read = combine(&runs);
+                let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
+                let pull_record = match &seeded {
+                    Some(r) => format!("{:+.2}", read.pull(r.mean(), r.err())),
+                    None => "n/a (no seed record)".to_string(),
+                };
                 eprintln!(
-                    "  {label} {neval:>9} x {NITER}: σ = {mean:.6e} ± {mean_err:.3e} pb \
-                     | rel {:+.2e} | pull {pull:+.2} | χ²/dof {chi2:8.2} | {:6.0} s \
-                     | per seed {}",
-                    mean / entry.sigma_pb - 1.0,
+                    "  {label} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
+                     ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}) | χ²/dof {:.2} \
+                     | pull vs seed record {pull_record} | pull vs single run \
+                     {pull_single:+.2} | rel vs single run {:+.2e}",
+                    read.n,
                     clock.seconds(),
-                    runs.iter()
-                        .map(|r| format!("{:.4e}", r.sigma_pb))
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    read.mean,
+                    read.err,
+                    read.quoted,
+                    read.spread,
+                    read.chi2_per_dof,
+                    read.mean / entry.sigma_pb - 1.0,
                 );
+                if let Some((prev_neval, prev)) = previous {
+                    // Measured per-rung seed sd: spread is sd/√n.
+                    let sigma = (prev.spread.powi(2) + read.spread.powi(2)).sqrt();
+                    eprintln!(
+                        "    {label} {prev_neval} -> {neval}: Δmean {:+.3e} pb ({:+.2e} rel) \
+                         over √(s₁²/n₁ + s₂²/n₂) = {sigma:.3e} pb: {:+.2}σ (information)",
+                        read.mean - prev.mean,
+                        (read.mean - prev.mean) / prev.mean,
+                        (read.mean - prev.mean) / sigma,
+                    );
+                }
+                previous = Some((neval, read));
             }
         }
     }
@@ -5368,7 +5551,7 @@ fn check_grammar_card(entry: &GrammarEntry, row: &SeededRow) {
         let banked = match key {
             "ebeam1" => card.ebeam1,
             "ebeam2" => card.ebeam2,
-            "nevents" => card.nevents as f64,
+            "nevents" => card.int("nevents") as f64,
             other => panic!("[{}] no check for the override {other}", entry.reference),
         };
         assert_eq!(

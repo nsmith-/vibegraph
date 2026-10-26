@@ -18,7 +18,10 @@ use super::parse::{
 };
 use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
-use crate::runcard::{ParamValue, RunCard};
+use crate::artifact::PdfInput;
+use crate::cache::lhapdf::Tier;
+use crate::generate::GenerateSettings;
+use crate::runcard::{card_text, RunCard};
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -265,7 +268,9 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 
 /// The `<MGRunCard>` element MadGraph puts in an event file's header
 /// (`banner.py:69-86`): the run card, one `value = name` line per parameter,
-/// as MadGraph records it ([`RunCard::banner_values`]).
+/// as MadGraph records it. The card is the integration's, joined with the
+/// generation's `settings` and its `seed` as `iseed` (`RunCard::banner_with`),
+/// so the record is the run as it was drawn.
 ///
 /// The body is element text, with `<`, `>` and `&` escaped, and not the CDATA
 /// section MadGraph wraps it in: Pythia 8.312's reader drops a CDATA
@@ -282,16 +287,10 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 /// round-tripping form with a decimal point (`20.0`), a flag as `True` or
 /// `False`, and a list or string as its text; a parameter whose value is
 /// empty (an unset list) is left out.
-pub fn mg_run_card(card: &RunCard) -> String {
+pub fn mg_run_card(card: &RunCard, settings: &GenerateSettings, seed: u64) -> String {
     let mut body = String::from("\n");
-    for (name, value) in card.banner_values() {
-        let text = match value {
-            ParamValue::Float(x) => format!("{x:?}"),
-            ParamValue::Int(i) => i.to_string(),
-            ParamValue::Bool(true) => "True".to_string(),
-            ParamValue::Bool(false) => "False".to_string(),
-            ParamValue::Str(s) | ParamValue::Opaque(s) => s.clone(),
-        };
+    for (name, value) in &card.banner_with(settings, seed) {
+        let text = card_text(value);
         if text.trim().is_empty() {
             continue;
         }
@@ -314,6 +313,62 @@ pub fn mg_run_card(card: &RunCard) -> String {
             .expect("writing to a Vec cannot fail");
     }
     String::from_utf8(writer.into_inner()).expect("a run card is text")
+}
+
+/// What a generation read besides the artifact's own contents, as the event
+/// file's `<vibegraphInputs>` header block records it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputsRead {
+    /// The central PDF member the weights were computed with and the lookup tier
+    /// its set was found in; `None` when no parton density is read.
+    pub pdf: Option<(PdfInput, Tier)>,
+    /// SHA-256 of the integrate artifact file, as read.
+    pub grid_sha256: String,
+}
+
+impl InputsRead {
+    /// The `<vibegraphInputs>` block: the central PDF member with each file's
+    /// SHA-256 and the tier (named, never a path: the header travels between
+    /// machines), then the artifact's digest.
+    pub fn header_block(&self) -> String {
+        let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
+        let mut write = |event: XmlEvent<'_>| {
+            writer
+                .write_event(event)
+                .expect("writing to a Vec cannot fail");
+        };
+        write(XmlEvent::Start(BytesStart::new("vibegraphInputs")));
+        if let Some((
+            PdfInput::Lhapdf {
+                lhaid,
+                set,
+                member,
+                files,
+            },
+            tier,
+        )) = &self.pdf
+        {
+            let mut pdf = BytesStart::new("pdf");
+            pdf.push_attribute(("use", "central"));
+            pdf.push_attribute(("set", set.as_str()));
+            pdf.push_attribute(("lhaid", lhaid.to_string().as_str()));
+            pdf.push_attribute(("member", member.to_string().as_str()));
+            pdf.push_attribute(("tier", tier.name()));
+            write(XmlEvent::Start(pdf));
+            for file in files {
+                let mut entry = BytesStart::new("file");
+                entry.push_attribute(("name", file.name.as_str()));
+                entry.push_attribute(("sha256", file.sha256.as_str()));
+                write(XmlEvent::Empty(entry));
+            }
+            write(XmlEvent::End(BytesEnd::new("pdf")));
+        }
+        let mut grid = BytesStart::new("grid");
+        grid.push_attribute(("sha256", self.grid_sha256.as_str()));
+        write(XmlEvent::Empty(grid));
+        write(XmlEvent::End(BytesEnd::new("vibegraphInputs")));
+        String::from_utf8(writer.into_inner()).expect("the block is text")
+    }
 }
 
 /// The `<initrwgt>` block declaring a file's reweighting weights, one line per
@@ -453,6 +508,54 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifact::FileDigest;
+    use crate::runcard::ParamValue;
+
+    /// The block names the central member, the tier by name, each file's
+    /// digest in load order and the artifact's digest; a run that reads no
+    /// density lists the artifact alone. Attribute values are escaped.
+    #[test]
+    fn the_inputs_block_lists_the_central_member_and_the_grid() {
+        let read = InputsRead {
+            pdf: Some((
+                PdfInput::Lhapdf {
+                    lhaid: 900002,
+                    set: "Set&Co".to_string(),
+                    member: 2,
+                    files: vec![
+                        FileDigest {
+                            name: "Set&Co.info".to_string(),
+                            sha256: "aa".to_string(),
+                        },
+                        FileDigest {
+                            name: "Set&Co_0002.dat".to_string(),
+                            sha256: "bb".to_string(),
+                        },
+                    ],
+                },
+                Tier::Cvmfs,
+            )),
+            grid_sha256: "cc".to_string(),
+        };
+        assert_eq!(
+            read.header_block(),
+            "<vibegraphInputs>\n  \
+             <pdf use=\"central\" set=\"Set&amp;Co\" lhaid=\"900002\" member=\"2\" tier=\"cvmfs\">\n    \
+             <file name=\"Set&amp;Co.info\" sha256=\"aa\"/>\n    \
+             <file name=\"Set&amp;Co_0002.dat\" sha256=\"bb\"/>\n  \
+             </pdf>\n  \
+             <grid sha256=\"cc\"/>\n\
+             </vibegraphInputs>"
+        );
+        let none = InputsRead {
+            pdf: None,
+            grid_sha256: "cc".to_string(),
+        };
+        assert_eq!(
+            none.header_block(),
+            "<vibegraphInputs>\n  <grid sha256=\"cc\"/>\n</vibegraphInputs>"
+        );
+    }
 
     #[test]
     fn reweight_markup_has_madgraphs_layout() {
@@ -798,12 +901,17 @@ mod tests {
     /// rewrites under `xqcut` keep the card's values.
     #[test]
     fn mg_run_card_carries_what_set_mad_reads() {
-        let card = RunCard::parse(
+        let parsed = RunCard::parse(
             "1 = ickkw\n30 = xqcut\n45 = ptj\n0.4 = drjj\nTrue = use_syst\n2 = alpsfact\n",
         )
         .expect("card");
-        assert_eq!(card.float("ptj"), 30.0, "the resolved card is setcuts.f's");
-        let block = mg_run_card(&card);
+        assert_eq!(
+            parsed.float("ptj"),
+            30.0,
+            "the resolved card is setcuts.f's"
+        );
+        let (card, settings) = parsed.clone().split();
+        let block = mg_run_card(&card, &settings, 20261021);
         assert!(block.starts_with("<MGRunCard>\n\n  "));
         assert!(block.ends_with("\n\n</MGRunCard>"));
         assert!(!block.contains("CDATA"));
@@ -825,7 +933,43 @@ mod tests {
         assert_eq!(number("ptj"), 45.0);
         assert_eq!(number("mmjj"), 0.0);
         assert_eq!(fields["use_syst"], "True");
-        assert_eq!(fields.len(), card.iter().filter(|(_, v)| !matches!(v, ParamValue::Opaque(s) | ParamValue::Str(s) if s.trim().is_empty())).count());
+        assert_eq!(fields["nevents"], "10000");
+        assert_eq!(fields["event_norm"], "average");
+        assert_eq!(
+            fields["iseed"], "20261021",
+            "iseed is the generation's seed"
+        );
+        assert_eq!(fields.len(), parsed.iter().filter(|(_, v)| !matches!(v, ParamValue::Opaque(s) | ParamValue::Str(s) if s.trim().is_empty())).count());
+    }
+
+    /// The record joins the integration card with the generation's settings as
+    /// used: a setting changed after the split is what the record says, every
+    /// integration field keeps the card's value, and a seed beyond MadGraph's
+    /// 32-bit `iseed` leaves the card's own.
+    #[test]
+    fn mg_run_card_records_the_generation_as_drawn() {
+        let parsed = RunCard::parse("7 = iseed\n500 = nevents\n").expect("card");
+        let (card, mut settings) = parsed.split();
+        settings.nevents = 42;
+        settings.event_norm = crate::runcard::EventNorm::Sum;
+        settings.systematics.enabled = false;
+        let field = |block: &str, name: &str| -> String {
+            block
+                .lines()
+                .filter_map(|l| l.split_once('='))
+                .find(|(_, n)| n.trim() == name)
+                .map(|(v, _)| v.trim().to_string())
+                .unwrap_or_else(|| panic!("{name} is not recorded"))
+        };
+        let block = mg_run_card(&card, &settings, 9);
+        assert_eq!(field(&block, "nevents"), "42");
+        assert_eq!(field(&block, "event_norm"), "sum");
+        assert_eq!(field(&block, "use_syst"), "False");
+        assert_eq!(field(&block, "iseed"), "9");
+        assert_eq!(field(&block, "ebeam1"), "6500.0");
+        assert_eq!(field(&block, "time_of_flight"), "-1.0");
+        let wide = mg_run_card(&card, &settings, u64::from(u32::MAX));
+        assert_eq!(field(&wide, "iseed"), "7");
     }
 
     /// A header with no blocks is the header [`LheWriter::begin`] always

@@ -3,7 +3,7 @@ type: Physics Convention
 title: MadGraph cut conventions (cuts.f) and what vibegraph implements
 description: "Cut families and class membership, rapidity not pseudorapidity, ΔR and mass thresholds as signed squares, lab-frame evaluation, and parse-and-detect refusal of unimplemented cuts."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-22}]
 tags: [run-card, cuts, conventions, madgraph-parity, kinematics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -14,6 +14,8 @@ sources:
   - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L225", title: "MadGraph LO cuts.f (FIRSTTIME squaring of dr)"}
   - {id: mg-kin, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L95", title: "MadGraph kin_functions.f rap, R2, DELTA_PHI"}
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L200-L235", title: "MadGraph setcuts.f class membership"}
+  - {id: mg-ht, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L517-L913", title: "MadGraph LO cuts.f, the jet and b transverse-momentum lists and the HT cuts"}
+  - {id: mg-ht-defaults, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4401-L4411", title: "MadGraph banner.py, the HT parameters and their defaults"}
 ---
 
 # MadGraph cut conventions and what vibegraph implements
@@ -73,6 +75,41 @@ under `cut_decays = F`, for decay products of a forced line[^mg-setcuts].
   the squared thresholds, and only with two incoming legs (`cuts.f:310`,
   `nincoming.eq.2`), so a decay never reads it[^n18-h6].
 
+## HT (`htjmin`, `htjmax`, `ihtmin`, `ihtmax`)
+
+`cuts.f` builds two lists of transverse momenta, one per jet-class leg
+(`is_a_j`) and one per b-class leg (`is_a_b`) (`cuts.f:521-534`), then
+cuts on two scalar sums[^mg-ht]:
+
+- **`htj`** is the sum over the jet-class legs (`cuts.f:876-880`): gluons and
+  quarks with `|pdg| ≤ min(maxjetflavor, 6)`. At the default
+  `maxjetflavor = 4` a b quark is not in it; at 5 it is; at 3 the charm quark
+  leaves it too. It fails when `htj < htjmin` or when `htjmax ≥ 0` and
+  `htj > htjmax` (`cuts.f:892`), so the thresholds themselves pass.
+- **`iht`** ("inclusive") is `htj` plus the b-class legs
+  (`maxjetflavor < |pdg| ≤ 5`) (`cuts.f:898-906`), with the same edges against
+  `ihtmin` / `ihtmax` (`cuts.f:908`). It is not over every visible leg:
+  leptons, photons and neutrinos are in neither sum. At `maxjetflavor ≥ 5`
+  `iht = htj`.
+- **No preselection.** The lists are filled from the class alone, with no pT,
+  rapidity or `do_cuts` test (`cuts.f:524-534`): decay products under
+  `cut_decays = F` and jet-class legs above 20 GeV (a top at
+  `maxjetflavor = 6`) count. The run card says so in words: "ht cuts always
+  apply" on decay products (`run_card.dat:102`).
+- **Frame.** Transverse momenta are invariant under the beam-axis boost, so the
+  lab and partonic frames give the same sums.
+- **No jets.** With no jet-class leg, `htjmin > 0` rejects the point
+  (`cuts.f:817`) and the `htj` maximum is never read (the `njets > 0` branch,
+  `:842`); `iht` is still checked (`:908`). A zero `htj` reproduces both.
+- **Defaults** (`banner.py:4402-4405`): `htjmin = 0`, `htjmax = -1`,
+  `ihtmin = 0`, `ihtmax = -1`, and `remove_all_cut` resets them to the same
+  values. A minimum at or below zero and a negative maximum never reject[^mg-ht-defaults].
+
+The partial sums `ht2min`..`ht4max` (`htjmin4`/`htjmax4`, `cuts.f:878-890`)
+are over the 2, 3 or 4 hardest jets and stay parse-and-detect. MadEvent also
+folds `htjmin²` into its `smin` (`setcuts.f:571`); vibegraph's `shat_min`
+takes `max(htjmin, ihtmin)²`, from `√ŝ ≥ Σ p_T` over the summed legs.
+
 ## Cuts are evaluated in the laboratory frame
 
 The matrix element is evaluated in the partonic centre of mass (beams along
@@ -89,7 +126,7 @@ on a given process[^n18-h6][^n18-outcome].
 
 Implemented: the ŝ window; single-leg pT, E, rapidity min and max for classes
 j, b, a, l; pairwise ΔR and invariant mass (min and max) over the class-pair
-tags; `ptll`; `mmnl`; the decay-chain Breit–Wigner windows (`cut_bw` in
+tags; `ptll`; `mmnl`; `htjmin`, `htjmax`, `ihtmin`, `ihtmax`; the decay-chain Breit–Wigner windows (`cut_bw` in
 `myamp.f`: a forced line rejects the point unless `|√p² − M| < bwcutoff·Γ`,
 a positive Γ floored at `M·small_width_treatment`) and `cut_decays`. Under `xqcut > 0` the
 jet thresholds are rewritten first ([run-card/matching-parameters](matching-parameters.md)).
@@ -97,7 +134,7 @@ jet thresholds are rewritten first ([run-card/matching-parameters](matching-para
 Everything else tagged `cut=` in `banner.py` is **parse-and-detect**:
 `UNIMPLEMENTED_CUTS` lists `misset(max)`, `ptheavy`, `ptonium`/`etaonium`,
 `xpt{j,b,a,l}`, the leading-object `ptj1..4`/`ptl1..4` min/max and `cutuse`, the
-`HT` family, `ptgmin` (Frixione isolation), `xetamin`/`deltaeta` (VBF),
+partial sums `ht2min`..`ht4max`, `ptgmin` (Frixione isolation), `xetamin`/`deltaeta` (VBF),
 `ktdurham`/`dparameter`/`ptlund` (CKKW-L merging) and the per-PDG dictionary
 cuts. `Cuts::compile` returns `CutError::UnimplementedCutActive` when any of
 them differs from its MadGraph default — or from the reset value MadGraph's
@@ -117,7 +154,8 @@ The cuts feed the phase-space maps, as bounds that must hold at every accepted
 point:
 
 - `shat_min()`: a lower bound on ŝ (`dsqrt_shat²`, `mmll²` when an
-  `l⁺l⁻` pair is present, `(2·ptl)²` with exactly two final leptons), used by the
+  `l⁺l⁻` pair is present, `(2·ptl)²` with exactly two final leptons,
+  `max(htjmin, ihtmin)²`), used by the
   hadronic `(τ, y)` map ([phase-space/hadronic-tau-y-sampling](../phase-space/hadronic-tau-y-sampling.md));
 - `spacelike_floor()` and `timelike_floor(slots)`: regulator scales and
   invariant-mass floors implied by the cuts
@@ -145,4 +183,5 @@ The parser and defaults are [run-card/run-card-parser-and-defaults](run-card-par
 [^mg-cuts]: MadGraph `cuts.f:225` (the squaring, inside the FIRSTTIME block `:207-280`) and `:443` (the test), at the pinned commit.
 [^mg-kin]: MadGraph `kin_functions.f:95` (`rap`), `:42` (`R2`), `:164` (`DELTA_PHI`, clamp `:181-182`).
 [^mg-setcuts]: MadGraph `setcuts.f:200-235`, `do_cuts` (`:201-215`) and class membership (`:217-235`).
-
+[^mg-ht]: MadGraph `cuts.f:521-534` (the lists), `:817` (no jets), `:874-913` (the HT cuts); `setcuts.f:498-507` (the parameters' commons), at the pinned commit.
+[^mg-ht-defaults]: MadGraph `banner.py:4402-4405` (defaults), `:3858-3873` (`remove_all_cut`); `run_card.dat:102, 218-223` (the template's wording).
