@@ -3,7 +3,7 @@ type: Sprint
 title: "Neyman on the 2 → 6 ladder, and an outcome-independent channel combine"
 description: "P1 measured Neyman against ByAlpha on bbx's floor-bound channels and found the point-weighted iteration combine biased low; C1 replaces it with an outcome-independent combine and re-measures Neyman's target-mode figures."
 status: draft
-active: true
+active: false
 tags: [multichannel, allocation, neyman, iteration-combination, two-to-six, budget-ladder]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-26}
 ---
