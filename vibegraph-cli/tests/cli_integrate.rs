@@ -20,13 +20,13 @@ use common::validation_dir;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::artifact::{FileDigest, IntegrateArtifact, PdfInput};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
@@ -105,7 +105,27 @@ fn check_run(test: &str, run: &str, run_card: &str) {
 
     // (2) Metadata round-trips through the artifact.
     assert_eq!(artifact.process, "p p > e+ e-");
-    assert_eq!(artifact.pdf_set, PDF_SET);
+    // The record is the card's `lhaid`, the set and member it names, and the
+    // SHA-256 of the two files on disk the run parsed.
+    let sha = |name: &str| FileDigest {
+        name: name.to_string(),
+        sha256: vibegraph::ufo::identity::digest_bytes(
+            &std::fs::read(pdf_dir().join(PDF_SET).join(name)).unwrap(),
+        ),
+    };
+    assert_eq!(
+        artifact.inputs.pdf,
+        PdfInput::Lhapdf {
+            lhaid: 247000,
+            set: PDF_SET.to_string(),
+            member: 0,
+            files: vec![
+                sha(&format!("{PDF_SET}.info")),
+                sha(&format!("{PDF_SET}_0000.dat")),
+            ],
+        }
+    );
+    assert!(artifact.inputs.params.is_empty());
     assert_eq!(artifact.sqrt_s_had, 13000.0);
     assert_eq!(artifact.mu_f, 91.1880);
 
@@ -132,7 +152,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         &amps,
         &evaluated,
         &pdf,
-        artifact.sqrt_s_had,
+        ProtonBeams::from_run_card(&rc),
         artifact.mu_f,
         MapOptions::fixed(artifact.maps),
     )
@@ -314,5 +334,63 @@ fn integrate_is_thread_count_independent() {
     assert!(
         bytes.iter().all(|b| *b == bytes[0]),
         "`integrate` wrote different artifacts on proton beams at -j 1 / 4 / 16"
+    );
+}
+
+/// `generate` on a proton artifact writes what it read into the event file's
+/// `<vibegraphInputs>` block: the central set, its `lhaid` and member, the tier
+/// it was found in (named, not a path), the SHA-256 of the two files it parsed,
+/// and the SHA-256 of the artifact file.
+#[test]
+fn generate_records_the_pdf_files_and_the_grid_it_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    let status = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(validation_dir().join("dy13_default_run_card.dat"))
+        .pdf_data_path(pdf_dir())
+        .arg("--out")
+        .arg(tmp.path())
+        .arg("--fixed-budget")
+        .args(["--neval", "2000", "--niter", "2"])
+        .status()
+        .expect("spawn vibegraph");
+    assert!(status.success(), "vibegraph integrate exited non-zero");
+    let artifact = tmp.path().join("grid.bin.zst");
+    let events = tmp.path().join("events.lhe");
+    let output = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(&artifact)
+        .args(["--seed", "1", "--nevents", "5", "-o"])
+        .arg(&events)
+        .pdf_data_path(pdf_dir())
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        output.status.success(),
+        "vibegraph generate failed:\n{}",
+        common::stderr_of(&output)
+    );
+
+    let sha = |path: &Path| vibegraph::ufo::identity::digest_bytes(&std::fs::read(path).unwrap());
+    let set = pdf_dir().join(PDF_SET);
+    let block = format!(
+        "<vibegraphInputs>\n  \
+         <pdf use=\"central\" set=\"{PDF_SET}\" lhaid=\"247000\" member=\"0\" tier=\"lhapdf_data_path\">\n    \
+         <file name=\"{PDF_SET}.info\" sha256=\"{}\"/>\n    \
+         <file name=\"{PDF_SET}_0000.dat\" sha256=\"{}\"/>\n  \
+         </pdf>\n  \
+         <grid sha256=\"{}\"/>\n\
+         </vibegraphInputs>",
+        sha(&set.join(format!("{PDF_SET}.info"))),
+        sha(&set.join(format!("{PDF_SET}_0000.dat"))),
+        sha(&artifact),
+    );
+    let text = std::fs::read_to_string(&events).expect("read the event file");
+    assert!(
+        text.contains(&block),
+        "expected\n{block}\nin the header of\n{}",
+        &text[..text.find("<init>").unwrap_or(text.len())]
     );
 }

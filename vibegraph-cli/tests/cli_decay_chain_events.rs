@@ -61,7 +61,7 @@ use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::maps::MapOptions;
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::stats::{chi2_homogeneity, effective_counts, Chi2Test};
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
@@ -921,7 +921,7 @@ fn replay_scales(
         &amps,
         &evaluated,
         &pdf,
-        rc.ebeam1 + rc.ebeam2,
+        ProtonBeams::from_run_card(&rc),
         rc.dsqrt_q2fact1,
         MapOptions::default(),
     )

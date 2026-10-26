@@ -40,9 +40,11 @@ cargo clippy --manifest-path "$ROOT/Cargo.toml" --workspace --all-targets \
   -- -D warnings
 lints=$?
 
+# `--no-fail-fast`: cargo otherwise stops at the first test target that fails,
+# and every gate in a later target goes unmeasured behind it.
 cargo test --manifest-path "$ROOT/Cargo.toml" --workspace --profile release-debug \
   --features vibegraph/extended-validation,vibegraph-lib/extended-validation \
-  -- --nocapture
+  --no-fail-fast -- --nocapture
 gates=$?
 
 cargo run --manifest-path "$ROOT/Cargo.toml" --profile release-debug \

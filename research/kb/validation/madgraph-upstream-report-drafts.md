@@ -20,6 +20,7 @@ sources:
   - {id: mg381-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/madgraph/various/banner.py#L1821-L1831", title: "3.8.1 banner.py, RivetCard.setWeightName"}
   - {id: mg381-rewgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/Template/LO/SubProcesses/reweight.f#L1534-L1538", title: "3.8.1 reweight.f, rewgt's jet labels"}
   - {id: mg-pr428, resource: "https://github.com/mg5amcnlo/mg5amcnlo/pull/428", title: "mg5amcnlo PR #428, fix the dead $ veto on outgoing-fermion propagators"}
+  - {id: mg381-cuts-orient, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/a5b17913ef0b6e1c872016f94d0fb610207dab47/Template/LO/SubProcesses/cuts.f#L24-L98", title: "3.8.1 cuts.f, PASSCUTS per beam orientation (CUTS_ORIENT)"}
   - {id: mg-ebbdc97, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/ebbdc974c7f697071cf3a90f0981a3047c4597b4", title: "mg5amcnlo commit ebbdc974, move back to refine_grid=False"}
 ---
 # MadGraph upstream report drafts
@@ -67,6 +68,7 @@ issue.
 | `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | 4 medium | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | [#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) |
 | ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | — (fixed) | not affected (ran; no `P1D` for `$`, fix backported) | **fixed** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
 | `AQCDUP`/`AQEDUP` divide by `3.1415926` | [`madgraph-aqcdup-truncated-pi`](../../upstream/madgraph-aqcdup-truncated-pi/README.md) | 7 low | affected (ran) | affected (ran) | `unwgt.f:768-769` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
+| mirrored beam ordering cut in the sampled frame at `ebeam1 ≠ ebeam2` | [`madgraph-mirrored-cut-unequal-beams`](../../upstream/madgraph-mirrored-cut-unequal-beams/README.md) | medium, unranked | affected (read) | **fixed** (read; `CUTS_ORIENT`) | `cuts.f:24-98` (the fix); 3.5.17 `super_auto_dsig_group_v4.inc:467`, `:472` | yes (asks for the LTS backport; reproducer not yet run) | not filed |
 | `rambo.py` massive overflow warning tests `iwarn[4] > 5` | [`madgraph-rambo-massive-overflow-warning`](../../upstream/madgraph-rambo-massive-overflow-warning/README.md) | 8 trivial | affected (ran, code level) | affected (ran, code level) | `rambo.py:218` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
 
 ## Versions

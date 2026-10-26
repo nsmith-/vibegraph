@@ -28,9 +28,11 @@ use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
-    check_model, check_process, generate, reads_parton_densities, GenerateAssets, GenerateError,
-    GenerateOptions, Strategy as SampleStrategy,
+    check_collider_energy, check_model, check_process, generate, reads_parton_densities,
+    GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
 };
+use vibegraph::lhef::write::InputsRead;
+use vibegraph::pdf::select::load_recorded;
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
@@ -38,8 +40,9 @@ use vibegraph::runcard::EventNorm;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
+use crate::assets;
 use crate::error::{err, CliError};
-use crate::integrate::{forbidden_onshell, load_pdf_set, process_string};
+use crate::integrate::{forbidden_onshell, process_string};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
@@ -298,7 +301,8 @@ fn cli_error(e: GenerateError) -> CliError {
         )),
         GenerateError::RoundingOnMixedMultiplicity { parts } => err(format!(
             "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
-             multiplicities to each one's integrated cross section; use --strategy buffer"
+             phase spaces (multiplicities or sets of outgoing masses) to each one's integrated \
+             cross section; use --strategy buffer"
         )),
         other => err(other.to_string()),
     }
@@ -314,7 +318,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         )));
     }
 
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+    let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact)
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
         err(format!(
@@ -337,6 +341,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
     check_model(&artifact, &model_id, &model_location(&parsed, &config)).map_err(cli_error)?;
+    // The library refuses a stale collider energy too; checking it here does so
+    // before the PDF set is read, which may mean a download.
+    check_collider_energy(&artifact, &parsed).map_err(cli_error)?;
 
     tui::state::describe_model(
         &model_id.label(),
@@ -368,27 +375,23 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let evaluated = EvaluatedModel::from_model(model.clone());
     let reweight = reweight_launches(args, &parsed, &model)?;
 
-    let set = if reads_parton_densities(&artifact, &parsed) {
-        Some(load_pdf_set(&artifact.pdf_set, None, network)?)
+    let pdf = if reads_parton_densities(&artifact, &parsed) {
+        let tiers = assets::pdf_tiers().map_err(err)?;
+        load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
+            .map_err(|e| err(e.to_string()))?
     } else {
         None
     };
-    let member = set
-        .as_ref()
-        .map(|set| {
-            set.member(artifact.pdf_member).map_err(|e| {
-                err(format!(
-                    "cannot load PDF member {} of {}: {e}",
-                    artifact.pdf_member, artifact.pdf_set
-                ))
-            })
-        })
-        .transpose()?;
+    let inputs = InputsRead {
+        pdf: pdf.as_ref().map(|p| (p.input.clone(), p.tier)),
+        grid_sha256,
+    };
     let assets = GenerateAssets {
         card: &parsed,
         model: &model,
         evaluated: &evaluated,
-        pdf: set.as_ref().zip(member.as_ref()),
+        pdf: pdf.as_ref().map(|p| (&p.set, &p.member)),
+        inputs: &inputs,
     };
     let options = GenerateOptions {
         seed,

@@ -34,7 +34,9 @@ differ. Points outside the tabulated range go through LHAPDF's continuation
 rule for the same reason. A set also carries the $\alpha_s(M_Z)$ it was
 fitted with, which is the coupling a run reading its densities has to use.
 
-The default set is `NNPDF23_lo_as_0130_qed`, MadGraph's LO default. The
+The default set is `NNPDF23_lo_as_0130_qed` (`pdlabel = lhapdf`,
+`lhaid = 247000`), the LHAPDF grid of the fit behind MadGraph's LO default
+`nn23lo1`, whose built-in parameterisation vibegraph does not read. The
 [command line](../cli/overview.md#data-the-binary-does-not-carry) page
 describes how sets are fetched and pinned.
 
@@ -62,6 +64,13 @@ outgoing masses, their cut filter and their colour basis, because
 $|\mathcal{M}|^2$ equality alone does not license reusing one member's
 colour flow for another. A partition whose groups are separated by less
 than a set margin is treated as a failed measurement, not a decomposition.
+
+The outgoing masses fix the phase space, so a card whose subprocesses differ
+in them, such as `p p > l+ l-` with the massive `ta` in the multiparticle, is
+split first: one integrand per set of outgoing masses, each partitioned into
+its own groups and integrated over its own channels, and the cross sections
+summed as for several final-state multiplicities. MadGraph separates them the
+same way, into different `P` directories.
 
 Diagram enumeration produces one ordering per unordered initial state:
 $g u$ is generated and $u g$ is not. Both are physical, since the
