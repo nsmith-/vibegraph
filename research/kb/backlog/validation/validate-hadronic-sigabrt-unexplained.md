@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "Heap corruption detected once in validate_hadronic (macOS libmalloc abort)"
-description: "validate_hadronic aborted once on the M3: libmalloc found a corrupted free-list entry while a matrix-element scratch arena grew. About 34 reruns on macOS and Linux were clean, and the corrupting write is not located."
+description: "validate_hadronic aborted once on the M3: libmalloc found a corrupted free list while a scratch arena grew. About 34 reruns were clean; the corrupting write is not located."
 area: validation
 state: open
 priority: medium
@@ -30,19 +30,14 @@ rerun of the same tree was clean
 - The realloc is where the damage was noticed, not necessarily where it was
   done. The other threads were in rayon or ordinary integrand code.
 
-**Ruled out so far.**
-- The binary has no `unsafe` of this crate's own. The `get_unchecked` pair in
-  `helas/eval/run.rs` sits behind `unchecked-study`, which no build enables.
-  No global allocator is installed.
-- What remains is a dependency's `unsafe` (rayon, rand, zstd-sys, the PDF
-  reader) or the OS allocator.
+**Ruled out so far.** The binary has no `unsafe` of this crate's own (the
+`get_unchecked` pair in `helas/eval/run.rs` sits behind `unchecked-study`, which
+no build enables) and no global allocator. A dependency's `unsafe` (rayon, rand,
+zstd-sys, the PDF reader) or the OS allocator remain.
 
-**Reproduction.** None of these runs aborted:
-- 22 Linux runs under the banked flags;
-- 12 runs of the exact crashing binary on the M3, 6 of them under
-  `MallocScribble`/`MallocGuardEdges`.
-
-That is one abort in about 70 runs.
+**Reproduction.** None of 22 Linux runs under the banked flags, or 12 runs of
+the exact crashing binary on the M3 (6 under `MallocScribble`/`MallocGuardEdges`),
+aborted: one abort in about 70 runs.
 
 **The same signature has been seen before.**
 [malloc-abort-under-proton-sample-load](malloc-abort-under-proton-sample-load.md)
