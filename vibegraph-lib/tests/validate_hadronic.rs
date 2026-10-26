@@ -62,7 +62,7 @@ use vibegraph::onshell::OnShellVeto;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, SplitAngle, TauMap};
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -371,6 +371,18 @@ fn run_seed_mapped(
     )
 }
 
+/// Where the integrand cuts a group's mirrored beam ordering.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MirroredCut {
+    /// On the lab frame of the event the term is, as this crate integrates.
+    Physical,
+    /// On the configuration MadEvent 3.7.1 sampled the term from, which at
+    /// unequal beams is not the event it writes: MadGraph's defect, emulated
+    /// ([`ProtonIntegrand::emulate_madevent_mirrored_cut`]) so σ can be gated
+    /// against its references.
+    MadEvent,
+}
+
 /// What a run card's scale prescription must resolve to.
 ///
 /// Asserted rather than observed. The fixed-scale and dynamical cards of the same
@@ -422,6 +434,7 @@ fn run_seed_shaped(
         bound_transfer,
         shape,
         MapOptions::default(),
+        MirroredCut::Physical,
     );
     let result = integ.integrate(neval, niter, seed);
     assert_no_scale_draw_fallbacks(&integ);
@@ -447,19 +460,38 @@ fn adapted_integrand<'a>(
     bound_transfer: bool,
     shape: ScaleShape,
     maps: MapOptions,
+    mirrored_cut: MirroredCut,
 ) -> ProtonIntegrand<'a> {
     let (survey, adapt_iters, _, _) = budget;
     let mut integ = if bound_transfer {
-        ProtonIntegrand::new_with_maps(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F, maps)
+        ProtonIntegrand::new_with_maps(
+            groups,
+            amps,
+            evaluated,
+            pdf,
+            ProtonBeams::from_run_card(rc),
+            MU_F,
+            maps,
+        )
     } else {
         assert_eq!(
             maps,
             MapOptions::default(),
             "the unbounded integrand is built under the default maps only"
         );
-        ProtonIntegrand::new_unbounded(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F)
+        ProtonIntegrand::new_unbounded(
+            groups,
+            amps,
+            evaluated,
+            pdf,
+            ProtonBeams::from_run_card(rc),
+            MU_F,
+        )
     }
     .expect("hadronic integrand");
+    if mirrored_cut == MirroredCut::MadEvent {
+        integ.emulate_madevent_mirrored_cut();
+    }
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -533,7 +565,31 @@ fn assert_no_scale_draw_fallbacks(integ: &ProtonIntegrand<'_>) {
 /// measure, which the seed sweep and not the pull is what guards.
 fn check_dy_run(run: &str, card: &str) {
     let clock = Stopwatch::start();
-    let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
+    let row = if run == DY_BEAMS_RUN {
+        DY_BEAMS_ROW
+    } else {
+        "pp_to_ll"
+    };
+    let Some((mg, mg_err)) = banked(run) else {
+        if common::manifest::unbundled_rows().contains(row) {
+            eprintln!(
+                "[{run}] AWAITING BUNDLE (the manifest marks row {row} bundled = false and this \
+                 checkout has no reference for it, so no cell is written)"
+            );
+            return;
+        }
+        assert!(
+            common::manifest::planned_rows().contains(row),
+            "[{run}] no banked Drell-Yan reference, and the manifest does not declare row {row} \
+             planned: bank it with `validation/madgraph/bank_seeded_sigma.sh`"
+        );
+        eprintln!(
+            "[{run}] NOT YET BANKED (the manifest marks row {row} planned and neither a seed \
+             record nor hadronic_sigma_reference.json carries a reference, so no cell is \
+             written)"
+        );
+        return;
+    };
     let card_path = validation_dir().join(card);
     let rc = RunCard::parse_file(&card_path).expect("parse run card");
 
@@ -548,34 +604,25 @@ fn check_dy_run(run: &str, card: &str) {
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
 
+    // The unequal-beam reference carries MadEvent's mirrored-ordering cut, a
+    // registered deviation: σ is gated with that cut emulated, and this crate's
+    // own σ is measured beside it and reported.
+    let cut = if run == DY_BEAMS_RUN {
+        MirroredCut::MadEvent
+    } else {
+        MirroredCut::Physical
+    };
+    let dy = DySetup {
+        groups: &groups,
+        amps: &amps,
+        model: &model,
+        evaluated: &evaluated,
+        set: &set,
+        pdf: &pdf,
+        rc: &rc,
+    };
     let mut summary = Vec::new();
-    let mut runs = Vec::new();
-    for &seed in DY_SEEDS {
-        let (sigma, err) = run_seed(
-            &groups,
-            &amps,
-            &model,
-            &evaluated,
-            &set,
-            &pdf,
-            &rc,
-            (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER),
-            seed,
-            // Drell-Yan at this order carries no strong coupling; a matrix element
-            // that did would need one, and `pdlabel = lhapdf` refuses to supply it.
-            false,
-            &mut summary,
-        );
-        eprintln!(
-            "[{run} seed {seed}] vibegraph σ = {sigma:.3} ± {err:.3} pb | rel = {:+.4}",
-            sigma / mg - 1.0
-        );
-        runs.push(SeedResult {
-            seed,
-            sigma_pb: sigma,
-            sigma_err_pb: err,
-        });
-    }
+    let runs = dy.seeds(run, mg, cut, &mut summary);
 
     let SeedMean {
         mean,
@@ -594,7 +641,10 @@ fn check_dy_run(run: &str, card: &str) {
     );
 
     let ok = pull.abs() < 3.0 && rel.abs() < DY_MAX_REL;
-    let mut row = IntegralsRow::new("pp_to_ll", DY_PROCESS, "gate").with_variant(run);
+    let mut row = IntegralsRow::new(row, DY_PROCESS, "gate");
+    if row.row == "pp_to_ll" {
+        row = row.with_variant(run);
+    }
     row.status = if ok && chi2 < DY_MAX_CHI2_PER_DOF {
         "pass"
     } else {
@@ -612,6 +662,9 @@ fn check_dy_run(run: &str, card: &str) {
     row.neval = DY_NEVAL;
     row.niter = DY_NITER;
     row.subsampler = summary;
+    if cut == MirroredCut::MadEvent {
+        row.note = Some(dy.registered_deviation(run, (mg, mg_err), (mean, mean_err)));
+    }
     row.duration_s = Some(clock.seconds());
     row.write();
 
@@ -624,6 +677,100 @@ fn check_dy_run(run: &str, card: &str) {
         chi2 < DY_MAX_CHI2_PER_DOF,
         "[{run}] the seeds scatter by more than they claim: χ²/dof = {chi2:.2} over {runs:?}"
     );
+}
+
+/// What one Drell-Yan card's seeds are run on.
+struct DySetup<'a> {
+    groups: &'a FlavorGroups,
+    amps: &'a [BoundAmplitude<'a, f64>],
+    model: &'a UFOModel,
+    evaluated: &'a EvaluatedModel,
+    set: &'a PdfSet,
+    pdf: &'a PdfMember,
+    rc: &'a RunCard,
+}
+
+impl DySetup<'_> {
+    /// [`DY_SEEDS`]' `(σ, Δσ)` at the Drell-Yan budget, each printed against the
+    /// reference `mg`, with the mirrored ordering cut where `cut` says.
+    fn seeds(
+        &self,
+        run: &str,
+        mg: f64,
+        cut: MirroredCut,
+        summary: &mut Vec<ChannelSummary>,
+    ) -> Vec<SeedResult> {
+        let budget = (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER);
+        DY_SEEDS
+            .iter()
+            .map(|&seed| {
+                let integ = adapted_integrand(
+                    self.groups,
+                    self.amps,
+                    self.model,
+                    self.evaluated,
+                    self.set,
+                    self.pdf,
+                    self.rc,
+                    budget,
+                    seed,
+                    // Drell-Yan at this order carries no strong coupling; a matrix
+                    // element that did would need one, and `pdlabel = lhapdf`
+                    // refuses to supply it.
+                    false,
+                    summary,
+                    true,
+                    ScaleShape::FixedAtMz,
+                    MapOptions::default(),
+                    cut,
+                );
+                let (sigma, err) = integ.integrate(DY_NEVAL, DY_NITER, seed);
+                assert_no_scale_draw_fallbacks(&integ);
+                eprintln!(
+                    "[{run} seed {seed} {cut:?} mirrored cut] vibegraph σ = {sigma:.3} ± \
+                     {err:.3} pb | rel = {:+.4}",
+                    sigma / mg - 1.0
+                );
+                SeedResult {
+                    seed,
+                    sigma_pb: sigma,
+                    sigma_err_pb: err,
+                }
+            })
+            .collect()
+    }
+
+    /// This crate's own σ, each ordering cut on its own lab frame, measured on the
+    /// gate's seeds and reported against MadGraph `(mg, mg_err)` and against the
+    /// MadEvent emulation `(emulated, emulated_err)`: the size of the registered
+    /// deviation, as the line the gated row's note carries. Reported, never
+    /// gated.
+    fn registered_deviation(
+        &self,
+        run: &str,
+        (mg, mg_err): (f64, f64),
+        (emulated, emulated_err): (f64, f64),
+    ) -> String {
+        let own = combine(&self.seeds(run, mg, MirroredCut::Physical, &mut Vec::new()));
+        let pull = |a: f64, ea: f64, b: f64, eb: f64| (a - b) / (ea * ea + eb * eb).sqrt();
+        let line = format!(
+            "registered deviation (MadGraph defect: MadEvent 3.7.1 cuts the mirrored beam \
+             ordering on the configuration it sampled, dsample.f:181 before \
+             super_auto_dsig_group_v4.inc:815-829; user, 2026-10-22): the gated sigma emulates \
+             it; this crate's own sigma is {:.3} +- {:.3} pb (chi2/dof {:.2}), rel {:+.4} \
+             (pull {:+.1}) against MadGraph's {mg:.3} +- {mg_err:.3} and rel {:+.4} (pull {:+.1}) \
+             against the emulation's {emulated:.3} +- {emulated_err:.3}; info",
+            own.mean,
+            own.err,
+            own.chi2_per_dof,
+            own.mean / mg - 1.0,
+            pull(own.mean, own.err, mg, mg_err),
+            own.mean / emulated - 1.0,
+            pull(own.mean, own.err, emulated, emulated_err),
+        );
+        eprintln!("[{run}] INFO {line}");
+        line
+    }
 }
 
 #[test]
@@ -913,8 +1060,8 @@ fn mixed_mass_runs(
                 .collect()
         })
         .collect();
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
-    let maps = multiplicity_maps(groups, evaluated, sqrt_s_had, MapOptions::default());
+    let beams = ProtonBeams::from_run_card(rc);
+    let maps = multiplicity_maps(groups, evaluated, beams.sqrt_s(), MapOptions::default());
 
     let mut part_runs: [Vec<SeedResult>; 2] = Default::default();
     let mut total_runs = Vec::new();
@@ -926,7 +1073,7 @@ fn mixed_mass_runs(
                 part_amps,
                 evaluated,
                 &pdf,
-                sqrt_s_had,
+                beams,
                 rc.dsqrt_q2fact1,
                 maps,
             )
@@ -974,6 +1121,38 @@ fn mixed_mass_runs(
         );
     }
     (part_runs, total_runs)
+}
+
+/// The run name and manifest row of the unequal-beam Drell-Yan cross section.
+const DY_BEAMS_RUN: &str = "beams_6500_4000";
+const DY_BEAMS_ROW: &str = "pp_to_ll_beams_6500_4000";
+
+/// σ(p p → e⁺e⁻) between proton beams of 6500 and 4000 GeV, against MadGraph's run
+/// on the same card apart from `ebeam2`.
+///
+/// The integrand takes its beams from the card, so this is the one σ comparison
+/// that sees `2√(E₁E₂)`, the parton energies `x_i E_i` and the lab boost.
+///
+/// **A registered deviation.** MadEvent 3.7.1 cuts a group's mirrored beam
+/// ordering on the configuration it sampled rather than on the event it writes,
+/// which at `E₁ ≠ E₂` is the lab frame displaced by `ln(E₁/E₂)` in rapidity
+/// ([`ProtonIntegrand::emulate_madevent_mirrored_cut`]). This crate keeps the
+/// correct cut. The gated σ is integrated with MadEvent's cut emulated; this
+/// crate's own σ is measured on the same seeds and reported in the row's note,
+/// against MadGraph and against the emulation — about `+5.3 %` above MadGraph on
+/// this card. Exchanging the beams leaves this crate's σ unchanged and not
+/// MadGraph's.
+///
+/// What the gate cannot see: the emulation replaces the mirrored ordering's
+/// production cut, so a defect in that cut alone is invisible to it. The reported
+/// σ sees one, at the deviation's own scale; pointwise it is pinned by
+/// `exchanging_unequal_beam_energies_reflects_the_integrand` in `proton.rs`.
+///
+/// Reports `NOT YET BANKED` and writes no cell while the manifest marks the row
+/// `planned` and no reference exists; a reference that exists is gated.
+#[test]
+fn sigma_unequal_beams_vs_mg() {
+    check_dy_run(DY_BEAMS_RUN, "dy_beams_6500_4000_run_card.dat");
 }
 
 /// Partonic-CM external momenta `[q, q̄, e⁺, e⁻]` of a back-to-back dilepton
@@ -1075,8 +1254,15 @@ fn pointwise_integrand_oracle() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
+    let integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
 
     // The oracle's two coupling classes, located by the flavour content of the
     // groups rather than by group order, so a reordering of the decomposition
@@ -1477,8 +1663,15 @@ fn probe_accepted_point_floor_hadronic() {
     eprintln!("-- pp_to_llj_fixed: MG {mg:.3} +- {mg_err:.3} pb, {LLJ_NEVAL} x {LLJ_NITER} --");
     let mut runs: Vec<SeedResult> = Vec::new();
     for &seed in LLJ_SEEDS {
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("hadronic integrand");
+        let mut integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::from_run_card(&rc),
+            MU_F,
+        )
+        .expect("hadronic integrand");
         integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
             .expect("run card scale prescription compiles");
@@ -1579,9 +1772,15 @@ fn probe_alpha_survey_budget_hadronic() {
         let mut converged: Vec<(usize, Vec<f64>)> = Vec::new();
         for n_survey in SURVEYS {
             let clock = Stopwatch::start();
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("hadronic integrand");
+            let mut integ = ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::from_run_card(&rc),
+                MU_F,
+            )
+            .expect("hadronic integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
                 .expect("run card scale prescription compiles");
@@ -3028,8 +3227,15 @@ fn probe_cluster_scale_spread_over_configurations() {
             .iter()
             .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
             .collect();
-        let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("hadronic integrand");
+        let mut integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::from_run_card(&rc),
+            MU_F,
+        )
+        .expect("hadronic integrand");
         let report = integ
             .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
             .expect("run card scale prescription compiles");
@@ -3205,8 +3411,15 @@ fn madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2() {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
+    let mut integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -4337,9 +4550,15 @@ fn probe_scale_draw_cost() {
             .collect();
 
         let build = |rc: &RunCard| {
-            let mut integ =
-                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                    .expect("integrand");
+            let mut integ = ProtonIntegrand::new(
+                &groups,
+                &amps,
+                &evaluated,
+                &pdf,
+                ProtonBeams::from_run_card(rc),
+                MU_F,
+            )
+            .expect("integrand");
             integ
                 .use_run_card_scales(&model, &evaluated, rc, Some(&set.info.alpha_s))
                 .expect("scale prescription compiles");
@@ -4558,6 +4777,7 @@ fn llj_scatter_calibration(
             true,
             shape,
             maps,
+            MirroredCut::Physical,
         );
         let (channels, total) = integ.adapt_grids(LLJ_NEVAL, LLJ_NITER, seed);
         assert_no_scale_draw_fallbacks(&integ);
@@ -4677,8 +4897,15 @@ fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
+    let mut integ = ProtonIntegrand::new(
+        &groups,
+        &amps,
+        &evaluated,
+        &pdf,
+        ProtonBeams::from_run_card(&rc),
+        MU_F,
+    )
+    .expect("hadronic integrand");
     integ
         .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -5355,7 +5582,8 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
     let evaluated = EvaluatedModel::from_model(model.clone());
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(&rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
     let forbidden = forbidden_onshell_ids(&proc_card, &model).expect("on-shell vetoes");
@@ -5418,7 +5646,7 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
                 part_amps,
                 &evaluated,
                 &pdf,
-                sqrt_s_had,
+                beams,
                 rc.dsqrt_q2fact1,
                 maps,
             )

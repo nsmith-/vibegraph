@@ -71,7 +71,7 @@ budget. The floor cut the worst single-seed rel to +0.89 % (uux) and +0.46 % (bb
 but at one budget only, so whether swings shrink with budget is unmeasured.
 They are measured and reported on the long tier rather than gated (see
 [sigma-row gating exceptions](sigma-row-gating-exceptions.md) and
-[two-to-six-integrals-not-enforced](../backlog/validation/two-to-six-integrals-not-enforced.md)).
+[two-to-six-integrals-info-on-scattering-references](../backlog/validation/two-to-six-integrals-info-on-scattering-references.md)).
 
 ## Caveats
 

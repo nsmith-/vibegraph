@@ -14,8 +14,9 @@
 #        mlm      the same script, on the committed <row>_run_card.dat
 #                 (gen_mlm_references.sh's card).
 #        dy13     `generate p p > e+ e-` on dy13_default_run_card.dat or
-#                 dy13_mmll_run_card.dat (gen_hadronic_sigma.sh's): the two
-#                 references the pp_to_ll gate reads.
+#                 dy13_mmll_run_card.dat or dy_beams_6500_4000_run_card.dat
+#                 (gen_hadronic_sigma.sh's): the references the pp_to_ll gate
+#                 and the unequal-beam Drell-Yan gate read.
 #        dy13etau dy13_etau_default: `p p > l+ l-` with `l = e, ta` on
 #                 dy13_default_run_card.dat, whose two lepton masses give two
 #                 P directories.
@@ -171,7 +172,7 @@ group_rows() {
       p3r3_to_p3r3_toy_sextet ee_to_wp0wm ee_to_mumu_zonly ee_to_ee_nsz ;;
     @fixed23) echo ee_to_tatah uux_to_epemg ddx_to_epemg gu_to_epemu gux_to_epemux ;;
     @fixed24) echo ee_to_mumu_tata_qcd0 ud_to_epemud_qcd0 ;;
-    @hadronic) echo dy13_default dy13_mmll_60_120 dy13_etau_default pp_to_bb pp_to_bb_qcd2 pp_to_bb_fixed \
+    @hadronic) echo dy13_default dy13_mmll_60_120 dy13_beams_6500_4000 dy13_etau_default pp_to_bb pp_to_bb_qcd2 pp_to_bb_fixed \
       pp_to_llj_fixed pp_to_llj pp_to_llj_dyn pp_to_jj pp_to_ll_scalefact2 ;;
     @llj-mlm) echo pp_to_llj_mlm pp_to_llj_xqcut_only pp_to_llj_mlm_alps2 ;;
     @mlm-multi) echo pp_to_ttx_0j1j_mlm pp_to_ll_0j2j_mlm ;;
@@ -191,7 +192,7 @@ group_rows() {
 row_kind() {
   case "$1" in
     ee_to_mumua) echo pta ;;
-    dy13_default | dy13_mmll_60_120) echo dy13 ;;
+    dy13_default | dy13_mmll_60_120 | dy13_beams_6500_4000) echo dy13 ;;
     dy13_etau_default) echo dy13etau ;;
     pp_to_llj_mlm | pp_to_llj_xqcut_only | pp_to_llj_mlm_alps2 | pp_to_ll_0j2j_mlm | pp_to_ttx_0j1j_mlm)
       echo mlm ;;
@@ -414,6 +415,7 @@ run_row() {
       case "$row" in
         dy13_default) card="$HERE/dy13_default_run_card.dat" ;;
         dy13_mmll_60_120) card="$HERE/dy13_mmll_run_card.dat" ;;
+        dy13_beams_6500_4000) card="$HERE/dy_beams_6500_4000_run_card.dat" ;;
       esac
       generator="generate p p > e+ e- (gen_hadronic_sigma.sh); run card $(basename "$card")"
       ;;

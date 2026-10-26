@@ -56,7 +56,9 @@ use common::validation_dir;
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::validation::samples::{compare, labelling_for, EventSample, Spectrum};
+use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
+use vibegraph::runcard::RunCard;
+use vibegraph::validation::samples::{compare, labelling_for, Comparison, EventSample, Spectrum};
 
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
 mod report;
@@ -145,6 +147,8 @@ struct Row {
     /// distribution comparison. Each returns how many units it judged and how many
     /// failed, so a clean reading is a recorded measurement rather than silence.
     scans: &'static [Scan],
+    /// A registered deviation the banked reference carries, or `None`.
+    deviation: Option<&'static MirroredCutDeviation>,
 }
 
 /// One per-event scan: `(name, unit, run)`, where `run` returns `(bad, total)`.
@@ -196,6 +200,289 @@ fn scan_colour_patterns(row: &Row, sample: &EventSample) -> (usize, usize) {
         }
     }
     (bad, sample.events.len())
+}
+
+/// MadGraph's defect on the unequal-beam row, kept as a registered deviation
+/// (user, 2026-10-22): grouped MadEvent 3.7.1 runs `passcuts` once per point,
+/// on the sampled momenta at the sampled `cm_rap` (`dsample.f:181`), before
+/// `select_grouping` picks the beam ordering (`dsample.f:222`); the mirror
+/// flips `CM_RAP` only afterwards (`super_auto_dsig_group_v4.inc:815-829`) and
+/// its own `PASSCUTS` (`:835`) is commented out. A mirrored event — the
+/// antiquark on the `+z` beam here — is therefore admitted when its leptons'
+/// lab rapidities lie within `etal` of `ln(E₁/E₂)` rather than of zero, and the
+/// written sample carries leptons up to `etal + ln(E₁/E₂)`. This crate keeps
+/// the correct cut.
+///
+/// The defect moves which mirrored events MadGraph's sample holds and nothing
+/// else, so the comparison splits three ways:
+/// - **reported**: every full-sample column the admitted region can correlate
+///   with — the leptons' rapidities and polar angles, the incoming `E` and `pz`
+///   through `x₁, x₂`, the transverse momenta, the pair mass and `cs_cos(ll)`
+///   through the acceptance's dependence on them, and `flavour`, `ICOLUP` and
+///   `SPINUP` through the direct-to-mirrored share;
+/// - **gated** on the full sample: the columns in [`gated`](Self::gated), each
+///   with why the defect cannot move it;
+/// - **gated** on every column: the direct-ordering sub-sample (the quark on the
+///   `+z` beam), which MadEvent cuts on its own lab frame, so the defect cannot
+///   reach it on either side.
+///
+/// The reference is read before any of that: its direct events must all pass
+/// the cut, its mirrored ones must all lie in the displaced window, and some of
+/// them must lie outside the cut — the defect present, as registered, in the
+/// sample the reported columns are excused against
+/// ([`measure_reference`](Self::measure_reference)).
+struct MirroredCutDeviation {
+    /// What the log calls it.
+    name: &'static str,
+    /// The full-sample columns that stay gated, each with why the defect cannot
+    /// move it. An entry ending in `(` names every column it prefixes.
+    gated: &'static [(&'static str, &'static str)],
+    /// The report variant the direct-ordering sub-sample is written under.
+    untouched_variant: &'static str,
+    /// That variant's note.
+    untouched_note: &'static str,
+}
+
+const MADEVENT_MIRRORED_CUT: MirroredCutDeviation = MirroredCutDeviation {
+    name: "MadEvent mirrored-ordering cut",
+    gated: &[
+        (
+            "phi(",
+            "the integrand, the cuts and the displaced window are all invariant under \
+             rotations about the beam axis, so the azimuth is uniform whichever events \
+             the defect admits",
+        ),
+        (
+            "beam1 m",
+            "a parton's mass is a constant of the record, whichever event carries it",
+        ),
+        (
+            "beam2 m",
+            "a parton's mass is a constant of the record, whichever event carries it",
+        ),
+        (
+            "SCALUP",
+            "the card fixes the scales, so every admitted event carries the same value",
+        ),
+        (
+            "AQCDUP",
+            "the card fixes the scales, so every admitted event carries the same value",
+        ),
+    ],
+    untouched_variant: "direct_ordering",
+    untouched_note: "the direct ordering alone (the quark on the +z beam), which MadEvent \
+        3.7.1 cuts on its own lab frame, so the registered mirrored-ordering deviation cannot \
+        reach it on either side: every column gated",
+};
+
+/// What [`MirroredCutDeviation::measure_reference`] read off MadGraph's sample.
+struct MirroredCutWindow {
+    /// The card's `etal`, and `ln(E₁/E₂)`, the displacement of the window
+    /// MadEvent admits mirrored events in.
+    etal: f64,
+    shift: f64,
+    /// MadGraph's direct and mirrored events, and the mirrored ones carrying a
+    /// lepton outside the cut.
+    direct: usize,
+    mirrored: usize,
+    mirrored_outside: usize,
+    /// The largest lepton `|η|` on a mirrored event.
+    max_eta: f64,
+}
+
+/// How far a printed lepton's `η` may sit past a cut edge and count as on it:
+/// eleven printed digits of momentum resolve `η` far below this.
+const ETA_EDGE: f64 = 1e-6;
+
+/// Whether an event is in the direct ordering: the parton on the `+z` beam is a
+/// quark.
+fn quark_on_the_plus_beam(event: &LheEvent) -> bool {
+    let plus: Vec<i32> = event
+        .particles
+        .iter()
+        .filter(|p| p.status == STATUS_INCOMING && p.momentum[3] > 0.0)
+        .map(|p| p.pdg)
+        .collect();
+    let &[pdg] = plus.as_slice() else {
+        panic!("an event without exactly one incoming parton along +z: {plus:?}")
+    };
+    assert!(
+        (1..=6).contains(&pdg.abs()),
+        "a Drell-Yan beam parton {pdg} is not a quark"
+    );
+    pdg > 0
+}
+
+/// The charged leptons' pseudorapidities.
+fn lepton_etas(event: &LheEvent) -> impl Iterator<Item = f64> + '_ {
+    event
+        .particles
+        .iter()
+        .filter(|p| p.status == STATUS_OUTGOING && matches!(p.pdg.abs(), 11 | 13 | 15))
+        .map(|p| {
+            let [_, px, py, pz] = p.momentum;
+            let mag = (px * px + py * py + pz * pz).sqrt();
+            0.5 * ((mag + pz) / (mag - pz)).ln()
+        })
+}
+
+impl MirroredCutDeviation {
+    /// Whether a full-sample column stays gated under the deviation.
+    fn gates(&self, column: &str) -> bool {
+        self.gated.iter().any(|(name, _)| {
+            if name.ends_with('(') {
+                column.starts_with(name)
+            } else {
+                column == *name
+            }
+        })
+    }
+
+    /// The direct-ordering events of `sample`, carrying their share of its
+    /// cross section.
+    fn untouched_part(&self, sample: &EventSample) -> EventSample {
+        let total: f64 = sample.weights.iter().sum();
+        let (events, weights): (Vec<LheEvent>, Vec<f64>) = sample
+            .events
+            .iter()
+            .zip(&sample.weights)
+            .filter(|(event, _)| quark_on_the_plus_beam(event))
+            .map(|(event, &w)| (event.clone(), w))
+            .unzip();
+        let kept: f64 = weights.iter().sum();
+        assert!(
+            !events.is_empty(),
+            "no direct-ordering event in a sample of {}",
+            sample.len()
+        );
+        EventSample {
+            events,
+            weights,
+            sigma_pb: sample.sigma_pb * kept / total,
+        }
+    }
+
+    /// Read the defect off MadGraph's own sample, failing where it is not the
+    /// deviation registered: a direct event outside the cut, a mirrored one
+    /// outside the displaced window, or no mirrored event outside the cut at all.
+    fn measure_reference(&self, row: &Row, mg: &EventSample) -> MirroredCutWindow {
+        let card = match row.run_card {
+            Some(name) => validation_dir().join(name),
+            None => run_dir(row.run).join("Cards/run_card.dat"),
+        };
+        let rc = RunCard::parse_file(&card).expect("the row's run card parses");
+        let etal = rc.float("etal");
+        let shift = (rc.ebeam1 / rc.ebeam2).ln();
+        let mut window = MirroredCutWindow {
+            etal,
+            shift,
+            direct: 0,
+            mirrored: 0,
+            mirrored_outside: 0,
+            max_eta: 0.0,
+        };
+        let (mut direct_outside, mut outside_window) = (0, 0);
+        for event in &mg.events {
+            let etas: Vec<f64> = lepton_etas(event).collect();
+            assert_eq!(
+                etas.len(),
+                2,
+                "a Drell-Yan event with {} leptons",
+                etas.len()
+            );
+            let outside = etas.iter().any(|eta| eta.abs() > etal + ETA_EDGE);
+            if quark_on_the_plus_beam(event) {
+                window.direct += 1;
+                direct_outside += usize::from(outside);
+            } else {
+                window.mirrored += 1;
+                window.mirrored_outside += usize::from(outside);
+                outside_window +=
+                    usize::from(etas.iter().any(|eta| (eta - shift).abs() > etal + ETA_EDGE));
+                window.max_eta = etas.iter().fold(window.max_eta, |m, e| m.max(e.abs()));
+            }
+        }
+        eprintln!(
+            "  {} on MadGraph's sample: {direct_outside} / {} direct events with a lepton \
+             outside |eta| <= {etal}; {} / {} mirrored ones, all but {outside_window} inside \
+             [{:.3}, {:.3}], largest |eta| {:.4}",
+            self.name,
+            window.direct,
+            window.mirrored_outside,
+            window.mirrored,
+            shift - etal,
+            shift + etal,
+            window.max_eta,
+        );
+        assert_eq!(
+            direct_outside, 0,
+            "MadGraph's direct-ordering events leave the cut: the direct ordering is not the \
+             one MadEvent cuts on its own lab frame, so its sub-sample is not untouched"
+        );
+        assert_eq!(
+            outside_window, 0,
+            "MadGraph's mirrored events leave the window ln(E1/E2) +- etal: the defect is not \
+             the one registered"
+        );
+        assert!(
+            window.mirrored_outside > 0,
+            "no mirrored MadGraph event carries a lepton outside the cut: the registered \
+             deviation is absent from the reference, so nothing excuses the reported columns"
+        );
+        window
+    }
+
+    /// Our events with a lepton outside the cut, out of all of them.
+    fn outside_the_cut(window: &MirroredCutWindow, sample: &EventSample) -> (usize, usize) {
+        let bad = sample
+            .events
+            .iter()
+            .filter(|event| lepton_etas(event).any(|eta| eta.abs() > window.etal + ETA_EDGE))
+            .count();
+        (bad, sample.len())
+    }
+
+    /// The full-sample row's note: the deviation, its size in MadGraph's sample,
+    /// the gated columns with their arguments, and every reported disagreement.
+    fn note(&self, window: &MirroredCutWindow, reported: &[String]) -> String {
+        let gated: Vec<String> = self
+            .gated
+            .iter()
+            .map(|(name, why)| {
+                let shown = if name.ends_with('(') {
+                    format!("{name}...)")
+                } else {
+                    name.to_string()
+                };
+                format!("{shown}: {why}")
+            })
+            .collect();
+        format!(
+            "registered deviation (user, 2026-10-22): MadEvent 3.7.1 cuts the mirrored beam \
+             ordering on the configuration it sampled (dsample.f:181 before \
+             super_auto_dsig_group_v4.inc:815-829), which displaces its window by ln(E1/E2) = \
+             {:.4}. MadGraph's sample: {} of {} mirrored events carry a lepton outside \
+             |eta| <= {}, every one inside [{:.3}, {:.3}] (largest |eta| {:.4}); 0 of {} direct \
+             events do. Gated on the full sample, the defect cannot move them: {}. Every other \
+             column is reported, not gated; below the floor: {}. The direct-ordering \
+             sub-sample ({}) is gated on every column.",
+            window.shift,
+            window.mirrored_outside,
+            window.mirrored,
+            window.etal,
+            window.shift - window.etal,
+            window.shift + window.etal,
+            window.max_eta,
+            window.direct,
+            gated.join("; "),
+            if reported.is_empty() {
+                "none".to_string()
+            } else {
+                reported.join("; ")
+            },
+            self.untouched_variant,
+        )
+    }
 }
 
 /// The dijet row's scans: slot legality, then pattern membership.
@@ -318,6 +605,7 @@ const LLJ_FIXED_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const LLJ_DYN_ROW: Row = Row {
@@ -331,6 +619,7 @@ const LLJ_DYN_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const BB_FIXED_ROW: Row = Row {
@@ -344,6 +633,7 @@ const BB_FIXED_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const JJ_ROW: Row = Row {
@@ -357,6 +647,7 @@ const JJ_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: DIJET_SCANS,
+    deviation: None,
 };
 
 const BB_ROW: Row = Row {
@@ -370,6 +661,7 @@ const BB_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const BB_QCD2_ROW: Row = Row {
@@ -383,6 +675,7 @@ const BB_QCD2_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const LLJ_ROW: Row = Row {
@@ -396,6 +689,7 @@ const LLJ_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 const SCALEFACT2_ROW: Row = Row {
@@ -409,6 +703,7 @@ const SCALEFACT2_ROW: Row = Row {
     niter: NITER,
     mode: "gate",
     scans: &[],
+    deviation: None,
 };
 
 /// Every gate row above, in the order the tests declare them — the set
@@ -424,6 +719,7 @@ const ALL_GATE_ROWS: &[&Row] = &[
     &SCALEFACT2_ROW,
     &DY_ROWS[0],
     &DY_ROWS[1],
+    &DY_ROWS[2],
 ];
 
 /// One row: integrate the banked cards once, then generate and compare a sample
@@ -464,6 +760,9 @@ fn check_row(row_spec: &Row) {
              so it is not a statement about ours"
         );
     }
+    let window = row_spec
+        .deviation
+        .map(|deviation| deviation.measure_reference(row_spec, &mg));
 
     let mut row = SamplesRow::new(key, process, mode);
     row.variant = variant.map(str::to_string);
@@ -472,6 +771,19 @@ fn check_row(row_spec: &Row) {
     row.sigma_mg_pb = mg.sigma_pb;
     row.labelling = "coarse";
     let mut failures: Vec<String> = Vec::new();
+    let mut reported: Vec<String> = Vec::new();
+    // The sub-sample a registered deviation cannot reach, compared on both sides
+    // and gated on every column.
+    let mut untouched = row_spec.deviation.map(|deviation| {
+        let mg_part = deviation.untouched_part(&mg);
+        let mut part =
+            SamplesRow::new(key, process, mode).with_variant(deviation.untouched_variant);
+        part.p_floor = P_FLOOR;
+        part.mg_events = mg_part.len();
+        part.sigma_mg_pb = mg_part.sigma_pb;
+        part.labelling = "coarse";
+        (deviation, mg_part, part)
+    });
 
     for &seed in &GEN_SEEDS {
         let ours = generator.sample(seed);
@@ -485,102 +797,57 @@ fn check_row(row_spec: &Row) {
                 ));
             }
         }
+        if let (Some(deviation), Some(window)) = (row_spec.deviation, &window) {
+            let (bad, total) = MirroredCutDeviation::outside_the_cut(window, &ours);
+            eprintln!(
+                "  seed {seed:#010x} | {}: {bad} / {total} events with a lepton outside \
+                 |eta| <= {}",
+                deviation.name, window.etal
+            );
+            if bad != 0 {
+                failures.push(format!(
+                    "seed {seed:#010x}: {bad} of {total} events with a lepton outside the cut"
+                ));
+            }
+        }
 
         let labelling = labelling_for(&ours, &mg);
         let found = compare(&ours, &mg, labelling);
-        let worst = found.worst_ks().expect("a comparable observable");
-        eprintln!(
-            "  seed {seed:#010x} | {} events (n_eff {:.0}) | worst KS: {} p {:.3e} (D {:.4})",
-            ours.len(),
-            ours.effective_size(),
-            worst.observable,
-            worst.p,
-            worst.d,
+        print_comparison(seed, "", &ours, &found);
+        judge(
+            &found,
+            &format!("seed {seed:#010x}"),
+            |column| row_spec.deviation.is_none_or(|d| d.gates(column)),
+            &mut failures,
+            &mut reported,
         );
-        for cell in &found.chi2 {
-            eprintln!(
-                "             chi2 {:<8} p {:.3e} (chi2 {:.1} / {} dof over {} of {} categories, \
-                 {:.1}% pooled)",
-                cell.column,
-                cell.p,
-                cell.chi2,
-                cell.dof,
-                cell.categories,
-                cell.distinct_keys,
-                100.0 * cell.pooled_share
-            );
-        }
-        for cell in &found.ks {
-            if cell.p < P_FLOOR {
-                failures.push(format!(
-                    "seed {seed:#010x} KS {} p {:.3e} (D {:.4}) below the {P_FLOOR:.0e} floor",
-                    cell.observable, cell.p, cell.d
-                ));
-            }
-        }
-        for cell in &found.chi2 {
-            if cell.p < P_FLOOR {
-                failures.push(format!(
-                    "seed {seed:#010x} chi2 {} p {:.3e} ({:.1}/{} dof) below the \
-                     {P_FLOOR:.0e} floor",
-                    cell.column, cell.p, cell.chi2, cell.dof
-                ));
-            }
-        }
-        for (what, columns) in [("incoming", &found.beams), ("reported", &found.scales)] {
-            for cell in columns {
-                eprintln!("             {}", cell.describe());
-                let Some(line) = cell.disagreement(what, P_FLOOR) else {
-                    continue;
-                };
-                failures.push(format!("seed {seed:#010x} {line}"));
-            }
-        }
-
         row.constant_observables = found.constant.clone();
         row.single_category = found
             .single_category
             .iter()
             .map(|c| (*c).to_string())
             .collect();
-        row.per_seed.push(SeedSample {
-            seed,
-            events: ours.len(),
-            sigma_pb: ours.sigma_pb,
-            ks: found
-                .ks
+        row.per_seed.push(seed_sample(seed, &ours, &found));
+
+        if let Some((deviation, mg_part, part)) = untouched.as_mut() {
+            let ours_part = deviation.untouched_part(&ours);
+            let found = compare(&ours_part, mg_part, labelling_for(&ours_part, mg_part));
+            print_comparison(seed, deviation.untouched_variant, &ours_part, &found);
+            judge(
+                &found,
+                &format!("seed {seed:#010x} {}", deviation.untouched_variant),
+                |_| true,
+                &mut failures,
+                &mut reported,
+            );
+            part.constant_observables = found.constant.clone();
+            part.single_category = found
+                .single_category
                 .iter()
-                .map(|c| KsCell {
-                    observable: c.observable.clone(),
-                    d: c.d,
-                    p: c.p,
-                })
-                .collect(),
-            chi2: found
-                .chi2
-                .iter()
-                .map(|c| Chi2Cell {
-                    column: c.column.to_string(),
-                    chi2: c.chi2,
-                    dof: c.dof,
-                    p: c.p,
-                    categories: c.categories,
-                    distinct_keys: c.distinct_keys,
-                    pooled_share: c.pooled_share,
-                    detail: c
-                        .detail
-                        .iter()
-                        .map(|(key, ours, theirs)| CategoryCount {
-                            key: key.clone(),
-                            ours: *ours,
-                            theirs: *theirs,
-                        })
-                        .collect(),
-                })
-                .collect(),
-            beams: found.beams.iter().map(FieldCell::of).collect(),
-            scales: found.scales.iter().map(FieldCell::of).collect(),
-        });
+                .map(|c| (*c).to_string())
+                .collect();
+            part.per_seed.push(seed_sample(seed, &ours_part, &found));
+        }
     }
 
     row.finish();
@@ -601,7 +868,7 @@ fn check_row(row_spec: &Row) {
         "  worst reported {} (dev {:.4e} against tol {:.2e}, min scale KS p {:.3e})",
         row.worst_scale_field, row.max_scale_dev, row.scale_tol, row.min_scale_ks_p,
     );
-    row.status = match mode {
+    let status = match mode {
         "gate" => {
             if failures.is_empty() {
                 "pass"
@@ -611,8 +878,21 @@ fn check_row(row_spec: &Row) {
         }
         _ => "info",
     };
+    if let (Some(deviation), Some(window)) = (row_spec.deviation, &window) {
+        let note = deviation.note(window, &reported);
+        eprintln!("  INFO {note}");
+        row.note = Some(note);
+    }
+    row.status = status;
     row.duration_s = Some(clock.seconds());
     row.write();
+    if let Some((deviation, _, mut part)) = untouched {
+        part.finish();
+        part.note = Some(deviation.untouched_note.to_string());
+        part.status = status;
+        part.duration_s = row.duration_s;
+        part.write();
+    }
 
     if mode != "gate" {
         if !failures.is_empty() {
@@ -621,6 +901,127 @@ fn check_row(row_spec: &Row) {
         return;
     }
     assert!(failures.is_empty(), "[{run}] samples gate:\n{failures:#?}");
+}
+
+/// One generated sample's comparison as log lines, `scope` naming the
+/// sub-sample it is of, or empty for the whole one.
+fn print_comparison(seed: u64, scope: &str, ours: &EventSample, found: &Comparison) {
+    let worst = found.worst_ks().expect("a comparable observable");
+    eprintln!(
+        "  seed {seed:#010x}{}{scope} | {} events (n_eff {:.0}) | worst KS: {} p {:.3e} (D {:.4})",
+        if scope.is_empty() { "" } else { " " },
+        ours.len(),
+        ours.effective_size(),
+        worst.observable,
+        worst.p,
+        worst.d,
+    );
+    for cell in &found.chi2 {
+        eprintln!(
+            "             chi2 {:<8} p {:.3e} (chi2 {:.1} / {} dof over {} of {} categories, \
+             {:.1}% pooled)",
+            cell.column,
+            cell.p,
+            cell.chi2,
+            cell.dof,
+            cell.categories,
+            cell.distinct_keys,
+            100.0 * cell.pooled_share
+        );
+    }
+    for cell in found.beams.iter().chain(&found.scales) {
+        eprintln!("             {}", cell.describe());
+    }
+}
+
+/// Every column of `found` below the floor or outside its printed precision, as
+/// a failure where `gated` names the column and as a reported line where it does
+/// not. `scope` heads each line.
+fn judge(
+    found: &Comparison,
+    scope: &str,
+    gated: impl Fn(&str) -> bool,
+    failures: &mut Vec<String>,
+    reported: &mut Vec<String>,
+) {
+    let mut file = |column: &str, line: String| {
+        if gated(column) {
+            failures.push(format!("{scope} {line}"));
+        } else {
+            reported.push(format!("{scope} {line}"));
+        }
+    };
+    for cell in &found.ks {
+        if cell.p < P_FLOOR {
+            file(
+                &cell.observable,
+                format!(
+                    "KS {} p {:.3e} (D {:.4}) below the {P_FLOOR:.0e} floor",
+                    cell.observable, cell.p, cell.d
+                ),
+            );
+        }
+    }
+    for cell in &found.chi2 {
+        if cell.p < P_FLOOR {
+            file(
+                cell.column,
+                format!(
+                    "chi2 {} p {:.3e} ({:.1}/{} dof) below the {P_FLOOR:.0e} floor",
+                    cell.column, cell.p, cell.chi2, cell.dof
+                ),
+            );
+        }
+    }
+    for (what, columns) in [("incoming", &found.beams), ("reported", &found.scales)] {
+        for cell in columns {
+            if let Some(line) = cell.disagreement(what, P_FLOOR) {
+                file(&cell.field, line);
+            }
+        }
+    }
+}
+
+/// One seed's cells as the report records them.
+fn seed_sample(seed: u64, ours: &EventSample, found: &Comparison) -> SeedSample {
+    SeedSample {
+        seed,
+        events: ours.len(),
+        sigma_pb: ours.sigma_pb,
+        ks: found
+            .ks
+            .iter()
+            .map(|c| KsCell {
+                observable: c.observable.clone(),
+                d: c.d,
+                p: c.p,
+            })
+            .collect(),
+        chi2: found
+            .chi2
+            .iter()
+            .map(|c| Chi2Cell {
+                column: c.column.to_string(),
+                chi2: c.chi2,
+                dof: c.dof,
+                p: c.p,
+                categories: c.categories,
+                distinct_keys: c.distinct_keys,
+                pooled_share: c.pooled_share,
+                detail: c
+                    .detail
+                    .iter()
+                    .map(|(key, ours, theirs)| CategoryCount {
+                        key: key.clone(),
+                        ours: *ours,
+                        theirs: *theirs,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        beams: found.beams.iter().map(FieldCell::of).collect(),
+        scales: found.scales.iter().map(FieldCell::of).collect(),
+    }
 }
 
 #[test]
@@ -678,6 +1079,7 @@ const DY_ROWS: &[Row] = &[
         niter: DY_NITER,
         mode: "gate",
         scans: &[],
+        deviation: None,
     },
     Row {
         run: "dy13_mmll_60_120",
@@ -690,6 +1092,23 @@ const DY_ROWS: &[Row] = &[
         niter: DY_NITER,
         mode: "gate",
         scans: &[],
+        deviation: None,
+    },
+    // Own manifest row rather than a variant of `pp_to_ll`: the beams are the
+    // only difference from the default card, and the cells it fills are the ones
+    // no equal-beam row can see.
+    Row {
+        run: "dy13_beams_6500_4000",
+        events: "run_beams_6500_4000",
+        key: "pp_to_ll_beams_6500_4000",
+        variant: None,
+        process: "p p > e+ e-",
+        run_card: Some("dy_beams_6500_4000_run_card.dat"),
+        neval: DY_NEVAL,
+        niter: DY_NITER,
+        mode: "gate",
+        scans: &[],
+        deviation: Some(&MADEVENT_MIRRORED_CUT),
     },
 ];
 
@@ -701,6 +1120,21 @@ fn generated_drell_yan_events_agree_with_madgraphs_banked_ones() {
 #[test]
 fn generated_drell_yan_events_in_the_mass_window_agree_with_madgraphs_banked_ones() {
     check_row(&DY_ROWS[1]);
+}
+
+/// Proton beams of 6500 and 4000 GeV, the one banked row whose beams differ: the
+/// events carry the lab boost and the per-beam incoming energies that no
+/// equal-beam row can distinguish from the energy-sum form.
+///
+/// Reports `NOT YET BANKED` and writes no cell while the manifest marks the row
+/// `planned` and its MadGraph run is absent; once the row is banked the gate runs,
+/// and once the manifest status is flipped an absent run fails.
+#[test]
+fn generated_unequal_beam_drell_yan_events_agree_with_madgraphs_banked_ones() {
+    if not_yet_banked(&DY_ROWS[2]) {
+        return;
+    }
+    check_row(&DY_ROWS[2]);
 }
 
 /// [`GEN_SEEDS`] extended to AGENTS.md's five for the headroom census below. The
@@ -733,6 +1167,9 @@ fn probe_proton_samples_p_floor_headroom() {
     let mut three: Vec<(f64, String)> = Vec::new();
     let mut five: Vec<(f64, String)> = Vec::new();
     for row_spec in ALL_GATE_ROWS {
+        if not_yet_banked(row_spec) {
+            continue;
+        }
         if !run_present("probe_proton_samples_p_floor_headroom", row_spec.run) {
             continue;
         }
@@ -1154,7 +1591,23 @@ const SPECTRUM_MAX_PULL: f64 = 4.0;
 fn the_drell_yan_mass_spectrum_is_binned_against_madgraph() {
     let mut failures: Vec<String> = Vec::new();
     for row_spec in DY_ROWS {
-        let mg = banked_sample(row_spec.run, row_spec.events);
+        if not_yet_banked(row_spec) {
+            continue;
+        }
+        // A row whose reference carries a registered deviation is binned on the
+        // sub-sample the deviation cannot reach, in that sub-sample's own share of
+        // the cross section: the whole spectrum is off by the deviation itself.
+        let restrict = |sample: EventSample| match row_spec.deviation {
+            Some(deviation) => deviation.untouched_part(&sample),
+            None => sample,
+        };
+        if let Some(deviation) = row_spec.deviation {
+            eprintln!(
+                "  [{}] {}: binned on the {} sub-sample only",
+                row_spec.run, deviation.name, deviation.untouched_variant
+            );
+        }
+        let mg = restrict(banked_sample(row_spec.run, row_spec.events));
         let mut theirs = Spectrum::new(MLL_EDGES);
         theirs.fill_from(&mg, "m(e+,e-)", Labelling::Fine);
 
@@ -1162,7 +1615,7 @@ fn the_drell_yan_mass_spectrum_is_binned_against_madgraph() {
         let mut ours = Spectrum::new(MLL_EDGES);
         let mut sigma_sum = 0.0;
         for &seed in &GEN_SEEDS {
-            let sample = generator.sample(seed);
+            let sample = restrict(generator.sample(seed));
             sigma_sum += sample.sigma_pb;
             ours.fill_from(&sample, "m(e+,e-)", Labelling::Fine);
         }
@@ -1265,6 +1718,37 @@ fn run_present(gate: &str, run: &str) -> bool {
         return false;
     }
     vibegraph::validation::require(gate, "a banked run directory", run);
+}
+
+/// Whether a row's MadGraph run is not in this checkout and the manifest
+/// declares why: the row is `planned` (no reference run yet) or `bundled = false`
+/// (the run exists but the pinned bundle does not carry it). Either way there is
+/// nothing to compare against here.
+///
+/// A banked run is always compared, and an absent run of a row with neither
+/// declaration still fails in the caller: the declaration, not the absence, is
+/// what permits skipping.
+fn not_yet_banked(row_spec: &Row) -> bool {
+    if run_dir(row_spec.run).join("Cards/run_card.dat").is_file() {
+        return false;
+    }
+    if manifest::unbundled_rows().contains(row_spec.key) {
+        eprintln!(
+            "[{}] AWAITING BUNDLE (the manifest marks row {} bundled = false and this \
+             checkout does not have its run, so no cell is written)",
+            row_spec.run, row_spec.key
+        );
+        return true;
+    }
+    if manifest::planned_rows().contains(row_spec.key) {
+        eprintln!(
+            "[{}] NOT YET BANKED (the manifest marks row {} planned and this checkout has no \
+             run for it, so no cell is written)",
+            row_spec.run, row_spec.key
+        );
+        return true;
+    }
+    false
 }
 
 /// The `p p > j j` sample against MadGraph's banked one — **measured and

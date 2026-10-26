@@ -493,7 +493,7 @@ fn number_notes(resolved: &mut [ResolvedRow]) {
 mod tests {
     use super::*;
 
-    /// The mixed-mass Drell-Yan row is declared `planned` with banked cells and no gate
+    /// The unequal-beam row is declared `planned` with banked cells and no gate
     /// has written one: the collator waits on it without a problem. The same
     /// row declared as an ordinary row is a missing cell.
     #[test]
@@ -505,7 +505,7 @@ mod tests {
         // declares it planned itself instead of reading the committed status.
         // `bundled = false` is stripped too: an unbundled row with no cell also
         // waits, and would satisfy the planned half without the planned rule.
-        let line = "key = \"pp_to_ll_etau\"\n";
+        let line = "key = \"pp_to_ll_beams_6500_4000\"\n";
         assert_eq!(text.matches(line).count(), 1);
         let text = text
             .replace("status = \"planned\"\n", "")
@@ -516,8 +516,8 @@ mod tests {
             let process = manifest
                 .processes
                 .iter()
-                .find(|p| p.key == "pp_to_ll_etau")
-                .expect("the mixed-mass row");
+                .find(|p| p.key == "pp_to_ll_beams_6500_4000")
+                .expect("the unequal-beam row");
             let declared = process.categories.get(Category::Integrals);
             let mut problems = Vec::new();
             let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);

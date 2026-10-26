@@ -23,8 +23,9 @@ on these rows.
 
 The pass-through was a deliberate decision: clamping would hide the cause. Treat
 the overflow as expected on any row with hundreds of channels until the
-estimator is fixed at its root. It may share a cause with the
-few-accepted-point iterations that inflate `stop_scale` (see
-[stop-scale-inflated-by-few-accepted-iterations](stop-scale-inflated-by-few-accepted-iterations.md)).
+estimator is fixed at its root. The few-accepted-point iterations once suspected of
+sharing the cause do not occur under the pooled stop
+([two-to-six-gate P1](../../sprints/two-to-six-gate/sessions/P1-report.md)); the statistic itself is the problem, see
+[chi2-per-own-sigma-misreads-heavy-tails](../validation/chi2-per-own-sigma-misreads-heavy-tails.md).
 
 Detail: [note 32 §5.4](../../history/notes/32-perf-addendum-plan.md).

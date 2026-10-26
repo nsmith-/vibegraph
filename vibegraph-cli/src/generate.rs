@@ -28,8 +28,8 @@ use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
-    check_model, check_process, generate, reads_parton_densities, GenerateAssets, GenerateError,
-    GenerateOptions, Strategy as SampleStrategy,
+    check_collider_energy, check_model, check_process, generate, reads_parton_densities,
+    GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
 };
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
@@ -338,6 +338,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
     check_model(&artifact, &model_id, &model_location(&parsed, &config)).map_err(cli_error)?;
+    // The library refuses a stale collider energy too; checking it here does so
+    // before the PDF set is read, which may mean a download.
+    check_collider_energy(&artifact, &parsed).map_err(cli_error)?;
 
     tui::state::describe_model(
         &model_id.label(),
