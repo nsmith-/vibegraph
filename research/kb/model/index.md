@@ -17,7 +17,7 @@
 
 ## Design Decision
 
-* [Model identity: SHA-256 over the serialized restricted model](model-identity-digest.md) - The integrate artifact banks the import label and a SHA-256 of the restricted ParsedModel's bincode bytes, so a different model under the same process string is refused.
+* [Model identity: SHA-256 over the serialized restricted model](model-identity-digest.md) - The integrate artifact banks the import label and a SHA-256 of the restricted ParsedModel's bincode bytes, so generate refuses a model whose files changed after integrate.
 
 ## Overview
 

@@ -28,10 +28,25 @@ committed at `vibegraph-lib/src/ufo/sm_assets/` and compiled in with
 `include_str!`/`include_bytes!` (`vibegraph-lib/src/ufo/sm.rs`):
 
 - the nine `restrict_*.dat` cards, byte for byte;
+- `restrict_ckm_no_b_mass.dat`, byte for byte from the `models/sm` that CMS
+  genproductions bundles in its gridpacks (gridpack `041_WWjj_SS_ewk`; sha256
+  `ad6e3eaf03443bc14148d392fe98deb712de29166061a7408eff521a47591b05`, pinned by
+  `vendored_card_is_the_cms_genproductions_bytes`). MadGraph does not ship it;
+  it is `restrict_ckm.dat` with `MB`, `ymb` and the tau width changed, so its
+  text is MadGraph's param-card writer's output with values edited by CMS.
+  It needs no licence of its own beyond MadGraph's (user decision,
+  2026-10-20);
 - `sm_parsed.bin.zst`, a serialised parse of the rest of `models/sm`
   (`particles.py`, `parameters.py`, `vertices.py`, `lorentz.py`,
   `couplings.py` and the other `.py` sources), produced by the `gen_sm_blob`
   dev binary. It is a derivative of the UFO model definition.
+
+It also embeds MadGraph's `input/particles_name_default.txt`, the default
+particle names by PDG code that `import model` applies, byte for byte at
+`vibegraph-lib/src/ufo/mg_input/` (`include_str!` in
+`vibegraph-lib/src/ufo/names.rs`, whose test pins its SHA-256). The file's
+header puts it under the same MadGraph5_aMC@NLO licence, so
+`THIRD-PARTY-NOTICES` lists it in a section of its own, at the same commit.
 
 `models/sm` has no licence of its own; it is covered by the mg5amcnlo root
 `LICENSE`, an NCSA-style licence (Copyright (c) 2009, 2013, the MadTeam).

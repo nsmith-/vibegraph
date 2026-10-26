@@ -31,3 +31,13 @@ see the explicit fermion-flow slot swap in
 [fermion-line-sign-ignores-vertex-content](../../amplitudes/fermion-line-sign.md)).
 Validate per diagram and per helicity against MadGraph's `AMP()`, following
 [note 12](../../history/notes/12-helas-continuum-bugfix-journey.md), before trusting any |M|².
+
+**Refused, not evaluated (2026-10-20).** Diagram generation now refuses a
+Majorana fermion on an external leg or a propagator, and a
+fermion-number-violating vertex (`Diagram::check_fermion_flow`; the
+[fnv-refusal sprint](../../sprints/fnv-refusal/closeout.md)). Before that,
+Majorana processes ran and could print a wrong σ. One refused case may be
+stricter than needed: a Majorana propagator on a line whose two ends are a
+particle and an antiparticle (`lt~ lt > sc sc~` in `vibegraph_toy_majorana_UFO`
+gave σ = 0.5158 ± 0.0023 pb before the refusal, unvalidated). Lift the refusal
+for it only after a per-diagram comparison with MadGraph.

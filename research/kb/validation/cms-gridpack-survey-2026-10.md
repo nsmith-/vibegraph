@@ -229,25 +229,24 @@ Other refusals:
 
 ## Backlog filed from this survey
 
-- Silent σ changes: [run-card hidden_parameter lines dropped](../backlog/hygiene/runcard-hidden-parameter-lines-dropped.md),
+- Silent σ changes: run-card `# hidden_parameter` lines dropped (fixed: `split_line` strips `#` comments),
   [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
   [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
-- Bugs and panics: [WEIGHTED search cap](../backlog/feature/auto-weighted-search-cap-uses-hierarchy.md),
-  [UFO `if configuration` branches](../backlog/feature/ufo-parameters-conditional-branches-panic.md),
-  [fermion-number violation panics](../backlog/feature/fermion-number-violation-panics-instead-of-refusing.md),
-  [default particle names and `--modelname`](../backlog/feature/madgraph-default-particle-names-missing.md).
+- Bugs and panics: WEIGHTED search cap (closed by [the weighted-cap sprint](../sprints/weighted-cap/sprint.md)),
+  UFO `if configuration` branches (closed: refused by name at load),
+  [fermion-number violation panics](../sprints/fnv-refusal/sprint.md) (closed: now refused),
+  default particle names and `--modelname` (closed by [the default-particle-names sprint](../sprints/default-particle-names/sprint.md)).
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),
   [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
 - Feature gaps: [variation weights](../backlog/feature/systematics-variation-weights-not-written.md)
-  and [the silent drop of a systematics request](../backlog/hygiene/systematics-request-dropped-silently.md),
-  [`ckm_no_b_mass`](../backlog/feature/sm-lacks-ckm-no-b-mass-restriction.md),
-  [`event_norm = sum`](../backlog/feature/event-norm-sum-refused.md),
-  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) and
-  [their late refusal](../backlog/hygiene/unimplemented-cut-refused-after-enumeration.md),
+  and the silent drop of a systematics request (now a warning),
+  `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
+  `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
+  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
+  since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
   [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
   [mixed outgoing masses in a group](../backlog/feature/flavour-group-mixed-outgoing-masses-refused.md),
-  [no-op cut values](../backlog/feature/no-op-cut-values-refused-as-active.md),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

@@ -102,7 +102,7 @@ pub enum DiagramError {
     MixedOnShellVeto { a: String, b: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
-    #[error("diagram conversion error: {0}")]
+    #[error("{0}")]
     Convert(#[from] ConvertError),
     #[error("cannot build the enumeration worker pool: {0}")]
     Pool(#[from] rayon::ThreadPoolBuildError),
@@ -416,7 +416,7 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     // count is refused.
     let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
-        let process_sets = generate_from_process(process, model)?;
+        let process_sets = generate_from_process(process, model, ProcessRole::TopLevel)?;
         if process_sets.iter().all(|s| s.diagrams.is_empty()) {
             return Err(DiagramError::NoDiagrams {
                 process: process.to_string(),
@@ -527,18 +527,34 @@ fn concrete_polarization(
 /// orders.
 const WEIGHTED: &str = "WEIGHTED";
 
+/// Where a process sits in the card, which decides whether a one-particle
+/// process gets the automatic WEIGHTED search.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProcessRole {
+    /// A process the card asks for, or a decay chain's core.
+    TopLevel,
+    /// A decay inside a chain, which MadGraph flags `is_decay_chain`
+    /// (`diagram_generation.py:1381-1382`).
+    ChainDecay,
+}
+
 /// Generate diagrams for one process of a checked card.
 ///
 /// Resolves the legs against the model, builds a `DiagramSelector` for each
 /// concrete particle assignment, then calls `feyngraph::generate_diagrams`.
 ///
 /// When the process has no explicit coupling constraints, the WEIGHTED coupling
-/// order filter is applied automatically: the minimum WEIGHTED value that produces
-/// any diagrams is found iteratively, then only diagrams at that value are kept.
-/// This mirrors MadGraph's default behaviour of selecting the lowest perturbative
-/// order.  WEIGHTED = Σ_i (hierarchy_i × n_i) where hierarchy comes from the
+/// order filter is applied automatically, as MadGraph's
+/// `MultiProcess.find_optimal_process_orders` applies it: the bound starts at
+/// the model's estimate for the process's legs, rises by one until some
+/// subprocess has a diagram, and stops at `(n_ext − 2)` times the largest
+/// WEIGHTED of any interaction, where the diagrams at the bound, if any, are
+/// the result. WEIGHTED = Σ_i (hierarchy_i × n_i) where hierarchy comes from the
 /// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM). An explicit
-/// `WEIGHTED<=n` is that same filter at a bound the card chose.
+/// `WEIGHTED<=n` is that same filter at a bound the card chose. A one-particle
+/// process runs no search unless it is a decay inside a chain
+/// ([`ProcessRole::ChainDecay`]): every order is generated
+/// (`diagram_generation.py:1978-1980`).
 ///
 /// The s-channel restrictions filter the converted diagrams inside the search,
 /// as they do inside MadGraph's (`find_optimal_process_orders` generates each
@@ -547,11 +563,12 @@ const WEIGHTED: &str = "WEIGHTED";
 fn generate_from_process(
     process: &SupportedProcess,
     model: &UFOModel,
+    role: ProcessRole,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     if !process.decays.is_empty() {
         return chain::generate_chain(process, model);
     }
-    let mut sets = generate_undecayed(process, model)?;
+    let mut sets = generate_undecayed(process, model, role)?;
     for diagram in sets.iter_mut().flat_map(|s| s.diagrams.iter_mut()) {
         diagram.provenance.process = process.id;
     }
@@ -562,6 +579,7 @@ fn generate_from_process(
 fn generate_undecayed(
     process: &SupportedProcess,
     model: &UFOModel,
+    role: ProcessRole,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     // MadGraph accepts `EW` on a model whose order is called `QED` (and the
     // reverse), then constrains the name as written, which no vertex carries:
@@ -672,33 +690,36 @@ fn generate_undecayed(
     // but they never decide whether the automatic WEIGHTED search runs: MadGraph
     // applies them (`Process.check_expansion_orders`) only after
     // `find_optimal_process_orders` has looked at the process's own orders.
-    let auto_weighted = process.orders.is_empty();
+    let top_level_decay = n_in == 1 && role == ProcessRole::TopLevel;
+    let auto_weighted = process.orders.is_empty() && !top_level_decay;
     let expanded = ExpandedProcess {
         orders: capped_orders(&expanded.orders, model),
         ..expanded
     };
 
     if auto_weighted {
-        // No explicit constraints: discover the minimum WEIGHTED order.
-        let min_hier = model.order_hierarchy.values().copied().min().unwrap_or(1) as usize;
-        let max_hier = model.order_hierarchy.values().copied().max().unwrap_or(2) as usize;
-        let min_w = (n_ext - 2) * min_hier;
-        let max_w = (n_ext - 2) * max_hier;
+        let search = &model.weighted_search;
+        let leg_ids: Vec<Vec<i64>> = checked.iter().map(|(_, ids, _)| ids.clone()).collect();
+        let start = search.minimum_weighted(&leg_ids, &expanded.schannels.required) as usize;
+        let cap = search.maximum_weighted(n_ext) as usize;
 
-        let mut w = min_w;
-        loop {
+        // `find_optimal_process_orders`: start at the model's estimate for the legs
+        // (`get_minimum_WEIGHTED`), raise the bound by one (:2111) while it is
+        // below the cap (:2013) and no subprocess has a diagram, then generate at
+        // the bound the loop stopped at, `max(start, cap)` (:2115, :1683-1686);
+        // its diagrams, if any, are the result.
+        let mut w = start;
+        while w < cap {
             let sets = generate_sets_inner(&expanded, model, Some(w), &cached_topologies)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
                 debug!("lowest WEIGHTED order with diagrams: {w}");
                 return Ok(sets);
             }
-            if w >= max_w {
-                debug!("no diagrams at any WEIGHTED order in {min_w}..={max_w}");
-                return Ok(sets);
-            }
             debug!("no diagrams at WEIGHTED {w}, raising the bound");
             w += 1;
         }
+        debug!("no diagrams below the WEIGHTED cap {cap}; generating at {w}");
+        generate_sets_inner(&expanded, model, Some(w), &cached_topologies)
     } else {
         generate_sets_inner(&expanded, model, explicit_weighted, &cached_topologies)
     }
@@ -899,6 +920,9 @@ fn generate_sets_inner(
             .collect::<Result<Vec<_>, _>>()?;
         let enumerated = diagrams.len();
         diagrams.retain(|d| process.schannels.keeps(d, model));
+        for diagram in &diagrams {
+            diagram.check_fermion_flow(model)?;
+        }
         if diagrams.len() != enumerated {
             debug!(
                 "{} > {}: the s-channel restrictions keep {} of {enumerated} diagrams",

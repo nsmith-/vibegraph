@@ -109,3 +109,52 @@ whose particle multiset is not self-conjugate is reachable from one side only
 unless the h.c. term is in the model too. Every Standard-Model vertex happens to
 be self-conjugate as a multiset, which is why nothing in this repository had met
 the rule before.
+
+## `vibegraph_toy_majorana_UFO` and `vibegraph_toy_fnv_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | Refusal fixtures, gated by no MadGraph row: `vibegraph-cli/tests/cli_fermion_flow.rs` checks that each process reaching their unsupported fermion flow is refused with an error naming it |
+
+`vibegraph_toy_majorana_UFO` has a Dirac lepton `lt`, a Majorana fermion `nt`
+(`name == antiname`), a neutral vector `vt` and a charged scalar `sc`. `nt`
+couples to itself through `vt` and to `lt` through `sc`, so `lt~ lt > nt nt`
+carries it on external legs and `lt~ lt > sc sc~` on a t-channel propagator
+only. `vibegraph_toy_fnv_UFO` has two Dirac fermions `at` and `bt`, a neutral
+vector `vt`, and a diquark-like scalar `dq` whose vertex `V_atbtdq` (and its
+conjugate) pairs two particles on one fermion line, with no `C` in its Lorentz
+structure; `at bt > at bt` reaches it. In both models the Dirac fermions also
+couple to `vt`, which gives each a process (`lt~ lt > lt~ lt`, `at~ at > at~ at`)
+that must still be accepted. No restrict cards: every parameter is used at its
+default.
+
+## `vibegraph_toy_names_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | Particle names that are not MadGraph's defaults for their PDG codes: the muon as `m-`/`m+` (what `loop_sm` calls it) and the up quark as `up`/`up~`, beside a photon `a` that already has its default name. `vibegraph-lib/tests/particle_names.rs` reads it to pin `import model`'s renaming by PDG code and `--modelname` switching it off |
+
+Two massless fermions coupled to the photon, one vertex each, so `u u~ > mu+ mu-`
+is a single s-channel diagram. `object_library.py` and `function_library.py`
+are `vibegraph_toy_UFO`'s.
+
+## `vibegraph_toy_weighted_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | MadGraph's automatic lowest-WEIGHTED search (`find_optimal_process_orders`) on a model whose hierarchies differ: a vertex carrying two orders weighs more than either hierarchy alone, a four-point vertex weighs less per equivalent cubic vertex than its orders say, and a contact term sits below where the search starts |
+
+Hierarchies QED=2 and NP=1 (and an unused QCD=1, declared because MadGraph's
+search reads it by name). Four fields: a Dirac fermion `fw`, a neutral massive
+vector `vw` and two real singlet scalars `xw` and `yw`. Five vertices: `fw~ fw
+vw` (QED), `fw~ fw xw` (QED and NP, WEIGHTED 3), `xw^4` (QED), `xw xw yw` (QED)
+and `yw^4` (QED=2, NP=3: 7 over four legs, 3.5 per cubic vertex, truncated with
+the `fw~ fw xw` vertex's 3 to a cap of 3 per vertex). No restrict card: the
+model is used whole. Diagram counts only; no amplitude is banked from it, so
+the couplings' values are arbitrary and distinct.

@@ -1,0 +1,15 @@
+# MadGraph5 batch script: fw~ fw > xw xw vw
+# in vibegraph_toy_weighted_UFO, no restrict card.
+#
+# Why this exact process:
+#   Three final-state legs: the search starts higher and its cap is
+#   (n_ext - 2) times the largest interaction WEIGHTED per equivalent cubic
+#   vertex (3), which the six-diagram set sits under. No order bound on
+#   purpose: the row is the search.
+#
+# The model path is repo-relative; build.sh rewrites it to the staged copy.
+# `display interactions` puts the interaction count (5) into build.log.
+import model validation/ufo/vibegraph_toy_weighted_UFO
+display interactions
+generate fw~ fw > xw xw vw
+output ffx_to_xwxwvw_toy_weighted -nojpeg

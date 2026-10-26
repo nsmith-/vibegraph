@@ -1,0 +1,28 @@
+# MadGraph5 batch script: u b~ > e+ ve in the Standard Model under
+# restrict_ckm_no_b_mass.dat, the card CMS genproductions bundles in its copy of
+# models/sm.
+#
+# Why this exact process:
+#   - One s-channel W+ whose quark vertex carries V_ub, which carries the
+#     Wolfenstein phase etaWS at leading order, on a massless b. The amplitude gate
+#     fixes the process-wide constant to +-i, so a conjugated or rotated V_ub
+#     fails this single diagram instead of hiding in a global phase.
+#   - Its coupling table banks MadGraph's whole coupling_dict at this card, the
+#     CKM couplings included, which no default-restriction table reaches.
+#
+# MadGraph does not ship this card: the run uses a copy of the pinned tree that
+# carries it, named by VG_MG5_ROOT (see mg5_pinned.sh).
+#
+# `display interactions` prints the post-restriction interaction count into the
+# build log, which is where extract_interactions.py reads it from.
+import model sm-ckm_no_b_mass
+display interactions
+generate u b~ > e+ ve
+output ubx_to_epve_ckm_no_b_mass -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -613,6 +613,7 @@ const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
 /// row must be listed, and a listed row must be compared.
 const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
     ("bbx_to_h_identity", "++"),
+    ("bbx_to_tapta_ckm_no_b_mass", "--"),
     ("ddx_to_epemg", "----"),
     ("ee_to_ee", "----"),
     ("ee_to_mumu", "--"),
@@ -642,6 +643,7 @@ const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
     ("ll_to_qqx_toy_yukawa", "-++++"),
     ("pp_to_ll_qcd0", "--"),
     ("tata_to_ttx_tensor4f", "--+"),
+    ("ubx_to_epve_ckm_no_b_mass", "-"),
     ("uux_to_epemg", "----"),
     ("uux_to_mumu", "--"),
     ("uux_to_ztg", "++"),
@@ -1979,7 +1981,7 @@ fn judge(
     println!(
         "  [{name}] '{}' NGRAPHS={} NCOLOR={}: |M|² max_rel grid {:.2e} / event {:.2e}, \
          per-diagram {worst_diagram:.2e}{}, per-flow {worst_flow:.2e}, JAMP2 {worst_jamp2:.2e} \
-         (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
+         (G = {:+.6}{:+.6}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
          {} configurations{}: amplitude {worst_config:.2e}, |k|-1 {worst_config_phase:.1e}, \
          |Im(k/G)| {worst_config_rotation:.1e}, AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
         table.process,
@@ -1988,7 +1990,8 @@ fn judge(
         m2.grid,
         m2.event,
         if per_diagram_fit { "" } else { " (not banked)" },
-        g.im.signum(),
+        g.re,
+        g.im,
         table.amp2_groups.len(),
         if merges {
             " (MadGraph merges some into one accumulator)"

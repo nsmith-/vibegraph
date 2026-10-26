@@ -234,14 +234,14 @@ impl VertexInfo {
         let group = vertex_flow_group(model, id, flow_group);
         let terms = vertex
             .couplings
-            .iter()
-            .filter(|(&(c, l), _)| c == color_idx && group.lorentz.contains(&l))
-            .map(|(&(_, lorentz_idx), coupling_id)| {
+            .keys()
+            .filter(|&&(c, l)| c == color_idx && group.lorentz.contains(&l))
+            .map(|&key| {
                 VertexTerm::from_ufo(
                     model,
-                    vertex.lorentz[lorentz_idx],
+                    vertex.lorentz[key.1],
                     &vertex.color[color_idx],
-                    *coupling_id,
+                    model.bound_coupling(id, key),
                     &group.flow,
                     result_leg_idx,
                     flows,

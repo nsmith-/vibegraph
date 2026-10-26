@@ -33,8 +33,9 @@
 #[path = "../../vibegraph-lib/tests/common/seeds.rs"]
 mod seeds;
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
@@ -140,7 +141,7 @@ fn integrate(dir: &Path, name: &str, row: &Row, seed: u64, extra: &[&str]) -> (f
     )
     .unwrap();
     let card = run_card(dir, name, row);
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph(dir, dir)
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -150,15 +151,14 @@ fn integrate(dir: &Path, name: &str, row: &Row, seed: u64, extra: &[&str]) -> (f
         .arg("--force")
         .args(["--seed", &seed.to_string()])
         .args(extra)
-        .current_dir(dir)
         .output()
         .expect("spawn vibegraph");
     assert!(
         output.status.success(),
         "vibegraph integrate {name} failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
-    parse_result(&String::from_utf8_lossy(&output.stdout))
+    parse_result(&common::stdout_of(&output))
 }
 
 /// The seed policy's reading of equal-budget seeds ([`seeds::combine`]): the

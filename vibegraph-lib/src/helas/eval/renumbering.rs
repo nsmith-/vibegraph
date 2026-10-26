@@ -140,15 +140,13 @@ fn census_processes() -> Vec<(String, Arc<UFOModel>, String)> {
     let mut out: Vec<(String, Arc<UFOModel>, String)> = Vec::new();
     for row in manifest["process"].as_array().unwrap() {
         let key = row["key"].as_str().unwrap().to_owned();
+        let restrict = row.get("restrict").and_then(|r| r.as_str());
         let model = match row.get("model").and_then(|m| m.as_str()) {
             None => sm.clone(),
-            Some(dir) => {
-                let restrict = row
-                    .get("restrict")
-                    .and_then(|r| r.as_str())
-                    .map(str::to_owned);
-                load(&mut models, dir, restrict.as_deref())
-            }
+            Some("sm") => sm_model(SMRestrict::from_suffix(restrict).unwrap_or_else(|| {
+                panic!("manifest row `{key}`: the interned SM has no restriction `{restrict:?}`")
+            })),
+            Some(dir) => load(&mut models, dir, restrict),
         };
         let mut processes: Vec<String> = Vec::new();
         processes.extend(
