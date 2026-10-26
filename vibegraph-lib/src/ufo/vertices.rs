@@ -4,7 +4,8 @@ use super::ast_util::{
 use super::color::ColorExpr;
 use super::couplings::CouplingId;
 use super::lorentz::LorentzId;
-use super::particles::ParticleId;
+use super::particles::{Particle, ParticleId};
+use indexmap::IndexMap;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -31,6 +32,18 @@ pub struct Vertex {
     pub lorentz: Vec<LorentzId>,
     /// `(color_idx, lorentz_idx)` → coupling id.
     pub couplings: BTreeMap<(usize, usize), CouplingId>,
+}
+
+impl Vertex {
+    /// Whether the vertex survives unitary gauge: none of its legs is a
+    /// Goldstone mode or a ghost ([`Particle::is_unphysical`]). Diagram
+    /// enumeration builds its topology model from exactly these vertices.
+    pub fn is_physical(&self, particles: &IndexMap<String, Particle>) -> bool {
+        !self
+            .particles
+            .iter()
+            .any(|&pid| particles[pid].is_unphysical())
+    }
 }
 
 /// Intermediate form from the Python AST parse; names not yet resolved to IDs.

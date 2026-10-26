@@ -7,6 +7,10 @@
     "configs": 1,
     "flows": 1
   },
+  "bbx_to_tapta_ckm_no_b_mass": {
+    "configs": 2,
+    "flows": 1
+  },
   "ddx_to_epemg": {
     "configs": 4,
     "flows": 1
@@ -161,6 +165,10 @@
   },
   "tata_to_ttx_tensor4f": {
     "configs": 3,
+    "flows": 1
+  },
+  "ubx_to_epve_ckm_no_b_mass": {
+    "configs": 1,
     "flows": 1
   },
   "ud_to_epemud_qcd0": {

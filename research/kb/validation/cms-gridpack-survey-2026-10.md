@@ -241,12 +241,12 @@ Other refusals:
   [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
 - Feature gaps: [variation weights](../backlog/feature/systematics-variation-weights-not-written.md)
   and the silent drop of a systematics request (now a warning),
-  [`ckm_no_b_mass`](../backlog/feature/sm-lacks-ckm-no-b-mass-restriction.md),
+  `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
   `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
   [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
   [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
-  [mixed outgoing masses in a group](../backlog/feature/flavour-group-mixed-outgoing-masses-refused.md),
+  mixed outgoing masses in a group (`flavour-group-mixed-outgoing-masses-refused`, since closed),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

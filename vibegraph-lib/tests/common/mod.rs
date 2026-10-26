@@ -104,6 +104,8 @@ pub const REFUSED_RUN_CARDS: &[(&str, &str)] = &[(
      helicity is a different estimator and a different per-event weight, so the card \
      is refused rather than read as an explicit sum",
 )];
+use vibegraph::ufo::parameters::{ParamNature, Parameter};
+use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model as interned_sm, SMRestrict};
 use vibegraph::ufo::UFOModel;
 
@@ -192,8 +194,8 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
 }
 
 /// The model a manifest row's gate evaluates in: the interned Standard Model
-/// where the row names none, and the vendored UFO directory under its restrict
-/// card where it does.
+/// where the row names none or names it (`model = "sm"`) under a restriction,
+/// and the vendored UFO directory under its restrict card otherwise.
 ///
 /// The `Err` is the message an informational cell carries: a row whose model
 /// this crate cannot read is reported with the refusal as its measurement rather
@@ -220,9 +222,26 @@ pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
 type ModelCache = BTreeMap<String, Result<Arc<UFOModel>, String>>;
 
 fn load_model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
-    let Some(row) = manifest::row_models().get(key).cloned() else {
-        return Ok(sm_model());
-    };
+    match manifest::row_models().get(key) {
+        Some(row) => load_row_model(row),
+        None => Ok(sm_model()),
+    }
+}
+
+/// The model a row that names one evaluates in: the interned Standard Model
+/// under the named restriction, or the UFO directory under its restrict card.
+pub fn load_row_model(row: &manifest::RowModel) -> Result<Arc<UFOModel>, String> {
+    if row.is_interned_sm() {
+        return SMRestrict::from_suffix(row.restrict.as_deref())
+            .map(interned_sm)
+            .ok_or_else(|| {
+                format!(
+                    "the interned SM has no restriction `{}` (it has: {})",
+                    row.restrict.as_deref().unwrap_or(""),
+                    SMRestrict::ALL.map(SMRestrict::suffix).join(", ")
+                )
+            });
+    }
     let dir = row.dir_path();
     let card = row.restrict_card();
     if let Some(card) = card.as_ref() {
@@ -393,6 +412,37 @@ pub fn assert_no_scale_draw_fallbacks(fallbacks: u64, what: &str) {
          {fallbacks} points: their squared amplitudes summed to something the draw could \
          not normalise"
     );
+}
+
+/// The SLHA block and code an external parameter reads from its param card.
+pub fn lha_slot(p: &Parameter) -> (&str, &[i32]) {
+    let ParamNature::External {
+        lha_block,
+        lha_code,
+        ..
+    } = &p.nature
+    else {
+        unreachable!("externals are external")
+    };
+    (lha_block, lha_code)
+}
+
+/// The param card a banked table (amplitude or coupling) carries, as MadGraph
+/// wrote it for the run. The table must bank one: a missing or empty card would
+/// parse to the model's defaults, which is the substitution a banked card rules out.
+pub fn banked_param_card(table: &serde_json::Value) -> ParamCard {
+    let key = table["key"].as_str().unwrap_or("?");
+    let lines = table["param_card"]
+        .as_array()
+        .unwrap_or_else(|| panic!("[{key}] the table banks no param card"));
+    assert!(!lines.is_empty(), "[{key}] the banked param card is empty");
+    lines
+        .iter()
+        .map(|l| l.as_str().expect("param card line"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .unwrap_or_else(|e| panic!("[{key}] banked param card: {e:?}"))
 }
 
 /// The authored model with the hierarchies QED=2, NP=1 and five vertices, used

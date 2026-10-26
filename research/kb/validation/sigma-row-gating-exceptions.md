@@ -54,7 +54,7 @@ section; the exceptions below are worked cases of them.
 | row · cell | treatment | standing reason | tracked as |
 |---|---|---|---|
 | `ee_to_mumua` · samples | `info` | `pt(a)` measures MadGraph's own sample | [ee-mumua sample reference](../backlog/validation/ee-mumua-sample-reference-mis-shaped.md) |
-| `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md) |
+| `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals info on scattering references](../backlog/validation/two-to-six-integrals-info-on-scattering-references.md) |
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |

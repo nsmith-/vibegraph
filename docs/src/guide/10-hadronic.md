@@ -65,6 +65,13 @@ $|\mathcal{M}|^2$ equality alone does not license reusing one member's
 colour flow for another. A partition whose groups are separated by less
 than a set margin is treated as a failed measurement, not a decomposition.
 
+The outgoing masses fix the phase space, so a card whose subprocesses differ
+in them, such as `p p > l+ l-` with the massive `ta` in the multiparticle, is
+split first: one integrand per set of outgoing masses, each partitioned into
+its own groups and integrated over its own channels, and the cross sections
+summed as for several final-state multiplicities. MadGraph separates them the
+same way, into different `P` directories.
+
 Diagram enumeration produces one ordering per unordered initial state:
 $g u$ is generated and $u g$ is not. Both are physical, since the
 two beams' densities are evaluated at different momentum fractions, and the

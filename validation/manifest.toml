@@ -519,6 +519,36 @@ integrals = { tier = "banked", mode = "gate", note = "two cards, both through th
 samples = { tier = "banked", mode = "gate", note = "the two dy13 cards' own runs, which bank their events and their cross section out of one MadGraph invocation, so what this compares against and what the integrals cell gates on cannot drift apart. 200000 MadGraph events per card against 3 x 20000 of ours: minimum KS p 2.2e-2 (y(l-)) and 2.6e-2 (phi(l+)/pi), minimum chi-squared p 2.9e-3 on SPINUP for one seed of the default card against 0.49 and 0.72 on the other two, so not seed-stable. pt(ll) is a constant of the process at this order and is named rather than compared. The row also carries the differential normalisation those p-values are blind to: dsigma/dm_ll in absolute picobarns from the 20 GeV threshold the pt cut implies out to 1 TeV, every judged bin within 2.3 combined errors and no weight below the threshold on either side The incoming legs are compared too, and at proton beams they are not constants of the process: each beam's E is a momentum fraction times the run card's, so the column is a weighted KS against MadGraph's own -- the first comparison of the realised x spectra rather than of the outgoing state. Minimum beam KS p 0.025 on the default card and 0.220 on the 60-120 window card over the three seeds, against the same 1e-4 floor; the massless parton masses agree exactly (0 against a 5e-11 GeV printed tolerance). The reported scales are compared beside the legs, at the seven significant digits rw_events.f writes the <event> line with: MadGraph's Python re-serialisation prints the same fields two digits wider, and those two are padding, so reading the spelling alone would compare against digits the reference never wrote. SCALUP gates and agrees -- an equality at the printed digits, 91.188 against 91.188; AQCDUP gates too, at 0.1300027 against 0.1300027, 1.100e-08 inside the 5.0e-08 the printing allows. Nothing in this matrix element moves with alphas, so no coupling is applied to it, but the record reports alphas(muR) all the same -- off the PDF set's own tabulation, the one the densities were fitted with, which is where MadGraph takes it from on the same card. The cross section is unchanged to the last printed digit." }
 
 [[process]]
+key = "pp_to_ll_beams_6500_4000"
+process = "p p > l+ l-"
+script = "validation/madgraph/gen_hadronic_sigma.sh"
+class = "multi-channel"
+n_final = 2
+bundled = false
+rationale = "Drell-Yan between proton beams of 6500 and 4000 GeV: the only banked run whose beams differ, so the only place the collision energy 2 sqrt(E1 E2), the parton energies x_i E_i and the lab boost cm_rap = 1/2 ln(x1 E1 / (x2 E2)) reach a comparison with MadGraph. Same process, PDF, scales and cuts as pp_to_ll's dy13_default card, byte for byte apart from ebeam2, so a disagreement is about the beams. At equal beams every one of those quantities is bit-identical to the energy-sum form, which is why no other row can see them."
+artifacts = ["output/dy13_beams_6500_4000", "output/seeded_sigma/dy13_beams_6500_4000", "hadronic_sigma_reference.json", "dy_beams_6500_4000_run_card.dat", "dy13_proc_card.dat", "dy13_param_card.dat"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"] }
+integrals = { tier = "banked", mode = "gate", note = "REGISTERED DEVIATION (user, 2026-10-22; madgraph-defects): MadEvent 3.7.1 cuts a group's mirrored beam ordering on the configuration it sampled, not the event it writes (dsample.f:181 runs passcuts before select_grouping, dsample.f:222; the mirror flips CM_RAP only afterwards, super_auto_dsig_group_v4.inc:815-829, its PASSCUTS at :835 commented out), so at 6500 x 4000 the mirrored ordering's lepton window is [-2.014, 2.986], not |eta| < 2.5. This crate keeps the correct cut, and its own sigma is 754.96 +- 0.35 pb against MadGraph's 717.25 +- 0.145: +5.26%. The gated sigma therefore integrates with MadEvent's cut emulated (ProtonIntegrand::emulate_madevent_mirrored_cut, test and extended-validation builds only), five seeds a side under the seed policy, gated as pp_to_ll's dy13 cells are: |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Measured: 717.575 +- 0.309 pb (5 seeds, chi2/dof 0.85) against the MadGraph seed record output/seeded_sigma/dy13_beams_6500_4000 (717.250 +- 0.145 pb), pull +0.95, rel +0.0005. This crate's own sigma is measured on the same seeds and reported, not gated, in the cell's note with its rel and pull against MadGraph and against the emulation: 754.956 +- 0.352 pb (chi2/dof 0.51), rel +0.0526 and pull +99.0 against MadGraph, rel +0.0521 and pull +79.8 against the emulation's 717.575 +- 0.309. Known-wrong control, measured once and recorded here: the build with the energy-sum frames (sqrt(s) = E1 + E2, no cm_rap) must fail this gate, and it does: 755.890 +- 0.341 pb against MadGraph's 717.250 +- 0.145, pull +104.4, rel +5.39% (the control also moves the frames the emulated cut is applied in, so the 5.39% is not split between the three quantities). Exchanging the beams leaves this crate's sigma unchanged (755.16 +- 0.36 pb at 4000 x 6500) but not MadGraph's, whose sigma the emulation predicts at about 792 pb there. Blind, because the emulation replaces it, to a defect in this crate's own mirrored-ordering cut alone: the reported sigma sees one at the deviation's scale, and proton.rs's exchanging_unequal_beam_energies_reflects_the_integrand pins it pointwise." }
+samples = { tier = "banked", mode = "gate", note = "the same invocation's events. y(l-) and the per-beam incoming-energy KS are the columns that see the boost direction and x_i E_i per beam, which sigma cannot. REGISTERED DEVIATION (user, 2026-10-22; madgraph-defects): MadEvent's mirrored-ordering cut admits mirrored events (the antiquark on the +z beam) with leptons in [ln(E1/E2) - etal, ln(E1/E2) + etal] = [-2.014, 2.986], so MadGraph's sample carries leptons outside its own cut and a different direct-to-mirrored share. The gate first reads the defect off MadGraph's sample and fails unless it is as registered: no direct event outside |eta| <= 2.5, every mirrored one inside the displaced window, and some outside the cut (measured: 0 / 99807 direct events with a lepton outside |eta| <= 2.5, and 8429 / 100193 mirrored ones outside it, all inside [-2.014, 2.986], the largest |eta| 2.9855); none of ours may leave the cut. On the full sample the columns the defect can move are reported, not gated, in the cell's note with the reason: the leptons' y and cos, the incoming E and pz, the pT spectra, m(l+,l-), cs_cos(ll), flavour, ICOLUP and SPINUP. The columns it cannot move stay gated: phi(l)/pi (everything, the displaced window included, is invariant under rotations about the beam axis), the beam masses (constants of the record) and SCALUP and AQCDUP (fixed by the card). The direct-ordering sub-sample (the quark on the +z beam), which MadEvent cuts on its own lab frame, is gated on every column as the direct_ordering variant. Emulating the defect in generation would need a hook in the shipped binary, so the sample is compared unemulated. Minimum p-values over three seeds of 20000 events: direct_ordering KS 0.0385, chi2 0.295, per-beam KS 0.0782; full sample, gated columns only, phi(l+)/pi KS 0.380, with the beam masses and SCALUP and AQCDUP within their tolerances (the largest AQCDUP deviation 1.1e-8 against 5e-8)" }
+
+[[process]]
+key = "pp_to_ll_etau"
+process = "p p > l+ l-"
+script = "validation/madgraph/bank_seeded_sigma.sh"
+class = "multi-channel"
+n_final = 2
+bundled = false
+rationale = "Drell-Yan with l = e, ta on the dy13 default card: one multiplicity whose subprocesses differ in outgoing masses (ta at 1.777 GeV, e massless), so it is the only row that integrates two phase spaces of the same leg count as two parts and sums them. MadGraph keys its subprocess groups on every leg's mass (group_subprocs.py find_process_classes) and puts the two in separate P directories; this crate splits them before flavour grouping (multiplicity::split_by_outgoing_masses). The e part is pp_to_ll's dy13_default process on the same card, so a disagreement in the ta part or the total is about the split."
+artifacts = ["output/seeded_sigma/dy13_etau_default", "dy13_default_run_card.dat", "dy13_param_card.dat"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"], note = "the ta+ ta- subprocesses differ from it by the external mass; ee_to_tatah and ee_to_mumu_tata_qcd0 carry massive taus at amplitude level" }
+integrals = { tier = "banked", mode = "gate", note = "five seeds a side under the seed policy, read as pp_to_ll's dy13 cells are (|pull| < 3, |rel| < 0.005, seeds' chi2/dof < 4), on the total and on each P directory's sum against the matching part. MadGraph 3.7.1 (b7687064) writes two P directories, P1_qq_ll (the massless leptons, named after the multiparticle label) and P1_qq_taptam. Measured at 120000 x 12, five seeds: e part 934.520 +- 0.616 pb against 933.580 +- 0.255 (pull +1.41, rel +0.0010, chi2/dof 0.90); ta part 923.762 +- 0.610 against 923.374 +- 0.262 (pull +0.58, rel +0.0004, chi2/dof 0.23); total 1858.282 +- 0.867 against 1856.940 +- 0.365 (pull +1.43, rel +0.0007, chi2/dof 0.53). The pre-registered total, 1858.318 +- 0.867 pb, matched. Known-wrong control, printed beside the three readings and asserted outside the gate bounds: the ta part integrated on the massless e channels (the e part's sigma, whose groups the test asserts share the ta part's members and diagrams) reads 934.520 +- 0.616 pb against the ta directory's 923.374 +- 0.262: pull +16.7, rel +0.0121 (11.1 pb), the tau-mass effect, outside both bounds." }
+samples = { tier = "uncovered", note = "no event sample banked; the per-part event split would be the column a sample adds" }
+
+[[process]]
 key = "pp_to_ll_qcd0"
 process = "p p > l+ l- QCD=0"
 script = "validation/madgraph/scripts/pp_to_ll_qcd0.mg5"
@@ -1638,6 +1668,41 @@ inputs = ["fetched PDF set", "validation/madgraph/decay_chain_events_reference.j
 rationale = "Decay-chain and two-@N event files through the shipped binary against five pooled MadEvent runs per card: the status-2 resonance trees and their frequencies (forced lines always, free lines inside their windows), each record's SPINUP, colour and momentum rules, the resonance masses inside their windows, the process split of a two-@N card (one <init> entry per process, IDPRUP per event), a `$` on a chain's core, and MadEvent's own 300 events replayed through the scale prescription (every SCALUP reproduced by one of the event's configurations, AQCDUP to the printed digit). Regenerated by pixi run -e madgraph generate-decay-chain-events."
 note = "SCALUP and AQCDUP binned against MadEvent's sample are informational. Each event's scale is now clustered in its own flavour group, at the mirrored event's momenta for a mirrored term (note 40), and our_own_events_replay_in_their_own_flavour_group replays 2000/2000 of this card's generated events to 6.2e-9; a binned column cannot resolve which group or configuration a scale came from, which is why the replay, not the histogram, is the gate on it."
 
+[[process]]
+key = "ubx_to_epve_ckm_no_b_mass"
+process = "u b~ > e+ ve"
+model = "sm"
+restrict = "ckm_no_b_mass"
+script = "validation/madgraph/scripts/ubx_to_epve_ckm_no_b_mass.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The Standard Model under the CMS genproductions card restrict_ckm_no_b_mass.dat, which MadGraph does not ship: a five-flavour CKM model with MB = ymb = 0 and the tau width kept. One s-channel W+ whose quark vertex carries V_ub, which carries the Wolfenstein phase at leading order, on a massless b; its coupling table is MadGraph's whole coupling_dict at this card."
+artifacts = ["output/ubx_to_epve_ckm_no_b_mass", "output/ubx_to_epve_ckm_no_b_mass.json", "output/ubx_to_epve_ckm_no_b_mass_amplitude.csv", "amplitudes/ubx_to_epve_ckm_no_b_mass.json", "couplings/ubx_to_epve_ckm_no_b_mass.json"]
+mg_amplitude = { process = "u b~ > e+ ve", pdgs_in = [2, -5], pdgs_out = [-11, 12], sqrt_s_list = [10.0, 80.0, 200.0, 500.0], npoints = 10, seed = 277 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "1 diagram, the s-channel W+; none exists at the default restriction, whose CKM matrix is the identity. MadGraph's interaction list at this card (67, unitary gauge) is compared with this crate's unitary-gauge vertex set; a count cannot see one vertex swapped for another." }
+amplitudes = { tier = "hermetic", mode = "gate", note = "|M|^2 max_rel 8.1e-14 (grid) / 9.8e-15 (event), per-diagram and per-flow 3.3e-16, JAMP2 8.6e-15, fitted G = +1i with |G|-1 = 4.4e-15. The one diagram pins the CKM orientation that |M|^2 cannot: its u b~ W vertex carries GC_102 = i ee conj(CKM1x3)/(sw sqrt2), as MadGraph does, where the conjugate convention (GC_43, CKM1x3) puts G at i V_ub/conj(V_ub) = 0.6733 - 0.7394i" }
+integrals = { tier = "uncovered", note = "the launch banks a cross section that is not extracted: the row exists for the couplings and amplitudes at this restriction, and its one diagram has no tau propagator for the card's tau width to reach" }
+samples = { tier = "uncovered", note = "the launch's events feed the amplitude table's event points only; no sample is banked for this restriction" }
+
+[[process]]
+key = "bbx_to_tapta_ckm_no_b_mass"
+process = "b b~ > ta+ ta-"
+model = "sm"
+restrict = "ckm_no_b_mass"
+script = "validation/madgraph/scripts/bbx_to_tapta_ckm_no_b_mass.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "The b sector of the CMS ckm_no_b_mass card: ymb = 0 removes the h b b~ vertex, so b b~ > ta+ ta- is the photon and Z exchanges alone, two diagrams where the default restriction has three, on massless b spinors."
+artifacts = ["output/bbx_to_tapta_ckm_no_b_mass", "output/bbx_to_tapta_ckm_no_b_mass.json", "output/bbx_to_tapta_ckm_no_b_mass_amplitude.csv", "amplitudes/bbx_to_tapta_ckm_no_b_mass.json", "couplings/bbx_to_tapta_ckm_no_b_mass.json"]
+mg_amplitude = { process = "b b~ > ta+ ta-", pdgs_in = [5, -5], pdgs_out = [-15, 15], sqrt_s_list = [10.0, 91.188, 200.0, 500.0], npoints = 10, seed = 281 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams, photon and Z; the default restriction's third, the h exchange, is pruned with ymb. MadGraph's interaction list at this card (67, unitary gauge) is compared with this crate's unitary-gauge vertex set; a count cannot see one vertex swapped for another." }
+amplitudes = { tier = "hermetic", mode = "gate", note = "|M|^2 max_rel 2.8e-14 (grid) / 7.9e-15 (event), per-diagram 2.8e-15, per-flow 2.1e-15, JAMP2 7.2e-15, fitted G = +1i with |G|-1 = 3.8e-15" }
+integrals = { tier = "uncovered", note = "the launch banks a cross section that is not extracted: the row exists for the vertex pruning and amplitudes at this restriction" }
+samples = { tier = "uncovered", note = "the launch's events feed the amplitude table's event points only; no sample is banked for this restriction" }
 
 [[process]]
 key = "ffx_to_xwxw_toy_weighted"
