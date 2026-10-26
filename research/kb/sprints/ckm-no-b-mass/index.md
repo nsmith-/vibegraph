@@ -6,6 +6,10 @@
 
 * [The built-in SM gains the ckm_no_b_mass restriction](sprint.md) - 'import model sm-ckm_no_b_mass' loads the built-in SM with the CMS-supplied restrict card, vendored with its provenance, and couplings are pinned at that restriction.
 
+## Sprint Record
+
+* [The built-in SM gains the ckm_no_b_mass restriction](closeout.md) - The CMS card is vendored byte-exact and loads as sm-ckm_no_b_mass; its first MadGraph row exposed a CKM conjugation bug (η → −η on charged vector currents), fixed and gated with G = +i.
+
 ## Directories
 
 * [sessions](sessions/index.md)

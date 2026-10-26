@@ -3,7 +3,7 @@ type: Sprint
 title: "gridpack-generate"
 description: "generate takes the integrate artifact plus generate-time inputs only: the run card split by stage, artifact version 13, a required --seed, and LHAPDF_DATA_PATH."
 status: draft
-active: true
+active: false
 tags: [generate, artifact, runcard, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-21}
 ---

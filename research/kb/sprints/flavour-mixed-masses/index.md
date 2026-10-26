@@ -10,6 +10,10 @@
 
 * [Map changes for the maps session: none needed](map-changes-for-the-maps-session.md) - F1 splits a mixed-mass card into one integrand per set of outgoing masses, so no map, VEGAS or budget code changes; this records why, and what the in-integrand alternative would have needed.
 
+## Sprint Record
+
+* [A flavour group with mixed outgoing masses is split, not refused](closeout.md) - A card whose subprocesses differ in outgoing masses splits into one proton integrand per mass set, summed like multiplicities, as MadGraph writes one P directory each; p p > l+ l- with l = e, ta gates against MadGraph on both parts.
+
 ## Directories
 
 * [sessions](sessions/index.md)
