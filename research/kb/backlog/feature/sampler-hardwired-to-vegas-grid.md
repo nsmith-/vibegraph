@@ -19,7 +19,8 @@ flow samplers can be tried per run. `VegasGrid` is assumed from
 `integrate_channels` through `Unweighter::trial`; the census and the proposed
 seam are in [importance-sampler-seam](../../phase-space/importance-sampler-seam.md),
 as amended by [the joint design](../../phase-space/sampler-and-map-seams.md)
-(the map owns windows; mergeable accumulators; product parts; per-role bound).
+(the map owns windows; uniforms-in draw; scalar `f64` accumulate; mergeable
+accumulators; per-role bound in `VegasConfig`).
 
 **What to build.** A trait (not named `Sampler`, which is the phase-space map's
 name twice already) with draw → `1/p(u)` plus a per-point record and a fixed

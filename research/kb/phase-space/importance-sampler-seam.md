@@ -15,8 +15,10 @@ sources:
 ---
 
 > **Amended by [the joint seam design](sampler-and-map-seams.md) (2026-10-22).**
-> The trait below stands, plus coordinate roles, mergeable accumulators,
-> product parts and a per-role bin-width bound; the sampler never sees a
+> The trait below stands, amended: the scalar is a parameter of the trait
+> (implemented at `f64` first), draw takes the point's uniforms rather than a
+> generator, accumulate is scalar `f64` in point order, accumulators merge, and
+> the bin-width bound is per coordinate role; the sampler never sees a
 > coordinate window. The artifact versioning in "serialise" follows
 > [artifact versioning](../pipeline/artifact-format-versioning.md) as PRs #69
 > and #60 left it (every artifact at the current version), not `version_for`.

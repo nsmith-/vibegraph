@@ -29,7 +29,7 @@ integrate/generate split.
 |---|---|---|
 | D1 | **The map owns every coordinate window**, cut-aware conditional ones included, in window-relative coordinates. The sampler is a density on the unit cube and never sees a window. (User, 2026-10-22.) | M2: no high-weight edge is fixed in an absolute invariant; the jet `pT` and `η` edges are pinned by earlier coordinates (`R` 0.03–0.11) |
 | D2 | **Absolute grid coordinates (option B) are refused.** The driven, per-coordinate draw they need is not built. | D1; M2 |
-| D3 | **No shared `(τ, y)` tier.** The seam keeps the means to build one (mergeable accumulators, product samplers over coordinate roles); nothing uses them. | the replay below: a shared `τ` costs the starved γ* channels 1.35–1.39× variance; no row gains more than 1.5% |
+| D3 | **No shared `(τ, y)` tier.** The seam keeps mergeable accumulators and coordinate roles, which a tier would need; no product sampler type is built. | the replay below: a shared `τ` costs the starved γ* channels 1.35–1.39× variance; no row gains more than 1.5% |
 | D4 | **The bin-width bound is per coordinate role**, with today's `K = 6` on every role as the default. | no measurement favours a per-role value yet; `bin-width-bound-best-k-per-row` is that study |
 | D5 | **MadSpin-kind decays are a decay stage after the map**, opt-in. The default for a decay request stays the in-process decay chain, trained with the rest of the point. (User, 2026-10-22.) | [decay chains without MadSpin](../performance/decay-chains-without-madspin.md) |
 | D6 | The sampler's draw, weight and accumulate stay generic over `F: Real`, and so do the map's windows. The default path stays byte-identical until a window or kind is switched on. | the [seam](importance-sampler-seam.md)'s contract |
@@ -119,8 +119,8 @@ Two additions, both inert on the default path:
 - **Coordinate roles.** Each channel reports a role for each adapted
   coordinate: `Tau`, `Rapidity`, `Invariant`, `Polar`, `Azimuth`,
   `DecayPolar`, `DecayAzimuth` or `Select`. Configurations address
-  coordinates by role, not index. That covers the per-role `K` (D4), any
-  product sampler (D3), and the probes, which today hard-code the M1 layout
+  coordinates by role, not index. That covers the per-role `K` (D4), a
+  tier if one is ever built (D3), and the probes, which today hard-code the M1 layout
   (`x0 = τ` … `x6 = φ*_ll`). The artifact records each channel's role list as
   its layout (D7). They go in with the sampler trait, since its VEGAS config is
   their first consumer.
@@ -135,21 +135,35 @@ Two additions, both inert on the default path:
 
 The [seam draft](importance-sampler-seam.md#the-proposed-seam) stands: draw
 (with a record and a fixed draws-per-point), accumulate in point order, refine,
-freeze, serialise, and a uniform second implementor. This design adds three
-things:
+freeze, serialise, and a uniform second implementor. Agreed with the user on
+2026-10-26:
 
+- **The scalar is a parameter of the trait, not of the method**, for example
+  `FrozenSampler<F: Real>`. The refactor implements it for `F = f64` only. A
+  lane implementation is added later with whatever bound the lane-primitives
+  design settles, so this seam commits to none of that design.
+- **Draw takes uniforms, not a random-number generator**:
+  `draw(&self, r: &[F], u: &mut [F], rec: &mut Self::Record) -> F`, with `r`
+  holding `draws_per_point()` uniforms. The caller fills `r` from the point's
+  substream, so the seek by point index that keeps `-j` from moving bits stays
+  with the caller. A lane batch packs N points' uniforms. The record is an
+  associated type of each `F` implementation (VEGAS at `f64`: one bin index per
+  dimension).
+- **Accumulate is scalar `f64`, in point order, always.** A lane batch unpacks
+  its records and weights and adds them point by point, so determinism holds by
+  construction and the lane design needs no order-preserving scatter-add.
+  Refine and freeze are plain `f64`.
 - **Mergeable accumulators.** `merge(&mut self, other)` in block-index order.
   `adapt_blocks_iteration` already reduces the blocks' histograms in point
-  order. A product sampler whose shared part refines from several channels
-  needs the same operation, so the seam has it whether or not D3 ever changes.
-- **Product samplers over roles.** A sampler may be the product of parts that
-  each own a set of roles. The draw concatenates the parts' coordinates in role
-  order, and `1/p` is the product of the parts' weights. This is how a tier
-  would be expressed. Under D3 the only instance is the trivial one: one part
-  owning every role.
-- **A config per kind.** `VegasConfig { nbins, alpha, rule }`, with `GridRule`
-  as on main, but its `max_bin_width` addressed per role (D4). `generate` never
-  reads a config: it rebuilds the frozen state from the artifact.
+  order. A tier's shared part would need the same operation.
+- **No product sampler type.** D3 leaves it without a user; the roles and merge
+  are what a tier would build on.
+- **A config per kind.** `VegasConfig { nbins, alpha, rule, max_bin_width_by_role }`.
+  The per-role overrides (D4) sit beside `GridRule`, not inside it: `GridRule`
+  is the artifact's `grid_rule` wire format, so a new field there would change
+  the artifact's shape. The overrides enter the artifact with the sampler kind.
+  `generate` never reads a config: it rebuilds the frozen state from the
+  artifact.
 
 ## D3: the shared `(τ, y)` tier, replayed
 
@@ -387,8 +401,8 @@ So:
      `tau-rule-reads-whole-process`.
   8. Non-aligned edges go to the sampler, VEGAS+ first.
 - **Seam draft:** everything stands except where the artifact versioning moved
-  under the split, #69 and #60 (D7). This design adds the roles, mergeable accumulators and
-  product parts.
+  under the split, #69 and #60 (D7). This design adds the roles, mergeable accumulators, the
+  trait's scalar parameter and the uniforms-in draw.
 
 [^m1]: [M1 report](../sprints/vegas-absolute-grid-coords/sessions/M1-report.md),
     tables M1, M2, M4 and M5.
