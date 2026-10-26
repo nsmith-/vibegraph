@@ -46,9 +46,10 @@ const R_LPP: &str = "RunCard::beam_mode, the beam-configuration check, and the p
                      parton-density flags the scale prescription branches on";
 const R_EBEAM: &str = "RunCard::ebeam1/ebeam2, the beam energies of both the proton and the \
                        fixed-energy integrands";
-const R_PDLABEL: &str = "coupling::alphas::pdf_label_alpha_s, reached through \
-                         RunningAlphaS::from_run_card";
-const R_LHAID: &str = "RunningAlphaS::from_run_card; the PDF set id";
+const R_PDLABEL: &str = "RunCard::pdf_choice, which on proton beams admits only 'lhapdf' and \
+                         refuses every built-in parameterisation";
+const R_LHAID: &str = "pdf::select::load_for_run_card, which reads the LHAPDF set and member \
+                       this id names";
 const R_SCALES: &str = "coupling::scales::ScaleChoice::from_run_card ('d' arrives as the \
                         clustering's d parameter)";
 const R_MAXJETFLAVOR: &str = "cuts::Cuts::compile, through the leg classification, and the \

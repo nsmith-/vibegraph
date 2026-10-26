@@ -261,7 +261,7 @@ mod tests {
         assert_eq!(card("cteq6l1 = pdlabel\n").pdlabel, "cteq6l1");
         // Fixed-energy beams read no density: the labels stay inert.
         let fixed = card("0 = lpp1\n0 = lpp2\nnone = pdlabel1\nnone = pdlabel2\n");
-        assert_eq!(fixed.pdlabel, "nn23lo1");
+        assert_eq!(fixed.pdlabel, "lhapdf");
     }
 
     /// MadGraph's own record of a card (`banner_values`) keeps the values

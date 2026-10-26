@@ -16,7 +16,7 @@ use std::path::Path;
 
 use common::fixed_beams;
 
-use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::artifact::{IntegrateArtifact, PdfInput};
 
 /// Drive `vibegraph integrate` on a fixed-energy proc/run card pair written to a
 /// tempdir, with symmetric beams of energy `ebeam` (√ŝ = 2·ebeam). `expected_ndim`
@@ -52,7 +52,7 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
     let artifact =
         IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
     assert_eq!(artifact.process, process);
-    assert_eq!(artifact.pdf_set, "none");
+    assert_eq!(artifact.inputs.pdf, PdfInput::None);
     assert_eq!(artifact.sqrt_s_had, sqrt_s);
     assert!(
         !artifact.channels.is_empty(),
@@ -329,7 +329,7 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
 
     assert_eq!(DEFAULT_MAX_BIN_WIDTH, 6.0);
     assert_eq!(default.grid_rule, Some(GridRule::default()));
-    assert_eq!(default.format_version, 13);
+    assert_eq!(default.format_version, vibegraph::artifact::FORMAT_VERSION);
     assert!(default_bytes == six_bytes, "the default is not K = 6");
     assert!(
         widest(&default) <= DEFAULT_MAX_BIN_WIDTH * (1.0 + 1e-9),
@@ -338,7 +338,10 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
     );
 
     assert_eq!(unbounded.grid_rule, Some(GridRule::UNBOUNDED));
-    assert_eq!(unbounded.format_version, 13);
+    assert_eq!(
+        unbounded.format_version,
+        vibegraph::artifact::FORMAT_VERSION
+    );
     assert!(
         widest(&unbounded) > DEFAULT_MAX_BIN_WIDTH,
         "the unbounded grid's widest bin is {} uniform widths, so the bound does not bind here",

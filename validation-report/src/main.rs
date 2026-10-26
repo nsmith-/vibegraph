@@ -616,11 +616,12 @@ mod tests {
     }
 
     /// The two HT rows with no gate output, each declared three ways from its
-    /// committed text: as committed (`bundled = false`) it waits on the bundle; with
-    /// `bundled = false` swapped for `status = "planned"` it waits on its reference
-    /// run; with neither it is a missing cell. Each declaration is spliced into that
-    /// row alone, and the splice is asserted to have happened. `bundled = false` is
-    /// gone from the planned declaration because an unbundled row also waits, and
+    /// committed text with any `bundled = false` removed: with `bundled = false` it
+    /// waits on the bundle; with `status = "planned"` it waits on its reference run;
+    /// with neither it is a missing cell. Each declaration is spliced into that row
+    /// alone, and the splice is asserted to have happened, so the test holds
+    /// whether or not the pinned bundle carries the rows. `bundled = false` is
+    /// absent from the planned declaration because an unbundled row also waits, and
     /// would pass the planned half without the planned rule.
     #[test]
     fn an_unbundled_or_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
@@ -642,11 +643,11 @@ mod tests {
         };
         for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
             let script = format!("script = \"validation/madgraph/scripts/{key}.mg5\"\n");
-            let committed = format!("{script}bundled = false\n");
-            assert_eq!(text.matches(&committed).count(), 1, "{key}");
-            let declared_as = |line: &str| text.replace(&committed, &format!("{script}{line}"));
+            let base = text.replace(&format!("{script}bundled = false\n"), &script);
+            assert_eq!(base.matches(&script).count(), 1, "{key}");
+            let declared_as = |line: &str| base.replace(&script, &format!("{script}{line}"));
             assert_eq!(
-                resolve(&text, key),
+                resolve(&declared_as("bundled = false\n"), key),
                 ("⏳", "awaiting the bundle".to_string(), 0),
                 "{key}"
             );

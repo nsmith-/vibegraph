@@ -18,6 +18,8 @@ use super::parse::{
 };
 use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
+use crate::artifact::PdfInput;
+use crate::cache::lhapdf::Tier;
 use crate::generate::GenerateSettings;
 use crate::runcard::{card_text, RunCard};
 
@@ -313,6 +315,62 @@ pub fn mg_run_card(card: &RunCard, settings: &GenerateSettings, seed: u64) -> St
     String::from_utf8(writer.into_inner()).expect("a run card is text")
 }
 
+/// What a generation read besides the artifact's own contents, as the event
+/// file's `<vibegraphInputs>` header block records it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InputsRead {
+    /// The central PDF member the weights were computed with and the lookup tier
+    /// its set was found in; `None` when no parton density is read.
+    pub pdf: Option<(PdfInput, Tier)>,
+    /// SHA-256 of the integrate artifact file, as read.
+    pub grid_sha256: String,
+}
+
+impl InputsRead {
+    /// The `<vibegraphInputs>` block: the central PDF member with each file's
+    /// SHA-256 and the tier (named, never a path: the header travels between
+    /// machines), then the artifact's digest.
+    pub fn header_block(&self) -> String {
+        let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
+        let mut write = |event: XmlEvent<'_>| {
+            writer
+                .write_event(event)
+                .expect("writing to a Vec cannot fail");
+        };
+        write(XmlEvent::Start(BytesStart::new("vibegraphInputs")));
+        if let Some((
+            PdfInput::Lhapdf {
+                lhaid,
+                set,
+                member,
+                files,
+            },
+            tier,
+        )) = &self.pdf
+        {
+            let mut pdf = BytesStart::new("pdf");
+            pdf.push_attribute(("use", "central"));
+            pdf.push_attribute(("set", set.as_str()));
+            pdf.push_attribute(("lhaid", lhaid.to_string().as_str()));
+            pdf.push_attribute(("member", member.to_string().as_str()));
+            pdf.push_attribute(("tier", tier.name()));
+            write(XmlEvent::Start(pdf));
+            for file in files {
+                let mut entry = BytesStart::new("file");
+                entry.push_attribute(("name", file.name.as_str()));
+                entry.push_attribute(("sha256", file.sha256.as_str()));
+                write(XmlEvent::Empty(entry));
+            }
+            write(XmlEvent::End(BytesEnd::new("pdf")));
+        }
+        let mut grid = BytesStart::new("grid");
+        grid.push_attribute(("sha256", self.grid_sha256.as_str()));
+        write(XmlEvent::Empty(grid));
+        write(XmlEvent::End(BytesEnd::new("vibegraphInputs")));
+        String::from_utf8(writer.into_inner()).expect("the block is text")
+    }
+}
+
 /// The `<initrwgt>` block declaring a file's reweighting weights, one line per
 /// entry, in the layout MadGraph's reweight module writes: one `<weightgroup>`
 /// holding a `<weight id='…'>` per hypothesis, its description as the text.
@@ -450,7 +508,54 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifact::FileDigest;
     use crate::runcard::ParamValue;
+
+    /// The block names the central member, the tier by name, each file's
+    /// digest in load order and the artifact's digest; a run that reads no
+    /// density lists the artifact alone. Attribute values are escaped.
+    #[test]
+    fn the_inputs_block_lists_the_central_member_and_the_grid() {
+        let read = InputsRead {
+            pdf: Some((
+                PdfInput::Lhapdf {
+                    lhaid: 900002,
+                    set: "Set&Co".to_string(),
+                    member: 2,
+                    files: vec![
+                        FileDigest {
+                            name: "Set&Co.info".to_string(),
+                            sha256: "aa".to_string(),
+                        },
+                        FileDigest {
+                            name: "Set&Co_0002.dat".to_string(),
+                            sha256: "bb".to_string(),
+                        },
+                    ],
+                },
+                Tier::Cvmfs,
+            )),
+            grid_sha256: "cc".to_string(),
+        };
+        assert_eq!(
+            read.header_block(),
+            "<vibegraphInputs>\n  \
+             <pdf use=\"central\" set=\"Set&amp;Co\" lhaid=\"900002\" member=\"2\" tier=\"cvmfs\">\n    \
+             <file name=\"Set&amp;Co.info\" sha256=\"aa\"/>\n    \
+             <file name=\"Set&amp;Co_0002.dat\" sha256=\"bb\"/>\n  \
+             </pdf>\n  \
+             <grid sha256=\"cc\"/>\n\
+             </vibegraphInputs>"
+        );
+        let none = InputsRead {
+            pdf: None,
+            grid_sha256: "cc".to_string(),
+        };
+        assert_eq!(
+            none.header_block(),
+            "<vibegraphInputs>\n  <grid sha256=\"cc\"/>\n</vibegraphInputs>"
+        );
+    }
 
     #[test]
     fn reweight_markup_has_madgraphs_layout() {

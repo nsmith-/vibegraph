@@ -18,7 +18,7 @@ measured:
 # Run inputs the integrate artifact records
 
 Two PRs add run inputs to `IntegrateArtifact`:
-[pdf-set-not-taken-from-run-card](../backlog/feature/pdf-set-not-taken-from-run-card.md)
+`pdf-set-not-taken-from-run-card` (closed)
 (the run card picks the PDF) and
 [cli-has-no-param-card-option](../backlog/feature/cli-has-no-param-card-option.md)
 (`integrate --param-card`). This concept fixes what the artifact records of
@@ -304,8 +304,12 @@ For `pdf-set-not-taken-from-run-card`, one line per `closes_when` clause:
 Informational, while the PDF PR is open: the survey's `p p > e+ e-` runs gave
 one σ, 690.095053 pb, for the default card and for `pdlabel = lhapdf` at lhaid
 325300 and 230000; afterwards the last two must differ from the first. Every
-gated proton card is `nn23lo1` or `lhapdf`/247000, so every banked σ gate is
-expected bit-for-bit unchanged; the PR confirms that rather than assumes it.
+proton card a banked σ or sample gate reads is `lhapdf`/247000, so every
+banked σ gate is expected bit-for-bit unchanged; the PR confirms that rather
+than assumes it. Two banked proton runs are `nn23lo1`/230000, `pp_to_ll` and
+`pp_to_ll_qcd0`, and the αs gates (`validate_alphas`, `validate_scales`) read
+them; they are reported as awaiting a re-card to `lhapdf`/247000 and a rebank
+(user, 2026-10-23) rather than compared.
 
 For `cli-has-no-param-card-option`: `params == []` for no card, an empty card
 and a defaults card, and the artifacts compare byte for byte; a moved `MZ`
