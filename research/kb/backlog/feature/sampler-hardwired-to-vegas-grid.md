@@ -18,9 +18,7 @@ The user asked (2026-10-17) for pluggable sampling so FOAM, VEGAS+, tree and
 flow samplers can be tried per run. `VegasGrid` is assumed from
 `integrate_channels` through `Unweighter::trial`; the census and the proposed
 seam are in [importance-sampler-seam](../../phase-space/importance-sampler-seam.md),
-as amended by [the joint design](../../phase-space/sampler-and-map-seams.md)
-(the map owns windows; uniforms-in draw; scalar `f64` accumulate; mergeable
-accumulators; per-role bound in `VegasConfig`).
+as amended by [the joint design](../../phase-space/sampler-and-map-seams.md#the-sampler-side-of-the-seam).
 
 **What to build.** A trait (not named `Sampler`, which is the phase-space map's
 name twice already) with draw → `1/p(u)` plus a per-point record and a fixed
