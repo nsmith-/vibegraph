@@ -248,5 +248,5 @@ Other refusals:
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
   [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
-  [mixed outgoing masses in a group](../backlog/feature/flavour-group-mixed-outgoing-masses-refused.md),
+  mixed outgoing masses in a group (`flavour-group-mixed-outgoing-masses-refused`, since closed),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

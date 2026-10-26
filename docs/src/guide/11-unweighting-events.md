@@ -193,10 +193,11 @@ integration's relative error on it plus the share's sampling error, and
 (`stochastic-rounding`) run knows the split before its first event only by
 drawing the sample once and replaying it, which it does when there is more
 than one process. A card summing several final-state multiplicities (`@0`, `@1`,
-`@2` of a matched sample) is different: there each multiplicity is integrated as
-its own part and the default strategy normalises every part to its own cross
-section, which unit weights cannot do, so `stochastic-rounding` refuses such a
-card.
+`@2` of a matched sample), or subprocesses with different outgoing masses, is
+different: there each multiplicity, and each set of masses within one, is
+integrated as its own part and the default strategy normalises every part to
+its own cross section, which unit weights cannot do, so `stochastic-rounding`
+refuses such a card.
 
 ## Reweighting
 

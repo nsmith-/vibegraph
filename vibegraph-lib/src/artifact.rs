@@ -88,8 +88,10 @@ pub enum ChannelKey {
     GroupChannel { group: usize, channel: usize },
     /// One integration channel of one flavour group of the hadronic
     /// decomposition of the processes with `final_state` outgoing legs, in a sum
-    /// over final-state multiplicities: each multiplicity pools its own groups'
-    /// channels into a mixture of its own.
+    /// over phase spaces: each multiplicity, or each set of outgoing masses
+    /// within one, pools its own groups' channels into a mixture of its own.
+    /// `group` counts the multiplicity's groups across its sets of outgoing
+    /// masses, in part order.
     MultiplicityChannel {
         final_state: usize,
         group: usize,

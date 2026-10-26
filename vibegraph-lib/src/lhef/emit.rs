@@ -68,8 +68,8 @@ pub struct WeightedEvent {
     pub record: LheEvent,
     pub weight: f64,
     /// The index into [`EmitPlan::parts`] of the integrated part this event was
-    /// drawn from: its final-state multiplicity in a sum over several, `0`
-    /// otherwise.
+    /// drawn from: its phase space (final-state multiplicity, or set of
+    /// outgoing masses) in a sum over several, `0` otherwise.
     pub part: usize,
     pub reweights: Vec<f64>,
 }
@@ -110,7 +110,7 @@ pub struct EmitPlan {
     pub sigma_pb: f64,
     pub sigma_err_pb: f64,
     /// The integration's cross section per part of the sample, one entry per
-    /// final-state multiplicity of a sum over several, in the integrand's part
+    /// phase space of a sum over several, in the integrand's part
     /// order; every event names its entry by [`WeightedEvent::part`]. Empty
     /// means one part, the whole integration (`sigma_pb ± sigma_err_pb`).
     pub parts: Vec<PartSigma>,
@@ -242,8 +242,8 @@ impl std::fmt::Display for EmitError {
             EmitError::PartsUnsupported { strategy, parts } => write!(
                 f,
                 "{strategy} cannot normalise a sample of {parts} integrated parts (a sum over \
-                 final-state multiplicities) to each part's own cross section; use the buffered \
-                 strategy"
+                 final-state phase spaces: multiplicities or sets of outgoing masses) to each \
+                 part's own cross section; use the buffered strategy"
             ),
         }
     }
@@ -886,7 +886,7 @@ impl UnweightStrategy for StochasticRounding {
             });
         }
         // Unit weights leave each part's share of the file to the realised sample,
-        // so a sum over multiplicities would not carry each part's integration.
+        // so a sum over phase spaces would not carry each part's integration.
         if plan.parts.len() > 1 {
             return Err(EmitError::PartsUnsupported {
                 strategy: "stochastic rounding",

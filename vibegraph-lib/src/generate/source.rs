@@ -365,11 +365,12 @@ pub(super) struct PartRecords {
 /// The difference from a fixed-beam run is entirely in what an accepted point
 /// carries: its own beam momentum fractions, its own scales, and a concrete flavour
 /// assignment drawn from the parton luminosities at those fractions. On a card of
-/// several final-state multiplicities a channel of any of them may be drawn, and
-/// the event is labelled from its own multiplicity's tables.
+/// several parts (final-state multiplicities, or sets of outgoing masses) a
+/// channel of any of them may be drawn, and the event is labelled from its own
+/// part's tables.
 pub(super) struct ProtonSampleSource<'s, 'a> {
     integrand: &'s MultiplicitySum<'a>,
-    /// Per multiplicity, in the integrand's part order.
+    /// Per part, in the integrand's part order.
     parts: &'s [PartRecords],
     pristine: Unweighter,
     pub(super) unweighter: Unweighter,

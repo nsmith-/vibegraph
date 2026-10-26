@@ -19,7 +19,9 @@
 //! (up-type vs down-type), the generation copies (`u`/`c`, `d`/`s`), the lepton
 //! flavours (`e`/`mu`) and the separation of `q g` from `q̄ g` all fall out of
 //! the measurement. Grouping is refused unless the members also share the
-//! *outgoing pole masses* (so one phase-space map serves the group), an equal
+//! *outgoing pole masses* (so one phase-space map serves the group; a card whose
+//! subprocesses differ in them is split into one decomposition per set of masses
+//! before it gets here, by [`crate::multiplicity::split_by_outgoing_masses`]), an equal
 //! [`Cuts`] filter (so one cut indicator does) and an equal colour basis (so an
 //! event's colour flow can be read off the representative), and unless distinct
 //! groups separate by more than [`GROUP_SEPARATION_MIN`] — a partition resting
@@ -556,9 +558,13 @@ pub enum ProtonError {
          supplies massless partons and the probe puts the beams on the light cone"
     )]
     MassiveInitialState { process: String, mass: f64 },
+    /// The decomposition was handed subprocesses on two phase spaces. Every group
+    /// of one decomposition is evaluated at every point its channels draw, so the
+    /// subprocesses are split by outgoing masses before they are decomposed
+    /// ([`crate::multiplicity::split_by_outgoing_masses`]).
     #[error(
         "subprocesses {a} and {b} have different outgoing masses, so no single phase-space map \
-         covers the sum"
+         covers the sum; split them by outgoing masses first"
     )]
     UnequalFinalMasses { a: String, b: String },
     #[error(
