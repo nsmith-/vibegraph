@@ -200,9 +200,9 @@ Systematics:
   `systematics_*` and `sys_*` fields as benign.
 
 Other refusals:
-- `htjmin`/`ihtmin`/`htjmax` are refused only after full enumeration (up to
+- `htjmin`/`ihtmin`/`htjmax` were refused only after full enumeration (up to
   92 s), under a misleading "failed to decompose into flavour groups: cut
-  compilation failed" prefix.
+  compilation failed" prefix. They are now compiled as cuts.
 - No-op cut values (`missetmax`, `ptj1max…ptj4max` = 1e5) are refused as
   active cuts.
 - Massive incoming partons: 4 cards. Mixed outgoing masses in one flavour
@@ -243,7 +243,7 @@ Other refusals:
   and the silent drop of a systematics request (now a warning),
   `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
   `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
-  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
+  HT cuts (`ht-cuts-unimplemented`, since closed; their late refusal is
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),

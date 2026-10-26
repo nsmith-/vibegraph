@@ -1,0 +1,20 @@
+# MadGraph5 batch script: p p > j j inside a jet-HT window.
+#
+# The pp_to_jj row's card (shipped defaults, ebeam 6500, NNPDF23_lo_as_0130_qed
+# through LHAPDF) with htjmin = 300 and htjmax = 800: the HT-binned QCD shape the
+# CMS survey's HT samples use, on the cheapest process that reaches it. The
+# jet sum htj runs over gluons and the four light-flavour quarks (maxjetflavor
+# 4); with two jets it is 2 pT, so the window is pT in [150, 400] and is
+# aligned with the ptj cut a reference can already read. That alignment is the
+# cell's blind spot: it cannot tell a scalar from a vector sum or see which
+# jets enter a sum of more than two.
+generate p p > j j
+output pp_to_jj_ht -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
+  set htjmin 300
+  set htjmax 800
+  done
