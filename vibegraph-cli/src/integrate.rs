@@ -10,9 +10,9 @@
 //! * `lpp = 1` (proton beams) — an arbitrary process, PDF-convolved over a
 //!   `(τ, y)` outer map with a per-diagram multichannel inner map pooled across
 //!   the process's flavour groups, one VEGAS grid per `(group, diagram)` channel.
-//!   A card whose lines differ in final-state multiplicity is one such integrand
-//!   per multiplicity, their channels integrated together
-//!   ([`MultiplicitySum`]).
+//!   A card whose lines differ in final-state multiplicity, or in outgoing
+//!   masses, is one such integrand per multiplicity and set of masses, their
+//!   channels integrated together ([`MultiplicitySum`]).
 //! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
 //!   convolution over any final multiplicity, sampled by a resonance-aware
 //!   per-diagram multichannel map whose integral is split channel by channel, one
@@ -814,7 +814,7 @@ fn integrate_proton(
     )
 }
 
-/// The process numbers (`@N`) of every subprocess of one multiplicity's groups,
+/// The process numbers (`@N`) of every subprocess of one part's groups,
 /// each once, in increasing order.
 pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
     let mut ids: Vec<u32> = groups
@@ -828,7 +828,7 @@ pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
 }
 
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
-/// is split by final-state multiplicity, each multiplicity partitioned into
+/// is split by final-state multiplicity and outgoing masses, each part partitioned into
 /// flavour groups, each group's summed parton-distribution luminosity multiplying
 /// one compiled matrix element, and the pooled per-diagram channels of every
 /// group of every multiplicity are integrated one grid at a time.
@@ -927,7 +927,7 @@ fn integrate_hadronic(
     })
 }
 
-/// Each multiplicity's own cross section, from its channels' terms.
+/// Each part's own cross section, from its channels' terms.
 fn report_multiplicities(
     integ: &MultiplicitySum<'_>,
     groups: &[FlavorGroups],
@@ -940,10 +940,16 @@ fn report_multiplicities(
             .iter()
             .map(|id| format!("@{id}"))
             .collect();
+        let masses: Vec<String> = groups[k].groups()[0]
+            .final_masses()
+            .iter()
+            .map(|m| format!("{m}"))
+            .collect();
         info!(
-            "{} outgoing legs ({}): σ = {:.6} ± {:.6} pb over {} channels",
+            "{} outgoing legs ({}; masses {} GeV): σ = {:.6} ± {:.6} pb over {} channels",
             integ.final_state_count(k),
             ids.join(" "),
+            masses.join(", "),
             part.integral * unit,
             part.std_dev * unit,
             integ.offsets()[k + 1] - integ.offsets()[k],
