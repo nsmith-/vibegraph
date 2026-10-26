@@ -140,8 +140,15 @@ fn trained<'a>(
     seed: u64,
 ) -> (ProtonIntegrand<'a>, Vec<ChannelIntegration>, VegasResult) {
     let (survey, iters, neval, niter) = row.budget;
-    let mut integ = ProtonIntegrand::new(&inp.groups, amps, &inp.evaluated, pdf, SQRT_S_HAD, MU_F)
-        .expect("hadronic integrand");
+    let mut integ = ProtonIntegrand::new(
+        &inp.groups,
+        amps,
+        &inp.evaluated,
+        pdf,
+        ProtonBeams::equal(SQRT_S_HAD),
+        MU_F,
+    )
+    .expect("hadronic integrand");
     integ
         .use_run_card_scales(
             &inp.model,

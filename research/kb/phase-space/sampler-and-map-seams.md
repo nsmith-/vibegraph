@@ -19,7 +19,9 @@ measured:
 Designed with the user on 2026-10-22, from M1's measurements[^m1] and the two
 drafts it answers: the [sampler seam](importance-sampler-seam.md) and
 [multi-tier VEGAS](multi-tier-vegas-and-cut-edges.md). Where this concept and
-either draft disagree, this concept holds. Code is cited at `5bc4a19`.
+either draft disagree, this concept holds. Code is cited at `5bc4a19`; the
+artifact section is checked against `cfd9f7a`, the main that carries the
+integrate/generate split.
 
 ## Decisions
 
@@ -31,7 +33,7 @@ either draft disagree, this concept holds. Code is cited at `5bc4a19`.
 | D4 | **The bin-width bound is per coordinate role**, with today's `K = 6` on every role as the default. | no measurement favours a per-role value yet; `bin-width-bound-best-k-per-row` is that study |
 | D5 | **MadSpin-kind decays are a decay stage after the map**, opt-in. The default for a decay request stays the in-process decay chain, trained with the rest of the point. (User, 2026-10-22.) | [decay chains without MadSpin](../performance/decay-chains-without-madspin.md) |
 | D6 | The sampler's draw, weight and accumulate stay generic over `F: Real`, and so do the map's windows. The default path stays byte-identical until a window or kind is switched on. | the [seam](importance-sampler-seam.md)'s contract |
-| D7 | The artifact records the sampler kind, the window set, the per-channel coordinate layout, any non-uniform `K` and the decay stage. It follows the versioning rules of the integrate/generate split (PRs #69 and #60), and lands after both. | the split's [integrate/generate split](#coordination-with-pr-60) |
+| D7 | The artifact records the sampler kind, the window set, the per-channel coordinate layout, any non-uniform `K` and the decay stage. It follows the [artifact versioning](../pipeline/artifact-format-versioning.md) the integrate/generate split left (PRs #69 and #60, merged). | [coordination with the split](#coordination-with-prs-69-and-60) |
 
 ## The point, end to end
 
@@ -316,38 +318,48 @@ The kind comes from the artifact, never from a flag.
 
 ### Coordination with PRs #69 and #60
 
-Sprint D's integrate/generate split (design approved 2026-10-21) lands as H1,
-PR #69 (gridpack `generate`), then H2, PR #60 (the PDF from the run card). It
-changes the rules this rests on:
+Sprint D's [integrate/generate split](../pipeline/integrate-generate-split.md)
+has landed: H1 as PR #69 (`ef96721`, gridpack `generate`), then H2 as PR #60
+(`cfd9f7a`, the PDF from the run card, with
+[run inputs](../pipeline/run-inputs-in-the-artifact.md)). What this design rests
+on, as merged:
 
-- **Version numbers.** H1 (#69) writes version 13 and H2 (#60) writes version 14.
-- **Every artifact is written at the current version (C11).** The `version_for`
-  write-down goes, so "a VEGAS-only artifact keeps today's version" no longer
-  holds.
-- **Each format step raises the readable floor and deletes the old readers
-  (N7).**
-- **Gridpack-style `generate` (H1, #69).** `generate` takes the artifact plus
-  generate-time inputs only, and the sampling driver moves into
-  `vibegraph-lib` (N10).
+- **Version numbers.** #69 wrote version 13 and #60 version 14.
+  `FORMAT_VERSION` and `OLDEST_READABLE_VERSION` are both 14 (`artifact.rs:31`,
+  `:34`).
+- **Every artifact is written at the current version.** `version_for` and the
+  threshold constants are gone, so "a VEGAS-only artifact keeps an older
+  version" no longer holds.
+- **The floor is a per-step choice.** [Keeping old readers](../pipeline/artifact-format-versioning.md#keeping-old-readers)
+  says a version that shares a schema with a later one costs nothing to keep,
+  and raising the floor breaks users' files. #69 and #60 raised it because no
+  older file could be replayed.
+- **Gridpack-style `generate`.** `generate` takes the artifact plus
+  generate-time inputs only, and the generation driver lives in
+  `vibegraph-lib/src/generate.rs`.
 
 So:
 
-- Each field above lands as one version step, after H2 (#60), taking the next free
+- Each field above lands as one version step, from 15 on, taking the next free
   number at merge.
-- A VEGAS-only, window-free artifact is still checked for identical replay:
-  the same LHE from the same seed. It is no longer checked for identical file
-  bytes, because the version number changes.
-- The sampler trait refactor lands after H1 (#69), so `Unweighter` and the generate
-  driver move once and are refactored once.
-- The decay request is an integrate input under the split's principle. It defines
-  the process and σ × BR, as the `madspin_card` does inside a MadGraph
+- A version-14 file holds only VEGAS grids. Under rule 5 ("upgrade only what
+  the old file knows") it can upgrade to the VEGAS kind with its role list
+  "not recorded", which skips the layout check. Whether to keep that reader or
+  raise the floor is that PR's call.
+- A VEGAS-only, window-free artifact is checked for identical replay, the same
+  LHE from the same seed, not for identical file bytes, because the version
+  number changes.
+- The sampler trait refactor now starts from the library driver, so
+  `Unweighter` and the generation path are refactored in one place.
+- The decay request is an integrate input under the split's principle. It
+  defines the process and σ × BR, as the `madspin_card` does inside a MadGraph
   gridpack.
 
 ## Landing order
 
 1. This design. It closes `sampler-and-phase-space-seams-designed-apart`.
    `vegas-grid-coords-not-absolute` closes as refused (D2).
-2. Sprint D's H1 (#69) and H2 (#60).
+2. Sprint D's H1 (#69) and H2 (#60): merged.
 3. [sampler-hardwired-to-vegas-grid](../backlog/feature/sampler-hardwired-to-vegas-grid.md):
    the trait, roles, mergeable accumulators and per-role `K`. Byte-identical.
 4. [artifact-has-no-sampler-kind](../backlog/feature/artifact-has-no-sampler-kind.md),

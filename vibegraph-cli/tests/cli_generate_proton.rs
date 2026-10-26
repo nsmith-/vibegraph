@@ -40,18 +40,18 @@
 //! cover those.
 
 mod common;
+use common::PdfDataPath;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
-use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
+use vibegraph::artifact::{ChannelKey, IntegrateArtifact, PdfInput};
 use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
-use vibegraph::vegas::GridRule;
 
 /// The banked run this replays: MadGraph's own cards, its own PDF set, and its own
 /// event file as the flavour and colour oracle.
@@ -140,7 +140,6 @@ struct Run {
     _tmp: tempfile::TempDir,
     dir: PathBuf,
     proc_card: PathBuf,
-    run_card: PathBuf,
     artifact_path: PathBuf,
     artifact: IntegrateArtifact,
 }
@@ -167,8 +166,7 @@ fn integrate_at(seed: &str) -> Run {
         .arg(&run_card)
         .arg("--out")
         .arg(&out)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .arg("--fixed-budget")
         .args(["--neval", NEVAL, "--niter", NITER, "--seed", seed])
         .output()
@@ -182,7 +180,11 @@ fn integrate_at(seed: &str) -> Run {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    assert_eq!(artifact.pdf_set, PDF_SET);
+    assert!(
+        matches!(&artifact.inputs.pdf, PdfInput::Lhapdf { set, .. } if set == PDF_SET),
+        "{:?}",
+        artifact.inputs.pdf
+    );
     assert!(
         artifact.channels.iter().all(|c| matches!(
             c.key,
@@ -194,26 +196,17 @@ fn integrate_at(seed: &str) -> Run {
         _tmp: tmp,
         dir,
         proc_card,
-        run_card,
         artifact_path,
         artifact,
     }
 }
 
 impl Run {
-    fn generate_cmd(&self, name: &str) -> Command {
-        self.generate_cmd_at(name, SEED)
-    }
-
     fn generate_cmd_at(&self, name: &str, seed: &str) -> Command {
         let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
-            .arg(&self.proc_card)
-            .arg("--run-card")
-            .arg(&self.run_card)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .arg("--seed")
             .arg(seed)
             .arg("-o")
@@ -633,42 +626,45 @@ fn banked_alpha_s() -> f64 {
     })
 }
 
-/// A `generate` run reads the parton distributions by *name*, and the run card
-/// pins only the LHAPDF id, so an artifact and a command line can agree on every
-/// card and still disagree about which tabulation trained the grids. The refusal is
-/// what closes that, and the matching case is exercised by the gate above.
+/// `generate` takes no PDF choice: it locates the set the artifact recorded,
+/// by name, through `$LHAPDF_DATA_PATH` and the cache. With the data path
+/// pointing at a directory without it, an empty cache and downloads refused,
+/// the refusal names the recorded set, and no file is written; the matching
+/// case, the set found on the data path, is exercised by the gate above.
 #[test]
-fn a_different_pdf_set_is_refused() {
+fn generate_locates_the_recorded_pdf_set_by_name() {
     if !banked_present() {
         vibegraph::validation::require(
-            "a_different_pdf_set_is_refused",
+            "generate_locates_the_recorded_pdf_set_by_name",
             "the banked MadGraph run and the fetched PDF set",
             RUN,
         );
     }
     let run = integrated();
-    let out = run
-        .generate_cmd("wrong-pdf.lhe")
-        .arg("--nevents")
-        .arg("10")
-        .arg("--pdf-set")
-        .arg("CT14lo")
+    let empty = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let lhe = run.dir.join("unlocated-pdf.lhe");
+    let out = common::vibegraph(&run.dir, home.path())
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .pdf_data_path(empty.path())
+        .arg("generate")
+        .arg(&run.artifact_path)
+        .args(["--seed", SEED, "--nevents", "10", "-o"])
+        .arg(&lhe)
         .output()
         .expect("spawn vibegraph");
     let stderr = common::stderr_of(&out);
-    assert!(!out.status.success(), "a foreign PDF set was accepted");
+    assert!(!out.status.success(), "a set the data path lacks was found");
     assert!(
-        stderr.contains("PDF set") && stderr.contains(PDF_SET) && stderr.contains("CT14lo"),
-        "the refusal does not name the two sets:\n{stderr}"
+        stderr.contains(PDF_SET) && stderr.contains("downloads are disabled"),
+        "the refusal does not name the recorded set:\n{stderr}"
     );
+    assert!(!lhe.exists());
 }
 
 /// A dynamical scale on this process runs to a cross section, and nothing in the
 /// coupling-and-densities layer stops it.
 ///
-/// Two halves, two separate statements. `generate` never reaches the scale
-/// prescription at all: the card it is handed does not match the one that trained
-/// the grids, and that refusal is about the artifact rather than about the scale.
 /// `integrate` computes the clustering scale per event, reads `αs` off the run
 /// card's PDF set at it, and asks the same set for a parton density at the same
 /// scale — and both readings now continue past the top of their tables the way
@@ -705,30 +701,6 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
     let dynamical = run.dir.join("dynamical_run_card.dat");
     std::fs::write(&dynamical, dynamical_card()).expect("write the dynamical card");
 
-    let out = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&run.artifact_path)
-        .arg(&run.proc_card)
-        .arg("--run-card")
-        .arg(&dynamical)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
-        .arg("--nevents")
-        .arg("10")
-        .arg("-o")
-        .arg(run.dir.join("dynamical.lhe"))
-        .arg("--force")
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = common::stderr_of(&out);
-    assert!(!out.status.success(), "a dynamical-scale card was accepted");
-    assert!(
-        stderr.contains("run card `fixed_ren_scale`"),
-        "the refusal does not name the switch that was turned off:\n{stderr}"
-    );
-
-    // And the card that would have to produce such an artifact now runs to a
-    // cross section instead of stopping part-way through.
     let out: Output = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&run.proc_card)
@@ -736,8 +708,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
         .arg(&dynamical)
         .arg("--out")
         .arg(run.dir.join("dynamical-out"))
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
@@ -862,8 +833,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         .arg(&run_card)
         .arg("--out")
         .arg(&out)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .args(["--fixed-budget", "--neval", "40000", "--niter", "5"])
         .args(["--seed", SEED])
         .output()
@@ -877,13 +847,12 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    // `@1`'s 24 (group, diagram) pairs share six maps; the default grid rule
-    // bounds the bin widths, which only a version-12 file records.
+    // `@1`'s 24 (group, diagram) pairs share six maps.
     assert!(artifact
         .channels
         .iter()
         .any(|c| matches!(c.key, ChannelKey::MergedChannel { .. })));
-    assert_eq!(artifact.format_version, 12);
+    assert_eq!(artifact.format_version, vibegraph::artifact::FORMAT_VERSION);
     let mut sigma = [0.0f64; 2];
     let mut alpha = [0.0f64; 2];
     let mut previous = 0;
@@ -914,11 +883,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     let generate = common::vibegraph_ambient()
         .arg("generate")
         .arg(&artifact_path)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
+        .pdf_data_path(pdf_dir())
         .args(["--seed", SEED, "--nevents", &nevents.to_string()])
         .arg("-o")
         .arg(&lhe)
@@ -1002,68 +967,6 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         (f - expected).abs() < 5.0 * sd,
         "@0's share {f} against the integration's {expected} ± {sd}"
     );
-
-    let mut stale = artifact.clone();
-    stale.format_version = 9;
-    // A file older than version 12 records no grid rule and reads back as the
-    // unbounded one.
-    stale.grid_rule = Some(GridRule::UNBOUNDED);
-    let stale_path = dir.join("stale.bin.zst");
-    stale
-        .write_to_path(&stale_path, true)
-        .expect("write the stale copy");
-    let refused = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale_path)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
-        .args(["--nevents", "10"])
-        .arg("-o")
-        .arg(dir.join("stale.lhe"))
-        .arg("--force")
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = common::stderr_of(&refused);
-    assert!(
-        !refused.status.success(),
-        "a version-9 artifact of a sum was replayed"
-    );
-    assert!(
-        stderr.contains("format version 10") && stderr.contains("written at version 9"),
-        "the refusal does not say why:\n{stderr}"
-    );
-
-    // A sum written before its channels merged holds one grid per pair.
-    stale.format_version = 10;
-    stale
-        .write_to_path(&stale_path, true)
-        .expect("write the stale copy");
-    let refused = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale_path)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
-        .args(["--nevents", "10"])
-        .arg("-o")
-        .arg(dir.join("stale.lhe"))
-        .arg("--force")
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = common::stderr_of(&refused);
-    assert!(
-        !refused.status.success(),
-        "a version-10 artifact of a merging process was replayed"
-    );
-    assert!(
-        stderr.contains("format version 11") && stderr.contains("written at version 10"),
-        "the refusal does not say why:\n{stderr}"
-    );
 }
 
 /// The matched single-multiplicity card M0 banked its MLM reference with
@@ -1093,8 +996,7 @@ fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
             .arg(matched_card())
             .arg("--out")
             .arg(&out)
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .args(["--fixed-budget", "--neval", "20000", "--niter", "4"])
             .args(["--seed", SEED])
             .output()
@@ -1108,11 +1010,7 @@ fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
         let generate = common::vibegraph_ambient()
             .arg("generate")
             .arg(out.join("grid.bin.zst"))
-            .arg(&proc_card)
-            .arg("--run-card")
-            .arg(matched_card())
-            .arg("--pdf-dir")
-            .arg(pdf_dir())
+            .pdf_data_path(pdf_dir())
             .args(["--seed", SEED, "--nevents", "3000"])
             .arg("-o")
             .arg(&lhe)

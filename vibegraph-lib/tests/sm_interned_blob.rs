@@ -2,7 +2,8 @@
 //! `mg5amcnlo` submodule.
 //!
 //! `src/ufo/sm_assets/` holds a zstd+bincode blob of the parsed SM UFO, written
-//! by the `gen_sm_blob` dev binary, plus every restrict card verbatim. That blob
+//! by the `gen_sm_blob` dev binary, plus every restrict card verbatim (the cards
+//! MadGraph ships, and one vendored from CMS genproductions). That blob
 //! is what a bare clone gets and what every hermetic test reads, so the blob —
 //! not the submodule — is the hermetic truth. What the blob cannot tell anyone
 //! is whether it still agrees with the source it was built from, which is what
@@ -70,7 +71,8 @@ fn interned_default_matches_submodule() {
 /// Full-field parity between `gen_sm_blob`'s committed output and a fresh parse
 /// of the pinned submodule: every particle/Lorentz-structure/coupling/vertex
 /// entry (both key order and value contents), the parameter set, and the
-/// coupling-order hierarchy, plus every restrict card byte-for-byte. Catches a
+/// coupling-order hierarchy, plus every restrict card MadGraph ships byte-for-byte
+/// (a vendored card is not in the submodule; a hermetic SHA-256 test pins it). Catches a
 /// stale interned blob after the submodule is bumped or its SM model edited;
 /// the submodule is a declared dependency of this layer, so its absence is a
 /// failure rather than a skip.
@@ -148,7 +150,18 @@ fn interned_blob_matches_submodule_exactly() {
 
     for variant in SMRestrict::ALL {
         let card = format!("restrict_{}.dat", variant.suffix());
-        let on_disk = std::fs::read_to_string(dir.join(&card))
+        let path = dir.join(&card);
+        if !variant.ships_with_madgraph() {
+            // A vendored card is pinned by its own digest; were MadGraph to start
+            // shipping a card of the same name, which one `sm-<suffix>` means
+            // would need deciding rather than silently staying the vendored copy.
+            assert!(
+                !path.exists(),
+                "MadGraph now ships {card}, which is interned from another source"
+            );
+            continue;
+        }
+        let on_disk = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {card} from submodule: {e}"));
         assert_eq!(
             variant.restrict_card_text(),

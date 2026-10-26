@@ -5,7 +5,7 @@ description: "ChannelGrid::grid is a bare bincode VegasGrid with no kind tag, so
 area: feature
 state: open
 priority: medium
-closes_when: "ChannelGrid carries a kind-tagged trained sampler state and its coordinate role list; the run records any per-role bin-width override; the artifact follows PR #60's versioning (written at the current version, one version step after H2); generate rebuilds the sampler from the artifact's kind and refuses an unknown kind, a kind/ndim mismatch and a role list this build lays out differently, naming the field; a VEGAS-only, window-free artifact replays to the same LHE at a fixed seed as before the change; round-trip and refusal tests."
+closes_when: "ChannelGrid carries a kind-tagged trained sampler state and its coordinate role list; the run records any per-role bin-width override; the artifact is written at the next version after 14, per the artifact-versioning concept; generate rebuilds the sampler from the artifact's kind and refuses an unknown kind, a kind/ndim mismatch and a role list this build lays out differently, naming the field; a VEGAS-only, window-free artifact replays to the same LHE at a fixed seed as before the change; round-trip and refusal tests."
 blocked_by: [sampler-hardwired-to-vegas-grid]
 opened: 2026-10-17
 tags: [artifact, sampler, serialisation, versioning, refactor]
@@ -25,10 +25,11 @@ grid was trained in); per run any per-role bin-width override, beside
 land. Adaptation settings other than
 the VEGAS `GridRule` stay out.
 
-**Versioning follows PR #60**, which lands first: every artifact is written at
-the current version (C11), each format step raises the readable floor (N7), and
-`version_for`'s write-down is gone. This item takes the next free version after
-H2's 14 at merge. Byte identity of the file therefore no longer holds across
+**Versioning** follows [artifact versioning](../../pipeline/artifact-format-versioning.md)
+as PRs #69 and #60 left it: every artifact is written at the current version
+(14 after #60), and `version_for` is gone. This item takes the next free version
+at merge. A version-14 file may upgrade to the VEGAS kind with its role list
+not recorded, or the floor may rise; the item decides and says why. Byte identity of the file therefore no longer holds across
 the step; the inertness check is replay: the same LHE from the same artifact
 content and seed.
 

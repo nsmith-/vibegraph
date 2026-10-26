@@ -101,7 +101,7 @@ the paused session's report that I did not confirm in code.
 | `pp_to_jj`: `drjj = 0.4` | | | | | inert: back-to-back jets have `ΔR ≥ π` [inferred] |
 | MLM: `ptj → xqcut`, `mmjj → xqcut` | `τ` floor implied [kb] | jet-pair floor `xqcut²` is a **map edge** | spacelike regulator `xqcut²` | — | already sharp |
 | MLM: kT veto at `xqcut` | | | | | per flavour group, not a per-point edge; "cannot become a floor" [kb `cut-implied-timelike-floors.md` §xqcut] |
-| `htjmin` and the other CMS-survey `ht*` cuts | | | | | refused today: `UNIMPLEMENTED_CUTS` [code `cuts.rs:352-400`, `htjmin` at `:379`]. With one jet `HT = pT_j` (aligned, like `ptj`); with two or more jets it is non-aligned [inferred] |
+| `htjmin`/`htjmax`/`ihtmin`/`ihtmax` | | | | | compiled as cuts per `cuts.f` (htj over the jet class, iht adding the b class); no map edge or regulator. With one jet `HT = pT_j` (aligned, like `ptj`); with two or more jets it is non-aligned [inferred] |
 
 Two corrections to the framing I was given:
 

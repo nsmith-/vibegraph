@@ -26,6 +26,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::generate::{GenerateSettings, Systematics};
+
 pub(crate) mod classes;
 mod matching;
 
@@ -122,6 +124,51 @@ impl Def {
     }
 }
 
+/// The parton densities a run card reads ([`RunCard::pdf_choice`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfChoice {
+    /// Fixed-energy beams: no density is read.
+    None,
+    /// Proton beams under `pdlabel = lhapdf`: the LHAPDF id the card names.
+    Lhapdf { lhaid: i64 },
+}
+
+/// The `pdlabel`s that name one of MadGraph's built-in parameterisations, or a
+/// lepton or photon flux, rather than an LHAPDF grid (`pdfwrap.f`,
+/// `banner.py`'s `get_pdf_id`).
+const BUILTIN_PDLABELS: &[&str] = &[
+    "nn23lo1", "nn23lo", "nn23nlo", "cteq6l1", "cteq6_m", "cteq6_l", "cteq6_d", "none", "iww",
+    "eva", "edff", "chff",
+];
+
+/// A proton-beam run card whose `pdlabel` is not `lhapdf`.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("{}", pdlabel_refusal(.label))]
+pub struct PdLabelRefused {
+    pub label: String,
+}
+
+fn pdlabel_refusal(label: &str) -> String {
+    let what = if BUILTIN_PDLABELS.contains(&label) {
+        ", MadGraph's built-in parameterisation"
+    } else {
+        ""
+    };
+    let hint = if label == "nn23lo1" {
+        " (247000 is NNPDF23_lo_as_0130_qed, the set nn23lo1 is fitted to)"
+    } else {
+        ""
+    };
+    format!(
+        "run card sets pdlabel = {label}{what}; vibegraph reads parton densities only from \
+         LHAPDF6 grids. Set pdlabel = lhapdf and lhaid to the set's LHAPDF id{hint}."
+    )
+}
+
+/// The proton mass MadGraph gives a proton beam (`lpp = 1`): `banner.py` refuses
+/// a lower beam energy and `genps.f` builds `stot` from beams of this mass.
+const PROTON_BEAM_MASS: f64 = 0.938;
+
 #[derive(Debug, Error)]
 pub enum RunCardError {
     #[error("run card i/o error on '{path}': {source}")]
@@ -142,6 +189,13 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error(
+        "run card sets {name} = {value} on a proton beam: a proton beam carries at least the \
+         proton mass, {PROTON_BEAM_MASS} GeV. MadGraph refuses an energy below it, and runs 0 \
+         as a proton at rest (banner.py, RunCardLO.check_validity), a massive beam that this \
+         build's massless proton kinematics cannot represent"
+    )]
+    ProtonBeamBelowMass { name: &'static str, value: f64 },
     #[error(
         "run card sets me_frame = '{value}': a frame is a list of leg numbers, such as \
          '1, 2' (the partonic centre of mass)"
@@ -175,6 +229,10 @@ pub enum RunCardError {
          (banner.py declares event_norm with allowed = ['sum', 'average', 'unity'])"
     )]
     UnsupportedEventNorm { value: String },
+    #[error("run card sets iseed = {iseed}: a seed is 0, for none, or a positive integer")]
+    NegativeSeed { iseed: i64 },
+    #[error("run card sets nevents = {nevents}: an event count is 0 or a positive integer")]
+    NegativeEventCount { nevents: i64 },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -187,7 +245,7 @@ pub enum RunCardError {
 /// The run card's `event_norm`: how the written event weights `XWGTUP` are
 /// normalised. It changes the file and not the integration: the cross section
 /// is the same under all three.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EventNorm {
     /// The weights' mean is the cross section (`IDWTUP = -4`); the card default.
     Average,
@@ -229,13 +287,33 @@ impl EventNorm {
     }
 }
 
+/// The seed an integration runs at when neither the command line nor the run
+/// card's `iseed` names one.
+pub const DEFAULT_INTEGRATION_SEED: u64 = 20_260_719;
+
+/// A parameter value as a card line spells it: the text MadGraph's own record
+/// of the card writes for it: a real in its shortest round-tripping form with a
+/// decimal point (`20.0`), a flag as `True` or `False`, and a list or string as
+/// its text.
+pub(crate) fn card_text(value: &ParamValue) -> String {
+    match value {
+        ParamValue::Float(x) => format!("{x:?}"),
+        ParamValue::Int(i) => i.to_string(),
+        ParamValue::Bool(true) => "True".to_string(),
+        ParamValue::Bool(false) => "False".to_string(),
+        ParamValue::Str(s) | ParamValue::Opaque(s) => s.clone(),
+    }
+}
+
 /// How the incoming state of a run is prepared.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BeamMode {
-    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, √ŝ = x₁x₂ s.
+    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, ŝ = x₁x₂ s with
+    /// s = 4·ebeam1·ebeam2.
     Proton,
     /// Fixed-energy partonic beams (`lpp = 0`): the incoming particles are the
-    /// beam particles themselves, √ŝ = ebeam1 + ebeam2, no PDF convolution.
+    /// beam particles themselves, ŝ = (p₁ + p₂)² of the two beams on their mass
+    /// shells (4·ebeam1·ebeam2 when massless), no PDF convolution.
     FixedEnergy,
 }
 
@@ -244,9 +322,12 @@ pub enum BeamMode {
 /// Typed fields expose the non-cut parameters consumed by the generator; every
 /// parameter (including all cut thresholds and recognized-but-unconsumed
 /// bookkeeping params) is retained in [`RunCard::values`] keyed by name.
+///
+/// A card as parsed holds every recognized parameter. [`RunCard::split`] narrows
+/// it to the parameters an integration reads, which is the card an integration
+/// artifact records and every later step reads back.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunCard {
-    pub nevents: i64,
     pub(crate) iseed: i64,
     pub lpp1: i64,
     pub lpp2: i64,
@@ -262,12 +343,18 @@ pub struct RunCard {
     pub maxjetflavor: i64,
     values: BTreeMap<String, ParamValue>,
     /// The parameters whose value in MadGraph's own record of the card differs
-    /// from the resolved one ([`banner_values`](Self::banner_values)). Not part
-    /// of the card as an artifact records it, so a deserialised card has none
-    /// and reports its resolved values.
-    #[serde(skip)]
+    /// from the resolved one ([`banner_values`](Self::banner_values)). Recorded
+    /// with the card, since the resolved values alone do not determine them.
     banner_overrides: BTreeMap<String, ParamValue>,
+    /// Whether the card spelled `pdlabel` on a line of its own. MadGraph's
+    /// `PDFSUP` reads that line and nothing else, so on fixed-energy beams a
+    /// card without it reports MadGraph's template label ([`RunCard::pdfsup`]).
+    pdlabel_written: bool,
 }
+
+/// The `pdlabel` of MadGraph's LO template (`banner.py:4253`), which its
+/// event-file `<init>` reports for a card with no `pdlabel` line.
+const MADGRAPH_TEMPLATE_PDLABEL: &str = "nn23lo1";
 
 impl Default for RunCard {
     /// The MadGraph LO out-of-the-box configuration (an empty run card).
@@ -313,15 +400,99 @@ impl RunCard {
             .as_i64()
     }
 
-    /// The card's `event_norm`; a card that never sets it resolves to
-    /// [`EventNorm::Average`], the card default.
-    pub fn event_norm(&self) -> EventNorm {
-        let raw = self
-            .values
-            .get("event_norm")
-            .expect("event_norm is a recognized parameter")
-            .as_str();
-        EventNorm::parse(raw).expect("from_values admits only MadGraph's event_norm values")
+    /// The seed an integration over this card runs at: `flag` when the command
+    /// line gives one, else the card's `iseed` when it is not 0, else
+    /// [`DEFAULT_INTEGRATION_SEED`]. MadGraph reads `iseed = 0` as "assign one",
+    /// so a card at its default asks for no particular seed.
+    pub fn integration_seed(&self, flag: Option<u64>) -> u64 {
+        match flag {
+            Some(seed) => seed,
+            None if self.iseed != 0 => {
+                u64::try_from(self.iseed).expect("from_values refuses a negative iseed")
+            }
+            None => DEFAULT_INTEGRATION_SEED,
+        }
+    }
+
+    /// Split a card as parsed into the card an integration reads and the
+    /// settings a generation reads ([`classes::Stage`]).
+    ///
+    /// The card returned holds every [`classes::Stage::Integrate`] parameter
+    /// and none of the others. `use_syst` goes to the settings: what it does at
+    /// integration, forcing `alpsfact` to 1, is already in the resolved card,
+    /// so a generation that changes it does not move `alpsfact`. The three
+    /// generate-stage fields that are refused off their default
+    /// (`time_of_flight`, `boost_event`, `lhe_version`) are not carried.
+    ///
+    /// Panics on a card that has already been split.
+    pub fn split(mut self) -> (RunCard, GenerateSettings) {
+        let mut taken = BTreeMap::new();
+        for name in classes::generate_fields() {
+            let value = self
+                .values
+                .remove(name)
+                .unwrap_or_else(|| panic!("'{name}' is absent: the card was split already"));
+            self.banner_overrides.remove(name);
+            taken.insert(name, value);
+        }
+        let event_norm = EventNorm::parse(taken["event_norm"].as_str())
+            .expect("from_values admits only MadGraph's event_norm values");
+        let systematics = Systematics {
+            enabled: taken["use_syst"].as_bool(),
+            fields: classes::systematics_request_fields()
+                .map(|name| (name.to_string(), card_text(&taken[name])))
+                .collect(),
+        };
+        let settings = GenerateSettings {
+            nevents: u64::try_from(taken["nevents"].as_i64())
+                .expect("from_values refuses a negative nevents"),
+            event_norm,
+            systematics,
+            clustering_info: taken["clusinfo"].as_bool(),
+        };
+        (self, settings)
+    }
+
+    /// Every parameter of a run as MadGraph records it in an event file's
+    /// `<MGRunCard>`: this integration card's [`banner_values`](Self::banner_values),
+    /// the generation's `settings`, the generate-stage fields that are refused
+    /// off their default at that default, and `iseed` as the generation's
+    /// `seed` where it fits MadGraph's 32-bit integer (the card's own otherwise).
+    pub(crate) fn banner_with(
+        &self,
+        settings: &GenerateSettings,
+        seed: u64,
+    ) -> BTreeMap<String, ParamValue> {
+        let mut out: BTreeMap<String, ParamValue> = self
+            .banner_values()
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect();
+        for name in classes::generate_fields() {
+            out.insert(
+                name.to_string(),
+                param_default(name).expect("a recognized parameter"),
+            );
+        }
+        let mut set = |name: &str, value: ParamValue| {
+            out.insert(name.to_string(), value);
+        };
+        set(
+            "nevents",
+            ParamValue::Int(i64::try_from(settings.nevents).unwrap_or(i64::MAX)),
+        );
+        set(
+            "event_norm",
+            ParamValue::Str(settings.event_norm.as_str().to_string()),
+        );
+        set("use_syst", ParamValue::Bool(settings.systematics.enabled));
+        set("clusinfo", ParamValue::Bool(settings.clustering_info));
+        for (name, text) in &settings.systematics.fields {
+            set(name, ParamValue::Str(text.clone()));
+        }
+        if let Ok(seed) = i32::try_from(seed) {
+            set("iseed", ParamValue::Int(i64::from(seed)));
+        }
+        out
     }
 
     /// MadGraph's `frame_id` for the card's `me_frame`: the legs whose summed
@@ -341,17 +512,25 @@ impl RunCard {
         frame_id_of(raw)
     }
 
-    /// The `PDFSUP` MadEvent writes for this card: `get_pdf_id(pdlabel)`
-    /// (`banner.py:3839`), the `lhaid` when `pdlabel` is `lhapdf` and otherwise
-    /// the LHAPDF id of the built-in set the label names, `0` for a label naming
-    /// none.
+    /// The `PDFSUP` this card's event file reports.
     ///
-    /// It is read off `pdlabel` whatever the beams: a fixed-energy card keeps
-    /// the default `nn23lo1` and MadEvent 3.7.1 writes `247000` for it although
-    /// nothing reads a parton density (every such banked run does, `lhaid`
-    /// `230000` notwithstanding).
+    /// On proton beams it is the LHAPDF id the densities are read from
+    /// ([`pdf_choice`](Self::pdf_choice)). On fixed-energy beams, which read no
+    /// density, it is what MadEvent writes: the `<init>` line comes from
+    /// `get_banner_init_information` (`banner.py:3824-3837`) over the banner's
+    /// run card, which `charge_card` reads with `consistency=False`
+    /// (`banner.py:538`), so `PDLabelBlock` never folds the per-beam labels into
+    /// `pdlabel`. `PDFSUP` is then `get_pdf_id(pdlabel)` (`banner.py:3839-3853`)
+    /// of the card's own `pdlabel` line, or of the template's `nn23lo1` when
+    /// the card has none: `247000` on every banked MadEvent 3.7.1
+    /// lepton-collider card, which spells `none` per beam and `lhaid = 230000`.
     pub fn pdfsup(&self) -> i32 {
-        match self.pdlabel.as_str() {
+        let label = match self.pdf_choice() {
+            Ok(PdfChoice::Lhapdf { lhaid }) => return i32::try_from(lhaid).unwrap_or(0),
+            Ok(PdfChoice::None) if !self.pdlabel_written => MADGRAPH_TEMPLATE_PDLABEL,
+            _ => self.pdlabel.as_str(),
+        };
+        match label {
             "lhapdf" => i32::try_from(self.lhaid).unwrap_or(0),
             "cteq6_m" => 10000,
             "cteq6_l" => 10041,
@@ -363,6 +542,23 @@ impl RunCard {
         }
     }
 
+    /// The parton densities this card reads: none on fixed-energy beams, where
+    /// the label is inert (`setrun.f` overwrites it with `none`), and on proton
+    /// beams the LHAPDF id `lhaid` under `pdlabel = lhapdf`. Every other label
+    /// is refused on proton beams: each names a parameterisation of MadGraph's
+    /// own, not an LHAPDF6 grid this crate can read.
+    pub fn pdf_choice(&self) -> Result<PdfChoice, PdLabelRefused> {
+        if self.beam_mode() == BeamMode::FixedEnergy {
+            return Ok(PdfChoice::None);
+        }
+        match self.pdlabel.as_str() {
+            "lhapdf" => Ok(PdfChoice::Lhapdf { lhaid: self.lhaid }),
+            label => Err(PdLabelRefused {
+                label: label.to_string(),
+            }),
+        }
+    }
+
     /// Iterate all resolved (name, value) pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
         self.values.iter().map(|(k, v)| (k.as_str(), v))
@@ -370,6 +566,7 @@ impl RunCard {
 
     /// Parse a run card from text.
     pub fn parse(text: &str) -> Result<Self, RunCardError> {
+        let mut pdlabel_written = false;
         let mut values = BTreeMap::new();
         for (name, default) in PARAM_DEFAULTS {
             values.insert((*name).to_string(), default.to_value());
@@ -395,10 +592,13 @@ impl RunCard {
                 value: value_tok.to_string(),
                 line: line_no,
             })?;
+            pdlabel_written |= canonical == "pdlabel";
             values.insert(canonical.to_string(), parsed);
         }
 
-        Self::from_values(values)
+        let mut card = Self::from_values(values)?;
+        card.pdlabel_written = pdlabel_written;
+        Ok(card)
     }
 
     /// Parse a run card from a file path.
@@ -438,8 +638,15 @@ impl RunCard {
     /// `dsqrt_q2fact1`/`dsqrt_q2fact2` — so no dynamical prescription, clustering
     /// or otherwise, is ever evaluated for a decay, whatever
     /// `dynamical_scale_choice` says. Systematics are switched off.
+    ///
+    /// The card returned holds the same parameters as this one, so the decay
+    /// card of an integration card is an integration card.
     pub(crate) fn for_decay(&self, mass: f64) -> Self {
-        let mut values = self.values.clone();
+        let mut values: BTreeMap<String, ParamValue> = PARAM_DEFAULTS
+            .iter()
+            .map(|(name, default)| (name.to_string(), default.to_value()))
+            .collect();
+        values.extend(self.values.clone());
         let mut set = |name: &str, value: ParamValue| {
             values.insert(name.to_string(), value);
         };
@@ -455,8 +662,13 @@ impl RunCard {
         set("fixed_fac_scale1", ParamValue::Bool(true));
         set("fixed_fac_scale2", ParamValue::Bool(true));
         set("use_syst", ParamValue::Bool(false));
-        Self::from_values(values)
-            .expect("a decay card relaxes the beam checks, never tightens them")
+        let mut card = Self::from_values(values)
+            .expect("a decay card relaxes the beam checks, never tightens them");
+        card.values.retain(|name, _| self.values.contains_key(name));
+        card.banner_overrides
+            .retain(|name, _| self.values.contains_key(name));
+        card.pdlabel_written = self.pdlabel_written;
+        card
     }
 
     /// Every parameter as MadGraph records the card in an event file's
@@ -503,13 +715,28 @@ impl RunCard {
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
+        if (lpp1, lpp2) == (1, 1) {
+            for name in ["ebeam1", "ebeam2"] {
+                let value = f(name);
+                if !(value.is_finite() && value >= PROTON_BEAM_MASS) {
+                    return Err(RunCardError::ProtonBeamBelowMass { name, value });
+                }
+            }
+        }
         classes::refuse_ignored_physics(&values)?;
         classes::warn_unwritten_systematics(&values);
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
+        let iseed = i("iseed");
+        if iseed < 0 {
+            return Err(RunCardError::NegativeSeed { iseed });
+        }
+        let nevents = i("nevents");
+        if nevents < 0 {
+            return Err(RunCardError::NegativeEventCount { nevents });
+        }
         Ok(RunCard {
-            nevents: i("nevents"),
-            iseed: i("iseed"),
+            iseed,
             lpp1,
             lpp2,
             ebeam1: f("ebeam1"),
@@ -523,6 +750,7 @@ impl RunCard {
             dsqrt_q2fact2: f("dsqrt_q2fact2"),
             maxjetflavor: i("maxjetflavor"),
             banner_overrides: matching::banner_overrides(&as_parsed, &values),
+            pdlabel_written: false,
             values,
         })
     }
@@ -687,10 +915,15 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("mass_ion1", Def::F(-1.0)),
     ("mass_ion2", Def::F(-1.0)),
     // ── PDF ──────────────────────────────────────────────────────────────
-    ("pdlabel", Def::S("nn23lo1")),
-    ("pdlabel1", Def::S("nn23lo1")),
-    ("pdlabel2", Def::S("nn23lo1")),
-    ("lhaid", Def::I(230000)),
+    // A departure from MadGraph's template (`nn23lo1`, `230000`): vibegraph
+    // reads parton densities only from LHAPDF6 grids and refuses every built-in
+    // `pdlabel` on proton beams, so a card that names no PDF reads LHAPDF set
+    // 247000, NNPDF23_lo_as_0130_qed, the fit `nn23lo1` parameterises. Its
+    // PDFSUP is 247000 under either spelling.
+    ("pdlabel", Def::S("lhapdf")),
+    ("pdlabel1", Def::S("lhapdf")),
+    ("pdlabel2", Def::S("lhapdf")),
+    ("lhaid", Def::I(247000)),
     // ── scales ───────────────────────────────────────────────────────────
     ("fixed_ren_scale", Def::B(false)),
     ("fixed_fac_scale", Def::B(false)),
@@ -1006,7 +1239,7 @@ mod tests {
     /// the parse rather than carried to the writer.
     #[test]
     fn event_norm_is_parsed_against_madgraphs_allowed_list() {
-        assert_eq!(RunCard::default().event_norm(), EventNorm::Average);
+        assert_eq!(RunCard::default().split().1.event_norm, EventNorm::Average);
         for (text, norm) in [
             ("average", EventNorm::Average),
             ("sum", EventNorm::Sum),
@@ -1014,8 +1247,8 @@ mod tests {
             ("UNITY", EventNorm::Unity),
         ] {
             let card = RunCard::parse(&format!("  {text} = event_norm\n")).expect(text);
-            assert_eq!(card.event_norm(), norm, "{text}");
             assert_eq!(card.get("event_norm").unwrap().as_str(), norm.as_str());
+            assert_eq!(card.split().1.event_norm, norm, "{text}");
         }
         for text in ["unit", "bias", "mean", "average sum"] {
             let err = RunCard::parse(&format!("  {text} = event_norm\n"))
@@ -1027,6 +1260,120 @@ mod tests {
         }
     }
 
+    /// The split hands every generate-stage field to the settings and keeps
+    /// every other one: the card returned holds no generate field, the settings
+    /// carry the card's values, and the integration card is resolved as before,
+    /// `alpsfact` forced to 1 under `use_syst` included.
+    #[test]
+    fn split_hands_the_generate_fields_to_the_settings() {
+        let parsed = RunCard::parse(
+            "250 = nevents\nsum = event_norm\nT = use_syst\n2 = alpsfact\n\
+             F = clusinfo\n'0.5 1' = sys_scalefact\n3 = sys_scalecorrelation\n\
+             15 = ptl\n",
+        )
+        .expect("card");
+        let (card, settings) = parsed.clone().split();
+        let generate: Vec<&str> = classes::generate_fields().collect();
+        for (name, value) in parsed.iter() {
+            if generate.contains(&name) {
+                assert!(card.get(name).is_none(), "'{name}' stayed on the card");
+            } else {
+                assert_eq!(card.get(name), Some(value), "'{name}' moved");
+            }
+        }
+        assert_eq!(card.iter().count() + generate.len(), PARAM_DEFAULTS.len());
+        assert_eq!(card.float("alpsfact"), 1.0, "resolved under use_syst");
+        assert_eq!(settings.nevents, 250);
+        assert_eq!(settings.event_norm, EventNorm::Sum);
+        assert!(settings.systematics.enabled);
+        assert!(!settings.clustering_info);
+        let field = |name: &str| {
+            settings
+                .systematics
+                .fields
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(field("sys_scalefact"), Some("0.5 1"));
+        assert_eq!(field("sys_scalecorrelation"), Some("3"));
+        assert_eq!(field("sys_pdf"), Some("errorset"));
+        assert_eq!(settings.systematics.fields.len(), 7);
+    }
+
+    /// The integration card survives the artifact's encoding with MadGraph's
+    /// own record of it: the `ptj` the card wrote under `xqcut`, which the
+    /// resolved card no longer holds, reads back.
+    #[test]
+    fn a_split_card_keeps_madgraphs_record_through_an_encoding() {
+        let (card, _) = RunCard::parse("1 = ickkw\n30 = xqcut\n45 = ptj\n")
+            .expect("card")
+            .split();
+        let back: RunCard =
+            bincode::deserialize(&bincode::serialize(&card).expect("encode")).expect("decode");
+        let banner = |rc: &RunCard| -> Vec<(String, ParamValue)> {
+            rc.banner_values()
+                .map(|(n, v)| (n.to_string(), v.clone()))
+                .collect()
+        };
+        assert_eq!(banner(&back), banner(&card));
+        assert_eq!(
+            back.banner_values()
+                .find(|(n, _)| *n == "ptj")
+                .map(|(_, v)| v.clone()),
+            Some(ParamValue::Float(45.0))
+        );
+    }
+
+    /// The integration seed: the command line's when given, else the card's
+    /// `iseed` when it is not 0, else the fixed default.
+    #[test]
+    fn the_integration_seed_is_the_flag_then_iseed_then_the_default() {
+        let unset = RunCard::parse("").expect("card");
+        let set = RunCard::parse("  31 = iseed\n").expect("card");
+        assert_eq!(unset.integration_seed(None), DEFAULT_INTEGRATION_SEED);
+        assert_eq!(unset.integration_seed(Some(5)), 5);
+        assert_eq!(set.integration_seed(None), 31);
+        assert_eq!(set.integration_seed(Some(5)), 5);
+        assert_eq!(set.clone().split().0.integration_seed(None), 31);
+        let explicit_zero = RunCard::parse("  0 = iseed\n").expect("card");
+        assert_eq!(
+            explicit_zero.integration_seed(None),
+            DEFAULT_INTEGRATION_SEED
+        );
+    }
+
+    #[test]
+    fn a_negative_iseed_is_refused() {
+        let err = RunCard::parse("  -3 = iseed\n").expect_err("a negative seed");
+        assert!(
+            matches!(err, RunCardError::NegativeSeed { iseed: -3 }),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_negative_nevents_is_refused() {
+        let err = RunCard::parse("  -5 = nevents\n").expect_err("a negative event count");
+        assert!(
+            matches!(err, RunCardError::NegativeEventCount { nevents: -5 }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("nevents = -5"), "{err}");
+    }
+
+    /// A decay's card derived from an integration card is an integration card:
+    /// the same parameters, no generate field brought back.
+    #[test]
+    fn a_decay_card_of_a_split_card_holds_the_same_parameters() {
+        let (card, _) = RunCard::decay_default().split();
+        let decay = card.for_decay(125.0);
+        let names = |rc: &RunCard| rc.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(names(&decay), names(&card));
+        assert_eq!(decay.ebeam1, 62.5);
+        assert_eq!(decay.scale, 125.0);
+    }
+
     #[test]
     fn empty_card_reproduces_mg_defaults() {
         let rc = RunCard::parse("").unwrap();
@@ -1035,7 +1382,7 @@ mod tests {
         assert_eq!(rc.lpp1, 1);
         assert_eq!(rc.lpp2, 1);
         assert_eq!(rc.maxjetflavor, 4);
-        assert_eq!(rc.nevents, 10000);
+        assert_eq!(rc.int("nevents"), 10000);
         assert_eq!(rc.scale, 91.1880);
         assert!(!rc.fixed_ren_scale);
         // Active default lepton cuts.
@@ -1194,6 +1541,38 @@ mod tests {
         assert_eq!(rc.ebeam2, 250.0);
     }
 
+    /// MadGraph's own line (`banner.py`, `RunCardLO.check_validity`): a proton
+    /// beam below 0.938 GeV is refused, and 0, which MadGraph runs as a proton at
+    /// rest, is refused here too. A beam exactly at the mass, and fixed-energy beams
+    /// of any energy, still parse.
+    #[test]
+    fn a_proton_beam_below_the_proton_mass_is_refused_naming_it() {
+        for (line, name, shown) in [
+            ("  0 = ebeam1\n", "ebeam1", "ebeam1 = 0 "),
+            ("  -6500 = ebeam2\n", "ebeam2", "ebeam2 = -6500 "),
+            ("  0.9 = ebeam1\n", "ebeam1", "ebeam1 = 0.9 "),
+            ("  nan = ebeam2\n", "ebeam2", "ebeam2 = NaN "),
+            ("  inf = ebeam1\n", "ebeam1", "ebeam1 = inf "),
+        ] {
+            let err = RunCard::parse(line).unwrap_err();
+            assert!(
+                matches!(err, RunCardError::ProtonBeamBelowMass { name: n, .. } if n == name),
+                "{line:?}: {err:?}"
+            );
+            let message = err.to_string();
+            assert!(
+                message.contains(shown) && message.contains("0.938 GeV"),
+                "{message}"
+            );
+        }
+        let at_mass = RunCard::parse("  0.938 = ebeam1\n  6500 = ebeam2\n").unwrap();
+        assert_eq!((at_mass.ebeam1, at_mass.ebeam2), (0.938, 6500.0));
+        let unequal = RunCard::parse("  6500 = ebeam1\n  4000 = ebeam2\n").unwrap();
+        assert_eq!((unequal.ebeam1, unequal.ebeam2), (6500.0, 4000.0));
+        let fixed = RunCard::parse("  0 = lpp1\n  0 = lpp2\n  0.5 = ebeam1\n  0.5 = ebeam2\n");
+        assert!(fixed.is_ok(), "{fixed:?}");
+    }
+
     #[test]
     fn proton_beams_are_default_mode() {
         assert_eq!(RunCard::default().beam_mode(), BeamMode::Proton);
@@ -1224,7 +1603,7 @@ mod tests {
         // free to differ from every banked card — see the file's own header.
         let text = include_str!("../tests/data/run_card_parser_fixture.dat");
         let rc = RunCard::parse(text).unwrap();
-        assert_eq!(rc.nevents, 10000);
+        assert_eq!(rc.int("nevents"), 10000);
         assert_eq!(rc.ebeam1, 6500.0);
         assert_eq!(rc.pdlabel, "lhapdf");
         assert_eq!(rc.lhaid, 230000);
@@ -1240,10 +1619,24 @@ mod tests {
         assert_eq!(rc.float("dsqrt_shatmax"), -1.0);
     }
 
+    /// The defaults that depart from MadGraph's on purpose, with MadGraph's own
+    /// value: the PDF rows (see the comment above them in [`PARAM_DEFAULTS`]).
+    fn departures() -> Vec<(&'static str, serde_json::Value)> {
+        let s = |v: &str| serde_json::Value::from(v);
+        vec![
+            ("pdlabel", s("nn23lo1")),
+            ("pdlabel1", s("nn23lo1")),
+            ("pdlabel2", s("nn23lo1")),
+            ("lhaid", serde_json::Value::from(230000)),
+        ]
+    }
+
     /// Transcription oracle: every default in [`PARAM_DEFAULTS`] must
     /// match `RunCardLO.default_setup` as dumped by
-    /// `validation/madgraph/dump_runcard_defaults.py`. Regenerate the JSON with
-    /// `pixi run -e madgraph dump-runcard-defaults` after a MadGraph bump.
+    /// `validation/madgraph/dump_runcard_defaults.py`, except the deliberate
+    /// departures, where the dump must still say what the departure is from.
+    /// Regenerate the JSON with `pixi run -e madgraph dump-runcard-defaults`
+    /// after a MadGraph bump.
     #[test]
     fn defaults_match_banner_py_dump() {
         let path = concat!(
@@ -1259,10 +1652,21 @@ mod tests {
         let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
         let obj = dump.as_object().expect("oracle is a JSON object");
 
+        let departures = departures();
         for (name, def) in PARAM_DEFAULTS {
             let Some(actual) = obj.get(*name) else {
                 panic!("parameter '{name}' absent from banner.py dump");
             };
+            if let Some((_, madgraph)) = departures.iter().find(|(n, _)| n == name) {
+                assert_eq!(actual, madgraph, "'{name}': MadGraph's default moved");
+                let ours = match def {
+                    Def::S(v) => serde_json::Value::from(*v),
+                    Def::I(i) => serde_json::Value::from(*i),
+                    _ => panic!("'{name}': a departure is a string or an integer"),
+                };
+                assert_ne!(&ours, madgraph, "'{name}' no longer departs from MadGraph");
+                continue;
+            }
             match def {
                 Def::F(x) => {
                     let a = actual
@@ -1390,5 +1794,94 @@ mod tests {
             247000
         );
         assert_eq!(card("  cteq6l1 = pdlabel\n").pdfsup(), 10042);
+        assert_eq!(RunCard::default().pdfsup(), 247000);
+    }
+
+    /// The banked MadEvent 3.7.1 lepton-collider cards (`ee_to_ee` and every
+    /// other `ee_*` row) spell the PDF per beam as `none`, keep `lhaid` at
+    /// MadGraph's `230000` and carry no `pdlabel` line; their `<init>` reports
+    /// `247000`, the template `nn23lo1`'s id. A fixed-energy card that does
+    /// write `pdlabel = lhapdf` reports its `lhaid`, as `get_pdf_id` does.
+    #[test]
+    fn a_madgraph_fixed_energy_card_reports_the_template_pdfsup() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        let banked_ee = "  0\t= lpp1 ! beam 1 type\n  0\t= lpp2 ! beam 2 type\n     \
+                         none    = pdlabel1     ! PDF type for beam #1\n     \
+                         none    = pdlabel2     ! PDF type for beam #2\n  \
+                         230000\t= lhaid ! if pdlabel=lhapdf, this is the lhapdf number\n";
+        assert_eq!(card(banked_ee).pdfsup(), 247000);
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  nn23lo1 = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            247000
+        );
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  lhapdf = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            230000
+        );
+        // A decay's card keeps whether the integration card wrote the line.
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  325300 = lhaid\n")
+                .for_decay(125.0)
+                .pdfsup(),
+            325300
+        );
+    }
+
+    /// The default card names LHAPDF set 247000 on every PDF line, a
+    /// departure from MadGraph's `nn23lo1` / `230000`, so a proton run with no
+    /// card reads a density rather than being refused.
+    #[test]
+    fn the_default_card_reads_lhapdf_247000() {
+        let rc = RunCard::default();
+        assert_eq!((rc.pdlabel.as_str(), rc.lhaid), ("lhapdf", 247000));
+        for name in ["pdlabel1", "pdlabel2"] {
+            assert_eq!(rc.get(name).unwrap().as_str(), "lhapdf", "{name}");
+        }
+        assert_eq!(rc.pdf_choice(), Ok(PdfChoice::Lhapdf { lhaid: 247000 }));
+        assert_eq!(
+            RunCard::parse("  325300 = lhaid\n").unwrap().pdf_choice(),
+            Ok(PdfChoice::Lhapdf { lhaid: 325300 })
+        );
+    }
+
+    /// Every label but `lhapdf` is refused on proton beams with the message
+    /// that says to set `pdlabel = lhapdf`; the `247000` hint is `nn23lo1`'s
+    /// alone. On fixed-energy beams, and so on a decay's card, the same labels
+    /// read nothing and pass, and their `PDFSUP` is unchanged.
+    #[test]
+    fn every_label_but_lhapdf_is_refused_on_proton_beams() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        for label in BUILTIN_PDLABELS.iter().copied().chain(["ct14lo"]) {
+            let proton = card(&format!("  {label} = pdlabel\n"));
+            let why = proton.pdf_choice().unwrap_err().to_string();
+            assert!(
+                why.starts_with(&format!("run card sets pdlabel = {label}"))
+                    && why.contains("Set pdlabel = lhapdf and lhaid to the set's LHAPDF id"),
+                "{why}"
+            );
+            assert_eq!(why.contains("247000"), label == "nn23lo1", "{why}");
+            assert_eq!(
+                why.contains("MadGraph's built-in parameterisation"),
+                label != "ct14lo",
+                "{why}"
+            );
+
+            let fixed = card(&format!("  0 = lpp1\n  0 = lpp2\n  {label} = pdlabel\n"));
+            assert_eq!(fixed.pdf_choice(), Ok(PdfChoice::None), "{label}");
+            assert_eq!(fixed.pdfsup(), proton.pdfsup(), "{label}");
+            let decay = proton.for_decay(125.0);
+            assert_eq!(decay.pdf_choice(), Ok(PdfChoice::None), "{label}");
+            assert_eq!(decay.pdfsup(), proton.pdfsup(), "{label}");
+        }
+        assert_eq!(
+            card("  nn23lo1 = pdlabel\n")
+                .pdf_choice()
+                .unwrap_err()
+                .to_string(),
+            "run card sets pdlabel = nn23lo1, MadGraph's built-in parameterisation; vibegraph \
+             reads parton densities only from LHAPDF6 grids. Set pdlabel = lhapdf and lhaid to \
+             the set's LHAPDF id (247000 is NNPDF23_lo_as_0130_qed, the set nn23lo1 is fitted \
+             to)."
+        );
     }
 }

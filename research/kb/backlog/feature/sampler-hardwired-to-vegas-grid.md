@@ -49,7 +49,8 @@ byte identity, not statistics ([no-change claims](../../validation/no-change-cla
 `-j 4`, a fixed-seed `generate` LHE, and an empty `pixi run --skip-deps validate`
 report diff. That leaves the σ calibrations PR #45 re-records untouched.
 
-**Sequencing.** After PR #60's H1, which moves the sampling driver into
-`vibegraph-lib` and rewrites `generate`: the refactor then moves code once.
+**Sequencing.** PR #69 has moved the generation driver into
+`vibegraph-lib/src/generate.rs`; the refactor starts from there. Line numbers
+above predate it.
 Absolute grid coordinates are refused, so there is no contract inversion to
 rebase against.

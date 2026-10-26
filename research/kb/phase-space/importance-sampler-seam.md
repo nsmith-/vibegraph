@@ -17,8 +17,9 @@ sources:
 > **Amended by [the joint seam design](sampler-and-map-seams.md) (2026-10-22).**
 > The trait below stands, plus coordinate roles, mergeable accumulators,
 > product parts and a per-role bin-width bound; the sampler never sees a
-> coordinate window. The artifact versioning in "serialise" follows PR #60's
-> rules (every artifact at the current version), not `version_for`.
+> coordinate window. The artifact versioning in "serialise" follows
+> [artifact versioning](../pipeline/artifact-format-versioning.md) as PRs #69
+> and #60 left it (every artifact at the current version), not `version_for`.
 
 Every adaptive density in the crate is a `VegasGrid`. This concept records
 where that is assumed, the seam that would let another importance sampler

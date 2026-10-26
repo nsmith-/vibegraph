@@ -10,7 +10,9 @@ by its event-generation phase:
    uncertainty reaches `--target-rel` (0.1% by default), or for a flat
    `--neval × --niter` under `--fixed-budget`.
 2. **`vibegraph generate`** reloads the artifact, unweights against the
-   frozen grids by accept/reject, and writes a Les Houches event file.
+   frozen grids by accept/reject, and writes a Les Houches event file. It
+   takes the artifact and no card: the cards `integrate` read are recorded in
+   it.
 
 The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
@@ -28,7 +30,7 @@ step is the subject of the [guided tour](../guide/01-pipeline.md).
 
 ## Two cards
 
-Both commands take MadGraph's own card formats, so the same pair of files
+`integrate` takes MadGraph's own card formats, so the same pair of files
 drives a MadGraph reference run unchanged.
 
 The **process card** picks the model and the process. A card with no
@@ -54,13 +56,22 @@ that turns on fixed-energy partonic beams:
 
 With no run card at all, a process runs at MadGraph's defaults: 13 TeV
 protons, the default jet and lepton cuts, and the default kT-clustered
-dynamical scale.
+dynamical scale. One default departs from MadGraph's card: the parton
+densities. MadGraph's template says `pdlabel = nn23lo1`, its own built-in
+parameterisation; vibegraph reads densities only from LHAPDF6 grids, so its
+default is `pdlabel = lhapdf` at `lhaid = 247000`, `NNPDF23_lo_as_0130_qed`,
+the set `nn23lo1` is fitted to. A card that omits the lines gets the same. A
+proton card naming `nn23lo1` or any other built-in label is refused, with a
+message that says to set `pdlabel = lhapdf` and an `lhaid`.
+
+The run card alone chooses the PDF: `lhaid` names the set and the member
+(`lhaid` minus the set's first id), found through LHAPDF's `pdfsets.index`.
+`integrate` takes no option for it.
 
 ```bash
 echo 'generate e+ e- > mu+ mu-' > proc_card.dat
 vibegraph integrate proc_card.dat --run-card run_card.dat --out ee_to_mumu/
-vibegraph generate ee_to_mumu/grid.bin.zst proc_card.dat --run-card run_card.dat \
-  --nevents 10000 --seed 1 -o events.lhe
+vibegraph generate ee_to_mumu/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe
 vibegraph check-events events.lhe
 ```
 
@@ -69,32 +80,43 @@ The process-card argument accepts `-` for a card on standard input.
 ## The artifact
 
 `grid.bin.zst` is a bincode + zstd snapshot of the adapted per-channel VEGAS
-grids together with everything needed to refuse a mismatched replay: the
+grids together with the run that trained them: the proc card's text, the
 process, the model identity (its import label and a SHA-256 digest of the
-parsed model), the PDF set, the seed and evaluation counts, and the fully
-resolved run card. `generate` compares its own cards against the banked ones
-exactly and refuses on any difference.
+parsed model), the PDF set, the seed and evaluation counts, the fully
+resolved run card, and the run card's generation settings (`nevents`,
+`event_norm`, the systematics request). Like a gridpack, it is all
+`generate` needs besides the assets: `generate` takes no proc card, run card
+or PDF choice, and a command line that passes one is an argument error.
 
 The compiled amplitude is deliberately not banked. Every `generate` job
-re-reads the cards and recompiles, so a worker machine needs the binary,
-the artifact, both cards, and, for proton beams, the PDF set. In return the
-expensive adaptive integration runs once and the artifact is a read-only
-input to any number of `generate` jobs, each with its own `--seed` and
-`--nevents`. The random number generator is a counter-based ChaCha8, so
+re-parses the recorded proc card and recompiles, so a worker machine needs
+the binary, the artifact, the model if it is not the built-in SM, and, for
+proton beams, the PDF set the artifact names. What it reads is checked
+against the record: a recorded proc card this build parses to another
+process, or a model whose digest is not the recorded one, is refused, with
+the advice to re-integrate. In return the expensive adaptive integration
+runs once and the artifact is a read-only input to any number of
+`generate` jobs. Each job must pass its own `--seed`, which has no default,
+so that jobs on one grid cannot write the same events by accident;
+`--nevents` and `--event-norm` override the recorded values. The random number generator is a counter-based ChaCha8, so
 distinct seeds give independent streams and the resulting files concatenate
 into one sample. See [unweighting and event files](../guide/11-unweighting-events.md)
 for what a seed reproduces.
 
 ## Data the binary does not carry
 
-The Standard Model is compiled in. Two kinds of data are resolved on demand,
-each in the order flag, environment variable, `~/.vibegraph/` cache, working
-directory:
+The Standard Model is compiled in. Two kinds of data are resolved on demand:
 
-| Data | Flag | Environment | Cached at |
-|---|---|---|---|
-| PDF sets (proton beams) | `--pdf-dir` | `$VIBEGRAPH_PDF_DIR` | `~/.vibegraph/pdf/<set>/` |
-| UFO models (non-SM) | `--ufo-dir` | `$VIBEGRAPH_UFO_DIR` | `~/.vibegraph/ufo/<model>/` |
+| Data | Flag | Environment | Cached at | Last |
+|---|---|---|---|---|
+| PDF sets (proton beams) | none: the run card's `lhaid` | `$LHAPDF_DATA_PATH`, else `$LHAPATH` | `~/.vibegraph/pdf/<set>/` | a download, with consent |
+| UFO models (non-SM) | `--ufo-dir` | `$VIBEGRAPH_UFO_DIR` | `~/.vibegraph/ufo/<model>/` | the working directory |
+
+The PDF variables are read as LHAPDF reads them: a `:`-separated list of
+directories, searched in order for `<set>/`, with `$LHAPATH` read only when
+`$LHAPDF_DATA_PATH` is unset. A user whose LHAPDF installation works
+therefore needs no setting of vibegraph's own. `$VIBEGRAPH_PDF_DIR` is no
+longer read, and a run that finds it set says so.
 
 A missing PDF set can be downloaded. The binary shows the URL, the size and
 the SHA-256 it will check against, and asks; the checksum is compiled in, so

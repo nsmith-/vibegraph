@@ -26,6 +26,18 @@ the weight fields (`IDWTUP`, `XWGTUP`, `XSECUP`, `XERRUP`, `XMAXUP`) are
 [events/lhef-weight-strategy](lhef-weight-strategy.md) and
 [events/multi-process-normalisation](multi-process-normalisation.md).
 
+## `<header>`: what the weights were computed from
+
+Every file `generate` writes carries a `<vibegraphInputs>` block in its
+`<header>` (after `<MGRunCard>` when a matched sample carries one): the central
+PDF member it read (`set`, `lhaid`, `member`, the lookup `tier` by name, never
+a path) with the SHA-256 of each file it parsed, and the SHA-256 of the
+integrate artifact file as read (`lhef::write::InputsRead`). The digests are
+the ones `generate` has just checked against the artifact, so the event file
+alone says which densities and which grid its weights came from. The schema,
+including the systematics entries that land when PDF systematics are
+evaluated, is [run inputs in the artifact](../pipeline/run-inputs-in-the-artifact.md) §3a.
+
 ## `<init>`
 
 | field | vibegraph writes | note |
@@ -33,7 +45,7 @@ the weight fields (`IDWTUP`, `XWGTUP`, `XSECUP`, `XERRUP`, `XMAXUP`) are
 | `IDBMUP` | proton beams: `±2212` from `lpp`; fixed beams: the incoming legs' PDG codes, which every subprocess must share; a decay: the decaying particle and `0` | a fixed-beam card whose subprocesses differ in initial state is refused, since one `<init>` cannot describe them |
 | `EBMUP` | the run card's `ebeam1`, `ebeam2`; a decay: the mass and `0` | |
 | `PDFGUP` | `0` on both beams | MadGraph's "named by LHAPDF id alone" spelling |
-| `PDFSUP` | `RunCard::pdfsup()` = MadGraph's `get_pdf_id(pdlabel)`: the `lhaid` under `pdlabel = lhapdf`, else the LHAPDF id of the built-in set the label names (`nn23lo1` → 247000), `0` for none | read off `pdlabel` whatever the beams: MadEvent 3.7.1 writes 247000 on fixed-energy runs that read no density at all[^mg-pdfid][^n38-e1] |
+| `PDFSUP` | `RunCard::pdfsup()`: on proton beams the `lhaid` read; on fixed-energy beams MadGraph's `get_pdf_id(pdlabel)` of the card's own `pdlabel` line, or of the template's `nn23lo1` without one (`banner.py` reads the banner card with `consistency=False`, so the per-beam labels are not folded in): the `lhaid` under `lhapdf`, else the built-in set's id (`nn23lo1` → 247000), `0` for none | MadEvent 3.7.1 writes 247000 on fixed-energy runs that read no density at all, `lhaid = 230000` notwithstanding[^mg-pdfid][^n38-e1] |
 | `NPRUP`, `LPRUP` | one process line per `@N` on the card, `LPRUP = N` | each event's `IDPRUP` is its `@N`; on MadGraph's matched cards `@N` equals the `P<n>` directory number, so those runs cannot tell the two readings apart[^n38-e1] |
 
 ## `<event>` line

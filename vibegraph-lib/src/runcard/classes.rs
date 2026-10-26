@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 
 use super::{param_default, ParamValue, RunCardError};
 use FieldClass::{Consumed, IgnoredBenign, IgnoredPhysics};
+use Stage::{Generate, Integrate};
 
 /// Where a recognized run-card parameter goes.
 pub(crate) enum FieldClass {
@@ -38,14 +39,17 @@ pub(crate) enum FieldClass {
     IgnoredPhysics { why: &'static str },
 }
 
-const R_NEVENTS: &str = "RunCard::nevents, the event budget the CLI generates against";
+const R_NEVENTS: &str = "GenerateSettings::nevents, the event budget a generation draws against";
+const R_ISEED: &str = "RunCard::integration_seed, the integration's seed when no seed is given \
+                       on the command line and the card's is not 0";
 const R_LPP: &str = "RunCard::beam_mode, the beam-configuration check, and the per-beam \
                      parton-density flags the scale prescription branches on";
 const R_EBEAM: &str = "RunCard::ebeam1/ebeam2, the beam energies of both the proton and the \
                        fixed-energy integrands";
-const R_PDLABEL: &str = "coupling::alphas::pdf_label_alpha_s, reached through \
-                         RunningAlphaS::from_run_card";
-const R_LHAID: &str = "RunningAlphaS::from_run_card; the PDF set id";
+const R_PDLABEL: &str = "RunCard::pdf_choice, which on proton beams admits only 'lhapdf' and \
+                         refuses every built-in parameterisation";
+const R_LHAID: &str = "pdf::select::load_for_run_card, which reads the LHAPDF set and member \
+                       this id names";
 const R_SCALES: &str = "coupling::scales::ScaleChoice::from_run_card ('d' arrives as the \
                         clustering's d parameter)";
 const R_MAXJETFLAVOR: &str = "cuts::Cuts::compile, through the leg classification, and the \
@@ -105,8 +109,7 @@ const R_AUTO_PTJ_MJJ: &str = "runcard::matching::resolve, which sets ptj and mmj
 
 const B_JOB: &str = "MadEvent job and code-generation bookkeeping: it names output files, \
                      seeds MadGraph-side random number generators, or passes compiler flags, \
-                     so it reaches no momentum, no weight and no written record. 'iseed' is \
-                     MadEvent's own generator seed; this crate's seed comes from the CLI";
+                     so it reaches no momentum, no weight and no written record";
 const B_INTEGRATOR: &str = "a directive for MadEvent's own integrator or helicity code \
                             generation. This crate integrates with its own sampler and sums \
                             helicities explicitly, so a reference cross section is invariant \
@@ -186,8 +189,9 @@ const P_NHEL: &str = "Monte-Carlo over helicities in place of the explicit sum, 
 const P_LIMHEL: &str = "the threshold below which MadGraph drops a helicity configuration; \
                         raising it drops contributions this crate keeps";
 const R_EVENT_NORM: &str = "lhef::emit::EmitPlan::event_norm, the normalisation of the \
-                            written XWGTUP and the IDWTUP; RunCard::event_norm refuses a \
-                            value outside MadGraph's list at the parse";
+                            written XWGTUP and the IDWTUP, through GenerateSettings::event_norm; \
+                            RunCard::from_values refuses a value outside MadGraph's list at the \
+                            parse";
 const P_TIME_OF_FLIGHT: &str = "writes a nonzero VTIMUP for long-lived particles, where this \
                                 crate always writes zero";
 const P_BOOST_EVENT: &str = "boosts the whole event before it is written";
@@ -200,219 +204,244 @@ const P_FIXED_COUPLINGS: &str = "MadGraph itself aborts on False ('form factor w
                                  fixed_couplings not supported anymore'), so refusing it is \
                                  the honest behaviour";
 
-/// One row per name in [`super::PARAM_DEFAULTS`], in that table's order.
+/// Which step of a run a recognized parameter belongs to.
+///
+/// An integration records the card it was trained on, and a later step reads
+/// every [`Stage::Integrate`] field back from that record and never again from a
+/// card. The [`Stage::Generate`] fields reach only the event budget or the
+/// written record, so a generation may set them anew without re-integrating
+/// ([`super::RunCard::split`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// Read while the grids are trained, or riding with the card that trained
+    /// them.
+    Integrate,
+    /// Read only when events are drawn and written.
+    Generate,
+}
+
+/// One row per name in [`super::PARAM_DEFAULTS`], in that table's order: the
+/// name, the step it belongs to, and where it goes.
 #[rustfmt::skip]
-pub(crate) static FIELD_CLASSES: &[(&str, FieldClass)] = &[
-    ("run_tag",                 IgnoredBenign(B_JOB)),
-    ("gridpack",                IgnoredBenign(B_JOB)),
-    ("time_of_flight",          IgnoredPhysics { why: P_TIME_OF_FLIGHT }),
-    ("nevents",                 Consumed(R_NEVENTS)),
-    ("iseed",                   IgnoredBenign(B_JOB)),
-    ("bypass_check",            IgnoredBenign(B_JOB)),
-    ("python_seed",             IgnoredBenign(B_JOB)),
-    ("lpp1",                    Consumed(R_LPP)),
-    ("lpp2",                    Consumed(R_LPP)),
-    ("ebeam1",                  Consumed(R_EBEAM)),
-    ("ebeam2",                  Consumed(R_EBEAM)),
-    ("polbeam1",                IgnoredPhysics { why: P_POLBEAM }),
-    ("polbeam2",                IgnoredPhysics { why: P_POLBEAM }),
-    ("nb_proton1",              IgnoredPhysics { why: P_ION_COMPOSITION }),
-    ("nb_proton2",              IgnoredPhysics { why: P_ION_COMPOSITION }),
-    ("nb_neutron1",             IgnoredPhysics { why: P_ION_COMPOSITION }),
-    ("nb_neutron2",             IgnoredPhysics { why: P_ION_COMPOSITION }),
-    ("mass_ion1",               IgnoredPhysics { why: P_ION_MASS }),
-    ("mass_ion2",               IgnoredPhysics { why: P_ION_MASS }),
-    ("pdlabel",                 Consumed(R_PDLABEL)),
-    ("pdlabel1",                Consumed(R_PDLABEL_BEAM)),
-    ("pdlabel2",                Consumed(R_PDLABEL_BEAM)),
-    ("lhaid",                   Consumed(R_LHAID)),
-    ("fixed_ren_scale",         Consumed(R_SCALES)),
-    ("fixed_fac_scale",         Consumed(R_SCALES)),
-    ("fixed_fac_scale1",        Consumed(R_SCALES)),
-    ("fixed_fac_scale2",        Consumed(R_SCALES)),
-    ("fixed_extra_scale",       IgnoredBenign(B_EXTRA_SCALE)),
-    ("scale",                   Consumed(R_SCALES)),
-    ("dsqrt_q2fact1",           Consumed(R_SCALES)),
-    ("dsqrt_q2fact2",           Consumed(R_SCALES)),
-    ("mue_ref_fixed",           IgnoredBenign(B_EXTRA_SCALE)),
-    ("dynamical_scale_choice",  Consumed(R_SCALES)),
-    ("mue_over_ref",            IgnoredBenign(B_EXTRA_SCALE)),
-    ("ievo_eva",                IgnoredBenign(B_EVA)),
-    ("evaorder",                IgnoredBenign(B_EVA)),
-    ("eva_xcut",                IgnoredBenign(B_EVA)),
-    ("bias_module",             IgnoredPhysics { why: P_BIAS_MODULE }),
-    ("bias_parameters",         IgnoredBenign(B_BIAS_PARAMETERS)),
-    ("scalefact",               Consumed(R_SCALES)),
-    ("ickkw",                   Consumed(R_ICKKW)),
-    ("highestmult",             IgnoredBenign(B_MLM)),
-    ("ktscheme",                IgnoredPhysics { why: P_KTSCHEME }),
-    ("alpsfact",                Consumed(R_ALPSFACT)),
-    ("chcluster",               IgnoredPhysics { why: P_CHCLUSTER }),
-    ("pdfwgt",                  Consumed(R_SCALES)),
-    ("asrwgtflavor",            Consumed(R_ASRWGTFLAVOR)),
-    ("clusinfo",                IgnoredBenign(B_MLM)),
-    ("custom_fcts",             IgnoredPhysics { why: P_CUSTOM_FCTS }),
-    ("lhe_version",             IgnoredPhysics { why: P_LHE_VERSION }),
-    ("boost_event",             IgnoredPhysics { why: P_BOOST_EVENT }),
-    ("me_frame",                Consumed(R_FRAME)),
-    ("frame_id",                IgnoredBenign(B_FRAME_ID)),
-    ("event_norm",              Consumed(R_EVENT_NORM)),
-    ("keep_log",                IgnoredBenign(B_JOB)),
-    ("auto_ptj_mjj",            Consumed(R_AUTO_PTJ_MJJ)),
-    ("bwcutoff",                Consumed(R_BWCUTOFF)),
-    ("cut_decays",              Consumed(R_CUT_DECAYS)),
-    ("dsqrt_shat",              Consumed(R_CUT_LITERAL)),
-    ("dsqrt_shatmax",           Consumed(R_CUT_LITERAL)),
-    ("nhel",                    IgnoredPhysics { why: P_NHEL }),
-    ("limhel",                  IgnoredPhysics { why: P_LIMHEL }),
-    ("ptj",                     Consumed(R_CUT_SINGLE)),
-    ("ptb",                     Consumed(R_CUT_SINGLE)),
-    ("pta",                     Consumed(R_CUT_LITERAL)),
-    ("ptl",                     Consumed(R_CUT_SINGLE)),
-    ("misset",                  Consumed(R_UNIMPL)),
-    ("ptheavy",                 Consumed(R_UNIMPL)),
-    ("ptonium",                 Consumed(R_UNIMPL)),
-    ("ptjmax",                  Consumed(R_CUT_SINGLE)),
-    ("ptbmax",                  Consumed(R_CUT_SINGLE)),
-    ("ptamax",                  Consumed(R_CUT_SINGLE)),
-    ("ptlmax",                  Consumed(R_CUT_SINGLE)),
-    ("missetmax",               Consumed(R_UNIMPL)),
-    ("ej",                      Consumed(R_CUT_SINGLE)),
-    ("eb",                      Consumed(R_CUT_SINGLE)),
-    ("ea",                      Consumed(R_CUT_SINGLE)),
-    ("el",                      Consumed(R_CUT_SINGLE)),
-    ("ejmax",                   Consumed(R_CUT_SINGLE)),
-    ("ebmax",                   Consumed(R_CUT_SINGLE)),
-    ("eamax",                   Consumed(R_CUT_SINGLE)),
-    ("elmax",                   Consumed(R_CUT_SINGLE)),
-    ("etaj",                    Consumed(R_CUT_SINGLE)),
-    ("etab",                    Consumed(R_CUT_SINGLE)),
-    ("etaa",                    Consumed(R_CUT_SINGLE)),
-    ("etal",                    Consumed(R_CUT_SINGLE)),
-    ("etaonium",                Consumed(R_UNIMPL)),
-    ("etajmin",                 Consumed(R_CUT_SINGLE)),
-    ("etabmin",                 Consumed(R_CUT_SINGLE)),
-    ("etaamin",                 Consumed(R_CUT_SINGLE)),
-    ("etalmin",                 Consumed(R_CUT_SINGLE)),
-    ("drjj",                    Consumed(R_CUT_DR)),
-    ("drbb",                    Consumed(R_CUT_DR)),
-    ("drll",                    Consumed(R_CUT_DR)),
-    ("draa",                    Consumed(R_CUT_DR)),
-    ("drbj",                    Consumed(R_CUT_DR)),
-    ("draj",                    Consumed(R_CUT_DR)),
-    ("drjl",                    Consumed(R_CUT_DR)),
-    ("drab",                    Consumed(R_CUT_DR)),
-    ("drbl",                    Consumed(R_CUT_DR)),
-    ("dral",                    Consumed(R_CUT_DR)),
-    ("drjjmax",                 Consumed(R_CUT_DR)),
-    ("drbbmax",                 Consumed(R_CUT_DR)),
-    ("drllmax",                 Consumed(R_CUT_DR)),
-    ("draamax",                 Consumed(R_CUT_DR)),
-    ("drbjmax",                 Consumed(R_CUT_DR)),
-    ("drajmax",                 Consumed(R_CUT_DR)),
-    ("drjlmax",                 Consumed(R_CUT_DR)),
-    ("drabmax",                 Consumed(R_CUT_DR)),
-    ("drblmax",                 Consumed(R_CUT_DR)),
-    ("dralmax",                 Consumed(R_CUT_DR)),
-    ("mmjj",                    Consumed(R_CUT_MM)),
-    ("mmbb",                    Consumed(R_CUT_MM)),
-    ("mmaa",                    Consumed(R_CUT_MM)),
-    ("mmll",                    Consumed(R_CUT_LITERAL)),
-    ("mmjjmax",                 Consumed(R_CUT_MM)),
-    ("mmbbmax",                 Consumed(R_CUT_MM)),
-    ("mmaamax",                 Consumed(R_CUT_MM)),
-    ("mmllmax",                 Consumed(R_CUT_MM)),
-    ("mmnl",                    Consumed(R_CUT_LITERAL)),
-    ("mmnlmax",                 Consumed(R_CUT_LITERAL)),
-    ("ptllmin",                 Consumed(R_CUT_LITERAL)),
-    ("ptllmax",                 Consumed(R_CUT_LITERAL)),
-    ("xptj",                    Consumed(R_UNIMPL)),
-    ("xptb",                    Consumed(R_UNIMPL)),
-    ("xpta",                    Consumed(R_UNIMPL)),
-    ("xptl",                    Consumed(R_UNIMPL)),
-    ("ptj1min",                 Consumed(R_UNIMPL)),
-    ("ptj1max",                 Consumed(R_UNIMPL)),
-    ("ptj2min",                 Consumed(R_UNIMPL)),
-    ("ptj2max",                 Consumed(R_UNIMPL)),
-    ("ptj3min",                 Consumed(R_UNIMPL)),
-    ("ptj3max",                 Consumed(R_UNIMPL)),
-    ("ptj4min",                 Consumed(R_UNIMPL)),
-    ("ptj4max",                 Consumed(R_UNIMPL)),
-    ("cutuse",                  Consumed(R_UNIMPL)),
-    ("ptl1min",                 Consumed(R_UNIMPL)),
-    ("ptl1max",                 Consumed(R_UNIMPL)),
-    ("ptl2min",                 Consumed(R_UNIMPL)),
-    ("ptl2max",                 Consumed(R_UNIMPL)),
-    ("ptl3min",                 Consumed(R_UNIMPL)),
-    ("ptl3max",                 Consumed(R_UNIMPL)),
-    ("ptl4min",                 Consumed(R_UNIMPL)),
-    ("ptl4max",                 Consumed(R_UNIMPL)),
-    ("htjmin",                  Consumed(R_UNIMPL)),
-    ("htjmax",                  Consumed(R_UNIMPL)),
-    ("ihtmin",                  Consumed(R_UNIMPL)),
-    ("ihtmax",                  Consumed(R_UNIMPL)),
-    ("ht2min",                  Consumed(R_UNIMPL)),
-    ("ht3min",                  Consumed(R_UNIMPL)),
-    ("ht4min",                  Consumed(R_UNIMPL)),
-    ("ht2max",                  Consumed(R_UNIMPL)),
-    ("ht3max",                  Consumed(R_UNIMPL)),
-    ("ht4max",                  Consumed(R_UNIMPL)),
-    ("ptgmin",                  Consumed(R_PTGMIN)),
-    ("r0gamma",                 IgnoredBenign(B_ISOLATION)),
-    ("xn",                      IgnoredBenign(B_ISOLATION)),
-    ("epsgamma",                IgnoredBenign(B_ISOLATION)),
-    ("isoem",                   IgnoredBenign(B_ISOLATION)),
-    ("xetamin",                 Consumed(R_UNIMPL)),
-    ("deltaeta",                Consumed(R_UNIMPL)),
-    ("ktdurham",                Consumed(R_UNIMPL)),
-    ("dparameter",              Consumed(R_UNIMPL)),
-    ("ptlund",                  Consumed(R_UNIMPL)),
-    ("pdgs_for_merging_cut",    IgnoredBenign(B_MLM)),
-    ("maxjetflavor",            Consumed(R_MAXJETFLAVOR)),
-    ("xqcut",                   Consumed(R_XQCUT)),
-    ("use_syst",                Consumed(R_USE_SYST)),
-    ("systematics_program",     IgnoredBenign(B_SYST)),
-    ("systematics_arguments",   IgnoredBenign(B_SYST)),
-    ("sys_scalefact",           IgnoredBenign(B_SYST)),
-    ("sys_alpsfact",            IgnoredBenign(B_SYST)),
-    ("sys_matchscale",          IgnoredBenign(B_SYST)),
-    ("sys_pdf",                 IgnoredBenign(B_SYST)),
-    ("sys_scalecorrelation",    IgnoredBenign(B_SYST)),
-    ("gridrun",                 IgnoredBenign(B_INTEGRATOR)),
-    ("fixed_couplings",         IgnoredPhysics { why: P_FIXED_COUPLINGS }),
-    ("mc_grouped_subproc",      IgnoredBenign(B_INTEGRATOR)),
-    ("xmtcentral",              Consumed(R_SCALES)),
-    ("d",                       Consumed(R_SCALES)),
-    ("gseed",                   IgnoredBenign(B_JOB)),
-    ("issgridfile",             IgnoredBenign(B_JOB)),
-    ("job_strategy",            IgnoredBenign(B_INTEGRATOR)),
-    ("hard_survey",             IgnoredBenign(B_INTEGRATOR)),
-    ("tmin_for_channel",        IgnoredPhysics { why: P_TMIN_FOR_CHANNEL }),
-    ("second_refine_treshold",  IgnoredBenign(B_INTEGRATOR)),
-    ("survey_splitting",        IgnoredBenign(B_INTEGRATOR)),
-    ("survey_nchannel_per_job", IgnoredBenign(B_INTEGRATOR)),
-    ("refine_evt_by_job",       IgnoredBenign(B_INTEGRATOR)),
-    ("small_width_treatment",   IgnoredPhysics { why: P_SMALL_WIDTH }),
-    ("hel_recycling",           IgnoredBenign(B_INTEGRATOR)),
-    ("hel_filtering",           IgnoredBenign(B_INTEGRATOR)),
-    ("hel_splitamp",            IgnoredBenign(B_INTEGRATOR)),
-    ("hel_zeroamp",             IgnoredBenign(B_INTEGRATOR)),
-    ("SDE_strategy",            Consumed(R_SDE_STRATEGY)),
-    ("global_flag",             IgnoredBenign(B_JOB)),
-    ("aloha_flag",              IgnoredBenign(B_JOB)),
-    ("matrix_flag",             IgnoredBenign(B_JOB)),
-    ("vector_size",             IgnoredBenign(B_INTEGRATOR)),
-    ("nb_warp",                 IgnoredBenign(B_INTEGRATOR)),
-    ("vecsize_memmax",          IgnoredBenign(B_INTEGRATOR)),
-    ("pt_min_pdg",              Consumed(R_UNIMPL)),
-    ("pt_max_pdg",              Consumed(R_UNIMPL)),
-    ("E_min_pdg",               Consumed(R_UNIMPL)),
-    ("E_max_pdg",               Consumed(R_UNIMPL)),
-    ("eta_min_pdg",             Consumed(R_UNIMPL)),
-    ("eta_max_pdg",             Consumed(R_UNIMPL)),
-    ("mxx_min_pdg",             Consumed(R_UNIMPL)),
-    ("mxx_only_part_antipart",  IgnoredBenign(B_MXX)),
+pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
+    ("run_tag",                 Integrate, IgnoredBenign(B_JOB)),
+    ("gridpack",                Integrate, IgnoredBenign(B_JOB)),
+    ("time_of_flight",          Generate,  IgnoredPhysics { why: P_TIME_OF_FLIGHT }),
+    ("nevents",                 Generate,  Consumed(R_NEVENTS)),
+    ("iseed",                   Integrate, Consumed(R_ISEED)),
+    ("bypass_check",            Integrate, IgnoredBenign(B_JOB)),
+    ("python_seed",             Integrate, IgnoredBenign(B_JOB)),
+    ("lpp1",                    Integrate, Consumed(R_LPP)),
+    ("lpp2",                    Integrate, Consumed(R_LPP)),
+    ("ebeam1",                  Integrate, Consumed(R_EBEAM)),
+    ("ebeam2",                  Integrate, Consumed(R_EBEAM)),
+    ("polbeam1",                Integrate, IgnoredPhysics { why: P_POLBEAM }),
+    ("polbeam2",                Integrate, IgnoredPhysics { why: P_POLBEAM }),
+    ("nb_proton1",              Integrate, IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_proton2",              Integrate, IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_neutron1",             Integrate, IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_neutron2",             Integrate, IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("mass_ion1",               Integrate, IgnoredPhysics { why: P_ION_MASS }),
+    ("mass_ion2",               Integrate, IgnoredPhysics { why: P_ION_MASS }),
+    ("pdlabel",                 Integrate, Consumed(R_PDLABEL)),
+    ("pdlabel1",                Integrate, Consumed(R_PDLABEL_BEAM)),
+    ("pdlabel2",                Integrate, Consumed(R_PDLABEL_BEAM)),
+    ("lhaid",                   Integrate, Consumed(R_LHAID)),
+    ("fixed_ren_scale",         Integrate, Consumed(R_SCALES)),
+    ("fixed_fac_scale",         Integrate, Consumed(R_SCALES)),
+    ("fixed_fac_scale1",        Integrate, Consumed(R_SCALES)),
+    ("fixed_fac_scale2",        Integrate, Consumed(R_SCALES)),
+    ("fixed_extra_scale",       Integrate, IgnoredBenign(B_EXTRA_SCALE)),
+    ("scale",                   Integrate, Consumed(R_SCALES)),
+    ("dsqrt_q2fact1",           Integrate, Consumed(R_SCALES)),
+    ("dsqrt_q2fact2",           Integrate, Consumed(R_SCALES)),
+    ("mue_ref_fixed",           Integrate, IgnoredBenign(B_EXTRA_SCALE)),
+    ("dynamical_scale_choice",  Integrate, Consumed(R_SCALES)),
+    ("mue_over_ref",            Integrate, IgnoredBenign(B_EXTRA_SCALE)),
+    ("ievo_eva",                Integrate, IgnoredBenign(B_EVA)),
+    ("evaorder",                Integrate, IgnoredBenign(B_EVA)),
+    ("eva_xcut",                Integrate, IgnoredBenign(B_EVA)),
+    ("bias_module",             Integrate, IgnoredPhysics { why: P_BIAS_MODULE }),
+    ("bias_parameters",         Integrate, IgnoredBenign(B_BIAS_PARAMETERS)),
+    ("scalefact",               Integrate, Consumed(R_SCALES)),
+    ("ickkw",                   Integrate, Consumed(R_ICKKW)),
+    ("highestmult",             Integrate, IgnoredBenign(B_MLM)),
+    ("ktscheme",                Integrate, IgnoredPhysics { why: P_KTSCHEME }),
+    ("alpsfact",                Integrate, Consumed(R_ALPSFACT)),
+    ("chcluster",               Integrate, IgnoredPhysics { why: P_CHCLUSTER }),
+    ("pdfwgt",                  Integrate, Consumed(R_SCALES)),
+    ("asrwgtflavor",            Integrate, Consumed(R_ASRWGTFLAVOR)),
+    ("clusinfo",                Generate,  IgnoredBenign(B_MLM)),
+    ("custom_fcts",             Integrate, IgnoredPhysics { why: P_CUSTOM_FCTS }),
+    ("lhe_version",             Generate,  IgnoredPhysics { why: P_LHE_VERSION }),
+    ("boost_event",             Generate,  IgnoredPhysics { why: P_BOOST_EVENT }),
+    ("me_frame",                Integrate, Consumed(R_FRAME)),
+    ("frame_id",                Integrate, IgnoredBenign(B_FRAME_ID)),
+    ("event_norm",              Generate,  Consumed(R_EVENT_NORM)),
+    ("keep_log",                Integrate, IgnoredBenign(B_JOB)),
+    ("auto_ptj_mjj",            Integrate, Consumed(R_AUTO_PTJ_MJJ)),
+    ("bwcutoff",                Integrate, Consumed(R_BWCUTOFF)),
+    ("cut_decays",              Integrate, Consumed(R_CUT_DECAYS)),
+    ("dsqrt_shat",              Integrate, Consumed(R_CUT_LITERAL)),
+    ("dsqrt_shatmax",           Integrate, Consumed(R_CUT_LITERAL)),
+    ("nhel",                    Integrate, IgnoredPhysics { why: P_NHEL }),
+    ("limhel",                  Integrate, IgnoredPhysics { why: P_LIMHEL }),
+    ("ptj",                     Integrate, Consumed(R_CUT_SINGLE)),
+    ("ptb",                     Integrate, Consumed(R_CUT_SINGLE)),
+    ("pta",                     Integrate, Consumed(R_CUT_LITERAL)),
+    ("ptl",                     Integrate, Consumed(R_CUT_SINGLE)),
+    ("misset",                  Integrate, Consumed(R_UNIMPL)),
+    ("ptheavy",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptonium",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptjmax",                  Integrate, Consumed(R_CUT_SINGLE)),
+    ("ptbmax",                  Integrate, Consumed(R_CUT_SINGLE)),
+    ("ptamax",                  Integrate, Consumed(R_CUT_SINGLE)),
+    ("ptlmax",                  Integrate, Consumed(R_CUT_SINGLE)),
+    ("missetmax",               Integrate, Consumed(R_UNIMPL)),
+    ("ej",                      Integrate, Consumed(R_CUT_SINGLE)),
+    ("eb",                      Integrate, Consumed(R_CUT_SINGLE)),
+    ("ea",                      Integrate, Consumed(R_CUT_SINGLE)),
+    ("el",                      Integrate, Consumed(R_CUT_SINGLE)),
+    ("ejmax",                   Integrate, Consumed(R_CUT_SINGLE)),
+    ("ebmax",                   Integrate, Consumed(R_CUT_SINGLE)),
+    ("eamax",                   Integrate, Consumed(R_CUT_SINGLE)),
+    ("elmax",                   Integrate, Consumed(R_CUT_SINGLE)),
+    ("etaj",                    Integrate, Consumed(R_CUT_SINGLE)),
+    ("etab",                    Integrate, Consumed(R_CUT_SINGLE)),
+    ("etaa",                    Integrate, Consumed(R_CUT_SINGLE)),
+    ("etal",                    Integrate, Consumed(R_CUT_SINGLE)),
+    ("etaonium",                Integrate, Consumed(R_UNIMPL)),
+    ("etajmin",                 Integrate, Consumed(R_CUT_SINGLE)),
+    ("etabmin",                 Integrate, Consumed(R_CUT_SINGLE)),
+    ("etaamin",                 Integrate, Consumed(R_CUT_SINGLE)),
+    ("etalmin",                 Integrate, Consumed(R_CUT_SINGLE)),
+    ("drjj",                    Integrate, Consumed(R_CUT_DR)),
+    ("drbb",                    Integrate, Consumed(R_CUT_DR)),
+    ("drll",                    Integrate, Consumed(R_CUT_DR)),
+    ("draa",                    Integrate, Consumed(R_CUT_DR)),
+    ("drbj",                    Integrate, Consumed(R_CUT_DR)),
+    ("draj",                    Integrate, Consumed(R_CUT_DR)),
+    ("drjl",                    Integrate, Consumed(R_CUT_DR)),
+    ("drab",                    Integrate, Consumed(R_CUT_DR)),
+    ("drbl",                    Integrate, Consumed(R_CUT_DR)),
+    ("dral",                    Integrate, Consumed(R_CUT_DR)),
+    ("drjjmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drbbmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drllmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("draamax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drbjmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drajmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drjlmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drabmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("drblmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("dralmax",                 Integrate, Consumed(R_CUT_DR)),
+    ("mmjj",                    Integrate, Consumed(R_CUT_MM)),
+    ("mmbb",                    Integrate, Consumed(R_CUT_MM)),
+    ("mmaa",                    Integrate, Consumed(R_CUT_MM)),
+    ("mmll",                    Integrate, Consumed(R_CUT_LITERAL)),
+    ("mmjjmax",                 Integrate, Consumed(R_CUT_MM)),
+    ("mmbbmax",                 Integrate, Consumed(R_CUT_MM)),
+    ("mmaamax",                 Integrate, Consumed(R_CUT_MM)),
+    ("mmllmax",                 Integrate, Consumed(R_CUT_MM)),
+    ("mmnl",                    Integrate, Consumed(R_CUT_LITERAL)),
+    ("mmnlmax",                 Integrate, Consumed(R_CUT_LITERAL)),
+    ("ptllmin",                 Integrate, Consumed(R_CUT_LITERAL)),
+    ("ptllmax",                 Integrate, Consumed(R_CUT_LITERAL)),
+    ("xptj",                    Integrate, Consumed(R_UNIMPL)),
+    ("xptb",                    Integrate, Consumed(R_UNIMPL)),
+    ("xpta",                    Integrate, Consumed(R_UNIMPL)),
+    ("xptl",                    Integrate, Consumed(R_UNIMPL)),
+    ("ptj1min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj1max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj2min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj2max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj3min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj3max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj4min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj4max",                 Integrate, Consumed(R_UNIMPL)),
+    ("cutuse",                  Integrate, Consumed(R_UNIMPL)),
+    ("ptl1min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl1max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl2min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl2max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl3min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl3max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl4min",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptl4max",                 Integrate, Consumed(R_UNIMPL)),
+    ("htjmin",                  Integrate, Consumed(R_CUT_LITERAL)),
+    ("htjmax",                  Integrate, Consumed(R_CUT_LITERAL)),
+    ("ihtmin",                  Integrate, Consumed(R_CUT_LITERAL)),
+    ("ihtmax",                  Integrate, Consumed(R_CUT_LITERAL)),
+    ("ht2min",                  Integrate, Consumed(R_UNIMPL)),
+    ("ht3min",                  Integrate, Consumed(R_UNIMPL)),
+    ("ht4min",                  Integrate, Consumed(R_UNIMPL)),
+    ("ht2max",                  Integrate, Consumed(R_UNIMPL)),
+    ("ht3max",                  Integrate, Consumed(R_UNIMPL)),
+    ("ht4max",                  Integrate, Consumed(R_UNIMPL)),
+    ("ptgmin",                  Integrate, Consumed(R_PTGMIN)),
+    ("r0gamma",                 Integrate, IgnoredBenign(B_ISOLATION)),
+    ("xn",                      Integrate, IgnoredBenign(B_ISOLATION)),
+    ("epsgamma",                Integrate, IgnoredBenign(B_ISOLATION)),
+    ("isoem",                   Integrate, IgnoredBenign(B_ISOLATION)),
+    ("xetamin",                 Integrate, Consumed(R_UNIMPL)),
+    ("deltaeta",                Integrate, Consumed(R_UNIMPL)),
+    ("ktdurham",                Integrate, Consumed(R_UNIMPL)),
+    ("dparameter",              Integrate, Consumed(R_UNIMPL)),
+    ("ptlund",                  Integrate, Consumed(R_UNIMPL)),
+    ("pdgs_for_merging_cut",    Integrate, IgnoredBenign(B_MLM)),
+    ("maxjetflavor",            Integrate, Consumed(R_MAXJETFLAVOR)),
+    ("xqcut",                   Integrate, Consumed(R_XQCUT)),
+    ("use_syst",                Generate,  Consumed(R_USE_SYST)),
+    ("systematics_program",     Generate,  IgnoredBenign(B_SYST)),
+    ("systematics_arguments",   Generate,  IgnoredBenign(B_SYST)),
+    ("sys_scalefact",           Generate,  IgnoredBenign(B_SYST)),
+    ("sys_alpsfact",            Generate,  IgnoredBenign(B_SYST)),
+    ("sys_matchscale",          Generate,  IgnoredBenign(B_SYST)),
+    ("sys_pdf",                 Generate,  IgnoredBenign(B_SYST)),
+    ("sys_scalecorrelation",    Generate,  IgnoredBenign(B_SYST)),
+    ("gridrun",                 Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("fixed_couplings",         Integrate, IgnoredPhysics { why: P_FIXED_COUPLINGS }),
+    ("mc_grouped_subproc",      Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("xmtcentral",              Integrate, Consumed(R_SCALES)),
+    ("d",                       Integrate, Consumed(R_SCALES)),
+    ("gseed",                   Integrate, IgnoredBenign(B_JOB)),
+    ("issgridfile",             Integrate, IgnoredBenign(B_JOB)),
+    ("job_strategy",            Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("hard_survey",             Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("tmin_for_channel",        Integrate, IgnoredPhysics { why: P_TMIN_FOR_CHANNEL }),
+    ("second_refine_treshold",  Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("survey_splitting",        Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("survey_nchannel_per_job", Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("refine_evt_by_job",       Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("small_width_treatment",   Integrate, IgnoredPhysics { why: P_SMALL_WIDTH }),
+    ("hel_recycling",           Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("hel_filtering",           Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("hel_splitamp",            Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("hel_zeroamp",             Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("SDE_strategy",            Integrate, Consumed(R_SDE_STRATEGY)),
+    ("global_flag",             Integrate, IgnoredBenign(B_JOB)),
+    ("aloha_flag",              Integrate, IgnoredBenign(B_JOB)),
+    ("matrix_flag",             Integrate, IgnoredBenign(B_JOB)),
+    ("vector_size",             Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("nb_warp",                 Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("vecsize_memmax",          Integrate, IgnoredBenign(B_INTEGRATOR)),
+    ("pt_min_pdg",              Integrate, Consumed(R_UNIMPL)),
+    ("pt_max_pdg",              Integrate, Consumed(R_UNIMPL)),
+    ("E_min_pdg",               Integrate, Consumed(R_UNIMPL)),
+    ("E_max_pdg",               Integrate, Consumed(R_UNIMPL)),
+    ("eta_min_pdg",             Integrate, Consumed(R_UNIMPL)),
+    ("eta_max_pdg",             Integrate, Consumed(R_UNIMPL)),
+    ("mxx_min_pdg",             Integrate, Consumed(R_UNIMPL)),
+    ("mxx_only_part_antipart",  Integrate, IgnoredBenign(B_MXX)),
 ];
+
+/// The parameters a generation reads, in [`super::PARAM_DEFAULTS`]'s order.
+pub(super) fn generate_fields() -> impl Iterator<Item = &'static str> {
+    FIELD_CLASSES
+        .iter()
+        .filter(|(_, stage, _)| *stage == Generate)
+        .map(|(name, _, _)| *name)
+}
 
 /// Refuse a card that moves an [`FieldClass::IgnoredPhysics`] field off the
 /// MadGraph default it was resolved against.
@@ -421,7 +450,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, FieldClass)] = &[
 pub(super) fn refuse_ignored_physics(
     values: &BTreeMap<String, ParamValue>,
 ) -> Result<(), RunCardError> {
-    for (name, class) in FIELD_CLASSES {
+    for (name, _, class) in FIELD_CLASSES {
         let IgnoredPhysics { why } = class else {
             continue;
         };
@@ -442,8 +471,8 @@ pub(super) fn refuse_ignored_physics(
 
 /// The fields through which a card asks for the systematics module's variation
 /// weights: every field classified under [`B_SYST`].
-fn systematics_request_fields() -> impl Iterator<Item = &'static str> {
-    FIELD_CLASSES.iter().filter_map(|(name, class)| {
+pub(super) fn systematics_request_fields() -> impl Iterator<Item = &'static str> {
+    FIELD_CLASSES.iter().filter_map(|(name, _, class)| {
         matches!(class, FieldClass::IgnoredBenign(reason) if *reason == B_SYST).then_some(*name)
     })
 }
@@ -571,7 +600,7 @@ mod tests {
     #[test]
     fn every_run_card_field_is_classified() {
         let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
-        for (name, class) in FIELD_CLASSES {
+        for (name, _, class) in FIELD_CLASSES {
             *seen.entry(name).or_default() += 1;
             let why = match class {
                 Consumed(s) | IgnoredBenign(s) => s,
@@ -595,6 +624,47 @@ mod tests {
         assert_eq!(seen.len(), PARAM_DEFAULTS.len());
     }
 
+    /// Every recognized name carries exactly one stage, and the generate stage is
+    /// exactly the fourteen fields that reach only the event budget or the
+    /// written record: a row moved between stages fails here by name.
+    ///
+    /// What this cannot see is a field whose stage is wrong in both the table
+    /// and this list; the list is written out by hand, not derived from the
+    /// table.
+    #[test]
+    fn every_run_card_field_has_one_stage_and_fourteen_are_generate() {
+        for (name, _) in PARAM_DEFAULTS {
+            let stages = FIELD_CLASSES.iter().filter(|(n, _, _)| n == name).count();
+            assert_eq!(stages, 1, "'{name}' carries {stages} stages");
+        }
+        let generate: Vec<&str> = generate_fields().collect();
+        assert_eq!(
+            generate,
+            [
+                "time_of_flight",
+                "nevents",
+                "clusinfo",
+                "lhe_version",
+                "boost_event",
+                "event_norm",
+                "use_syst",
+                "systematics_program",
+                "systematics_arguments",
+                "sys_scalefact",
+                "sys_alpsfact",
+                "sys_matchscale",
+                "sys_pdf",
+                "sys_scalecorrelation",
+            ]
+        );
+        assert_eq!(generate.len(), 14);
+        let iseed = FIELD_CLASSES.iter().find(|(n, _, _)| *n == "iseed");
+        assert!(
+            matches!(iseed, Some((_, Integrate, Consumed(_)))),
+            "iseed is the integration's seed"
+        );
+    }
+
     /// A one-line card moving each [`FieldClass::IgnoredPhysics`] field off its
     /// default is refused, and the refusal names that field.
     ///
@@ -603,7 +673,7 @@ mod tests {
     #[test]
     fn ignored_physics_fields_are_refused() {
         let mut checked = 0;
-        for (name, class) in FIELD_CLASSES {
+        for (name, _, class) in FIELD_CLASSES {
             let IgnoredPhysics { .. } = class else {
                 continue;
             };

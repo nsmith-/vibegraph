@@ -2,13 +2,15 @@
 //! fetching PDF sets, on the machine of a user with no dev checkout.
 //!
 //! Both asset kinds share one layout, `<cache_root>/{ufo,pdf}/<name>/`
-//! ([`AssetKind::entry_dir`]), and one resolution order ([`resolve::locate`]):
-//! an explicit path, an environment variable, the cache, then a repo-local dev
-//! fallback.
+//! ([`AssetKind::entry_dir`]). A UFO model resolves through an explicit path,
+//! an environment variable, the cache, then a dev fallback
+//! ([`resolve::locate`]); a PDF set, and LHAPDF's `pdfsets.index`, through the
+//! LHAPDF data path, CVMFS, the cache, then a download ([`lhapdf`]).
 //!
-//! Only PDF sets are fetched ([`store`]), each pinned by the SHA-256 of the
-//! archive it was fetched as. A UFO model is resolved and never fetched, so one
-//! in the cache was placed there by hand. No download URL can be derived from a
+//! Only PDF sets and the index are fetched ([`store`], [`lhapdf`]). A set is
+//! cached beside the SHA-256 of the archive it was fetched as, and a set this
+//! build pins ([`pinned`]) must match its pin. A UFO model is resolved and
+//! never fetched, so one in the cache was placed there by hand. No download URL can be derived from a
 //! model name: UFO models are published on the FeynRules wiki as files attached
 //! by hand, `/raw-attachment/wiki/<page>/<file>`, where the page is not the
 //! model name and the file follows no rule. The 2HDM page alone carries
@@ -20,13 +22,16 @@
 //! semantically identical tarball is not taken for a different model.
 //!
 //! Network I/O is absent from this module: [`store::Fetch`] is the seam a
-//! caller supplies bytes through, so the interaction policy around *when* to
-//! fetch (prompting, a `--no-network` refusal) lives with the caller, not here.
+//! caller supplies bytes through, and [`lhapdf::FetchFactory`] the one it is
+//! asked for a fetch through, so the interaction policy around *when* to fetch
+//! (prompting, a `--no-network` refusal) lives with the caller, not here.
 //!
 //! [`pinned`] adds the other half of that seam: which URL a known set name
 //! downloads from and what its archive must hash to, compiled in rather than
 //! configured.
 
+pub mod index;
+pub mod lhapdf;
 pub mod pinned;
 pub mod resolve;
 pub mod store;
@@ -56,15 +61,25 @@ impl AssetKind {
         cache_root.join(self.cache_subdir()).join(name)
     }
 
-    /// Environment variable naming this kind's resolution-order override
-    /// directory.
+    /// Environment variable naming where this kind is looked for before the
+    /// cache: one directory for a UFO model, a path list for a PDF set
+    /// ([`resolve::pdf_data_path`], which falls back to [`LHAPATH_VAR`]).
     pub fn env_var(self) -> &'static str {
         match self {
             AssetKind::Ufo => "VIBEGRAPH_UFO_DIR",
-            AssetKind::Pdf => "VIBEGRAPH_PDF_DIR",
+            AssetKind::Pdf => "LHAPDF_DATA_PATH",
         }
     }
 }
+
+/// LHAPDF's older name for its data path, read when `LHAPDF_DATA_PATH` is
+/// unset.
+pub const LHAPATH_VAR: &str = "LHAPATH";
+
+/// The variable vibegraph once read a PDF directory from. It is not read; a
+/// caller that finds it set says so, so that an environment written for it
+/// does not silently resolve elsewhere.
+pub const RETIRED_PDF_DIR_VAR: &str = "VIBEGRAPH_PDF_DIR";
 
 /// The default cache root, `~/.vibegraph`, or `None` if the platform has no
 /// resolvable home directory.
@@ -87,7 +102,7 @@ mod tests {
     fn asset_kind_subdirs_and_env_vars_are_distinct() {
         assert_ne!(AssetKind::Ufo.cache_subdir(), AssetKind::Pdf.cache_subdir());
         assert_ne!(AssetKind::Ufo.env_var(), AssetKind::Pdf.env_var());
-        assert_eq!(AssetKind::Pdf.env_var(), "VIBEGRAPH_PDF_DIR");
+        assert_eq!(AssetKind::Pdf.env_var(), "LHAPDF_DATA_PATH");
         assert_eq!(AssetKind::Ufo.env_var(), "VIBEGRAPH_UFO_DIR");
     }
 }

@@ -48,6 +48,7 @@
 //!   `SCALUP` any configuration of the event's subprocess reproduces.
 
 mod common;
+use common::PdfDataPath;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -60,7 +61,7 @@ use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
 use vibegraph::phasespace::maps::MapOptions;
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::stats::{chi2_homogeneity, effective_counts, Chi2Test};
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
@@ -156,6 +157,7 @@ fn proc_card(dir: &Path, row: &Row) -> PathBuf {
 
 fn vibegraph(args: &[&std::ffi::OsStr]) -> std::process::Output {
     let output = common::vibegraph_ambient()
+        .pdf_data_path(pdf_dir())
         .args(args)
         .output()
         .expect("spawn vibegraph");
@@ -183,8 +185,6 @@ fn integrate(
         card.as_os_str(),
         "--run-card".as_ref(),
         run_card.as_os_str(),
-        "--pdf-dir".as_ref(),
-        pdf_dir().as_os_str(),
         "--out".as_ref(),
         out.as_os_str(),
         "--force".as_ref(),
@@ -201,13 +201,7 @@ fn integrate(
 
 /// One sample per generation seed off `artifact`, each checked by
 /// `check-events`, parsed.
-fn samples(
-    dir: &Path,
-    card: &Path,
-    run_card: &Path,
-    artifact: &Path,
-    strategy: &str,
-) -> Vec<LheFile> {
+fn samples(dir: &Path, artifact: &Path, strategy: &str) -> Vec<LheFile> {
     GEN_SEEDS
         .iter()
         .map(|seed| {
@@ -215,11 +209,6 @@ fn samples(
             vibegraph(&[
                 "generate".as_ref(),
                 artifact.as_os_str(),
-                card.as_os_str(),
-                "--run-card".as_ref(),
-                run_card.as_os_str(),
-                "--pdf-dir".as_ref(),
-                pdf_dir().as_os_str(),
                 "--seed".as_ref(),
                 seed.to_string().as_ref(),
                 "--nevents".as_ref(),
@@ -614,7 +603,7 @@ fn a_hadronic_decay_chain_sample_matches_madevents_records() {
     let card = proc_card(tmp.path(), row);
     let run_card = madgraph_dir().join(&row.run_card);
     let (_, _, artifact) = integrate(tmp.path(), &card, &run_card, INTEGRATION_SEED, "3e-3");
-    let files = samples(tmp.path(), &card, &run_card, &artifact, "buffer");
+    let files = samples(tmp.path(), &artifact, "buffer");
     // `<init>`: MadEvent's beams, energies and PDF ids. `IDWTUP` is not compared:
     // this card leaves `event_norm` at MadGraph's system default `sum` (`-3`)
     // where `generate` writes the mean (`-4`).
@@ -642,7 +631,7 @@ fn a_nested_decay_chain_sample_matches_madevents_records() {
     let card = proc_card(tmp.path(), row);
     let run_card = madgraph_dir().join(&row.run_card);
     let (_, _, artifact) = integrate(tmp.path(), &card, &run_card, INTEGRATION_SEED, "3e-3");
-    let files = samples(tmp.path(), &card, &run_card, &artifact, "buffer");
+    let files = samples(tmp.path(), &artifact, "buffer");
     let ours = summarise(&files, row);
     let failures = compare_records("ttx_nested", row, &ours, &[]);
     assert!(failures.is_empty(), "{failures:#?}");
@@ -666,7 +655,7 @@ fn identical_decays_write_a_pairing_inside_its_windows() {
     let card = proc_card(tmp.path(), row);
     let run_card = madgraph_dir().join(&row.run_card);
     let (_, _, artifact) = integrate(tmp.path(), &card, &run_card, INTEGRATION_SEED, "3e-3");
-    let files = samples(tmp.path(), &card, &run_card, &artifact, "buffer");
+    let files = samples(tmp.path(), &artifact, "buffer");
     let ours = summarise(&files, row);
     let failures = compare_records("zz_ee", row, &ours, &["m_z"]);
     assert!(failures.is_empty(), "{failures:#?}");
@@ -692,7 +681,7 @@ fn two_process_numbers_split_the_sample_as_madevent_does() {
         integrate(tmp.path(), &card, &run_card, INTEGRATION_SEED, "2e-3");
     let mut failures = Vec::new();
     for strategy in ["buffer", "stochastic-rounding"] {
-        let files = samples(tmp.path(), &card, &run_card, &artifact, strategy);
+        let files = samples(tmp.path(), &artifact, strategy);
         let ids: Vec<i32> = files[0].init.processes.iter().map(|p| p.id).collect();
         assert_eq!(ids, [1, 2], "one <init> entry per process number");
         // MadEvent's per-process cross sections, pooled over its seeds from each
@@ -932,7 +921,7 @@ fn replay_scales(
         &amps,
         &evaluated,
         &pdf,
-        rc.ebeam1 + rc.ebeam2,
+        ProtonBeams::from_run_card(&rc),
         rc.dsqrt_q2fact1,
         MapOptions::default(),
     )
@@ -1131,11 +1120,6 @@ fn our_own_events_replay_in_their_own_flavour_group() {
         vibegraph(&[
             "generate".as_ref(),
             artifact.as_os_str(),
-            card.as_os_str(),
-            "--run-card".as_ref(),
-            run_card.as_os_str(),
-            "--pdf-dir".as_ref(),
-            pdf_dir().as_os_str(),
             "--seed".as_ref(),
             GEN_SEEDS[0].to_string().as_ref(),
             "--nevents".as_ref(),

@@ -11,7 +11,7 @@
 //! needs the manifest, because nothing else in the tree records which rows the
 //! bundle carries.
 //!
-//! `key`, `bundled`, `model`, `restrict` and each category cell's `tier` and
+//! `key`, `bundled`, `status`, `model`, `restrict` and each category cell's `tier` and
 //! `mode` are read. The report collator parses the whole manifest and is the
 //! authority on its shape; these are the fields a gate has to agree with it
 //! about, so they are deserialised the same way — `bundled` defaulting to true,
@@ -42,6 +42,8 @@ struct Process {
     key: String,
     #[serde(default = "bundled_by_default")]
     bundled: bool,
+    #[serde(default)]
+    status: Option<String>,
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
@@ -101,6 +103,19 @@ pub fn unbundled_rows() -> BTreeSet<String> {
         .collect()
 }
 
+/// The keys of every row declared `status = "planned"`: its reference run does
+/// not exist yet, so a gate reading it that finds no reference reports the row as
+/// not yet banked instead of failing. A row leaves this set when its status is
+/// flipped, and from then on a missing reference fails like any other.
+pub fn planned_rows() -> BTreeSet<String> {
+    load_manifest()
+        .processes
+        .into_iter()
+        .filter(|p| p.status.as_deref() == Some("planned"))
+        .map(|p| p.key)
+        .collect()
+}
+
 /// The keys of every row the manifest declares `diagrams` hermetic — the set
 /// the committed `validation/madgraph/diagrams.json` must cover exactly.
 pub fn hermetic_diagram_rows() -> BTreeSet<String> {
@@ -133,11 +148,18 @@ pub fn hermetic_amplitude_rows() -> BTreeSet<String> {
         .collect()
 }
 
-/// The UFO model a row's reference was generated against, where it is not the
-/// interned Standard Model.
+/// The `model` spelling for MadGraph's own Standard Model, which this crate
+/// interns: `model = "sm"` with `restrict = "<suffix>"` is `import model
+/// sm-<suffix>` on both sides. A row that names no model is the same model at
+/// its default restriction.
+pub const INTERNED_SM: &str = "sm";
+
+/// The model a row's reference was generated against, where the row names one:
+/// a vendored UFO directory, or [`INTERNED_SM`] under a restrict card of its own.
 #[derive(Debug, Clone)]
 pub struct RowModel {
-    /// Repository-relative UFO directory, as the row's `.mg5` script imports it.
+    /// Repository-relative UFO directory, as the row's `.mg5` script imports it,
+    /// or [`INTERNED_SM`].
     pub dir: String,
     /// The restrict card's name: `restrict_<name>.dat`, as `import model
     /// <dir>-<name>` selects it.
@@ -145,6 +167,14 @@ pub struct RowModel {
 }
 
 impl RowModel {
+    /// Whether the row names the interned Standard Model rather than a UFO
+    /// directory: its restrict card is then one of the interned SM's own, and
+    /// neither [`dir_path`](Self::dir_path) nor
+    /// [`restrict_card`](Self::restrict_card) names a file.
+    pub fn is_interned_sm(&self) -> bool {
+        self.dir == INTERNED_SM
+    }
+
     /// The UFO directory, absolute.
     pub fn dir_path(&self) -> PathBuf {
         repo_root().join(&self.dir)
@@ -184,7 +214,8 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Every row that names a UFO model of its own, by key.
+/// Every row that names a model of its own, by key: a UFO directory, or the
+/// interned Standard Model under a restrict card.
 pub fn row_models() -> BTreeMap<String, RowModel> {
     load_manifest()
         .processes
