@@ -4,11 +4,11 @@
 //! Unlike the hadronic `cli_integrate` gate, these need no PDF set and no banked
 //! reference data — only the interned SM model — so they run in the default test
 //! suite. They demonstrate the two generalizations of the CLI: `lpp = 0` beams
-//! (no PDF convolution, √ŝ = ebeam1 + ebeam2) and n-body final states through the
-//! per-diagram multichannel combiner. The 2→2 run's σ is pinned against the
-//! committed MadGraph reference for the same point; the 2→3 run's σ is checked
-//! only to be finite and positive, since the reference holds no point at its
-//! beam energy.
+//! (no PDF convolution, ŝ = (p₁ + p₂)² of the two beams) and n-body final
+//! states through the per-diagram multichannel combiner. The 2→2 run's σ is
+//! pinned against the committed MadGraph reference for the same point; the
+//! 2→3 run's σ is checked only to be finite and positive, since the reference
+//! holds no point at its beam energy.
 
 mod common;
 

@@ -824,8 +824,11 @@ impl ClusterHistory {
 }
 
 /// `√stot` as `genps.f:653-676` sets it for proton beams: the invariant mass
-/// of two beams of mass `0.938`. The mass cancels analytically, `stot = 4 E₁ E₂`,
-/// but not in floating point, and this is the formula's own value. Only proton
+/// of two beams of mass `0.938`. At equal beams the mass cancels analytically,
+/// `stot = 4 E₁ E₂`, but not in floating point; at unequal beams it does not
+/// cancel, `stot = 4 E₁ E₂ − m² (√r − 1/√r)² + O(m⁴/E²)` with `r = E₁/E₂`
+/// (a relative `−2.0e-9` in `stot` at 6500 × 4000). This is the formula's own
+/// value, which is what MadGraph records. Only proton
 /// beams reach the clustering scale's record fields (matching refuses fixed
 /// beams), so any other beam is taken as massless.
 fn collider_energy(card: &RunCard) -> f64 {

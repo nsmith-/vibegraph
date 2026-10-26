@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Generate the MadGraph5 reference cross sections for H7 (hadronic-sigma):
 # p p > e+ e- at 13 TeV, LO, PDF = NNPDF23_lo_as_0130_qed (lhaid 247000),
-# fixed mu_F = m_Z, for two run cards (default cuts; m_ll in [60,120]).
+# fixed mu_F = m_Z, for two run cards (default cuts; m_ll in [60,120]), and
+# at proton beams of 6500 and 4000 GeV with the default cuts.
 #
 # The committed run-card files (dy13_*_run_card.dat) are copied verbatim into
 # each MadGraph process directory's Cards/run_card.dat, so MadGraph and vibegraph
@@ -115,10 +116,11 @@ EOF
 
 read -r SD ED < <(run_one default dy13_default_run_card.dat)
 read -r SM EM < <(run_one mmll_60_120 dy13_mmll_run_card.dat)
+read -r SU EU < <(run_one beams_6500_4000 dy_beams_6500_4000_run_card.dat)
 
-python3 - "$REF_JSON" "$SD" "$ED" "$SM" "$EM" <<'PY'
+python3 - "$REF_JSON" "$SD" "$ED" "$SM" "$EM" "$SU" "$EU" <<'PY'
 import json, sys
-out, sd, ed, sm, em = sys.argv[1:6]
+out, sd, ed, sm, em, su, eu = sys.argv[1:8]
 doc = {
     "_comment": "MadGraph5 LO reference sigma(pp->e+e-) at 13 TeV, "
                 "PDF NNPDF23_lo_as_0130_qed (lhaid 247000), fixed muF=muR=91.188 GeV. "
@@ -133,6 +135,11 @@ doc = {
         "run_card": "dy13_mmll_run_card.dat",
         "sigma_pb": float(sm),
         "sigma_err_pb": float(em),
+    },
+    "beams_6500_4000": {
+        "run_card": "dy_beams_6500_4000_run_card.dat",
+        "sigma_pb": float(su),
+        "sigma_err_pb": float(eu),
     },
 }
 with open(out, "w") as f:

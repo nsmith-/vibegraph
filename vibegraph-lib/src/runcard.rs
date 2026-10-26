@@ -124,6 +124,10 @@ impl Def {
     }
 }
 
+/// The proton mass MadGraph gives a proton beam (`lpp = 1`): `banner.py` refuses
+/// a lower beam energy and `genps.f` builds `stot` from beams of this mass.
+const PROTON_BEAM_MASS: f64 = 0.938;
+
 #[derive(Debug, Error)]
 pub enum RunCardError {
     #[error("run card i/o error on '{path}': {source}")]
@@ -144,6 +148,13 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error(
+        "run card sets {name} = {value} on a proton beam: a proton beam carries at least the \
+         proton mass, {PROTON_BEAM_MASS} GeV. MadGraph refuses an energy below it, and runs 0 \
+         as a proton at rest (banner.py, RunCardLO.check_validity), a massive beam that this \
+         build's massless proton kinematics cannot represent"
+    )]
+    ProtonBeamBelowMass { name: &'static str, value: f64 },
     #[error(
         "run card sets me_frame = '{value}': a frame is a list of leg numbers, such as \
          '1, 2' (the partonic centre of mass)"
@@ -256,10 +267,12 @@ pub(crate) fn card_text(value: &ParamValue) -> String {
 /// How the incoming state of a run is prepared.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BeamMode {
-    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, √ŝ = x₁x₂ s.
+    /// Proton beams (`lpp = 1`): parton momenta drawn from PDFs, ŝ = x₁x₂ s with
+    /// s = 4·ebeam1·ebeam2.
     Proton,
     /// Fixed-energy partonic beams (`lpp = 0`): the incoming particles are the
-    /// beam particles themselves, √ŝ = ebeam1 + ebeam2, no PDF convolution.
+    /// beam particles themselves, ŝ = (p₁ + p₂)² of the two beams on their mass
+    /// shells (4·ebeam1·ebeam2 when massless), no PDF convolution.
     FixedEnergy,
 }
 
@@ -622,6 +635,14 @@ impl RunCard {
         let lpp2 = i("lpp2");
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
+        }
+        if (lpp1, lpp2) == (1, 1) {
+            for name in ["ebeam1", "ebeam2"] {
+                let value = f(name);
+                if !(value.is_finite() && value >= PROTON_BEAM_MASS) {
+                    return Err(RunCardError::ProtonBeamBelowMass { name, value });
+                }
+            }
         }
         classes::refuse_ignored_physics(&values)?;
         classes::warn_unwritten_systematics(&values);
@@ -1433,6 +1454,38 @@ mod tests {
         assert_eq!(rc.beam_mode(), BeamMode::FixedEnergy);
         assert_eq!(rc.ebeam1, 250.0);
         assert_eq!(rc.ebeam2, 250.0);
+    }
+
+    /// MadGraph's own line (`banner.py`, `RunCardLO.check_validity`): a proton
+    /// beam below 0.938 GeV is refused, and 0, which MadGraph runs as a proton at
+    /// rest, is refused here too. A beam exactly at the mass, and fixed-energy beams
+    /// of any energy, still parse.
+    #[test]
+    fn a_proton_beam_below_the_proton_mass_is_refused_naming_it() {
+        for (line, name, shown) in [
+            ("  0 = ebeam1\n", "ebeam1", "ebeam1 = 0 "),
+            ("  -6500 = ebeam2\n", "ebeam2", "ebeam2 = -6500 "),
+            ("  0.9 = ebeam1\n", "ebeam1", "ebeam1 = 0.9 "),
+            ("  nan = ebeam2\n", "ebeam2", "ebeam2 = NaN "),
+            ("  inf = ebeam1\n", "ebeam1", "ebeam1 = inf "),
+        ] {
+            let err = RunCard::parse(line).unwrap_err();
+            assert!(
+                matches!(err, RunCardError::ProtonBeamBelowMass { name: n, .. } if n == name),
+                "{line:?}: {err:?}"
+            );
+            let message = err.to_string();
+            assert!(
+                message.contains(shown) && message.contains("0.938 GeV"),
+                "{message}"
+            );
+        }
+        let at_mass = RunCard::parse("  0.938 = ebeam1\n  6500 = ebeam2\n").unwrap();
+        assert_eq!((at_mass.ebeam1, at_mass.ebeam2), (0.938, 6500.0));
+        let unequal = RunCard::parse("  6500 = ebeam1\n  4000 = ebeam2\n").unwrap();
+        assert_eq!((unequal.ebeam1, unequal.ebeam2), (6500.0, 4000.0));
+        let fixed = RunCard::parse("  0 = lpp1\n  0 = lpp2\n  0.5 = ebeam1\n  0.5 = ebeam2\n");
+        assert!(fixed.is_ok(), "{fixed:?}");
     }
 
     #[test]

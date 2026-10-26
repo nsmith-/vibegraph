@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use vibegraph::coupling::scales::{ScaleChoice, ScaleEvent};
+use vibegraph::proton::ProtonBeams;
 use vibegraph::runcard::RunCard;
 
 fn validation_dir() -> PathBuf {
@@ -22,7 +23,11 @@ fn validation_dir() -> PathBuf {
 #[test]
 fn the_banked_cross_section_cards_are_fixed_scale() {
     let mut checked = 0;
-    for name in ["dy13_default_run_card.dat", "dy13_mmll_run_card.dat"] {
+    for name in [
+        "dy13_default_run_card.dat",
+        "dy13_mmll_run_card.dat",
+        "dy_beams_6500_4000_run_card.dat",
+    ] {
         let path = validation_dir().join("madgraph").join(name);
         let card = RunCard::parse_file(&path).expect("run card");
         assert!(card.fixed_ren_scale, "{name}: fixed_ren_scale");
@@ -46,7 +51,7 @@ fn the_banked_cross_section_cards_are_fixed_scale() {
         assert_eq!(scales.mu_f, [card.dsqrt_q2fact1, card.dsqrt_q2fact2]);
         checked += 1;
     }
-    assert_eq!(checked, 2);
+    assert_eq!(checked, 3);
 }
 
 /// The parser fixture compiles to the *other* branch, and is the only committed
@@ -136,4 +141,69 @@ fn the_committed_run_cards_are_accepted() {
         refused.join("\n")
     );
     println!("{} committed run cards accepted", committed.len());
+}
+
+/// The unequal-beam Drell-Yan card is the default Drell-Yan card with the second
+/// beam at 4000 GeV and nothing else: the same lines apart from `ebeam2` and the
+/// two header lines that name the beams. A difference anywhere else would make a
+/// disagreement with MadGraph about more than the beams.
+///
+/// Cannot see: a change that preserves the line count and the lines compared
+/// here, as the comparison is line by line and says nothing about the order
+/// MadGraph reads them in.
+#[test]
+fn the_unequal_beam_card_differs_from_the_default_card_in_the_beams_alone() {
+    let dir = validation_dir().join("madgraph");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).expect("run card");
+    let default = read("dy13_default_run_card.dat");
+    let unequal = read("dy_beams_6500_4000_run_card.dat");
+    let (a, b): (Vec<&str>, Vec<&str>) = (default.lines().collect(), unequal.lines().collect());
+    assert_eq!(a.len(), b.len(), "the cards differ in length");
+    let differing: Vec<(&str, &str)> = a
+        .iter()
+        .zip(&b)
+        .filter(|(x, y)| x != y)
+        .map(|(x, y)| (*x, *y))
+        .collect();
+    let is_header = |line: &str| line.starts_with('#');
+    let headers: Vec<_> = differing.iter().filter(|(x, _)| is_header(x)).collect();
+    let values: Vec<_> = differing.iter().filter(|(x, _)| !is_header(x)).collect();
+    assert_eq!(headers.len(), 2, "header lines that differ: {headers:?}");
+    assert_eq!(
+        values,
+        [&("  6500.0  = ebeam2", "  4000.0  = ebeam2")],
+        "the only value that differs is ebeam2"
+    );
+    assert!(default.ends_with('\n') == unequal.ends_with('\n'));
+}
+
+/// Both Drell-Yan cards give the proton integrand the beams it was built with
+/// before beams were read from the card: `ProtonBeams::from_run_card` on the
+/// equal-beam cards is bit-identical to `ProtonBeams::new(13000/2, 13000/2)`, so
+/// a gate that takes its beams from the card moves nothing on them. The
+/// unequal-beam card collides at `2√(E₁E₂)`.
+///
+/// Cannot see: any card not listed, which is why the banked layer's own cells
+/// are the evidence for the rest.
+#[test]
+fn run_card_beams_reproduce_the_constant_the_equal_beam_gates_used() {
+    let constant = ProtonBeams::new(13000.0 / 2.0, 13000.0 / 2.0);
+    let beams_of = |name: &str| {
+        let path = validation_dir().join("madgraph").join(name);
+        ProtonBeams::from_run_card(&RunCard::parse_file(&path).expect("run card"))
+    };
+    for name in ["dy13_default_run_card.dat", "dy13_mmll_run_card.dat"] {
+        let beams = beams_of(name);
+        for (got, want) in beams.energies().into_iter().zip(constant.energies()) {
+            assert_eq!(got.to_bits(), want.to_bits(), "{name}");
+        }
+        assert_eq!(
+            beams.sqrt_s().to_bits(),
+            constant.sqrt_s().to_bits(),
+            "{name}"
+        );
+    }
+    let unequal = beams_of("dy_beams_6500_4000_run_card.dat");
+    assert_eq!(unequal.energies(), [6500.0, 4000.0]);
+    assert_eq!(unequal.sqrt_s(), 2.0 * (6500.0f64 * 4000.0).sqrt());
 }
