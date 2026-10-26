@@ -23,7 +23,6 @@ gpmodel,strip,runpatch`) panics on `BulkGravitonTo2W_Inclusive_narrow_Par-M{2500
 with "index out of bounds: the len is 2 but the index is 1001" at
 `helas/eval/lower.rs:646`. The site is the `L::Leg(i) => inputs[i]` arm of
 `lower_lorentz`, and lower.rs and root_lorentz.rs are unchanged from 5bc4a19 to main.
-
 **Cause (reproduced).** UFO writes a spin-2 leg `k`'s two Lorentz indices as
 `1000+k` and `2000+k`. `ufo/lorentz.rs` `to_isize` shifts every positive index
 down by one without checking that it names a leg. `LorentzEvalTree::build_child`
@@ -56,7 +55,6 @@ exactly (len 2, index 1001, via `lower_vertex` ← `compile`); the external
   `edited_toy_model` builds.
 - **Support (b).** Add spin-2 support: tensor index handling in the Lorentz
   tree, tensor external wavefunctions, and the spin-2 propagator. Validate it
-  against MadGraph per helicity, internal and external. That also closes the
-  spin-2 half of
+  against MadGraph per helicity, internal and external; this also closes the spin-2 half of
   [spin-2-and-spin-3-2-particles-unsupported](spin-2-and-spin-3-2-particles-unsupported.md).
-  The CMS bulk-graviton gridpacks in #71 are the motivating sample.
+  #71's bulk-graviton gridpacks are the motivating sample.
