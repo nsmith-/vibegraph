@@ -88,10 +88,13 @@ rows and cut the bundle.
   `refdata-fetch-fails-on-cloud-hosts` (F2 Found 4),
   `validate-hadronic-sigabrt-unexplained` and `validate-sh-keeps-no-crash-evidence`
   (#60 comments and the probe).
-- Proposed edit, not a new item: `cli-has-no-param-card-option`'s obsolete
-  "`generate` refuses a different one" (D1b Found 2). Also proposed:
-  `validate-sh-stops-at-first-failed-suite` looks closable after this PR's
-  `--no-fail-fast`, pending a check of its collator clause.
+- Edited, not a new item: `cli-has-no-param-card-option` drops the obsolete
+  "`generate` refuses a different one" (D1b Found 2).
+- Deleted at closeout: `validate-sh-stops-at-first-failed-suite`. This PR's
+  `--no-fail-fast` closes it. The manager's local banked run on the refdata-11
+  tree (`validate.sh`, 2026-10-26) had one failing suite (a validation-report
+  unit test, fixed in `7f43544`). Every later suite still ran, the script exited
+  101, and the collator rendered 216 measured cells.
 - Not filed:
   - D1 Found 3 (CVMFS layout unverified): measured, above;
   - D1 Found 4 (`ParamCard` drops unknown entries): already
