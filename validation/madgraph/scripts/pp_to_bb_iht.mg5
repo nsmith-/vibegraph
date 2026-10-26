@@ -1,0 +1,19 @@
+# MadGraph5 batch script: p p > b b~ inside an inclusive-HT window.
+#
+# The pp_to_bb row's card (shipped defaults, ebeam 6500, NNPDF23_lo_as_0130_qed
+# through LHAPDF) with ihtmin = 200 and ihtmax = 500 at maxjetflavor = 4. The b
+# quarks are b-class there, outside the jet sum htj and inside the inclusive
+# sum iht (cuts.f:898-906), so this window is the only cut on the final state:
+# a generator that dropped the b's from iht would read zero, and one that put
+# them in htj would read the same value as this row and is caught by the
+# per-event tests instead.
+generate p p > b b~
+output pp_to_bb_iht -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set pdlabel lhapdf
+  set lhaid 247000
+  set ihtmin 200
+  set ihtmax 500
+  done

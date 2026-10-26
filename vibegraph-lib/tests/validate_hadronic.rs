@@ -3901,6 +3901,67 @@ fn sigma_ll_scalefact2_recarded_vs_mg() {
     measure_recarded_sigma(run, process, neval, ladder_note);
 }
 
+// ───────────── the HT-binned rows ──────────────────────────────────────────────
+
+/// The two HT-cut rows, each with the process its `.mg5` script generates and
+/// the points an iteration its gate integrates at.
+///
+/// `pp_to_jj_ht` is `pp_to_jj`'s card with `htjmin = 300` and `htjmax = 800`;
+/// `pp_to_bb_iht` is `pp_to_bb`'s with `ihtmin = 200` and `ihtmax = 500` at
+/// `maxjetflavor = 4`, where the b quarks count for the inclusive sum and not
+/// for the jet sum. With two final-state partons either window is a pT window,
+/// so the cross sections read the cuts' edges, the `ŝ` floor they imply and, for
+/// the second row, which legs the inclusive sum takes; they cannot tell a scalar
+/// from a vector sum or say which jets a sum of three or more takes.
+const HT_ROWS: &[(&str, &str, usize)] = &[
+    ("pp_to_jj_ht", "p p > j j", 75_000),
+    ("pp_to_bb_iht", "p p > b b~", 75_000),
+];
+
+/// Whether this checkout carries both `row`'s banked run and the seed record
+/// `gate` reads for it.
+///
+/// A row the manifest marks `bundled = false` whose run is absent reports
+/// `AWAITING BUNDLE` and writes no cell, as [`dyn_run_present`] decides for every
+/// such row. A run without its seed record fails, since the single run's own
+/// `results.dat` is not the seed policy's reading.
+fn seed_record_banked(gate: &str, row: &str) -> bool {
+    if !dyn_run_present(gate, row) {
+        return false;
+    }
+    if common::seed_record::read(&validation_dir().join("output"), row).is_some() {
+        return true;
+    }
+    vibegraph::validation::require(gate, "a banked seed record", row);
+}
+
+fn measure_ht_sigma(gate: &str, index: usize) {
+    let (run, process, neval) = HT_ROWS[index];
+    if !seed_record_banked(gate, run) {
+        return;
+    }
+    measure_recarded_sigma(
+        run,
+        process,
+        neval,
+        "the lowest rung of the seed policy's budget ladder",
+    );
+}
+
+/// σ(p p → j j) with `htjmin = 300`, `htjmax = 800` against the row's seed record.
+#[test]
+fn sigma_jj_ht_window_vs_mg() {
+    measure_ht_sigma("sigma_jj_ht_window_vs_mg", 0);
+}
+
+/// σ(p p → b b̄) with `ihtmin = 200`, `ihtmax = 500` at `maxjetflavor = 4` against
+/// the row's seed record: the only cut on the final state is on the inclusive
+/// sum, which takes the b-class legs the jet sum leaves out.
+#[test]
+fn sigma_bb_iht_window_vs_mg() {
+    measure_ht_sigma("sigma_bb_iht_window_vs_mg", 1);
+}
+
 /// The budget ladder behind the four re-carded rows' tolerances.
 ///
 /// A seed sweep alone cannot separate agreement from this crate's convergence:
