@@ -38,29 +38,13 @@ when that list is `None` (as it is for spin 3/2), lets spin 2 through. That
 check covers external legs only in any case; nothing looks at spin on an
 internal line.
 
-**Reproducer** (scratch, not committed). The base is a copy of
-`validation/ufo/vibegraph_toy_UFO` plus a spin-5 `gt` (M = 1 TeV), an
-`lt~ lt gt` vertex (`P(2003,1)*Gamma(1003,2,1) + ...`) and a `vt vt gt` vertex
-(`Metric(1,1003)*Metric(2003,2) + ... - Metric(1,2)*Metric(1003,2003)`).
-- **Internal graviton.** `vibegraph integrate` on `lt~ lt > vt vt NP<=2` at
-  fixed 500+500 GeV beams exits 101 with the reported message exactly:
-  `lower.rs:646:22`, len 2, index 1001, via `lower_vertex` ←
-  `AmplitudeEvaluator::compile` ← `hadronic::compile_class`. Putting the
-  graviton in slot 2 instead gives index 1000.
-- **External graviton.** `lt~ lt > gt` panics at the same site with len 3,
-  index 2002, *before* `build_external_core`.
-
-**Panics behind the first one.** If the index panic is fixed without real
-support, an external spin-2 leg reaches two more panic arms on spin code 5:
-- `build_external_core`'s "unsupported external spin code" arm
-  (`helas/eval/run.rs` ~:1948);
-- the matching arm in `helas/eval/analysis.rs` (~:251).
-
-`spin_state_count` in `hadronic.rs` (~:625) counts 5 states for code 5, so the
-spin average is already right for (b).
-
-Spin 3/2 (code 4) gets `EvalError::UnsupportedSpin` at compile. The general
-panic-to-refusal sweep is
+**Reproducer** (scratch). The toy UFO plus a spin-5 `gt` (1 TeV) with `lt~ lt gt`
+(`P(2003,1)*Gamma(1003,2,1) + ...`) and `vt vt gt` (`Metric(1,1003)*Metric(2003,2) + ...`)
+vertices. `lt~ lt > vt vt NP<=2` at fixed 500+500 GeV gives the reported message
+exactly (len 2, index 1001, via `lower_vertex` ← `compile`); the external
+`lt~ lt > gt` panics at the same site (len 3, index 2002) before
+`build_external_core`. Behind it, `build_external_core` (`run.rs` ~:1948) and
+`analysis.rs` (~:251) also panic on spin code 5; those arms are in
 [lorentz-and-spin-code-paths-panic-instead-of-refusing](../hygiene/lorentz-and-spin-code-paths-panic-instead-of-refusing.md).
 
 **Two ways to close it.**
