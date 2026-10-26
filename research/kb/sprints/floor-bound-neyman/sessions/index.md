@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [C1: an outcome-independent channel combine, and Neyman re-measured with it](C1.md) - Replace combine_kept's point-weighted branch (and pooled_scale's weights) with a combination fixed independently of the run's outcomes, state the fixed-budget path's transformation class, and re-measure the CLI's Neyman target mode and the BlockAllocation::Neyman figures.
 * [P1: does Neyman allocation let budget reach the floor-bound channels?](P1.md) - Add an allocation knob to probe_2to6_budget_ladder, then run bbx_to_ccx_emmm_qcd0 at 600k and 1.2M over 20 seeds under ByAlpha and Neyman on one tree, and read the rungs as paired per-seed differences.
 
 ## Session Report
