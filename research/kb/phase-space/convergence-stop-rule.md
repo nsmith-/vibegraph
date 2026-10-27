@@ -72,12 +72,17 @@ scaled_rel = √( Σ_j  quoted_j · max(1, emp_j / quoted_j) ) / Σ_j I_j  ≤  
 ```
 
 (`scaled_rel`, `budget.rs:1209`; the factor is `pooled_scale`, `budget.rs:493`).
-For channel `j`'s `k` kept iterations of `n_i` points, `W = Σ n_i`:
+For channel `j`'s `k` kept iterations, about their plain mean `Ī`:
 
 ```
-quoted = Σ n_i² σ_i² / W²                          (the variance the mean claims)
-emp    = Σ n_i² (I_i − Ī)² / W² · k/(k − 1)          (the scatter it actually shows)
+quoted = Σ σ_i² / k²                          (the variance the mean claims)
+emp    = Σ (I_i − Ī)² / k² · k/(k − 1)        (the scatter it actually shows)
 ```
+
+The mean is plain whatever counts the iterations drew: under Neyman a count is
+chosen from earlier iterations' variances, which a tail point inflates, and
+weighting by counts read `bbx_to_ccx_emmm_qcd0` 0.10–0.14% of σ low
+([floor-bound-neyman C1](../sprints/floor-bound-neyman/sessions/C1-report.md)).
 
 So the widened variance is `max(quoted, emp)`: a channel whose iterations
 disagree by more than they claimed is charged its measured scatter, and never
