@@ -52,6 +52,5 @@ on most runs is ruled out, a rare one is not.
 **Next.** The suspects left are the macOS nano allocator and C code not built
 with ASan (`zstd-sys`). Two steps: soak on the M3 with `MallocNanoZone=0`
 against the default, which also puts a rate on the abort; and rebuild with
-clang ASan for `zstd-sys`. Separately,
-[validate-sh-keeps-no-crash-evidence](../hygiene/validate-sh-keeps-no-crash-evidence.md)
-makes a recurrence leave its evidence.
+clang ASan for `zstd-sys`. Also see
+[validate-sh-keeps-no-crash-evidence](../hygiene/validate-sh-keeps-no-crash-evidence.md).
