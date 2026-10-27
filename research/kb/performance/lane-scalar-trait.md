@@ -174,10 +174,10 @@ map's comparisons in `diagram_channel.rs` are per point, so they become
 `Num` requires `PartialEq`, so keeping `num_complex` keeps `==` on `F`. Two
 ways:
 
-- **Keep `Num`.** `==` survives on `F`. On `LaneField` it becomes "uniform or
+- **Keep `Num` (chosen by the user, 2026-10-27).** `==` survives on `F`. On `LaneField` it becomes "uniform or
   panic" (option 2, for equality only). Most equality sites compare against
   card constants (`mass == 0`), which are uniform by construction.
-- **Own complex type.** `F` then needs no `PartialEq`, and the remaining
+- **Own complex type (deferred).** `F` then needs no `PartialEq`, and the remaining
   equality sites become `eq_lanes` with `select` or `uniform()`.
 
 **The lift, measured.** [measured] In a throwaway worktree at `d57fbb1`,
@@ -243,7 +243,7 @@ What that means for our clustering, 2–8 partons per point:
   `id_cl` maps a leg set to its diagrams (`graph.rs:96-98`). Lanes that merged
   different pairs hold different lists, so the next step's admissibility
   differs per lane. Two ways:
-  - **A per-lane bitset (recommended).** `graphs` becomes `⌈G/64⌉` `u64`
+  - **A per-lane bitset (chosen by the user, 2026-10-27).** `graphs` becomes `⌈G/64⌉` `u64`
     words per lane, with `G` the process's diagram count, and `id_cl` a bitset
     per leg set. Narrowing is a word-wise AND, admissibility is "any word
     non-zero", and both are lane-wise integer operations with no branch. It
@@ -310,9 +310,11 @@ through the trait's scalar parameter.
 ## Open questions
 
 1. Staging: **B**, decided 2026-10-26.
-2. Equality: keep `Num`, or own the complex type (measured lift above)?
-3. Clustering's per-lane graph narrowing: a per-lane bitset (recommended) or
-   a scalar fallback on disagreement?
+2. Equality: **keep `Num` and `num_complex`**, decided 2026-10-27. `==` on
+   `LaneField` is uniform-or-panic; the own complex type stays an option with
+   its lift measured above.
+3. Clustering's per-lane graph narrowing: **a per-lane bitset**, decided
+   2026-10-27.
 4. The index lane: `[u32; N]` (gather-friendly), or `usize` lanes?
 5. `Mask::uniform` in release builds: lane 0's answer (no cost), or keep the
    check (one reduction per fork)?
