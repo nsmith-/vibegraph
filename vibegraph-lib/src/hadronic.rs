@@ -33,7 +33,10 @@ use thiserror::Error;
 use thread_local::ThreadLocal;
 
 use crate::artifact::{ChannelSampler, SamplerTopology};
-use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
+use crate::budget::{
+    integrate_channels, integrate_channels_with_floor, BlockAllocation, Budget, ChannelFloor,
+    ConvergenceReport, StopSignal,
+};
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder};
@@ -3116,13 +3119,28 @@ impl<'a> FixedBeamIntegrand<'a> {
         seed: u64,
         stop: &StopSignal,
     ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
-        integrate_channels(
+        self.adapt_grids_budget_with_floor(budget, allocation, ChannelFloor::default(), seed, stop)
+    }
+
+    /// [`adapt_grids_budget`](Self::adapt_grids_budget) with the channels'
+    /// accepted-point floor chosen by `floor` — the seam a budget ladder compares
+    /// the floor rules through.
+    pub fn adapt_grids_budget_with_floor(
+        &self,
+        budget: Budget,
+        allocation: BlockAllocation,
+        floor: ChannelFloor,
+        seed: u64,
+        stop: &StopSignal,
+    ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
+        integrate_channels_with_floor(
             self,
             &self.channel_alphas(),
             self.vegas_alpha,
             IterationCombination::default(),
             budget,
             allocation,
+            floor,
             seed,
             stop,
         )
