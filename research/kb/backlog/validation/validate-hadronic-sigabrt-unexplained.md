@@ -5,7 +5,7 @@ description: "validate_hadronic aborted once on the M3: libmalloc found a corrup
 area: validation
 state: open
 priority: medium
-closes_when: "The corrupting write is located (for example under AddressSanitizer on the hadronic suite) and fixed or attributed outside this crate; or an ASan run of the suite is clean and a soak puts a rate on the abort, recorded here."
+closes_when: "The corrupting write is located and fixed or attributed outside this crate (the allocator, a C dependency or the host); or a macOS soak with and without the nano allocator puts a rate on the abort, recorded here."
 blocked_by: []
 opened: 2026-10-26
 tags: [flaky, banked, macos, abort, heap-corruption, rayon]
@@ -14,21 +14,17 @@ sources:
   - {id: pr60-m3, resource: "https://github.com/nsmith-/vibegraph/pull/60#issuecomment-6373556349", title: "nsmith-/vibegraph#60, the M3's refdata-11 comment"}
   - {id: pr60-ips, resource: "https://github.com/nsmith-/vibegraph/pull/60#issuecomment-6428160160", title: "nsmith-/vibegraph#60, the M3's crash report"}
 ---
-During the refdata-11 export on the M3, the first full `validate` run on a clean
-`git archive` tree of `47ac21a` died with SIGABRT in `validate_hadronic`. The
-rerun of the same tree was clean
+One full `validate` run of the refdata-11 export (`47ac21a`) on the M3 died with
+SIGABRT in `validate_hadronic`; the rerun was clean
 ([#60](https://github.com/nsmith-/vibegraph/pull/60#issuecomment-6373556349)).
 
-**The crash report** (macOS 15.8.1, process up 30 s, 31 threads;
+**The crash report** (macOS 15.8.1;
 [#60](https://github.com/nsmith-/vibegraph/pull/60#issuecomment-6428160160)):
-- `abort()` came from libmalloc (`nanov2_guard_corruption_detected`), not from
-  Rust, so no panic line was printed.
-- Faulting stack: `nanov2_realloc` ← `Vec::resize` ←
-  `ScratchSpace::ensure_sizes` (`helas/eval/run.rs:101`, growing the
-  `Bispinor` arena) ← `fill_arenas` ← `BoundAmplitude::eval_m2` ←
-  `BoundSubprocess::eval_m2`.
-- The realloc is where the damage was noticed, not necessarily where it was
-  done. The other threads were in rayon or ordinary integrand code.
+libmalloc's `nanov2_guard_corruption_detected` called `abort()`, so no Rust panic
+line was printed. Faulting stack: `nanov2_realloc` ← `Vec::resize` ←
+`ScratchSpace::ensure_sizes` (`helas/eval/run.rs:101`) ← `fill_arenas` ←
+`BoundAmplitude::eval_m2`. That is where the damage was noticed, not
+necessarily where it was done.
 
 **Ruled out so far.** The binary has no `unsafe` of this crate's own (the
 `get_unchecked` pair in `helas/eval/run.rs` sits behind `unchecked-study`, which
@@ -46,8 +42,16 @@ unrelated code (`kt::Clustering`), and was also never reproduced. Two
 corruptions in different safe-Rust paths point at something shared (a
 dependency, the allocator, or the host) rather than at either call site.
 
-**Next.** Run the hadronic and proton-sample suites under AddressSanitizer
-(nightly, `-Zsanitizer=address`). ASan reports the corrupting write itself,
-not a later victim. Separately,
+**AddressSanitizer on Linux, clean (2026-10-27).** Nightly 1.101 with
+`-Zbuild-std`, so std, rayon and rand are instrumented, and the spawned CLI child
+is instrumented too. A heap-buffer-overflow control was caught. Runs: the lib
+unit tests, 3 × `validate_hadronic` and 2 × `validate_samples_proton` (which
+includes `pp_to_llj_dyn`), about 4.6 h in all, with no ASan report. A corruption
+on most runs is ruled out, a rare one is not.
+
+**Next.** The suspects left are the macOS nano allocator and C code not built
+with ASan (`zstd-sys`). Two steps: soak on the M3 with `MallocNanoZone=0`
+against the default, which also puts a rate on the abort; and rebuild with
+clang ASan for `zstd-sys`. Separately,
 [validate-sh-keeps-no-crash-evidence](../hygiene/validate-sh-keeps-no-crash-evidence.md)
 makes a recurrence leave its evidence.
