@@ -2091,19 +2091,37 @@ fn probe_2to6_density_decomposition() {
 ///   `11 k` for `k = 1..N` (`N = 5` is `SEED, 11, 22, 33, 44`, today's seeds); a
 ///   comma list is taken verbatim.
 /// * `VG_2TO6_NITER`: iterations per run.
+/// * `VG_2TO6_ALLOC`: comma list from `alpha` (`BlockAllocation::ByAlpha`, the
+///   default) and `neyman` (`BlockAllocation::Neyman`), the rules the
+///   multichannel sampler splits each iteration by; every rung runs under each.
+///   The flat sampler is one channel with nothing to split, runs once, and is
+///   labelled `single`.
+/// * `VG_2TO6_WATCH`: comma list of channel indices whose own term, drawn and
+///   accepted points are recorded per seed in the TSV's `watch` column.
 /// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
-///   so a killed run keeps what it measured. Columns: `row sampler neval niter
-///   seed sigma_pb err_pb wall_s`. Rerunning with the same path appends; remove
-///   the file to start over.
+///   so a killed run keeps what it measured. Columns: `row sampler alloc neval
+///   niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
+///   `points` is every channel's draws over the run. `share_floor_bound` counts
+///   the channels whose α share of the last iteration was at or under their
+///   accepted-point floor — under `alpha` the channels that drew the floor, under
+///   `neyman` the channels the α split would have left there. `watch` is
+///   `j:term_pb:err_pb:drawn:accepted` per watched channel, comma-separated.
+///   Rerunning with the same path appends, and a file whose header differs is
+///   refused; remove the file to start over.
 ///
 /// # Output
 ///
 /// Per seed, a progress line. Per rung, a summary: the unweighted mean, the
 /// error `max(quoted, spread/√n)`, χ²/dof, and the pull against both the row's
 /// MadEvent seed record (read the way the gates read it) and the single-run
-/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler,
-/// the separation of the means against `√(s₁²/n₁ + s₂²/n₂)` from the measured
-/// seed spreads, printed as information.
+/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler
+/// and allocation, the per-seed paired difference: its mean and its standard
+/// deviation over the seeds, with the ratio of the two rungs' seed standard
+/// deviations, printed as information. The rungs share their seeds, and a
+/// channel whose allocation is the floor at both draws the same points at both,
+/// so the two rungs of one seed are correlated and the difference of their
+/// means is read against the spread of the paired differences, not against the
+/// rungs' separate spreads.
 ///
 /// # Running the 20-seed multichannel ladder
 ///
@@ -2115,7 +2133,7 @@ fn probe_2to6_density_decomposition() {
 /// cargo test -p vibegraph-lib --profile release-debug --features extended-validation \
 ///     --test validate_sigma --no-run
 /// VG_2TO6_SAMPLERS=multi VG_2TO6_RUNGS=600000,1200000 VG_2TO6_SEEDS=20 \
-///     VG_2TO6_OUT=$PWD/ladder-2to6.tsv \
+///     VG_2TO6_ALLOC=alpha,neyman VG_2TO6_OUT=$PWD/ladder-2to6.tsv \
 ///     nohup setsid cargo test -p vibegraph-lib --profile release-debug \
 ///     --features extended-validation --test validate_sigma -- --ignored \
 ///     --nocapture --exact probe_2to6_budget_ladder > ladder-2to6.log 2>&1 &
@@ -2129,7 +2147,11 @@ fn probe_2to6_density_decomposition() {
 #[test]
 #[ignore]
 fn probe_2to6_budget_ladder() {
-    use std::io::Write;
+    use std::io::{BufRead, Write};
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+
+    const TSV_HEADER: &str = "row\tsampler\talloc\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s\t\
+                              points\tshare_floor_bound\twatch";
 
     const DEFAULT_NITER: usize = 8;
     const FLAT_RUNGS: [usize; 4] = [100_000, 200_000, 400_000, 800_000];
@@ -2231,22 +2253,49 @@ fn probe_2to6_budget_ladder() {
     let niter = std::env::var("VG_2TO6_NITER")
         .map(|s| parse_usize(&s, "VG_2TO6_NITER"))
         .unwrap_or(DEFAULT_NITER);
+    let allocations: Vec<(&str, BlockAllocation)> = match var_list("VG_2TO6_ALLOC") {
+        None => vec![("alpha", BlockAllocation::ByAlpha)],
+        Some(names) => names
+            .iter()
+            .map(|n| match n.as_str() {
+                "alpha" => ("alpha", BlockAllocation::ByAlpha),
+                "neyman" => ("neyman", BlockAllocation::Neyman),
+                other => panic!("VG_2TO6_ALLOC: `{other}` is not `alpha` or `neyman`"),
+            })
+            .collect(),
+    };
+    let watch: Vec<usize> = var_list("VG_2TO6_WATCH")
+        .unwrap_or_default()
+        .iter()
+        .map(|s| parse_usize(s, "VG_2TO6_WATCH"))
+        .collect();
     let mut out = std::env::var("VG_2TO6_OUT").ok().map(|path| {
         let fresh = std::fs::metadata(&path)
             .map(|m| m.len() == 0)
             .unwrap_or(true);
+        if !fresh {
+            let existing = std::fs::File::open(&path)
+                .map(std::io::BufReader::new)
+                .and_then(|mut r| {
+                    let mut line = String::new();
+                    r.read_line(&mut line).map(|_| line)
+                })
+                .unwrap_or_else(|e| panic!("VG_2TO6_OUT {path}: {e}"));
+            assert_eq!(
+                existing.trim_end(),
+                TSV_HEADER,
+                "VG_2TO6_OUT {path} has other columns; remove it or name another file"
+            );
+        }
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
             .unwrap_or_else(|e| panic!("VG_2TO6_OUT {path}: {e}"));
         if fresh {
-            writeln!(
-                file,
-                "row\tsampler\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s"
-            )
-            .and_then(|_| file.flush())
-            .expect("TSV header writable");
+            writeln!(file, "{TSV_HEADER}")
+                .and_then(|_| file.flush())
+                .expect("TSV header writable");
         }
         file
     });
@@ -2257,7 +2306,9 @@ fn probe_2to6_budget_ladder() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     eprintln!(
-        "ladder: rows {rows:?}, samplers {samplers:?}, {} seeds {seeds:?}, niter {niter}",
+        "ladder: rows {rows:?}, samplers {samplers:?}, allocations {:?}, {} seeds {seeds:?}, \
+         niter {niter}",
+        allocations.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
         seeds.len(),
     );
     for dir in rows {
@@ -2274,67 +2325,129 @@ fn probe_2to6_budget_ladder() {
                 "flat" => ("flat RAMBO  ", 0, 0),
                 _ => ("multichannel", MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS),
             };
-            let mut previous: Option<(usize, SeedMean)> = None;
-            for neval in rungs_for(sampler) {
-                let clock = Stopwatch::start();
-                let mut runs: Vec<SeedResult> = Vec::new();
-                for &seed in &seeds {
-                    let seed_clock = Stopwatch::start();
-                    let (sigma_pb, sigma_err_pb, _, _) =
-                        integrate_with(dir, &entry.process, neval, niter, seed, n_survey, n_adapt);
-                    let wall = seed_clock.seconds();
-                    eprintln!(
-                        "    {label} {neval:>9} x {niter} seed {seed:>10}: σ {sigma_pb:.6e} \
-                         ± {sigma_err_pb:.3e} pb | rel vs single run {:+.2e} | {wall:6.0} s",
-                        sigma_pb / entry.sigma_pb - 1.0,
-                    );
-                    if let Some(file) = out.as_mut() {
-                        writeln!(
-                            file,
-                            "{dir}\t{sampler}\t{neval}\t{niter}\t{seed}\t{sigma_pb:.9e}\t\
-                             {sigma_err_pb:.6e}\t{wall:.1}",
-                        )
-                        .and_then(|_| file.flush())
-                        .expect("TSV line writable");
+            let rules: Vec<(&str, BlockAllocation)> = if *sampler == "flat" {
+                vec![("single", BlockAllocation::ByAlpha)]
+            } else {
+                allocations.clone()
+            };
+            for &(alloc, allocation) in &rules {
+                let mut previous: Option<(usize, SeedMean, Vec<f64>)> = None;
+                for neval in rungs_for(sampler) {
+                    let clock = Stopwatch::start();
+                    let mut runs: Vec<SeedResult> = Vec::new();
+                    for &seed in &seeds {
+                        let seed_clock = Stopwatch::start();
+                        let (sigma_pb, sigma_err_pb, points, share_floor_bound, watched) =
+                            with_integrand(
+                                dir,
+                                &entry.process,
+                                seed,
+                                n_survey,
+                                n_adapt,
+                                None,
+                                |integ, _| {
+                                    let (per_channel, total, report) = integ.adapt_grids_budget(
+                                        Budget::Fixed { neval, niter },
+                                        allocation,
+                                        seed,
+                                        &StopSignal::default(),
+                                    );
+                                    let watched: Vec<String> = watch
+                                        .iter()
+                                        .map(|&j| {
+                                            let c = per_channel.get(j).unwrap_or_else(|| {
+                                                panic!(
+                                                    "VG_2TO6_WATCH: channel {j} of {}",
+                                                    per_channel.len()
+                                                )
+                                            });
+                                            format!(
+                                                "{j}:{:.6e}:{:.4e}:{}:{}",
+                                                c.result.integral * GEV2_TO_PB,
+                                                c.result.std_dev * GEV2_TO_PB,
+                                                report.channel_points[j],
+                                                report.channel_accepted[j],
+                                            )
+                                        })
+                                        .collect();
+                                    (
+                                        total.integral * GEV2_TO_PB,
+                                        total.std_dev * GEV2_TO_PB,
+                                        report.points,
+                                        report.floor_bound_channels,
+                                        watched,
+                                    )
+                                },
+                            );
+                        let wall = seed_clock.seconds();
+                        eprintln!(
+                            "    {label} {alloc} {neval:>9} x {niter} seed {seed:>10}: \
+                             σ {sigma_pb:.6e} ± {sigma_err_pb:.3e} pb | rel vs single run \
+                             {:+.2e} | {points} points, {share_floor_bound} share-floor-bound \
+                             | {wall:6.0} s",
+                            sigma_pb / entry.sigma_pb - 1.0,
+                        );
+                        if let Some(file) = out.as_mut() {
+                            writeln!(
+                                file,
+                                "{dir}\t{sampler}\t{alloc}\t{neval}\t{niter}\t{seed}\t\
+                                 {sigma_pb:.9e}\t{sigma_err_pb:.6e}\t{wall:.1}\t{points}\t\
+                                 {share_floor_bound}\t{}",
+                                watched.join(","),
+                            )
+                            .and_then(|_| file.flush())
+                            .expect("TSV line writable");
+                        }
+                        runs.push(SeedResult {
+                            seed,
+                            sigma_pb,
+                            sigma_err_pb,
+                        });
                     }
-                    runs.push(SeedResult {
-                        seed,
-                        sigma_pb,
-                        sigma_err_pb,
-                    });
-                }
-                let read = combine(&runs);
-                let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
-                let pull_record = match &seeded {
-                    Some(r) => format!("{:+.2}", read.pull(r.mean(), r.err())),
-                    None => "n/a (no seed record)".to_string(),
-                };
-                eprintln!(
-                    "  {label} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
-                     ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}) | χ²/dof {:.2} \
-                     | pull vs seed record {pull_record} | pull vs single run \
-                     {pull_single:+.2} | rel vs single run {:+.2e}",
-                    read.n,
-                    clock.seconds(),
-                    read.mean,
-                    read.err,
-                    read.quoted,
-                    read.spread,
-                    read.chi2_per_dof,
-                    read.mean / entry.sigma_pb - 1.0,
-                );
-                if let Some((prev_neval, prev)) = previous {
-                    // Measured per-rung seed sd: spread is sd/√n.
-                    let sigma = (prev.spread.powi(2) + read.spread.powi(2)).sqrt();
+                    let read = combine(&runs);
+                    let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
+                    let pull_record = match &seeded {
+                        Some(r) => format!("{:+.2}", read.pull(r.mean(), r.err())),
+                        None => "n/a (no seed record)".to_string(),
+                    };
+                    let sd = read.spread * (read.n as f64).sqrt();
                     eprintln!(
-                        "    {label} {prev_neval} -> {neval}: Δmean {:+.3e} pb ({:+.2e} rel) \
-                         over √(s₁²/n₁ + s₂²/n₂) = {sigma:.3e} pb: {:+.2}σ (information)",
-                        read.mean - prev.mean,
-                        (read.mean - prev.mean) / prev.mean,
-                        (read.mean - prev.mean) / sigma,
+                        "  {label} {alloc} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
+                         ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}, seed sd {sd:.3e}) \
+                         | χ²/dof {:.2} | pull vs seed record {pull_record} | pull vs single \
+                         run {pull_single:+.2} | rel vs single run {:+.2e}",
+                        read.n,
+                        clock.seconds(),
+                        read.mean,
+                        read.err,
+                        read.quoted,
+                        read.spread,
+                        read.chi2_per_dof,
+                        read.mean / entry.sigma_pb - 1.0,
                     );
+                    let values: Vec<f64> = runs.iter().map(|r| r.sigma_pb).collect();
+                    if let Some((prev_neval, prev, prev_values)) = &previous {
+                        let diffs: Vec<f64> =
+                            values.iter().zip(prev_values).map(|(b, a)| b - a).collect();
+                        let n = diffs.len() as f64;
+                        let d_mean = diffs.iter().sum::<f64>() / n;
+                        let d_sd = (diffs.iter().map(|d| (d - d_mean).powi(2)).sum::<f64>()
+                            / (n - 1.0))
+                            .sqrt();
+                        let prev_sd = prev.spread * (prev.n as f64).sqrt();
+                        eprintln!(
+                            "    {label} {alloc} {prev_neval} -> {neval}: paired Δ over {} seeds \
+                             {d_mean:+.3e} pb ({:+.2e} rel), sd of Δ {d_sd:.3e} pb, Δ/(sd/√n) \
+                             {:+.2} | seed sd {prev_sd:.3e} -> {sd:.3e}, ratio {:.3} \
+                             (information)",
+                            diffs.len(),
+                            d_mean / prev.mean,
+                            d_mean / (d_sd / n.sqrt()),
+                            sd / prev_sd,
+                        );
+                    }
+                    previous = Some((neval, read, values));
                 }
-                previous = Some((neval, read));
             }
         }
     }

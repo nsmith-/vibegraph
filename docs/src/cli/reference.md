@@ -152,7 +152,7 @@ Options:
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
           
-          Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is reproducible under — and to `neyman` under a convergence target, where it reaches the same accuracy for roughly half the evaluations on a wide multichannel process (`p p > l+ l- j`, 24 channels, 8 seeds: 2.94M evaluations against 6.41M at a 0.179% target) and makes no measurable difference on a narrow one (`p p > e+ e-`, 4 channels).
+          Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is reproducible under — and to `neyman` under a convergence target, where it reaches the same accuracy in somewhat fewer evaluations on a multichannel process (`p p > l+ l- j`, 6 channels, 20 seeds: 1.49M evaluations against 1.58M at a 0.179% target, the same σ) and is the same run on a single-channel one (`p p > e+ e-`).
 
           Possible values:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
