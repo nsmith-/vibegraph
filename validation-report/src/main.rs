@@ -73,7 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::cells::{RowFile, Status};
-use crate::manifest::{Category, Layer, Manifest, Mode, Process, Tier, CATEGORIES};
+use crate::manifest::{Category, Layer, Manifest, Mode, Process, ProcessStatus, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
 pub(crate) struct ResolvedCell {
@@ -358,6 +358,15 @@ fn resolve_cell(
             cell.body = "awaiting the bundle".to_string();
             return cell;
         }
+        // A planned row's reference run does not exist yet, so its gates have
+        // nothing to measure and write no cell. The cell waits for the run; once
+        // the run is banked and the gate writes a cell it is rendered from it
+        // whatever the status says.
+        if process.status == Some(ProcessStatus::Planned) {
+            cell.mark = "⏳";
+            cell.body = "planned: no reference run yet".to_string();
+            return cell;
+        }
         problems.push(format!(
             "{where_} is declared '{}' and no gate wrote it — the cell is missing, not empty",
             declared.tier.as_str()
@@ -484,6 +493,42 @@ fn number_notes(resolved: &mut [ResolvedRow]) {
 mod tests {
     use super::*;
 
+    /// The unequal-beam row is declared `planned` with banked cells and no gate
+    /// has written one: the collator waits on it without a problem. The same
+    /// row declared as an ordinary row is a missing cell.
+    #[test]
+    fn a_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        // The row is planned only until its reference run is banked, so the test
+        // declares it planned itself instead of reading the committed status.
+        // `bundled = false` is stripped too: an unbundled row with no cell also
+        // waits, and would satisfy the planned half without the planned rule.
+        let line = "key = \"pp_to_ll_beams_6500_4000\"\n";
+        assert_eq!(text.matches(line).count(), 1);
+        let text = text
+            .replace("status = \"planned\"\n", "")
+            .replace("bundled = false\n", "")
+            .replace(line, &format!("{line}status = \"planned\"\n"));
+        let resolve = |text: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == "pp_to_ll_beams_6500_4000")
+                .expect("the unequal-beam row");
+            let declared = process.categories.get(Category::Integrals);
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, problems)
+        };
+        let (mark, problems) = resolve(&text);
+        assert_eq!((mark, problems.len()), ("⏳", 0), "{problems:?}");
+        let (mark, problems) = resolve(&text.replace("status = \"planned\"\n", ""));
+        assert_eq!((mark, problems.len()), ("❌", 1), "{problems:?}");
+    }
+
     fn standalone(row: Option<&str>, mode: Option<&str>) -> manifest::Standalone {
         let mut text =
             String::from("key = \"gate-under-test\"\nlayer = \"oracle\"\nrationale = \"r\"\n");
@@ -567,6 +612,55 @@ mod tests {
                     "{written}"
                 );
             }
+        }
+    }
+
+    /// The two HT rows with no gate output, each declared three ways from its
+    /// committed text with any `bundled = false` removed: with `bundled = false` it
+    /// waits on the bundle; with `status = "planned"` it waits on its reference run;
+    /// with neither it is a missing cell. Each declaration is spliced into that row
+    /// alone, and the splice is asserted to have happened, so the test holds
+    /// whether or not the pinned bundle carries the rows. `bundled = false` is
+    /// absent from the planned declaration because an unbundled row also waits, and
+    /// would pass the planned half without the planned rule.
+    #[test]
+    fn an_unbundled_or_planned_row_with_no_cell_waits_and_an_ordinary_one_is_missing() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
+        let text = std::fs::read_to_string(path).expect("the committed manifest");
+        let resolve = |text: &str, key: &str| {
+            let manifest = toml::from_str::<Manifest>(text).unwrap();
+            let process = manifest
+                .processes
+                .iter()
+                .find(|p| p.key == key)
+                .expect("the row");
+            let declared = process.categories.get(Category::Integrals);
+            assert_eq!(declared.tier, Tier::Banked, "{key}");
+            let mut problems = Vec::new();
+            let cell = resolve_cell(process, Category::Integrals, declared, &[], &mut problems);
+            (cell.mark, cell.body, problems.len())
+        };
+        for key in ["pp_to_jj_ht", "pp_to_bb_iht"] {
+            let script = format!("script = \"validation/madgraph/scripts/{key}.mg5\"\n");
+            let base = text.replace(&format!("{script}bundled = false\n"), &script);
+            assert_eq!(base.matches(&script).count(), 1, "{key}");
+            let declared_as = |line: &str| base.replace(&script, &format!("{script}{line}"));
+            assert_eq!(
+                resolve(&declared_as("bundled = false\n"), key),
+                ("⏳", "awaiting the bundle".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as("status = \"planned\"\n"), key),
+                ("⏳", "planned: no reference run yet".to_string(), 0),
+                "{key}"
+            );
+            assert_eq!(
+                resolve(&declared_as(""), key),
+                ("❌", "not measured".to_string(), 1),
+                "{key}"
+            );
         }
     }
 }

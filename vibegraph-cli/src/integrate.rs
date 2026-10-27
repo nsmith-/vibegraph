@@ -10,9 +10,9 @@
 //! * `lpp = 1` (proton beams) — an arbitrary process, PDF-convolved over a
 //!   `(τ, y)` outer map with a per-diagram multichannel inner map pooled across
 //!   the process's flavour groups, one VEGAS grid per `(group, diagram)` channel.
-//!   A card whose lines differ in final-state multiplicity is one such integrand
-//!   per multiplicity, their channels integrated together
-//!   ([`MultiplicitySum`]).
+//!   A card whose lines differ in final-state multiplicity, or in outgoing
+//!   masses, is one such integrand per multiplicity and set of masses, their
+//!   channels integrated together ([`MultiplicitySum`]).
 //! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
 //!   convolution over any final multiplicity, sampled by a resonance-aware
 //!   per-diagram multichannel map whose integral is split channel by channel, one
@@ -31,7 +31,7 @@ use std::path::PathBuf;
 use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{
-    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
+    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
@@ -49,9 +49,10 @@ use vibegraph::multiplicity::{
     MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
+use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
-use vibegraph::proton::{FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
@@ -64,12 +65,6 @@ use crate::error::{err, CliError};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
-use vibegraph::cache::pinned::DEFAULT_PDF_SET;
-
-/// PDF member index (central value; error members are not consumed at LO).
-pub(crate) const PDF_MEMBER: u32 = 0;
-/// Sentinel `pdf_set` recorded in the artifact for a no-PDF (fixed-energy) run.
-pub(crate) const NO_PDF: &str = "none";
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
 
@@ -349,17 +344,6 @@ pub(crate) struct IntegrateArgs {
     #[arg(long)]
     pub(crate) force: bool,
 
-    /// LHAPDF set name (proton beams only).
-    #[arg(long, default_value = DEFAULT_PDF_SET)]
-    pub(crate) pdf_set: String,
-
-    /// Directory containing `<pdf-set>/`; defaults to the first
-    /// `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is
-    /// unset), then the `~/.vibegraph` cache (offering to download the set if
-    /// absent).
-    #[arg(long)]
-    pub(crate) pdf_dir: Option<PathBuf>,
-
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
     /// directory. Unused for the built-in Standard Model.
@@ -424,10 +408,10 @@ pub(crate) struct IntegrateArgs {
     ///
     /// Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is
     /// reproducible under — and to `neyman` under a convergence target, where it
-    /// reaches the same accuracy for roughly half the evaluations on a wide
-    /// multichannel process (`p p > l+ l- j`, 24 channels, 8 seeds: 2.94M
-    /// evaluations against 6.41M at a 0.179% target) and makes no measurable
-    /// difference on a narrow one (`p p > e+ e-`, 4 channels).
+    /// reaches the same accuracy in somewhat fewer evaluations on a multichannel
+    /// process (`p p > l+ l- j`, 6 channels, 20 seeds: 1.49M evaluations against
+    /// 1.58M at a 0.179% target, the same σ) and is the same run on a
+    /// single-channel one (`p p > e+ e-`).
     #[arg(long, value_enum)]
     pub(crate) allocate: Option<Allocation>,
 
@@ -492,22 +476,6 @@ impl IntegrateArgs {
     }
 }
 
-/// Locate and load a PDF set by name, which may mean asking to download it.
-pub(crate) fn load_pdf_set(
-    name: &str,
-    pdf_dir: Option<&PathBuf>,
-    network: NetworkPolicy,
-) -> Result<PdfSet, CliError> {
-    let set_dir =
-        assets::resolve_pdf_set_dir(name, pdf_dir.map(|p| p.as_path()), network).map_err(err)?;
-    PdfSet::load(&set_dir, name).map_err(|e| {
-        err(format!(
-            "cannot load PDF set {name} from {}: {e}",
-            set_dir.display()
-        ))
-    })
-}
-
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
 /// removed. A card that activates a cut no stage applies is refused here, ahead
@@ -568,7 +536,8 @@ struct RunOutput {
     process: String,
     /// What the integral measures: a cross section, or a decay's partial width.
     observable: Observable,
-    pdf_set: String,
+    /// The parton densities the run read.
+    pdf: PdfInput,
     mu_f: f64,
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
@@ -680,7 +649,12 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     info!("model:    {} ({})", model_id.label(), model_id.digest);
     match observable {
         Observable::CrossSection => {
-            info!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
+            if let PdfInput::Lhapdf {
+                lhaid, set, member, ..
+            } = &output.pdf
+            {
+                info!("PDF set:  {set} (member {member}, lhaid {lhaid})");
+            }
             info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
         }
         Observable::PartialWidth => {
@@ -760,8 +734,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         process: output.process,
         proc_card,
         model: model_id,
-        pdf_set: output.pdf_set,
-        pdf_member: PDF_MEMBER,
+        inputs: RunInputs::with_pdf(output.pdf),
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
@@ -804,17 +777,25 @@ fn integrate_proton(
     seed: u64,
     network: NetworkPolicy,
 ) -> Result<RunOutput, CliError> {
-    let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
-    let pdf = set
-        .member(PDF_MEMBER)
-        .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
+    let tiers = assets::pdf_tiers().map_err(err)?;
+    let fetch = assets::pdf_fetch(network);
+    let loaded = load_for_run_card(rc, &tiers, &fetch)
+        .map_err(|e| err(e.to_string()))?
+        .expect("a proton-beam card reads a density or is refused");
+    let LoadedPdf {
+        set,
+        member,
+        input,
+        tier,
+    } = loaded;
+    tracing::debug!(tier = tier.name(), dir = %set.dir().display(), "PDF set located");
 
     integrate_hadronic(
-        args, parsed, model, evaluated, rc, &set, &pdf, process, seed,
+        args, parsed, model, evaluated, rc, &set, &member, input, process, seed,
     )
 }
 
-/// The process numbers (`@N`) of every subprocess of one multiplicity's groups,
+/// The process numbers (`@N`) of every subprocess of one part's groups,
 /// each once, in increasing order.
 pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
     let mut ids: Vec<u32> = groups
@@ -828,7 +809,7 @@ pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
 }
 
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
-/// is split by final-state multiplicity, each multiplicity partitioned into
+/// is split by final-state multiplicity and outgoing masses, each part partitioned into
 /// flavour groups, each group's summed parton-distribution luminosity multiplying
 /// one compiled matrix element, and the pooled per-diagram channels of every
 /// group of every multiplicity are integrated one grid at a time.
@@ -849,10 +830,12 @@ fn integrate_hadronic(
     rc: &RunCard,
     set: &PdfSet,
     pdf: &PdfMember,
+    pdf_input: PdfInput,
     process: String,
     seed: u64,
 ) -> Result<RunOutput, CliError> {
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+    let beams = ProtonBeams::from_run_card(rc);
+    let sqrt_s_had = beams.sqrt_s();
 
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
@@ -876,7 +859,7 @@ fn integrate_hadronic(
             part_amps,
             evaluated,
             pdf,
-            sqrt_s_had,
+            beams,
             rc.dsqrt_q2fact1,
             maps,
         )
@@ -915,7 +898,7 @@ fn integrate_hadronic(
     Ok(RunOutput {
         process,
         observable: Observable::CrossSection,
-        pdf_set: args.pdf_set.clone(),
+        pdf: pdf_input,
         mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
         channels,
@@ -926,7 +909,7 @@ fn integrate_hadronic(
     })
 }
 
-/// Each multiplicity's own cross section, from its channels' terms.
+/// Each part's own cross section, from its channels' terms.
 fn report_multiplicities(
     integ: &MultiplicitySum<'_>,
     groups: &[FlavorGroups],
@@ -939,10 +922,16 @@ fn report_multiplicities(
             .iter()
             .map(|id| format!("@{id}"))
             .collect();
+        let masses: Vec<String> = groups[k].groups()[0]
+            .final_masses()
+            .iter()
+            .map(|m| format!("{m}"))
+            .collect();
         info!(
-            "{} outgoing legs ({}): σ = {:.6} ± {:.6} pb over {} channels",
+            "{} outgoing legs ({}; masses {} GeV): σ = {:.6} ± {:.6} pb over {} channels",
             integ.final_state_count(k),
             ids.join(" "),
+            masses.join(", "),
             part.integral * unit,
             part.std_dev * unit,
             integ.offsets()[k + 1] - integ.offsets()[k],
@@ -1025,7 +1014,7 @@ fn integrate_fixed_energy(
     Ok(RunOutput {
         process,
         observable: initial.observable(),
-        pdf_set: NO_PDF.to_string(),
+        pdf: PdfInput::None,
         // No parton distributions, so no factorisation scale enters the integral.
         mu_f: 0.0,
         sqrt_s,

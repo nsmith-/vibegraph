@@ -56,7 +56,17 @@ that turns on fixed-energy partonic beams:
 
 With no run card at all, a process runs at MadGraph's defaults: 13 TeV
 protons, the default jet and lepton cuts, and the default kT-clustered
-dynamical scale.
+dynamical scale. One default departs from MadGraph's card: the parton
+densities. MadGraph's template says `pdlabel = nn23lo1`, its own built-in
+parameterisation; vibegraph reads densities only from LHAPDF6 grids, so its
+default is `pdlabel = lhapdf` at `lhaid = 247000`, `NNPDF23_lo_as_0130_qed`,
+the set `nn23lo1` is fitted to. A card that omits the lines gets the same. A
+proton card naming `nn23lo1` or any other built-in label is refused, with a
+message that says to set `pdlabel = lhapdf` and an `lhaid`.
+
+The run card alone chooses the PDF: `lhaid` names the set and the member
+(`lhaid` minus the set's first id), found through LHAPDF's `pdfsets.index`.
+`integrate` takes no option for it.
 
 ```bash
 echo 'generate e+ e- > mu+ mu-' > proc_card.dat
@@ -99,7 +109,7 @@ The Standard Model is compiled in. Two kinds of data are resolved on demand:
 
 | Data | Flag | Environment | Cached at | Last |
 |---|---|---|---|---|
-| PDF sets (proton beams) | `--pdf-dir` (`integrate` only) | `$LHAPDF_DATA_PATH`, else `$LHAPATH` | `~/.vibegraph/pdf/<set>/` | a download, with consent |
+| PDF sets (proton beams) | none: the run card's `lhaid` | `$LHAPDF_DATA_PATH`, else `$LHAPATH` | `~/.vibegraph/pdf/<set>/` | a download, with consent |
 | UFO models (non-SM) | `--ufo-dir` | `$VIBEGRAPH_UFO_DIR` | `~/.vibegraph/ufo/<model>/` | the working directory |
 
 The PDF variables are read as LHAPDF reads them: a `:`-separated list of

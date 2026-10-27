@@ -80,22 +80,8 @@ Options:
       --no-network
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
-      --pdf-set <PDF_SET>
-          LHAPDF set name (proton beams only)
-          
-          [default: NNPDF23_lo_as_0130_qed]
-
-      --pdf-dir <PDF_DIR>
-          Directory containing `<pdf-set>/`; defaults to the first `$LHAPDF_DATA_PATH` entry holding the set (`$LHAPATH` when that is unset), then the `~/.vibegraph` cache (offering to download the set if absent)
-
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
-
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
-
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
 
       --neval <NEVAL>
           VEGAS evaluations per adaptation iteration.
@@ -104,23 +90,19 @@ Options:
           
           [default: 120000]
 
-  -q, --quiet
-          Report only warnings and errors
-
-      --log-level <LEVEL>
-          Report at this level, instead of counting `-v`s
-          
-          [possible values: off, error, warn, info, debug, trace]
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
-      --log-file <PATH>
-          Also record every event, at `trace`, to this file.
-          
-          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
+  -q, --quiet
+          Report only warnings and errors
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -134,16 +116,20 @@ Options:
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
+
+      --log-file <PATH>
+          Also record every event, at `trace`, to this file.
+          
+          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
       --min-iters <MIN_ITERS>
           Iterations that must run before the convergence target may stop a run
           
           [default: 6]
-
-      --no-tui
-          Never draw the live status pane; report in plain lines
 
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
@@ -152,15 +138,21 @@ Options:
           
           [default: 500]
 
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
 
+      --no-tui
+          Never draw the live status pane; report in plain lines
+
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
           
-          Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is reproducible under — and to `neyman` under a convergence target, where it reaches the same accuracy for roughly half the evaluations on a wide multichannel process (`p p > l+ l- j`, 24 channels, 8 seeds: 2.94M evaluations against 6.41M at a 0.179% target) and makes no measurable difference on a narrow one (`p p > e+ e-`, 4 channels).
+          Defaults to `by-alpha` under `--fixed-budget` — the split a banked run is reproducible under — and to `neyman` under a convergence target, where it reaches the same accuracy in somewhat fewer evaluations on a multichannel process (`p p > l+ l- j`, 6 channels, 20 seeds: 1.49M evaluations against 1.58M at a 0.179% target, the same σ) and is the same run on a single-channel one (`p p > e+ e-`).
 
           Possible values:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply

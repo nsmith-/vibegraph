@@ -146,8 +146,9 @@ second pointer when there is one incoming particle). `SCALUP` is the larger
 of the card's two factorisation scales and `AQCDUP` is $\alpha_s$ at the
 renormalisation scale, the particle's mass by default — both fixed for every
 event, as MadEvent fixes them. `PDFSUP` is MadEvent's `get_pdf_id(pdlabel)`:
-`247000` for the card's default `nn23lo1` although nothing reads a parton
-density, as on every fixed-energy run. One field differs from MadEvent's file:
+`247000` for a card with no `pdlabel` line (MadGraph's template label is
+`nn23lo1`) although nothing reads a parton density, as on every fixed-energy
+run. One field differs from MadEvent's file:
 MadEvent writes an intermediate resonance of a plain process inside its
 Breit–Wigner window (the $W$ in `t > b e+ ve`) as a status-2 record, which
 this writer does only for [decay chains](#decay-chains).
@@ -193,10 +194,11 @@ integration's relative error on it plus the share's sampling error, and
 (`stochastic-rounding`) run knows the split before its first event only by
 drawing the sample once and replaying it, which it does when there is more
 than one process. A card summing several final-state multiplicities (`@0`, `@1`,
-`@2` of a matched sample) is different: there each multiplicity is integrated as
-its own part and the default strategy normalises every part to its own cross
-section, which unit weights cannot do, so `stochastic-rounding` refuses such a
-card.
+`@2` of a matched sample), or subprocesses with different outgoing masses, is
+different: there each multiplicity, and each set of masses within one, is
+integrated as its own part and the default strategy normalises every part to
+its own cross section, which unit weights cannot do, so `stochastic-rounding`
+refuses such a card.
 
 ## Reweighting
 

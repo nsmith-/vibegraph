@@ -43,8 +43,10 @@
 //! measured from that channel's own completed iterations and capped at
 //! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see [`floor_for_acceptance`] for the cap's
 //! rationale and the cold start. The correction is read from iterations already
-//! finished, never from the draws it sizes, which is what keeps an allocation
-//! uncorrelated with the estimate it weights (see [`ChannelHistory::combine`]).
+//! finished, never from the draws it sizes, so an iteration's count is fixed
+//! before its points exist and its estimate is unbiased whatever count it got.
+//! The counts are still set from earlier outcomes, which is why they never
+//! weight the combination (see [`ChannelHistory::combine`]).
 //!
 //! # Stopping
 //!
@@ -65,9 +67,9 @@
 //!   quoted error but each channel's quoted variance times
 //!   `max(1, emp/quoted)` — the PDG scale-factor treatment, applied where the
 //!   inconsistency lives. `quoted` is the variance the unweighted mean claims,
-//!   `Σnᵢ²σᵢ²/W²`, and `emp` is the variance its iterations actually scatter
-//!   with, `Σnᵢ²(Iᵢ − Ī)²/W² · k/(k − 1)` over `k` kept iterations of `nᵢ`
-//!   points (`W = Σnᵢ`, `Ī` the point-weighted mean). The widened variance is
+//!   `Σσᵢ²/k²`, and `emp` is the variance its iterations actually scatter
+//!   with, `Σ(Iᵢ − Ī)²/k² · k/(k − 1)` over `k` kept iterations (`Ī` their
+//!   plain mean, the estimate the run reports). The widened variance is
 //!   therefore `max(quoted, emp)`: a channel whose iterations disagree by more
 //!   than they claimed is charged its measured scatter, and never more. See
 //!   [`ChannelHistory::stop_scale`].
@@ -199,21 +201,20 @@ pub enum BlockAllocation {
     /// `j`'s own term, floored, recomputed from every completed iteration.
     ///
     /// Re-splitting a *fixed* budget this way is worth almost nothing — a factor
-    /// 1.00–1.22 in variance on `p p > l+ l- j`, 1.000 on the four channels of
-    /// `p p > e+ e-` — because the α-survey has already done that work. What it
-    /// is worth is measured against a *target*, where the channels it feeds are
-    /// the ones whose iterations disagree with themselves: on `p p > l+ l- j` at
-    /// a 0.179% target over 8 seeds it reaches the same accuracy in 2.94M
-    /// evaluations against 6.41M, and the seed-to-seed spread of that spend
-    /// narrows from 2.75M–12.4M to 1.97M–4.26M.
+    /// 1.00–1.22 in variance on `p p > l+ l- j` and 1.000 on `p p > e+ e-`,
+    /// measured when those integrated 24 and 4 channels — because the α-survey
+    /// has already done that work. Against a *target* it is worth a little more:
+    /// on `p p > l+ l- j` (6 channels) at a 0.179% target over 20 paired seeds
+    /// it stops after 1.49M evaluations (1.20M–1.80M) against the α split's 1.58M
+    /// (1.32M–2.04M), fewer on 15 of the 20 seeds (paired t +2.3). The two agree
+    /// on σ (paired difference 0.02 pb, sd 0.41 pb; both +1.1σ from MadEvent's
+    /// seed record), and both scatter as they quote (seed sd over RMS quoted
+    /// error 0.99 and 1.10). On `p p > e+ e-`, one channel, they are the same run.
     ///
-    /// The mechanism is the consistency factor, not the split: a starved
-    /// channel's [`ChannelHistory::stop_scale`] is what widens the error the
-    /// stopping rule reads, so feeding it relaxes the test by more than its own
-    /// variance share ever could. Both arms agree on σ (0.14σ and 0.32σ from
-    /// MadGraph's banked value). These figures were measured with the stopping
-    /// test widening each channel by its per-iteration χ²/dof rather than by the
-    /// pooled factor it reads, and have not been re-measured under it.
+    /// A target is where the split can pay beyond a channel's variance share:
+    /// a starved channel's [`ChannelHistory::stop_scale`] widens the error the
+    /// stopping rule reads, so feeding it can relax the test by more than its
+    /// own variance would.
     Neyman,
 }
 
@@ -401,12 +402,15 @@ struct ChannelHistory {
     alpha: f64,
     /// Points drawn so far — the block's generator position.
     drawn: u64,
-    /// `(integral, variance, neval)` of every iteration past the warm-up, the
-    /// variance exactly as measured. Zero is a value it really takes — an
-    /// iteration all of whose points came back equal, which on a wide split is
-    /// routinely an allocation every point of which failed the cuts — and the
-    /// stopping test needs to see that rather than a floored stand-in.
-    kept: Vec<(f64, f64, usize)>,
+    /// `(integral, variance)` of every iteration past the warm-up, the variance
+    /// exactly as measured. Zero is a value it really takes — an iteration all of
+    /// whose points came back equal, which on a wide split is routinely an
+    /// allocation every point of which failed the cuts — and the stopping test
+    /// needs to see that rather than a floored stand-in.
+    ///
+    /// An iteration's point count is not recorded here: it never enters the
+    /// combination (see [`ChannelHistory::combine`]).
+    kept: Vec<(f64, f64)>,
     /// Running sum of the per-point variances measured by *every* iteration, and
     /// the count behind it: the Neyman input. Warm-up iterations are included
     /// because before the warm-up is over they are the only measurement there is.
@@ -441,7 +445,7 @@ impl ChannelHistory {
         self.point_var_sum += out.point_variance(neval);
         self.point_var_n += 1;
         if keep {
-            self.kept.push((out.integral, out.variance, neval));
+            self.kept.push((out.integral, out.variance));
         }
     }
 
@@ -457,25 +461,28 @@ impl ChannelHistory {
         (self.point_var_n > 0).then(|| (self.point_var_sum / self.point_var_n as f64).sqrt())
     }
 
-    /// This channel's term, combined over its kept iterations.
+    /// This channel's term: its kept iterations combined under `rule` by
+    /// [`combine_iterations`], the arithmetic and the order [`VegasGrid::adapt`]
+    /// combines its own iterations in, whatever number of points each drew.
     ///
-    /// Iterations that drew the same number of points combine under `rule` —
-    /// [`combine_iterations`], the arithmetic and the order
-    /// [`VegasGrid::adapt`] combines its own iterations in, so a fixed budget's
-    /// channel terms are those of independent per-channel adaptations.
+    /// The point counts are not weights. Every count is fixed before its
+    /// iteration's points exist, so each iteration's estimate is unbiased
+    /// whatever count it got, and so is their plain mean. A mean weighted by the
+    /// counts is not, because the counts after an iteration are set from what it
+    /// measured: a Neyman split feeds a channel whose per-point spread a tail
+    /// point has just inflated, and a floor re-read from the measured acceptance
+    /// moves with the points an iteration kept. The iterations after a tail point
+    /// then outweigh it, and the weighted mean, its quoted error and its seed
+    /// spread all come out small. Measured on `b b~ > c c~ e+ e- mu+ mu-`, 615
+    /// channels, 20 paired seeds at 600k and 1.2M points an iteration: under
+    /// Neyman the count-weighted mean sat 0.10% and 0.14% of σ below the α split
+    /// (paired t −2.4, −2.8); the plain mean of the same iterations sits 0.02%
+    /// below it (t −0.3, −0.2).
     ///
-    /// Iterations that drew *different* numbers are averaged weighted by their
-    /// point counts. Those weights are what Lepage's are not: an iteration's
-    /// point count is decided before any of its points exist, so it cannot
-    /// correlate with the estimate it weights, which is the correlation that
-    /// makes the `1/σ²` rule biased. What survives is a weaker dependence — a
-    /// count is chosen from *earlier* iterations' variances, and those are
-    /// correlated with earlier iterations' estimates. Bounding it needs a
-    /// measurement rather than an argument: over 8 seeds at four
-    /// process/target settings, this weighted mean and the plain unweighted one
-    /// (which is what a fixed split takes, its counts never varying) differ by
-    /// 0.26–0.40 σ with no common sign — no bias at the 0.02–0.04% these
-    /// resolve.
+    /// Weights fixed before the run draws anything would be as unbiased as equal
+    /// ones, but an iteration's budget is the same `neval` every iteration, so
+    /// any such weight a channel could be given (its α share, say) is one
+    /// number for all of its iterations and the weighted mean is the plain one.
     fn combine(&self, rule: IterationCombination) -> VegasResult {
         Self::combine_kept(&self.kept, rule)
     }
@@ -485,37 +492,12 @@ impl ChannelHistory {
     /// which is what keeps a zero-variance iteration from dividing the χ² sum by
     /// nothing; the floor makes that term enormous instead of undefined, so a
     /// caller that cares about the difference filters before it calls.
-    fn combine_kept(kept: &[(f64, f64, usize)], rule: IterationCombination) -> VegasResult {
-        let uniform = kept
-            .first()
-            .is_some_and(|&(_, _, n0)| kept.iter().all(|&(_, _, n)| n == n0));
-        if uniform {
-            let pairs: Vec<(f64, f64)> = kept
-                .iter()
-                .map(|&(i, v, _)| (i, v.max(f64::MIN_POSITIVE)))
-                .collect();
-            return combine_iterations(&pairs, rule);
-        }
-        let wtot: f64 = kept.iter().map(|&(_, _, n)| n as f64).sum();
-        let integral: f64 = kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / wtot;
-        let var: f64 = kept
+    fn combine_kept(kept: &[(f64, f64)], rule: IterationCombination) -> VegasResult {
+        let pairs: Vec<(f64, f64)> = kept
             .iter()
-            .map(|&(_, v, n)| v.max(f64::MIN_POSITIVE) * (n as f64) * (n as f64))
-            .sum::<f64>()
-            / (wtot * wtot);
-        let chi2_per_dof = if kept.len() > 1 {
-            kept.iter()
-                .map(|&(i, v, _)| (i - integral).powi(2) / v.max(f64::MIN_POSITIVE))
-                .sum::<f64>()
-                / (kept.len() - 1) as f64
-        } else {
-            0.0
-        };
-        VegasResult {
-            integral,
-            std_dev: var.sqrt(),
-            chi2_per_dof,
-        }
+            .map(|&(i, v)| (i, v.max(f64::MIN_POSITIVE)))
+            .collect();
+        combine_iterations(&pairs, rule)
     }
 
     /// The iteration-consistency scale factor the stopping test widens this
@@ -526,40 +508,32 @@ impl ChannelHistory {
     }
 }
 
-/// `max(1, emp/quoted)` for the point-weighted mean of `kept`'s
-/// `(integral, variance, neval)` iterations.
+/// `max(1, emp/quoted)` for the plain mean of `kept`'s `(integral, variance)`
+/// iterations, the estimate [`ChannelHistory::combine_kept`] reports.
 ///
-/// `quoted = Σnᵢ²σᵢ²/W²` is the variance the mean claims, with every σᵢ² floored
+/// `quoted = Σσᵢ²/k²` is the variance the mean claims, with every σᵢ² floored
 /// at [`f64::MIN_POSITIVE`] as [`ChannelHistory::combine_kept`] floors it, and
-/// `emp = Σnᵢ²(Iᵢ − Ī)²/W² · k/(k − 1)` the variance its `k` iterations scatter
-/// with. On iterations of equal size the two are the empirical and the quoted
-/// variance of the plain mean, and at `k = 2` the factor is
-/// `(I₁ − I₂)²/(σ₁² + σ₂²)`, the one-degree-of-freedom χ². Fewer than two
-/// iterations have no scatter to measure and get no factor.
+/// `emp = Σ(Iᵢ − Ī)²/k² · k/(k − 1)` the variance its `k` iterations scatter
+/// with. At `k = 2` the factor is `(I₁ − I₂)²/(σ₁² + σ₂²)`, the
+/// one-degree-of-freedom χ². Fewer than two iterations have no scatter to
+/// measure and get no factor.
 ///
 /// The factor multiplies the quoted variance, so the widened variance is
 /// `max(quoted, emp)`: it measures the estimator the run reports, not each
-/// iteration against its own error bar. The weights are the point counts, which
-/// an allocation fixes before the iteration's points exist (see
-/// [`ChannelHistory::combine`]).
-fn pooled_scale(kept: &[(f64, f64, usize)]) -> f64 {
+/// iteration against its own error bar.
+fn pooled_scale(kept: &[(f64, f64)]) -> f64 {
     let k = kept.len();
     if k < 2 {
         return 1.0;
     }
-    let w: f64 = kept.iter().map(|&(_, _, n)| n as f64).sum();
-    let mean: f64 = kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / w;
+    let kf = k as f64;
+    let mean: f64 = kept.iter().map(|&(i, _)| i).sum::<f64>() / kf;
     let quoted: f64 = kept
         .iter()
-        .map(|&(_, v, n)| v.max(f64::MIN_POSITIVE) * (n as f64) * (n as f64))
+        .map(|&(_, v)| v.max(f64::MIN_POSITIVE))
         .sum::<f64>()
-        / (w * w);
-    let emp: f64 = kept
-        .iter()
-        .map(|&(i, _, n)| (n as f64) * (n as f64) * (i - mean).powi(2))
-        .sum::<f64>()
-        / (w * w)
-        * k as f64
+        / (kf * kf);
+    let emp: f64 = kept.iter().map(|&(i, _)| (i - mean).powi(2)).sum::<f64>() / (kf * kf) * kf
         / (k - 1) as f64;
     (emp / quoted).max(1.0)
 }
@@ -935,7 +909,7 @@ where
         floor_capped_channels,
         zero_variance_iterations: channels
             .iter()
-            .map(|c| c.kept.iter().filter(|&&(_, v, _)| v == 0.0).count())
+            .map(|c| c.kept.iter().filter(|&&(_, v)| v == 0.0).count())
             .sum(),
     };
     (per_channel, total, report)
@@ -1312,7 +1286,7 @@ pub(crate) fn sequential_channel_reference(
     let mut n_j = share.max(MIN_CHANNEL_NEVAL);
     let mut drawn = 0_u64;
     let mut accepted = 0_u64;
-    let mut kept: Vec<(f64, usize)> = Vec::new();
+    let mut kept: Vec<f64> = Vec::new();
     let mut last = n_j;
     for iteration in 0..niter {
         let (integral, _, hist) = grid.adapt_iteration(
@@ -1328,7 +1302,7 @@ pub(crate) fn sequential_channel_reference(
         );
         drawn += n_j as u64;
         if iteration >= warmup {
-            kept.push((integral, n_j));
+            kept.push(integral);
         }
         if iteration + 1 < niter {
             grid.refine_grid(&hist, n_j);
@@ -1336,13 +1310,7 @@ pub(crate) fn sequential_channel_reference(
         last = n_j;
         n_j = share.max(floor_for_acceptance(Some(accepted as f64 / drawn as f64)));
     }
-    let uniform = kept.iter().all(|&(_, n)| n == kept[0].1);
-    let integral = if uniform {
-        kept.iter().map(|&(i, _)| i).sum::<f64>() / kept.len() as f64
-    } else {
-        let wtot: f64 = kept.iter().map(|&(_, n)| n as f64).sum();
-        kept.iter().map(|&(i, n)| i * n as f64).sum::<f64>() / wtot
-    };
+    let integral = kept.iter().sum::<f64>() / kept.len() as f64;
     (integral, last)
 }
 
@@ -1496,10 +1464,7 @@ mod tests {
         ChannelHistory {
             alpha: 1.0,
             drawn: 0,
-            kept: kept
-                .iter()
-                .map(|&(i, v)| (i, v, MIN_CHANNEL_NEVAL))
-                .collect(),
+            kept: kept.to_vec(),
             point_var_sum: 0.0,
             point_var_n: 0,
             accepted: 0,
@@ -1545,28 +1510,102 @@ mod tests {
         );
     }
 
-    /// Iterations of different sizes are weighted by their point counts, in the
-    /// mean, in both variances and in nothing else.
+    /// An iteration of `integral` and `variance` over `neval` points, as
+    /// [`adapt_blocks_iteration`] reports one.
+    fn iteration(integral: f64, variance: f64, neval: usize) -> BlockIteration {
+        BlockIteration {
+            integral,
+            variance,
+            accepted: neval,
+            hist: Vec::new(),
+        }
+    }
+
+    /// Iterations of different sizes combine as their plain mean, in the
+    /// estimate, in its quoted variance and in the scatter the stop scale
+    /// compares it with: the point counts enter none of them.
     #[test]
-    fn unequal_iterations_are_weighted_by_their_point_counts() {
-        let kept = vec![(1.0, 0.01, 100), (2.0, 0.02, 300)];
-        let h = ChannelHistory {
-            alpha: 1.0,
-            drawn: 0,
-            kept,
-            point_var_sum: 0.0,
-            point_var_n: 0,
-            accepted: 0,
-        };
-        let w = 400.0_f64;
-        let mean = (100.0 + 600.0) / w;
-        let emp = (100.0_f64.powi(2) * (1.0 - mean).powi(2)
-            + 300.0_f64.powi(2) * (2.0 - mean).powi(2))
-            / (w * w)
-            * 2.0;
-        let quoted = (100.0_f64.powi(2) * 0.01 + 300.0_f64.powi(2) * 0.02) / (w * w);
+    fn unequal_iterations_combine_as_their_plain_mean() {
+        let mut h = history(&[]);
+        h.record(&iteration(1.0, 0.01, 100), 100, true);
+        h.record(&iteration(2.0, 0.02, 300), 300, true);
+        let r = h.combine(IterationCombination::Unweighted);
+        assert_eq!(r.integral, 1.5);
+        let quoted = (0.01 + 0.02) / 4.0;
         assert!((quoted_variance(&h) / quoted - 1.0).abs() < 1e-12);
+        let emp = (0.25 + 0.25) / 4.0 * 2.0;
         assert!((h.stop_scale() / (emp / quoted) - 1.0).abs() < 1e-12);
+        assert!((quoted_variance(&h) * h.stop_scale() / emp - 1.0).abs() < 1e-12);
+    }
+
+    /// Point counts set from the channel's own earlier iterations do not bias
+    /// its term.
+    ///
+    /// A heavy-tailed channel — Pareto points of mean 1 and tail index 2.2,
+    /// near the 2 the σ-carrying channels' weights show — draws each
+    /// iteration's count in proportion to the per-point spread its iterations
+    /// have measured so far, as a Neyman split does. A tail point inflates that
+    /// spread, the iterations after it draw more points, and a mean weighted by
+    /// the counts lets them outweigh it: over 4000 seeds that mean reads many of
+    /// its standard errors below 1. The term the history reports must not.
+    #[test]
+    fn counts_set_from_earlier_variances_do_not_bias_the_term() {
+        use rand::{Rng, SeedableRng};
+        const TAIL_INDEX: f64 = 2.2;
+        const SEEDS: usize = 4000;
+        const ITERATIONS: usize = 8;
+        const WARMUP: usize = 2;
+        let scale = (TAIL_INDEX - 1.0) / TAIL_INDEX;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_C1);
+        let mut terms = Vec::with_capacity(SEEDS);
+        let mut count_weighted = Vec::with_capacity(SEEDS);
+        for _ in 0..SEEDS {
+            let mut h = history(&[]);
+            let mut counts = Vec::new();
+            for it in 0..ITERATIONS {
+                let n = match h.point_sd() {
+                    None => 64,
+                    Some(sd) => ((128.0 * sd).round() as usize).clamp(16, 1024),
+                };
+                let xs: Vec<f64> = (0..n)
+                    .map(|_| scale / (1.0 - rng.random::<f64>()).powf(1.0 / TAIL_INDEX))
+                    .collect();
+                let mean = xs.iter().sum::<f64>() / n as f64;
+                let point_var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+                let keep = it >= WARMUP;
+                h.record(&iteration(mean, point_var / n as f64, n), n, keep);
+                if keep {
+                    counts.push(n as f64);
+                }
+            }
+            terms.push(h.combine(IterationCombination::Unweighted).integral);
+            count_weighted.push(
+                h.kept
+                    .iter()
+                    .zip(&counts)
+                    .map(|(k, &n)| k.0 * n)
+                    .sum::<f64>()
+                    / counts.iter().sum::<f64>(),
+            );
+        }
+        let pull = |x: &[f64]| {
+            let n = x.len() as f64;
+            let mean = x.iter().sum::<f64>() / n;
+            let var = x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+            (mean - 1.0) / (var / n).sqrt()
+        };
+        let weighted_pull = pull(&count_weighted);
+        assert!(
+            weighted_pull < -5.0,
+            "the toy does not reproduce the bias it guards against: the count-weighted \
+             mean is {weighted_pull:+.1} standard errors from the truth"
+        );
+        let term_pull = pull(&terms);
+        assert!(
+            term_pull.abs() < 4.0,
+            "the channel term is {term_pull:+.1} standard errors from the truth (the \
+             count-weighted mean: {weighted_pull:+.1})"
+        );
     }
 
     /// An iteration whose points all came back equal measured no error bar, and
@@ -1603,12 +1642,8 @@ mod tests {
     /// against: χ²/dof over the iterations that measured a variance, each
     /// residual over that iteration's own σᵢ².
     fn chi2_scale(h: &ChannelHistory) -> f64 {
-        let informative: Vec<(f64, f64, usize)> = h
-            .kept
-            .iter()
-            .copied()
-            .filter(|&(_, v, _)| v > 0.0)
-            .collect();
+        let informative: Vec<(f64, f64)> =
+            h.kept.iter().copied().filter(|&(_, v)| v > 0.0).collect();
         if informative.len() < 2 {
             return 1.0;
         }
@@ -1651,15 +1686,13 @@ mod tests {
         let (mut chi2_stop, mut pooled_stop) = (None, None);
         for k in 0..max_kept {
             let z = Z[k % Z.len()];
-            channels[0]
-                .kept
-                .push((1.0 + 3.0e-3 * z, 9.0e-6, MIN_CHANNEL_NEVAL));
+            channels[0].kept.push((1.0 + 3.0e-3 * z, 9.0e-6));
             let spike = if k == 2 {
                 (1.0e-3 + 1.0e-2, 1.0e-4)
             } else {
                 (1.0e-3 * (1.0 + 1.0e-2 * Z[(k + 3) % Z.len()]), 1.0e-10)
             };
-            channels[1].kept.push((spike.0, spike.1, MIN_CHANNEL_NEVAL));
+            channels[1].kept.push(spike);
             if k + 1 < min_kept {
                 continue;
             }

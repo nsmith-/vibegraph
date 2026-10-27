@@ -35,7 +35,7 @@ return `Located { dir, source, found }`:
 
 | step | PDF set | UFO model | existence checked? |
 |---|---|---|---|
-| 1. flag | `--pdf-dir <base>` → `<base>/<name>/` (`integrate` only) | `--ufo-dir <base>` → `<base>/<name>/` | reported, never blocks: an explicit path is returned even if absent |
+| 1. flag | none: the run card's `lhaid` names the set, and no option points at it | `--ufo-dir <base>` → `<base>/<name>/` | reported, never blocks: an explicit path is returned even if absent |
 | 2. env | each entry of `$LHAPDF_DATA_PATH`, else of `$LHAPATH`, → `<entry>/<name>/` | `$VIBEGRAPH_UFO_DIR/<name>/` | PDF: the first entry holding the set, a miss passes to the next entry and then the cache; UFO: as the flag |
 | 3. cache | `<root>/pdf/<name>/` | `<root>/ufo/<name>/` | taken only if the directory exists |
 | 4. last | a download, with consent (below) | `./<name>/` (the cwd) | UFO: taken only if it exists |
@@ -82,7 +82,7 @@ Why the set is fetched rather than embedded is
 [the pinned PDF set](../scales-pdf/pinned-pdf-set.md).
 
 **The pin binds only on the cache step.** `assets::resolve_pdf_set_dir` returns
-a set reached through `--pdf-dir` or the LHAPDF data path as found, with no checksum check: those name data the caller points at
+a set reached through the LHAPDF data path (or CVMFS) as found, with no checksum check: those name data the caller points at
 deliberately, and that is also what keeps sets with no pin usable at all. The
 cache step is the only one that decides on the user's behalf what a bare set
 name means, so there the pin is authoritative:

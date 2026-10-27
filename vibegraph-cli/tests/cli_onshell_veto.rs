@@ -40,6 +40,8 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
+use common::PdfDataPath;
+
 /// Integration seeds per row.
 const SEEDS: [u64; 5] = [11, 22, 33, 44, 55];
 
@@ -133,6 +135,12 @@ fn parse_result(stdout: &str) -> (f64, f64) {
     (fields[2].parse().unwrap(), fields[4].parse().unwrap())
 }
 
+/// The fetched PDF sets, on `$LHAPDF_DATA_PATH` for every row: a proton row
+/// reads its set there, and a fixed-energy row reads none.
+fn pdf_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
+}
+
 fn integrate(dir: &Path, name: &str, row: &Row, seed: u64, extra: &[&str]) -> (f64, f64) {
     let proc_card = dir.join(format!("{name}_proc_card.dat"));
     std::fs::write(
@@ -142,6 +150,7 @@ fn integrate(dir: &Path, name: &str, row: &Row, seed: u64, extra: &[&str]) -> (f
     .unwrap();
     let card = run_card(dir, name, row);
     let output = common::vibegraph(dir, dir)
+        .pdf_data_path(pdf_dir())
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -278,10 +287,6 @@ fn a_decay_with_the_w_window_vetoed_matches_madevent() {
 mod heavy {
     use super::*;
 
-    fn pdf_dir() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
-    }
-
     /// Both top windows zeroed pointwise in a `2 → 4` final state at fixed
     /// energy. **Informational**: MadGraph 3.7.1 writes the `P1D` form of a
     /// fermion propagator computed from its second spinor slot (`FFV2P1D_1`, the
@@ -317,11 +322,6 @@ mod heavy {
     fn drell_yan_with_the_z_window_vetoed_matches_madevent() {
         let tmp = tempfile::tempdir().unwrap();
         known_wrong("pp_z", "pp_full");
-        let pdf = pdf_dir();
-        check_row(
-            tmp.path(),
-            "pp_z",
-            &["--target-rel", "1e-3", "--pdf-dir", pdf.to_str().unwrap()],
-        );
+        check_row(tmp.path(), "pp_z", &["--target-rel", "1e-3"]);
     }
 }
