@@ -6,6 +6,10 @@
 
 * [event_norm = sum and unity are consumed](sprint.md) - A run card's event_norm = sum or unity is honoured: generate writes XWGTUP and IDWTUP with MadGraph's normalisation for that setting, and σ is unchanged.
 
+## Sprint Record
+
+* [event_norm = sum and unity in the written events](closeout.md) - generate honours event_norm: sum writes IDWTUP -3 with weights summing to σ, unity IDWTUP -3 with unit weights, average is unchanged; pinned per event against two banked MadEvent samples, and MadGraph's own unity path crashes.
+
 ## Directories
 
 * [sessions](sessions/index.md)

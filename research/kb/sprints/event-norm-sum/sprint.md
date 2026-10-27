@@ -3,7 +3,7 @@ type: Sprint
 title: "event_norm = sum and unity are consumed"
 description: "A run card's event_norm = sum or unity is honoured: generate writes XWGTUP and IDWTUP with MadGraph's normalisation for that setting, and σ is unchanged."
 status: draft
-active: true
+active: false
 tags: [lhef, runcard, event-weights, cms, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

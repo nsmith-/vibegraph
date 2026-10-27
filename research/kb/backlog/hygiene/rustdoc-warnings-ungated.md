@@ -15,6 +15,6 @@ sources:
   - {id: f-c-report, resource: "../../sprints/hygiene/sessions/F-C-report.md", title: "F-C report (hygiene sprint)"}
   - {id: f-g2-report, resource: "../../sprints/hygiene/sessions/F-G2-report.md", title: "F-G2 report (hygiene sprint)"}
 ---
-Remaining sites: `coupling/cluster/configs.rs:4`, `phasespace/channel.rs` (`ScaledChannel::ndim`), `coupling/alphas.rs`, `coupling/scales.rs` ×2, `ufo/parameters.rs`, `lhef/mod.rs` ×2, `vibegraph-cli/src/assets.rs:5` (F-B Found 3, F-C Found 5, F-G2 Found 10).
+Remaining sites: `coupling/cluster/configs.rs:4`, `phasespace/channel.rs` (`ScaledChannel::ndim`), `coupling/alphas.rs`, `coupling/scales.rs` ×2, `ufo/parameters.rs`, `lhef/mod.rs` ×2, (F-B Found 3, F-C Found 5, F-G2 Found 10).
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [F-B](../../sprints/hygiene/sessions/F-B-report.md), [F-C](../../sprints/hygiene/sessions/F-C-report.md), [F-G2](../../sprints/hygiene/sessions/F-G2-report.md).

@@ -6,6 +6,10 @@
 
 * [The run card picks the PDF set and member](sprint.md) - integrate and generate take no PDF option: lhaid/pdlabel choose set and member, looked up through LHAPDF_DATA_PATH, CVMFS, the cache, then a consented download, and the artifact records them with a checksum.
 
+## Sprint Record
+
+* [The run card picks the PDF set and member](closeout.md) - lhaid resolves set and member through pdfsets.index over four tiers; built-in pdlabels are refused on proton beams; artifact v14 records per-file SHA-256; pp_to_ll rebanked on lhapdf/247000 (+0.008 %); refdata-11 pinned.
+
 ## Directories
 
 * [sessions](sessions/index.md)

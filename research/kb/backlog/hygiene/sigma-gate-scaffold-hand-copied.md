@@ -16,4 +16,10 @@ sources:
 ---
 R-G2.11–.13. F-G2's remaining inline fallback checks belong here too (F-G2 Found 9).
 
+The σ gates also fill `IntegralsRow` field by field with hand-written pulls
+beside `SeedMean::pull` (7 `row.pull =` sites in `validate_hadronic.rs`, 1 in
+`validate_sigma.rs`; [flavour-mixed-masses HY1](../../sprints/flavour-mixed-masses/sessions/HY1-report.md)).
+An `IntegralsRow` built from a `SeedMean`, the reference and the gate's bounds
+would close both.
+
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-G2](../../sprints/hygiene/sessions/R-G2-report.md), [F-G2](../../sprints/hygiene/sessions/F-G2-report.md).

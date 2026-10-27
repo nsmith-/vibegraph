@@ -83,7 +83,7 @@ sessions' own. The banked-layer evidence is this PR's CI.
 - [pp-to-bb-sigma-high-on-seeded-refs](../../backlog/validation/pp-to-bb-sigma-high-on-seeded-refs.md)
 - [validated-ew-awaits-refdata-11](../../backlog/validation/validated-ew-awaits-refdata-11.md)
 - [sigma-pulls-tool-follow-ups](../../backlog/hygiene/sigma-pulls-tool-follow-ups.md)
-- [validate-sh-stops-at-first-failed-suite](../../backlog/hygiene/validate-sh-stops-at-first-failed-suite.md)
+- `validate-sh-stops-at-first-failed-suite` (closed in the sprint D closeout)
 - [sigma-docs-stale-costs-and-report-column](../../backlog/hygiene/sigma-docs-stale-costs-and-report-column.md)
 - [probe-scatter-reads-low-pp-to-bb-qcd2](../../backlog/validation/probe-scatter-reads-low-pp-to-bb-qcd2.md)
 - [ll-0j2j-mlm-sigma-gate-cost](../../backlog/performance/ll-0j2j-mlm-sigma-gate-cost.md)

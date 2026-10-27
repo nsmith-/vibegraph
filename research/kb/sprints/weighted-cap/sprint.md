@@ -3,7 +3,7 @@ type: Sprint
 title: "The automatic WEIGHTED search reaches MadGraph's cap"
 description: "With no explicit orders, the lowest-WEIGHTED search runs up to (n_ext−2) × the largest WEIGHTED of any model interaction, as MadGraph's does, so a QED+NP vertex's diagrams are found."
 status: draft
-active: true
+active: false
 tags: [diagrams, coupling-orders, weighted, madgraph-parity, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---
