@@ -3,7 +3,7 @@ type: Sprint
 title: "Proton runs with unequal beam energies"
 description: "A proton run with unequal beams uses √s = 2√(E1E2), partons at x_i·E_i and MadGraph's cm_rap boost, bit-identical for equal beams, pinned by a unit test and a banked unequal-beam MadGraph σ row."
 status: draft
-active: true
+active: false
 tags: [beams, kinematics, proton, madgraph-parity, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-21}
 ---

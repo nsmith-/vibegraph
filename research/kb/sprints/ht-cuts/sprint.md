@@ -3,7 +3,7 @@ type: Sprint
 title: "ht-cuts"
 description: "Compile MadGraph's HT cuts (htjmin, htjmax, ihtmin, ihtmax) instead of refusing them, matching cuts.f's definitions, with σ validated on an HT-binned card."
 status: draft
-active: true
+active: false
 tags: [cuts, ht, runcard, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-22}
 ---
