@@ -56,6 +56,7 @@
 * [sigma-ttx-mlm-at1](sigma-ttx-mlm-at1/index.md)
 * [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
+* [systematics](systematics/index.md)
 * [two-to-six-gate](two-to-six-gate/index.md)
 * [ufo-conditional-params](ufo-conditional-params/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
