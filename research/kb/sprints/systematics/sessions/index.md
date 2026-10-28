@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [S-D1: design the systematics weights](S-D1.md) - Design only: the typed request and artifact version 15, the per-event weight calculation mirroring MadGraph's systematics.py, the exact header and <rwgt>/<mgrwt> format, PDF loading at scale, refusals, migration, gates and the M3 banking request.
+
+## Session Report
+
+* [S-D1 report: the systematics weights designed](S-D1-report.md) - The design concept events/systematics-weights.md; MadGraph's own write_banner reproduces the banked header byte for byte and a get_lo_wgt prototype every one of 17.4M banked weights at MadGraph's printed digits; the controls' blind spots; the nominal-first crash that shapes M3; open choices O1-O12, brief corrections and Found.
