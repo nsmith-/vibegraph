@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [T-F1: build the peripheral spine without a single-leg pT cut](T-F1.md) - Separate the pole floor (always on, from a fixed default scale) from the support bound (only from a provable pT floor), build the spine for every final state, and measure bias and variance before any σ gate.
+* [T-V1: version bump, then is the CMS VBF σ well defined?](T-V1.md) - Bump the artifact version for the new channel maps; re-run mutation M1; then measure whether the three CMS cards' σ is regulated (ptj = 0, etaj = -1) on both vibegraph's and MadGraph's side, before any ladder.
 
 ## Session Report
 
