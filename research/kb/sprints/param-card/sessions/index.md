@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [P-F1: integrate --param-card and the recorded parameter point](P-F1.md) - integrate --param-card binds through from_model_card and fills inputs.params; generate rebinds from it; reweight denominators at the recorded point; refusals for Auto widths, revived zeroed parameters and split merged pairs; <slha> header block.
+
+## Session Report
+
+* [P-F1 report: integrate --param-card and the recorded parameter point](P-F1-report.md) - integrate --param-card binds through ufo::bind::bind_card and records the moved externals; generate rebinds from the record (bit-identical to integrate's evaluation); reweight denominators at the recorded point; refusals for Auto widths, revived zeros, split merges and unknown entries; dependent masses ignored with a warning; the <slha> header block in MadGraph's layout; ymt = 250 informational σ.
