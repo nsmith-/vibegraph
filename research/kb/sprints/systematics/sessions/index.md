@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [S-D1: design the systematics weights](S-D1.md) - Design only: the typed request and artifact version 15, the per-event weight calculation mirroring MadGraph's systematics.py, the exact header and <rwgt>/<mgrwt> format, PDF loading at scale, refusals, migration, gates and the M3 banking request.
+* [S-F1: systematics weights for unmatched events](S-F1.md) - Implement the approved design's S-F1 scope: the typed request at artifact version 15, the PDF member metadata cascade, the weight function and record, MadGraph's exact header and weight format, and the per-event gate on the twelve banked runs.
 
 ## Session Report
 
