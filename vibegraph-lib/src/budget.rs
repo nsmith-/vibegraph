@@ -194,6 +194,13 @@ pub enum ChannelFloor {
     /// `MAX_FLOOR_ACCEPTANCE_SCALE × n_channels` times the scaled floor on top of
     /// the α shares. The floor is still read from the acceptance of iterations
     /// already complete and the budget, never from the draws it sizes.
+    ///
+    /// Reaching the floored channels is not the same as reducing the error. On
+    /// `bbx_to_ccx_emmm_qcd0` at 1 200 000 over 20 paired seeds this rule draws
+    /// 1.48 times the fixed floor's points and leaves the seed spread where the
+    /// fixed floor leaves it (sd 3.41e-9 pb against 3.34e-9 pb): the ~570
+    /// floored channels carry about 2% of that run's quoted variance, and its
+    /// excursions come from channels sized by their α share.
     ScalesWithBudget,
 }
 
