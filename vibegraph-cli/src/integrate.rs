@@ -344,8 +344,9 @@ pub(crate) struct IntegrateArgs {
     /// defaults under its restriction. The artifact records every parameter
     /// the card moves, and `generate` evaluates at those values. Refused: a
     /// width given as `Auto`, a non-zero value for a parameter the restriction
-    /// fixed to zero, a move that splits parameters the restriction merged,
-    /// and an entry the model has no parameter for. A mass or width the model
+    /// fixed to zero, a value other than one for a parameter it fixed to one, a
+    /// move that splits parameters the restriction merged, and an entry the
+    /// model has no parameter for. A mass or width the model
     /// computes (MW in the SM) is ignored, with a warning when it disagrees.
     #[arg(long)]
     pub(crate) param_card: Option<PathBuf>,

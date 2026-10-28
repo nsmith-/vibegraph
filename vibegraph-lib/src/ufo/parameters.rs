@@ -77,6 +77,14 @@ pub struct ParameterSet {
     /// already covers, so it is left out of the serialized form.
     #[serde(skip)]
     pub(crate) merged: Vec<MergedGroup>,
+    /// External parameters a restriction leaves at exactly one. MadGraph's
+    /// restriction fixes them (`detect_special_parameters` and
+    /// `fix_parameter_values` in `import_ufo.py`, with a `one` rule in the
+    /// process's `param_card_rule.dat` that `check_param_card` holds a card to),
+    /// so a card must leave them at one. Derived from the restricted defaults,
+    /// as [`merged`](Self::merged) is, and left out of the serialized form.
+    #[serde(skip)]
+    pub(crate) ones: BTreeSet<String>,
 }
 
 impl ParameterSet {
@@ -144,6 +152,11 @@ impl ParameterSet {
     /// evaluate a vertex set that no longer matches the couplings. Non-zero values
     /// are defaults and stay overridable, which is what makes the generated
     /// `param_card.dat` an editable card rather than a transcript.
+    ///
+    /// The externals the restriction leaves at exactly one are recorded in
+    /// [`ones`](Self::ones), and the groups it merges in
+    /// [`merged`](Self::merged): a card binding refuses a move of either
+    /// (`ufo::bind`), as MadGraph's `param_card_rule.dat` does.
     pub(crate) fn apply_restrict(&mut self, card: &ParamCard) {
         for p in &mut self.externals {
             if let ParamNature::External {
@@ -161,6 +174,14 @@ impl ParameterSet {
             }
         }
         self.merged = self.identical_externals();
+        self.ones = self
+            .externals
+            .iter()
+            .filter(|p| {
+                matches!(p.nature, ParamNature::External { default_value, .. } if default_value == 1.0)
+            })
+            .map(|p| p.name.clone())
+            .collect();
     }
 
     /// The externals MadGraph's restriction merges
@@ -329,6 +350,7 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
         rdeps,
         zeros: BTreeSet::new(),
         merged: Vec::new(),
+        ones: BTreeSet::new(),
     })
 }
 

@@ -12,6 +12,9 @@
 //! * A non-zero value for a parameter the restriction fixed to zero is refused:
 //!   the restriction also pruned the vertices that parameter feeds, so the
 //!   model could not honour it.
+//! * A value other than one for a parameter the restriction leaves at exactly
+//!   one is refused: MadGraph fixes such a parameter at import and its
+//!   `param_card_rule.dat` holds every card to it.
 //! * Moving one parameter of a group the restriction merged
 //!   ([`ParameterSet::merged`](super::parameters::ParameterSet)) without the
 //!   others is refused: MadGraph evaluates the others as the group's first.
@@ -53,6 +56,17 @@ pub enum CardError {
          keeps {name} free, or leave it at zero"
     )]
     RevivesZeroed {
+        name: String,
+        block: String,
+        code: String,
+        value: f64,
+    },
+    #[error(
+        "the card sets {name} (block {block}, code {code}) to {value:e}, but the model's \
+         restriction fixes it to one, as MadGraph's restriction does, and MadGraph refuses a \
+         card that moves it; use a restriction that keeps {name} free, or leave it at one"
+    )]
+    MovesFixedOne {
         name: String,
         block: String,
         code: String,
@@ -259,9 +273,17 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
                     value,
                 });
             }
+            if model.params.ones.contains(name) && value != 1.0 {
+                return Err(CardError::MovesFixedOne {
+                    name: name.to_string(),
+                    block: block.to_string(),
+                    code: code_text(code),
+                    value,
+                });
+            }
             continue;
         }
-        if block == "qnumbers" {
+        if block == "qnumbers" || block.starts_with("qnumbers ") {
             continue;
         }
         let dependent = match (block, code) {
@@ -331,7 +353,9 @@ pub fn bind_recorded(
     for p in params {
         let free = matches!(
             external_at(&model, &p.block, &p.code),
-            Some((name, _)) if name == p.name && !model.params.zeros.contains(name)
+            Some((name, _)) if name == p.name
+                && !model.params.zeros.contains(name)
+                && !model.params.ones.contains(name)
         );
         if !free {
             return Err(CardError::NotRecordable {
@@ -506,6 +530,9 @@ mod tests {
         }
         // A new state's quantum numbers are not parameters.
         assert!(bind("Block QNUMBERS 9000005 # x\n 1 0\n 2 1\n").is_ok());
+        assert!(
+            bind("Block QNUMBERS 9000005 # x\n 1 0\nBlock QNUMBERS 9000006 # y\n 1 3\n").is_ok()
+        );
     }
 
     #[test]
@@ -599,6 +626,104 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, lhabl
         ));
         let both = bind_card(model, &card("Block YUKAWA\n 6 250\nBlock MASS\n 6 250\n")).unwrap();
         assert_eq!(both.moved.len(), 2);
+    }
+
+    /// The card the `dy13_mmll_60_120_mz95` row is banked on, MadGraph's own
+    /// with the `MZ` line set to 95 GeV, moves `MZ` and the width MadGraph
+    /// rounds, and nothing else; its `MW` line (80.419, MadGraph's value at the
+    /// default MZ) is ignored and reported against the 85.036 GeV the model
+    /// computes at MZ = 95, as MadGraph's Fortran recomputes it.
+    #[test]
+    fn the_mz95_banking_card_moves_mz_and_the_rounded_width() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/dy13_mz95_param_card.dat"
+        ))
+        .unwrap();
+        let bound = bind(&text).unwrap();
+        let moved: Vec<(&str, f64)> = bound
+            .moved
+            .iter()
+            .map(|p| (p.name.as_str(), p.value))
+            .collect();
+        assert_eq!(moved, [("MZ", 95.0), ("WH", 6.382339e-03)]);
+        let ignored: Vec<(&str, i32, f64)> = bound
+            .ignored
+            .iter()
+            .map(|e| (e.param.as_str(), e.pdg, e.card))
+            .collect();
+        assert_eq!(ignored, [("MW", 24, 80.419)]);
+        assert!((bound.ignored[0].computed - 85.03597559307168).abs() < 1e-9);
+    }
+
+    /// The toy model's `restrict_all` leaves the colour-octet width `WO8` at
+    /// exactly one, which MadGraph's restriction fixes (a `one` rule in the
+    /// process's `param_card_rule.dat`): a card that moves it is refused, one
+    /// that restates it binds and records nothing, and a record that names it
+    /// does not rebind.
+    #[test]
+    fn moving_a_parameter_the_restriction_fixes_to_one_is_refused() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo");
+        let toy = UFOModel::load(
+            &root.join("vibegraph_toy_UFO"),
+            Some(&root.join("vibegraph_toy_UFO/restrict_all.dat")),
+        )
+        .unwrap();
+        assert!(toy.params.ones.contains("WO8"), "{:?}", toy.params.ones);
+
+        let err = bind_card(toy.clone(), &card("DECAY 9000021 2.0\n")).err();
+        assert!(
+            matches!(&err, Some(CardError::MovesFixedOne { name, value, .. }) if name == "WO8" && *value == 2.0),
+            "{err:?}"
+        );
+        let kept = bind_card(toy.clone(), &card("DECAY 9000021 1.000000e+00\n")).unwrap();
+        assert!(kept.moved.is_empty(), "{:?}", kept.moved);
+        // A width beside it that the restriction did not fix stays free.
+        let moved = bind_card(toy.clone(), &card("DECAY 9000023 2.5\n")).unwrap();
+        assert_eq!(moved.moved.len(), 1);
+
+        let record = MovedParam {
+            name: "WO8".to_string(),
+            block: "DECAY".to_string(),
+            code: vec![9000021],
+            value: 2.0,
+        };
+        assert!(matches!(
+            bind_recorded(toy, &[record]),
+            Err(CardError::NotRecordable { .. })
+        ));
+    }
+
+    /// Only a restriction value of exactly one fixes a parameter: MadGraph's
+    /// "keep this parameter" value `9.999999e-01` does not, and neither does a
+    /// `parameters.py` default of one with no restriction applied.
+    #[test]
+    fn only_a_restricted_value_of_exactly_one_is_fixed() {
+        let src = r"
+a = Parameter(name = 'a', nature = 'external', type = 'real', value = 1.0, lhablock = 'NP', lhacode = [ 1 ])
+b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.3, lhablock = 'NP', lhacode = [ 2 ])
+c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, lhablock = 'NP', lhacode = [ 3 ])
+";
+        let unrestricted = parse_parameters(src).unwrap();
+        assert!(unrestricted.ones.is_empty());
+        let mut params = unrestricted.clone();
+        params.apply_restrict(&card("Block NP\n 2 1.0\n 3 9.999999e-01\n"));
+        let ones: Vec<&str> = params.ones.iter().map(String::as_str).collect();
+        assert_eq!(ones, ["a", "b"]);
+    }
+
+    /// No restriction of the interned SM leaves an external at one, so the
+    /// refusal above never fires on an SM card.
+    #[test]
+    fn the_interned_sm_fixes_nothing_to_one() {
+        for restrict in SMRestrict::ALL.iter().copied() {
+            let model = sm_model(restrict);
+            assert!(
+                model.params.ones.is_empty(),
+                "{restrict:?}: {:?}",
+                model.params.ones
+            );
+        }
     }
 
     /// No restriction of the interned SM merges a parameter: its blocks hold no

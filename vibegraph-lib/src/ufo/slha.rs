@@ -50,6 +50,8 @@ impl FromStr for ParamCard {
     fn from_str(content: &str) -> Result<Self, SlhaError> {
         let mut card = ParamCard::default();
         let mut current_block: Option<String> = None;
+        let mut seen: HashMap<(String, Vec<i32>), (CardValue, usize)> = HashMap::new();
+        let mut headers: HashMap<String, usize> = HashMap::new();
 
         for (lineno, raw) in content.lines().enumerate() {
             let lineno = lineno + 1;
@@ -63,17 +65,33 @@ impl FromStr for ParamCard {
             let lower = line.to_lowercase();
 
             if lower.starts_with("block") {
-                // `BLOCK SMINPUTS`
-                let block_name = lower
-                    .strip_prefix("block")
-                    .unwrap()
-                    .split_whitespace()
+                // `BLOCK SMINPUTS`. A `QNUMBERS` block is one per new state,
+                // named by its PDG code (`BLOCK QNUMBERS 9000005`), and is
+                // kept as `qnumbers <pdg>`, as MadGraph's reader keeps it.
+                let mut words = lower.strip_prefix("block").unwrap().split_whitespace();
+                let mut block_name = words
                     .next()
                     .ok_or_else(|| SlhaError::Parse {
                         line: lineno,
                         msg: "BLOCK header missing name".into(),
                     })?
                     .to_owned();
+                if block_name == "qnumbers" {
+                    if let Some(pdg) = words.next() {
+                        block_name = format!("qnumbers {pdg}");
+                    }
+                }
+                // MadGraph's reader replaces a block by a later header of the
+                // same name, dropping the earlier entries; this one would
+                // merge them. Neither is what a card means, so it is refused.
+                if let Some(first_line) = headers.insert(block_name.clone(), lineno) {
+                    return Err(SlhaError::Parse {
+                        line: lineno,
+                        msg: format!(
+                            "block {block_name} is opened again (first on line {first_line})"
+                        ),
+                    });
+                }
                 card.blocks.entry(block_name.clone()).or_default();
                 current_block = Some(block_name);
             } else if lower.starts_with("decay") {
@@ -82,28 +100,35 @@ impl FromStr for ParamCard {
                 // parameters (lhablock = DECAY, e.g. WZ) resolve. Any
                 // branching-ratio rows that follow are ignored.
                 let tokens: Vec<&str> = line.split_whitespace().collect();
-                if tokens.len() >= 3 {
-                    if let Ok(code) = tokens[1].parse::<i32>() {
-                        if tokens[2].eq_ignore_ascii_case("auto") {
-                            card.auto_widths.push(code);
-                        } else if let Ok(width) = tokens[2].parse::<f64>() {
-                            card.blocks
-                                .entry("decay".to_string())
-                                .or_default()
-                                .insert(vec![code], width);
-                        }
-                    }
+                let parse_error = |msg: String| SlhaError::Parse { line: lineno, msg };
+                if tokens.len() < 3 {
+                    return Err(parse_error(format!(
+                        "a DECAY line needs a PDG code and a width, got '{line}'"
+                    )));
                 }
+                let code = tokens[1].parse::<i32>().map_err(|_| {
+                    parse_error(format!(
+                        "expected an integer PDG code after DECAY, got '{}'",
+                        tokens[1]
+                    ))
+                })?;
+                let width = if tokens[2].eq_ignore_ascii_case("auto") {
+                    CardValue::Auto
+                } else {
+                    CardValue::Value(tokens[2].parse::<f64>().map_err(|_| {
+                        parse_error(format!(
+                            "expected a number or Auto as the width of {code}, got '{}'",
+                            tokens[2]
+                        ))
+                    })?)
+                };
+                card.record("decay", vec![code], width, lineno, &mut seen)?;
                 current_block = None;
             } else if let Some(ref block) = current_block {
-                // Data entry: one or more integers followed by a float
-                // e.g. `   3   0.118`, `   1   2   0.5`
+                // Data entry: integer codes followed by a float, e.g.
+                // `   3   0.118`, `   1   2   0.5`; a lone value (SLHA's
+                // `Block ALPHA`) has the empty code, as MadGraph reads it.
                 let tokens: Vec<&str> = line.split_whitespace().collect();
-                if tokens.len() < 2 {
-                    continue;
-                }
-                // Try to parse all but the last token as integers (the key)
-                // and the last as a float.
                 let value: f64 =
                     tokens[tokens.len() - 1]
                         .parse()
@@ -111,23 +136,16 @@ impl FromStr for ParamCard {
                             line: lineno,
                             msg: format!("expected float, got '{}'", tokens[tokens.len() - 1]),
                         })?;
-                let mut key: Vec<i32> = Vec::new();
-                for tok in &tokens[..tokens.len() - 1] {
-                    match tok.parse::<i32>() {
-                        Ok(n) => key.push(n),
-                        Err(_) => {
-                            // Hit a non-integer token — stop parsing keys here
-                            break;
-                        }
-                    }
-                }
-                if key.is_empty() {
-                    continue;
-                }
-                card.blocks
-                    .get_mut(block.as_str())
-                    .unwrap()
-                    .insert(key, value);
+                let key = tokens[..tokens.len() - 1]
+                    .iter()
+                    .map(|tok| {
+                        tok.parse::<i32>().map_err(|_| SlhaError::Parse {
+                            line: lineno,
+                            msg: format!("block {block}: expected an integer code, got '{tok}'"),
+                        })
+                    })
+                    .collect::<Result<Vec<i32>, _>>()?;
+                card.record(block, key, CardValue::Value(value), lineno, &mut seen)?;
             }
         }
 
@@ -135,7 +153,61 @@ impl FromStr for ParamCard {
     }
 }
 
+/// A value as a card line gives it: a number, or (for a `DECAY` width only)
+/// `Auto`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CardValue {
+    Value(f64),
+    Auto,
+}
+
 impl ParamCard {
+    /// Store one parsed entry, refusing a `(block, code)` an earlier line set to
+    /// another value. A repeat of the same value is accepted, as MadGraph's
+    /// `check_param_card.Block.append` accepts it; a different one is the error
+    /// MadGraph raises ("is already define").
+    fn record(
+        &mut self,
+        block: &str,
+        code: Vec<i32>,
+        value: CardValue,
+        lineno: usize,
+        seen: &mut HashMap<(String, Vec<i32>), (CardValue, usize)>,
+    ) -> Result<(), SlhaError> {
+        let key = (block.to_owned(), code);
+        if let Some(&(first, first_line)) = seen.get(&key) {
+            if first == value {
+                return Ok(());
+            }
+            let show = |w: CardValue| match w {
+                CardValue::Value(v) => v.to_string(),
+                CardValue::Auto => "Auto".to_owned(),
+            };
+            let code = key
+                .1
+                .iter()
+                .map(i32::to_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            return Err(SlhaError::Parse {
+                line: lineno,
+                msg: format!(
+                    "block {block} code {code} is set to {} here and to {} on line {first_line}",
+                    show(value),
+                    show(first),
+                ),
+            });
+        }
+        seen.insert(key.clone(), (value, lineno));
+        match value {
+            CardValue::Value(v) => {
+                self.blocks.entry(key.0).or_default().insert(key.1, v);
+            }
+            CardValue::Auto => self.auto_widths.push(key.1[0]),
+        }
+        Ok(())
+    }
+
     /// Look up a parameter value.
     ///
     /// `block` is case-insensitive; `code` is the integer key list.
@@ -214,6 +286,73 @@ DECAY 6 1.49
                 "{text:?}: {result:?}"
             );
         }
+    }
+
+    /// The lines a card used to drop without a word are errors at their own
+    /// line: a `DECAY` width that is neither a number nor `Auto`, a `DECAY`
+    /// line with no width or a non-integer code, a block entry with a
+    /// non-integer code, a `(block, code)` set twice to different values
+    /// (MadGraph's "is already define"), `DECAY` widths and `Auto` included, and
+    /// a block opened twice.
+    #[test]
+    fn lines_the_card_cannot_honour_are_parse_errors_at_their_line() {
+        for (text, want_line, want) in [
+            ("Block MASS\n 6 173.0\nDECAY 6 wide\n", 3, "number or Auto"),
+            ("DECAY 6\n", 1, "a PDG code and a width"),
+            ("DECAY t 1.49\n", 1, "integer PDG code"),
+            (
+                "Block MASS\n 6 173.0\n mt 173.0\n",
+                3,
+                "integer code, got 'mt'",
+            ),
+            ("Block YUKAWA\n 6 x 173.0\n", 2, "integer code, got 'x'"),
+            (
+                "Block MASS\n 23 91.188\n 6 173\n 23 95 # MZ\n",
+                4,
+                "on line 2",
+            ),
+            (
+                "Block MASS\n 23 91.188\nBlock mass\n 6 173\n",
+                3,
+                "first on line 1",
+            ),
+            ("DECAY 23 2.44\nDECAY 23 2.5\n", 2, "on line 1"),
+            ("DECAY 25 Auto\nDECAY 25 4e-3\n", 2, "on line 1"),
+        ] {
+            match text.parse::<ParamCard>() {
+                Err(SlhaError::Parse { line, msg }) => {
+                    assert_eq!(line, want_line, "{text:?}: {msg}");
+                    assert!(msg.contains(want), "{text:?}: {msg}");
+                }
+                other => panic!("{text:?} parsed: {other:?}"),
+            }
+        }
+    }
+
+    /// A line that repeats a `(block, code)` at the same value is accepted, as
+    /// MadGraph accepts it, and a lone value in a block is read under the empty
+    /// code, as MadGraph reads SLHA's `Block ALPHA`.
+    #[test]
+    fn a_repeat_at_the_same_value_and_a_lone_value_are_read() {
+        let card = "Block MASS\n 23 91.188\n 23 9.118800e+01\nDECAY 25 Auto\nDECAY 25 auto\n\
+                    Block ALPHA\n -1.1e-01 # alpha\n"
+            .parse::<ParamCard>()
+            .unwrap();
+        assert_eq!(card.get("MASS", &[23]), Some(91.188));
+        assert_eq!(card.auto_widths(), &[25]);
+        assert_eq!(card.get("ALPHA", &[]), Some(-0.11));
+    }
+
+    /// Two new states' `QNUMBERS` blocks are two blocks, as MadGraph names
+    /// them, not one block set twice.
+    #[test]
+    fn each_new_state_has_its_own_qnumbers_block() {
+        let card =
+            "Block QNUMBERS 9000005 # x\n 1 0\n 2 1\nBlock QNUMBERS 9000006 # y\n 1 3\n 2 2\n"
+                .parse::<ParamCard>()
+                .unwrap();
+        assert_eq!(card.get("QNUMBERS 9000005", &[1]), Some(0.0));
+        assert_eq!(card.get("qnumbers 9000006", &[1]), Some(3.0));
     }
 
     #[test]
