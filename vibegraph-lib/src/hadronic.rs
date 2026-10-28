@@ -3159,6 +3159,9 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 }
 
 #[cfg(test)]
+mod tail_probe;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::budget::sequential_channel_reference;
