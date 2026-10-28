@@ -74,17 +74,24 @@
 //! subsystem**, whose drawn invariant cancels against `ŝ` in the edge and puts it on
 //! either side of zero at the rounding scale.
 //!
-//! [`DiagramChannel::from_diagram_regulated`] therefore takes the **fiducial
-//! scale** the process's own transverse-momentum cuts imply and regulates each rung
-//! with it two ways. It bounds the transfer at `t ≤ −scale`, which is where the
-//! draw stops before reaching the degenerate edge and is also where the cuts stop
-//! accepting; and it floors the pole location at a small fraction of that scale, so
-//! a configuration whose window the bound cannot narrow still draws against a pole
-//! far above the cancellation noise. The floor moves only the sampling density —
-//! `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is unbiased
-//! for any non-negative value — while the bound narrows the channel's *support*,
-//! which [`Channel::density`] reports as an exact zero above the edge. A spine is
-//! built for a final state of more than two legs only when a scale is supplied.
+//! Every rung therefore draws against a **pole floor**: its propagator pole is
+//! raised to at least `POLE_FRACTION_OF_FIDUCIAL_SCALE` times a scale, so the
+//! log map is always on and its pole sits orders above the cancellation noise,
+//! whichever side of zero the edge lands on. The floor moves only the sampling
+//! density — `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is
+//! unbiased for any non-negative value — and so it needs no justification from the
+//! cuts. The scale is the **fiducial scale** the process's own single-leg
+//! transverse-momentum cuts imply where they imply one, and the fixed
+//! `DEFAULT_POLE_SCALE` where they do not.
+//!
+//! The fiducial scale does a second job that the default never does: it **bounds**
+//! each rung's transfer at `t ≤ −scale`, which is where the cuts provably stop
+//! accepting. The bound narrows the channel's *support*, which
+//! [`Channel::density`] reports as an exact zero above the edge, so it is applied
+//! only from a scale the cuts guarantee ([`DiagramChannel::from_diagram_regulated`]);
+//! a run with no single-leg `pT` cut keeps the whole kinematic window. With the
+//! floor always on, a spine is built for every final state whose spacelike lines
+//! form a chain, cut or no cut.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
@@ -357,7 +364,8 @@ pub struct DiagramChannel<F: Real> {
 
 impl<F: Real> DiagramChannel<F> {
     /// Build the channel from a diagram's propagator chain at CM energy `sqrt_s`,
-    /// with an unregulated spacelike pole.
+    /// with no fiducial scale: every peripheral rung keeps its whole kinematic
+    /// window and draws against the pole floor `DEFAULT_POLE_SCALE` implies.
     ///
     /// Outgoing-leg masses and each internal line's mass/width are read from
     /// `model`. The incoming legs are externals `0..n_in`: two beams, or on a
@@ -369,7 +377,8 @@ impl<F: Real> DiagramChannel<F> {
 
     /// [`from_diagram`](Self::from_diagram) with the peripheral rungs regulated at
     /// the process's own `fiducial_scale` (GeV², the largest single-leg `pT_min`
-    /// squared), so a massless exchanged line still gives a well-posed draw.
+    /// squared): each rung's transfer bounded at `t ≤ −fiducial_scale` and its pole
+    /// floored at a fraction of it. A scale of zero is [`from_diagram`](Self::from_diagram).
     ///
     /// A diagram with several spacelike lines is a ladder, and this decomposes it
     /// as the ordered chain of rungs those lines imply, each drawing its own `t`
@@ -389,7 +398,8 @@ impl<F: Real> DiagramChannel<F> {
     ///
     /// Nothing derives a cap this way — production admits every rung. It exists so
     /// the chain can be measured against a truncated map; at `max_rungs = 1` every
-    /// ladder falls back to the all-timelike tree.
+    /// ladder falls back to the all-timelike tree, and at `max_rungs = 0` every
+    /// diagram does.
     pub fn from_diagram_capped(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -403,20 +413,18 @@ impl<F: Real> DiagramChannel<F> {
     /// The shared construction, admitting a peripheral chain of at most `max_rungs`
     /// rungs and falling back to the all-timelike tree otherwise.
     ///
-    /// `fiducial_scale` regulates the collinear edge two ways at once. It bounds
-    /// each rung's transfer at `t ≤ −fiducial_scale`, the region a process's own
-    /// transverse-momentum cuts reject anyway, and it puts a token floor
-    /// `POLE_FRACTION_OF_FIDUCIAL_SCALE · fiducial_scale` under the propagator pole
-    /// so a configuration the bound cannot narrow still has a well-posed draw
-    /// rather than one whose pole sits on the transfer's own rounding noise. Both
-    /// enter `draw_t` and `t_measure` alike, so the pole floor reshapes the sampling
-    /// density and nothing else; the bound additionally narrows the channel's
-    /// support, which the density reports honestly as an exact zero above the edge.
+    /// Every rung's propagator pole is floored at `POLE_FRACTION_OF_FIDUCIAL_SCALE`
+    /// times a scale, so the draw is well posed rather than one whose pole sits on
+    /// the transfer's own rounding noise. The floor enters `draw_t` and `t_measure`
+    /// alike, so it reshapes the sampling density and nothing else, and it is on
+    /// whatever the cuts: the scale is `fiducial_scale` when that is positive and
+    /// `DEFAULT_POLE_SCALE` otherwise.
     ///
-    /// A scale of zero — a run with no active single-leg `pT` cut — leaves both off,
-    /// which for a final state of more than two legs means no spine is built at all:
-    /// the module docs record why an unregulated three-body spine is biased rather
-    /// than merely noisy.
+    /// A positive `fiducial_scale` — a run with an active single-leg `pT` cut —
+    /// additionally bounds each rung's transfer at `t ≤ −fiducial_scale`, the region
+    /// those cuts reject anyway. The bound narrows the channel's support, which the
+    /// density reports honestly as an exact zero above the edge. A scale of zero
+    /// leaves the support whole.
     fn from_diagram_with(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -470,23 +478,19 @@ impl<F: Real> DiagramChannel<F> {
 
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
         // Spacelike lines are peripheral: they are decomposed as a chain of t-channel
-        // rungs rather than as an all-timelike tree. Past two outgoing legs the
-        // transfer's upper edge is a cancelling difference of drawn invariants, so
-        // the chain is built only when a fiducial scale keeps the draw clear of it.
-        let regulated = fiducial_scale > F::zero();
-        let chain =
-            if !spacelike.is_empty() && spacelike.len() <= max_rungs && (n_out == 2 || regulated) {
-                spine_chain(
-                    &spacelike,
-                    n_out,
-                    fiducial_scale,
-                    &masses,
-                    &subsystems,
-                    &resonances,
-                )
-            } else {
-                None
-            };
+        // rungs rather than as an all-timelike tree.
+        let chain = if !spacelike.is_empty() && spacelike.len() <= max_rungs {
+            spine_chain(
+                &spacelike,
+                n_out,
+                fiducial_scale,
+                &masses,
+                &subsystems,
+                &resonances,
+            )
+        } else {
+            None
+        };
         let topology = match chain {
             Some(spine) => ChannelTopology::Spine(spine),
             None => ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances)),
@@ -1030,8 +1034,12 @@ impl<F: Real> DiagramChannel<F> {
     ///
     /// Production always bounds where a fiducial scale exists. This exists so the
     /// bound's effect can be measured against the same channels without it, on the
-    /// same seeds, rather than against a differently-poled map.
-    pub(crate) fn without_transfer_bound(mut self) -> Self {
+    /// same seeds, rather than against a differently-poled map — and so a channel
+    /// floored from any pole scale `X` can be built without the bound, as
+    /// `from_diagram_regulated(.., X).without_transfer_bound()`, which at
+    /// `X = DEFAULT_POLE_SCALE` is the channel [`from_diagram`](Self::from_diagram)
+    /// builds.
+    pub fn without_transfer_bound(mut self) -> Self {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.t_max_cap = None;
@@ -1642,15 +1650,32 @@ fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (u64, u64) {
     (emitted, full & !emitted)
 }
 
-/// Fraction of the fiducial scale left under a bounded rung's propagator pole.
+/// Fraction of the pole scale left under a rung's propagator pole.
 ///
-/// The bound is what shapes the draw, so the pole only has to be far enough below
-/// the bound to leave the propagator map essentially bare `1/|t|` over the window,
-/// and far enough above the scale at which a massless transfer's upper edge is a
-/// cancelling difference of large quantities for the draw to be well posed at all
-/// on a configuration the bound could not narrow. Three orders below the bound sits
-/// between those.
+/// Where the scale is a fiducial bound, the bound is what shapes the draw, so the
+/// pole only has to be far enough below it to leave the propagator map essentially
+/// bare `1/|t|` over the window, and far enough above the scale at which a massless
+/// transfer's upper edge is a cancelling difference of large quantities for the
+/// draw to be well posed at all on a configuration the bound could not narrow.
+/// Three orders below the bound sits between those.
 const POLE_FRACTION_OF_FIDUCIAL_SCALE: f64 = 1e-3;
+
+/// The pole scale (GeV²) a rung is floored from when the cuts supply no fiducial
+/// scale, giving a pole floor of `POLE_FRACTION_OF_FIDUCIAL_SCALE` times this.
+///
+/// It is a sampling choice and never a bound: the floor moves the density the
+/// transfer is drawn from, not the support, so any positive value is unbiased and
+/// the value is chosen for variance. Measured as the relative per-draw variance of
+/// plain Monte Carlo over the production channel set, eight seeds of `2·10⁶`, on
+/// two finite peripheral processes with no single-leg `pT` cut: `u c → e⁺e⁻ u c`
+/// (`QCD = 0`, `√ŝ = 1 TeV`, `mmjj > 300`, `mmll > 50`) reads `1.37e3`, `8.2e2`,
+/// `5.4e2`, `3.7e3` and `6.1e3` at scales `1`, `10²`, `10⁴`, `10⁵` and
+/// `10⁶ GeV²`, and `e⁺e⁻ → e⁺e⁻ µ⁺µ⁻` (`√ŝ = 500 GeV`, `mmll > 50`) reads `240`,
+/// `154`, `90`, `62` and `59`. `10⁴ GeV²` — a pole floor of `10 GeV²` — is the
+/// best on the first and within `1.5×` of the best on the second, where the
+/// larger scales cost the first a factor of seven or more. Every scale's σ agreed
+/// with the others, and on the second process with flat RAMBO.
+const DEFAULT_POLE_SCALE: f64 = 1e4;
 
 /// Order a diagram's spacelike lines into a chain of rungs, or report that they do
 /// not form one.
@@ -1679,7 +1704,12 @@ fn spine_chain<F: Real>(
         }
     }
     let bounded = fiducial_scale > F::zero();
-    let pole_floor = fiducial_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
+    let pole_scale = if bounded {
+        fiducial_scale
+    } else {
+        cast(DEFAULT_POLE_SCALE)
+    };
+    let pole_floor = pole_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
     let mut rungs = Vec::with_capacity(sides.len());
     let mut previous = 0u64;
     for &(side, m2) in &sides {
@@ -1689,7 +1719,7 @@ fn spine_chain<F: Real>(
         }
         rungs.push(SpineRung {
             emitted: build_node(blob, masses, subsystems, resonances),
-            t_mass2: if bounded { m2.max(pole_floor) } else { m2 },
+            t_mass2: m2.max(pole_floor),
             t_max_cap: bounded.then(|| -fiducial_scale),
             rest_floor: F::zero(),
         });

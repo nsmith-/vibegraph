@@ -312,7 +312,7 @@ fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (Vec<usize>, V
 }
 
 /// One `llj` diagram reduced to the facts a peripheral map would be built from,
-/// alongside the channel the derivation actually produces for it today.
+/// alongside the all-timelike tree the derivation falls back to without a spine.
 struct SpacelikeCut {
     emitted: Vec<usize>,
     recoil: Vec<usize>,
@@ -320,7 +320,8 @@ struct SpacelikeCut {
     t_mass: f64,
     /// Resonance on whichever side is the lepton pair, if the diagram has one.
     lepton_pair_resonance: Option<Resonance<f64>>,
-    /// What `from_diagram` builds for this diagram.
+    /// The all-timelike tree for this diagram: what `from_diagram_capped` builds
+    /// when it admits no rung.
     derived: DiagramChannel<f64>,
 }
 
@@ -347,7 +348,8 @@ fn spacelike_cuts(
         let (emitted, recoil) = spine_partition(&spacelike[0].momentum, d.n_in, n_ext);
         // The lepton pair is the two outgoing leptons; its timelike line is the
         // only resonance a `2 -> 3` llj diagram carries.
-        let derived = DiagramChannel::<f64>::from_diagram(d, model, sqrt_s);
+        let derived = DiagramChannel::<f64>::from_diagram_capped(d, model, sqrt_s, 0.0, 0);
+        assert!(derived.spine_poles().is_empty(), "a zero cap built a spine");
         cuts.push(SpacelikeCut {
             emitted,
             recoil,
@@ -751,7 +753,8 @@ fn an_unregulated_spine_breaks_the_positive_density_contract() {
 /// Does a three-body peripheral map earn its place? On a toy integrand carrying the
 /// two structures an `llj` matrix element has — the lepton pair's Z pole and the
 /// spacelike propagator — the regulated spine is compared against the all-timelike
-/// channel the derivation builds for the very same diagram, and against flat RAMBO.
+/// tree the derivation falls back to for the very same diagram when it builds no
+/// spine, and against flat RAMBO.
 ///
 /// The comparison is a seed sweep, not a single run, because a single run cannot
 /// tell a converged estimate from an under-covered one: a map that misses the
@@ -964,9 +967,8 @@ fn spacelike_lines_of_a_diagram_nest_into_an_ordered_rung_chain() {
 /// The integrand carries the two structures an `llj` matrix element has, with the
 /// spacelike propagator left **massless** (`1/t²`, the singular thing the question
 /// is about) and the run card's own cut indicator in front, which is what makes it
-/// integrable. The baseline is the all-timelike channel the derivation builds for
-/// these diagrams when no floor is supplied — past two outgoing legs that is what
-/// "the map falls back flat" means concretely, since no spine is built at all.
+/// integrable. The baseline is the all-timelike tree the derivation falls back to
+/// for these diagrams when it builds no spine.
 ///
 /// Read as a measurement, not a gate: the assertions pin only that all three maps
 /// agree on the integral (so the narrowed support loses nothing here) and that the
@@ -1241,10 +1243,10 @@ fn the_llj_run_card_supplies_the_scale_the_spacelike_pole_is_floored_at() {
 
 /// A zero floor is the identity map on the channel derivation.
 ///
-/// [`DiagramChannel::from_diagram`] is the unregulated derivation, and a run whose
-/// cuts imply no single-leg transverse threshold reaches the regulated one with a
-/// zero scale; the two have to build the same channel, or the regulator would be
-/// moving maps for processes that never asked it to. Asserted on the sampled
+/// [`DiagramChannel::from_diagram`] is the derivation with no fiducial scale, and a
+/// run whose cuts imply no single-leg transverse threshold reaches the regulated
+/// one with a zero scale; the two have to build the same channel, or the cuts would
+/// be moving maps for processes whose cuts imply nothing. Asserted on the sampled
 /// momenta and the densities rather than on the constructor arguments, since those
 /// are what a run actually consumes.
 ///
@@ -2739,4 +2741,622 @@ fn the_ladder_chain_beside_the_all_timelike_fallback() {
         "the all-timelike map now agrees with the chain everywhere, so this \
          comparison has stopped carrying a signal about what the chain is worth"
     );
+}
+
+// ── Peripheral spines without a fiducial scale ──────────────────────────────
+
+/// Processes whose peripheral diagrams the spine is checked on with no fiducial
+/// scale: the two `llj` classes (a single rung, the lepton pair on either side of
+/// it), the electroweak `2 → 4` ladder with up to three rungs, a QCD `2 → 3` whose
+/// gluon exchange emits a quark pair, and `e+ e- → e+ e- µ+ µ-`, whose photon
+/// ladders are massless on every rung. Between them they carry massless and massive
+/// exchanged lines, and emitted subsystems of one leg and of two.
+const NO_SCALE_PROCESSES: [&str; 5] = [
+    LLJ_SUBPROCESSES[0],
+    LLJ_SUBPROCESSES[1],
+    LADDER_PROCESS,
+    "u u~ > d d~ g",
+    "e+ e- > e+ e- mu+ mu-",
+];
+const NO_SCALE_SQRT_S: f64 = 500.0;
+
+/// Every diagram of [`NO_SCALE_PROCESSES`] with at least one spacelike line, with
+/// the chain it implies and its outgoing masses.
+fn no_scale_peripheral_diagrams(
+    model: &EvaluatedModel,
+) -> Vec<(&'static str, Diagram, RungChain, Vec<f64>)> {
+    let mut out = Vec::new();
+    for process in NO_SCALE_PROCESSES {
+        let sets = common::generate(process);
+        for d in &sets[0].diagrams {
+            let chain = rung_chain(d, model);
+            if chain.sides.is_empty() {
+                continue;
+            }
+            let masses = out_masses(d, model);
+            out.push((process, d.clone(), chain, masses));
+        }
+    }
+    out
+}
+
+/// With no fiducial scale, a final state of more than two legs gets its peripheral
+/// spine — one rung per spacelike line, in the chain the diagram implies — and every
+/// rung draws against a pole floor: a massless exchanged line's pole is raised
+/// above zero, the same floor on every such rung, and a massive line keeps its own
+/// mass wherever that lies above the floor.
+///
+/// Both halves are what the scale used to decide. Withholding the spine past two
+/// legs leaves `spine_poles` empty, and switching the floor off leaves a massless
+/// rung's pole at zero, where the transfer's upper edge sits on rounding noise.
+#[test]
+fn without_a_fiducial_scale_every_peripheral_diagram_gets_its_spine_on_a_pole_floor() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let mut spines = 0usize;
+    let mut multi_rung = 0usize;
+    let mut massless_rungs = 0usize;
+    let mut composite_massless = 0usize;
+    let mut floors = Vec::<f64>::new();
+    let mut massive = Vec::new();
+    for (process, d, chain, masses) in no_scale_peripheral_diagrams(&evaluated) {
+        assert!(
+            masses.len() > 2,
+            "{process}: expected a final state past two legs"
+        );
+        let ch = DiagramChannel::<f64>::from_diagram(&d, &evaluated, NO_SCALE_SQRT_S);
+        let poles = ch.spine_poles();
+        assert_eq!(
+            poles.len(),
+            chain.sides.len(),
+            "{process}: a {}-line peripheral diagram built {} rungs with no fiducial scale",
+            chain.sides.len(),
+            poles.len()
+        );
+        for (k, (&pole, &bare)) in poles.iter().zip(&chain.poles).enumerate() {
+            if bare == 0.0 {
+                assert!(
+                    pole > 0.0,
+                    "{process}: rung {k} draws against a massless pole with no floor under it"
+                );
+                floors.push(pole);
+                massless_rungs += 1;
+                if chain.blobs[k].len() > 1 {
+                    composite_massless += 1;
+                }
+            } else {
+                massive.push((process, k, bare, pole));
+            }
+        }
+        spines += 1;
+        if chain.sides.len() > 1 {
+            multi_rung += 1;
+        }
+    }
+    let floor = floors.first().copied().unwrap_or(0.0);
+    assert!(
+        floors.iter().all(|&f| f == floor),
+        "the massless rungs do not share one pole floor: {floors:?}"
+    );
+    for (process, k, bare, pole) in &massive {
+        assert_eq!(
+            *pole,
+            bare.max(floor),
+            "{process}: rung {k}'s massive pole {bare} became {pole}"
+        );
+    }
+    eprintln!(
+        "no fiducial scale: {spines} spines ({multi_rung} multi-rung), {massless_rungs} massless \
+         rungs ({composite_massless} emitting a composite subsystem), pole floor {floor:e} GeV²"
+    );
+    assert!(
+        spines > 0 && multi_rung > 0,
+        "no peripheral spine was exercised"
+    );
+    assert!(
+        composite_massless > 0,
+        "no massless rung emits a composite subsystem, the case whose edge lands on noise"
+    );
+}
+
+/// Draws per peripheral channel in the walk-against-density check with no scale.
+///
+/// The walk/density identity carries a tail that has nothing to do with the
+/// spacelike pole: over `10⁵` draws per channel on these diagrams, about three
+/// points in a million exceed [`WALK_DENSITY_TOL`] (worst `2.4e-6`), at the same
+/// rate whatever the pole scale from `1` to `10⁶ GeV²` and on the channels a
+/// `400 GeV²` fiducial scale builds, with its bound. A sweep long enough to meet
+/// that tail measures near-threshold conditioning rather than the pole, so the
+/// check stays below it, where a pole on the transfer's rounding noise breaks the
+/// identity on a third of all draws.
+const NO_SCALE_WALK_POINTS: usize = 2_000;
+
+/// The worst relative gap between a channel's walk weight and its reciprocal
+/// density over `n` uniform draws, how many draws exceed [`WALK_DENSITY_TOL`], and
+/// how many are degenerate — a weight or a density that is not positive and
+/// finite, which a combiner cannot weight at all.
+fn walk_density_sweep(ch: &DiagramChannel<f64>, seed: u64, n: usize) -> (f64, usize, usize) {
+    let mut stream = SubStream::from_stream(seed, 81);
+    let (mut worst, mut over, mut degenerate) = (0.0f64, 0usize, 0usize);
+    for _ in 0..n {
+        let u = stream.uniforms::<f64>(ch.ndim());
+        let pt = ch.sample(&u);
+        let g = ch.density(&pt.momenta);
+        if !(g > 0.0 && g.is_finite() && pt.weight > 0.0 && pt.weight.is_finite()) {
+            degenerate += 1;
+            continue;
+        }
+        let recip = 1.0 / g;
+        let gap = (pt.weight - recip).abs() / recip;
+        if gap > WALK_DENSITY_TOL {
+            over += 1;
+        }
+        worst = worst.max(gap);
+    }
+    (worst, over, degenerate)
+}
+
+/// The bias oracle for a spine with no fiducial scale: on every peripheral diagram
+/// of [`NO_SCALE_PROCESSES`], the weight the walk accumulates is the reciprocal of
+/// the density rebuilt from the momenta it produced, to [`WALK_DENSITY_TOL`], and
+/// both are positive and finite at every draw.
+///
+/// The same draws are swept through the same diagrams with the pole floored at
+/// `10⁻²⁰ GeV²`, below the transfer edge's rounding noise. That arm is required to
+/// break the identity on every diagram whose massless exchanged line emits a
+/// composite subsystem — the case whose edge lands on either side of zero — so the
+/// production arm's agreement is a measurement on those configurations and not an
+/// absence of them.
+#[test]
+fn a_spine_without_a_fiducial_scale_keeps_its_walk_and_its_density_in_step() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let noise_floor_scale = 1e-17;
+    let (mut channels, mut composite) = (0usize, 0usize);
+    let mut worst = 0.0f64;
+    let mut worst_at = String::new();
+    let (mut flips, mut composite_flipped, mut composite_flips) = (0usize, 0usize, 0usize);
+    for (i, (process, d, chain, _)) in no_scale_peripheral_diagrams(&evaluated)
+        .into_iter()
+        .enumerate()
+    {
+        let seed = 0x5E1F_0 + i as u64;
+        let ch = DiagramChannel::<f64>::from_diagram(&d, &evaluated, NO_SCALE_SQRT_S);
+        assert!(
+            !ch.spine_poles().is_empty(),
+            "{process} diagram {i}: no spine to check without a fiducial scale"
+        );
+        let (gap, over, degenerate) = walk_density_sweep(&ch, seed, NO_SCALE_WALK_POINTS);
+        assert_eq!(
+            (over, degenerate),
+            (0, 0),
+            "{process} diagram {i}: {over} draws past the walk-density tolerance (worst \
+             {gap:.3e}) and {degenerate} degenerate ones without a fiducial scale"
+        );
+        if gap > worst {
+            worst = gap;
+            worst_at = format!("{process} diagram {i}");
+        }
+        let noisy = DiagramChannel::<f64>::from_diagram_regulated(
+            &d,
+            &evaluated,
+            NO_SCALE_SQRT_S,
+            noise_floor_scale,
+        )
+        .without_transfer_bound();
+        let (_, over_noise, degenerate_noise) =
+            walk_density_sweep(&noisy, seed, NO_SCALE_WALK_POINTS);
+        let broken = over_noise + degenerate_noise;
+        flips += broken;
+        let composite_massless = chain
+            .blobs
+            .iter()
+            .zip(&chain.poles)
+            .any(|(blob, &m2)| blob.len() > 1 && m2 == 0.0);
+        if composite_massless {
+            composite += 1;
+            composite_flips += broken;
+            if broken > 0 {
+                composite_flipped += 1;
+            }
+        }
+        channels += 1;
+    }
+    eprintln!(
+        "no fiducial scale, {channels} peripheral channels × {NO_SCALE_WALK_POINTS} draws: worst \
+         walk-vs-density gap {worst:.3e} ({worst_at}); with the pole at 1e-20 GeV² the same draws \
+         break the identity {flips} times, {composite_flips} of them on {composite_flipped} of the \
+         {composite} diagrams emitting a composite subsystem off a massless line"
+    );
+    assert!(
+        composite > 0,
+        "no composite emission off a massless line was exercised"
+    );
+    assert!(
+        2 * composite_flipped > composite,
+        "a pole below the rounding noise broke the identity on only {composite_flipped} of \
+         {composite} composite emissions, so these draws do not reach their edge"
+    );
+}
+
+/// The walk/density identity's tail over a long sweep, as a function of the pole
+/// scale: the measurement behind [`NO_SCALE_WALK_POINTS`]. Every arm is swept over
+/// the same `10⁵` draws per peripheral diagram of [`NO_SCALE_PROCESSES`]: the pole
+/// floored from scales `10⁻¹⁷` (below the edge's rounding noise) through `10⁶ GeV²`
+/// with the support whole, and the channel a `400 GeV²` fiducial scale builds,
+/// bound and all.
+#[test]
+#[ignore]
+fn probe_the_walk_density_tail_against_the_pole_scale() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let n = 100_000;
+    let scales = [1e-17, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6];
+    let diagrams = no_scale_peripheral_diagrams(&evaluated);
+    let mut rows: Vec<(String, f64, usize, usize, String)> = Vec::new();
+    let arms: Vec<(String, Option<f64>)> = scales
+        .iter()
+        .map(|&x| (format!("pole scale {x:e} GeV², unbounded"), Some(x)))
+        .chain([("fiducial scale 400 GeV², bounded".to_string(), None)])
+        .collect();
+    for (label, scale) in arms {
+        let (mut worst, mut over, mut degenerate) = (0.0f64, 0usize, 0usize);
+        let mut at = String::new();
+        for (i, (process, d, _, _)) in diagrams.iter().enumerate() {
+            let ch = match scale {
+                Some(x) => {
+                    DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, NO_SCALE_SQRT_S, x)
+                        .without_transfer_bound()
+                }
+                None => DiagramChannel::<f64>::from_diagram_regulated(
+                    d,
+                    &evaluated,
+                    NO_SCALE_SQRT_S,
+                    400.0,
+                ),
+            };
+            let (gap, o, dg) = walk_density_sweep(&ch, 0x5E1F_0 + i as u64, n);
+            if gap > worst {
+                worst = gap;
+                at = format!("{process} diagram {i}");
+            }
+            over += o;
+            degenerate += dg;
+        }
+        rows.push((label, worst, over, degenerate, at));
+    }
+    let total = n * diagrams.len();
+    for (label, worst, over, degenerate, at) in &rows {
+        eprintln!(
+            "{label:>40}: {over:>8} of {total} draws past {WALK_DENSITY_TOL:e}, {degenerate} \
+             degenerate, worst gap {worst:.2e} ({at})"
+        );
+    }
+}
+
+/// The finite peripheral process the no-scale spine is measured on at the σ level:
+/// one flavour assignment of the electroweak `l+ l- j j` class, every quark line
+/// exchanging a photon, `Z` or `W`, at a fixed `√ŝ = 1 TeV`.
+const MASS_CUT_PROCESS: &str = "u c > e+ e- u c QCD=0";
+
+/// Its run card: no single-leg `pT` cut at all, so no fiducial scale, and the
+/// invariant-mass cuts the CMS VBF/EWK Drell–Yan cards set. The default `|η_j| < 5`
+/// and `ΔR > 0.4` stay on; with massless quarks they are what keeps a jet off its
+/// beam, so the integral is finite.
+const MASS_CUT_CARD: &str =
+    "0 = lpp1\n0 = lpp2\n500 = ebeam1\n500 = ebeam2\n0 = ptj\n0 = ptl\n300 = mmjj\n50 = mmll\n";
+
+/// Several seeds of one estimator, combined as the AGENTS.md seed policy reads
+/// them: the unweighted mean, its spread (the seeds' standard deviation over
+/// `√S`), the seeds' `χ²/dof` about that mean against the error each claims, and
+/// the mean per-draw variance.
+struct SeedSweep {
+    mean: f64,
+    spread: f64,
+    chi2: f64,
+    var: f64,
+}
+
+fn seed_sweep(runs: &[(f64, f64)], n: usize) -> SeedSweep {
+    let s = runs.len() as f64;
+    let mean = runs.iter().map(|r| r.0).sum::<f64>() / s;
+    let sd = (runs.iter().map(|r| (r.0 - mean).powi(2)).sum::<f64>() / (s - 1.0)).sqrt();
+    let chi2 = runs
+        .iter()
+        .map(|r| (r.0 - mean).powi(2) / (r.1 / n as f64))
+        .sum::<f64>()
+        / (s - 1.0);
+    let var = runs.iter().map(|r| r.1).sum::<f64>() / s;
+    SeedSweep {
+        mean,
+        spread: sd / s.sqrt(),
+        chi2,
+        var,
+    }
+}
+
+/// A second finite process with no single-leg `pT` cut: `e+ e- → e+ e- µ+ µ-` at
+/// `√ŝ = 500 GeV`, whose photon ladders are massless on every rung, held finite by
+/// `mmll` on both same-flavour pairs and the default `|η_l| < 2.5`, `ΔR > 0.4`.
+const MASS_CUT_LEPTONIC_PROCESS: &str = "e+ e- > e+ e- mu+ mu-";
+const MASS_CUT_LEPTONIC_CARD: &str =
+    "0 = lpp1\n0 = lpp2\n250 = ebeam1\n250 = ebeam2\n0 = ptl\n50 = mmll\n";
+
+/// One arm of a map comparison: its label, the map, the draws per seed, and how
+/// many of its channels carry a spine.
+type ProbeArm = (String, Box<dyn PhaseSpaceMap<f64> + Sync>, usize, usize);
+
+/// The no-scale spine at the σ level, beside estimators that cannot share a bias
+/// it might carry, on [`MASS_CUT_PROCESS`] under [`MASS_CUT_CARD`] and on
+/// [`MASS_CUT_LEPTONIC_PROCESS`] under [`MASS_CUT_LEPTONIC_CARD`].
+///
+/// The integrand is the process's own `Σ|M|²` under the run card's cuts (constant
+/// prefactors dropped, so every arm estimates the same number), drawn by plain
+/// Monte Carlo — no VEGAS, so what is compared is the maps alone. The arms:
+///
+/// * flat RAMBO, which samples no propagator and so cannot share a spine's bias;
+/// * the production channel set with no fiducial scale (one channel per
+///   configuration, uniform α);
+/// * the same set with the pole floored from scales `1` to `10⁶ GeV²`, the support
+///   whole — the candidates the default pole scale is chosen among, which share no
+///   floor and so no floor-driven bias;
+/// * the all-timelike tree for every diagram, which is what a final state past two
+///   legs got with no scale before the spine was built for it: the known-wrong row.
+///
+/// Read as a measurement: each arm reports its seed mean, spread and `χ²/dof`, its
+/// ratio to flat RAMBO and its per-draw variance.
+#[test]
+#[ignore]
+fn probe_the_no_scale_spine_on_a_mass_cut_peripheral_process() {
+    use std::cell::RefCell;
+    use vibegraph::hadronic::{channel_diagrams, compile_subprocesses, process_external_legs};
+    use vibegraph::helas::eval::{BoundAmplitude, ScratchSpace};
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let seeds = 8u64;
+    let n_flat = 40_000_000;
+    let n_multi = 2_000_000;
+    let pole_scales = [1.0, 1e2, 1e4, 1e5, 1e6];
+
+    for (process, card_text) in [
+        (MASS_CUT_PROCESS, MASS_CUT_CARD),
+        (MASS_CUT_LEPTONIC_PROCESS, MASS_CUT_LEPTONIC_CARD),
+    ] {
+        let sets = common::generate(process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        assert_eq!(evals.len(), 1, "one subprocess");
+        let amp = BoundAmplitude::<f64>::bind(&evals[0], &evaluated);
+        let legs = process_external_legs(&evals[0], &model, &evaluated);
+        let card = RunCard::parse(card_text).expect("card parses");
+        let cuts = Cuts::compile(&card, &legs).expect("cuts compile");
+        assert_eq!(
+            cuts.spacelike_floor(),
+            0.0,
+            "the card sets no single-leg pT cut"
+        );
+        let sqrt_s = card.ebeam1 + card.ebeam2;
+        let h = sqrt_s / 2.0;
+        let beams = [
+            LorentzVector::new(h, 0.0, 0.0, h),
+            LorentzVector::new(h, 0.0, 0.0, -h),
+        ];
+        let diagrams = &sets[0].diagrams;
+        let reps = channel_diagrams(diagrams, &evaluated);
+        let masses = out_masses(reps[0], &evaluated);
+
+        let build = |make: &dyn Fn(&Diagram) -> DiagramChannel<f64>| -> MultiChannel<f64> {
+            MultiChannel::uniform(
+                reps.iter()
+                    .map(|d| Box::new(make(d)) as Box<dyn Channel<f64>>)
+                    .collect(),
+            )
+        };
+        let spine_count = |make: &dyn Fn(&Diagram) -> DiagramChannel<f64>| -> usize {
+            reps.iter()
+                .filter(|d| !make(d).spine_poles().is_empty())
+                .count()
+        };
+        let production = |d: &Diagram| DiagramChannel::<f64>::from_diagram(d, &evaluated, sqrt_s);
+        let timelike =
+            |d: &Diagram| DiagramChannel::<f64>::from_diagram_capped(d, &evaluated, sqrt_s, 0.0, 0);
+        let mut arms: Vec<ProbeArm> = vec![
+            (
+                "flat RAMBO".to_string(),
+                Box::new(RamboChannel::new(sqrt_s, masses.clone())),
+                n_flat,
+                0,
+            ),
+            (
+                "spine, production".to_string(),
+                Box::new(build(&production)),
+                n_multi,
+                spine_count(&production),
+            ),
+        ];
+        for &x in &pole_scales {
+            let at = |d: &Diagram| {
+                DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, x)
+                    .without_transfer_bound()
+            };
+            arms.push((
+                format!("spine, pole scale {x:e}"),
+                Box::new(build(&at)),
+                n_multi,
+                spine_count(&at),
+            ));
+        }
+        arms.push((
+            "all-timelike (known-wrong)".to_string(),
+            Box::new(build(&timelike)),
+            n_multi,
+            spine_count(&timelike),
+        ));
+
+        let integrand = |scratch: &RefCell<ScratchSpace<f64>>, p: &[LorentzVector<f64>]| -> f64 {
+            let mut ext = Vec::with_capacity(2 + p.len());
+            ext.extend_from_slice(&beams);
+            ext.extend_from_slice(p);
+            if !cuts.pass(&ext) {
+                return 0.0;
+            }
+            amp.eval_m2(&ext, &mut scratch.borrow_mut())
+        };
+
+        eprintln!(
+            "{process} at √ŝ = {sqrt_s} GeV, {} diagrams in {} channels, spacelike floor {} \
+             GeV²; plain MC, {seeds} seeds per arm",
+            diagrams.len(),
+            reps.len(),
+            cuts.spacelike_floor()
+        );
+        let mut flat_mean = 0.0;
+        for (label, map, n, spines) in &arms {
+            let start = std::time::Instant::now();
+            let runs: Vec<(f64, f64)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..seeds)
+                    .map(|k| {
+                        let map = map.as_ref();
+                        let integrand = &integrand;
+                        scope.spawn(move || {
+                            let scratch = RefCell::new(ScratchSpace::default());
+                            mc_estimate(map, 0x7F1_000 + 97 * k, 131 + k, *n, |p| {
+                                integrand(&scratch, p)
+                            })
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().expect("seed"))
+                    .collect()
+            });
+            let sw = seed_sweep(&runs, *n);
+            if label == "flat RAMBO" {
+                flat_mean = sw.mean;
+            }
+            let per_seed: Vec<String> = runs.iter().map(|r| format!("{:.4e}", r.0)).collect();
+            eprintln!(
+                "  {label:>28} ({spines:>2} spines, {seeds} × {n}): mean {:.5e} ± {:.2e} \
+                 (rel {:.2e}), seed χ²/dof {:.2}, ratio to flat {:.4}, relative per-draw \
+                 variance {:.3e}, {:.0} s; seeds [{}]",
+                sw.mean,
+                sw.spread,
+                sw.spread / sw.mean,
+                sw.chi2,
+                sw.mean / flat_mean,
+                sw.var / (sw.mean * sw.mean),
+                start.elapsed().as_secs_f64(),
+                per_seed.join(", ")
+            );
+        }
+    }
+}
+
+/// The production integrator on [`MASS_CUT_PROCESS`] and
+/// [`MASS_CUT_LEPTONIC_PROCESS`] under their cards: `FixedBeamIntegrand` under
+/// VEGAS, its α-adapted multichannel map against the flat RAMBO map it replaces,
+/// five seeds each, as `vibegraph integrate` would run it at a fixed budget. Flat
+/// RAMBO samples no spacelike propagator, so it cannot share a bias the peripheral
+/// channels might carry. Read as a measurement.
+#[test]
+#[ignore]
+fn probe_the_no_scale_production_sigma_against_flat_rambo() {
+    use vibegraph::hadronic::{
+        channel_diagrams, compile_subprocesses, initial_spin_color_average, process_external_legs,
+        FixedBeamIntegrand, FixedBeams,
+    };
+    use vibegraph::helas::eval::BoundAmplitude;
+    use vibegraph::phasespace::GEV2_TO_PB;
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let seeds = [11u64, 22, 33, 44, 55];
+    let (neval, niter) = (200_000, 8);
+
+    for (process, card_text) in [
+        (MASS_CUT_PROCESS, MASS_CUT_CARD),
+        (MASS_CUT_LEPTONIC_PROCESS, MASS_CUT_LEPTONIC_CARD),
+    ] {
+        let sets = common::generate(process);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &model, &evaluated);
+        let card = RunCard::parse(card_text).expect("card parses");
+        let cuts = Cuts::compile(&card, &legs).expect("cuts compile");
+        let beams = FixedBeams::from_run_card(&card, &legs);
+        let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &model, &evaluated);
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let reps = channel_diagrams(&diagrams, &evaluated);
+        let spines = reps
+            .iter()
+            .filter(|d| {
+                !DiagramChannel::<f64>::from_diagram_regulated(
+                    d,
+                    &evaluated,
+                    beams.sqrt_s(),
+                    cuts.spacelike_floor(),
+                )
+                .spine_poles()
+                .is_empty()
+            })
+            .count();
+
+        eprintln!(
+            "{process} at √ŝ = {} GeV under VEGAS, {neval} × {niter} a seed; the multichannel \
+             map builds {spines} peripheral channels of {}",
+            beams.sqrt_s(),
+            reps.len()
+        );
+        for multichannel in [false, true] {
+            let label = if multichannel {
+                "multichannel"
+            } else {
+                "flat RAMBO"
+            };
+            let start = std::time::Instant::now();
+            let mut runs = Vec::new();
+            for &seed in &seeds {
+                let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+                let mut integ =
+                    FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
+                if multichannel {
+                    integ.use_multichannel(&diagrams, &evaluated, 30_000, 6, seed);
+                }
+                let r = integ.adapt_grids(neval, niter, seed).1;
+                let (s, e) = (r.integral * GEV2_TO_PB, r.std_dev * GEV2_TO_PB);
+                eprintln!(
+                    "    {label} seed {seed}: σ = {s:.5e} ± {e:.2e} pb, iteration χ²/dof {:.2}",
+                    r.chi2_per_dof
+                );
+                runs.push((s, e));
+            }
+            let k = runs.len() as f64;
+            let mean = runs.iter().map(|r| r.0).sum::<f64>() / k;
+            let sd = (runs.iter().map(|r| (r.0 - mean).powi(2)).sum::<f64>() / (k - 1.0)).sqrt();
+            let chi2 = runs
+                .iter()
+                .map(|r| ((r.0 - mean) / r.1).powi(2))
+                .sum::<f64>()
+                / (k - 1.0);
+            eprintln!(
+                "  {label}: unweighted mean {mean:.5e} pb, spread {:.2e} (rel {:.2e}), seed \
+                 χ²/dof {chi2:.2}, {:.0} s",
+                sd / k.sqrt(),
+                sd / k.sqrt() / mean,
+                start.elapsed().as_secs_f64()
+            );
+        }
+    }
 }

@@ -2467,8 +2467,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// this integrand's own cuts imply — the same input
     /// [`ProtonIntegrand`](crate::proton::ProtonIntegrand) passes, read off the cuts
     /// rather than taken from the caller so a run cannot regulate at a scale its
-    /// cuts do not have. Without one, a final state of more than two legs has no
-    /// peripheral spine at all, and a spacelike line's transfer is drawn flat.
+    /// cuts do not have. Without one, every peripheral spine is still built, its
+    /// transfer unbounded and its pole floored at the default scale.
     ///
     /// Returns the α refinement path, or `None` if `diagrams` is empty (the flat
     /// sampler is then left in place).

@@ -1443,11 +1443,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// within a group or across groups, share one channel at their summed
     /// selection weight: a point's value does not depend on which of them drew it.
     ///
-    /// The peripheral channels are floored at [`Cuts::spacelike_floor`], the scale
-    /// the process's own transverse-momentum cuts imply. The floor is passed because
-    /// a final state of more than two legs has no peripheral spine without one; it
-    /// also reshapes a `2 → 2` process's spine, which leaves the estimator unbiased
-    /// but does change the map a banked run was taken with.
+    /// The peripheral channels are regulated at [`Cuts::spacelike_floor`], the scale
+    /// the process's own transverse-momentum cuts imply: it bounds each rung's
+    /// transfer and sets its pole floor. A run with no such cut gets a spine on the
+    /// default pole floor and an unbounded transfer.
     pub fn new(
         groups: &'a FlavorGroups,
         amps: &'a [BoundAmplitude<'a, f64>],
@@ -4170,9 +4169,10 @@ mod tests {
                 );
                 let without =
                     DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, SQRT_S_HAD, 0.0);
-                assert!(
-                    without.spine_poles().is_empty(),
-                    "a three-body spine was built without a floor"
+                assert_eq!(
+                    without.spine_poles().len(),
+                    with.spine_poles().len(),
+                    "the spine was built with a floor and not without one, or the reverse"
                 );
                 match with.spine_poles().as_slice() {
                     [] => unfloored += 1,
