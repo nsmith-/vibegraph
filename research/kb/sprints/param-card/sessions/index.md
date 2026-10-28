@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [P-F1: integrate --param-card and the recorded parameter point](P-F1.md) - integrate --param-card binds through from_model_card and fills inputs.params; generate rebinds from it; reweight denominators at the recorded point; refusals for Auto widths, revived zeroed parameters and split merged pairs; <slha> header block.
+* [P-V1: banking inputs, MadGraph's coupling fusion, and the silent-card fixes](P-V1.md) - Prepare the two moved-parameter MadGraph rows (cards, driver fixes), check whether MadGraph's merged couplings break at a moved MZ or ymt, fix the SLHA parser's silent drops and the unlocked 1-valued parameters, and write the σ gate awaiting the bank.
 
 ## Session Report
 
