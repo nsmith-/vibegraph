@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [T-F1: build the peripheral spine without a single-leg pT cut](T-F1.md) - Separate the pole floor (always on, from a fixed default scale) from the support bound (only from a provable pT floor), build the spine for every final state, and measure bias and variance before any σ gate.
+
+## Session Report
+
+* [T-F1 report: the spine is built without a pT cut, on a pole floor from a 10⁴ GeV² default scale](T-F1-report.md) - The pole floor and the support bound are now separate. The bound comes only from Cuts::spacelike_floor. The floor is always on, from the fiducial scale or from DEFAULT_POLE_SCALE = 10⁴ GeV², a value chosen by measured variance. The spine is built for every final state. Walk/density agreement holds on every peripheral diagram with no scale. σ matches flat RAMBO on a converged leptonic process. Seven banked rows move, all within their gates.
