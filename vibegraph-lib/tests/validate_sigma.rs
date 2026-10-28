@@ -2089,7 +2089,8 @@ fn probe_2to6_density_decomposition() {
 ///   default rungs).
 /// * `VG_2TO6_SEEDS`: a single integer `N` is a count, giving `SEED` followed by
 ///   `11 k` for `k = 1..N` (`N = 5` is `SEED, 11, 22, 33, 44`, today's seeds); a
-///   comma list is taken verbatim.
+///   value with a comma is a list taken verbatim, so `11,` is the one seed 11.
+///   A rung run on one seed records it and prints no summary.
 /// * `VG_2TO6_NITER`: iterations per run.
 /// * `VG_2TO6_ALLOC`: comma list from `alpha` (`BlockAllocation::ByAlpha`, the
 ///   default) and `neyman` (`BlockAllocation::Neyman`), the rules the
@@ -2235,7 +2236,12 @@ fn probe_2to6_budget_ladder() {
     };
     let seeds: Vec<u64> = match var_list("VG_2TO6_SEEDS") {
         None => vec![SEED, 11, 22, 33, 44],
-        Some(items) if items.len() == 1 => {
+        Some(items)
+            if items.len() == 1
+                && !std::env::var("VG_2TO6_SEEDS")
+                    .unwrap_or_default()
+                    .contains(',') =>
+        {
             let n = parse_usize(&items[0], "VG_2TO6_SEEDS");
             (0..n as u64)
                 .map(|k| if k == 0 { SEED } else { 11 * k })
@@ -2249,7 +2255,7 @@ fn probe_2to6_budget_ladder() {
             })
             .collect(),
     };
-    assert!(seeds.len() >= 2, "the seed combination needs two seeds");
+    assert!(!seeds.is_empty(), "VG_2TO6_SEEDS names no seed");
     let niter = std::env::var("VG_2TO6_NITER")
         .map(|s| parse_usize(&s, "VG_2TO6_NITER"))
         .unwrap_or(DEFAULT_NITER);
@@ -2403,6 +2409,9 @@ fn probe_2to6_budget_ladder() {
                             sigma_pb,
                             sigma_err_pb,
                         });
+                    }
+                    if runs.len() < 2 {
+                        continue;
                     }
                     let read = combine(&runs);
                     let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
