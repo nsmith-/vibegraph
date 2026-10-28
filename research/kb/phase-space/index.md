@@ -31,6 +31,7 @@
 * [A pluggable importance sampler in front of the phase-space map (proposed)](importance-sampler-seam.md) - Where integration, the w_max scan, unweighting and the artifact assume a VegasGrid; the trait that would separate draw, accumulate, refine, freeze and serialise; and what each candidate sampler needs of it.
 * [Mixed-multiplicity composite integrand](mixed-multiplicity-integrand.md) - MultiplicitySum: one ProtonIntegrand per @N multiplicity with its own channels and grid dimension (channel_grid_ndim), a budget split by part spread, union-shape maps, versioned keys.
 * [Multi-tier VEGAS, absolute grid coordinates and sharp cut edges (draft)](multi-tier-vegas-and-cut-edges.md) - Which cut edges each channel's grid can see, what absolute coordinates, a shared (τ, y) tier, cut-aware conditional windows and a pluggable sampler would each buy, and what to measure before choosing.
+* [The importance sampler and the phase-space map, designed together](sampler-and-map-seams.md) - The map owns every coordinate window, cut-aware ones included, and the sampler stays a density on the unit cube; no shared (τ, y) tier (replayed, 5 seeds); K per coordinate role; MadSpin as an opt-in decay stage after the map.
 
 ## Design Decision
 

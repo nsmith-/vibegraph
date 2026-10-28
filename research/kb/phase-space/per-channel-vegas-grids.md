@@ -161,9 +161,10 @@ Building it needs two changes, and one shortcut is rejected:
    run whose windows sit at `ŝ ≪ s` it wastes most draws and would measure
    worse for reasons unrelated to the idea.
 
-No flag is exposed until the code exists, so no artifact can claim a map that
-was not run. Open work:
-[VEGAS grid coordinates are not absolute](../backlog/performance/vegas-grid-coords-not-absolute.md).
+No flag is exposed, and none will be: absolute grid coordinates are refused
+(D2 of [the joint seam design](sampler-and-map-seams.md#decisions)). M1 found no
+high-weight edge fixed in an absolute invariant; the drifting edges become map
+edges through cut-aware windows owned by the map instead.
 
 [^channel-rs]: `vibegraph-lib/src/phasespace/channel.rs`, `MultiChannel` doc.
 [^n21-grid]: Note 21, the grid-per-channel addendum and its outcome.

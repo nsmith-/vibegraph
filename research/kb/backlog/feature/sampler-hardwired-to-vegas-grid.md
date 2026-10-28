@@ -3,20 +3,22 @@ type: Backlog Item
 title: Integration, the w_max scan and unweighting are hard-wired to VegasGrid
 description: "No seam separates draw, accumulate, refine and freeze from the VEGAS grid; every other sampler, and later lane-batched drawing, needs one, bit-for-bit inert on VEGAS."
 area: feature
-state: blocked
+state: open
 priority: medium
-closes_when: "A sampler trait whose draw, weight and accumulate signatures are generic over F: Real (scalar and batch draw, point-order accumulate, refine, freeze), implemented and tested at F = f64 only, has VegasGrid and a no-adaptation uniform sampler as implementors, drives integrate_channels, adapt_blocks_iteration, scan_channel and Unweighter, and the default path's grid.bin.zst, LHE and validation report are byte-identical before and after."
-blocked_by: [sampler-and-phase-space-seams-designed-apart]
+closes_when: "A sampler trait whose draw, weight and accumulate signatures are generic over F: Real (scalar and batch draw, point-order accumulate, mergeable accumulators, refine, freeze), implemented and tested at F = f64 only, has VegasGrid and a no-adaptation uniform sampler as implementors and drives integrate_channels, adapt_blocks_iteration, scan_channel and Unweighter; channels report a role per coordinate and the VEGAS config addresses the bin-width bound by role (default K = 6 on every role); the default path's grid.bin.zst, LHE and validation report are byte-identical before and after."
+blocked_by: []
 opened: 2026-10-17
 tags: [vegas, sampler, refactor, integration, unweighting, simd, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: seam, resource: "../../phase-space/importance-sampler-seam.md", title: "The proposed importance-sampler seam"}
+  - {id: design, resource: "../../phase-space/sampler-and-map-seams.md", title: "The importance sampler and the phase-space map, designed together"}
 ---
 The user asked (2026-10-17) for pluggable sampling so FOAM, VEGAS+, tree and
 flow samplers can be tried per run. `VegasGrid` is assumed from
 `integrate_channels` through `Unweighter::trial`; the census and the proposed
-seam are in [importance-sampler-seam](../../phase-space/importance-sampler-seam.md).
+seam are in [importance-sampler-seam](../../phase-space/importance-sampler-seam.md),
+as amended by [the joint design](../../phase-space/sampler-and-map-seams.md#the-sampler-side-of-the-seam).
 
 **What to build.** A trait (not named `Sampler`, which is the phase-space map's
 name twice already) with draw → `1/p(u)` plus a per-point record and a fixed
@@ -46,8 +48,8 @@ byte identity, not statistics ([no-change claims](../../validation/no-change-cla
 `-j 4`, a fixed-seed `generate` LHE, and an empty `pixi run --skip-deps validate`
 report diff. That leaves the σ calibrations PR #45 re-records untouched.
 
-**Sequencing.** After PR #48 (`GridRule`), PR #51 (map defaults) and PR #50
-(the constant-integrand stop rule: `ChannelIntegrand::is_constant`,
-`StopReason::Constant` in `integrate_channels`) merge. Absolute grid coordinates
-([vegas-grid-coords-not-absolute](../performance/vegas-grid-coords-not-absolute.md))
-invert the grid↔map contract; whichever lands second is rebased onto the other.
+**Sequencing.** PR #69 has moved the generation driver into
+`vibegraph-lib/src/generate.rs`; the refactor starts from there. Line numbers
+above predate it.
+Absolute grid coordinates are refused, so there is no contract inversion to
+rebase against.
