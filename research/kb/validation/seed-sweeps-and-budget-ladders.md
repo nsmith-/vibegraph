@@ -140,7 +140,15 @@ Worked cases:
   single-seed swing below 1%, but at one budget only, so that falsifier is
   still unclaimed and the cells stay `info`
   ([2→6 integrals info on scattering references](../backlog/validation/two-to-six-integrals-info-on-scattering-references.md);
-  [sigma-row gating exceptions](sigma-row-gating-exceptions.md)).
+  [sigma-row gating exceptions](sigma-row-gating-exceptions.md)). On `bbx` the
+  1.2M rung shares the floor-held channels' draws with 600k, but giving those
+  channels more points (Neyman, or a floor scaling with `neval`) left the spread
+  unchanged: the excess is a tail in a channel sized by its α share
+  ([bbx ladder excess in α-share tails](../backlog/validation/bbx-ladder-excess-in-alpha-share-tails.md)).
+- A ladder's control is rerun on the tree being measured. The α survey moves
+  at the last digit when unrelated code changes the arithmetic order, so a
+  per-channel trace from another commit does not replay, and seeds that agree
+  on one tree differ on the next (scaling-floor S1).
 
 ## Rung-to-rung differences need the measured spread
 

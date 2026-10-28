@@ -108,6 +108,15 @@ row fell from +3.82% to +0.46% and its over-seed χ²/dof from 13.5 to 0.33;
 rows went from 0–3 to 5–14 accepted points per channel per iteration. The
 cost: wide-row oracle runs spend about 2×, and the full `validate` run +1.9%.
 
+A floor that grows with the budget does not buy precision on the wide rows.
+Holding each channel to `max(512, ⌈512 · neval / 600 000⌉)` accepted points
+doubled every floor-held channel's points on `bbx_to_ccx_emmm_qcd0` at 1.2M,
+for 1.48× the run's points, and left the seed spread where the fixed floor
+leaves it (sd 3.41e-9 against 3.34e-9 pb over 20 paired seeds): the ~570
+floor-held channels carry about 2% of the quoted variance, and the excursions
+come from channels sized by their α share. The rule was measured and not
+kept ([scaling-floor S1](../sprints/scaling-floor/sessions/S1-report.md)).
+
 ## Neyman is handed the α split's own spend
 
 The re-split is given `Σ_j max(share_j, floor_j)`, the total the α split
