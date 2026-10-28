@@ -36,5 +36,17 @@ Related: `keep_grid_for_refine = False`, in both 3.8.1 and 3.5.17, moves grouped
 Upstream asked on #452 for one problem per issue, stating whether 3.5.17 and
 3.8.1 are affected.
 
+Two more candidates from sprint D are catalogued in
+[madgraph-defects](../../validation/madgraph-defects.md) and not reported:
+- MadEvent cuts the mirrored beam ordering at the direct ordering's `cm_rap`
+  between unequal beams (a registered deviation, user 2026-10-22). Its draft is
+  `research/upstream/madgraph-mirrored-cut-unequal-beams/`; 3.8.1 is fixed and
+  3.5.17 LTS is not.
+- `event_norm = unity` aborts `MultiEventFile.unweight` (`'unit'` compared at
+  `lhe_parser.py:1232`, `UnboundLocalError` at `:1238`). No draft yet.
+
+Whether to file either is the user's call; the item closes when each is filed or
+declined.
+
 The CDATA / `setMad` interplay is tracked separately as
 [pythia-setmad-drops-cdata-run-card](pythia-setmad-drops-cdata-run-card.md).

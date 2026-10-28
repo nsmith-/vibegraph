@@ -14,7 +14,7 @@ sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L1372-L1373", title: "TODO.md entry T120"}
 ---
 The `generate-stream` Part B item: a lazy `generate_*` event iterator. Event
-generation runs in `vibegraph-cli/src/generate.rs` (`generate_sample`,
+generation runs in `vibegraph-lib/src/generate.rs` (`generate_sample` at :353,
 `generate_proton_sample`), not behind a library iterator. Diagram
 enumeration (`generate_from_proc_card` → `Vec<DiagramSet>`) is a separate
 question that [note 33](../../history/notes/33-logging-tui-plan.md) §2 keeps apart from this one.

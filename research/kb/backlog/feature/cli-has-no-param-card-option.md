@@ -5,7 +5,7 @@ description: integrate and generate always run at the restriction card's default
 area: feature
 state: open
 priority: high
-closes_when: "`integrate --param-card` binds the model via `EvaluatedModel::from_model_card`, the artifact records the card and `generate` refuses a different one, and a moved-parameter run matches MadGraph's σ at the same card."
+closes_when: "`integrate --param-card` binds the model via `EvaluatedModel::from_model_card`, the artifact records the moved parameters, `generate` takes no param-card option and evaluates at the recorded values, and a moved-parameter run matches MadGraph's σ at the same card."
 blocked_by: []
 opened: 2026-10-06
 tags: [cli, param-card, slha, reweight, docs]
@@ -35,9 +35,10 @@ so a gridpack's final `Cards/param_card.dat` already carries them.
 Scope (user, 2026-10-06):
 
 - `integrate --param-card <file>` binds through `from_model_card`.
-- The artifact records the card (contents or digest) beside the model identity.
-  `generate` uses the same card or refuses, as it already does for model and
-  process.
+- The artifact records the moved parameters beside the model identity.
+  `generate` takes no param card and evaluates at the recorded values (user,
+  2026-10-21: the param card feeds integration only;
+  [integrate-generate split](../../pipeline/integrate-generate-split.md)).
 - `generate --reweight-card` takes that card as its card point: hypothesis
   denominators and the per-event audit run against it.
 - A card that sets a parameter the restriction zeroed to a non-zero value is

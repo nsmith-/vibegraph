@@ -3,7 +3,7 @@ type: Sprint
 title: "flavour-mixed-masses"
 description: "Split a flavour group whose subprocesses have different outgoing masses into separate groups, rather than refusing it, with no change to the phase-space map code."
 status: draft
-active: true
+active: false
 tags: [flavour-groups, masses, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-22}
 ---
