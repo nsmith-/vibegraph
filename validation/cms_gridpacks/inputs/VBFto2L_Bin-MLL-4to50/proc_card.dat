@@ -1,0 +1,9 @@
+import model loop_sm-ckm_no_b_mass
+
+define ell+ = e+ mu+ ta+
+define ell- = e- mu- ta-
+
+generate p p > ell+ ell- j j QCD=0 QED=4 $$ h @0
+
+output VBFto2L_Bin-MLL-4to50_madgraph-pythia8 -nojpeg
+
