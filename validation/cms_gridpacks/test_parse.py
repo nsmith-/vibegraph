@@ -221,6 +221,63 @@ class Reasons(unittest.TestCase):
         self.assertEqual(P.error_reasons(text, "error"), [])
 
 
+# runcmsgrid.sh excerpts: a run-3 LO script, and an older one that runs SysCalc on
+# the 5-flavour block of its card.
+RUNCMSGRID_SYSTEMATICS = """\
+pdfsets="325300,316200,306000@0,322500@0"
+scalevars="--mur=1,2,0.5 --muf=1,2,0.5 --together=muf,mur,dyn --dyn=-1,1,2,3,4 --alps=0.5,1,2"
+# echo "systematics $runlabel --pdf=unused" | ./bin/madevent
+if { echo "systematics $runlabel --start_id=1001 --pdf=$pdfsets $scalevars" | ./bin/madevent 2>&1 >&3 3>&- | grep '^' >&2; } 3>&1; then
+"""
+RUNCMSGRID_SYSCALC = '''\
+echo "
+# Central scale factors
+scalefact:
+1 2 0.5
+# choice of correlation scheme between muF and muR
+scalecorrelation:
+0 3 6 1 4 7 2 5 8
+# PDF sets and number of members (0 or none for all members)
+PDF:
+" > syscalc_card.dat
+
+is5FlavorScheme=1
+
+if [ $is5FlavorScheme -eq 1 ]; then
+  # 5F PDF
+  echo "
+  NNPDF31_nnlo_hessian_pdfas.LHgrid
+  NNPDF31_nnlo_as_0108.LHgrid 1
+  " >> syscalc_card.dat
+else
+  echo "
+  NNPDF31_nnlo_as_0118_nf_4.LHgrid
+  " >> syscalc_card.dat
+fi
+'''
+
+
+class RuncmsgridSystematics(unittest.TestCase):
+    def test_systematics_command_is_substituted(self):
+        r = P.runcmsgrid_systematics(RUNCMSGRID_SYSTEMATICS)
+        self.assertEqual(r["tool"], "systematics")
+        self.assertEqual(r["pdfs"], ["325300", "316200", "306000@0", "322500@0"])
+        self.assertEqual(r["args"], "systematics $runlabel --start_id=1001 --pdf=325300,316200,306000@0,322500@0 "
+                                    "--mur=1,2,0.5 --muf=1,2,0.5 --together=muf,mur,dyn --dyn=-1,1,2,3,4 "
+                                    "--alps=0.5,1,2")
+
+    def test_syscalc_takes_the_selected_flavour_block(self):
+        r = P.runcmsgrid_systematics(RUNCMSGRID_SYSCALC)
+        self.assertEqual(r["tool"], "syscalc")
+        self.assertEqual(r["pdfs"], ["NNPDF31_nnlo_hessian_pdfas", "NNPDF31_nnlo_as_0108@0"])
+        self.assertEqual(r["args"], "scalefact: 1 2 0.5; scalecorrelation: 0 3 6 1 4 7 2 5 8")
+        four = P.runcmsgrid_systematics(RUNCMSGRID_SYSCALC.replace("is5FlavorScheme=1", "is5FlavorScheme=0"))
+        self.assertEqual(four["pdfs"], ["NNPDF31_nnlo_as_0118_nf_4"])
+
+    def test_no_weight_step(self):
+        self.assertIsNone(P.runcmsgrid_systematics("./run.sh $nevt $rnum\n"))
+
+
 class Schema(unittest.TestCase):
     def test_fresh_database_matches_schema_version(self):
         import tempfile

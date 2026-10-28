@@ -466,6 +466,55 @@ def model_identity(file_shas):
     return h.hexdigest()
 
 
+# --- runcmsgrid.sh systematics -----------------------------------------------
+
+SHELL_ASSIGN = r'^\s*%s="([^"]*)"'
+SYSCALC_SWITCH = re.compile(r"^\s*is5FlavorScheme=(\d+)", re.M)
+SYSCALC_BLOCK = re.compile(r'^\s*echo "\n([^"]*)"\s*>>\s*syscalc_card\.dat', re.M | re.S)
+SYSCALC_HEADER = re.compile(r'^echo "\n([^"]*?)\nPDF:\n"\s*>\s*syscalc_card\.dat', re.M | re.S)
+
+
+def runcmsgrid_systematics(text):
+    """The weight-producing step a CMS `runcmsgrid.sh` runs after event generation.
+
+    Newer scripts pipe `systematics $runlabel ... --pdf=$pdfsets $scalevars` into
+    MadGraph, with both variables assigned once; the command is returned with them
+    substituted (`$runlabel` stays literal). Older ones write a `syscalc_card.dat`
+    and run SysCalc, choosing the 5- or 4-flavour PDF block by `is5FlavorScheme`.
+    PDF entries are normalised to MadGraph's syntax: a set id or name, `@0` when
+    only the central member is kept. -> {tool, pdfs, args} or None."""
+    def assigned(name):
+        m = re.search(SHELL_ASSIGN % name, text, re.M)
+        return m.group(1) if m else None
+
+    pdfsets = assigned("pdfsets")
+    if pdfsets is not None:
+        cmd = re.search(r'^[^#\n]*echo "(systematics [^"]*)"', text, re.M)
+        if cmd is None:
+            return None
+        args = cmd.group(1).replace("$pdfsets", pdfsets).replace("$scalevars", assigned("scalevars") or "")
+        return {"tool": "systematics", "pdfs": pdfsets.split(","), "args": " ".join(args.split())}
+    if "syscalc_card.dat" not in text:
+        return None
+    switch = SYSCALC_SWITCH.search(text)
+    blocks = SYSCALC_BLOCK.findall(text)
+    if switch is None or len(blocks) != 2:
+        return None
+    pdfs = []
+    for line in blocks[0 if switch.group(1) == "1" else 1].splitlines():
+        line = line.split("#", 1)[0].split()
+        if not line:
+            continue
+        name = line[0].removesuffix(".LHgrid")
+        pdfs.append(name + "@0" if line[1:] == ["1"] else name)
+    header = SYSCALC_HEADER.search(text)
+    settings = []
+    if header:
+        lines = [l for l in header.group(1).splitlines() if l.strip() and not l.lstrip().startswith("#")]
+        settings = ["%s %s" % (k.strip(), v.strip()) for k, v in zip(lines[::2], lines[1::2])]
+    return {"tool": "syscalc", "pdfs": pdfs, "args": "; ".join(settings)}
+
+
 # --- vibegraph output ------------------------------------------------------
 
 VG_SIGMA = re.compile(r"^σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+)", re.M)

@@ -16,6 +16,8 @@ Commands, in pipeline order:
   run        drive `vibegraph integrate` over a sample (see vgrun.py)
   status     row counts, and the outcome table of the latest runs
   reasons    the refusal and panic reasons behind the latest runs, by count
+  systematics  one CSV row per gridpack: run-card PDF and matching settings,
+             and the PDF and scale weights its runcmsgrid.sh adds
 
 Tarball contents are untrusted: they are extracted into per-gridpack cache
 directories, symlinks in them are never followed, and UFO model files are read
@@ -628,6 +630,63 @@ def cmd_reasons(db, args, scrape_id):
         print("%4d %4d  %s" % (rid, n, template))
 
 
+SYSTEMATICS_COLUMNS = ("label", "path", "order", "ickkw", "lhaid", "use_syst", "tool", "n_sets", "n_members",
+                       "unresolved", "pdfs_sha256", "pdfs", "args")
+
+
+def lhapdf_members(data_path):
+    """-> f(entry) giving the member count a systematics PDF entry asks for, or None
+    when its set is not in `data_path`. The CSV's `n_members` sums the resolved
+    entries and lists the others under `unresolved`."""
+    index = {}
+    with open(os.path.join(data_path, "pdfsets.index")) as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) >= 2:
+                index[parts[0]] = parts[1]
+
+    def members(entry):
+        name, _, member = entry.partition("@")
+        if member:
+            return 1
+        name = index.get(name, name)
+        try:
+            with open(os.path.join(data_path, name, name + ".info")) as fh:
+                m = re.search(r"^NumMembers:\s*(\d+)", fh.read(), re.M)
+        except OSError:
+            return None
+        return int(m.group(1)) if m else None
+    return members
+
+
+def cmd_systematics(db, args, scrape_id):
+    """One row per scraped gridpack: the run card's PDF and matching settings next to
+    the weights its `runcmsgrid.sh` adds after generation (see parse.runcmsgrid_systematics)."""
+    import csv
+    members = lhapdf_members(args.lhapdf_data_path)
+    out = open(args.out, "w", newline="") if args.out else sys.stdout
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(SYSTEMATICS_COLUMNS)
+    q = """SELECT g.gridpack_id, g.label, g.path, g.order_, g.lhaid, f.sha256,
+                  (SELECT value_raw FROM run_card_entry e WHERE e.gridpack_id = g.gridpack_id AND key = 'ickkw'),
+                  (SELECT value_raw FROM run_card_entry e WHERE e.gridpack_id = g.gridpack_id AND key = 'use_syst')
+           FROM gridpack g LEFT JOIN gridpack_file f ON f.gridpack_id = g.gridpack_id AND f.role = 'runcmsgrid'
+           ORDER BY g.label, g.path"""
+    for gid, label, path, order, lhaid, sha, ickkw, use_syst in db.execute(q).fetchall():
+        syst = P.runcmsgrid_systematics(get_blob(db, sha).decode(errors="replace")) if sha else None
+        if syst is None:
+            w.writerow((label, path, order, ickkw, lhaid, use_syst, "none" if sha else "", "", "", "", "", "", ""))
+            continue
+        counts = {p: members(p) for p in syst["pdfs"]}
+        pdfs = ",".join(syst["pdfs"])
+        w.writerow((label, path, order, ickkw, lhaid, use_syst, syst["tool"], len(counts),
+                    sum(n for n in counts.values() if n is not None),
+                    ",".join(p for p, n in counts.items() if n is None),
+                    hashlib.sha256(pdfs.encode()).hexdigest(), pdfs, syst["args"]))
+    if args.out:
+        out.close()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--db", default=DEFAULT_DB)
@@ -658,12 +717,16 @@ def main(argv=None):
     p = sub.add_parser("reasons")
     p.add_argument("--campaign")
     p.add_argument("--rebuild", action="store_true", help="re-derive every run's reasons from its error text")
+    p = sub.add_parser("systematics")
+    p.add_argument("--out", help="CSV path (default stdout)")
+    p.add_argument("--lhapdf-data-path", default="/cvmfs/sft.cern.ch/lcg/external/lhapdfsets/current",
+                   help="LHAPDF sets, for the member counts")
     args = ap.parse_args(argv)
     db = connect(args.db)
-    scrape_id = new_scrape(db, sys.argv) if args.cmd not in ("status", "reasons") else None
+    scrape_id = new_scrape(db, sys.argv) if args.cmd not in ("status", "reasons", "systematics") else None
     {"inventory": cmd_inventory, "sample": cmd_sample, "extract": cmd_extract, "parse": cmd_parse,
      "scrape": cmd_scrape, "run": vgrun.cmd_run, "status": cmd_status,
-     "reasons": cmd_reasons}[args.cmd](db, args, scrape_id)
+     "reasons": cmd_reasons, "systematics": cmd_systematics}[args.cmd](db, args, scrape_id)
 
 
 if __name__ == "__main__":
