@@ -22,16 +22,18 @@ use crate::vegas::{GridRule, VegasGrid};
 /// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
 /// artifact is written at this version.
 ///
-/// `14` records the run's external inputs as [`IntegrateArtifact::inputs`]:
-/// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
-/// integration parsed. A version-13 file names its PDF set but records no
-/// checksum, so a generation could not tell whether the densities it reads are
-/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
-/// version.
-pub const FORMAT_VERSION: u32 = 14;
+/// `15` records the systematics request typed
+/// ([`crate::generate::Systematics`]): the variations MadGraph's module would
+/// compute, with every default filled in, in place of the card's text for
+/// them. A version-14 file recorded the fields' values but not whether the
+/// card wrote `systematics_arguments` on a line of its own, and MadGraph reads
+/// the request from that list or from the `sys_*` fields according to exactly
+/// that, so a version-14 file cannot be upgraded and
+/// [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 15;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -483,8 +485,14 @@ mod tests {
             neval: 1000,
             niter: 2,
             seed: 42,
-            run_card: RunCard::default().split().0,
-            generate: RunCard::default().split().1,
+            run_card: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .0,
+            generate: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .1,
             channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
@@ -796,25 +804,31 @@ mod tests {
         path
     }
 
-    /// A version-13 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records no
-    /// checksum of the PDF files it was integrated with.
+    /// A version-14 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode: it records the
+    /// systematics fields' values but not whether the card wrote
+    /// `systematics_arguments`, which decides MadGraph's request. Version 13,
+    /// which records no checksum of its PDF files, is refused the same way.
     #[test]
-    fn a_version_13_artifact_is_refused() {
-        let dir = scratch_dir("v13");
-        let path = stamped(&sample_artifact(), &dir, 13);
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
-        assert!(
-            matches!(
-                err,
-                ArtifactError::UnsupportedVersion {
-                    found: 13,
-                    oldest: 14,
-                    expected: 14
-                }
-            ),
-            "{err}"
-        );
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        for version in [13, 14] {
+            let path = stamped(&sample_artifact(), &dir, version);
+            let err = IntegrateArtifact::read_from_path(&path).expect_err("an older file");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::UnsupportedVersion {
+                        found,
+                        oldest: 15,
+                        expected: 15
+                    } if found == version
+                ),
+                "{err}"
+            );
+        }
+        let path = stamped(&sample_artifact(), &dir, 14);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));

@@ -626,6 +626,152 @@ fn banked_alpha_s() -> f64 {
     })
 }
 
+/// The writer of MadGraph's default request on the banked set, read from
+/// `validation/pdf` alone.
+fn default_systematics_writer() -> vibegraph::systematics::plan::Writer {
+    use vibegraph::cache::lhapdf::{DownloadRequest, Tier, Tiers};
+    use vibegraph::cache::store::Fetch;
+    use vibegraph::systematics::request::VariationRequest;
+    let cache = tempfile::tempdir().unwrap();
+    let tiers = Tiers {
+        lhapdf_data_path: vec![pdf_dir()],
+        data_path_tier: Tier::LhapdfDataPath,
+        cvmfs: None,
+        cache_root: cache.path().to_path_buf(),
+    };
+    let refuse = |r: &DownloadRequest| -> Result<Box<dyn Fetch>, String> {
+        Err(format!("no download: {}", r.what))
+    };
+    let central = vibegraph::pdf::select::load_for_lhaid(247000, &tiers, &refuse).unwrap();
+    let request = VariationRequest::madgraph_default();
+    let resolved =
+        vibegraph::systematics::plan::resolve(&request, &central, &tiers, &refuse).unwrap();
+    vibegraph::systematics::plan::Writer::new(&request, &resolved).unwrap()
+}
+
+/// The systematics weights round-trip through the written file: MadGraph's own
+/// card asks for its default request, and every weight of every event, read
+/// back with the gate's parser and re-evaluated from the event's own
+/// `<mgrwt>` record and particles, is within one unit of the eighth digit of
+/// what was written. The header is MadGraph's banked block byte for byte.
+///
+/// A round trip sees an inconsistent record, not a wrong one, so it is paired
+/// with the record's own cross-checks against the same event, each at the
+/// record's printed digits: the chain's `x` is the incoming parton's
+/// `E/ebeam`, its `q` the event's factorisation scale (`SCALUP` on this
+/// fixed-scale card), `αs(μR)` off the set is `AQCDUP`, and the nominal
+/// group's first weight (id 45) is `XWGTUP`'s spelling.
+#[test]
+fn the_systematics_weights_round_trip_through_the_written_file() {
+    use vibegraph::systematics::format::as_written_e15_8;
+    use vibegraph::systematics::record::{LoRecord, RecordKinematics};
+    if !banked_present() {
+        vibegraph::validation::require(
+            "the_systematics_weights_round_trip_through_the_written_file",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let run = integrated();
+    let (file, text) = run.generate_text_at(400, "systematics.lhe", "20261028");
+    let writer = default_systematics_writer();
+    let banked_text = {
+        use std::io::Read;
+        let mut t = String::new();
+        flate2::read::GzDecoder::new(
+            std::fs::File::open(run_dir().join("Events/run_01/unweighted_events.lhe.gz")).unwrap(),
+        )
+        .read_to_string(&mut t)
+        .unwrap();
+        t
+    };
+    let block = |t: &str| {
+        let a = t.find("<initrwgt>").expect("<initrwgt>");
+        let b = t.find("</initrwgt>").expect("</initrwgt>");
+        t[a..b].to_string()
+    };
+    assert_eq!(
+        block(&text),
+        block(&banked_text),
+        "the header is MadGraph's"
+    );
+    assert!(
+        text.contains("<pdf use=\"systematics\" set=\"NNPDF23_lo_as_0130_qed\" lhaid=\"247000\""),
+        "the inputs record the systematics set"
+    );
+    let set = PdfSet::load(&pdf_dir().join(PDF_SET), PDF_SET).unwrap();
+    let alphas = vibegraph::pdf::alphas::GridAlphaS::from_info(&set.info.alpha_s).unwrap();
+    let ebeam = run.artifact.run_card.ebeam1;
+    let (mut weights, mut exact) = (0usize, 0usize);
+    for (n, event) in file.events.iter().enumerate() {
+        let record = LoRecord::parse(&event.trailer)
+            .expect("the record parses")
+            .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
+        let written: Vec<(String, String)> = event
+            .trailer
+            .iter()
+            .filter_map(|l| {
+                let rest = l.strip_prefix("<wgt id='")?;
+                let (id, rest) = rest.split_once("'>")?;
+                Some((
+                    id.to_string(),
+                    rest.strip_suffix("</wgt>")?.trim().to_string(),
+                ))
+            })
+            .collect();
+        let ids: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(
+            ids,
+            writer.ids().iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        let again = writer
+            .weights(&record, &RecordKinematics::of(event), event.weight)
+            .expect("the weights evaluate");
+        for (w, (_, text)) in again.iter().zip(&written) {
+            let ours = vibegraph::systematics::format::wgt_text(*w);
+            let theirs: f64 = text.parse().unwrap();
+            let unit = 10f64.powi(text.split_once('e').unwrap().1.parse::<i32>().unwrap() - 7);
+            let apart = ((ours.parse::<f64>().unwrap() - theirs).abs() / unit).round();
+            assert!(apart <= 1.0, "event {n}: {ours} written as {text}");
+            weights += 1;
+            exact += usize::from(ours == *text);
+        }
+        assert_eq!(
+            written[44].1,
+            vibegraph::systematics::format::wgt_text(event.weight),
+            "event {n}: id 45"
+        );
+        for (b, incoming) in event.particles[..2].iter().enumerate() {
+            let chain = &record.beams[b].entries;
+            assert_eq!(chain.len(), 1, "an unmatched chain is one entry");
+            let (pdg, x, q) = chain[0];
+            assert_eq!(pdg, i64::from(incoming.pdg), "event {n} beam {}", b + 1);
+            // `E/ebeam` from the eleven digits the particle line keeps, against
+            // the record's eight: half a unit of `E15.8`'s eighth digit is at
+            // most 5e-8 relative.
+            let from_line = incoming.momentum[0] / ebeam;
+            assert!(
+                (x / from_line - 1.0).abs() < 6e-8,
+                "event {n} beam {}: x {x} against E/ebeam {from_line}",
+                b + 1
+            );
+            assert_eq!(q, as_written_e15_8(event.scale), "event {n}");
+        }
+        let alpha = alphas.eval(record.mu_r);
+        assert!(
+            ((alpha - event.alpha_qcd) / alpha).abs() < 1e-7,
+            "event {n}: alpha_s(muR) {alpha} against AQCDUP {}",
+            event.alpha_qcd
+        );
+    }
+    println!(
+        "round trip: {} events, {weights} weights, {exact} exact ({:.4}%)",
+        file.events.len(),
+        100.0 * exact as f64 / weights as f64
+    );
+    assert!(weights > 0);
+}
+
 /// `generate` takes no PDF choice: it locates the set the artifact recorded,
 /// by name, through `$LHAPDF_DATA_PATH` and the cache. With the data path
 /// pointing at a directory without it, an empty cache and downloads refused,

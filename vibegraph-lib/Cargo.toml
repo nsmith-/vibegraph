@@ -59,6 +59,13 @@ statrs = { version = "0.19", default-features = false }
 # enabled vector units, with one-instruction ops that inline into the evaluator.
 wide = "1.7"
 quick-xml = "0.32.0"
+# LHAPDF reads a set's `.info` and each member's header as YAML (yaml-cpp), and
+# MadGraph's systematics header prints descriptions that are quoted or folded
+# over several lines there, so both are parsed as YAML.
+yaml_serde = "0.10"
+# `generate --systematics` takes MadGraph's arguments as one string, split as a
+# shell splits it (MadGraph's `split_arg`).
+shlex = "2"
 sha2 = "0.11.0"
 dirs = "6"
 tar = "0.4"
@@ -169,6 +176,10 @@ required-features = ["extended-validation"]
 
 [[test]]
 name = "validate_lhef"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_systematics"
 required-features = ["extended-validation"]
 
 [[test]]

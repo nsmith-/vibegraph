@@ -1872,7 +1872,8 @@ fn mg_run_card_matches_madevents_banner() {
         let (card, settings) =
             RunCard::parse_file(&madgraph_dir().join(format!("{name}_run_card.dat")))
                 .expect("run card")
-                .split();
+                .split()
+                .expect("the matched card splits");
         let ours = run_card_fields(&body(&vibegraph::lhef::write::mg_run_card(
             &card, &settings, 0,
         )));

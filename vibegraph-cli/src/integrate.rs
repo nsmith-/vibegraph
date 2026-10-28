@@ -38,6 +38,7 @@ use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
 };
+use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
@@ -54,6 +55,7 @@ use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
@@ -604,7 +606,13 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let (rc, generate_settings) = load_run_card(&config, &parsed)?.split();
+    let card = load_run_card(&config, &parsed)?;
+    let split = if parsed.is_decay() {
+        card.split_decay()
+    } else {
+        card.split()
+    };
+    let (rc, generate_settings) = split.map_err(|e| err(e.to_string()))?;
     let seed = rc.integration_seed(args.seed);
     tui::state::describe_model(
         &model_id.label(),
@@ -622,7 +630,19 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
         }
         BeamMode::Proton => integrate_proton(
-            args, &parsed, &model, &evaluated, &rc, process, seed, network,
+            args,
+            &parsed,
+            &model,
+            &evaluated,
+            &rc,
+            process,
+            seed,
+            network,
+            generate_settings
+                .systematics
+                .request
+                .as_ref()
+                .filter(|_| generate_settings.systematics.enabled),
         )?,
         BeamMode::FixedEnergy => {
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
@@ -776,6 +796,7 @@ fn integrate_proton(
     process: String,
     seed: u64,
     network: NetworkPolicy,
+    systematics: Option<&VariationRequest>,
 ) -> Result<RunOutput, CliError> {
     let tiers = assets::pdf_tiers().map_err(err)?;
     let fetch = assets::pdf_fetch(network);
@@ -791,7 +812,17 @@ fn integrate_proton(
     tracing::debug!(tier = tier.name(), dir = %set.dir().display(), "PDF set located");
 
     integrate_hadronic(
-        args, parsed, model, evaluated, rc, &set, &member, input, process, seed,
+        args,
+        parsed,
+        model,
+        evaluated,
+        rc,
+        &set,
+        &member,
+        input,
+        process,
+        seed,
+        systematics,
     )
 }
 
@@ -833,6 +864,7 @@ fn integrate_hadronic(
     pdf_input: PdfInput,
     process: String,
     seed: u64,
+    systematics: Option<&VariationRequest>,
 ) -> Result<RunOutput, CliError> {
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
@@ -840,6 +872,10 @@ fn integrate_hadronic(
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
             .map_err(err)?;
+    if let Some(request) = systematics {
+        refuse_single_particle_et(request, &groups)
+            .map_err(|e| err(format!("systematics request refused at integrate: {e}")))?;
+    }
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
         .map(|part| {
@@ -866,10 +902,15 @@ fn integrate_hadronic(
         .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
         integ.use_onshell_veto(part_vetoes, evaluated);
         // Both scales and the strong coupling come from the run card; the coupling
-        // is the PDF set's own tabulation, which is what the densities were fitted
-        // with.
+        // is the PDF member's own tabulation, which is what the densities were
+        // fitted with.
         let report = integ
-            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+            .use_run_card_scales(
+                model,
+                evaluated,
+                rc,
+                Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
+            )
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
         scale_report.get_or_insert(report);
         parts.push(integ);

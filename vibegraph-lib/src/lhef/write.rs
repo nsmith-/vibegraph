@@ -22,6 +22,7 @@ use crate::artifact::PdfInput;
 use crate::cache::lhapdf::Tier;
 use crate::generate::GenerateSettings;
 use crate::runcard::{card_text, RunCard};
+use crate::systematics::plan::SystematicsSet;
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -324,6 +325,8 @@ pub struct InputsRead {
     pub pdf: Option<(PdfInput, Tier)>,
     /// SHA-256 of the integrate artifact file, as read.
     pub grid_sha256: String,
+    /// The sets the systematics weights read, each with every file read.
+    pub systematics: Vec<SystematicsSet>,
 }
 
 impl InputsRead {
@@ -363,6 +366,21 @@ impl InputsRead {
             }
             write(XmlEvent::End(BytesEnd::new("pdf")));
         }
+        for set in &self.systematics {
+            let mut pdf = BytesStart::new("pdf");
+            pdf.push_attribute(("use", "systematics"));
+            pdf.push_attribute(("set", set.set.as_str()));
+            pdf.push_attribute(("lhaid", set.set_index.to_string().as_str()));
+            pdf.push_attribute(("tier", set.tier.name()));
+            write(XmlEvent::Start(pdf));
+            for file in &set.files {
+                let mut entry = BytesStart::new("file");
+                entry.push_attribute(("name", file.name.as_str()));
+                entry.push_attribute(("sha256", file.sha256.as_str()));
+                write(XmlEvent::Empty(entry));
+            }
+            write(XmlEvent::End(BytesEnd::new("pdf")));
+        }
         let mut grid = BytesStart::new("grid");
         grid.push_attribute(("sha256", self.grid_sha256.as_str()));
         write(XmlEvent::Empty(grid));
@@ -371,25 +389,30 @@ impl InputsRead {
     }
 }
 
-/// The `<initrwgt>` block declaring a file's reweighting weights, one line per
-/// entry, in the layout MadGraph's reweight module writes: one `<weightgroup>`
+/// The `<initrwgt>` block declaring a file's weights, one line per entry: the
+/// systematics module's groups and weights as given (`systematics`, written by
+/// [`crate::systematics::header`]), then the reweighting hypotheses in the
+/// layout MadGraph's reweight module appends after them: one `<weightgroup>`
 /// holding a `<weight id='…'>` per hypothesis, its description as the text.
 ///
 /// The ids go into attributes unescaped, so they must be attribute-safe; the
 /// descriptions are escaped.
-pub(crate) fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
-    let mut lines = vec![
-        "<initrwgt>".to_string(),
-        "<weightgroup name='mg_reweighting' weight_name_strategy='includeIdInWeightName'>"
-            .to_string(),
-    ];
-    for (id, info) in weights {
-        lines.push(format!(
-            "<weight id='{id}'> {} </weight>",
-            quick_xml::escape::escape(info.as_str())
-        ));
+pub(crate) fn initrwgt_block(systematics: &[String], weights: &[(String, String)]) -> Vec<String> {
+    let mut lines = vec!["<initrwgt>".to_string()];
+    lines.extend(systematics.iter().cloned());
+    if !weights.is_empty() {
+        lines.push(
+            "<weightgroup name='mg_reweighting' weight_name_strategy='includeIdInWeightName'>"
+                .to_string(),
+        );
+        for (id, info) in weights {
+            lines.push(format!(
+                "<weight id='{id}'> {} </weight>",
+                quick_xml::escape::escape(info.as_str())
+            ));
+        }
+        lines.push("</weightgroup>".to_string());
     }
-    lines.push("</weightgroup>".to_string());
     lines.push("</initrwgt>".to_string());
     lines
 }
@@ -536,6 +559,7 @@ mod tests {
                 Tier::Cvmfs,
             )),
             grid_sha256: "cc".to_string(),
+            systematics: Vec::new(),
         };
         assert_eq!(
             read.header_block(),
@@ -550,6 +574,7 @@ mod tests {
         let none = InputsRead {
             pdf: None,
             grid_sha256: "cc".to_string(),
+            systematics: Vec::new(),
         };
         assert_eq!(
             none.header_block(),
@@ -570,7 +595,7 @@ mod tests {
             ]
         );
         assert!(rwgt_block(&[], &[]).is_empty());
-        let block = initrwgt_block(&[("a".to_string(), "set ymt 1 & <more>".to_string())]);
+        let block = initrwgt_block(&[], &[("a".to_string(), "set ymt 1 & <more>".to_string())]);
         assert_eq!(
             block[2],
             "<weight id='a'> set ymt 1 &amp; &lt;more&gt; </weight>"
@@ -580,7 +605,7 @@ mod tests {
     /// Header blocks are markup a reader walks past, and the events still parse.
     #[test]
     fn header_blocks_leave_the_file_readable() {
-        let block = initrwgt_block(&[("x".to_string(), "info".to_string())]);
+        let block = initrwgt_block(&[], &[("x".to_string(), "info".to_string())]);
         let mut out = Vec::new();
         {
             let mut writer =
@@ -902,7 +927,8 @@ mod tests {
     #[test]
     fn mg_run_card_carries_what_set_mad_reads() {
         let parsed = RunCard::parse(
-            "1 = ickkw\n30 = xqcut\n45 = ptj\n0.4 = drjj\nTrue = use_syst\n2 = alpsfact\n",
+            "1 = ickkw\n30 = xqcut\n45 = ptj\n0.4 = drjj\nTrue = use_syst\n2 = alpsfact\n\
+             none = systematics_program\n",
         )
         .expect("card");
         assert_eq!(
@@ -910,7 +936,7 @@ mod tests {
             30.0,
             "the resolved card is setcuts.f's"
         );
-        let (card, settings) = parsed.clone().split();
+        let (card, settings) = parsed.clone().split().expect("card splits");
         let block = mg_run_card(&card, &settings, 20261021);
         assert!(block.starts_with("<MGRunCard>\n\n  "));
         assert!(block.ends_with("\n\n</MGRunCard>"));
@@ -949,7 +975,7 @@ mod tests {
     #[test]
     fn mg_run_card_records_the_generation_as_drawn() {
         let parsed = RunCard::parse("7 = iseed\n500 = nevents\n").expect("card");
-        let (card, mut settings) = parsed.split();
+        let (card, mut settings) = parsed.split().expect("card splits");
         settings.nevents = 42;
         settings.event_norm = crate::runcard::EventNorm::Sum;
         settings.systematics.enabled = false;

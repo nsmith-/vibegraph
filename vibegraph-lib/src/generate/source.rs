@@ -7,6 +7,7 @@ use tracing::{info, warn};
 
 use super::audit::ReweightAudit;
 use super::MAX_TRIALS_PER_EVENT;
+use crate::coupling::cluster::configs::qcd_order;
 use crate::coupling::scales::MatchedRecord;
 use crate::hadronic::FixedBeamIntegrand;
 use crate::helas::repr::lorentz::LorentzVector;
@@ -16,10 +17,13 @@ use crate::lhef::record::LheEvent;
 use crate::lhef::resonance::SubprocessResonances;
 use crate::lhef::LhefError;
 use crate::multiplicity::MultiplicitySum;
+use crate::pdf::PdfMember;
 use crate::phasespace::GEV2_TO_PB;
-use crate::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
+use crate::proton::{BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection};
 use crate::reweight::engine::Reweighter;
 use crate::runcard::RunCard;
+use crate::systematics::record::{LoRecord, PdfChain};
+use crate::ufo::UFOModel;
 use crate::unweight::{UnweightStats, Unweighter};
 
 type V = LorentzVector<f64>;
@@ -173,6 +177,7 @@ impl EventSource for SampleSource<'_, '_> {
             weight: point.weight,
             part: 0,
             reweights,
+            lo_record: None,
         })
     }
 
@@ -360,6 +365,84 @@ pub(super) struct PartRecords {
     pub(super) member_pdgs: Vec<Vec<Vec<Vec<i32>>>>,
 }
 
+/// What an unmatched proton event's `<mgrwt>` record is filled from
+/// (`reweight.f:1450-1458`): the QCD power of each integration configuration's
+/// diagram, and the central member the densities were read from.
+pub(super) struct RecordFill<'s> {
+    /// `[part][group][config]`: the QCD coupling power of the configuration's
+    /// diagram, MadEvent's `nqcd`.
+    nqcd: Vec<Vec<Vec<u32>>>,
+    central: &'s PdfMember,
+}
+
+impl<'s> RecordFill<'s> {
+    pub(super) fn new(parts: &[FlavorGroups], model: &UFOModel, central: &'s PdfMember) -> Self {
+        let nqcd = parts
+            .iter()
+            .map(|groups| {
+                groups
+                    .groups()
+                    .iter()
+                    .map(|group| {
+                        let evaluator = group.evaluator();
+                        (0..evaluator.n_configs())
+                            .map(|c| {
+                                evaluator
+                                    .config_diagram(c)
+                                    .and_then(|d| group.diagrams().get(d))
+                                    .map_or(0, |diagram| {
+                                        u32::try_from(qcd_order(diagram, model)).unwrap_or(0)
+                                    })
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+        RecordFill { nqcd, central }
+    }
+
+    /// The `<mgrwt>` record of an unmatched event of part `k`: the QCD power
+    /// of the configuration the event is labelled in (MadEvent's
+    /// `nqcd(igraphs(1))`; the group's highest where no configuration carried
+    /// weight), its `μR`, one chain entry per beam holding the incoming
+    /// parton's code, `x` and `μF`, and `f₁ f₂` as the total factor, the
+    /// densities at those entries (`asref = 0` without matching).
+    fn record(
+        &self,
+        k: usize,
+        selection: &ProtonSelection,
+        event: &ProtonEvent,
+        record: &LheEvent,
+    ) -> Option<LoRecord> {
+        let configs = &self.nqcd[k][selection.group];
+        let n_qcd = match selection.config {
+            Some(c) => *configs.get(c)?,
+            None => configs.iter().copied().max().unwrap_or(0),
+        };
+        let mut beams = [PdfChain::default(), PdfChain::default()];
+        let mut tot_fact = 1.0;
+        for (b, chain) in beams.iter_mut().enumerate() {
+            let parton = record.particles.get(b)?;
+            let (x, q) = (event.x[b], selection.scales.mu_f[b]);
+            let pdg = parton.pdg;
+            tot_fact *= self.central.try_xfx_q2(pdg, x, q * q).ok()? / x;
+            chain.entries.push((i64::from(pdg), x, q));
+        }
+        Some(LoRecord {
+            n_qcd,
+            mu_r: selection.scales.mu_r,
+            emission_scales: Vec::new(),
+            beams,
+            beam_order: match selection.ordering {
+                BeamOrdering::Direct => [1, 2],
+                BeamOrdering::Exchanged => [2, 1],
+            },
+            tot_fact,
+        })
+    }
+}
+
 /// The accept/reject pass over a hadronic integrand as a replayable source.
 ///
 /// The difference from a fixed-beam run is entirely in what an accepted point
@@ -384,6 +467,8 @@ pub(super) struct ProtonSampleSource<'s, 'a> {
     member_offset: Vec<Vec<usize>>,
     mirrored: Vec<V>,
     pub(super) audit: ReweightAudit,
+    /// Where the run writes `<mgrwt>` records, what they are filled from.
+    records: Option<RecordFill<'s>>,
 }
 
 impl<'s, 'a> ProtonSampleSource<'s, 'a> {
@@ -395,6 +480,7 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         seed: u64,
         alpha_qed: f64,
         reweighter: Option<Reweighter<'s>>,
+        records: Option<RecordFill<'s>>,
     ) -> Self {
         ProtonSampleSource {
             integrand,
@@ -409,6 +495,7 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             member_offset: member_offsets(integrand.parts().iter().map(ProtonIntegrand::groups)),
             mirrored: Vec::new(),
             audit: ReweightAudit::default(),
+            records,
         }
     }
 }
@@ -510,11 +597,18 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 (&reweights, rw.launches()),
             );
         }
+        let lo_record = match &self.records {
+            Some(fill) if selection.record.is_none() => {
+                Some(fill.record(k, &selection, &event, &record)?)
+            }
+            _ => None,
+        };
         Some(WeightedEvent {
             record,
             weight: point.weight,
             part: k,
             reweights,
+            lo_record,
         })
     }
 
