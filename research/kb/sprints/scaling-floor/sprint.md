@@ -3,7 +3,7 @@ type: Sprint
 title: "A channel floor that scales with the budget"
 description: "Give floor-bound multichannel channels a floor that grows with neval, so budget reaches them, and measure it on bbx_to_ccx_emmm_qcd0 with 20 paired seeds at 600k and 1.2M under the plain-mean combine."
 status: draft
-active: true
+active: false
 tags: [multichannel, allocation, coverage-floor, two-to-six, heavy-tail, budget-ladder]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-27}
 ---

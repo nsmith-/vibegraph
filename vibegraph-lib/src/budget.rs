@@ -48,12 +48,6 @@
 //! The counts are still set from earlier outcomes, which is why they never
 //! weight the combination (see [`ChannelHistory::combine`]).
 //!
-//! [`MIN_CHANNEL_NEVAL`] is the floor at every budget under the default
-//! [`ChannelFloor::Fixed`]. [`ChannelFloor::ScalesWithBudget`] keeps it up to
-//! [`FLOOR_REFERENCE_NEVAL`] and raises it in proportion to `neval` past that,
-//! so a channel held at its floor still draws more points when the budget
-//! grows.
-//!
 //! # Stopping
 //!
 //! [`Budget::Fixed`] is the reproducible mode: `neval × niter`, the same points
@@ -160,82 +154,22 @@ pub const MAX_FLOOR_ACCEPTANCE_SCALE: usize = 4;
 /// wide to call exact.
 pub(crate) const CONSTANT_REL_ERROR: f64 = 1e-7;
 
-/// The budget up to which [`ChannelFloor::ScalesWithBudget`] is the fixed
-/// [`MIN_CHANNEL_NEVAL`] floor, and past which it grows in proportion to `neval`.
-///
-/// The `2 → 6` rows, whose hundreds of channels put most of every iteration on
-/// the floor, run their σ at this budget, so the two rules allocate those runs
-/// identically and differ only on a budget raised past it.
-pub const FLOOR_REFERENCE_NEVAL: usize = 600_000;
-
-/// How the accepted-point floor every channel is held to depends on the budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ChannelFloor {
-    /// [`MIN_CHANNEL_NEVAL`] accepted points at every budget.
-    ///
-    /// A channel held at this floor draws the same points whatever `neval` is
-    /// asked, so raising the budget leaves its term, and the variance it adds,
-    /// where they were. On a split wide enough for the floors to be most of an
-    /// iteration that is most of the run: on `bbx_to_ccx_emmm_qcd0`, 615
-    /// channels, 563–580 channels draw bit-identical histories at 600 000 and
-    /// 1 200 000 points an iteration.
-    #[default]
-    Fixed,
-    /// `max(MIN_CHANNEL_NEVAL, ⌈MIN_CHANNEL_NEVAL · neval / FLOOR_REFERENCE_NEVAL⌉)`
-    /// accepted points: the fixed floor up to [`FLOOR_REFERENCE_NEVAL`], and
-    /// proportional to `neval` past it, with the acceptance correction's cap
-    /// scaling alongside.
-    ///
-    /// Past the reference every channel's count is proportional to `neval`, the
-    /// floored ones included, so the share of an iteration the floors take stays
-    /// the share they take at the reference, and a doubled budget doubles every
-    /// channel's points. The cost is that the spend is no longer bounded by the
-    /// channel count: an iteration costs up to
-    /// `MAX_FLOOR_ACCEPTANCE_SCALE × n_channels` times the scaled floor on top of
-    /// the α shares. The floor is still read from the acceptance of iterations
-    /// already complete and the budget, never from the draws it sizes.
-    ///
-    /// Reaching the floored channels is not the same as reducing the error. On
-    /// `bbx_to_ccx_emmm_qcd0` at 1 200 000 over 20 paired seeds this rule draws
-    /// 1.48 times the fixed floor's points and leaves the seed spread where the
-    /// fixed floor leaves it (sd 3.41e-9 pb against 3.34e-9 pb): the ~570
-    /// floored channels carry about 2% of that run's quoted variance, and its
-    /// excursions come from channels sized by their α share.
-    ScalesWithBudget,
-}
-
-impl ChannelFloor {
-    /// Accepted points each channel is floored at, an iteration, at `neval`.
-    pub fn accepted_points(self, neval: usize) -> usize {
-        match self {
-            ChannelFloor::Fixed => MIN_CHANNEL_NEVAL,
-            ChannelFloor::ScalesWithBudget => {
-                let scaled = (MIN_CHANNEL_NEVAL as u128 * neval as u128)
-                    .div_ceil(FLOOR_REFERENCE_NEVAL as u128);
-                usize::try_from(scaled)
-                    .unwrap_or(usize::MAX)
-                    .max(MIN_CHANNEL_NEVAL)
-            }
-        }
-    }
-}
-
-/// The points a channel of measured `acceptance` must draw for `accepted_floor`
-/// of them to survive the cuts, capped at [`MAX_FLOOR_ACCEPTANCE_SCALE`] times
-/// that floor.
+/// The points a channel of measured `acceptance` must draw for
+/// [`MIN_CHANNEL_NEVAL`] of them to survive the cuts, capped at
+/// [`MAX_FLOOR_ACCEPTANCE_SCALE`] times the floor.
 ///
 /// `None` is the cold start — a channel that has drawn nothing has measured no
 /// acceptance, and the floor is the uncorrected one, which is what the whole
 /// allocation was before any acceptance existed. A channel that has accepted
 /// *nothing* is not the same case: it has a measurement, and the measurement says
 /// no finite allocation buys the floor's coverage, so it gets the cap.
-pub(crate) fn floor_for_acceptance(accepted_floor: usize, acceptance: Option<f64>) -> usize {
-    let cap = accepted_floor.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE);
+pub(crate) fn floor_for_acceptance(acceptance: Option<f64>) -> usize {
+    let cap = MIN_CHANNEL_NEVAL.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE);
     match acceptance {
-        None => accepted_floor,
-        Some(a) if a >= 1.0 => accepted_floor,
+        None => MIN_CHANNEL_NEVAL,
+        Some(a) if a >= 1.0 => MIN_CHANNEL_NEVAL,
         Some(a) if a > 0.0 && a.is_finite() => {
-            let need = (accepted_floor as f64 / a).ceil();
+            let need = (MIN_CHANNEL_NEVAL as f64 / a).ceil();
             if need >= cap as f64 {
                 cap
             } else {
@@ -719,36 +653,6 @@ pub(crate) fn integrate_channels<I>(
 where
     I: ChannelIntegrand + Sync,
 {
-    integrate_channels_with_floor(
-        integrand,
-        alphas,
-        vegas_alpha,
-        combination,
-        budget,
-        allocation,
-        ChannelFloor::default(),
-        seed,
-        stop,
-    )
-}
-
-/// [`integrate_channels`] with the channels' accepted-point floor chosen by
-/// `floor` rather than [`ChannelFloor::default`].
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn integrate_channels_with_floor<I>(
-    integrand: &I,
-    alphas: &[f64],
-    vegas_alpha: f64,
-    combination: IterationCombination,
-    budget: Budget,
-    allocation: BlockAllocation,
-    floor: ChannelFloor,
-    seed: u64,
-    stop: &StopSignal,
-) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport)
-where
-    I: ChannelIntegrand + Sync,
-{
     let _span = info_span!("vegas").entered();
     let ndims: Vec<usize> = (0..alphas.len())
         .map(|j| integrand.channel_grid_ndim(j))
@@ -756,7 +660,6 @@ where
     let scale_ndim = integrand.scale_draw_ndim();
     let neval = budget.neval();
     let single = alphas.len() == 1;
-    let accepted_floor = floor.accepted_points(neval);
 
     let mut grids: Vec<VegasGrid> = ndims
         .iter()
@@ -799,11 +702,11 @@ where
     let by_alpha: Vec<usize> = if single {
         shares.clone()
     } else {
-        shares.iter().map(|&s| s.max(accepted_floor)).collect()
+        shares.iter().map(|&s| s.max(MIN_CHANNEL_NEVAL)).collect()
     };
     let alpha_total: usize = by_alpha.iter().sum();
 
-    report_split(&ndims, &by_alpha, neval, allocation, accepted_floor);
+    report_split(&ndims, &by_alpha, neval, allocation);
 
     // An integrand declared constant needs no warm-up: nothing is refined, so
     // there is no grid for a discarded iteration to have trained, and its one
@@ -841,14 +744,12 @@ where
         // was; a floor thereafter is decided by iterations already complete, and
         // never by the draws it is about to size.
         if !single {
-            let split =
-                allocate_iteration(&channels, &shares, allocation, iteration, accepted_floor);
+            let split = allocate_iteration(&channels, &shares, allocation, iteration);
             floor_capped_channels = split.capped;
             floor_bound_channels = split.floor_bound;
             report_reallocation(&current, &split.points);
             current = split.points;
             report_floor_correction(
-                accepted_floor,
                 alphas.len(),
                 alpha_total,
                 current.iter().sum(),
@@ -1018,13 +919,7 @@ where
 /// range, the points an iteration spends before any acceptance is measured, and
 /// how they are allocated — with a warning when the floor alone outspends the
 /// request.
-fn report_split(
-    ndims: &[usize],
-    by_alpha: &[usize],
-    neval: usize,
-    allocation: BlockAllocation,
-    accepted_floor: usize,
-) {
+fn report_split(ndims: &[usize], by_alpha: &[usize], neval: usize, allocation: BlockAllocation) {
     let alpha_total: usize = by_alpha.iter().sum();
     let lowest = ndims.iter().copied().min().unwrap_or(0);
     let widest = ndims.iter().copied().max().unwrap_or(0);
@@ -1048,10 +943,10 @@ fn report_split(
     // raises it further once the first iteration has measured one, and warns
     // again there with the number it reaches.
     if alpha_total > neval {
-        let floored = by_alpha.iter().filter(|&&n| n == accepted_floor).count();
+        let floored = by_alpha.iter().filter(|&&n| n == MIN_CHANNEL_NEVAL).count();
         warn!(
             "neval {neval} is below what {} channels can cover: {floored} of them sit at the \
-             {accepted_floor}-point floor, so an iteration spends {alpha_total} before the \
+             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total} before the \
              acceptance correction, and at most {} after it",
             ndims.len(),
             alpha_total.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE),
@@ -1083,11 +978,10 @@ fn allocate_iteration(
     shares: &[usize],
     allocation: BlockAllocation,
     iteration: usize,
-    accepted_floor: usize,
 ) -> IterationSplit {
     let floors: Vec<usize> = channels
         .iter()
-        .map(|c| floor_for_acceptance(accepted_floor, c.acceptance()))
+        .map(|c| floor_for_acceptance(c.acceptance()))
         .collect();
     let capped = channels
         .iter()
@@ -1341,10 +1235,9 @@ fn report_reallocation(before: &[usize], after: &[usize]) {
 /// correction raised the spend is accounting a caller pricing a run needs, since
 /// the number an iteration costs is no longer the one `neval` and the channel
 /// count imply. That it had to be *capped* is a coverage statement: on those
-/// channels the run is knowingly buying fewer than `accepted_floor` accepted
+/// channels the run is knowingly buying fewer than [`MIN_CHANNEL_NEVAL`] accepted
 /// points, which is the promise the floor exists to make.
 fn report_floor_correction(
-    accepted_floor: usize,
     channels: usize,
     uncorrected: usize,
     corrected: usize,
@@ -1355,7 +1248,7 @@ fn report_floor_correction(
     if corrected > uncorrected && !*raised_reported {
         *raised_reported = true;
         info!(
-            "the {accepted_floor}-accepted-point floor raises an iteration over \
+            "the {MIN_CHANNEL_NEVAL}-accepted-point floor raises an iteration over \
              {channels} channels from {uncorrected} to {corrected} points at the measured \
              acceptances"
         );
@@ -1366,8 +1259,8 @@ fn report_floor_correction(
             "{capped} of {channels} channels accept less than one point in \
              {MAX_FLOOR_ACCEPTANCE_SCALE}, so their allocation is held at the \
              {}-point cap and they cover their own region with fewer than \
-             {accepted_floor} accepted points an iteration",
-            accepted_floor * MAX_FLOOR_ACCEPTANCE_SCALE,
+             {MIN_CHANNEL_NEVAL} accepted points an iteration",
+            MIN_CHANNEL_NEVAL * MAX_FLOOR_ACCEPTANCE_SCALE,
         );
     }
 }
@@ -1415,10 +1308,7 @@ pub(crate) fn sequential_channel_reference(
             grid.refine_grid(&hist, n_j);
         }
         last = n_j;
-        n_j = share.max(floor_for_acceptance(
-            MIN_CHANNEL_NEVAL,
-            Some(accepted as f64 / drawn as f64),
-        ));
+        n_j = share.max(floor_for_acceptance(Some(accepted as f64 / drawn as f64)));
     }
     let integral = kept.iter().sum::<f64>() / kept.len() as f64;
     (integral, last)
@@ -2171,163 +2061,23 @@ mod tests {
     fn the_floor_is_denominated_in_accepted_points() {
         let cap = MIN_CHANNEL_NEVAL * MAX_FLOOR_ACCEPTANCE_SCALE;
         // Cold start: nothing measured, so the floor is the uncorrected one.
-        assert_eq!(
-            floor_for_acceptance(MIN_CHANNEL_NEVAL, None),
-            MIN_CHANNEL_NEVAL
-        );
+        assert_eq!(floor_for_acceptance(None), MIN_CHANNEL_NEVAL);
         // A channel the cuts never reject needs no correction.
-        assert_eq!(
-            floor_for_acceptance(MIN_CHANNEL_NEVAL, Some(1.0)),
-            MIN_CHANNEL_NEVAL
-        );
+        assert_eq!(floor_for_acceptance(Some(1.0)), MIN_CHANNEL_NEVAL);
         // Half the draws through the cuts costs twice the draws.
-        assert_eq!(
-            floor_for_acceptance(MIN_CHANNEL_NEVAL, Some(0.5)),
-            2 * MIN_CHANNEL_NEVAL
-        );
+        assert_eq!(floor_for_acceptance(Some(0.5)), 2 * MIN_CHANNEL_NEVAL);
         // Below the cap's acceptance the ask is held, and said to be held.
         let starved = 0.5 / MAX_FLOOR_ACCEPTANCE_SCALE as f64;
-        assert_eq!(floor_for_acceptance(MIN_CHANNEL_NEVAL, Some(starved)), cap);
+        assert_eq!(floor_for_acceptance(Some(starved)), cap);
         assert!(floor_is_capped(Some(starved)));
         assert!(!floor_is_capped(Some(1.0)));
         assert!(!floor_is_capped(None));
         // A channel that has accepted nothing has a measurement, not a missing
         // one: no finite allocation buys it coverage, so it gets the cap.
-        assert_eq!(floor_for_acceptance(MIN_CHANNEL_NEVAL, Some(0.0)), cap);
+        assert_eq!(floor_for_acceptance(Some(0.0)), cap);
         assert!(floor_is_capped(Some(0.0)));
         // A degenerate estimate cannot conjure an unbounded allocation.
-        assert_eq!(floor_for_acceptance(MIN_CHANNEL_NEVAL, Some(f64::NAN)), cap);
-    }
-
-    /// The scaling floor's arithmetic: today's floor at and below the reference
-    /// budget, proportional to `neval` above it, and never below
-    /// [`MIN_CHANNEL_NEVAL`] at any budget.
-    #[test]
-    fn the_scaling_floor_is_the_fixed_one_up_to_the_reference() {
-        let fixed = ChannelFloor::Fixed;
-        let scaled = ChannelFloor::ScalesWithBudget;
-        for neval in [0, 1, 2_000, 20_000, 200_000, 600_000, 1_200_000, usize::MAX] {
-            assert_eq!(
-                fixed.accepted_points(neval),
-                MIN_CHANNEL_NEVAL,
-                "neval {neval}"
-            );
-        }
-        for neval in [0, 1, 2_000, 20_000, 75_000, 200_000, FLOOR_REFERENCE_NEVAL] {
-            assert_eq!(
-                scaled.accepted_points(neval),
-                MIN_CHANNEL_NEVAL,
-                "neval {neval}"
-            );
-        }
-        // Past the reference the floor rounds up, so it is never under the
-        // proportional ask.
-        assert_eq!(
-            scaled.accepted_points(FLOOR_REFERENCE_NEVAL + 1),
-            MIN_CHANNEL_NEVAL + 1
-        );
-        assert_eq!(
-            scaled.accepted_points(2 * FLOOR_REFERENCE_NEVAL),
-            2 * MIN_CHANNEL_NEVAL
-        );
-        assert_eq!(
-            scaled.accepted_points(10 * FLOOR_REFERENCE_NEVAL),
-            10 * MIN_CHANNEL_NEVAL
-        );
-        let mut previous = 0;
-        for k in 0..=400 {
-            let neval = k * 10_007;
-            let a = scaled.accepted_points(neval);
-            assert!(a >= MIN_CHANNEL_NEVAL, "neval {neval}: {a}");
-            assert!(a >= previous, "neval {neval}: {a} after {previous}");
-            let proportional =
-                MIN_CHANNEL_NEVAL as f64 * neval as f64 / FLOOR_REFERENCE_NEVAL as f64;
-            let expected = (MIN_CHANNEL_NEVAL as f64).max(proportional);
-            assert!(
-                a as f64 >= expected && (a as f64) < expected + 1.0,
-                "neval {neval}: {a} against {expected}"
-            );
-            previous = a;
-        }
-        assert!(scaled.accepted_points(usize::MAX) > MIN_CHANNEL_NEVAL);
-        // The acceptance correction and its cap scale with the floor they act on.
-        let a = scaled.accepted_points(2 * FLOOR_REFERENCE_NEVAL);
-        assert_eq!(floor_for_acceptance(a, None), a);
-        assert_eq!(floor_for_acceptance(a, Some(0.5)), 2 * a);
-        assert_eq!(
-            floor_for_acceptance(a, Some(0.01)),
-            MAX_FLOOR_ACCEPTANCE_SCALE * a
-        );
-        assert_eq!(
-            floor_for_acceptance(a, Some(0.0)),
-            MAX_FLOOR_ACCEPTANCE_SCALE * a
-        );
-    }
-
-    /// At a budget up to the reference the scaling floor is the fixed one, draw
-    /// for draw; past it, a floored channel gathers the raised floor's accepted
-    /// points and the first iteration draws the raised uncorrected floor.
-    #[test]
-    fn the_scaling_floor_raises_a_floored_channel_only_past_the_reference() {
-        let width = 0.5;
-        let channels = 8;
-        let epsilon = 1.0e-7;
-        let mut alphas = vec![epsilon; channels];
-        alphas[0] = 1.0 - epsilon * (channels - 1) as f64;
-        let integ = SparseTail {
-            alphas: alphas.clone(),
-            width,
-        };
-        let run = |neval: usize, niter: usize, floor: ChannelFloor| {
-            integrate_channels_with_floor(
-                &integ,
-                &alphas,
-                0.0,
-                IterationCombination::Unweighted,
-                Budget::Fixed { neval, niter },
-                BlockAllocation::ByAlpha,
-                floor,
-                0xF102,
-                &StopSignal::default(),
-            )
-        };
-        let (fixed_terms, fixed_total, fixed_report) = run(4_000, 6, ChannelFloor::Fixed);
-        let (scaled_terms, scaled_total, scaled_report) =
-            run(4_000, 6, ChannelFloor::ScalesWithBudget);
-        assert_eq!(
-            fixed_total.integral.to_bits(),
-            scaled_total.integral.to_bits()
-        );
-        assert_eq!(
-            fixed_total.std_dev.to_bits(),
-            scaled_total.std_dev.to_bits()
-        );
-        assert_eq!(fixed_report.channel_points, scaled_report.channel_points);
-        for (f, s) in fixed_terms.iter().zip(&scaled_terms) {
-            assert_eq!(f.result.integral.to_bits(), s.result.integral.to_bits());
-            assert_eq!(f.neval, s.neval);
-        }
-
-        let neval = 2 * FLOOR_REFERENCE_NEVAL;
-        let floor = ChannelFloor::ScalesWithBudget.accepted_points(neval);
-        let (_, _, report) = run(neval, 3, ChannelFloor::ScalesWithBudget);
-        assert_eq!(
-            report.min_channel_neval, floor,
-            "the first iteration is the cold start and draws the uncorrected floor"
-        );
-        assert_eq!(report.floor_bound_channels, channels - 1);
-        assert!(
-            report.min_channel_accepted as f64 > 0.8 * floor as f64,
-            "the scaled floor promises {floor} accepted points and delivered {}",
-            report.min_channel_accepted,
-        );
-        let (_, _, fixed_report) = run(neval, 3, ChannelFloor::Fixed);
-        assert!(
-            (fixed_report.min_channel_accepted as f64) < 1.2 * MIN_CHANNEL_NEVAL as f64,
-            "the fixed floor at the same budget stays at {MIN_CHANNEL_NEVAL} accepted points, \
-             delivered {}",
-            fixed_report.min_channel_accepted,
-        );
+        assert_eq!(floor_for_acceptance(Some(f64::NAN)), cap);
     }
 
     /// Floors are per channel because acceptances are, and the Neyman split

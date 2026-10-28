@@ -2097,16 +2097,11 @@ fn probe_2to6_density_decomposition() {
 ///   multichannel sampler splits each iteration by; every rung runs under each.
 ///   The flat sampler is one channel with nothing to split, runs once, and is
 ///   labelled `single`.
-/// * `VG_2TO6_FLOOR`: comma list from `fixed` (`ChannelFloor::Fixed`, the
-///   default) and `scaled` (`ChannelFloor::ScalesWithBudget`), the accepted-point
-///   floor the multichannel sampler holds each channel to; every rung and
-///   allocation runs under each. The flat sampler has no floor and is labelled
-///   `none`.
 /// * `VG_2TO6_WATCH`: comma list of channel indices whose own term, drawn and
 ///   accepted points are recorded per seed in the TSV's `watch` column.
 /// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
-///   so a killed run keeps what it measured. Columns: `row sampler alloc floor
-///   neval niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
+///   so a killed run keeps what it measured. Columns: `row sampler alloc neval
+///   niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
 ///   `points` is every channel's draws over the run. `share_floor_bound` counts
 ///   the channels whose α share of the last iteration was at or under their
 ///   accepted-point floor — under `alpha` the channels that drew the floor, under
@@ -2120,8 +2115,8 @@ fn probe_2to6_density_decomposition() {
 /// Per seed, a progress line. Per rung, a summary: the unweighted mean, the
 /// error `max(quoted, spread/√n)`, χ²/dof, and the pull against both the row's
 /// MadEvent seed record (read the way the gates read it) and the single-run
-/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler,
-/// allocation and floor, the per-seed paired difference: its mean and its standard
+/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler
+/// and allocation, the per-seed paired difference: its mean and its standard
 /// deviation over the seeds, with the ratio of the two rungs' seed standard
 /// deviations, printed as information. The rungs share their seeds, and a
 /// channel whose allocation is the floor at both draws the same points at both,
@@ -2154,10 +2149,10 @@ fn probe_2to6_density_decomposition() {
 #[ignore]
 fn probe_2to6_budget_ladder() {
     use std::io::{BufRead, Write};
-    use vibegraph::budget::{BlockAllocation, Budget, ChannelFloor, StopSignal};
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
 
-    const TSV_HEADER: &str = "row\tsampler\talloc\tfloor\tneval\tniter\tseed\tsigma_pb\terr_pb\t\
-                              wall_s\tpoints\tshare_floor_bound\twatch";
+    const TSV_HEADER: &str = "row\tsampler\talloc\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s\t\
+                              points\tshare_floor_bound\twatch";
 
     const DEFAULT_NITER: usize = 8;
     const FLAT_RUNGS: [usize; 4] = [100_000, 200_000, 400_000, 800_000];
@@ -2275,17 +2270,6 @@ fn probe_2to6_budget_ladder() {
             })
             .collect(),
     };
-    let floors: Vec<(&str, ChannelFloor)> = match var_list("VG_2TO6_FLOOR") {
-        None => vec![("fixed", ChannelFloor::Fixed)],
-        Some(names) => names
-            .iter()
-            .map(|n| match n.as_str() {
-                "fixed" => ("fixed", ChannelFloor::Fixed),
-                "scaled" => ("scaled", ChannelFloor::ScalesWithBudget),
-                other => panic!("VG_2TO6_FLOOR: `{other}` is not `fixed` or `scaled`"),
-            })
-            .collect(),
-    };
     let watch: Vec<usize> = var_list("VG_2TO6_WATCH")
         .unwrap_or_default()
         .iter()
@@ -2328,10 +2312,9 @@ fn probe_2to6_budget_ladder() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     eprintln!(
-        "ladder: rows {rows:?}, samplers {samplers:?}, allocations {:?}, floors {:?}, {} seeds \
-         {seeds:?}, niter {niter}",
+        "ladder: rows {rows:?}, samplers {samplers:?}, allocations {:?}, {} seeds {seeds:?}, \
+         niter {niter}",
         allocations.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
-        floors.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
         seeds.len(),
     );
     for dir in rows {
@@ -2348,24 +2331,12 @@ fn probe_2to6_budget_ladder() {
                 "flat" => ("flat RAMBO  ", 0, 0),
                 _ => ("multichannel", MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS),
             };
-            let rules: Vec<(&str, BlockAllocation, &str, ChannelFloor)> = if *sampler == "flat" {
-                vec![(
-                    "single",
-                    BlockAllocation::ByAlpha,
-                    "none",
-                    ChannelFloor::Fixed,
-                )]
+            let rules: Vec<(&str, BlockAllocation)> = if *sampler == "flat" {
+                vec![("single", BlockAllocation::ByAlpha)]
             } else {
-                allocations
-                    .iter()
-                    .flat_map(|&(a, allocation)| {
-                        floors
-                            .iter()
-                            .map(move |&(f, floor)| (a, allocation, f, floor))
-                    })
-                    .collect()
+                allocations.clone()
             };
-            for &(alloc, allocation, floor_name, floor) in &rules {
+            for &(alloc, allocation) in &rules {
                 let mut previous: Option<(usize, SeedMean, Vec<f64>)> = None;
                 for neval in rungs_for(sampler) {
                     let clock = Stopwatch::start();
@@ -2381,14 +2352,12 @@ fn probe_2to6_budget_ladder() {
                                 n_adapt,
                                 None,
                                 |integ, _| {
-                                    let (per_channel, total, report) = integ
-                                        .adapt_grids_budget_with_floor(
-                                            Budget::Fixed { neval, niter },
-                                            allocation,
-                                            floor,
-                                            seed,
-                                            &StopSignal::default(),
-                                        );
+                                    let (per_channel, total, report) = integ.adapt_grids_budget(
+                                        Budget::Fixed { neval, niter },
+                                        allocation,
+                                        seed,
+                                        &StopSignal::default(),
+                                    );
                                     let watched: Vec<String> = watch
                                         .iter()
                                         .map(|&j| {
@@ -2418,7 +2387,7 @@ fn probe_2to6_budget_ladder() {
                             );
                         let wall = seed_clock.seconds();
                         eprintln!(
-                            "    {label} {alloc} {floor_name} {neval:>9} x {niter} seed {seed:>10}: \
+                            "    {label} {alloc} {neval:>9} x {niter} seed {seed:>10}: \
                              σ {sigma_pb:.6e} ± {sigma_err_pb:.3e} pb | rel vs single run \
                              {:+.2e} | {points} points, {share_floor_bound} share-floor-bound \
                              | {wall:6.0} s",
@@ -2427,7 +2396,7 @@ fn probe_2to6_budget_ladder() {
                         if let Some(file) = out.as_mut() {
                             writeln!(
                                 file,
-                                "{dir}\t{sampler}\t{alloc}\t{floor_name}\t{neval}\t{niter}\t{seed}\t\
+                                "{dir}\t{sampler}\t{alloc}\t{neval}\t{niter}\t{seed}\t\
                                  {sigma_pb:.9e}\t{sigma_err_pb:.6e}\t{wall:.1}\t{points}\t\
                                  {share_floor_bound}\t{}",
                                 watched.join(","),
@@ -2452,8 +2421,7 @@ fn probe_2to6_budget_ladder() {
                     };
                     let sd = read.spread * (read.n as f64).sqrt();
                     eprintln!(
-                        "  {label} {alloc} {floor_name} {neval:>9} x {niter} ({} seeds, {:.0} s): \
-                         σ = {:.6e} \
+                        "  {label} {alloc} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
                          ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}, seed sd {sd:.3e}) \
                          | χ²/dof {:.2} | pull vs seed record {pull_record} | pull vs single \
                          run {pull_single:+.2} | rel vs single run {:+.2e}",
@@ -2477,8 +2445,7 @@ fn probe_2to6_budget_ladder() {
                             .sqrt();
                         let prev_sd = prev.spread * (prev.n as f64).sqrt();
                         eprintln!(
-                            "    {label} {alloc} {floor_name} {prev_neval} -> {neval}: paired Δ over \
-                             {} seeds \
+                            "    {label} {alloc} {prev_neval} -> {neval}: paired Δ over {} seeds \
                              {d_mean:+.3e} pb ({:+.2e} rel), sd of Δ {d_sd:.3e} pb, Δ/(sd/√n) \
                              {:+.2} | seed sd {prev_sd:.3e} -> {sd:.3e}, ratio {:.3} \
                              (information)",
