@@ -30,6 +30,9 @@ pub enum SlhaError {
 pub struct ParamCard {
     /// block name (lower-cased) → { lha_code → value }
     blocks: HashMap<String, HashMap<Vec<i32>, f64>>,
+    /// PDG codes whose `DECAY` line gives the width as `Auto` (MadWidth's
+    /// placeholder, computed by MadGraph at launch), in the order they appear.
+    auto_widths: Vec<i32>,
 }
 
 impl ParamCard {
@@ -80,13 +83,15 @@ impl FromStr for ParamCard {
                 // branching-ratio rows that follow are ignored.
                 let tokens: Vec<&str> = line.split_whitespace().collect();
                 if tokens.len() >= 3 {
-                    if let (Ok(code), Ok(width)) =
-                        (tokens[1].parse::<i32>(), tokens[2].parse::<f64>())
-                    {
-                        card.blocks
-                            .entry("decay".to_string())
-                            .or_default()
-                            .insert(vec![code], width);
+                    if let Ok(code) = tokens[1].parse::<i32>() {
+                        if tokens[2].eq_ignore_ascii_case("auto") {
+                            card.auto_widths.push(code);
+                        } else if let Ok(width) = tokens[2].parse::<f64>() {
+                            card.blocks
+                                .entry("decay".to_string())
+                                .or_default()
+                                .insert(vec![code], width);
+                        }
                     }
                 }
                 current_block = None;
@@ -139,6 +144,38 @@ impl ParamCard {
             .get(block.to_lowercase().as_str())
             .and_then(|b| b.get(code))
             .copied()
+    }
+
+    /// Set the value at `block` (case-insensitive) and `code`, replacing any
+    /// value already there.
+    pub fn insert(&mut self, block: &str, code: Vec<i32>, value: f64) {
+        self.blocks
+            .entry(block.to_lowercase())
+            .or_default()
+            .insert(code, value);
+    }
+
+    /// Every value the card sets, as `(block, code, value)` with the block
+    /// lower-cased and a `DECAY` line's width under block `decay`; sorted by
+    /// block, then code.
+    pub fn entries(&self) -> Vec<(&str, &[i32], f64)> {
+        let mut out: Vec<(&str, &[i32], f64)> = self
+            .blocks
+            .iter()
+            .flat_map(|(block, values)| {
+                values
+                    .iter()
+                    .map(move |(code, &value)| (block.as_str(), code.as_slice(), value))
+            })
+            .collect();
+        out.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+        out
+    }
+
+    /// The PDG codes whose width the card leaves to MadGraph to compute
+    /// (`DECAY <pdg> Auto`), in card order.
+    pub fn auto_widths(&self) -> &[i32] {
+        &self.auto_widths
     }
 }
 
@@ -209,5 +246,34 @@ DECAY 6 1.49
         // The branching-ratio row `1.0  2  5 24` must NOT be parsed as an entry.
         assert_eq!(card.get("decay", &[5, 24]), None);
         assert_eq!(card.get("decay", &[2, 5, 24]), None);
+    }
+
+    /// `DECAY <pdg> Auto`, in any case, is recorded as an automatic width and
+    /// sets no value; a numeric width beside it is unaffected.
+    #[test]
+    fn auto_widths_are_recorded_and_set_nothing() {
+        let card = "DECAY 25 Auto\nDECAY 6 auto # WT\nDECAY 23 2.4\n"
+            .parse::<ParamCard>()
+            .unwrap();
+        assert_eq!(card.auto_widths(), &[25, 6]);
+        assert_eq!(card.get("DECAY", &[25]), None);
+        assert_eq!(card.get("DECAY", &[6]), None);
+        assert_eq!(card.get("DECAY", &[23]), Some(2.4));
+    }
+
+    /// `entries` lists every value once, sorted, under lower-cased blocks; an
+    /// inserted value replaces the parsed one.
+    #[test]
+    fn entries_are_sorted_and_insert_replaces() {
+        let mut card = SAMPLE.parse::<ParamCard>().unwrap();
+        card.insert("MASS", vec![23], 91.0);
+        let entries = card.entries();
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0], ("decay", &[6][..], 1.49));
+        assert!(entries.contains(&("mass", &[23][..], 91.0)));
+        let keys: Vec<_> = entries.iter().map(|e| (e.0, e.1)).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted);
     }
 }

@@ -51,6 +51,10 @@ pub struct Parameter {
     pub nature: ParamNature,
 }
 
+/// Parameters a restriction merged: each one's name and its factor against the
+/// first (see [`ParameterSet::merged`]).
+pub(crate) type MergedGroup = Vec<(String, f64)>;
+
 /// A complete set of parsed parameters, ready for evaluation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParameterSet {
@@ -62,6 +66,17 @@ pub struct ParameterSet {
     pub(crate) rdeps: BTreeMap<String, Vec<String>>,
     /// Const-zero parameters (set by restrictions)
     pub zeros: BTreeSet<String>,
+    /// Groups of external parameters a restriction ties together, as MadGraph's
+    /// `RestrictModel.detect_identical_parameters` finds them: same block, and
+    /// defaults equal up to sign. Each entry is a parameter and its factor
+    /// against the group's first (`+1.0` or `-1.0`; the first's is `+1.0`).
+    ///
+    /// MadGraph keeps the first of each group as the external parameter and
+    /// rewrites the others as `factor × first`, so a card must keep the
+    /// relation. Derived from the restricted defaults, which the model digest
+    /// already covers, so it is left out of the serialized form.
+    #[serde(skip)]
+    pub(crate) merged: Vec<MergedGroup>,
 }
 
 impl ParameterSet {
@@ -145,6 +160,51 @@ impl ParameterSet {
                 }
             }
         }
+        self.merged = self.identical_externals();
+    }
+
+    /// The externals MadGraph's restriction merges
+    /// (`import_ufo.py`, `detect_identical_parameters`): over the externals in
+    /// model order, those whose restricted default is neither 0 nor 1 and whose
+    /// block is not `DECAY`, grouped by `(block, value)`, where a value equal to
+    /// the negative of an earlier group's joins that group with factor −1.
+    /// Blocks compare as spelled, as MadGraph's dictionary key does.
+    fn identical_externals(&self) -> Vec<MergedGroup> {
+        let mut groups: Vec<(String, f64, MergedGroup)> = Vec::new();
+        for p in &self.externals {
+            let ParamNature::External {
+                default_value,
+                lha_block,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let value = *default_value;
+            if value == 0.0 || value == 1.0 || lha_block.eq_ignore_ascii_case("decay") {
+                continue;
+            }
+            let existing = groups.iter_mut().find_map(|(block, v, members)| {
+                if block != lha_block {
+                    None
+                } else if *v == value {
+                    Some((members, 1.0))
+                } else if *v == -value {
+                    Some((members, -1.0))
+                } else {
+                    None
+                }
+            });
+            match existing {
+                Some((members, factor)) => members.push((p.name.clone(), factor)),
+                None => groups.push((lha_block.clone(), value, vec![(p.name.clone(), 1.0)])),
+            }
+        }
+        groups
+            .into_iter()
+            .map(|(_, _, members)| members)
+            .filter(|members| members.len() > 1)
+            .collect()
     }
 
     /// Every parameter whose value transitively depends on `changed`.
@@ -268,6 +328,7 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
         internals,
         rdeps,
         zeros: BTreeSet::new(),
+        merged: Vec::new(),
     })
 }
 

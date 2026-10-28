@@ -22,6 +22,8 @@ use crate::artifact::PdfInput;
 use crate::cache::lhapdf::Tier;
 use crate::generate::GenerateSettings;
 use crate::runcard::{card_text, RunCard};
+use crate::ufo::parameters::ParamNature;
+use crate::ufo::EvaluatedModel;
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -315,6 +317,227 @@ pub fn mg_run_card(card: &RunCard, settings: &GenerateSettings, seed: u64) -> St
     String::from_utf8(writer.into_inner()).expect("a run card is text")
 }
 
+/// PDG codes MadGraph's card writer counts as Standard Model particles and
+/// writes no `QNUMBERS` block for (`write_param_card.py`, `sm_pdg`).
+const SM_PDG: [i64; 17] = [1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25];
+
+/// A card value as MadGraph's writer spells it (`%e`), or with the fewest
+/// further digits that read back as the value: a card moved to more digits
+/// than MadGraph prints is written as it was bound.
+fn slha_number(value: f64) -> String {
+    (6..=16)
+        .map(|digits| c_exponential(value, digits, false, 0))
+        .find(|text| text.parse::<f64>() == Ok(value))
+        .unwrap_or_else(|| c_exponential(value, 16, false, 0))
+}
+
+/// The `<slha>` element MadGraph puts in an event file's header: the parameter
+/// card the run used, in the layout of MadGraph's `ParamCardWriter`
+/// (`models/write_param_card.py`), so a shower reading SLHA from the event
+/// file (Pythia's `SLHA:readFrom`) takes the run's masses and widths.
+///
+/// * The free external parameters, at the values `evaluated` binds them to,
+///   ordered as `order_param` orders them: by block name with `DECAY` last,
+///   then by code. A parameter the restriction fixed to zero is not written,
+///   as MadGraph's restricted model no longer has it.
+/// * After the `MASS` and after the `DECAY` entries, the masses and widths
+///   that are not free parameters (computed, `ZERO`, or fixed to zero), one per
+///   physical particle by ascending PDG code, then any particle whose mass or
+///   width is another particle's parameter, each with `%e` and the particle's
+///   name lower-cased, as MadGraph's model names it. A computed entry's
+///   comment names the parameter, where MadGraph prints its expression.
+/// * A `QNUMBERS` block for every physical particle outside MadGraph's SM list.
+pub fn slha_block(evaluated: &EvaluatedModel) -> String {
+    let model = evaluated.model();
+    let params = &model.params;
+    let value = |name: &str| evaluated.param_values.get(name).map_or(0.0, |v| v.re);
+    let free_at = |name: &str| -> Option<&[i32]> {
+        if params.zeros.contains(name) {
+            return None;
+        }
+        params.externals.iter().find_map(|p| match &p.nature {
+            ParamNature::External { lha_code, .. } if p.name == name => Some(lha_code.as_slice()),
+            _ => None,
+        })
+    };
+
+    let mut externals: Vec<(String, &[i32], &str)> = params
+        .externals
+        .iter()
+        .filter(|p| !params.zeros.contains(&p.name))
+        .filter_map(|p| match &p.nature {
+            ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } => Some((
+                lha_block.to_uppercase(),
+                lha_code.as_slice(),
+                p.name.as_str(),
+            )),
+            ParamNature::Internal { .. } => None,
+        })
+        .collect();
+    externals.sort_by(|a, b| (a.0 == "DECAY", &a.0, a.1).cmp(&(b.0 == "DECAY", &b.0, b.1)));
+
+    let particles: Vec<_> = {
+        let mut seen = Vec::new();
+        model
+            .particles
+            .values()
+            .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
+            .filter(|p| {
+                let new = !seen.contains(&p.pdg_code);
+                seen.push(p.pdg_code);
+                new
+            })
+            .collect()
+    };
+    // MadGraph's `define_not_dep_param`: a particle whose mass (width) is a free
+    // parameter at another particle's code, or one an earlier particle already
+    // uses, is a duplicate; one whose parameter is not free is dependent.
+    let derived = |width: bool| {
+        let mut dependent = Vec::new();
+        let mut duplicate = Vec::new();
+        let mut used: Vec<&str> = Vec::new();
+        for p in &particles {
+            let param = if width {
+                p.width_param.as_str()
+            } else {
+                p.mass_param.as_str()
+            };
+            match free_at(param) {
+                Some(code) if code.first() != Some(&(p.pdg_code as i32)) => {
+                    duplicate.push((*p, param));
+                    continue;
+                }
+                _ if used.contains(&param) => {
+                    duplicate.push((*p, param));
+                    continue;
+                }
+                Some(_) => used.push(param),
+                None => {
+                    if param != "ZERO" {
+                        used.push(param);
+                    }
+                    dependent.push((*p, param));
+                }
+            }
+        }
+        dependent.sort_by_key(|(p, _)| p.pdg_code);
+        dependent.extend(duplicate);
+        dependent
+    };
+    let dependent_lines = |block: &str| -> String {
+        let (width, prefix) = match block {
+            "MASS" => (false, " "),
+            "DECAY" => (true, "DECAY "),
+            _ => return String::new(),
+        };
+        let mut text = String::new();
+        for (p, param) in derived(width) {
+            let what = if param == "ZERO" || params.zeros.contains(param) {
+                "0.0"
+            } else {
+                param
+            };
+            text.push_str(&format!(
+                "{prefix} {} {} # {} : {what} \n",
+                p.pdg_code,
+                c_exponential(value(param), 6, false, 0),
+                p.name.to_lowercase()
+            ));
+        }
+        if text.is_empty() {
+            return text;
+        }
+        format!(
+            "## Dependent parameters: computed from the ones above, or fixed by the\n\
+             ## model's restriction. Written for programs that read masses and widths\n\
+             ## from this card, such as a shower.\n{text}"
+        )
+    };
+    let block_header = |name: &str| {
+        let mut text = format!(
+            "\n###################################\n## INFORMATION FOR {name}\n###################################\n"
+        );
+        if name != "DECAY" {
+            text.push_str(&format!("Block {} \n", name.to_lowercase()));
+        }
+        text
+    };
+
+    let mut body = String::from(
+        "######################################################################\n\
+         ## PARAM_CARD OF THE RUN: THE PARAMETERS VIBEGRAPH EVALUATED AT     ##\n\
+         ######################################################################\n",
+    );
+    let mut todo = vec!["MASS", "DECAY"];
+    let mut current: Option<&str> = None;
+    for (block, code, name) in &externals {
+        if current != Some(block.as_str()) {
+            if let Some(previous) = current {
+                body.push_str(&dependent_lines(previous));
+            }
+            current = Some(block.as_str());
+            todo.retain(|b| b != block);
+            body.push_str(&block_header(block));
+        }
+        let lhacode = code
+            .iter()
+            .map(|k| format!("{k:>3}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut info = (*name).to_string();
+        if block == "SMINPUTS" && *code == [3] {
+            info.push_str(" (Note: this Parameter is not used if you use a PDF set)");
+        }
+        let number = slha_number(value(name));
+        if block == "DECAY" {
+            body.push_str(&format!("DECAY {lhacode} {number} # {info} \n"));
+        } else {
+            body.push_str(&format!("  {lhacode} {number} # {info} \n"));
+        }
+    }
+    if let Some(previous) = current {
+        body.push_str(&dependent_lines(previous));
+    }
+    for block in todo {
+        body.push_str(&block_header(block));
+        body.push_str(&dependent_lines(block));
+    }
+
+    let mut qnumbers = String::new();
+    for p in particles.iter().filter(|p| !SM_PDG.contains(&p.pdg_code)) {
+        let charge = (3.0 * p.charge * 1e6).round() / 1e6;
+        qnumbers.push_str(&format!(
+            "Block QNUMBERS {}  # {} \n        1 {}  # 3 times electric charge\n        \
+             2 {}  # number of spin states (2S+1)\n        \
+             3 {}  # colour rep (1: singlet, 3: triplet, 8: octet)\n        \
+             4 {}  # Particle/Antiparticle distinction (0=own anti)\n",
+            p.pdg_code,
+            p.name,
+            charge + 0.0,
+            p.spin,
+            p.color,
+            if p.is_self_conjugate { 0 } else { 1 },
+        ));
+    }
+    if !qnumbers.is_empty() {
+        body.push_str(
+            "#===========================================================\n\
+             # QUANTUM NUMBERS OF NEW STATE(S) (NON SM PDG CODE)\n\
+             #===========================================================\n\n",
+        );
+        body.push_str(&qnumbers);
+    }
+
+    format!(
+        "<slha>\n{}\n</slha>",
+        quick_xml::escape::partial_escape(body.trim_end())
+    )
+}
+
 /// What a generation read besides the artifact's own contents, as the event
 /// file's `<vibegraphInputs>` header block records it.
 #[derive(Clone, Debug, PartialEq)]
@@ -510,6 +733,87 @@ mod tests {
     use super::*;
     use crate::artifact::FileDigest;
     use crate::runcard::ParamValue;
+
+    /// The `<slha>` block of the default SM, entry for entry, is the card
+    /// MadGraph wrote into its event files for the same restriction
+    /// (`dy13_param_card.dat` is the `<slha>` content of a banked MadGraph
+    /// file): every data line, with its spacing and its comment up to a
+    /// dependent entry's expression, in the same order. The one value that
+    /// differs is the Higgs width, which MadGraph rounds to `%e` and the
+    /// restriction gives to two digits more.
+    #[test]
+    fn the_slha_block_has_madgraphs_layout() {
+        let evaluated = EvaluatedModel::from_model(crate::ufo::sm::sm_model(
+            crate::ufo::sm::SMRestrict::Default,
+        ));
+        let ours = slha_block(&evaluated);
+        assert!(ours.starts_with("<slha>\n######"), "{ours}");
+        assert!(ours.ends_with("# a : 0.0\n</slha>"), "{ours}");
+        let theirs = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/dy13_param_card.dat"
+        ))
+        .unwrap();
+        // A data line up to its comment's `:`, the dependent entries' expression
+        // being MadGraph's own.
+        let entries = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter(|l| !l.starts_with('#') && !l.trim().is_empty() && !l.starts_with('<'))
+                .map(|l| l.split(" : ").next().unwrap().trim_end().to_string())
+                .collect()
+        };
+        let mut expected = entries(&theirs);
+        let wh = expected
+            .iter()
+            .position(|l| l == "DECAY  25 6.382339e-03 # WH")
+            .expect("MadGraph's card writes WH");
+        expected[wh] = "DECAY  25 6.38233934e-03 # WH".to_string();
+        assert_eq!(entries(&ours), expected);
+        // The section headings and block lines too.
+        let headings = |text: &str| -> Vec<String> {
+            text.lines()
+                .filter(|l| l.starts_with("## INFORMATION") || l.starts_with("Block"))
+                .map(str::to_string)
+                .collect()
+        };
+        assert_eq!(headings(&ours), headings(&theirs));
+    }
+
+    /// A moved value keeps every digit it was bound with; the computed W mass
+    /// follows MZ; a model with new states declares their quantum numbers as
+    /// MadGraph's writer does, and the SM declares none.
+    #[test]
+    fn the_slha_block_writes_moved_values_and_new_states() {
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let card: ParamCard = "Block MASS\n 23 91.18765432\n".parse().unwrap();
+        let evaluated = EvaluatedModel::from_model_card(sm_model(SMRestrict::Default), &card);
+        let block = slha_block(&evaluated);
+        assert!(block.contains("\n   23 9.118765432e+01 # MZ \n"), "{block}");
+        let mw = c_exponential(evaluated.param_values["MW"].re, 6, false, 0);
+        assert!(
+            block.contains(&format!("\n  24 {mw} # w+ : MW \n")),
+            "{block}"
+        );
+        assert!(!block.contains("QNUMBERS"));
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo");
+        let toy = crate::ufo::UFOModel::load(
+            &root.join("vibegraph_toy_UFO"),
+            Some(&root.join("vibegraph_toy_UFO/restrict_all.dat")),
+        )
+        .unwrap();
+        let block = slha_block(&EvaluatedModel::from_model(toy));
+        assert!(
+            block.contains(
+                "Block QNUMBERS 9000004  # qt \n        1 2  # 3 times electric charge\n        \
+                 2 2  # number of spin states (2S+1)\n        \
+                 3 3  # colour rep (1: singlet, 3: triplet, 8: octet)\n        \
+                 4 1  # Particle/Antiparticle distinction (0=own anti)\n"
+            ),
+            "{block}"
+        );
+    }
 
     /// The block names the central member, the tier by name, each file's
     /// digest in load order and the artifact's digest; a run that reads no

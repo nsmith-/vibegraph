@@ -69,6 +69,9 @@ Options:
       --run-card <RUN_CARD>
           MadGraph `run_card.dat`; absent → MadGraph LO defaults
 
+      --param-card <PARAM_CARD>
+          SLHA `param_card.dat` to evaluate the model at; absent → the model's defaults under its restriction. The artifact records every parameter the card moves, and `generate` evaluates at those values. Refused: a width given as `Auto`, a non-zero value for a parameter the restriction fixed to zero, a move that splits parameters the restriction merged, and an entry the model has no parameter for. A mass or width the model computes (MW in the SM) is ignored, with a warning when it disagrees
+
       --out <OUT>
           Output directory for the grid artifact (`<out>/grid.bin.zst`)
           
@@ -83,6 +86,9 @@ Options:
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
 
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
       --neval <NEVAL>
           VEGAS evaluations per adaptation iteration.
           
@@ -90,19 +96,21 @@ Options:
           
           [default: 120000]
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
-
   -q, --quiet
           Report only warnings and errors
+
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -116,11 +124,6 @@ Options:
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
 
-      --log-level <LEVEL>
-          Report at this level, instead of counting `-v`s
-          
-          [possible values: off, error, warn, info, debug, trace]
-
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
@@ -131,6 +134,9 @@ Options:
           
           [default: 6]
 
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
           
@@ -138,16 +144,13 @@ Options:
           
           [default: 500]
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
-
-      --no-tui
-          Never draw the live status pane; report in plain lines
 
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
