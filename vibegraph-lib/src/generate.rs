@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
 
-use crate::artifact::IntegrateArtifact;
+use crate::artifact::{channel_map_digest, IntegrateArtifact};
 use crate::cuts::{Cuts, ForcedResonances};
 use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
@@ -466,6 +466,7 @@ fn generate_sample(
             }
         }
     }
+    check_channel_maps(artifact, integ.channel_map_keys())?;
     for (j, channel) in artifact.channels.iter().enumerate() {
         if channel.grid.ndim() != integ.channel_grid_ndim() {
             return Err(err(format!(
@@ -825,6 +826,24 @@ fn check_channel_keys(
     Ok(())
 }
 
+/// The rebuilt channels' maps against the ones the artifact's grids were
+/// trained through, compared by [`channel_map_digest`]. Equal keys and grid
+/// dimensions say the channels are the same diagrams; they do not say the
+/// diagrams got the same maps, and a grid replayed through another map samples
+/// a plausible wrong distribution.
+fn check_channel_maps(artifact: &IntegrateArtifact, keys: &[String]) -> Result<(), GenerateError> {
+    let rebuilt = channel_map_digest(keys);
+    if rebuilt != artifact.channel_map_digest {
+        return Err(err(format!(
+            "the artifact's channel-map digest is {} but this build's channels give {rebuilt}: \
+             the phase-space maps changed since this grid was trained, so re-integrate with \
+             `vibegraph integrate`",
+            artifact.channel_map_digest
+        )));
+    }
+    Ok(())
+}
+
 /// Rebuild the hadronic integrand the artifact describes, unweight against its
 /// frozen grids, and write the file.
 ///
@@ -915,6 +934,7 @@ fn generate_proton_sample(
     let mut integ = MultiplicitySum::new(parts);
 
     check_channel_keys(artifact, &integ)?;
+    check_channel_maps(artifact, &integ.channel_map_keys())?;
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
     for k in 0..groups.len() {
         check_alphas(&alphas[integ.offsets()[k]..integ.offsets()[k + 1]])?;
@@ -1477,6 +1497,7 @@ mod tests {
             chi2_per_dof: 1.0,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            channel_map_digest: String::new(),
         }
     }
 

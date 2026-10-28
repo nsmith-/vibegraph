@@ -456,6 +456,15 @@ impl<'a> MultiplicitySum<'a> {
             .collect()
     }
 
+    /// Every channel's [`map_key`](crate::phasespace::DiagramChannel::map_key), in
+    /// channel order.
+    pub fn channel_map_keys(&self) -> Vec<String> {
+        self.parts
+            .iter()
+            .flat_map(|p| p.channel_map_keys().iter().cloned())
+            .collect()
+    }
+
     /// Every channel's selection weight in its own part's mixture, in channel
     /// order — the `αⱼ` each term carries. They sum to one per part.
     pub(crate) fn channel_alphas(&self) -> Vec<f64> {

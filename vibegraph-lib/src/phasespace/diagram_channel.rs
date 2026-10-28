@@ -4323,6 +4323,65 @@ mod tests {
         assert!(spines > 0, "no t-channel spine built for u u~ > u u~");
     }
 
+    /// The artifact's channel-map digest separates a spine from the all-timelike
+    /// tree on the same diagrams. `u u~ > u u~` built with the spine admitted and
+    /// with it capped at zero rungs gives the same channel count and the same
+    /// grid dimension per channel, which is everything the `(group, diagram)` key
+    /// check reads, so only the digest can tell the two sets apart.
+    #[test]
+    fn the_channel_map_digest_separates_a_spine_from_the_timelike_tree() {
+        use crate::artifact::channel_map_digest;
+        let m = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card("generate u u~ > u u~", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let diagrams: Vec<&Diagram> = sets.iter().flat_map(|s| s.diagrams.iter()).collect();
+        let build = |max_rungs: usize| -> Vec<DiagramChannel<f64>> {
+            diagrams
+                .iter()
+                .map(|d| DiagramChannel::from_diagram_capped(d, &ev, 500.0, 0.0, max_rungs))
+                .collect()
+        };
+        let spine = build(usize::MAX);
+        let timelike = build(0);
+        assert!(
+            spine
+                .iter()
+                .any(|c| matches!(c.topology, ChannelTopology::Spine(_))),
+            "no diagram of u u~ > u u~ was built on a spine"
+        );
+        assert!(timelike
+            .iter()
+            .all(|c| matches!(c.topology, ChannelTopology::Timelike(_))));
+        assert_eq!(spine.len(), timelike.len());
+        for (s, t) in spine.iter().zip(&timelike) {
+            assert_eq!(s.ndim(), t.ndim());
+        }
+
+        let keys = |chs: &[DiagramChannel<f64>]| -> Vec<String> {
+            chs.iter().map(DiagramChannel::map_key).collect()
+        };
+        let (spine_keys, timelike_keys) = (keys(&spine), keys(&timelike));
+        assert_eq!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&keys(&build(usize::MAX))),
+            "one build of the same maps gives one digest"
+        );
+        assert_ne!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&timelike_keys)
+        );
+        let mut reordered = spine_keys.clone();
+        reordered.reverse();
+        if reordered != spine_keys {
+            assert_ne!(
+                channel_map_digest(&spine_keys),
+                channel_map_digest(&reordered),
+                "the digest reads the channel order"
+            );
+        }
+    }
+
     // ── Diagram classification against the momentum-routing convention ──────────
 
     /// The externals attached to the connected component of `prop[cut]`'s first

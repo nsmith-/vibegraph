@@ -1325,6 +1325,9 @@ pub struct ProtonIntegrand<'a> {
     /// it was built and kept because the built channels are type-erased behind
     /// [`ScaledChannel`] afterwards.
     channel_samplers: Vec<ChannelSampler>,
+    /// Each channel's [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key),
+    /// in channel order: the map a banked grid is replayed through.
+    channel_map_keys: Vec<String>,
     /// Total hadronic invariant `s = 4E₁E₂` (head-on beams).
     s_had: f64,
     beams: ProtonBeams,
@@ -1580,6 +1583,7 @@ impl<'a> ProtonIntegrand<'a> {
         let mut channel_ids = Vec::new();
         let mut channel_members: Vec<Vec<ChannelId>> = Vec::new();
         let mut channel_samplers = Vec::new();
+        let mut channel_map_keys = Vec::new();
         let mut by_identity: HashMap<MapIdentity, usize> = HashMap::new();
         for (gi, g) in groups.groups().iter().enumerate() {
             for (di, d) in channel_diagrams(g.diagrams(), model)
@@ -1615,6 +1619,7 @@ impl<'a> ProtonIntegrand<'a> {
                     }
                 }
                 channel_samplers.push(ChannelSampler::of(&channel));
+                channel_map_keys.push(channel.map_key());
                 channels.push(Box::new(channel));
                 channel_ids.push(id);
                 channel_members.push(vec![id]);
@@ -1654,6 +1659,7 @@ impl<'a> ProtonIntegrand<'a> {
             channel_ids,
             channel_members,
             channel_samplers,
+            channel_map_keys,
             s_had,
             beams,
             tau_min,
@@ -1922,6 +1928,13 @@ impl<'a> ProtonIntegrand<'a> {
     /// order — the map kind and the propagator poles that shaped it.
     pub fn channel_samplers(&self) -> &[ChannelSampler] {
         &self.channel_samplers
+    }
+
+    /// Each sampling channel's
+    /// [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key), in
+    /// channel order.
+    pub fn channel_map_keys(&self) -> &[String] {
+        &self.channel_map_keys
     }
 
     /// Which diagram of which group each sampling channel was first built from,

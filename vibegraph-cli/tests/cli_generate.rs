@@ -709,6 +709,33 @@ fn a_model_whose_digest_moved_is_refused() {
     );
 }
 
+/// The channel maps a generation rebuilds are checked by digest against the
+/// ones the grids were trained through. `run()`'s own artifact generates; the
+/// same artifact with only the recorded digest changed is refused, so the
+/// digest is all that can refuse it.
+#[test]
+fn a_channel_map_digest_that_moved_is_refused() {
+    let run = run();
+    run.generate_with(&[], SEED_A, "maps-unchanged.lhe");
+    let edited = run.edited_artifact("moved-maps.bin.zst", |a| {
+        a.channel_map_digest = vibegraph::ufo::identity::digest_bytes(b"other maps");
+    });
+    let out = run.generate_on(&edited, &[], "never.lhe");
+    let stderr = common::stderr_of(&out);
+    expect_refusal(
+        out,
+        "a channel-map digest that moved",
+        "the phase-space maps changed since this grid was trained",
+    );
+    assert!(
+        stderr.contains(&run.artifact.channel_map_digest)
+            && stderr.contains(&vibegraph::ufo::identity::digest_bytes(b"other maps")),
+        "the refusal does not name both digests:\n{stderr}"
+    );
+    assert!(stderr.contains("re-integrate"), "{stderr}");
+    assert!(!run.dir.join("never.lhe").exists());
+}
+
 /// An existing output file is not clobbered.
 #[test]
 fn an_existing_event_file_is_left_alone() {
