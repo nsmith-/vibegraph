@@ -136,11 +136,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 11
-archive = "vibegraph-refdata-11.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-11/vibegraph-refdata-11.tar.zst"
-sha256 = "637cb81f10a65aad72d0a5a129e51302f7e0156f3b1d86b992d0e6310c8acb6a"
-size_bytes = 195555578
+version = 12
+archive = "vibegraph-refdata-12.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-12/vibegraph-refdata-12.tar.zst"
+sha256 = "04fd869b583a5b27cc01a84a4cfae799ab9b074f77130942ffb924df117cc9d5"
+size_bytes = 344565873
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -212,6 +212,19 @@ unpacks_to = "validation/madgraph/output"
 # weight moves from 1686.34 pb to 1686.48 pb. `pp_to_bb_iht`'s record is 20 seeds
 # at the budget and 20 at four times it. Generated on macOS 15 by the pinned
 # 3.7.1 submodule (b7687064).
+#
+# Cut 12 is cut 11's 15874 files, all byte-identical, plus 487 files: the CMS
+# systematics-argument runs (`run_01_cms`) of `pp_to_ll`, `pp_to_jj`,
+# `pp_to_ll_0j2j_mlm` and `pp_to_ttx_0j1j_mlm` (926 weights per event, ids
+# 1001-1926, with the 43 LHAPDF `.info` files and set hashes they ran against),
+# MadGraph's default-argument systematics runs (`run_01_syst_default`, 147
+# weights per event) of the four MLM rows with events, the `ee_to_tth_ymt250`
+# run with its `seeded_sigma/` record, the `dy13_mmll_60_120_mz95` seeded-sigma
+# record, and the `nexternal.inc`, `configs.inc`, `config_nqcd.inc` and
+# `config_subproc_map.inc` of the five matched rows' subprocess directories,
+# which `validate_mlm_dumps` parses beside its per-event dumps (the dumps stay
+# outside the bundle). Generated on macOS 15 by the pinned 3.7.1 submodule
+# (b7687064).
 #
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
