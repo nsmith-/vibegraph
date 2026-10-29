@@ -84,8 +84,10 @@ pub struct SetInfo {
     pub(crate) set_index: Option<i64>,
     pub(crate) format: String,
     pub(crate) num_members: u32,
-    /// Beam particle PDG code the set is defined for (2212 = proton).
-    pub(crate) particle: i32,
+    /// Beam particle PDG code the set is defined for (2212 = proton), where
+    /// the `.info` gives one: the CT18 and MSHT20 sets do not, and LHAPDF
+    /// reads neither the key nor a default for it when it opens a set.
+    pub(crate) particle: Option<i32>,
     /// Flavors present somewhere in the set (union across subgrids); gluon is
     /// listed as 21 here even though `.dat` flavor lists may use either 0 or 21.
     pub flavors: Vec<i32>,
@@ -111,8 +113,17 @@ impl SetInfo {
         &self.set_desc
     }
 
-    /// LHAPDF's `errorType`: `ErrorType` lowercased, `unknown` when the
-    /// `.info` gives none.
+    /// LHAPDF's `PDFSet::description()`: `SetDesc` as LHAPDF stores it, the
+    /// YAML value re-emitted by its bundled yaml-cpp (see [`lhapdf_entry`]).
+    /// A description holding `": "` therefore comes back double-quoted.
+    pub fn lhapdf_description(&self) -> String {
+        self.raw
+            .get("SetDesc")
+            .map_or_else(|| self.set_desc.clone(), lhapdf_entry)
+    }
+
+    /// LHAPDF's `errorType`: `ErrorType` as LHAPDF stores it, lowercased,
+    /// `unknown` when the `.info` gives none.
     pub fn error_type(&self) -> String {
         if self.raw.contains_key("ErrorType") {
             self.error_type.to_lowercase()
@@ -120,6 +131,85 @@ impl SetInfo {
             "unknown".to_owned()
         }
     }
+}
+
+/// A metadata entry as LHAPDF 6.5 keeps it: `Info::load` parses the block
+/// with yaml-cpp and stores each value as `YAML::Emitter << node` writes it,
+/// so a string comes back plain where yaml-cpp may write it plain and
+/// double-quoted, with yaml-cpp's escapes, where it may not. The file's own
+/// quoting is gone either way: a single-quoted CT18 `SetDesc` comes back
+/// plain, and a double-quoted MSHT20 one holding `Web address: www` comes
+/// back double-quoted. A number or flag is its plain spelling.
+pub(crate) fn lhapdf_entry(value: &Value) -> String {
+    match value {
+        Value::String(s) if !yaml_cpp_plain(s) => yaml_cpp_double_quoted(s),
+        other => scalar_text(other),
+    }
+}
+
+/// yaml-cpp's `IsValidPlainScalar` in block context with non-ASCII allowed
+/// (`emitterutils.cpp`, `exp.h` of the copy LHAPDF 6.5 bundles), byte by
+/// byte as its `StringCharSource` reads.
+fn yaml_cpp_plain(s: &str) -> bool {
+    if matches!(s, "" | "~" | "null" | "Null" | "NULL") {
+        return false;
+    }
+    let b = s.as_bytes();
+    let at = |i: usize| b.get(i).copied();
+    let blank = |i: usize| matches!(at(i), Some(b' ' | b'\t'));
+    let brk = |i: usize| at(i) == Some(b'\n') || (at(i) == Some(b'\r') && at(i + 1) == Some(b'\n'));
+    let brk_len = |i: usize| if at(i) == Some(b'\r') { 2 } else { 1 };
+    // `Exp::PlainScalar()` at the first byte.
+    if blank(0)
+        || brk(0)
+        || b",[]{}#&*!|>'\"%@`".contains(&b[0])
+        || (b"-?:".contains(&b[0]) && (blank(1) || brk(1) || at(1).is_none()))
+    {
+        return false;
+    }
+    if s.ends_with(' ') {
+        return false;
+    }
+    (0..b.len()).all(|i| {
+        let c = b[i];
+        let end_scalar = c == b':' && (blank(i + 1) || brk(i + 1) || at(i + 1).is_none());
+        let comment =
+            (blank(i) && at(i + 1) == Some(b'#')) || (brk(i) && at(i + brk_len(i)) == Some(b'#'));
+        let not_printable = matches!(c, 0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F)
+            || (c == 0xC2 && matches!(at(i + 1), Some(0x80..=0x84 | 0x86..=0x9F)));
+        let bom = b[i..].starts_with(&[0xEF, 0xBB, 0xBF]);
+        !(end_scalar || comment || not_printable || bom || brk(i) || c == b'\t')
+    })
+}
+
+/// yaml-cpp's `WriteDoubleQuotedString`, non-ASCII written as is.
+fn yaml_cpp_double_quoted(s: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in s.chars() {
+        let cp = u32::from(ch);
+        // `GetNextCodePointAndAdvance` reads a non-character as U+FFFD.
+        let ch = if (cp & 0xFFFE) == 0xFFFE || (0xFDD0..=0xFDEF).contains(&cp) {
+            '\u{FFFD}'
+        } else {
+            ch
+        };
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            c if u32::from(c) < 0x20 || (0x80..=0xA0).contains(&u32::from(c)) => {
+                out.push_str(&format!("\\x{:02x}", u32::from(c)));
+            }
+            '\u{FEFF}' => out.push_str("\\ufeff"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 impl AlphaSInfo {
@@ -349,12 +439,10 @@ pub(crate) fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError
             require(&map, path, "NumMembers")?,
             "integer",
         )?,
-        particle: parse_num(
-            path,
-            "Particle",
-            require(&map, path, "Particle")?,
-            "integer",
-        )?,
+        particle: map
+            .get("Particle")
+            .map(|v| parse_num(path, "Particle", v, "integer"))
+            .transpose()?,
         flavors: parse_list(
             path,
             "Flavors",
@@ -367,7 +455,7 @@ pub(crate) fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError
             require(&map, path, "OrderQCD")?,
             "integer",
         )?,
-        error_type: text_of(require(&map, path, "ErrorType")?),
+        error_type: map.get("ErrorType").map(lhapdf_entry).unwrap_or_default(),
         x_min: parse_num(path, "XMin", require(&map, path, "XMin")?, "float")?,
         x_max: parse_num(path, "XMax", require(&map, path, "XMax")?, "float")?,
         q_min: parse_num(path, "QMin", require(&map, path, "QMin")?, "float")?,
@@ -569,7 +657,7 @@ AlphaS_Lambda5: 0.165831
         let info = parse_info(SAMPLE_INFO, "test.info").unwrap();
         assert_eq!(info.num_members, 101);
         assert_eq!(info.set_index, Some(247000));
-        assert_eq!(info.particle, 2212);
+        assert_eq!(info.particle, Some(2212));
         assert_eq!(
             info.flavors,
             vec![-6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 21, 22]
@@ -618,6 +706,120 @@ AlphaS_Lambda5: 0.165831
             parse_info(&upper, "t.info").unwrap().error_type(),
             "hessian"
         );
+    }
+
+    /// An `.info` without `Particle` (the CT18 and MSHT20 sets of CMS's
+    /// run-3 list) or without `ErrorType` (`MSHT20nnlo_as_largerange`,
+    /// `MSHT20nnlo_as_smallrange`) opens as LHAPDF opens it; the error type
+    /// is then LHAPDF's `unknown`.
+    #[test]
+    fn an_info_without_particle_or_error_type_opens() {
+        let text = SAMPLE_INFO
+            .replace("Particle: 2212\n", "")
+            .replace("ErrorType: replicas\n", "");
+        let info = parse_info(&text, "t.info").unwrap();
+        assert_eq!(info.particle, None);
+        assert_eq!(info.error_type(), "unknown");
+        assert_eq!(info.num_members, 101);
+    }
+
+    /// `SetDesc` as LHAPDF 6.5's `description()` returns it, on the
+    /// `SetDesc` lines of real `.info` files of CMS's run-3 list (verbatim)
+    /// and on the shapes yaml-cpp's emitter quotes. The expected strings are
+    /// what MadGraph's `systematics` module wrote into its `<weightgroup>`
+    /// lines with LHAPDF 6.5.6, before its `=>`/`>`/`<` edit.
+    #[test]
+    fn a_set_description_is_what_lhapdf_returns() {
+        let desc = |line: &str| {
+            let text = SAMPLE_INFO.replace(
+                "SetDesc: \"LO QCD + LO QED PDF set, alphas(MZ)=0.130\"",
+                line,
+            );
+            let info = parse_info(&text, "t.info").unwrap();
+            (info.description().to_owned(), info.lhapdf_description())
+        };
+        // `MSHT20nnlo_as118.info`: double-quoted in the file, holding ": ",
+        // so yaml-cpp writes it double-quoted.
+        let (yaml, lhapdf) = desc(
+            "SetDesc: \"MSHT 2020 NNLO (68% C.L>). mem=0 => central value; mem=1-64 => 32 \
+             eigenvector sets (+/- directions). See Section 5.3.2 of arXiv:2012.04684 for error \
+             calculation. Web address: www.hep.ucl.ac.uk/msht\"",
+        );
+        assert_eq!(lhapdf, format!("\"{yaml}\""));
+        assert!(lhapdf.ends_with("Web address: www.hep.ucl.ac.uk/msht\""));
+        // `PDF4LHC21_40_pdfas.info`: likewise (`41 and 42: alphas`).
+        let (yaml, lhapdf) = desc(
+            "SetDesc: \"The PDF4LHC21 Hessian 40 set, 3-loop QCD, alphas(MZ)=0.118, large-x \
+             positivity. 1+40 symmetric eigenvector sets at alphas(MZ)=0.118; 41 and 42: \
+             alphas(MZ)=0.117 and 0.119\"",
+        );
+        assert_eq!(lhapdf, format!("\"{yaml}\""));
+        // `HERAPDF20_NNLO_EIG.info`: folded over five lines, no ": ", plain.
+        let (_, lhapdf) = desc(
+            "SetDesc: \"HERAPDF20 NNLO (Q2min=3.5) fit and experimental uncertainty variations.\n \
+             The 28 error PDFs should be treated two by two as the up and down excursions along \
+             14 eigenvectors,\n such that the symmetric error is calculated as the quadrature sum \
+             of [Sum i=1,14 of (var i+1 - var i)/2 ],\n or if asymmetric errors are desired \
+             according to Eqn 43 of Campbell, Huston and Stirling hep-ph/0611148.\n mem=0 => \
+             central; mem=1-28 => error eigenvectors.\"",
+        );
+        assert_eq!(
+            lhapdf,
+            "HERAPDF20 NNLO (Q2min=3.5) fit and experimental uncertainty variations. The 28 error \
+             PDFs should be treated two by two as the up and down excursions along 14 \
+             eigenvectors, such that the symmetric error is calculated as the quadrature sum of \
+             [Sum i=1,14 of (var i+1 - var i)/2 ], or if asymmetric errors are desired according \
+             to Eqn 43 of Campbell, Huston and Stirling hep-ph/0611148. mem=0 => central; \
+             mem=1-28 => error eigenvectors."
+        );
+        // `CT18NNLO.info`: single-quoted in the file, plain from LHAPDF.
+        let (_, lhapdf) = desc(
+            "SetDesc: 'CT18NNLO, 3-loop PDF evolution with HOPPET and HOPPET alphas_s running \
+             solution. This set has 59 member PDFs. mem=0 --> central value; mem=1-58 --> \
+             eigenvector sets 90%'",
+        );
+        assert_eq!(
+            lhapdf,
+            "CT18NNLO, 3-loop PDF evolution with HOPPET and HOPPET alphas_s running solution. \
+             This set has 59 member PDFs. mem=0 --> central value; mem=1-58 --> eigenvector sets \
+             90%"
+        );
+        // `NNPDF40_nnlo_hessian_pdfas.info` (plain in the file) and
+        // `ABMP16als118_5_nnlo.info` (double-quoted in the file): plain.
+        for (line, want) in [
+            (
+                "SetDesc: Hessian conversion of NNPDF40_nnlo_as_01180_1000; mem=0 central value \
+                 => alphas(MZ)=0.1180; mem=1-50 => eigenvector sets; mem=51 => alphas(MZ)=0.1170; \
+                 mem=52 => alphas(MZ)=0.1190",
+                "Hessian conversion of NNPDF40_nnlo_as_01180_1000; mem=0 central value => \
+                 alphas(MZ)=0.1180; mem=1-50 => eigenvector sets; mem=51 => alphas(MZ)=0.1170; \
+                 mem=52 => alphas(MZ)=0.1190",
+            ),
+            (
+                "SetDesc: \"NNLO 5-flavour PDFs with different alphas_s for the ABMP16 set\"",
+                "NNLO 5-flavour PDFs with different alphas_s for the ABMP16 set",
+            ),
+        ] {
+            assert_eq!(desc(line).1, want);
+        }
+        // The rest of yaml-cpp's plain-scalar rule, and its escapes.
+        for (line, want) in [
+            ("SetDesc: \"- a list marker\"", "\"- a list marker\""),
+            ("SetDesc: \"-1 is fine\"", "-1 is fine"),
+            ("SetDesc: \"a trailing space \"", "\"a trailing space \""),
+            ("SetDesc: \"a #comment\"", "\"a #comment\""),
+            ("SetDesc: \"a#b\"", "a#b"),
+            ("SetDesc: \"ends in a colon:\"", "\"ends in a colon:\""),
+            ("SetDesc: \"a:b\"", "a:b"),
+            ("SetDesc: \"[bracketed] start\"", "\"[bracketed] start\""),
+            ("SetDesc: \"say \\\"x\\\": y\"", "\"say \\\"x\\\": y\""),
+            ("SetDesc: \"tab\\there\"", "\"tab\\there\""),
+            ("SetDesc: \"two\\nlines\"", "\"two\\nlines\""),
+            ("SetDesc: \"null\"", "\"null\""),
+            ("SetDesc: \"caf\u{e9} \u{3b1}s\"", "caf\u{e9} \u{3b1}s"),
+        ] {
+            assert_eq!(desc(line).1, want, "{line}");
+        }
     }
 
     /// A member's header overrides the set's `AlphaS_*` and `ForcePositive`,

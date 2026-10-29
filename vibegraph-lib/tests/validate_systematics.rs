@@ -18,12 +18,18 @@
 //! `scalefact = 1` — the third negative control below measures exactly that
 //! blindness.
 //!
-//! The MLM terms are reached by [`madgraphs_module_on_other_files`], which
-//! reads event files MadGraph's module weighted outside the reference bundle
-//! (the banked MLM runs carry the record and no weights): every weight within
-//! one unit, the `--alps`-only weights exactly `XWGTUP` on an event whose
-//! record gives them nothing to vary, and a control that drops the emission
-//! and chain terms.
+//! The MLM terms are gated on the four banked MLM runs that MadGraph's module
+//! weighted under its default arguments plus `--alps=0.5,1,2`
+//! (`Events/run_01_syst_default`): every weight within one unit, the
+//! `--alps`-only weights exactly `XWGTUP` on an event whose record gives them
+//! nothing to vary and moved on every other, and a control that drops the
+//! emission and chain terms. [`madgraphs_module_on_other_files`] runs the
+//! same check on any other file.
+//!
+//! CMS's `runcmsgrid.sh` arguments (43 sets, 880 members, `--together` and
+//! `--start_id`) are gated on the four `Events/run_01_cms` runs: the
+//! `<initrwgt>` block byte for byte from the bundled `.info` files alone, and,
+//! where the 880 members are on disk, every weight.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -34,12 +40,14 @@ use vibegraph::cache::lhapdf::{DownloadRequest, Tier, Tiers};
 use vibegraph::cache::store::Fetch;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::LheEvent;
-use vibegraph::pdf::select::{load_for_lhaid, LoadedPdf};
+use vibegraph::pdf::alphas::GridAlphaS;
+use vibegraph::pdf::select::{load_for_lhaid, open_set_for_lhaid, LoadedPdf};
+use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::runcard::RunCard;
-use vibegraph::systematics::plan::{resolve, Writer};
+use vibegraph::systematics::plan::{open_request, resolve, RunSet, Writer};
 use vibegraph::systematics::record::{LoRecord, RecordKinematics};
 use vibegraph::systematics::request::{Axis, DynScale, RequestSource, VariationRequest};
-use vibegraph::systematics::weight::{lo_weight, Variation};
+use vibegraph::systematics::weight::{lo_weight, Variation, VariationPdf};
 use vibegraph::ufo::identity::digest_bytes;
 
 /// The banked runs carrying MadGraph's default systematics weights.
@@ -61,6 +69,33 @@ const RUNS: [&str; 12] = [
 /// The SHA-256 of the `<initrwgt>` block every one of the twelve carries.
 const BANKED_INITRWGT_SHA256: &str =
     "eb55efbb97a2cabfb6dd59595d3534770ed4175971d0cc217de18320d893c7d4";
+
+/// The banked runs MadGraph's module weighted with CMS's `runcmsgrid.sh`
+/// arguments, on copies whose banner names lhaid 325300.
+const CMS_RUNS: [&str; 4] = [
+    "pp_to_ll",
+    "pp_to_jj",
+    "pp_to_ll_0j2j_mlm",
+    "pp_to_ttx_0j1j_mlm",
+];
+
+/// The SHA-256 of the `<initrwgt>` block all four CMS outputs carry.
+const CMS_INITRWGT_SHA256: &str =
+    "ba7e21bc8c3cdaff027a91bd6c6f269b9dd4f49585db4c9266aaeaa2d1f730cf";
+
+/// The run's own density in the CMS outputs' banners.
+const CMS_LHAID: i64 = 325300;
+
+/// The banked MLM runs MadGraph's module weighted under its default
+/// arguments and `--alps=0.5,1,2`, with the number of events whose record
+/// gives `--alps` something to vary (an emission scale, or a chain longer
+/// than one entry), as counted on the oracle host from the written weights.
+const SYST_DEFAULT_RUNS: [(&str, u64); 4] = [
+    ("pp_to_llj_mlm", 8877),
+    ("pp_to_ll_0j2j_mlm", 3527),
+    ("pp_to_ttx_0j1j_mlm", 5253),
+    ("pp_to_llj_xqcut_only", 0),
+];
 
 /// The runs the `setscales.f` control detects on: massive final states, or a
 /// `scalefact` off one.
@@ -96,6 +131,48 @@ fn banked_text(run: &str) -> String {
         .read_to_string(&mut text)
         .expect("a gzip LHE file");
     text
+}
+
+/// An event file, plain or gzipped.
+fn read_lhe(path: &Path) -> String {
+    let file = std::fs::File::open(path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e}; fetch the banked runs with `pixi run fetch-refdata`",
+            path.display()
+        )
+    });
+    let mut text = String::new();
+    if path.extension().is_some_and(|e| e == "gz") {
+        flate2::read::GzDecoder::new(file).read_to_string(&mut text)
+    } else {
+        std::io::BufReader::new(file).read_to_string(&mut text)
+    }
+    .expect("the file reads");
+    text
+}
+
+fn banked_events_dir(run: &str, events: &str) -> PathBuf {
+    root()
+        .join("validation/madgraph/output")
+        .join(run)
+        .join("Events")
+        .join(events)
+}
+
+/// The module arguments of the banked `command.txt`: every `--` option on
+/// the line that runs `systematics.py`, less the two that name output and
+/// tools.
+fn module_arguments(dir: &Path) -> String {
+    let command = std::fs::read_to_string(dir.join("command.txt")).expect("command.txt");
+    let line = command
+        .lines()
+        .find(|l| l.contains("systematics.py"))
+        .expect("the systematics.py command line");
+    line.split_whitespace()
+        .filter(|a| a.starts_with("--"))
+        .filter(|a| !a.starts_with("--result=") && !a.starts_with("--lhapdf_config="))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The `<initrwgt>` block, tags and final newline included.
@@ -602,16 +679,130 @@ fn the_pdfas_member_reads_its_own_coupling_and_clamp() {
     );
 }
 
-/// MadGraph's own systematics module on event files outside the bundle, the
-/// MLM-matched ones in particular: `SYSTEMATICS_FILES` lists LHE files (plain
-/// or gzipped, `:`-separated) whose weights MadGraph's module wrote under
-/// `SYSTEMATICS_ARGS` (one command-line string) on `NNPDF23_lo_as_0130_qed`.
-/// Every weight must print MadGraph's string or one unit from it; where the
-/// request varies `--alps`, its weights must be `XWGTUP`'s spelling exactly on
-/// the events whose record holds no emission scale and no chain longer than
-/// one entry, and how many of the other events they move on is reported; and
-/// dropping the emission and chain terms must be detected wherever such events
-/// exist.
+/// One file MadGraph's module weighted under `request`, against `writer`:
+/// every weight within one unit; where the request varies `--alps`, its
+/// weights `XWGTUP`'s spelling exactly on every event whose record holds no
+/// emission scale and no chain longer than one entry, and moved on every
+/// other; and dropping the emission and chain terms detected exactly where
+/// such events exist. `alps_events`, where given, is the number of such
+/// events counted independently. Returns the failures.
+fn module_gate(
+    label: &str,
+    text: &str,
+    request: &VariationRequest,
+    writer: &Writer,
+    alps_events: Option<u64>,
+) -> Vec<String> {
+    let controls = [(Control::NoMlmTerms, "MLM terms dropped")];
+    let mut failures = Vec::new();
+    let r = measure_text(label, text, writer, &controls);
+    let worst = r
+        .worst_rel
+        .iter()
+        .map(|(c, v)| format!("{c} {v:.3e}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let events = text.matches("<event>").count() as u64;
+    println!(
+        "{label}\n  weights {} exact {} one-unit {} beyond {} ({:.5}% exact); worst {worst}",
+        r.weights,
+        r.exact,
+        r.one_unit,
+        r.beyond,
+        100.0 * r.exact as f64 / r.weights as f64
+    );
+    println!(
+        "  --alps: {} of {events} events give it something to vary, and it moves every \
+         --alps weight on {} of them; it leaves every one at XWGTUP on {} of the other {}",
+        r.alps_events,
+        r.alps_moved,
+        r.alps_still,
+        events - r.alps_events
+    );
+    if r.weights != events * writer.ids().len() as u64 || r.beyond != 0 {
+        failures.push(format!(
+            "{label}: {} weights, {} beyond one unit",
+            r.weights, r.beyond
+        ));
+    }
+    if request.alps.iter().any(|&a| a != 1.0) {
+        if r.alps_still != events - r.alps_events {
+            failures.push(format!(
+                "{label}: --alps moved a weight on {} events with nothing to vary",
+                events - r.alps_events - r.alps_still
+            ));
+        }
+        if r.alps_moved != r.alps_events {
+            failures.push(format!(
+                "{label}: --alps left a weight at XWGTUP on {} events with something to vary",
+                r.alps_events - r.alps_moved
+            ));
+        }
+    }
+    if let Some(expected) = alps_events {
+        if r.alps_events != expected {
+            failures.push(format!(
+                "{label}: {} events give --alps something to vary, the oracle host counted \
+                 {expected}",
+                r.alps_events
+            ));
+        }
+    }
+    for (name, by_class) in &r.controls {
+        let worst = by_class.values().copied().fold(0.0f64, f64::max);
+        let detected = worst > DETECTION;
+        println!(
+            "  control {name}: {} (max {worst:.3e})",
+            if detected { "DETECTED" } else { "blind" }
+        );
+        if detected != (r.alps_events > 0) {
+            failures.push(format!(
+                "{label}: control '{name}' detected={detected} with {} events to vary",
+                r.alps_events
+            ));
+        }
+    }
+    failures
+}
+
+/// MadGraph's own systematics module under its default arguments plus
+/// `--alps=0.5,1,2` on the four banked MLM runs: the emission and chain terms
+/// of every weight, the `--alps` weights moving on exactly the events whose
+/// record gives them something to vary (counted on the oracle host), and the
+/// dropped-terms control detected on the three runs that have such events and
+/// blind on `pp_to_llj_xqcut_only`, which has none.
+#[test]
+fn madgraphs_default_arguments_on_the_banked_mlm_runs() {
+    let (tiers, _cache) = tiers();
+    let central = central(&tiers);
+    let mut failures = Vec::new();
+    for (run, alps_events) in SYST_DEFAULT_RUNS {
+        let dir = banked_events_dir(run, "run_01_syst_default");
+        let arguments = module_arguments(&dir);
+        assert_eq!(
+            arguments, "--mur=0.5,1,2 --muf=0.5,1,2 --pdf=errorset --alps=0.5,1,2",
+            "{run}: the banked command"
+        );
+        let request = VariationRequest::from_command_line(&arguments).expect("the arguments parse");
+        let writer = writer(&request, &tiers, &central);
+        assert_eq!(writer.ids().len(), 147);
+        let text = read_lhe(&dir.join("unweighted_events.lhe.gz"));
+        failures.extend(module_gate(
+            run,
+            &text,
+            &request,
+            &writer,
+            Some(alps_events),
+        ));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// MadGraph's own systematics module on event files outside the bundle:
+/// `SYSTEMATICS_FILES` lists LHE files (plain or gzipped, `:`-separated)
+/// whose weights MadGraph's module wrote under `SYSTEMATICS_ARGS` (one
+/// command-line string) on `NNPDF23_lo_as_0130_qed`, each checked as
+/// [`module_gate`] checks.
 #[test]
 #[ignore = "needs files weighted by MadGraph's module: SYSTEMATICS_FILES, SYSTEMATICS_ARGS"]
 fn madgraphs_module_on_other_files() {
@@ -621,63 +812,354 @@ fn madgraphs_module_on_other_files() {
     let (tiers, _cache) = tiers();
     let central = central(&tiers);
     let writer = writer(&request, &tiers, &central);
-    let controls = [(Control::NoMlmTerms, "MLM terms dropped")];
     let mut failures = Vec::new();
     for path in files.split(':').filter(|p| !p.is_empty()) {
-        let mut text = String::new();
-        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-        if path.ends_with(".gz") {
-            flate2::read::GzDecoder::new(file).read_to_string(&mut text)
-        } else {
-            std::io::BufReader::new(file).read_to_string(&mut text)
-        }
-        .expect("the file reads");
-        let r = measure_text(path, &text, &writer, &controls);
-        let worst = r
-            .worst_rel
+        let text = read_lhe(Path::new(path));
+        failures.extend(module_gate(path, &text, &request, &writer, None));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// `write_banner`'s description edit, for the control's lines.
+fn madgraph_edit(text: &str) -> String {
+    text.replace("=>", ";")
+        .replace('>', ".gt.")
+        .replace('<', ".lt.")
+}
+
+/// The bundled `.info` files of a CMS run as an LHAPDF tree: each under
+/// `<name>/<name>.info`, its SHA-256 checked against the oracle host's
+/// `pdfsets.json`, and a `pdfsets.index` listing each by its `SetIndex`.
+fn cms_info_tree(dir: &Path) -> (tempfile::TempDir, Vec<PdfSet>) {
+    let recorded: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("pdfsets.json")).expect("pdfsets.json"),
+    )
+    .expect("pdfsets.json parses");
+    let tree = tempfile::tempdir().expect("a scratch tree");
+    let mut index = String::new();
+    let mut sets = Vec::new();
+    let mut names: Vec<_> = std::fs::read_dir(dir.join("pdfinfo"))
+        .expect("the bundled .info files")
+        .map(|e| e.expect("an entry").path())
+        .collect();
+    names.sort();
+    for path in names {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("a set name")
+            .to_string();
+        let bytes = std::fs::read(&path).expect("the .info reads");
+        assert_eq!(
+            digest_bytes(&bytes),
+            recorded[&name]["info_sha256"]
+                .as_str()
+                .expect("info_sha256"),
+            "{name}: the bundled .info is not the one the oracle host read"
+        );
+        let set_dir = tree.path().join(&name);
+        std::fs::create_dir_all(&set_dir).expect("a set directory");
+        std::fs::write(set_dir.join(format!("{name}.info")), &bytes).expect("the .info writes");
+        let set = PdfSet::load(&set_dir, &name).expect("the .info parses");
+        let set_index = set.info.set_index().expect("a SetIndex");
+        assert_eq!(
+            Some(set_index),
+            recorded[&name]["lhapdf_id"].as_i64(),
+            "{name}: SetIndex"
+        );
+        index.push_str(&format!("{set_index} {name} 1\n"));
+        sets.push(set);
+    }
+    assert_eq!(sets.len(), 43, "the CMS list's 43 sets");
+    std::fs::write(tree.path().join("pdfsets.index"), index).expect("the index writes");
+    (tree, sets)
+}
+
+fn tiers_at(path: &Path) -> (Tiers, tempfile::TempDir) {
+    let cache = tempfile::tempdir().expect("a scratch cache");
+    (
+        Tiers {
+            lhapdf_data_path: vec![path.to_path_buf()],
+            data_path_tier: Tier::LhapdfDataPath,
+            cvmfs: None,
+            cache_root: cache.path().to_path_buf(),
+        },
+        cache,
+    )
+}
+
+fn block_of(lines: &[String]) -> String {
+    let mut block = String::from("<initrwgt>\n");
+    for line in lines {
+        block.push_str(line);
+        block.push('\n');
+    }
+    block.push_str("</initrwgt>\n");
+    block
+}
+
+/// The lines of `ours` that differ from `banked`, by position.
+fn differing_lines(ours: &str, banked: &str) -> Vec<(usize, String, String)> {
+    let (a, b): (Vec<&str>, Vec<&str>) = (ours.lines().collect(), banked.lines().collect());
+    (0..a.len().max(b.len()))
+        .filter(|&i| a.get(i) != b.get(i))
+        .map(|i| {
+            (
+                i + 1,
+                a.get(i).unwrap_or(&"").to_string(),
+                b.get(i).unwrap_or(&"").to_string(),
+            )
+        })
+        .collect()
+}
+
+/// The `<initrwgt>` block CMS's arguments write, from the banked command
+/// line and the 43 bundled `.info` files alone (no member is read), is
+/// MadGraph's on all four CMS runs byte for byte. The control writes each
+/// set's description as the YAML text of its `.info` reads, without LHAPDF's
+/// re-emission: it must differ from the banked block on exactly the group
+/// lines of the sets whose description yaml-cpp writes quoted.
+#[test]
+fn the_cms_header_is_madgraphs_byte_for_byte() {
+    for run in CMS_RUNS {
+        let dir = banked_events_dir(run, "run_01_cms");
+        let text = read_lhe(&dir.join("unweighted_events.lhe.gz"));
+        let banked = initrwgt_block(&text);
+        assert_eq!(
+            digest_bytes(banked.as_bytes()),
+            CMS_INITRWGT_SHA256,
+            "{run}: the banked block moved"
+        );
+        let arguments = module_arguments(&dir);
+        let request =
+            VariationRequest::from_command_line(&arguments).expect("the CMS arguments parse");
+        assert_eq!(request.start_id, Some(1001));
+        let (tree, sets) = cms_info_tree(&dir);
+        let (tiers, _cache) = tiers_at(tree.path());
+        let opened_run =
+            open_set_for_lhaid(CMS_LHAID, &tiers, &refuse).expect("325300 in the tree");
+        let run_set = RunSet {
+            set: &opened_run.set,
+            tier: opened_run.found.tier,
+            lhaid: CMS_LHAID,
+            member: 0,
+        };
+        let opened = open_request(&request, &run_set, &tiers, &refuse).expect("the list opens");
+        let lines = opened.header_lines(&request).expect("the request expands");
+        let weights = lines
             .iter()
-            .map(|(c, v)| format!("{c} {v:.3e}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let events = text.matches("<event>").count() as u64;
+            .filter(|l| l.starts_with("<weight id="))
+            .count();
+        let ours = block_of(&lines);
+        let differ = differing_lines(&ours, &banked);
         println!(
-            "{path}\n  weights {} exact {} one-unit {} beyond {} ({:.5}% exact); worst {worst}",
-            r.weights,
-            r.exact,
-            r.one_unit,
-            r.beyond,
-            100.0 * r.exact as f64 / r.weights as f64
+            "cms header {run:<20} weights {weights} sha256 {} identical={}",
+            &digest_bytes(ours.as_bytes())[..16],
+            differ.is_empty()
         );
-        println!(
-            "  --alps: {} of {events} events give it something to vary, and it moves every \
-             --alps weight on {} of them; it leaves every one at XWGTUP on {} of the other {}",
-            r.alps_events,
-            r.alps_moved,
-            r.alps_still,
-            events - r.alps_events
-        );
-        if r.weights == 0 || r.beyond != 0 {
-            failures.push(format!("{path}: {} beyond one unit", r.beyond));
+        for (n, a, b) in differ.iter().take(5) {
+            println!("  line {n}\n    ours   {a}\n    banked {b}");
         }
-        if request.alps.iter().any(|&a| a != 1.0) && r.alps_still != events - r.alps_events {
-            failures.push(format!(
-                "{path}: --alps moved a weight on {} events with nothing to vary",
-                events - r.alps_events - r.alps_still
-            ));
-        }
-        for (name, by_class) in &r.controls {
-            let worst = by_class.values().copied().fold(0.0f64, f64::max);
-            let detected = worst > DETECTION;
-            println!(
-                "  control {name}: {} (max {worst:.3e})",
-                if detected { "DETECTED" } else { "blind" }
+        assert!(differ.is_empty(), "{run}: the CMS header is not MadGraph's");
+        assert_eq!(weights, 926);
+
+        let quoted: Vec<&PdfSet> = sets
+            .iter()
+            .filter(|s| s.info.lhapdf_description() != s.info.description())
+            .collect();
+        let mut control = ours.clone();
+        for set in &quoted {
+            control = control.replace(
+                &madgraph_edit(&set.info.lhapdf_description()),
+                &madgraph_edit(set.info.description()),
             );
-            if detected != (r.alps_events > 0) {
-                failures.push(format!(
-                    "{path}: control '{name}' detected={detected} with {} events to vary",
-                    r.alps_events
-                ));
+        }
+        let caught = differing_lines(&control, &banked);
+        let caught_sets: Vec<&str> = caught
+            .iter()
+            .filter_map(|(_, line, _)| {
+                line.strip_prefix("<weightgroup name=\"")
+                    .and_then(|l| l.split('"').next())
+            })
+            .collect();
+        println!(
+            "  control: the YAML text as the description: sha256 {}, {} line(s) differ ({})",
+            &digest_bytes(control.as_bytes())[..16],
+            caught.len(),
+            caught_sets.join(", ")
+        );
+        // Only sets read whole open a group, so a quoted description of a
+        // set read at `@0` never reaches the header.
+        let grouped: Vec<&str> = quoted
+            .iter()
+            .map(|s| s.name())
+            .filter(|name| banked.contains(&format!("<weightgroup name=\"{name}\"")))
+            .collect();
+        assert!(!caught.is_empty(), "{run}: the control is not detected");
+        assert_eq!(caught_sets, grouped, "{run}: the control's lines");
+        assert_eq!(caught.len(), grouped.len(), "{run}: the control's lines");
+    }
+}
+
+/// A member density read with its set's `.info` coupling instead of the
+/// member's own: the control for the member-level `AlphaS_*` overrides.
+struct SetCoupling {
+    member: PdfMember,
+    alphas: GridAlphaS,
+}
+
+impl VariationPdf for SetCoupling {
+    fn alphas_q(&self, q: f64) -> Result<f64, String> {
+        Ok(self.alphas.eval(q))
+    }
+
+    fn xfx_q(&self, pdg: i64, x: f64, q: f64) -> Result<f64, String> {
+        self.member
+            .try_xfx_q2(i32::try_from(pdg).map_err(|e| e.to_string())?, x, q * q)
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// The `PDF="…"` lhaid of every `<weight>` line, in id order.
+fn header_pdf_ids(lines: &[String]) -> Vec<i64> {
+    lines
+        .iter()
+        .filter(|l| l.starts_with("<weight id="))
+        .map(|l| {
+            let (_, rest) = l.split_once(" PDF=\"").expect("a PDF attribute");
+            rest.split('"').next().unwrap().parse().expect("an lhaid")
+        })
+        .collect()
+}
+
+/// CMS's `runcmsgrid.sh` arguments on the four `run_01_cms` runs: every one
+/// of the 926 weights of every event within one unit of MadGraph's string,
+/// ids 1001–1926 in order, the header byte for byte from the loaded members,
+/// and the `--alps` and dropped-MLM-terms checks of [`module_gate`]. The 43
+/// sets are not banked: `SYSTEMATICS_CMS_PDFS` names an LHAPDF tree holding
+/// them (at least the 880 members the list reads, and a `pdfsets.index`).
+///
+/// The member-level couplings are pinned on real data: 325300 members 101 and
+/// 102 must read `AlphaS_MZ` 0.116 and 0.120 from their own headers over the
+/// set's 0.118, and evaluating every member whose header overrides the set's
+/// `AlphaS_MZ` with the set's coupling instead must be detected on every run
+/// whose weights depend on αs (all but `pp_to_ll`, whose events carry no
+/// power of αs and no emission).
+#[test]
+#[ignore = "needs the 43 CMS sets on SYSTEMATICS_CMS_PDFS"]
+fn cms_arguments_reproduce_madgraphs_weights() {
+    let pdfs = PathBuf::from(std::env::var("SYSTEMATICS_CMS_PDFS").expect("SYSTEMATICS_CMS_PDFS"));
+    let (tiers, _cache) = tiers_at(&pdfs);
+    let central = load_for_lhaid(CMS_LHAID, &tiers, &refuse).expect("325300 member 0");
+    let arguments = module_arguments(&banked_events_dir(CMS_RUNS[0], "run_01_cms"));
+    let request = VariationRequest::from_command_line(&arguments).expect("the CMS arguments parse");
+    let started = std::time::Instant::now();
+    let resolved = resolve(&request, &central, &tiers, &refuse).expect("the list resolves");
+    println!(
+        "resolved {} sets, {} members in {:.1} s",
+        resolved.inputs().len(),
+        resolved.members_loaded(),
+        started.elapsed().as_secs_f64()
+    );
+    let writer = Writer::new(&request, &resolved).expect("the request expands");
+    assert_eq!(writer.ids().len(), 926);
+    assert_eq!(writer.ids()[0], "1001");
+    let mut failures = Vec::new();
+
+    // The member-level couplings, and the control that reads them from the
+    // set instead.
+    let pdf_ids = header_pdf_ids(writer.header_lines());
+    let mut overrides: BTreeMap<i64, SetCoupling> = BTreeMap::new();
+    for id in pdf_ids.iter().collect::<std::collections::BTreeSet<_>>() {
+        let set = open_set_for_lhaid(*id, &tiers, &refuse).expect("the set opens");
+        let member = u32::try_from(id - set.set_index).unwrap();
+        let pdf = set.set.member(member).expect("the member loads");
+        let own = pdf.alpha_s_info().expect("member alpha_s").mz();
+        let of_set = set.set.info.alpha_s.mz();
+        if *id == CMS_LHAID + 101 || *id == CMS_LHAID + 102 {
+            let want = if *id == CMS_LHAID + 101 { 0.116 } else { 0.120 };
+            println!(
+                "{} member {member}: AlphaS_MZ {own} (set's {of_set})",
+                set.set.name()
+            );
+            if own != want {
+                failures.push(format!("{id}: AlphaS_MZ {own}, its header says {want}"));
             }
+        }
+        if of_set.is_finite() && own != of_set {
+            println!(
+                "  overrides the set's AlphaS_MZ: {} member {member} ({id}): {own} over {of_set}",
+                set.set.name()
+            );
+            let alphas = GridAlphaS::from_info(&set.set.info.alpha_s).expect("ipol");
+            overrides.insert(
+                *id,
+                SetCoupling {
+                    member: pdf,
+                    alphas,
+                },
+            );
+        }
+    }
+
+    for run in CMS_RUNS {
+        let dir = banked_events_dir(run, "run_01_cms");
+        assert_eq!(
+            module_arguments(&dir),
+            arguments,
+            "{run}: the same arguments"
+        );
+        let text = read_lhe(&dir.join("unweighted_events.lhe.gz"));
+        let banked = initrwgt_block(&text);
+        let ours = block_of(writer.header_lines());
+        println!(
+            "cms {run}: header from the loaded members identical={}",
+            ours == banked
+        );
+        if ours != banked {
+            failures.push(format!("{run}: the header from the loaded members differs"));
+        }
+        failures.extend(module_gate(run, &text, &request, &writer, None));
+
+        let file = LheFile::parse(&text).expect("the file parses");
+        let worst = file
+            .events
+            .par_iter()
+            .map(|event| {
+                let variations = writer.variations();
+                let record = LoRecord::parse(&event.trailer)
+                    .expect("the record parses")
+                    .expect("<mgrwt>")
+                    .as_written();
+                let kinematics = RecordKinematics::of(event);
+                let banked = banked_weights(event);
+                let nominal = lo_weight(&record, &kinematics, &variations[0]).unwrap();
+                let xwgtup: f64 = printed(event.weight).parse().unwrap();
+                let mut worst = 0.0f64;
+                for (k, id) in pdf_ids.iter().enumerate() {
+                    let Some(pdf) = overrides.get(id) else {
+                        continue;
+                    };
+                    let v = Variation {
+                        pdf,
+                        ..variations[k + 1]
+                    };
+                    let w = xwgtup * lo_weight(&record, &kinematics, &v).unwrap() / nominal;
+                    let theirs: f64 = banked[k].1.parse().unwrap();
+                    worst = worst.max((w / theirs - 1.0).abs());
+                }
+                worst
+            })
+            .reduce(|| 0.0, f64::max);
+        let detected = worst > DETECTION;
+        println!(
+            "  control the set's coupling for those members: {} (max {worst:.3e})",
+            if detected { "DETECTED" } else { "blind" }
+        );
+        if detected != (run != "pp_to_ll") {
+            failures.push(format!(
+                "{run}: the set-coupling control detected={detected}"
+            ));
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));

@@ -38,7 +38,7 @@ pub struct SetHeader {
     /// LHAPDF's `errorType`: the `.info` `ErrorType` lowercased, `unknown`
     /// when absent.
     pub error_type: String,
-    /// `SetDesc`.
+    /// LHAPDF's `description()`: `SetDesc` as its yaml-cpp re-emits it.
     pub description: String,
 }
 

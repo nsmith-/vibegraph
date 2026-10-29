@@ -309,40 +309,58 @@ fn open_sets(
     }
 }
 
-/// Resolve `request`'s PDF list against the sets it names, the run's own
-/// density `central` among them, and load every member it reads.
-pub fn resolve(
+/// The run's own density, as a request's PDF list is resolved against it:
+/// its set, the tier the set was found in, and the lhaid and member the run
+/// reads.
+pub struct RunSet<'a> {
+    pub set: &'a PdfSet,
+    pub tier: Tier,
+    pub lhaid: i64,
+    pub member: u32,
+}
+
+impl<'a> RunSet<'a> {
+    /// The run's density as `central` loaded it.
+    pub fn of(central: &'a LoadedPdf) -> Self {
+        let crate::artifact::PdfInput::Lhapdf { lhaid, member, .. } = &central.input else {
+            unreachable!("systematics weights are resolved only for a run that reads a density");
+        };
+        RunSet {
+            set: &central.set,
+            tier: central.tier,
+            lhaid: *lhaid,
+            member: *member,
+        }
+    }
+}
+
+/// A request's PDF list resolved to slots against the sets' `.info` files,
+/// before any member is read: everything the `<initrwgt>` block needs.
+pub struct OpenedRequest {
+    opened: BTreeMap<SetKey, OpenedSet>,
+    /// Each slot as (set key, member index), the list's in order and then
+    /// the fresh nominal when the list does not start with it.
+    wanted: Vec<(SetKey, u32)>,
+    list_len: usize,
+    nominal: usize,
+    sets: BTreeMap<i64, SetHeader>,
+    run_member: u32,
+}
+
+/// Resolve `request`'s PDF list against the sets it names and the run's own
+/// set, reading only their `.info` files.
+pub fn open_request(
     request: &VariationRequest,
-    central: &LoadedPdf,
+    run: &RunSet<'_>,
     tiers: &Tiers,
     fetch: &FetchFactory<'_>,
-) -> Result<ResolvedPdfs, ResolveError> {
-    let crate::artifact::PdfInput::Lhapdf {
-        lhaid: run_lhaid,
-        member: run_member,
-        ..
-    } = &central.input
-    else {
-        unreachable!("systematics weights are resolved only for a run that reads a density");
-    };
-    let (run_lhaid, run_member) = (*run_lhaid, *run_member);
+) -> Result<OpenedRequest, ResolveError> {
+    let (run_lhaid, run_member) = (run.lhaid, run.member);
     let targets: Vec<(SetKey, Members)> =
         request.pdfs.iter().map(|e| target(e, run_lhaid)).collect();
     let keys: BTreeSet<SetKey> = targets.iter().map(|(k, _)| k.clone()).collect();
-    let opened = open_sets(&keys, &central.set, central.tier, tiers, fetch)?;
-    if let Some(run) = opened.get(&SetKey::Run) {
-        let (got, want) = (run.set.info_file(), central.set.info_file());
-        if got.sha256 != want.sha256 {
-            return Err(ResolveError::CentralChanged {
-                set: central.set.name().to_string(),
-                file: got.name.clone(),
-                got: got.sha256.clone(),
-                want: want.sha256.clone(),
-            });
-        }
-    }
+    let opened = open_sets(&keys, run.set, run.tier, tiers, fetch)?;
 
-    // Each slot as (set key, member index), in the list's order.
     let mut wanted: Vec<(SetKey, u32)> = Vec::new();
     let mut sets = BTreeMap::new();
     for (entry, (key, members)) in request.pdfs.iter().zip(&targets) {
@@ -359,7 +377,7 @@ pub fn resolve(
                     SetHeader {
                         name: opened_set.set.name().to_string(),
                         error_type: opened_set.set.info.error_type(),
-                        description: opened_set.set.info.description().to_string(),
+                        description: opened_set.set.info.lhapdf_description(),
                     },
                 );
                 wanted.extend((0..num).map(|m| (key.clone(), m)));
@@ -386,11 +404,7 @@ pub fn resolve(
         }
     }
     let list_len = wanted.len();
-    let slot_of = |(key, m): &(SetKey, u32)| SlotId {
-        lhapdf_id: opened[key].set_index + i64::from(*m),
-        member: *m,
-    };
-    let first = slot_of(&wanted[0]);
+    let first = slot_of_opened(&opened)(&wanted[0]);
     let nominal = if first.lhapdf_id == run_lhaid {
         0
     } else if list_len == 1 {
@@ -409,42 +423,51 @@ pub fn resolve(
         let mut more = opened;
         more.extend(open_sets(
             &[SetKey::Run].into_iter().collect(),
-            &central.set,
-            central.tier,
+            run.set,
+            run.tier,
             tiers,
             fetch,
         )?);
         more
     };
+    Ok(OpenedRequest {
+        opened,
+        wanted,
+        list_len,
+        nominal,
+        sets,
+        run_member,
+    })
+}
 
-    let distinct: BTreeSet<(SetKey, u32)> = wanted.iter().cloned().collect();
-    let distinct: Vec<(SetKey, u32)> = distinct.into_iter().collect();
-    let loaded: Vec<Result<MemberEval, ResolveError>> = distinct
-        .par_iter()
-        .map(|(key, m)| {
-            let set = &opened[key].set;
-            let member_error = |why: String| ResolveError::Member {
-                set: set.name().to_string(),
-                member: *m,
-                why,
-            };
-            let member = set.member(*m).map_err(|e| member_error(e.to_string()))?;
-            let info = member
-                .alpha_s_info()
-                .ok_or_else(|| member_error("no alpha_s metadata".to_string()))?;
-            let alphas = GridAlphaS::from_info(info).map_err(|e| member_error(e.to_string()))?;
-            Ok(MemberEval { member, alphas })
-        })
-        .collect();
-    let mut evals_by: BTreeMap<(SetKey, u32), Arc<MemberEval>> = BTreeMap::new();
-    for (key, eval) in distinct.iter().zip(loaded) {
-        evals_by.insert(key.clone(), Arc::new(eval?));
+impl OpenedRequest {
+    fn slots(&self) -> Vec<SlotId> {
+        self.wanted
+            .iter()
+            .map(slot_of_opened(&self.opened))
+            .collect()
     }
-    if let (Some(eval), Some(want)) = (
-        evals_by.get(&(SetKey::Run, run_member)),
-        central.member.file(),
-    ) {
-        if let Some(got) = eval.member.file() {
+
+    /// The `<initrwgt>` lines between its tags that `request` writes over
+    /// these sets: what [`Writer::header_lines`] gives once the members are
+    /// loaded.
+    pub fn header_lines(&self, request: &VariationRequest) -> Result<Vec<String>, String> {
+        Ok(expanded(
+            request,
+            &self.slots(),
+            self.list_len,
+            self.nominal,
+            &self.sets,
+        )?
+        .header)
+    }
+
+    /// Load every member the slots read, in parallel, checking the run's own
+    /// files against what `central` read.
+    pub fn load(self, central: &LoadedPdf) -> Result<ResolvedPdfs, ResolveError> {
+        let opened = self.opened;
+        if let Some(run) = opened.get(&SetKey::Run) {
+            let (got, want) = (run.set.info_file(), central.set.info_file());
             if got.sha256 != want.sha256 {
                 return Err(ResolveError::CentralChanged {
                     set: central.set.name().to_string(),
@@ -454,37 +477,111 @@ pub fn resolve(
                 });
             }
         }
-    }
-
-    let mut inputs: Vec<SystematicsSet> = Vec::new();
-    let mut seen: Vec<SetKey> = Vec::new();
-    for (key, _) in &wanted {
-        if seen.contains(key) {
-            continue;
+        let wanted = self.wanted;
+        let distinct: BTreeSet<(SetKey, u32)> = wanted.iter().cloned().collect();
+        let distinct: Vec<(SetKey, u32)> = distinct.into_iter().collect();
+        let loaded: Vec<Result<MemberEval, ResolveError>> = distinct
+            .par_iter()
+            .map(|(key, m)| {
+                let set = &opened[key].set;
+                let member_error = |why: String| ResolveError::Member {
+                    set: set.name().to_string(),
+                    member: *m,
+                    why,
+                };
+                let member = set.member(*m).map_err(|e| member_error(e.to_string()))?;
+                let info = member
+                    .alpha_s_info()
+                    .ok_or_else(|| member_error("no alpha_s metadata".to_string()))?;
+                let alphas =
+                    GridAlphaS::from_info(info).map_err(|e| member_error(e.to_string()))?;
+                Ok(MemberEval { member, alphas })
+            })
+            .collect();
+        let mut evals_by: BTreeMap<(SetKey, u32), Arc<MemberEval>> = BTreeMap::new();
+        for (key, eval) in distinct.iter().zip(loaded) {
+            evals_by.insert(key.clone(), Arc::new(eval?));
         }
-        seen.push(key.clone());
-        let o = &opened[key];
-        let mut files = vec![o.set.info_file().clone()];
-        for ((k, _), eval) in &evals_by {
-            if k == key {
-                files.extend(eval.member.file().cloned());
+        if let (Some(eval), Some(want)) = (
+            evals_by.get(&(SetKey::Run, self.run_member)),
+            central.member.file(),
+        ) {
+            if let Some(got) = eval.member.file() {
+                if got.sha256 != want.sha256 {
+                    return Err(ResolveError::CentralChanged {
+                        set: central.set.name().to_string(),
+                        file: got.name.clone(),
+                        got: got.sha256.clone(),
+                        want: want.sha256.clone(),
+                    });
+                }
             }
         }
-        inputs.push(SystematicsSet {
-            set: o.set.name().to_string(),
-            set_index: o.set_index,
-            tier: o.found.tier,
-            files,
-        });
-    }
 
-    Ok(ResolvedPdfs {
-        slots: wanted.iter().map(slot_of_opened(&opened)).collect(),
-        evals: wanted.iter().map(|k| evals_by[k].clone()).collect(),
-        list_len,
-        nominal,
-        sets,
-        inputs,
+        let mut inputs: Vec<SystematicsSet> = Vec::new();
+        let mut seen: Vec<SetKey> = Vec::new();
+        for (key, _) in &wanted {
+            if seen.contains(key) {
+                continue;
+            }
+            seen.push(key.clone());
+            let o = &opened[key];
+            let mut files = vec![o.set.info_file().clone()];
+            for ((k, _), eval) in &evals_by {
+                if k == key {
+                    files.extend(eval.member.file().cloned());
+                }
+            }
+            inputs.push(SystematicsSet {
+                set: o.set.name().to_string(),
+                set_index: o.set_index,
+                tier: o.found.tier,
+                files,
+            });
+        }
+
+        Ok(ResolvedPdfs {
+            slots: wanted.iter().map(slot_of_opened(&opened)).collect(),
+            evals: wanted.iter().map(|k| evals_by[k].clone()).collect(),
+            list_len: self.list_len,
+            nominal: self.nominal,
+            sets: self.sets,
+            inputs,
+        })
+    }
+}
+
+/// Resolve `request`'s PDF list against the sets it names, the run's own
+/// density `central` among them, and load every member it reads.
+pub fn resolve(
+    request: &VariationRequest,
+    central: &LoadedPdf,
+    tiers: &Tiers,
+    fetch: &FetchFactory<'_>,
+) -> Result<ResolvedPdfs, ResolveError> {
+    open_request(request, &RunSet::of(central), tiers, fetch)?.load(central)
+}
+
+/// `request` expanded over `slots`: its variations, their ids and the
+/// `<initrwgt>` lines, with no member attached yet.
+fn expanded(
+    request: &VariationRequest,
+    slots: &[SlotId],
+    list_len: usize,
+    nominal: usize,
+    sets: &BTreeMap<i64, SetHeader>,
+) -> Result<Writer, String> {
+    let args = expand(request, slots, list_len, nominal)?;
+    let first_id = request.start_id.unwrap_or(1);
+    let header = banner_lines(&args, slots, sets, nominal, first_id);
+    let ids = (0..args.len() - 1)
+        .map(|k| (first_id + k as i64).to_string())
+        .collect();
+    Ok(Writer {
+        args,
+        ids,
+        header,
+        evals: Vec::new(),
     })
 }
 
@@ -516,18 +613,15 @@ impl std::fmt::Debug for Writer {
 impl Writer {
     /// Expand `request` over `pdfs` and write its header.
     pub fn new(request: &VariationRequest, pdfs: &ResolvedPdfs) -> Result<Self, String> {
-        let args = expand(request, &pdfs.slots, pdfs.list_len, pdfs.nominal)?;
-        let first_id = request.start_id.unwrap_or(1);
-        let header = banner_lines(&args, &pdfs.slots, &pdfs.sets, pdfs.nominal, first_id);
-        let ids = (0..args.len() - 1)
-            .map(|k| (first_id + k as i64).to_string())
-            .collect();
-        Ok(Writer {
-            args,
-            ids,
-            header,
-            evals: pdfs.evals.clone(),
-        })
+        let mut writer = expanded(
+            request,
+            &pdfs.slots,
+            pdfs.list_len,
+            pdfs.nominal,
+            &pdfs.sets,
+        )?;
+        writer.evals = pdfs.evals.clone();
+        Ok(writer)
     }
 
     /// The weight ids, in the order every event lists them.

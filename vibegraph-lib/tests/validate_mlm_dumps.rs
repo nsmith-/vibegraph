@@ -1416,9 +1416,17 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
             );
             if let (true, Some(lhe)) = (use_syst, &lhe) {
                 let banked = &lhe.events[i];
-                let flavours = [0, 1].map(|b| i64::from(banked.particles[b].pdg));
-                let ebeam = [row.card.ebeam1, row.card.ebeam2];
-                let x = [0, 1].map(|b| banked.particles[b].momentum[0] / ebeam[b]);
+                // Without matching, `rewgt` fills each clustering beam's chain
+                // from `ipdgcl(j)` and `xbk(ib(j))` (`reweight.f:1450-1457`),
+                // which the event's `SYST` record holds unrounded; the written
+                // energies carry `x` only to about 2e-7. `unwgt.f` writes the
+                // chain of matrix-element leg 1 under beam 2 when that leg runs
+                // along -z (`flip`), in the momenta the clustering read.
+                let syst = event.only("SYST").expect("a SYST record");
+                let flavours = [syst.i(6), syst.i(10)];
+                let x = [syst.f(7), syst.f(11)];
+                let flip = first.momenta(first.n_external())[0][3] < 0.0;
+                let labels = if flip { [2, 1] } else { [1, 2] };
                 compare_mgrwt(
                     &mut tally,
                     &row,
@@ -1427,7 +1435,7 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                     None,
                     flavours,
                     x,
-                    [1, 2],
+                    labels,
                     first.iconfig(),
                     banked,
                     i,
