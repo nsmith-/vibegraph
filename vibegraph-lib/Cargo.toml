@@ -204,6 +204,10 @@ name = "rambo_flat_mc"
 required-features = ["extended-validation"]
 
 [[test]]
+name = "spine_sigma"
+required-features = ["extended-validation"]
+
+[[test]]
 name = "ufo"
 required-features = ["extended-validation"]
 

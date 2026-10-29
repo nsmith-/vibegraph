@@ -1435,6 +1435,13 @@ inputs = []
 rationale = "The RAMBO weight normalisation through a flat Monte-Carlo cross section against the QED analytic sigma: banked for cost, not for dependencies."
 
 [[standalone]]
+key = "spine-sigma"
+layer = "banked"
+targets = ["vibegraph-lib/tests/spine_sigma.rs"]
+inputs = []
+rationale = "The peripheral spine without a fiducial scale at the level of sigma: u c > e+ e- u c QCD=0 under mass cuts only, sixteen seeds of the production integrator, gated on their relative spread and their chi2/dof against their own errors. Withholding the spine fails it. Blind to a bias every seed shares: there is no independent sigma for this process. Banked for cost, not for dependencies."
+
+[[standalone]]
 key = "runcard-defaults"
 layer = "hermetic"
 targets = ["vibegraph-lib/src/runcard.rs (unit tests)"]
