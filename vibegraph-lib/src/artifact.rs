@@ -22,16 +22,14 @@ use crate::vegas::{GridRule, VegasGrid};
 /// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
 /// artifact is written at this version.
 ///
-/// `14` records the run's external inputs as [`IntegrateArtifact::inputs`]:
-/// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
-/// integration parsed. A version-13 file names its PDF set but records no
-/// checksum, so a generation could not tell whether the densities it reads are
-/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
+/// `15` banks the pair order ([`PairOrder`](crate::phasespace::maps::PairOrder))
+/// among the map choices. A version-14 file's choices have no such field, so it
+/// cannot decode into this shape, and [`OLDEST_READABLE_VERSION`] is this
 /// version.
-pub const FORMAT_VERSION: u32 = 14;
+pub const FORMAT_VERSION: u32 = 15;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -796,21 +794,21 @@ mod tests {
         path
     }
 
-    /// A version-13 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records no
-    /// checksum of the PDF files it was integrated with.
+    /// A version-14 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode: its map choices do
+    /// not record the pair order its grids were trained under.
     #[test]
-    fn a_version_13_artifact_is_refused() {
-        let dir = scratch_dir("v13");
-        let path = stamped(&sample_artifact(), &dir, 13);
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        let path = stamped(&sample_artifact(), &dir, 14);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
         assert!(
             matches!(
                 err,
                 ArtifactError::UnsupportedVersion {
-                    found: 13,
-                    oldest: 14,
-                    expected: 14
+                    found: 14,
+                    oldest: 15,
+                    expected: 15
                 }
             ),
             "{err}"

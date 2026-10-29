@@ -274,6 +274,11 @@ fn decompose(
 /// * `VG_TAIL_RECORDED`: a file of `P seed neval channel iteration rank fval
 ///   index wgt first_point x …` lines recorded during a run; each one of a
 ///   selected seed, budget and channel is decomposed instead of replaying.
+/// * `VG_TAIL_ALPHA_FLOOR`: a floor the installed α vector is raised to and
+///   renormalised by before anything is replayed ([`floored_alphas`]): on the
+///   survey's weights as [`FixedBeamIntegrand::set_alpha_floor`] raises them, and
+///   on a trace's weights as given, so a trace whose run was already floored
+///   is named without it.
 /// * `VG_TAIL_ALPHA_FLOORS`: comma list of α floors; each accepted point's
 ///   `g/g'` under each is appended to its `D` line.
 /// * `VG_TAIL_PARTITIONS`: `1` appends the two partition ratios of
@@ -304,6 +309,9 @@ fn probe_2to6_tail_points() {
     let top = env_usizes("VG_TAIL_TOP", "4")[0];
     let trace = std::env::var("VG_TAIL_TRACE").ok();
     let recorded = std::env::var("VG_TAIL_RECORDED").ok();
+    let alpha_floor: Option<f64> = std::env::var("VG_TAIL_ALPHA_FLOOR")
+        .ok()
+        .map(|s| s.trim().parse().expect("VG_TAIL_ALPHA_FLOOR: a number"));
     let alpha_floors: Vec<f64> = env_list("VG_TAIL_ALPHA_FLOORS", "")
         .iter()
         .map(|s| s.parse().expect("VG_TAIL_ALPHA_FLOORS: a number"))
@@ -389,24 +397,25 @@ fn probe_2to6_tail_points() {
     for &seed in &seeds {
         match &trace {
             Some(path) => {
-                let alphas = traced_alphas(path, seed, channel_diags.len());
+                let traced = traced_alphas(path, seed, channel_diags.len());
+                let alphas = match alpha_floor {
+                    Some(floor) => floored_alphas(&traced, floor),
+                    None => traced,
+                };
                 integ
                     .use_multichannel_with_alphas(&diagrams, &evaluated, &alphas)
                     .expect("the multichannel map installs")
                     .expect("one α per channel");
             }
             None => {
+                integ.set_alpha_floor(alpha_floor);
                 integ.use_multichannel(&diagrams, &evaluated, SURVEY, SURVEY_ITERS, seed);
             }
         }
         let alphas = integ.channel_alphas();
         let floored: Vec<Vec<f64>> = alpha_floors
             .iter()
-            .map(|&floor| {
-                let raised: Vec<f64> = alphas.iter().map(|&a| a.max(floor)).collect();
-                let total: f64 = raised.iter().sum();
-                raised.iter().map(|a| a / total).collect()
-            })
+            .map(|&floor| floored_alphas(&alphas, floor))
             .collect();
         let mut head = format!("A {seed} {}\n", join(alphas.iter().copied()));
         for &j in &watched {

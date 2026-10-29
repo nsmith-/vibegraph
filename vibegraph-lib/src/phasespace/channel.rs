@@ -292,6 +292,22 @@ pub(crate) fn kleiss_pittau_step<F: Real>(
     Some(raw)
 }
 
+/// `alphas` with every weight raised to at least `floor` and the set
+/// renormalised to sum to one, so a weight that sat on the floor ends a little
+/// below it.
+///
+/// The α survey reallocates by each channel's measured variance share, and a
+/// channel whose peak the survey's own draws never reach measures none: its
+/// weight falls geometrically over the survey's iterations, to `1e-11` and
+/// below. Every point the integration draws there then carries a mixture density
+/// set by channels that do not follow that peak. A floor keeps such a channel
+/// in the mixture's denominator at a bounded cost to the others' weights.
+pub(crate) fn floored_alphas<F: Real>(alphas: &[F], floor: F) -> Vec<F> {
+    let raised: Vec<F> = alphas.iter().map(|&a| a.max(floor)).collect();
+    let total = raised.iter().fold(F::zero(), |acc, &a| acc + a);
+    raised.iter().map(|&a| a / total).collect()
+}
+
 /// Panics unless `alphas` is a valid set of selection weights: each strictly
 /// positive, summing to `1` within `1e-9`.
 fn assert_normalized<F: Real>(alphas: &[F]) {

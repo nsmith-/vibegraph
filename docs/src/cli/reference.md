@@ -205,6 +205,18 @@ Options:
           
           [default: auto]
 
+      --map-pair-order <PAIR_ORDER>
+          The order a split whose two daughters both carry a finite-width resonance draws their invariants in.
+          
+          `auto` is `symmetric`: either daughter first with probability ½. `ordered` draws one daughter on its pole first, which below the two poles' sum (`H → ZZ*`) leaves the half of the peak with the other daughter on shell in a Breit–Wigner tail.
+
+          Possible values:
+          - auto
+          - ordered:   The left daughter first, on its pole
+          - symmetric: Either daughter first with probability ½
+          
+          [default: auto]
+
       --grid-bin-weight <BIN_WEIGHT>
           What each point adds to its bins of the refinement histogram
 

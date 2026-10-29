@@ -51,7 +51,9 @@ use vibegraph::multiplicity::{
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
-use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
+use vibegraph::phasespace::maps::{
+    MapChoices, MapOptions, PairOrder, RungOrder, SplitAngle, TauMap,
+};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -185,6 +187,17 @@ pub(crate) enum RungOrderArg {
     Reversed,
 }
 
+/// The order a split with two resonant daughters draws their invariants in
+/// ([`PairOrder`]); `auto` is `symmetric`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum PairOrderArg {
+    Auto,
+    /// The left daughter first, on its pole.
+    Ordered,
+    /// Either daughter first with probability ½.
+    Symmetric,
+}
+
 /// The phase-space map flags, shared by the integrator and anything that
 /// re-derives channels from a process.
 #[derive(Args, Debug, Clone, Copy)]
@@ -217,6 +230,16 @@ pub(crate) struct MapArgs {
     /// `auto` is `derived`; `reversed` reads 1.01 ± 0.02 of it on `u u~ > g g g`.
     #[arg(long = "map-rung-order", value_enum, default_value_t = RungOrderArg::Auto)]
     pub(crate) rung_order: RungOrderArg,
+
+    /// The order a split whose two daughters both carry a finite-width resonance
+    /// draws their invariants in.
+    ///
+    /// `auto` is `symmetric`: either daughter first with probability ½. `ordered`
+    /// draws one daughter on its pole first, which below the two poles' sum
+    /// (`H → ZZ*`) leaves the half of the peak with the other daughter on shell
+    /// in a Breit–Wigner tail.
+    #[arg(long = "map-pair-order", value_enum, default_value_t = PairOrderArg::Auto)]
+    pub(crate) pair_order: PairOrderArg,
 }
 
 impl MapArgs {
@@ -239,6 +262,11 @@ impl MapArgs {
                 RungOrderArg::Auto => None,
                 RungOrderArg::Derived => Some(RungOrder::Derived),
                 RungOrderArg::Reversed => Some(RungOrder::Reversed),
+            },
+            pair_order: match self.pair_order {
+                PairOrderArg::Auto => None,
+                PairOrderArg::Ordered => Some(PairOrder::Ordered),
+                PairOrderArg::Symmetric => Some(PairOrder::Symmetric),
             },
         }
     }

@@ -57,8 +57,8 @@ use crate::phasespace::beams;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
-    identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
-    PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
+    floored_alphas, identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel,
+    MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::progress;
 use crate::runcard::{RunCard, RunCardError};
@@ -1705,6 +1705,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// The maps the installed multichannel map was built under, or `None` under
     /// flat RAMBO.
     maps: Option<MapChoices>,
+    /// The floor every selection weight is raised to after the α survey
+    /// ([`floored_alphas`]), or `None` to install the survey's weights as they
+    /// came out.
+    alpha_floor: Option<f64>,
     /// Per subprocess, the amplitudes with forbidden on-shell s-channels (`$`)
     /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
     /// for a subprocess, leaves its matrix element whole.
@@ -1980,6 +1984,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             unpolarized,
             map_options: MapOptions::default(),
             maps: None,
+            alpha_floor: None,
             vetoes: Vec::new(),
             resonances: &[],
             grid_rule: GridRule::default(),
@@ -2051,6 +2056,17 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.map_options = options;
     }
 
+    /// Raise every selection weight the α survey of
+    /// [`use_multichannel`](Self::use_multichannel) settles on to at least
+    /// `floor` and renormalise ([`floored_alphas`]); `None`, the default,
+    /// installs the survey's weights as they are. Weights installed from a
+    /// completed integration
+    /// ([`use_multichannel_with_alphas`](Self::use_multichannel_with_alphas))
+    /// are taken as given.
+    pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
+        self.alpha_floor = floor;
+    }
+
     /// Refine the channels' grids under `rule` in every per-channel adaptation:
     /// [`adapt_grids`](Self::adapt_grids), [`adapt_grids_with`](Self::adapt_grids_with)
     /// and [`adapt_grids_budget`](Self::adapt_grids_budget).
@@ -2080,10 +2096,12 @@ impl<'a> FixedBeamIntegrand<'a> {
             .collect();
         if !built.is_empty() {
             tracing::info!(
-                "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
+                "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs, \
+                 {} resonant pairs)",
                 choices.describe(&self.map_options),
                 shape.soft_emission_splits,
-                shape.max_rungs
+                shape.max_rungs,
+                shape.resonant_pair_splits
             );
             self.maps = Some(choices);
         }
@@ -2510,6 +2528,12 @@ impl<'a> FixedBeamIntegrand<'a> {
             n_iter,
             0.5,
         );
+        let mut report = report;
+        if let Some(floor) = self.alpha_floor {
+            let floored = floored_alphas(combiner.alphas(), floor);
+            combiner.set_alphas(floored.clone());
+            report.trajectory.push(floored);
+        }
         self.sampler = Sampler::Multi(combiner);
         self.channel_samplers = samplers;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
