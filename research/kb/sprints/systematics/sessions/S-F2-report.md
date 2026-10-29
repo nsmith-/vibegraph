@@ -172,7 +172,50 @@ and at beam 1's emission scale in MadEvent (Found FG). `<totfact>` on
 
 ## Gates
 
-(Filled from `S-F2-banked/status.txt` below.)
+One cargo invocation per target (`S-F2-banked.sh`, resumable, release-debug
+where pixi uses it; `CARGO_BUILD_JOBS=2`, no incremental data or debug info):
+
+```
+fmt                cargo fmt --all --check                                   rc=0
+clippy             cargo clippy --workspace --all-targets -- -D warnings     rc=0
+test-workspace     cargo test --workspace --no-fail-fast                     rc=0
+                   49 suites: 1754 passed, 0 failed, 19 ignored
+clippy-ext         cargo clippy … --features vibegraph/extended-validation,
+                   vibegraph-lib/extended-validation -- -D warnings          rc=101, then rc=0
+                   (clippy::approx_constant on validate_mlm_records' 3.1415926; fixed in a6f1da5a)
+kb lint            python3 scripts/kb.py lint     1006 concepts; 0 errors, 4 warnings (backlog, pre-existing)
+validate_alphas            ok. 2 passed
+validate_scales            ok. 10 passed; 1 ignored
+validate_scale_couplings   ok. 1 passed
+validate_kt_cluster        (--ignored) FAILED: no kT clustering dumps (outside the bundle)   NOT RUN
+validate_mlm_dumps         ok. 0 passed; 3 ignored
+validate_mlm_dumps         (--ignored) 1 passed (mg_run_card_matches_madevents_banner), 2 failed: no dump   NOT RUN
+validate_mlm_records       ok. 1 passed (the table above)
+validate-mlm-sigma         ok. 5 passed (finished in 1704.47s): llj_mlm pull +1.00, xqcut_only +0.85,
+                           alps2 +0.88, ttx_0j1j total +0.75 (@0 +0.28, @1 +0.71), ll_0j2j total +1.54
+                           (@0 +0.50, @1 +0.37, @2 +2.08); llj, xqcut_only, alps2 and 0j2j
+                           print the manifest's values, ttx_0j1j reads 1092.332 against the
+                           manifest's 2026-10-20 1092.328 (not compared to a run before this change)
+validate-mlm-samples       ok. 1 passed: the Z pull +0.44, jet at sqrt(s) +0.01,
+                           <asrwt> emission scale 0.8877 vs 0.8877 (-0.01), chains > 1 entry 0.4438 vs 0.4439 (-0.00)
+validate_lhef              ok. 3 passed
+validate_unweighting       ok. 1 passed
+validate_hadronic          ok. 20 passed; 26 ignored
+validate_sigma             ok. 8 passed; 33 ignored (596.95s)
+validate_systematics       ok. 2 passed; 2 ignored (S-F1's 17.4M-weight gate, unchanged)
+cli_generate_proton        ok. 8 passed; 2 ignored; with --include-ignored on the matched and
+                           systematics tests: matched round trip 400 events, 58800 weights,
+                           58797 exact; --alps moved 696 weights on the 348 events with an
+                           emission scale or a longer chain; unmatched round trip 58000 / 57994
+cli_systematics            ok. 4 passed
+cli_reweight_proton        ok. 2 passed
+validate_samples_proton    ok. 12 passed; 6 ignored
+cli_generate               ok. 17 passed
+```
+
+Not run: the validation report's collate step (only the targets above were
+driven), `validate-mlm-pythia` and `validate-pythia` (no Pythia here), and
+the oracle-layer dump targets (no dumps).
 
 ## Mutations
 
