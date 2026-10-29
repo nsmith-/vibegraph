@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [F1: a symmetric H → ZZ* split and an α floor, measured on the bbx ladder](F1.md) - Implement the symmetric two-daughter draw for X → VV* splits (default) and an α floor after the survey (selectable), then run bbx at 600k and 1.2M over 20 paired seeds against T1's falsifier and measure every gate the split moves.
 * [T1: where bbx's α-share tail points sit, and why their variance does not fall with points](T1.md) - Record the largest-weight points per channel and iteration on bbx_to_ccx_emmm_qcd0, estimate each heavy channel's tail index, locate the tail points in phase space against the channel's map, and propose a fix verified on the dumps.
 
 ## Session Report

@@ -15,8 +15,9 @@ scaling floor (#79) moved it: the floor-held channels carry about 2% of the
 variance, and seed 55's 1.18e-8 pb point in α-share channel 613 drives the
 excess. The user chose this study next (2026-10-28). T1 is a diagnosis: where
 the tail points sit, why their channels' variance does not fall with points,
-and what would fix it. The fix, or a heavy-tail error model in place of the
-√n reading, is a later session after the user decides.
+and what would fix it. T1 found two mechanisms; the user chose to implement both fixes (F1,
+2026-10-29): a symmetric H → ZZ* split as the fix, and an α floor as a
+selectable option, measured against T1's falsifier.
 
 ## Scope
 
@@ -36,3 +37,4 @@ comment on the PR listing exactly what to run on the M3 host.
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
 | T1 | performance-dev (Opus) | — | diagnosis; candidate fix verified arithmetically on dumps | — (diagnosis for `bbx-ladder-excess-in-alpha-share-tails`) |
+| F1 | performance-dev (Opus) | T1 | 20 paired seeds × 2 rungs against T1's falsifier; validate before/after | `bbx-ladder-excess-in-alpha-share-tails` |
