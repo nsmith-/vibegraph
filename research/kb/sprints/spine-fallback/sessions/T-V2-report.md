@@ -201,3 +201,82 @@ of the beam that quark is attached to.
 
 The same sample is the clearest evidence about convergence; see "Per-event
 reading of the tail" below.
+
+## Per-event reading of the tail (DY MLL-50, R1 seed 1)
+
+The 600-event sample above is the finer oracle here. The integration of that
+grid read σ = 11.97 ± 0.93 pb. The sample reads 44.3 ± 30.7 pb (`generate`'s
+own check: +270%, pull +1.05). Its overweight rate is 1.0e-4, and the
+overweight events carry 75% of the sample's σ. The largest event has
+w/w_max = 1547.
+
+The heaviest events (event weight share of the sample):
+
+| share | subprocess | quark pT (GeV) | lepton pT (GeV) | mjj (GeV) | mℓℓ (GeV) | SCALUP |
+|---|---|---|---|---|---|---|
+| 56.3% | `u u > e+ e- u u` | 3.22, 5.09 | 3.92, 5.71 | 975 | 59.5 | 5.1 |
+| 7.1% | `u u > ta+ ta- u u` | 2.05, 6.42 | – | 1995 | 61.4 | 6.4 |
+| 0.3% | `u u~ > ta+ ta- u u~` | 23.6, 2.45 | – | 677 | 74.6 | 22.9 |
+
+The top event, in detail:
+- Both quarks are at |y| > 5, with pT just above the 2 GeV floor.
+- The two quark-line transfers are t = −10.7 and −28.9 GeV².
+- The leptons are soft (pT 3.9 and 5.7) and far apart in rapidity
+  (y = 1.38 and −3.67), with mℓℓ just above the 50 GeV cut.
+
+That is photon–photon fusion, `γγ → ℓ⁺ℓ⁻`. Each quark radiates a
+quasi-real photon, and the lepton pair is made by t-channel lepton exchange
+between the photons. The ladder has three soft rungs: two photon virtualities
+at 10–30 GeV², and a lepton exchange at pT² ≈ 15–30 GeV². All three sit at
+or near the spine's pole floor of 10 GeV² (`DEFAULT_POLE_SCALE` × the pole
+fraction).
+
+What this shows and what it does not:
+- **It shows** that at R1 the grid samples this corner at w/w_max ≈ 1500.
+  The integration found almost none of it; the unweighting found it by
+  chance. That is a region of small measure carrying a large share of σ: the
+  failure AGENTS.md warns a σ sweep is blind to.
+- **It does not show** that the corner is mis-mapped, as opposed to
+  under-trained. Two seeds of one grid cannot tell those apart. The weight a
+  1/|t| integrand gets under a map with density ∝ 1/(|t| + 10 GeV²) only
+  reaches a factor of about 2–3 at these virtualities. So the floor alone does
+  not explain a factor of 1500: three rungs, plus a VEGAS grid that never saw
+  the corner, would be needed.
+
+## Raw result lines (driver output, one per run)
+
+```
+pilot-dy-r0 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=1 neval=10000 niter=4 rc=0 wall=527s | σ = 12.029886 ± 0.557276 pb
+pilot-vbf50-r0 card=VBFto2L_Bin-MLL-50 seed=1 neval=10000 niter=4 rc=0 wall=533s | σ = 8.503414 ± 0.747117 pb
+pilot-vbf4-r0 card=VBFto2L_Bin-MLL-4to50 seed=1 neval=10000 niter=4 rc=0 wall=461s | σ = 104.699526 ± 6.997600 pb
+dy-r1-s1 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=1 neval=10000 niter=3 rc=0 wall=693s | σ = 11.969900 ± 0.932908 pb
+dy-r1-s2 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=2 neval=10000 niter=3 rc=0 wall=735s | σ = 14.936697 ± 2.374074 pb
+dy-r1-s3 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=3 neval=10000 niter=3 rc=0 wall=935s | σ = 11.797280 ± 0.574758 pb
+dy-r1-s4 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=4 neval=10000 niter=3 rc=0 wall=922s | σ = 13.995478 ± 1.759216 pb
+dy-r1-s5 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=5 neval=10000 niter=3 rc=0 wall=572s | σ = 12.126630 ± 0.689593 pb
+dy-r1-s6 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=6 neval=10000 niter=3 rc=0 wall=440s | σ = 11.466032 ± 0.473115 pb
+dy-r1-s7 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=7 neval=10000 niter=3 rc=0 wall=412s | σ = 11.352622 ± 0.403627 pb
+dy-r1-s8 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=8 neval=10000 niter=3 rc=0 wall=441s | σ = 12.935757 ± 1.052571 pb
+dy-r1-s9 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=9 neval=10000 niter=3 rc=0 wall=420s | σ = 10.679520 ± 0.359401 pb
+dy-r1-s10 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=10 neval=10000 niter=3 rc=0 wall=421s | σ = 11.551483 ± 0.430045 pb
+dy-r1-s11 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=11 neval=10000 niter=3 rc=0 wall=414s | σ = 12.984483 ± 0.942344 pb
+dy-r1-s12 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=12 neval=10000 niter=3 rc=0 wall=402s | σ = 12.490177 ± 0.932102 pb
+dy-r1-s13 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=13 neval=10000 niter=3 rc=0 wall=424s | σ = 11.561231 ± 0.567131 pb
+dy-r1-s14 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=14 neval=10000 niter=3 rc=0 wall=415s | σ = 12.445249 ± 1.365465 pb
+dy-r1-s15 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=15 neval=10000 niter=3 rc=0 wall=394s | σ = 13.579473 ± 1.818190 pb
+dy-r1-s16 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=16 neval=10000 niter=3 rc=0 wall=399s | σ = 18.101254 ± 5.997293 pb
+dy-r1-s17 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=17 neval=10000 niter=3 rc=0 wall=387s | σ = 12.734328 ± 0.634621 pb
+dy-r1-s18 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=18 neval=10000 niter=3 rc=0 wall=389s | σ = 10.929752 ± 0.524480 pb
+dy-r1-s19 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=19 neval=10000 niter=3 rc=0 wall=386s | σ = 14.742465 ± 2.518524 pb
+dy-r1-s20 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=20 neval=10000 niter=3 rc=0 wall=402s | σ = 12.321067 ± 0.778491 pb
+vbf50-r1-s1 card=VBFto2L_Bin-MLL-50 seed=1 neval=10000 niter=3 rc=0 wall=388s | σ = 8.245534 ± 1.033098 pb
+vbf50-r1-s2 card=VBFto2L_Bin-MLL-50 seed=2 neval=10000 niter=3 rc=0 wall=386s | σ = 6.526713 ± 0.505958 pb
+vbf50-r1-s3 card=VBFto2L_Bin-MLL-50 seed=3 neval=10000 niter=3 rc=0 wall=393s | σ = 9.061639 ± 1.329933 pb
+vbf50-r1-s4 card=VBFto2L_Bin-MLL-50 seed=4 neval=10000 niter=3 rc=0 wall=384s | σ = 7.906333 ± 1.679582 pb
+vbf50-r1-s5 card=VBFto2L_Bin-MLL-50 seed=5 neval=10000 niter=3 rc=0 wall=385s | σ = 7.632453 ± 0.940979 pb
+vbf4-r1-s1 card=VBFto2L_Bin-MLL-4to50 seed=1 neval=10000 niter=3 rc=0 wall=310s | σ = 93.066868 ± 8.924896 pb
+vbf4-r1-s2 card=VBFto2L_Bin-MLL-4to50 seed=2 neval=10000 niter=3 rc=0 wall=306s | σ = 95.122941 ± 6.375758 pb
+vbf4-r1-s3 card=VBFto2L_Bin-MLL-4to50 seed=3 neval=10000 niter=3 rc=0 wall=334s | σ = 158.780579 ± 18.758837 pb
+vbf4-r1-s4 card=VBFto2L_Bin-MLL-4to50 seed=4 neval=10000 niter=3 rc=0 wall=319s | σ = 110.927985 ± 12.393580 pb
+vbf4-r1-s5 card=VBFto2L_Bin-MLL-4to50 seed=5 neval=10000 niter=3 rc=0 wall=294s | σ = 200.281889 ± 100.525222 pb
+```
