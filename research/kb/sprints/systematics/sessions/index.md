@@ -10,3 +10,4 @@
 ## Session Report
 
 * [S-D1 report: the systematics weights designed](S-D1-report.md) - The design concept events/systematics-weights.md; MadGraph's own write_banner reproduces the banked header byte for byte and a get_lo_wgt prototype every one of 17.4M banked weights at MadGraph's printed digits; the controls' blind spots; the nominal-first crash that shapes M3; open choices O1-O12, brief corrections and Found.
+* [S-F1 report: systematics weights for unmatched events](S-F1-report.md) - The typed request at artifact version 15, YAML metadata with the member cascade, lo_weight over the <mgrwt> record, MadGraph's header and weight bytes, the generation path; every one of 17.4M banked weights within one unit of MadGraph's eighth digit, the header byte-identical from three entry points, the controls as the design predicts.

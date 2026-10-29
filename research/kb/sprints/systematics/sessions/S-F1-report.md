@@ -6,7 +6,15 @@ status: draft
 tags: [systematics, report, sprint-e]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-28}
 ---
-TBD
+All four §6 gates pass on the banked layer under `release-debug`: every one
+of the 17 400 000 banked weights prints MadGraph's string exactly; the
+`<initrwgt>` block is byte-identical from all three entry points on all twelve
+runs (36 of 36); the three negative controls detect exactly where §6.2
+predicts; and the round trip on this crate's own `pp_to_llj_fixed` events holds
+every weight within one unit (57 994 of 58 000 exact). The hermetic layer and
+the rest of the banked layer are green; the validation report's measured cells
+are exactly the declared cells and every gate cell passed.
+
 Worktree `/home/user/wt/S`, branch `sprinte-systematics`, from `43bbc244`.
 Implements design §8's S-F1 scope of
 [the systematics weights](../../../events/systematics-weights.md), with Found
@@ -133,9 +141,10 @@ All in `vibegraph-lib/src/systematics/` unless said otherwise.
 - The brief's gate list says "the banked layer, `bash validation/validate.sh`,
   run detached", and §8 says the same. `validate.sh` runs every
   extended-validation target under `release-debug`, so on this shared host it
-  is the longest step by far; it was run detached with an untracked
-  `.cargo/config.toml` dropping `release-debug` debug info, as the
-  extended-validation skill prescribes.
+  is the longest step by far. It was run as one detached cargo invocation
+  per target with resumable results, so a restart loses one target, not the
+  layer, and with an untracked `.cargo/config.toml` dropping `release-debug`
+  debug info (disk only).
 - The extended-validation skill's map for "the LHEF writer/reader" also names
   `pixi run -e pythia validate-pythia`, which needs Pythia 8 and is outside
   `validate.sh`: not run (no Pythia on this host).
@@ -209,8 +218,10 @@ test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fini
 ```
 
 The source assertions were added after this dev-profile run (the first
-`--from_card` reading silently took the `sys_*` path: Found FC); the banked
-layer's run below carries them.
+`--from_card` reading silently took the `sys_*` path: Found FC). The banked
+layer's run carries them and reproduces every line above: all twelve weight
+rows identical to the table, all 36 header lines `identical=true`, `test
+result: ok. 2 passed; 0 failed; 1 ignored; … finished in 16.37s`.
 
 ## Gate 3: the negative controls (§6.2)
 
@@ -249,8 +260,55 @@ lhaid="247000"`, every weight re-evaluated from the written record and
 particles must be within one unit of what was written, and per event: each
 chain's `pdg` is the incoming parton's, its `x` the parton's `E/ebeam` (to
 1e-8), its `q` `SCALUP` as written, `αs(μR)` off the set equals `AQCDUP` to
-1e-7, and weight 45 is `XWGTUP`'s spelling. Result: see the banked layer
-below.
+1e-7, and weight 45 is `XWGTUP`'s spelling. Banked-layer result:
+
+```
+round trip: 400 events, 58000 weights, 57994 exact (99.9897%)
+test the_systematics_weights_round_trip_through_the_written_file ... ok
+test result: ok. 6 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 15.79s
+```
+
+The six inexact weights are within the gate's one unit of the eighth digit.
+
+## The hermetic and banked layers
+
+Hermetic, on `e1567121` (`CARGO_BUILD_JOBS=2`, no incremental data or debug
+info):
+
+```
+fmt rc=0       cargo fmt --all --check
+clippy rc=0    cargo clippy --workspace --all-targets -- -D warnings
+build rc=0     cargo build --workspace
+test rc=0      cargo test --workspace -j 2
+               49 suites: 1750 passed, 0 failed, 19 ignored
+```
+
+Banked: `validate.sh`'s steps, run as one detached `cargo test -p <crate>
+--profile release-debug --features …extended-validation --test <target>` per
+target, with each result recorded as it finished (container restarts killed
+two whole-layer runs, and a third filled the disk while a sibling's banked
+run shared the host):
+
+```
+clippy (extended-validation features) rc=0
+every test target of vibegraph-lib and vibegraph, the lib and bin tests,
+vibegraph-validation-report, the doc tests: 74 suites, 2183 passed,
+0 failed, 99 ignored
+validate_sigma        ok. 8 passed; 0 failed; 33 ignored; finished in 619.27s
+validate_systematics  ok. 2 passed; 0 failed; 1 ignored; finished in 16.37s
+cli_generate_proton   ok. 6 passed; 0 failed; 2 ignored; finished in 15.79s
+cli_systematics       ok. 4 passed; 0 failed; 0 ignored
+validate_lhef         ok. 3 passed; 0 failed; 0 ignored
+collate rc=0:
+74 rows × 4 categories = 296 cells: 216 measured in the layers this run
+drove (211 ✅, 5 ⚠️, 13 ⏳, 67 — / uncovered). The measured cells are exactly
+the cells the manifest declares, every gate cell passed, and every
+measurement agrees with the manifest about what it is.
+```
+
+The five ⚠️ cells are informational rows outside this work (`gg_to_gg`,
+`ee_to_wpwm_cw`, `gg_to_gg_cg`, `ee_to_zh_smeft`, `ee_to_mumua`), and no
+enforced cell changed status.
 
 ## Python floats, refusals, and the rest of the unit layer
 
