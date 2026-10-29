@@ -9,7 +9,8 @@
 //!
 //! * [`request`]: the typed request, from either card entry point or a
 //!   command line, with MadGraph's defaults and refusals.
-//! * [`record`]: the `<mgrwt>` record, written and parsed.
+//! * [`record`]: the `<mgrwt>` record, filled as MadEvent fills it (from
+//!   `rewgt` on a matched event), written and parsed.
 //! * [`weight`]: `W` term by term.
 //! * [`header`]: the variation list and the `<initrwgt>` block.
 //! * [`plan`]: the request resolved against its PDF sets, and the writer that

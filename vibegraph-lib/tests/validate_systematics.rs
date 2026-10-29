@@ -17,6 +17,13 @@
 //! and `scalefact` on the seven runs whose final states are massless at
 //! `scalefact = 1` — the third negative control below measures exactly that
 //! blindness.
+//!
+//! The MLM terms are reached by [`madgraphs_module_on_other_files`], which
+//! reads event files MadGraph's module weighted outside the reference bundle
+//! (the banked MLM runs carry the record and no weights): every weight within
+//! one unit, the `--alps`-only weights exactly `XWGTUP` on an event whose
+//! record gives them nothing to vary, and a control that drops the emission
+//! and chain terms.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -228,6 +235,8 @@ fn class(v: &Variation<'_>, nominal: &Variation<'_>) -> &'static str {
         "dyn"
     } else if !std::ptr::addr_eq(v.pdf, nominal.pdf) {
         "pdf"
+    } else if v.alps != 1.0 {
+        "alps"
     } else if v.mur != 1.0 && v.muf != 1.0 {
         "mur_muf"
     } else if v.mur != 1.0 {
@@ -267,6 +276,9 @@ enum Control {
     WrongPower,
     /// The dynamical scale off `setscales.f`'s frame and factor.
     SetscalesFrame,
+    /// The MLM terms dropped: no emission scales (the `μR` power kept at the
+    /// `<rscale>` integer) and each chain read at its last entry alone.
+    NoMlmTerms,
 }
 
 const CONTROLS: [(Control, &str); 3] = [
@@ -293,6 +305,14 @@ fn control_weights(
     let mut record = record.as_written();
     if control == Control::WrongPower {
         record.n_qcd += 1;
+    }
+    if control == Control::NoMlmTerms {
+        record.n_qcd -= record.emission_scales.len() as u32;
+        record.emission_scales.clear();
+        for chain in &mut record.beams {
+            let last = chain.entries.pop();
+            chain.entries = last.into_iter().collect();
+        }
     }
     let frame = setscales_frame(kinematics, scalefact);
     let kinematics = if control == Control::SetscalesFrame {
@@ -328,12 +348,29 @@ struct RunResult {
     beyond: u64,
     worst_rel: BTreeMap<&'static str, f64>,
     controls: BTreeMap<&'static str, BTreeMap<&'static str, f64>>,
+    /// Events whose record gives `--alps` something to vary (an emission
+    /// scale, or a chain of more than one entry); of the others, those whose
+    /// `--alps`-only weights are all `XWGTUP`'s spelling exactly; and of the
+    /// first, those whose `--alps`-only weights all differ from it.
+    alps_events: u64,
+    alps_still: u64,
+    alps_moved: u64,
 }
 
 fn measure(run: &str, writer: &Writer) -> RunResult {
-    let text = banked_text(run);
-    let file = LheFile::parse(&text).expect("the banked file parses");
-    let card = RunCard::parse(&banner_card(&text)).expect("the banked card parses");
+    measure_text(run, &banked_text(run), writer, &CONTROLS)
+}
+
+/// [`measure`] on any file whose weights MadGraph's module wrote for the
+/// writer's request, under `controls`.
+fn measure_text(
+    run: &str,
+    text: &str,
+    writer: &Writer,
+    controls: &[(Control, &'static str)],
+) -> RunResult {
+    let file = LheFile::parse(text).expect("the file parses");
+    let card = RunCard::parse(&banner_card(text)).expect("the banner's card parses");
     let scalefact = card.float("scalefact");
     let variations = writer.variations();
     let classes: Vec<&'static str> = variations[1..]
@@ -356,6 +393,21 @@ fn measure(run: &str, writer: &Writer) -> RunResult {
                 "{run}: the banked ids are not this crate's, in order"
             );
             let mut r = RunResult::default();
+            let varied = !record.emission_scales.is_empty()
+                || record.beams.iter().any(|c| c.entries.len() > 1);
+            r.alps_events += u64::from(varied);
+            let nominal_text = printed(event.weight);
+            let alps: Vec<bool> = banked
+                .iter()
+                .zip(&classes)
+                .filter(|(_, class)| **class == "alps")
+                .map(|((_, theirs), _)| *theirs == nominal_text)
+                .collect();
+            if varied {
+                r.alps_moved += u64::from(alps.iter().all(|&same| !same));
+            } else {
+                r.alps_still += u64::from(alps.iter().all(|&same| same));
+            }
             let ours = control_weights(
                 writer,
                 &record,
@@ -377,7 +429,7 @@ fn measure(run: &str, writer: &Writer) -> RunResult {
                 let slot = r.worst_rel.entry(class).or_insert(0.0);
                 *slot = slot.max(rel);
             }
-            for (control, name) in CONTROLS {
+            for &(control, name) in controls {
                 let got = control_weights(
                     writer,
                     &record,
@@ -403,6 +455,9 @@ fn measure(run: &str, writer: &Writer) -> RunResult {
         total.exact += r.exact;
         total.one_unit += r.one_unit;
         total.beyond += r.beyond;
+        total.alps_events += r.alps_events;
+        total.alps_still += r.alps_still;
+        total.alps_moved += r.alps_moved;
         for (class, rel) in r.worst_rel {
             let slot = total.worst_rel.entry(class).or_insert(0.0);
             *slot = slot.max(rel);
@@ -545,4 +600,85 @@ fn the_pdfas_member_reads_its_own_coupling_and_clamp() {
         set.info.alpha_s.vals,
         "member 102 tabulates its own alpha_s"
     );
+}
+
+/// MadGraph's own systematics module on event files outside the bundle, the
+/// MLM-matched ones in particular: `SYSTEMATICS_FILES` lists LHE files (plain
+/// or gzipped, `:`-separated) whose weights MadGraph's module wrote under
+/// `SYSTEMATICS_ARGS` (one command-line string) on `NNPDF23_lo_as_0130_qed`.
+/// Every weight must print MadGraph's string or one unit from it; where the
+/// request varies `--alps`, its weights must be `XWGTUP`'s spelling exactly on
+/// the events whose record holds no emission scale and no chain longer than
+/// one entry, and how many of the other events they move on is reported; and
+/// dropping the emission and chain terms must be detected wherever such events
+/// exist.
+#[test]
+#[ignore = "needs files weighted by MadGraph's module: SYSTEMATICS_FILES, SYSTEMATICS_ARGS"]
+fn madgraphs_module_on_other_files() {
+    let files = std::env::var("SYSTEMATICS_FILES").expect("SYSTEMATICS_FILES");
+    let arguments = std::env::var("SYSTEMATICS_ARGS").expect("SYSTEMATICS_ARGS");
+    let request = VariationRequest::from_command_line(&arguments).expect("the arguments parse");
+    let (tiers, _cache) = tiers();
+    let central = central(&tiers);
+    let writer = writer(&request, &tiers, &central);
+    let controls = [(Control::NoMlmTerms, "MLM terms dropped")];
+    let mut failures = Vec::new();
+    for path in files.split(':').filter(|p| !p.is_empty()) {
+        let mut text = String::new();
+        let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        if path.ends_with(".gz") {
+            flate2::read::GzDecoder::new(file).read_to_string(&mut text)
+        } else {
+            std::io::BufReader::new(file).read_to_string(&mut text)
+        }
+        .expect("the file reads");
+        let r = measure_text(path, &text, &writer, &controls);
+        let worst = r
+            .worst_rel
+            .iter()
+            .map(|(c, v)| format!("{c} {v:.3e}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let events = text.matches("<event>").count() as u64;
+        println!(
+            "{path}\n  weights {} exact {} one-unit {} beyond {} ({:.5}% exact); worst {worst}",
+            r.weights,
+            r.exact,
+            r.one_unit,
+            r.beyond,
+            100.0 * r.exact as f64 / r.weights as f64
+        );
+        println!(
+            "  --alps: {} of {events} events give it something to vary, and it moves every \
+             --alps weight on {} of them; it leaves every one at XWGTUP on {} of the other {}",
+            r.alps_events,
+            r.alps_moved,
+            r.alps_still,
+            events - r.alps_events
+        );
+        if r.weights == 0 || r.beyond != 0 {
+            failures.push(format!("{path}: {} beyond one unit", r.beyond));
+        }
+        if request.alps.iter().any(|&a| a != 1.0) && r.alps_still != events - r.alps_events {
+            failures.push(format!(
+                "{path}: --alps moved a weight on {} events with nothing to vary",
+                events - r.alps_events - r.alps_still
+            ));
+        }
+        for (name, by_class) in &r.controls {
+            let worst = by_class.values().copied().fold(0.0f64, f64::max);
+            let detected = worst > DETECTION;
+            println!(
+                "  control {name}: {} (max {worst:.3e})",
+                if detected { "DETECTED" } else { "blind" }
+            );
+            if detected != (r.alps_events > 0) {
+                failures.push(format!(
+                    "{path}: control '{name}' detected={detected} with {} events to vary",
+                    r.alps_events
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

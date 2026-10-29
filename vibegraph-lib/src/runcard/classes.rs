@@ -102,8 +102,8 @@ const R_ASRWGTFLAVOR: &str = "ScaleChoice::asrwgtflavor, the heaviest quark flav
                               matched alpha_s reweighting counts as a parton";
 const R_USE_SYST: &str = "runcard::matching::resolve, where it forces alpsfact to 1 \
                           (setrun.f:151-159); and GenerateSettings::systematics, which writes \
-                          each unmatched proton event's <mgrwt> record under it and resolves it \
-                          off on fixed-energy beams";
+                          every proton event's <mgrwt> record, matched or not, and the file's \
+                          <MGRunCard> under it, and resolves it off on fixed-energy beams";
 const R_SYST_REQUEST: &str = "RunCard::split, which reads MadGraph's systematics request from \
                               it into GenerateSettings::systematics: the program, then the \
                               systematics_arguments list when the card writes that line and the \

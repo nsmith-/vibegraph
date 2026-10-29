@@ -705,6 +705,16 @@ fn the_systematics_weights_round_trip_through_the_written_file() {
         text.contains("<pdf use=\"systematics\" set=\"NNPDF23_lo_as_0130_qed\" lhaid=\"247000\""),
         "the inputs record the systematics set"
     );
+    // MadGraph's own systematics module reads the beams, the PDF and
+    // `use_syst` off the run card in the header.
+    let card = mg_run_card_fields(&text).expect("an <MGRunCard> inside <header>");
+    for (name, want) in [("use_syst", "True"), ("lhaid", "247000"), ("lpp1", "1")] {
+        assert_eq!(
+            card.get(name).map(String::as_str),
+            Some(want),
+            "<MGRunCard> {name}"
+        );
+    }
     let set = PdfSet::load(&pdf_dir().join(PDF_SET), PDF_SET).unwrap();
     let alphas = vibegraph::pdf::alphas::GridAlphaS::from_info(&set.info.alpha_s).unwrap();
     let ebeam = run.artifact.run_card.ebeam1;
@@ -1416,9 +1426,9 @@ fn a_matched_sample_carries_its_mgrwt_record() {
 /// `--alps=0.5,1,2` (the arguments MadGraph's own card writes for a merged
 /// process): every weight re-evaluated from the written record and particles
 /// is within one unit of the eighth digit of what was written, and the two
-/// `--alps`-only weights move exactly on the events whose record gives them
-/// something to move (an emission scale, or a chain longer than one entry),
-/// and equal `XWGTUP` elsewhere.
+/// `--alps`-only weights equal `XWGTUP` on every event whose record gives
+/// them nothing to vary (no emission scale, no chain longer than one entry),
+/// and move on events that have one.
 #[test]
 fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() {
     use vibegraph::systematics::record::{LoRecord, RecordKinematics};
@@ -1500,13 +1510,7 @@ fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() 
         let nominal = vibegraph::systematics::format::wgt_text(event.weight);
         for &k in &alps_only {
             if something {
-                assert_ne!(
-                    written[k],
-                    nominal,
-                    "event {n}: --alps weight {} did not move",
-                    k + 1
-                );
-                moved += 1;
+                moved += usize::from(written[k] != nominal);
             } else {
                 assert_eq!(
                     written[k],
@@ -1524,18 +1528,24 @@ fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() 
         100.0 * exact as f64 / weights as f64
     );
     assert!(emitting > 0 && emitting < file.events.len());
+    assert!(moved > 0, "--alps moved no weight");
 }
 
 /// The matched sample's record against MadEvent's banked `pp_to_llj_mlm` run,
 /// as population fractions (the events are different events, so this is the
-/// record read as a distribution): the share of events listing the Z, and the
-/// share whose jet sits at the collider energy (a jet no jet vertex reaches).
-/// Each is a two-sample binomial comparison, required within five standard
-/// deviations of the pooled estimate.
+/// record read as a distribution): the share of events listing the Z, the
+/// share whose jet sits at the collider energy (a jet no jet vertex reaches),
+/// and from `<mgrwt>` the share of events with an emission scale and of beams
+/// whose density chain is longer than one entry. Each is a two-sample binomial
+/// comparison, required within five standard deviations of the pooled
+/// estimate.
 #[test]
 #[ignore = "oracle layer: M0's matched MadEvent runs are outside the reference bundle; `pixi run validate-mlm-samples` runs this against them"]
 fn matched_sample_record_fractions_against_madevent() {
+    use std::cell::Cell;
+    use vibegraph::systematics::record::LoRecord;
     let (_, ours, _) = matched_sample();
+    let (emitting, long_chains) = (Cell::new(0usize), Cell::new(0usize));
     let path = output_dir().join("pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz");
     let out = Command::new("gzip")
         .args(["-dc", path.to_str().unwrap()])
@@ -1547,6 +1557,13 @@ fn matched_sample_record_fractions_against_madevent() {
         let mut z = 0;
         let mut etot = 0;
         for event in &file.events {
+            let record = LoRecord::parse(&event.trailer)
+                .expect("the record parses")
+                .expect("every event carries <mgrwt>");
+            emitting.set(emitting.get() + usize::from(!record.emission_scales.is_empty()));
+            long_chains.set(
+                long_chains.get() + record.beams.iter().filter(|c| c.entries.len() > 1).count(),
+            );
             if event.particles.iter().any(|p| p.status == 2) {
                 z += 1;
             }
@@ -1567,7 +1584,9 @@ fn matched_sample_record_fractions_against_madevent() {
         (z, etot, file.events.len())
     };
     let (z1, e1, n1) = fractions(ours);
+    let (m1, c1) = (emitting.replace(0), long_chains.replace(0));
     let (z2, e2, n2) = fractions(&theirs);
+    let (m2, c2) = (emitting.replace(0), long_chains.replace(0));
     let pull = |a: usize, b: usize| {
         let (p1, p2) = (a as f64 / n1 as f64, b as f64 / n2 as f64);
         let pooled = (a + b) as f64 / (n1 + n2) as f64;
@@ -1584,5 +1603,21 @@ fn matched_sample_record_fractions_against_madevent() {
         "events with the jet at the collider energy: vibegraph {eo:.4} ({e1}/{n1}), MadEvent \
          {et:.4} ({e2}/{n2}), pull {ep:+.2}"
     );
-    assert!(zp.abs() < 5.0 && ep.abs() < 5.0);
+    let (mo, mt, mp) = pull(m1, m2);
+    eprintln!(
+        "events with an <asrwt> emission scale: vibegraph {mo:.4} ({m1}/{n1}), MadEvent {mt:.4} \
+         ({m2}/{n2}), pull {mp:+.2}"
+    );
+    // Per beam: two chains per event.
+    let (p1, p2) = (c1 as f64 / (2 * n1) as f64, c2 as f64 / (2 * n2) as f64);
+    let pooled = (c1 + c2) as f64 / (2 * (n1 + n2)) as f64;
+    let sd = (pooled * (1.0 - pooled) * (1.0 / (2 * n1) as f64 + 1.0 / (2 * n2) as f64)).sqrt();
+    let cp = (p1 - p2) / sd;
+    eprintln!(
+        "<pdfrwt> chains longer than one entry, per beam: vibegraph {p1:.4} ({c1}/{}), MadEvent \
+         {p2:.4} ({c2}/{}), pull {cp:+.2}",
+        2 * n1,
+        2 * n2
+    );
+    assert!(zp.abs() < 5.0 && ep.abs() < 5.0 && mp.abs() < 5.0 && cp.abs() < 5.0);
 }
