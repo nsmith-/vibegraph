@@ -503,9 +503,7 @@ impl RunCard {
     /// anything is integrated. On fixed-energy beams `use_syst` resolves to
     /// off unless the card writes it, and a card that writes it on is refused:
     /// MadGraph's own lepton card sets it off, and its module refuses the
-    /// `pdlabel = none` such a card carries. A matched card (`ickkw = 1`) that
-    /// asks for weights is refused: the weights of matched events are not
-    /// written.
+    /// `pdlabel = none` such a card carries.
     ///
     /// Panics on a card that has already been split.
     pub fn split(self) -> Result<(RunCard, GenerateSettings), RunCardError> {
@@ -551,15 +549,6 @@ impl RunCard {
         } else {
             None
         };
-        if request.is_some() && !decay && self.int("ickkw") == 1 {
-            return Err(RunCardError::SystematicsField {
-                field: "systematics_program",
-                value: taken["systematics_program"].as_str().to_string(),
-                why: "with ickkw = 1 and use_syst = T this asks for the variation weights of \
-                      matched events, which are not implemented; set systematics_program = \
-                      none to write the events without them",
-            });
-        }
         let systematics = Systematics {
             enabled,
             request,
@@ -1577,12 +1566,20 @@ mod tests {
         assert!(decay.systematics.enabled);
     }
 
-    /// Refusal table: a matched card asking for weights, until matched
-    /// records are written; `systematics_program = none` there is accepted.
+    /// A matched card asks for weights as an unmatched one does: the default
+    /// request, `alps` included where the card lists it, and under
+    /// `systematics_program = none` the record without weights.
     #[test]
-    fn a_matched_card_asking_for_weights_is_refused() {
-        let e = split_err("1 = ickkw\n30 = xqcut\n");
-        assert!(e.to_string().contains("matched events"), "{e}");
+    fn a_matched_card_asks_for_weights_as_any_card_does() {
+        let (_, settings) = RunCard::parse(
+            "1 = ickkw\n30 = xqcut\n['--mur=0.5,1,2', '--alps=0.5,1,2'] = systematics_arguments\n",
+        )
+        .unwrap()
+        .split()
+        .unwrap();
+        let request = settings.systematics.request.expect("a request");
+        assert!(settings.systematics.enabled);
+        assert_eq!(request.alps, [0.5, 1.0, 2.0]);
         let (_, settings) = RunCard::parse("1 = ickkw\n30 = xqcut\nnone = systematics_program\n")
             .unwrap()
             .split()

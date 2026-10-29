@@ -22,7 +22,7 @@ use crate::phasespace::GEV2_TO_PB;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection};
 use crate::reweight::engine::Reweighter;
 use crate::runcard::RunCard;
-use crate::systematics::record::{LoRecord, PdfChain};
+use crate::systematics::record::{LoRecord, RecordInputs};
 use crate::ufo::UFOModel;
 use crate::unweight::{UnweightStats, Unweighter};
 
@@ -365,9 +365,9 @@ pub(super) struct PartRecords {
     pub(super) member_pdgs: Vec<Vec<Vec<Vec<i32>>>>,
 }
 
-/// What an unmatched proton event's `<mgrwt>` record is filled from
-/// (`reweight.f:1450-1458`): the QCD power of each integration configuration's
-/// diagram, and the central member the densities were read from.
+/// What a proton event's `<mgrwt>` record is filled from: the QCD power of
+/// each integration configuration's diagram, and the central member the
+/// densities were read from.
 pub(super) struct RecordFill<'s> {
     /// `[part][group][config]`: the QCD coupling power of the configuration's
     /// diagram, MadEvent's `nqcd`.
@@ -402,44 +402,69 @@ impl<'s> RecordFill<'s> {
         RecordFill { nqcd, central }
     }
 
-    /// The `<mgrwt>` record of an unmatched event of part `k`: the QCD power
-    /// of the configuration the event is labelled in (MadEvent's
-    /// `nqcd(igraphs(1))`; the group's highest where no configuration carried
-    /// weight), its `μR`, one chain entry per beam holding the incoming
-    /// parton's code, `x` and `μF`, and `f₁ f₂` as the total factor, the
-    /// densities at those entries (`asref = 0` without matching).
+    /// The `<mgrwt>` record of an event of part `k` (`reweight.f:1440-1482`,
+    /// `:1803-1818`).
+    ///
+    /// The QCD power is `nqcd(igraphs(1))`: the configuration the event's
+    /// clustering named first wherever its scale was clustered (matched or
+    /// not), and otherwise the configuration the event is labelled in (the
+    /// group's highest where none carried weight), standing in for MadEvent's
+    /// integration channel. Without matching each beam's chain is its
+    /// incoming parton at its `x` and `μF`, and the total factor is `f₁ f₂`.
+    /// Under matching the chains, the emission scales and the total factor
+    /// (`rewgt · f₁ f₂ · αs^n`, `αs` the coupling the matrix element ran at)
+    /// come from the drawn member's reweighting and the second clustering.
     fn record(
         &self,
         k: usize,
         selection: &ProtonSelection,
         event: &ProtonEvent,
         record: &LheEvent,
+        alpha_qcd: f64,
     ) -> Option<LoRecord> {
         let configs = &self.nqcd[k][selection.group];
-        let n_qcd = match selection.config {
+        let n_qcd = match selection.scales.graph.or(selection.config) {
             Some(c) => *configs.get(c)?,
             None => configs.iter().copied().max().unwrap_or(0),
         };
-        let mut beams = [PdfChain::default(), PdfChain::default()];
-        let mut tot_fact = 1.0;
-        for (b, chain) in beams.iter_mut().enumerate() {
-            let parton = record.particles.get(b)?;
-            let (x, q) = (event.x[b], selection.scales.mu_f[b]);
-            let pdg = parton.pdg;
-            tot_fact *= self.central.try_xfx_q2(pdg, x, q * q).ok()? / x;
-            chain.entries.push((i64::from(pdg), x, q));
-        }
-        Some(LoRecord {
-            n_qcd,
-            mu_r: selection.scales.mu_r,
-            emission_scales: Vec::new(),
-            beams,
-            beam_order: match selection.ordering {
-                BeamOrdering::Direct => [1, 2],
-                BeamOrdering::Exchanged => [2, 1],
+        // Clustering beam `j` is physical beam `labels[j]`.
+        let labels: [u8; 2] = match selection.ordering {
+            BeamOrdering::Direct => [1, 2],
+            BeamOrdering::Exchanged => [2, 1],
+        };
+        let physical = labels.map(|l| usize::from(l) - 1);
+        let incoming = [
+            i64::from(record.particles.get(physical[0])?.pdg),
+            i64::from(record.particles.get(physical[1])?.pdg),
+        ];
+        let x = physical.map(|b| event.x[b]);
+        let inputs = match (&selection.record, &selection.rewgt) {
+            (Some(matched), Some(rewgt)) => RecordInputs {
+                n_qcd,
+                mu_r: matched.mu_r,
+                incoming,
+                x,
+                mu_f: matched.q2fact.map(f64::sqrt),
+                labels,
+                asref: alpha_qcd,
+                rewgt: Some(rewgt),
             },
-            tot_fact,
+            (None, None) => RecordInputs {
+                n_qcd,
+                mu_r: selection.scales.mu_r,
+                incoming,
+                x,
+                mu_f: physical.map(|b| selection.scales.mu_f[b]),
+                labels,
+                asref: 0.0,
+                rewgt: None,
+            },
+            _ => return None,
+        };
+        LoRecord::fill(&inputs, |pdg, x, q2| {
+            self.central.try_xfx_q2(pdg as i32, x, q2)
         })
+        .ok()
     }
 }
 
@@ -598,10 +623,8 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             );
         }
         let lo_record = match &self.records {
-            Some(fill) if selection.record.is_none() => {
-                Some(fill.record(k, &selection, &event, &record)?)
-            }
-            _ => None,
+            Some(fill) => Some(fill.record(k, &selection, &event, &record, alpha_qcd)?),
+            None => None,
         };
         Some(WeightedEvent {
             record,
@@ -621,5 +644,98 @@ impl EventSource for ProtonSampleSource<'_, '_> {
 
     fn sigma_pb(&self) -> f64 {
         self.unweighter.sigma_from_events() * GEV2_TO_PB
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coupling::scales::EventScales;
+    use crate::lhef::record::{LheParticle, STATUS_INCOMING};
+    use crate::pdf::grid::SubGrid;
+
+    fn central() -> PdfMember {
+        let flavors = vec![-2, -1, 1, 2, 21];
+        let (x, q2) = (vec![1e-7, 1.0], vec![1.0, 1e8]);
+        let xf = (0..x.len() * q2.len() * flavors.len())
+            .map(|i| 0.1 + 0.01 * i as f64)
+            .collect();
+        PdfMember::from_subgrids(vec![SubGrid { x, q2, flavors, xf }])
+    }
+
+    fn incoming(pdg: i32, pz: f64) -> LheParticle {
+        LheParticle {
+            pdg,
+            status: STATUS_INCOMING,
+            mothers: [0, 0],
+            color: [0, 0],
+            momentum: [pz.abs(), 0.0, 0.0, pz],
+            mass: 0.0,
+            lifetime: 0.0,
+            spin: 9.0,
+        }
+    }
+
+    /// An unmatched `u ū → b b̄` event whose scale was clustered in the QCD
+    /// configuration (the clustering's first graph, `nqcd = 2`) while its
+    /// colour flow was drawn in the electroweak one (`nqcd = 0`). Its record
+    /// takes the clustered graph's power, as `reweight.f:1276` does, and the
+    /// labelled configuration's only where nothing was clustered.
+    #[test]
+    fn the_qcd_power_is_the_clustered_graphs_wherever_the_scale_was_clustered() {
+        let pdf = central();
+        let fill = RecordFill {
+            nqcd: vec![vec![vec![2, 0]]],
+            central: &pdf,
+        };
+        let scales = EventScales {
+            graph: Some(0),
+            ..EventScales::unmatched(50.0, [50.0, 50.0])
+        };
+        let mut selection = ProtonSelection {
+            group: 0,
+            member: 0,
+            ordering: BeamOrdering::Direct,
+            helicity: Vec::new(),
+            flow: 0,
+            config: Some(1),
+            leading: true,
+            scales,
+            record: None,
+            rewgt: None,
+            m2: 1.0,
+        };
+        let event = ProtonEvent {
+            weight: 1.0,
+            x: [0.1, 0.02],
+            group_scales: Vec::new(),
+            group_rewgt: Vec::new(),
+            group_records: Vec::new(),
+            group_histories: Vec::new(),
+            lab: Vec::new(),
+            cm: Vec::new(),
+        };
+        let record = LheEvent {
+            process_id: 1,
+            weight: 1.0,
+            scale: 50.0,
+            alpha_qed: 0.0078,
+            alpha_qcd: 0.13,
+            particles: vec![incoming(2, 650.0), incoming(-2, -130.0)],
+            trailer: Vec::new(),
+            source: None,
+        };
+        let lo = fill
+            .record(0, &selection, &event, &record, 0.13)
+            .expect("a record");
+        assert_eq!(lo.n_qcd, 2);
+        assert_eq!(lo.beams[0].entries, [(2, 0.1, 50.0)]);
+        assert_eq!(lo.beams[1].entries, [(-2, 0.02, 50.0)]);
+
+        selection.scales.graph = None;
+        let lo = fill
+            .record(0, &selection, &event, &record, 0.13)
+            .expect("a record");
+        assert_eq!(lo.n_qcd, 0);
     }
 }

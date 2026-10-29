@@ -95,7 +95,8 @@ pub struct GenerateSettings {
 /// variation request its systematics module would read, typed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Systematics {
-    /// `use_syst`: every unmatched proton event carries its `<mgrwt>` record.
+    /// `use_syst`: every proton event, matched or not, carries its `<mgrwt>`
+    /// record, and the file its `<MGRunCard>`.
     pub enabled: bool,
     /// The variations each event carries a weight for; `None` under
     /// `systematics_program = none` or `use_syst = F`.
@@ -966,10 +967,11 @@ fn generate_proton_sample(
         assets.systematics,
         &groups,
         &declared_reweights(reweight_plan.as_ref()),
-        matched,
     )?;
-    let fill = settings.systematics.enabled && !matched;
-    let record_fill = fill.then(|| RecordFill::new(&groups, model, pdf));
+    let record_fill = settings
+        .systematics
+        .enabled
+        .then(|| RecordFill::new(&groups, model, pdf));
 
     let rule = options.max_rule;
     let scan = Unweighter::scan_with(
@@ -1023,9 +1025,10 @@ fn generate_proton_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        // The card a shower's MLM matching reads its parameters from, then
-        // what the weights were computed from.
-        header_blocks: if matched {
+        // The card a shower's MLM matching reads its parameters from, and
+        // MadGraph's systematics module its beams and PDF, then what the
+        // weights were computed from.
+        header_blocks: if matched || settings.systematics.enabled {
             vec![
                 mg_run_card(rc, settings, options.seed),
                 assets.inputs.header_block(),
@@ -1063,15 +1066,13 @@ fn generate_proton_sample(
 
 /// The writer of the run's systematics weights: `None` unless the settings ask
 /// for them. Refused before any event is drawn: a request with no resolved
-/// PDFs, a matched run's (whose events carry no record yet), a weight id the
-/// reweighting also writes, and `--dyn=1` on a process whose written final
-/// state is one particle, where `Σ E_T` is zero.
+/// PDFs, a weight id the reweighting also writes, and `--dyn=1` on a process
+/// whose written final state is one particle, where `Σ E_T` is zero.
 fn systematics_writer(
     settings: &GenerateSettings,
     resolved: Option<&ResolvedPdfs>,
     groups: &[FlavorGroups],
     reweights: &[(String, String)],
-    matched: bool,
 ) -> Result<Option<Arc<SystematicsWriter>>, GenerateError> {
     let Some(request) = settings
         .systematics
@@ -1081,12 +1082,6 @@ fn systematics_writer(
     else {
         return Ok(None);
     };
-    if matched {
-        return Err(err(
-            "systematics weights on a matched run (ickkw = 1) are not implemented: its events \
-             carry no <mgrwt> record to compute them from",
-        ));
-    }
     let Some(resolved) = resolved else {
         return Err(err(
             "the settings ask for systematics weights, and no PDF members were resolved for \

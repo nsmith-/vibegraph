@@ -3,6 +3,7 @@
 //! `:1578-1640`), written as `unwgt.f` writes it (`:767-834`).
 
 use super::format::{as_written_e15_8, fortran_e, fortran_i};
+use crate::coupling::cluster::rewgt::{PdfOutcome, Rewgt};
 use crate::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
 
 /// One beam's density chain: `(pdg, x, q in GeV)` per entry. The last entry is
@@ -31,6 +32,36 @@ pub struct LoRecord {
     pub beam_order: [u8; 2],
     /// `<totfact>`: written, never read by a weight.
     pub tot_fact: f64,
+}
+
+/// What MadEvent fills an event's `<mgrwt>` record from (`reweight.f`'s
+/// `setclscales` and `rewgt`), per *clustering* beam: the matrix element's leg
+/// order, beam `j` being its leg `j + 1`.
+#[derive(Clone, Copy, Debug)]
+pub struct RecordInputs<'a> {
+    /// The event's QCD coupling power, `nqcd` of the configuration the
+    /// clustering named first, or of the channel where nothing was clustered.
+    pub n_qcd: u32,
+    /// `<rscale>`'s scale, GeV: the `μR` of the last `setclscales` call.
+    pub mu_r: f64,
+    /// Each clustering beam's incoming code (`idup(j, IPSEL)`).
+    pub incoming: [i64; 2],
+    /// Each clustering beam's momentum fraction (`xbk(ib(j))`).
+    pub x: [f64; 2],
+    /// Each clustering beam's factorisation scale when the chain is seeded,
+    /// GeV (`√q2fact(j)`).
+    pub mu_f: [f64; 2],
+    /// The physical beam (`1` or `2`) each clustering beam is written under:
+    /// `[2, 1]` on an event whose matrix element saw the beams exchanged
+    /// (`unwgt.f`'s `flip`).
+    pub labels: [u8; 2],
+    /// `asref`, the coupling the matrix element ran at, which `<totfact>`
+    /// carries to the event's QCD power; `0` without matching
+    /// (`reweight.f:1460`), where it carries none.
+    pub asref: f64,
+    /// The matched reweighting, factor by factor, in clustering order; `None`
+    /// without matching, where `rewgt` returns `1` before reading anything.
+    pub rewgt: Option<&'a Rewgt>,
 }
 
 /// The written event's momenta a dynamical scale is taken from, lab frame,
@@ -65,6 +96,60 @@ impl RecordKinematics {
 pub struct RecordParseError(pub String);
 
 impl LoRecord {
+    /// The record MadEvent writes for an event, from what `rewgt` leaves in
+    /// its systematics buffers (`reweight.f:1450-1482, 1603-1606, 1715-1724,
+    /// 1803-1818`):
+    ///
+    /// * each beam's chain starts at its incoming parton, at its own `x` and
+    ///   the factorisation scale the chain is seeded at, and gains one entry
+    ///   per density ratio `rewgt` took on that beam: the flavour of the line
+    ///   entering the vertex, its momentum fraction there, and the ratio's
+    ///   upper scale;
+    /// * one emission scale per `αs` ratio, `√pt2ijcl`, in vertex order;
+    /// * `<totfact>` is `rewgt × f₁ f₂ × asref^n_qcd`, the densities at each
+    ///   chain's first entry.
+    ///
+    /// `xfx(pdg, x, q2)` is `x·f(x, Q²)` of the run's central member.
+    pub fn fill<E>(
+        inputs: &RecordInputs<'_>,
+        xfx: impl Fn(i64, f64, f64) -> Result<f64, E>,
+    ) -> Result<LoRecord, E> {
+        let mut beams = [PdfChain::default(), PdfChain::default()];
+        let mut tot_fact = inputs.rewgt.map_or(1.0, |r| r.weight);
+        for j in 0..2 {
+            let (pdg, x, q) = (inputs.incoming[j], inputs.x[j], inputs.mu_f[j]);
+            tot_fact *= xfx(pdg, x, q * q)? / x;
+            let chain = &mut beams[usize::from(inputs.labels[j]) - 1];
+            chain.entries.push((pdg, x, q));
+            if let Some(rewgt) = inputs.rewgt {
+                for step in &rewgt.pdf_chain[j] {
+                    if let PdfOutcome::Ratio { .. } = step.outcome {
+                        chain
+                            .entries
+                            .push((step.flavour, step.x_entering, step.q2_now.sqrt()));
+                    }
+                }
+            }
+        }
+        if inputs.asref > 0.0 {
+            tot_fact *= inputs.asref.powi(inputs.n_qcd as i32);
+        }
+        let emission_scales = inputs.rewgt.map_or_else(Vec::new, |r| {
+            r.vertices
+                .iter()
+                .filter_map(|v| v.alpha_s.map(|a| a.q2.sqrt()))
+                .collect()
+        });
+        Ok(LoRecord {
+            n_qcd: inputs.n_qcd,
+            mu_r: inputs.mu_r,
+            emission_scales,
+            beams,
+            beam_order: inputs.labels,
+            tot_fact,
+        })
+    }
+
     /// The `<mgrwt>` block's lines, as `unwgt.f` writes them.
     pub fn lines(&self) -> Vec<String> {
         let n_em = self.emission_scales.len() as i64;
@@ -240,6 +325,186 @@ impl LoRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::coupling::cluster::rewgt::{AlphaSRatio, PdfStep, VertexClass, VertexDecision};
+
+    /// A toy `x·f`: a different power of `x` and `Q²` per flavour, so a density
+    /// read for the wrong flavour, at the wrong fraction or scale differs.
+    fn xfx(pdg: i64, x: f64, q2: f64) -> Result<f64, ()> {
+        let k = (pdg.unsigned_abs() % 7) as f64 + 1.0;
+        Ok(x.powf(0.1 * k) * (1.0 - x) * q2.ln() * (1.0 + 0.01 * pdg as f64))
+    }
+
+    fn step(
+        n: usize,
+        flavour: i64,
+        x: f64,
+        x_entering: f64,
+        q2_now: f64,
+        o: PdfOutcome,
+    ) -> PdfStep {
+        PdfStep {
+            n,
+            line: 0,
+            flavour,
+            x,
+            x_entering,
+            q2_prev: 1.0,
+            q2_now,
+            outcome: o,
+        }
+    }
+
+    fn vertex(n: usize, class: VertexClass, q2: Option<f64>) -> VertexDecision {
+        VertexDecision {
+            n,
+            mother: 0,
+            daughters: [0, 0],
+            pdg: [0; 3],
+            ipart: 1,
+            class,
+            alpha_s: q2.map(|q2| AlphaSRatio {
+                q2,
+                numerator: 0.2,
+                denominator: 0.1,
+                ratio: 2.0,
+            }),
+        }
+    }
+
+    const RATIO: PdfOutcome = PdfOutcome::Ratio {
+        numerator: 1.0,
+        denominator: 1.0,
+        ratio: 1.0,
+    };
+
+    /// The banked `pp_to_ll_0j2j_mlm` event `g u → e⁺e⁻ u` (its first),
+    /// rebuilt from what `rewgt` left: one ISR `αs` ratio at 51.098 GeV and,
+    /// on the gluon beam, one density ratio for the `ū` line entering the
+    /// core, recorded at that line's fraction and the ratio's upper scale.
+    /// The beam's first vertex and a vertex whose scale did not rise take no
+    /// ratio and add no entry. Every line but `<totfact>` is MadGraph's own;
+    /// `<totfact>` is `rewgt · f₁ f₂ · asref^n` at the chains' first entries.
+    #[test]
+    fn a_matched_record_is_what_rewgt_left_in_its_buffers() {
+        let (q_isr, q_core) = (51.098437, 104.78542);
+        let rewgt = Rewgt {
+            weight: 0.75,
+            vertices: vec![
+                vertex(1, VertexClass::Isr, Some(q_isr * q_isr)),
+                vertex(2, VertexClass::FsrNotPartonVertex, None),
+                vertex(3, VertexClass::Core, None),
+            ],
+            pdf_chain: [
+                vec![
+                    step(
+                        1,
+                        21,
+                        0.0012,
+                        0.0085277455,
+                        q_isr * q_isr,
+                        PdfOutcome::First,
+                    ),
+                    step(3, -2, 0.0005, 0.00083878028, q_core * q_core, RATIO),
+                ],
+                vec![step(
+                    3,
+                    2,
+                    0.059038495,
+                    0.059038495,
+                    900.0,
+                    PdfOutcome::NoRise,
+                )],
+            ],
+            kill: None,
+        };
+        let inputs = RecordInputs {
+            n_qcd: 1,
+            mu_r: q_core,
+            incoming: [21, 2],
+            x: [0.0085277455, 0.059038495],
+            mu_f: [q_isr, q_isr],
+            labels: [1, 2],
+            asref: 0.13,
+            rewgt: Some(&rewgt),
+        };
+        let record = LoRecord::fill(&inputs, xfx).unwrap();
+        let lines = record.lines();
+        assert_eq!(
+            lines[..5],
+            [
+                "<mgrwt>",
+                "<rscale>  0 0.10478542E+03</rscale>",
+                "<asrwt>  1 0.51098437E+02</asrwt>",
+                "<pdfrwt beam=\"1\">  2       21       -2 0.85277455E-02 0.83878028E-03 \
+                 0.51098437E+02 0.10478542E+03</pdfrwt>",
+                "<pdfrwt beam=\"2\">  1        2 0.59038495E-01 0.51098437E+02</pdfrwt>",
+            ]
+        );
+        let f = |pdg: i64, x: f64, q: f64| xfx(pdg, x, q * q).unwrap() / x;
+        let expected = 0.75 * f(21, 0.0085277455, q_isr) * f(2, 0.059038495, q_isr) * 0.13;
+        assert_eq!(record.tot_fact, expected);
+        assert_eq!(record.n_qcd, 1);
+    }
+
+    /// On an event whose matrix element saw the beams exchanged, clustering
+    /// beam 1 is the physical beam 2: its chain is written first, labelled
+    /// `beam="2"`, and read back under that label.
+    #[test]
+    fn an_exchanged_event_writes_each_chain_under_its_physical_beam() {
+        let rewgt = Rewgt {
+            weight: 1.0,
+            vertices: vec![vertex(1, VertexClass::Core, None)],
+            pdf_chain: [vec![step(1, 3, 0.02, 0.04, 400.0, RATIO)], Vec::new()],
+            kill: None,
+        };
+        let inputs = RecordInputs {
+            n_qcd: 0,
+            mu_r: 88.932649,
+            incoming: [3, -3],
+            x: [0.0042275231, 0.011070055],
+            mu_f: [10.0, 88.932649],
+            labels: [2, 1],
+            asref: 0.11,
+            rewgt: Some(&rewgt),
+        };
+        let record = LoRecord::fill(&inputs, xfx).unwrap();
+        let lines = record.lines();
+        assert_eq!(
+            lines[3],
+            "<pdfrwt beam=\"2\">  2        3        3 0.42275231E-02 0.40000000E-01 \
+             0.10000000E+02 0.20000000E+02</pdfrwt>"
+        );
+        assert_eq!(
+            lines[4],
+            "<pdfrwt beam=\"1\">  1       -3 0.11070055E-01 0.88932649E+02</pdfrwt>"
+        );
+        let back = LoRecord::parse(&lines).unwrap().unwrap();
+        assert_eq!(back.beams[1].entries[0].0, 3);
+        assert_eq!(back.beams[0].entries, [(-3, 0.011070055, 88.932649)]);
+    }
+
+    /// Without matching the chain is the incoming parton alone and the total
+    /// factor `f₁ f₂`, with no coupling whatever the QCD power (`asref = 0`).
+    #[test]
+    fn an_unmatched_record_carries_one_entry_per_beam_and_no_coupling() {
+        let inputs = RecordInputs {
+            n_qcd: 2,
+            mu_r: 91.188,
+            incoming: [21, -1],
+            x: [0.1, 0.2],
+            mu_f: [45.0, 46.0],
+            labels: [1, 2],
+            asref: 0.0,
+            rewgt: None,
+        };
+        let record = LoRecord::fill(&inputs, xfx).unwrap();
+        assert_eq!(record.emission_scales, Vec::<f64>::new());
+        assert_eq!(record.beams[0].entries, [(21, 0.1, 45.0)]);
+        assert_eq!(record.beams[1].entries, [(-1, 0.2, 46.0)]);
+        let f = |pdg: i64, x: f64, q: f64| xfx(pdg, x, q * q).unwrap() / x;
+        assert_eq!(record.tot_fact, f(21, 0.1, 45.0) * f(-1, 0.2, 46.0));
+        assert_eq!(record.lines()[1], "<rscale>  2 0.91188000E+02</rscale>");
+    }
 
     /// A banked `pp_to_ll` event's record, as MadGraph wrote it.
     const BANKED: &[&str] = &[
