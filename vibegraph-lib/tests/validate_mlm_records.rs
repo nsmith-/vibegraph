@@ -95,6 +95,10 @@ const ROWS: [&str; 4] = [
 /// unmatched row, where every other field agrees.
 const TOTFACT_AGREEMENT: f64 = 1e-6;
 
+/// `unwgt.f` writes `AQCDUP` as `g²/4/3.1415926`, `π` truncated.
+#[allow(clippy::approx_constant)]
+const TRUNCATED_PI: f64 = 3.1415926;
+
 /// `SCALUP` and `AQCDUP` are printed with seven significant digits.
 const HEADER_AGREEMENT: f64 = 1e-6;
 
@@ -379,7 +383,7 @@ fn compare_event(
         let scales = history.event_scales();
         if rel(scalup(&scales), event.scale) > HEADER_AGREEMENT
             || rel(
-                row.alpha_s.eval(scales.mu_r) * 3.1415926 / std::f64::consts::PI,
+                row.alpha_s.eval(scales.mu_r) * TRUNCATED_PI / std::f64::consts::PI,
                 event.alpha_qcd,
             ) > HEADER_AGREEMENT
         {
