@@ -74,3 +74,130 @@ VBF rung:
   `/home/user/wt/T` while the campaign runs. That slows some runs; the
   recorded wall per run says by how much. It does not change any σ: a fixed
   budget at a fixed seed gives the same artifact at any thread count.
+
+## The committed σ-level test
+
+Commit `9e7ab447` on `sprinte-spine-fallback`.
+
+- **Where.** `vibegraph-lib/tests/spine_sigma.rs`, a new test target with
+  `required-features = ["extended-validation"]`, so it is in the banked layer
+  that `pixi run validate` (`validation/validate.sh`) runs under
+  `--profile release-debug`. It needs no reference data, only the interned
+  SM: banked for cost, like `rambo_flat_mc`. `validation/manifest.toml` has a
+  `[[standalone]] key = "spine-sigma"` row for it, with its blind spot.
+- **What.** `u c > e+ e- u c QCD=0`, fixed beams at √ŝ = 1 TeV,
+  `ptj = ptl = 0`, `mmjj > 300`, `mmll > 50` (T-F1's card). All 10 channels
+  are spines. `FixedBeamIntegrand` with `use_multichannel(…, 30000, 6, seed)`
+  and `adapt_grids(200000, 8, seed)`, as T-F1's production probe. Sixteen
+  seeds (11, 22, …, 176) combined by `common::seeds::combine` (unweighted
+  mean).
+- **Assertions.** Relative spread (sd/√16 over the mean) ≤ 3.0e-3, then seed
+  χ²/dof in [0.15, 4.0].
+- **Blind spot.** A bias every seed shares. There is no independent σ for
+  this process (flat RAMBO does not converge on it, T-F1), so a map that is
+  wrong the same way on every seed passes. The walk/density test in
+  `diagram_channel.rs` covers that.
+
+### Calibration
+
+The ignored probe `probe_the_seed_scatter_of_the_no_scale_spine` runs 40
+seeds (1001–1040), disjoint from the gated ones. It was run on the tree as
+committed and under M1. Sixteen-of-40 quantiles come from 20 000 random
+draws without replacement (`T-V2-calib.py`).
+
+| arm | 40-seed mean (pb) | per-seed rel. sd | sd / quoted | 16 of 40: rel. spread, 0.1% / 50% / 99.9% | 16 of 40: χ²/dof, 0.1% / 50% / 99.9% |
+|---|---|---|---|---|---|
+| spine (as committed) | 1.79781e-2 | 3.29e-3 | 0.91 | 4.5e-4 / 8.2e-4 / 1.11e-3 | 0.25 / 0.85 / 1.57 |
+| spine withheld (M1) | 1.80991e-2 | 1.27e-1 | 1.46 | 7.5e-3 / 2.9e-2 / 4.4e-2 | 0.38 / 2.36 / 7.17 |
+
+- The **spread bound separates the arms**, with a factor of 2.7 to the spine
+  arm's 99.9% quantile and 2.5 to M1's 0.1% quantile.
+- **χ²/dof alone does not.** The no-spine estimator quotes errors nearly as
+  wide as its scatter on most seeds, so its median χ²/dof is 2.4. The band is
+  kept for what it does catch: seeds that are not independent (low edge), and
+  the confidently-wrong signature (high edge). It failed M1's gated seeds too
+  (5.74).
+- The spine arm's resampled quantiles understate a tail, because they are
+  drawn from 40 values. The first eight gated seeds scatter by 5.4e-3 per
+  seed, against 3.3e-3 over the 40. An eight-seed version of this test read a
+  relative spread of 1.91e-3, the top of its resampled range. So the gate
+  uses sixteen seeds, and the bound keeps a factor of 2.9 over the gated
+  value.
+
+### Gate run, and mutation M1
+
+Command (on `9e7ab447`'s tree, campaign running alongside):
+`cargo test -j 2 -p vibegraph-lib --profile release-debug --config 'profile.release-debug.debug=0' --features extended-validation --test spine_sigma -- --nocapture`
+
+```
+u c > e+ e- u c QCD=0 at √ŝ = 1000 GeV, 200000 × 8 a seed: 10 peripheral channels of 10
+  16 seeds: mean 1.799259e-2 pb, spread 1.88e-5 (rel 1.05e-3), seed χ²/dof 1.06, 81 s
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 81.42s
+real 2m8.677s   user 3m37.886s
+```
+
+**Runtime:** 81 s of test time, with the 4-core host shared with a
+4-thread campaign run, and 3.6 min of CPU. The earlier eight-seed run took 41 s
+under the same sharing, and the 40-seed probe took 194 s (about 5 s a
+seed), also shared. No uncontended timing was taken.
+
+**M1**, the spine withheld: restored
+`&& (n_out == 2 || fiducial_scale > F::zero())` in `from_diagram_with`. The
+same command:
+
+```
+u c > e+ e- u c QCD=0 at √ŝ = 1000 GeV, 200000 × 8 a seed: 0 peripheral channels of 10
+  16 seeds: mean 1.829004e-2 pb, spread 6.74e-4 (rel 3.68e-2), seed χ²/dof 5.74, 139 s
+thread '…' panicked at vibegraph-lib/tests/spine_sigma.rs:210:5:
+the seeds' relative spread 3.68e-2 exceeds 3.0e-3
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 138.75s
+```
+
+- The M1 seeds show the confidently-wrong signature: seed 110 reads
+  1.553e-2 ± 5.6e-4 pb, 14% low with a 3.6% error.
+- Seeds 11–55 reproduce T-F1's M1 row exactly (2.066886e-2, 1.714126e-2, …).
+- The source was restored from a backup, and `cmp` reported it identical.
+
+## The μF floor edge, per event (DY MLL-50)
+
+`vibegraph generate T-V2-runs/dy-r1-s1/grid.bin.zst --seed 7 --nevents 600 -j 1`
+on DY's R1 seed-1 grid. This run took 24 min, at an unweighting efficiency of
+1.85e-3. A first try at 2000 events was stopped after 15 min. Histogram:
+`T-V2-muf.py`.
+
+The LHE record holds only `SCALUP = max(μF₁, μF₂)`. The veto acts on each
+beam's μF, and no per-beam μF is written. So two readings are shown: SCALUP,
+and the softest outgoing quark's pT, which stands in for the clustering scale
+of the beam that quark is attached to.
+
+| bin (GeV) | events, SCALUP | events, softest-quark pT |
+|---|---|---|
+| 0–1 | 0 | 1 |
+| 1–1.5 | 0 | 3 |
+| 1.5–1.8 | 0 | 1 |
+| 1.8–1.9 | 0 | 0 |
+| 1.9–2 | 0 | 0 |
+| 2–2.1 | 0 | 11 |
+| 2.1–2.2 | 0 | 11 |
+| 2.2–2.5 | 2 | 21 |
+| 2.5–3 | 5 | 39 |
+| 3–4 | 9 | 58 |
+| 4–6 | 27 | 63 |
+| 6–10 | 60 | 69 |
+| 10–∞ | 497 | 323 |
+
+- **The edge is at 2 GeV.** There are no events in 1.8–2.0 GeV, then 11
+  events in each of the next two 0.1 GeV bins. The minimum SCALUP is
+  2.219 GeV.
+- **Five events lie below 2 GeV in the proxy, and none of them crosses the
+  floor.** All five have a same-flavour `q q̄` final pair with `mjj` of 4–89
+  GeV and SCALUP of 92–124 GeV. These are `q q̄ → ℓℓ (Z/γ* → q q̄)` events.
+  The soft quark clusters with its partner, not with a beam, so both beam
+  scales are at the boson scale and the proxy does not apply. On the CMS
+  cards the proxy stands in for a beam scale only on the t-channel
+  topologies.
+- This is the same edge T-V1 found on `u c > e+ e- u c` alone: 2.0006 GeV
+  minimum there.
+
+The same sample is the clearest evidence about convergence; see "Per-event
+reading of the tail" below.
