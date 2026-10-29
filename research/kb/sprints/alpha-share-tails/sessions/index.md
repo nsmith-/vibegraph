@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [T1: where bbx's α-share tail points sit, and why their variance does not fall with points](T1.md) - Record the largest-weight points per channel and iteration on bbx_to_ccx_emmm_qcd0, estimate each heavy channel's tail index, locate the tail points in phase space against the channel's map, and propose a fix verified on the dumps.
+
+## Session Report
+
+* [T1 report: bbx's α-share tails are half-covered H → ZZ* peaks and Z → 4f peaks whose channels the α survey starved](T1-report.md) - On bbx_to_ccx_emmm_qcd0 (20 paired seeds, 600k and 1.2M) the largest single-point contributions sit on two narrow structures. 85% (1.2M) and 46% (600k) of their summed square is the H → ZZ* peak in the half no channel's map covers: every H channel draws the same Z pair first, on its pole, so the configuration with the other pair near shell lies in a Breit–Wigner tail. Seed 55's 1.18e-8 pb point in channel 613 is one of these. Another 11% / 31% is a Z → 4f peak (Z → l l γ*) whose covering channels the α survey drove to α = 1e-11 … 1e-5. A symmetrised H → ZZ* split lowers the mirror points' weights 20–380×, and an α floor of 1e-4 lowers the Z → 4f points 1.0–125×. Together they cut the summed square of the recorded tail contributions to 6% (1.2M) and 25% (600k). Proposed, not implemented, with a falsifier.
