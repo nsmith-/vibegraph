@@ -40,6 +40,15 @@
 //! told apart from that. The record rule itself is gated on MadEvent's own
 //! clustering inputs by `validate_mlm_dumps`.
 //!
+//! # The forests
+//!
+//! The replay runs twice: on this crate's own channel forests, which is what
+//! generation clusters, and on MadGraph's generated ones (each process
+//! directory's `configs.inc`, `config_nqcd.inc`, `config_subproc_map.inc`
+//! and `leshouche.inc`, where the bundle carries them), informational. Equal
+//! tables say a disagreement with MadEvent's record does not come from the
+//! forests.
+//!
 //! # What this cannot see
 //!
 //! * The beam order: it is an input here, never a result.
@@ -64,7 +73,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use vibegraph::coupling::alphas::AlphaSSource;
 use vibegraph::coupling::cluster::configs::{derive_channels, DerivedChannels};
-use vibegraph::coupling::cluster::graph::ColorTable;
+use vibegraph::coupling::cluster::graph::{ChannelSet, ColorTable, ConfigForest, ForestLine};
 use vibegraph::coupling::cluster::rewgt::rewgt;
 use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
@@ -257,6 +266,185 @@ impl Row {
     }
 }
 
+/// A fixed-form source's statements, continuation lines (a non-blank sixth
+/// column) joined onto the line they continue.
+fn statements(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in text.lines() {
+        let continued = raw.len() > 5
+            && !raw.starts_with(['C', 'c', '!'])
+            && raw[..5].trim().is_empty()
+            && !raw[5..6].trim().is_empty();
+        if continued {
+            out.last_mut()
+                .expect("a statement to continue")
+                .push_str(raw[6..].trim());
+        } else {
+            out.push(raw.trim().to_string());
+        }
+    }
+    out
+}
+
+/// `DATA (NAME(I,a,b),I=1,n)/v,…/` or `DATA NAME(a,b)/v/`: the two indices
+/// after the loop variable and the values.
+fn data_args(line: &str, open: &str) -> Option<(i64, i64, Vec<i64>)> {
+    let at = line.find(open)?;
+    let inner = &line[at + open.len()..];
+    let close = inner.find(')')?;
+    let head: Vec<&str> = inner[..close].split(',').collect();
+    let slash = line.find('/')?;
+    let values: Vec<i64> = line[slash + 1..]
+        .trim_end()
+        .trim_end_matches('/')
+        .split(',')
+        .map(|v| v.trim().parse().expect("an integer DATA value"))
+        .collect();
+    let (a, b) = match head.len() {
+        3 => (head[1], head[2]),
+        2 => (head[0], head[1]),
+        _ => (head[0], "0"),
+    };
+    Some((a.trim().parse().ok()?, b.trim().parse().ok()?, values))
+}
+
+/// A process directory as MadGraph generated it: the group's channel forests
+/// (`configs.inc`, `config_nqcd.inc`), which subprocess contributes to which
+/// channel (`config_subproc_map.inc`), and each subprocess's flavour rows
+/// (`leshouche.inc`'s `IDUP(i, ipsel, iproc)`). The masses and widths are the
+/// ones the derived forests read, so the two differ only in structure.
+struct Generated {
+    n_external: usize,
+    configs: Vec<ConfigForest>,
+    contributes: Vec<Vec<bool>>,
+    /// `flavours[iproc - 1]`: every `IDUP` row of the subprocess.
+    flavours: Vec<Vec<Vec<i64>>>,
+}
+
+impl Generated {
+    fn load(dir: &Path, row: &Row) -> Self {
+        let read = |name: &str| {
+            std::fs::read_to_string(dir.join(name))
+                .unwrap_or_else(|e| panic!("{}: {e}", dir.join(name).display()))
+        };
+        let mut lines: BTreeMap<(usize, i32), ForestLine> = BTreeMap::new();
+        fn entry(
+            lines: &mut BTreeMap<(usize, i32), ForestLine>,
+            c: i64,
+            k: i64,
+        ) -> &mut ForestLine {
+            lines.entry((c as usize, k as i32)).or_insert(ForestLine {
+                index: k as i32,
+                daughters: [0, 0],
+                tprid: 0,
+                sprop: Vec::new(),
+                mass: 0.0,
+                width: 0.0,
+                forced: false,
+            })
+        }
+        for line in statements(&read("configs.inc")) {
+            if let Some((k, c, v)) = data_args(&line, "(IFOREST(I,") {
+                entry(&mut lines, c, k).daughters = [v[0] as i32, v[1] as i32];
+            } else if let Some((k, c, v)) = data_args(&line, "(SPROP(I,") {
+                entry(&mut lines, c, k).sprop = v;
+            } else if let Some((k, c, v)) = data_args(&line, "TPRID(") {
+                entry(&mut lines, c, k).tprid = v[0];
+            }
+        }
+        let n_configs = lines.keys().map(|(c, _)| *c).max().expect("a config");
+        let mut configs = vec![ConfigForest::default(); n_configs];
+        for ((c, _), line) in lines {
+            configs[c - 1].lines.push(line);
+        }
+        let particle = |pdg: i64| {
+            let name = row.name_of(pdg.abs());
+            row.model.particle_id(&name).expect("in the model")
+        };
+        for config in &mut configs {
+            config.lines.sort_by_key(|line| -line.index);
+            let closing = config.lines.last().map(|l| l.index);
+            for line in &mut config.lines {
+                if line.tprid == 0 {
+                    // Timelike: every subprocess with a diagram in the channel
+                    // names the same particle up to charge on a line the
+                    // clustering weighs.
+                    if let Some(&code) = line.sprop.iter().find(|&&c| c != 0) {
+                        let id = particle(code);
+                        line.mass = row.evaluated.mass(id);
+                        line.width = row.evaluated.width(id);
+                    }
+                } else if Some(line.index) != closing {
+                    line.mass = row.evaluated.mass(particle(line.tprid));
+                    line.width = row.evaluated.width(particle(line.tprid));
+                }
+            }
+        }
+        for raw in read("config_nqcd.inc").lines() {
+            if let Some((c, _, v)) = data_args(raw, "NQCD(") {
+                configs[c as usize - 1].nqcd = v[0];
+            }
+        }
+        let mut contributes: Vec<Vec<bool>> = Vec::new();
+        for line in statements(&read("config_subproc_map.inc")) {
+            let Some((c, _, v)) = data_args(&line, "(CONFSUB(I,") else {
+                continue;
+            };
+            if contributes.is_empty() {
+                contributes = vec![vec![false; n_configs]; v.len()];
+            }
+            for (iproc, diagram) in v.iter().enumerate() {
+                contributes[iproc][c as usize - 1] = *diagram != 0;
+            }
+        }
+        let mut flavours = vec![Vec::new(); contributes.len()];
+        for line in statements(&read("leshouche.inc")) {
+            if let Some((_, iproc, v)) = data_args(&line, "(IDUP(I,") {
+                flavours[iproc as usize - 1].push(v);
+            }
+        }
+        Generated {
+            n_external: configs
+                .iter()
+                .flat_map(|c| &c.lines)
+                .flat_map(|l| l.daughters)
+                .max()
+                .expect("an external leg") as usize,
+            configs,
+            contributes,
+            flavours,
+        }
+    }
+
+    /// The channel set and subprocess (from 1) of the event whose legs, in
+    /// the matrix element's order, are `legs`.
+    fn channels(&self, legs: &[i64]) -> Option<(ChannelSet, usize)> {
+        let iproc = self
+            .flavours
+            .iter()
+            .position(|rows| rows.iter().any(|r| r == legs))?;
+        let mut configs = self.configs.clone();
+        for config in &mut configs {
+            for line in &mut config.lines {
+                if line.tprid == 0 {
+                    let code = line.sprop[iproc];
+                    line.sprop = vec![code; self.contributes.len()];
+                }
+            }
+        }
+        Some((
+            ChannelSet {
+                n_external: self.n_external,
+                n_incoming: 2,
+                configs,
+                external_pdg: vec![legs.to_vec(); self.contributes.len()],
+                contributes: self.contributes.clone(),
+            },
+            iproc + 1,
+        ))
+    }
+}
+
 /// What one event's comparison found.
 #[derive(Default)]
 struct Outcome {
@@ -310,7 +498,7 @@ fn record_fields(ours: &LoRecord, theirs: &LoRecord) -> Vec<(&'static str, bool)
 
 fn compare_event(
     row: &Row,
-    sets: &HashMap<Vec<i64>, Option<DerivedChannels>>,
+    sets: &HashMap<Vec<i64>, Option<(ChannelSet, usize)>>,
     event: &LheEvent,
 ) -> Option<Outcome> {
     let theirs = LoRecord::parse(&event.trailer).ok()??;
@@ -333,7 +521,7 @@ fn compare_event(
         .chain(&outgoing)
         .map(|&k| i64::from(event.particles[k].pdg))
         .collect();
-    let derived = sets.get(&legs)?.as_ref()?;
+    let (set, iproc) = sets.get(&legs)?.as_ref()?;
 
     // The partonic frame, the matrix element's first leg along +z.
     let x_lab = [0, 1].map(|b| event.particles[incoming[b]].momentum[0] / row.ebeam[b]);
@@ -363,12 +551,15 @@ fn compare_event(
 
     let mut out = Outcome::default();
     let mut seen: Option<Vec<String>> = None;
-    for config in 1..=derived.set.configs.len() {
+    for config in 1..=set.configs.len() {
+        if !set.contributes[iproc - 1][config - 1] {
+            continue;
+        }
         let input = ClusterInput {
-            set: &derived.set,
+            set,
             colors: &row.colors,
             this_config: config,
-            iproc: 1,
+            iproc: *iproc,
             tables: None,
         };
         let Ok(history) = row.choice.cluster_history(
@@ -406,7 +597,7 @@ fn compare_event(
             }
         }
         let graph = scales.graph.expect("a clustered event");
-        let n_qcd = u32::try_from(derived.set.configs[graph].nqcd).expect("a QCD power");
+        let n_qcd = u32::try_from(set.configs[graph].nqcd).expect("a QCD power");
         let last = history.second.as_ref().unwrap_or(&history.first);
         let factor = match (row.choice.rewgt_settings(), history.rewgt_history()) {
             (Some(settings), Some(h)) => rewgt(
@@ -477,6 +668,126 @@ fn banner_card(text: &str) -> String {
     text[start..end].replace("<![CDATA[", "").replace("]]>", "")
 }
 
+/// Every subprocess a file's events name, in the matrix element's leg order.
+fn event_legs(file: &LheFile) -> Vec<Vec<i64>> {
+    let mut keys: Vec<Vec<i64>> = Vec::new();
+    for event in &file.events {
+        let Ok(Some(record)) = LoRecord::parse(&event.trailer) else {
+            continue;
+        };
+        let incoming: Vec<i64> = event
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_INCOMING)
+            .map(|p| i64::from(p.pdg))
+            .collect();
+        let mut legs = if record.beam_order == [2, 1] {
+            vec![incoming[1], incoming[0]]
+        } else {
+            incoming
+        };
+        legs.extend(
+            event
+                .particles
+                .iter()
+                .filter(|p| p.status == STATUS_OUTGOING)
+                .map(|p| i64::from(p.pdg)),
+        );
+        if !keys.contains(&legs) {
+            keys.push(legs);
+        }
+    }
+    keys
+}
+
+/// Replay every event of `file` against `sets` and print the field table;
+/// with `gate`, the gated fields' misses are pushed to `failures`.
+fn tabulate(
+    name: &str,
+    forests: &str,
+    file: &LheFile,
+    row: &Row,
+    sets: &HashMap<Vec<i64>, Option<(ChannelSet, usize)>>,
+    gate: bool,
+    failures: &mut Vec<String>,
+) {
+    let outcomes: Vec<Option<Outcome>> = file
+        .events
+        .par_iter()
+        .map(|event| compare_event(row, sets, event))
+        .collect();
+
+    let mut fields: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
+    let (mut compared, mut no_candidate, mut ambiguous, mut no_set) = (0, 0, 0, 0);
+    let mut worst_totfact = 0.0f64;
+    let mut totfact_ok = 0usize;
+    let mut shown: Vec<String> = Vec::new();
+    for outcome in &outcomes {
+        let Some(o) = outcome else {
+            no_set += 1;
+            continue;
+        };
+        if o.candidates == 0 {
+            no_candidate += 1;
+            continue;
+        }
+        compared += 1;
+        ambiguous += usize::from(o.ambiguous);
+        if let (Some((ours, theirs)), true) = (&o.shown, shown.len() < 6) {
+            shown.push(format!(
+                "  differs:\n    ours   {}\n    theirs {}",
+                ours[1..6].join(" "),
+                theirs[1..6].join(" ")
+            ));
+        }
+        for (field, ok) in &o.fields {
+            let entry = fields.entry(field).or_insert((0, 0));
+            entry.0 += usize::from(*ok);
+            entry.1 += 1;
+        }
+        worst_totfact = worst_totfact.max(o.totfact);
+        totfact_ok += usize::from(o.totfact <= TOTFACT_AGREEMENT);
+    }
+    println!(
+        "\n{name}, {forests}: {} events, {} subprocesses; {compared} compared, {no_candidate} \
+         with no configuration reproducing the header, {no_set} without a record or a \
+         subprocess; {ambiguous} with candidates disagreeing among themselves",
+        file.events.len(),
+        sets.len()
+    );
+    for line in &shown {
+        println!("{line}");
+    }
+    // Gated: the QCD power on every row, and every field on the row that
+    // clusters without matching. The matched rows' other fields are
+    // informational (see the module documentation).
+    let unmatched = row.choice.rewgt_settings().is_none();
+    for (field, (ok, n)) in &fields {
+        let gated = gate && (unmatched || *field == "<rscale> power");
+        println!(
+            "  {field:<36} {ok:>6}/{n}{}",
+            if gated { "" } else { "  (info)" }
+        );
+        if gated && ok != n {
+            failures.push(format!("{name}: {field} {ok}/{n}"));
+        }
+    }
+    println!(
+        "  {:<36} {totfact_ok:>6}/{compared}  worst {worst_totfact:.2e}{}",
+        "<totfact>",
+        if gate && unmatched { "" } else { "  (info)" }
+    );
+    if gate && unmatched && totfact_ok != compared {
+        failures.push(format!("{name}: <totfact> {totfact_ok}/{compared}"));
+    }
+    if gate && compared * 10 < file.events.len() * 9 {
+        failures.push(format!(
+            "{name}: only {compared} of {} events reached a comparison",
+            file.events.len()
+        ));
+    }
+}
+
 #[test]
 fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
     let mut failures = Vec::new();
@@ -485,113 +796,59 @@ fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
         let file = LheFile::parse(&text).expect("the banked file parses");
         let row = Row::load(name, &banner_card(&text));
         assert!(row.card.get("use_syst").expect("known").as_bool());
-        // Every subprocess the events name, in the matrix element's leg order.
-        let mut keys: Vec<Vec<i64>> = Vec::new();
-        for event in &file.events {
-            let Ok(Some(record)) = LoRecord::parse(&event.trailer) else {
-                continue;
-            };
-            let incoming: Vec<i64> = event
-                .particles
-                .iter()
-                .filter(|p| p.status == STATUS_INCOMING)
-                .map(|p| i64::from(p.pdg))
-                .collect();
-            let mut legs = if record.beam_order == [2, 1] {
-                vec![incoming[1], incoming[0]]
-            } else {
-                incoming
-            };
-            legs.extend(
-                event
-                    .particles
-                    .iter()
-                    .filter(|p| p.status == STATUS_OUTGOING)
-                    .map(|p| i64::from(p.pdg)),
-            );
-            if !keys.contains(&legs) {
-                keys.push(legs);
-            }
-        }
-        let sets: HashMap<Vec<i64>, Option<DerivedChannels>> = keys
+        let keys = event_legs(&file);
+        let derived: HashMap<Vec<i64>, Option<(ChannelSet, usize)>> = keys
             .par_iter()
-            .map(|legs| (legs.clone(), row.channels(legs)))
+            .map(|legs| (legs.clone(), row.channels(legs).map(|d| (d.set, 1))))
             .collect();
-        let outcomes: Vec<Option<Outcome>> = file
-            .events
-            .par_iter()
-            .map(|event| compare_event(&row, &sets, event))
-            .collect();
+        tabulate(
+            name,
+            "this crate's forests",
+            &file,
+            &row,
+            &derived,
+            true,
+            &mut failures,
+        );
 
-        let mut fields: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
-        let (mut compared, mut no_candidate, mut ambiguous, mut no_set) = (0, 0, 0, 0);
-        let mut worst_totfact = 0.0f64;
-        let mut totfact_ok = 0usize;
-        let mut shown: Vec<String> = Vec::new();
-        for outcome in &outcomes {
-            let Some(o) = outcome else {
-                no_set += 1;
-                continue;
-            };
-            if o.candidates == 0 {
-                no_candidate += 1;
-                continue;
+        // The same replay on MadGraph's generated forests, where the bundle
+        // carries the process directories' `configs.inc`.
+        let subprocesses = root()
+            .join("validation/madgraph/output")
+            .join(name)
+            .join("SubProcesses");
+        let mut directories: Vec<Generated> = Vec::new();
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
+            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .unwrap_or_default();
+        entries.sort();
+        for dir in entries {
+            if dir.join("configs.inc").is_file() && dir.join("config_subproc_map.inc").is_file() {
+                directories.push(Generated::load(&dir, &row));
             }
-            compared += 1;
-            ambiguous += usize::from(o.ambiguous);
-            if let (Some((ours, theirs)), true) = (&o.shown, shown.len() < 6) {
-                shown.push(format!(
-                    "  differs:\n    ours   {}\n    theirs {}",
-                    ours[1..6].join(" "),
-                    theirs[1..6].join(" ")
-                ));
-            }
-            for (field, ok) in &o.fields {
-                let entry = fields.entry(field).or_insert((0, 0));
-                entry.0 += usize::from(*ok);
-                entry.1 += 1;
-            }
-            worst_totfact = worst_totfact.max(o.totfact);
-            totfact_ok += usize::from(o.totfact <= TOTFACT_AGREEMENT);
         }
-        println!(
-            "\n{name}: {} events, {} subprocesses; {compared} compared, {no_candidate} with no \
-             configuration reproducing the header, {no_set} without a record or a subprocess; \
-             {ambiguous} with candidates disagreeing among themselves",
-            file.events.len(),
-            sets.len()
+        if directories.is_empty() {
+            println!("{name}: no generated configs.inc in the bundle");
+            continue;
+        }
+        let generated: HashMap<Vec<i64>, Option<(ChannelSet, usize)>> = keys
+            .iter()
+            .map(|legs| {
+                (
+                    legs.clone(),
+                    directories.iter().find_map(|d| d.channels(legs)),
+                )
+            })
+            .collect();
+        tabulate(
+            name,
+            "MadGraph's configs.inc",
+            &file,
+            &row,
+            &generated,
+            false,
+            &mut failures,
         );
-        for line in &shown {
-            println!("{line}");
-        }
-        // Gated: the QCD power on every row, and every field on the row that
-        // clusters without matching. The matched rows' other fields are
-        // informational (see the module documentation).
-        let unmatched = row.choice.rewgt_settings().is_none();
-        for (field, (ok, n)) in &fields {
-            let gated = unmatched || *field == "<rscale> power";
-            println!(
-                "  {field:<36} {ok:>6}/{n}{}",
-                if gated { "" } else { "  (info)" }
-            );
-            if gated && ok != n {
-                failures.push(format!("{name}: {field} {ok}/{n}"));
-            }
-        }
-        println!(
-            "  {:<36} {totfact_ok:>6}/{compared}  worst {worst_totfact:.2e}{}",
-            "<totfact>",
-            if unmatched { "" } else { "  (info)" }
-        );
-        if unmatched && totfact_ok != compared {
-            failures.push(format!("{name}: <totfact> {totfact_ok}/{compared}"));
-        }
-        if compared * 10 < file.events.len() * 9 {
-            failures.push(format!(
-                "{name}: only {compared} of {} events reached a comparison",
-                file.events.len()
-            ));
-        }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
