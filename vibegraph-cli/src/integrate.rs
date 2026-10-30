@@ -26,12 +26,14 @@
 //! default that has every cut removed — and so does this command
 //! ([`RunCard::decay_default`], [`RunCard::for_decay`]).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{
-    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, PdfInput, RunInputs, FORMAT_VERSION,
+    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, MovedParam, PdfInput, RunInputs,
+    FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
@@ -54,6 +56,8 @@ use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::ufo::bind::bind_card;
+use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
@@ -336,6 +340,17 @@ pub(crate) struct IntegrateArgs {
     #[arg(long)]
     pub(crate) run_card: Option<PathBuf>,
 
+    /// SLHA `param_card.dat` to evaluate the model at; absent → the model's
+    /// defaults under its restriction. The artifact records every parameter
+    /// the card moves, and `generate` evaluates at those values. Refused: a
+    /// width given as `Auto`, a non-zero value for a parameter the restriction
+    /// fixed to zero, a value other than one for a parameter it fixed to one, a
+    /// move that splits parameters the restriction merged, and an entry the
+    /// model has no parameter for. A mass or width the model
+    /// computes (MW in the SM) is ignored, with a warning when it disagrees.
+    #[arg(long)]
+    pub(crate) param_card: Option<PathBuf>,
+
     /// Output directory for the grid artifact (`<out>/grid.bin.zst`).
     #[arg(long, default_value = ".")]
     pub(crate) out: PathBuf,
@@ -615,7 +630,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     );
     tui::state::describe_process(&process);
 
-    let evaluated = EvaluatedModel::from_model(model.clone());
+    let (evaluated, moved) = bind_param_card(args.param_card.as_deref(), &model)?;
 
     let output = match rc.beam_mode() {
         _ if parsed.is_decay() => {
@@ -647,6 +662,16 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 
     info!("process:  {}", output.process);
     info!("model:    {} ({})", model_id.label(), model_id.digest);
+    if !moved.is_empty() {
+        info!(
+            "params:   {}",
+            moved
+                .iter()
+                .map(|m| format!("{} = {}", m.name, m.value))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     match observable {
         Observable::CrossSection => {
             if let PdfInput::Lhapdf {
@@ -734,7 +759,10 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         process: output.process,
         proc_card,
         model: model_id,
-        inputs: RunInputs::with_pdf(output.pdf),
+        inputs: RunInputs {
+            pdf: output.pdf,
+            params: moved,
+        },
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
@@ -762,6 +790,38 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     tui::result_line(format_args!("wrote {}", out_path.display()));
 
     Ok(())
+}
+
+/// The model evaluated at `--param-card`, and the parameters the card moved off
+/// the restricted defaults; the defaults, and none moved, without a card.
+fn bind_param_card(
+    path: Option<&Path>,
+    model: &Arc<UFOModel>,
+) -> Result<(EvaluatedModel, Vec<MovedParam>), CliError> {
+    let Some(path) = path else {
+        return Ok((EvaluatedModel::from_model(model.clone()), Vec::new()));
+    };
+    let card = ParamCard::from_file(path).map_err(|e| {
+        err(format!(
+            "cannot read the param card {}: {e}",
+            path.display()
+        ))
+    })?;
+    let bound =
+        bind_card(model.clone(), &card).map_err(|e| err(format!("{}: {e}", path.display())))?;
+    for ignored in &bound.ignored {
+        warn!(
+            "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
+             ignored",
+            path.display(),
+            ignored.block,
+            ignored.pdg,
+            ignored.param,
+            ignored.card,
+            ignored.computed,
+        );
+    }
+    Ok((bound.evaluated, bound.moved))
 }
 
 /// Proton beams (`lpp = 1`): load the PDF set and integrate over the flavour

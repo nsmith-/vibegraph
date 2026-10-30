@@ -93,10 +93,10 @@ wrong-model run write events at σ = 2061.99 pb against the banked 2022.62 pb
 ## What the identity does not cover
 
 - **The param card.** The digest identifies the restricted model, not parameter values
-  a run binds later. The CLI has no param-card option today and every run computes at
-  the restriction's defaults
-  ([backlog](../backlog/feature/cli-has-no-param-card-option.md)); when one is added, the
-  artifact has to record the card beside the identity.
+  a run binds later. `integrate --param-card` records the parameters a card moves off
+  the restriction's defaults beside the identity (`RunInputs::params`), and `generate`
+  rebinds from those; the digest pins the defaults the record is relative to
+  ([run inputs](../pipeline/run-inputs-in-the-artifact.md) §1).
 - **A self-contained replay.** A worker still needs the PDF set and, for a non-SM
   model, the UFO directory
   ([backlog](../backlog/feature/generate-artifact-not-self-contained.md)).

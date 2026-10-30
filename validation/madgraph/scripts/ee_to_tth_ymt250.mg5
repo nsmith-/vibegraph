@@ -1,0 +1,22 @@
+# MadGraph5 batch script: e+ e- > t t~ h at LO with the top Yukawa moved
+#
+# Why this exact process:
+#   - A cross section at a moved parameter point: the run's param card sets
+#     ymt = 250 GeV (block YUKAWA, code 6) and leaves MT at 173 GeV, so the
+#     t t~ h coupling moves while the top mass and every propagator stay put.
+#     vibegraph integrates it with `integrate --param-card` on this run's own
+#     Cards/param_card.dat.
+#   - The reweight oracle's ee_tth_ymt process, beams and hypothesis (ymt250),
+#     so the per-event reweight ratio and a fresh run at the card meet here.
+#
+# sqrt(s) = 1000 GeV > 2*MT + MH = 471 GeV so the channel is open.
+generate e+ e- > t t~ h
+output ee_to_tth_ymt250 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 500
+set ebeam2 500
+set use_syst False
+set yukawa 6 250
+done

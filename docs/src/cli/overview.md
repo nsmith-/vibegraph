@@ -28,10 +28,10 @@ The [command reference](reference.md) lists every option of each command;
 this page is about how they fit together. The physics behind each
 step is the subject of the [guided tour](../guide/01-pipeline.md).
 
-## Two cards
+## Cards
 
-`integrate` takes MadGraph's own card formats, so the same pair of files
-drives a MadGraph reference run unchanged.
+`integrate` takes MadGraph's own card formats, so the same files drive a
+MadGraph reference run unchanged.
 
 The **process card** picks the model and the process. A card with no
 `import model` line uses the Standard Model compiled into the binary;
@@ -77,6 +77,21 @@ vibegraph check-events events.lhe
 
 The process-card argument accepts `-` for a card on standard input.
 
+A third card is optional: **`--param-card`** takes an SLHA `param_card.dat`
+and evaluates the model at its values instead of the restriction's defaults.
+A gridpack's `Cards/param_card.dat` is the card to give, since it carries
+every edit MadGraph applied before the run. The artifact records each
+parameter the card moved off the defaults, and `generate` takes no param card:
+it evaluates at the recorded values, and writes the card it evaluated at into
+the event file's `<slha>` header block, where a shower reads masses and widths.
+`integrate` refuses a card it cannot honour: a width given as `Auto` (MadGraph
+computes those at launch and writes the number into the card it ran with), a
+non-zero value for a parameter the restriction zeroes, a value other than one
+for a parameter the restriction fixes to one, a value that splits two
+parameters the restriction merged, and an entry the model has no parameter
+for. A value for a mass or width the model computes, such as the W mass in
+the Standard Model, is ignored, as MadGraph ignores it, with a warning when it
+disagrees with the computed one.
 ## The artifact
 
 `grid.bin.zst` is a bincode + zstd snapshot of the adapted per-channel VEGAS
@@ -134,9 +149,10 @@ cache or point `--ufo-dir` at it.
 `import model <name>-<restrict>` selects `restrict_<restrict>.dat` from inside
 the model directory, the way MadGraph does, and the restriction's values become
 the model's parameter defaults: a run with no param card of its own computes at
-exactly the values MadGraph's generated `param_card.dat` would carry, and a
-parameter the restriction zeroes stays zero whatever a later card says, because
-the restriction is also what pruned the vertices. The SMEFT model the validation
+exactly the values MadGraph's generated `param_card.dat` would carry. A card
+given to `integrate --param-card` that sets a parameter the restriction zeroes
+to anything but zero is refused, because the restriction is also what pruned
+the vertices that parameter feeds. The SMEFT model the validation
 ladder gates is committed in the repository, so
 
 ```bash

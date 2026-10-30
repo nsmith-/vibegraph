@@ -11,6 +11,11 @@
 //! process, or a model whose files changed since the integration, would sample
 //! a plausible-looking wrong distribution, so each is refused.
 //!
+//! The parameter point is the artifact's too: `generate` takes no param card,
+//! and evaluates the model at the parameters `integrate --param-card` recorded
+//! as moved, every other one at the model's default. A reweight card's
+//! hypotheses are taken against that point.
+//!
 //! What `generate` does take is what only generation introduces: the event
 //! count, the generation seed, the output, the weight strategy and its
 //! options, the event normalisation, and a reweight card.
@@ -37,7 +42,8 @@ use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
 use vibegraph::runcard::EventNorm;
-use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::ufo::bind::bind_recorded;
+use vibegraph::ufo::UFOModel;
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
 use crate::assets;
@@ -372,7 +378,15 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         }));
     }
 
-    let evaluated = EvaluatedModel::from_model(model.clone());
+    // The parameter point the grid was trained at: the restricted defaults with
+    // the recorded moves applied. The digest check above has pinned the
+    // defaults, so this is the point the integration evaluated.
+    let evaluated = bind_recorded(model.clone(), &artifact.inputs.params).map_err(|e| {
+        err(format!(
+            "cannot bind the parameters recorded in {}: {e}; re-integrate",
+            args.artifact.display()
+        ))
+    })?;
     let reweight = reweight_launches(args, &parsed, &model)?;
 
     let pdf = if reads_parton_densities(&artifact, &parsed) {

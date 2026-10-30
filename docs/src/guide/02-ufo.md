@@ -91,10 +91,12 @@ chosen parameters to zero; MadGraph applies one when a card says
 parameters are zero. vibegraph bakes that into the parsed model: with the
 restricted parameters set to zero, every coupling that evaluates to zero is
 dropped, and every vertex left with no coupling is removed before any
-diagram is enumerated. The card's non-zero values carry no such weight; the
-`param_card.dat` read at run time supplies the values the run actually uses
-and may override them. The pruning is therefore part of the model's
-identity, not a runtime switch, and the parameter values are not.
+diagram is enumerated. The card's non-zero values carry no such weight: they
+become the defaults, and a `param_card.dat` given to `integrate --param-card`
+may override them, while a non-zero value for a zeroed parameter is refused.
+The pruning is therefore part of the model's identity, not a runtime switch,
+and the parameter values are not: the integration artifact records the ones
+the card moved beside the model's identity.
 
 ## The Standard Model, compiled in
 
