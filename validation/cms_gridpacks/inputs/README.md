@@ -35,10 +35,20 @@ A run without these settings will not reproduce MadGraph's σ, even with full co
 
 The σ values are the survey results from each tarball's `gridpack_generation.log`, the reference the CMS gridpack survey compares against. All three use PDF 325300 (`NNPDF31_nnlo_as_0118_mc_hessian_pdfas`), `dynamical_scale_choice = -1`, and `ell = e mu ta`. The τ pairs are in their own MadEvent P directory.
 
-The per-P-directory σ, summed from each P directory's channel `results.dat`:
+The per-P-directory σ of that survey, summed from each channel's `pilotrun_results.dat`. These sums reproduce the totals above exactly:
 
-| gridpack | `P0_qq_llqq` (e, μ) | `P0_qq_taptamqq` (τ) |
-|---|---|---|
-| `DYto2L-2Jets-EWK_Bin-MLL-50` | 9.0205 ± 0.066 | 4.0458 ± 0.046 |
-| `VBFto2L_Bin-MLL-50` | 5.3933 ± 0.036 | 2.1736 ± 0.027 |
-| `VBFto2L_Bin-MLL-4to50` | 88.498 ± 0.7 | 29.822 ± 0.9 |
+| gridpack | `P0_qq_llqq` (e, μ) | `P0_qq_taptamqq` (τ) | sum |
+|---|---|---|---|
+| `DYto2L-2Jets-EWK_Bin-MLL-50` | 9.0052 ± 0.028 | 4.1146 ± 0.013 | 13.120 ± 0.031 |
+| `VBFto2L_Bin-MLL-50` | 5.4057 ± 0.027 | 2.1686 ± 0.012 | 7.5743 ± 0.030 |
+| `VBFto2L_Bin-MLL-4to50` | 87.271 ± 0.37 | 30.377 ± 0.22 | 117.65 ± 0.44 |
+
+**A channel's `results.dat` is not the survey.** It is the gridpack's own test run (`GridRun_234567`, `gseed` 234567), a smaller integration whose sums differ:
+- DY gives 9.0205 ± 0.066 and 4.0458 ± 0.046;
+- VBF MLL-50 gives 5.3933 ± 0.036 and 2.1736 ± 0.027;
+- VBF MLL-4to50 gives 88.498 ± 0.70 and 29.822 ± 0.90.
+
+`mg_channels.csv` in each directory lists every channel's survey and test-run `results.dat` fields, and its survey χ²/dof from the channel log. `../mg_channels.py` writes it from an extracted tarball:
+```
+python3 -I validation/cms_gridpacks/mg_channels.py <extracted gridpack> --csv mg_channels.csv
+```
