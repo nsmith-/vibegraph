@@ -37,4 +37,5 @@ comment on the PR listing exactly what to run on the M3 host.
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
 | T1 | performance-dev (Opus) | — | diagnosis; candidate fix verified arithmetically on dumps | — (diagnosis for `bbx-ladder-excess-in-alpha-share-tails`) |
-| F1 | performance-dev (Opus) | T1 | 20 paired seeds × 2 rungs against T1's falsifier; validate before/after | `bbx-ladder-excess-in-alpha-share-tails` |
+| F1 | performance-dev (Opus) | T1 | 20 paired seeds × 2 rungs against T1's falsifier; validate before/after | — (the fix, floor selectable) |
+| F2 | performance-dev (Opus) | F1 | validate pair against F1's split-only tree; MLM pair if touched | `bbx-ladder-excess-in-alpha-share-tails` |
