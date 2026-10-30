@@ -1,13 +1,22 @@
 ---
 type: Session Report
-title: "T-V2 report: budget study and CMS VBF/EWK ladder (in progress)"
-description: "Campaign plan with measured per-run wall times, written before the long runs were launched."
+title: "T-V2 report: the CMS VBF/EWK σ has not converged at affordable budgets; a banked σ-level spine gate"
+description: "At about 1.1 ms a point, a 10-hour campaign reaches DY MLL-50 at two nested rungs (20 and 12 seeds) and the two VBF cards at one rung (5 seeds). The typical DY seed still climbs between the rungs (paired +0.54 ± 0.27 pb), seed χ²/dof is 3.5–14, and a γγ → ℓℓ corner carries 75% of one sample's weight. The pass condition is not met. A banked 16-seed σ test on u c > e+ e- u c, calibrated on 40 seeds per arm, fails with the spine withheld."
 status: draft
 tags: [phase-space, spine, vbf, cms, budget-ladder, sprint-e, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-29}
 ---
-The session brief is [T-V2](T-V2.md). This checkpoint holds the campaign plan
-only; the results follow when the campaign ends.
+The session brief is [T-V2](T-V2.md). The campaign plan below was written and
+committed (`ba9df8cf`) before the long runs were launched. What actually ran
+follows it.
+
+**Verdict.** The item's pass condition is **not met**. On DY MLL-50 the 5-seed
+median has not stopped moving between the two rungs. The seeds disagree with
+their own errors (χ²/dof 3.5–4.4), and a per-event check finds a region of
+small measure that the grids sample at w/w_max ≈ 1500. The VBF cards have
+one rung each, so a ladder cannot be read on them. No residual against
+MadGraph can be quoted as a convergence result. All that can be said is that
+the readings are within a few percent of MadGraph, with the numbers below.
 
 ## Campaign plan (written before launch)
 
@@ -74,6 +83,145 @@ VBF rung:
   `/home/user/wt/T` while the campaign runs. That slows some runs; the
   recorded wall per run says by how much. It does not change any σ: a fixed
   budget at a fixed seed gives the same artifact at any thread count.
+
+## What actually ran
+
+| phase | planned | ran | wall |
+|---|---|---|---|
+| pilots (seed 1, niter 4, all three cards) | 3 | 3 | 14:22–14:57 (with two aborted sizing runs) |
+| 1. DY R1, seeds 1–20 | 20 | 20 | 14:58–17:45, 386–935 s a run |
+| 2. VBF MLL-50 and MLL-4to50 R1, seeds 1–5 | 10 | 10 | 17:45–18:43, 294–393 s a run |
+| 3. DY R4 | seeds 1–20 | **seeds 1–12** | 18:43–00:20, 1106–2514 s a run |
+
+- **Total wall time:** 14:22 to 00:20, 10.0 h. The campaign itself ran
+  14:58 to 00:20, 9.4 h.
+- **Deviation: phase 3 stopped at 12 seeds, not 20.** From about 19:50 to
+  23:00 a sibling session's banked suite (`/home/user/wt/S`, load average 6–14)
+  shared the 4 cores. That pushed R4 runs from 1262 s to 1700–2500 s, so 20
+  seeds would have ended near 04:00. Seeds 13–20 are recorded in the results
+  file as `SKIPPED`. The skips were set when the slowdown was seen, and
+  11–12 were re-admitted once the host was free again.
+- The calibration and gates on `/home/user/wt/T` also shared the cores, from
+  about 15:00 to 16:00. Their effect shows in DY R1 seeds 1–5 (572–935 s,
+  against 386–441 s later).
+- **σ does not depend on any of this.** A fixed budget at a fixed seed gives
+  the same artifact whatever the load or thread count. DY seed 1's
+  iteration 3 reads 3.074097e-8 ± 2.395884e-9 in the pilot, in R1 and in R4
+  alike.
+
+**Moved parameters** the artifacts record (every run, all three cards; the
+`params:` line of `integrate`):
+`aEWM1 = 128.8253, Gf = 0.00001166379, ymt = 172.5, MT = 172.5, MZ = 91.15351, WT = 1.311, WZ = 2.493202, WW = 2.085, WH = 0.006382339`.
+- MW is computed by the model and is not in the list. No warning was printed,
+  so the card's 79.90685 agrees with the computed value at the card's
+  precision.
+- WH is recorded as moved: the card's 6.382339e-3 differs from the
+  restriction default.
+- The card writes MZ as 9.115351e+01. MadGraph read the same card, so it used
+  the same seven-digit value, not the customize card's 91.153509740726733.
+
+## Budget study (DY MLL-50; MG 13.12 ± 0.031 pb)
+
+The rungs are **nested**. At a seed, R4's first three iterations are R1's,
+bit for bit, so the rung difference per seed is a paired quantity.
+
+| rung | seeds | mean (pb) | median | seed sd | sd/√n | mean quoted err | sd / quoted | seed χ²/dof | mean/MG | median/MG |
+|---|---|---|---|---|---|---|---|---|---|---|
+| R1 (10⁴ × 3) | 1–20 | 12.74 | 12.38 | 1.72 | 0.38 | 1.26 | 1.37 | 4.37 | 0.971 ± 0.029 | 0.944 |
+| R4 (10⁴ × 12) | 1–12 | 12.90 | 12.88 | 0.64 | 0.18 | 0.55 | 1.17 | 3.45 | 0.983 ± 0.014 | 0.982 |
+
+Per seed (pb), R1 → R4:
+1: 11.97 → 12.58, 2: 14.94 → 14.06, 3: 11.80 → 11.93, 4: 14.00 → 13.24,
+5: 12.13 → 12.09, 6: 11.47 → 12.63, 7: 11.35 → 12.58, 8: 12.94 → 13.13,
+9: 10.68 → 13.23, 10: 11.55 → 12.35, 11: 12.98 → 13.51, 12: 12.49 → 13.42.
+R1 seeds 13–20: 11.56, 12.45, 13.58, **18.10 ± 6.0**, 12.73, 10.93, 14.74,
+12.32.
+
+Paired over seeds 1–12, R4 − R1:
+
+| quantity | R1 mean / median | R4 mean / median | paired difference |
+|---|---|---|---|
+| total | 12.36 / 12.05 | 12.90 / 12.88 | **+0.54 ± 0.27** (sd 0.93) |
+| massless part | 8.46 / 8.43 | 8.60 / 8.40 | +0.14 ± 0.15 |
+| τ part | 3.90 / 3.60 | 4.30 / 4.26 | **+0.40 ± 0.16** |
+
+Reading it against the measured spread:
+- **The quoted errors understate the spread at both rungs** (sd/quoted 1.37
+  and 1.17, seed χ²/dof 4.4 and 3.5). The R1 seeds are heavy-tailed: seed 16
+  reads 18.1 ± 6.0, and seeds 2, 4 and 19 read 14–15 with errors of 1.8–2.5.
+- **The failure signature is present.** Ten of twelve seeds rise from R1 to
+  R4. The two that fall (2 and 4) are R1's high outliers. That is the typical
+  seed climbing while the tail is trimmed, the pattern of a region found more
+  often at the larger budget. The paired climb is 2.0σ on the total and 2.5σ
+  on the τ part.
+- **A 5-seed ladder could not resolve convergence at these rungs.** R4's
+  measured per-seed sd is 0.64 pb, so five seeds resolve the median to about
+  0.3–0.35 pb (2.5%). The median moved by 0.83 pb between R1's seeds 1–12 and
+  R4's. R4's 5-seed median (12.58) and its 12-seed median (12.88) differ by
+  about one 5-seed resolution.
+- **R4 against MadGraph:** 0.983 ± 0.014 on the total (pull −1.2 on the
+  spread). The parts move in opposite directions: massless 8.60 ± 0.15
+  against MadGraph's P0_qq_llqq 9.02 ± 0.07 (0.953), and τ 4.30 ± 0.10
+  against P0_qq_taptamqq 4.05 ± 0.05 (1.062). These errors are spread-based,
+  from 12 seeds at χ²/dof 3.5, and the τ part is still climbing. Neither part
+  is a converged residual.
+
+## Ladder on the two VBF cards (R1 only, 5 seeds)
+
+| card | MG σ (pb) | mean (pb) | median | seed sd | sd/√5 | seed χ²/dof | mean/MG | median/MG |
+|---|---|---|---|---|---|---|---|---|
+| DY MLL-50 (R1, seeds 1–5) | 13.12 ± 0.031 | 12.97 | 12.13 | 1.41 | 0.63 | 1.94 | 0.988 ± 0.048 | 0.924 |
+| DY MLL-50 (R4, seeds 1–5) | 13.12 ± 0.031 | 12.78 | 12.58 | 0.88 | 0.39 | 6.16 | 0.974 ± 0.030 | 0.959 |
+| VBF MLL-50 | 7.574 ± 0.030 | 7.875 | 7.906 | 0.925 | 0.414 | 2.02 | 1.040 ± 0.055 | 1.044 |
+| VBF MLL-4to50 | 117.6 ± 0.44 | 131.6 | 110.9 | 46.6 | 20.9 | 14.21 | 1.119 ± 0.177 | 0.943 |
+
+Per seed (pb):
+- VBF MLL-50: 8.25 ± 1.0, 6.53 ± 0.51, 9.06 ± 1.3, 7.91 ± 1.7, 7.63 ± 0.94.
+- VBF MLL-4to50: 93.1 ± 8.9, 95.1 ± 6.4, 158.8 ± 19, 110.9 ± 12,
+  **200.3 ± 101**.
+
+Per part (mean of 5 seeds against MadGraph's per-P σ):
+
+| card | massless / P0_qq_llqq | τ / P0_qq_taptamqq |
+|---|---|---|
+| VBF MLL-50 | 4.98 / 5.39 (0.923) | 2.90 / 2.17 (1.334) |
+| VBF MLL-4to50 | 100.7 / 88.5 (1.138) | 30.9 / 29.8 (1.038) |
+
+- **VBF MLL-4to50 is the worst-behaved card.** Seed χ²/dof is 14.2, and one
+  seed reads 200 ± 100. The pilot's last iteration read iteration χ²/dof 55.7.
+  94 of its 136 channels accept less than one point in four. The DY and
+  VBF MLL-50 runs print no such warning.
+- **The VBF MLL-50 τ part reads 1.33 of MadGraph (+3.3σ on 5 seeds).** The τ
+  part is also +6% on DY R4. One hypothesis was checked and ruled out: the
+  `$$ h` card's diagram counts are 48/35/48 for τ, equal to the electron
+  counts, so the h → ττ diagrams are removed as MadGraph's `$$` removes them.
+  The DY `$ h` card has 50/37/50. Nothing else was checked; see Found.
+- The VBF medians span 0.94–1.04 of MadGraph. With one rung, they say
+  nothing about convergence.
+
+## What the brief's pass condition needs, and what would close it
+
+- **Size of the residual.** At R4 on DY it is −1.7% ± 1.4% on the total, but
+  −4.7% on the massless part and +6.2% on the τ part, with seed χ²/dof 3.5 and
+  a paired climb still under way. On the VBF cards, at R1, it is +4% ± 5.5%
+  and +12% ± 18%.
+- **Consistency across cards.** None can be established at one rung. The
+  only shared feature is the heavy tail: seed χ²/dof is above 2 on every
+  card at every rung.
+- **Next per-event checks**, in order:
+  1. The γγ → ℓℓ corner below. Locate the overweight event's point in its
+     channel. Compare that channel's density with |M|² there. Then rerun R1 on
+     DY with the pole floor moved (a `DEFAULT_POLE_SCALE` scan, as T-F1 did on
+     `u c`). If the climb is this corner being under-mapped, the R1 median
+     should move with the floor.
+  2. Pin the per-beam μF against MadGraph's own record on a banked
+     `p p > l+ l- j j` run with the dynamical scale (T-V1's Found). This
+     corner sits at quark pT 2–6 GeV, right above the floor.
+  3. The τ part: a per-part ladder on a τ-only card (`p p > ta+ ta- j j`),
+     where the 5-seed spread is smaller.
+- **Budget.** A converged ladder on these cards needs a much larger budget:
+  R16 (48 iterations, about 80 min a run) or higher, at 20 seeds on two rungs.
+  That is 25–50 h on this host, or a host with more cores.
 
 ## The committed σ-level test
 
@@ -243,6 +391,110 @@ What this shows and what it does not:
   not explain a factor of 1500: three rungs, plus a VEGAS grid that never saw
   the corner, would be needed.
 
+## Gates (on `/home/user/wt/T`)
+
+These ran on the tree of `9e7ab447`. Later commits touch only
+`research/kb/`. Logs: `T-V2-gate-lint.log`, `T-V2-test-ws.log`,
+`T-V2-gate-spine16-final.log` in the scratchpad.
+
+```
+$ cargo fmt --all --check                                                       FMT_EXIT=0
+$ cargo clippy -j 2 --workspace --all-targets -- -D warnings                    CLIPPY_EXIT=0
+$ cargo clippy -j 2 --workspace --all-targets --features vibegraph/extended-validation -- -D warnings
+                                                                                CLIPPY_EXT_EXIT=0
+$ cargo clippy -j 2 -p vibegraph-lib --all-targets --features extended-validation -- -D warnings
+                                                                                CLIPPY_EXT_LIB_EXIT=0
+$ cargo test -j 2 --workspace --no-fail-fast -- --test-threads 2                TEST_EXIT=0
+  45 "test result: ok" lines, 0 FAILED; 1710 passed, 0 failed, 22 ignored
+$ cargo test -p vibegraph-lib --profile release-debug --config 'profile.release-debug.debug=0' \
+    --features extended-validation --test spine_sigma -- --nocapture          (host idle, 00:21)
+  16 seeds: mean 1.799259e-2 pb, spread 1.88e-5 (rel 1.05e-3), seed χ²/dof 1.06, 37 s
+  test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 37.07s
+$ python3 scripts/kb.py lint
+  1002 concepts, 333 backlog items; 0 errors, 4 warnings
+```
+
+- **Clippy.** The fourth clippy line was added because `vibegraph/extended-validation`
+  is the CLI crate's feature. It is the library's own feature that compiles
+  `spine_sigma`.
+- **kb lint.** It first failed with 1 error: the sessions `index.md` was stale
+  after the plan commit `ba9df8cf`. `python3 scripts/kb.py index` fixed it, in
+  `9e7ab447`. The 4 warnings are pre-existing `state: blocked` backlog items.
+- **Runtime.** The idle-host run is 37 s, bit-identical to the shared-host run
+  (81 s).
+- **Not run:** the rest of the banked layer (`pixi` is not installed, and
+  `validation/validate.sh` was not run). The change adds a test target and a
+  manifest row; it touches no amplitude, map or integrator code.
+
+## Corrections to the brief
+
+- **"Run with `VIBEGRAPH_FETCH_CONSENT=1` once, to fetch it into the cache."**
+  It was not needed: 325300 was already in `~/.vibegraph/pdf` from T-V1. The
+  CLI's consent flag is `-y`, and every run passed it.
+- **"Measure one run per card, then plan a campaign that fits in about 10
+  hours."** The brief's design does not fit. At 1.1 ms a point and the
+  142-channel 512-point floor (8–9 × 10⁴ points an iteration whatever
+  `--neval` is), the cheapest rungs cost 7 and 21 minutes a run. 20 + 20 DY
+  seeds plus 5 seeds × 2 rungs × 2 VBF cards come to about 21 h. The plan
+  kept the priority order and dropped the second VBF rung.
+- **The ladder's "rungs × 4 apart" rule in iterations nests the rungs.** At a
+  fixed seed, R4 extends R1, so rung-to-rung comparisons are paired. The
+  table reads them that way. Independent rungs would need disjoint seed sets.
+- **"until the 5-seed median stops moving within the measured spread."** At
+  R4 the measured spread puts the 5-seed median's resolution at about 2.5%.
+  So "stopped moving" cannot be read below that, whatever the budget, without
+  more seeds.
+
+## Found
+
+- **A γγ → ℓℓ corner dominates the DY tail at R1.**
+  - *Evidence:* the 600-event sample from DY R1 seed 1. Overweight events
+    carry 75% of the sample's σ, and the top event has w/w_max = 1547. It is
+    `u u > e+ e- u u` with both quarks at |y| > 5 and pT 3.2 / 5.1 GeV,
+    t = −10.7 and −28.9 GeV², soft leptons, and mℓℓ = 59.5. The sample's σ is
+    +270% on its integration's.
+  - *To close:* locate the point in its channel and compare density with |M|²
+    there. Then scan `DEFAULT_POLE_SCALE` on DY R1, as T-F1 did on `u c`, and
+    see whether the R1 → R4 climb follows the floor. Three soft rungs sit at
+    or near the 10 GeV² pole floor here.
+- **The τ part reads high where the total does not.**
+  - *Evidence:* DY R4 τ part 4.30 ± 0.10 against MadGraph's 4.05 ± 0.05, and
+    still climbing (+0.40 ± 0.16 pb from R1, paired). VBF MLL-50 R1 τ part is
+    2.90 ± 0.22 against 2.17 ± 0.03. The massless parts read low (0.95, 0.92).
+    The `$$ h` diagram removal matches MadGraph's (48/35/48 τ diagrams, as for
+    electrons).
+  - *To close:* a τ-only card (`p p > ta+ ta- j j`, the same run card) at two
+    rungs × 20 seeds, against MadGraph's P0_qq_taptamqq. Check the τ part's
+    channel set: 74 channels on DY under `$ h` and 68 on VBF under `$$ h`,
+    against 68 for the massless part on both. The extra six on DY were not
+    identified.
+- **The LHE record has no per-beam μF.**
+  - *Evidence:* SCALUP is max(μF₁, μF₂). The 2 GeV veto acts on each beam, so
+    the floor edge can only be shown through a proxy (softest-quark pT), and
+    the proxy is wrong for s-channel `q q̄` pairs (5 of 600 events).
+  - *To close:* write MadGraph's per-beam record (the `<mgrwt>`
+    `<pdfrwt beam=…>` scale), or a debug dump of `EventScales::mu_f`, so the
+    floor can be pinned per event against MadGraph.
+- **Per-point cost and the per-channel floor set the ladder's price.**
+  - *Evidence:* 1.1 ms a point at 4 threads on these cards (766
+    subprocesses, about 3200 (group, diagram) channels). 139 of 142 channels
+    sit at the 512-point floor, so `--neval` below about 8 × 10⁴ does nothing.
+    The two α-surveys alone cost 130 s a run.
+  - *To close:* profile a DY point (`scripts/profile.sh`) to see whether the
+    matrix elements or the channel densities dominate. A converged CMS ladder
+    needs a 25–50 h campaign, or a bigger host.
+- **`generate` is serial and slow on these cards.**
+  - *Evidence:* 600 events took 24 min at efficiency 1.85e-3 (324k trials,
+    1 thread).
+  - *To close:* parallelise the accept/reject pass, or document the cost
+    next to `-j` in `generate`.
+- **A sibling session's load is not visible to a campaign's plan.**
+  - *Evidence:* phase 3's runs took 1.7–1.9× longer while
+    `/home/user/wt/S`'s banked suite ran, and that cost 8 of the 20 planned R4
+    seeds.
+  - *To close (process):* serialise heavy campaigns on a shared container,
+    or give each session a core budget.
+
 ## Raw result lines (driver output, one per run)
 
 ```
@@ -279,4 +531,24 @@ vbf4-r1-s2 card=VBFto2L_Bin-MLL-4to50 seed=2 neval=10000 niter=3 rc=0 wall=306s 
 vbf4-r1-s3 card=VBFto2L_Bin-MLL-4to50 seed=3 neval=10000 niter=3 rc=0 wall=334s | σ = 158.780579 ± 18.758837 pb
 vbf4-r1-s4 card=VBFto2L_Bin-MLL-4to50 seed=4 neval=10000 niter=3 rc=0 wall=319s | σ = 110.927985 ± 12.393580 pb
 vbf4-r1-s5 card=VBFto2L_Bin-MLL-4to50 seed=5 neval=10000 niter=3 rc=0 wall=294s | σ = 200.281889 ± 100.525222 pb
+dy-r4-s1 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=1 neval=10000 niter=12 rc=0 wall=1262s | σ = 12.577028 ± 0.478981 pb
+dy-r4-s2 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=2 neval=10000 niter=12 rc=0 wall=1443s | σ = 14.055480 ± 1.024113 pb
+dy-r4-s17 SKIPPED: not run, the campaign is capped near 10 h
+dy-r4-s18 SKIPPED: not run, the campaign is capped near 10 h
+dy-r4-s19 SKIPPED: not run, the campaign is capped near 10 h
+dy-r4-s20 SKIPPED: not run, the campaign is capped near 10 h
+dy-r4-s3 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=3 neval=10000 niter=12 rc=0 wall=1703s | σ = 11.929993 ± 0.232501 pb
+dy-r4-s4 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=4 neval=10000 niter=12 rc=0 wall=2367s | σ = 13.242881 ± 0.536947 pb
+dy-r4-s13 SKIPPED: not run, the campaign is capped near 10 h (host shared with a sibling's banked suite from about 19:50)
+dy-r4-s14 SKIPPED: not run, the campaign is capped near 10 h (host shared with a sibling's banked suite from about 19:50)
+dy-r4-s15 SKIPPED: not run, the campaign is capped near 10 h (host shared with a sibling's banked suite from about 19:50)
+dy-r4-s16 SKIPPED: not run, the campaign is capped near 10 h (host shared with a sibling's banked suite from about 19:50)
+dy-r4-s5 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=5 neval=10000 niter=12 rc=0 wall=2294s | σ = 12.089536 ± 0.231996 pb
+dy-r4-s6 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=6 neval=10000 niter=12 rc=0 wall=2514s | σ = 12.625261 ± 0.436599 pb
+dy-r4-s7 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=7 neval=10000 niter=12 rc=0 wall=2315s | σ = 12.575855 ± 0.426379 pb
+dy-r4-s8 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=8 neval=10000 niter=12 rc=0 wall=1815s | σ = 13.129231 ± 0.628075 pb
+dy-r4-s9 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=9 neval=10000 niter=12 rc=0 wall=1135s | σ = 13.234986 ± 0.743730 pb
+dy-r4-s10 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=10 neval=10000 niter=12 rc=0 wall=1106s | σ = 12.347596 ± 0.273219 pb
+dy-r4-s11 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=11 neval=10000 niter=12 rc=0 wall=1134s | σ = 13.508101 ± 0.926678 pb
+dy-r4-s12 card=DYto2L-2Jets-EWK_Bin-MLL-50 seed=12 neval=10000 niter=12 rc=0 wall=1136s | σ = 13.424739 ± 0.611322 pb
 ```
