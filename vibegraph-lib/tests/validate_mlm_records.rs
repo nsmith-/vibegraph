@@ -51,7 +51,11 @@
 //!
 //! # What this cannot see
 //!
-//! * The beam order: it is an input here, never a result.
+//! * In the replay, the beam order, each chain's first code and its `x`:
+//!   they are read off MadEvent's record, so the replay's fields there
+//!   compare an input with itself. `head_census` gates the beam order and
+//!   the first codes against the process directories' `leshouche.inc`
+//!   instead.
 //! * Anything the header already fixes about the clustering: a wrong
 //!   clustering that still reproduces `SCALUP`, `AQCDUP` and `pt_clust` is
 //!   taken as a candidate. The fields compared are the ones the header does
@@ -67,7 +71,6 @@
 //!   which events those are. They are among the events with no candidate.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -88,6 +91,8 @@ use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 mod common;
+
+use common::banked_lhe::{banked_text, banner_card};
 
 /// The rows written with `use_syst = T` whose `<mgrwt>` carries the MLM
 /// terms or the `xqcut` clustering.
@@ -113,24 +118,6 @@ const HEADER_AGREEMENT: f64 = 1e-6;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
-}
-
-fn banked_text(row: &str) -> String {
-    let path = root()
-        .join("validation/madgraph/output")
-        .join(row)
-        .join("Events/run_01/unweighted_events.lhe.gz");
-    let file = std::fs::File::open(&path).unwrap_or_else(|e| {
-        panic!(
-            "{}: {e}; fetch the banked runs with `pixi run fetch-refdata`",
-            path.display()
-        )
-    });
-    let mut text = String::new();
-    flate2::read::GzDecoder::new(file)
-        .read_to_string(&mut text)
-        .expect("a gzip LHE file");
-    text
 }
 
 /// Whether two values printed at `E15.8` are equal or one unit of the last
@@ -669,13 +656,6 @@ fn compare_event(
     Some(out)
 }
 
-/// The `<MGRunCard>` text the banner records.
-fn banner_card(text: &str) -> String {
-    let start = text.find("<MGRunCard>").expect("an <MGRunCard>") + "<MGRunCard>".len();
-    let end = text.find("</MGRunCard>").expect("</MGRunCard>");
-    text[start..end].replace("<![CDATA[", "").replace("]]>", "")
-}
-
 /// Every subprocess a file's events name, in the matrix element's leg order.
 fn event_legs(file: &LheFile) -> Vec<Vec<i64>> {
     let mut keys: Vec<Vec<i64>> = Vec::new();
@@ -810,16 +790,8 @@ const STALE_HEADS: [(&str, usize); 4] = [
 /// `(directory, IPROC)`, each holding its `IDUP(i, IPSEL, IPROC)` rows; empty
 /// where the bundle carries no `leshouche.inc`.
 fn idup_tables(name: &str) -> Vec<Vec<Vec<i64>>> {
-    let subprocesses = root()
-        .join("validation/madgraph/output")
-        .join(name)
-        .join("SubProcesses");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
-        .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
-        .unwrap_or_default();
-    dirs.sort();
     let mut tables = Vec::new();
-    for dir in dirs {
+    for dir in process_directories(name) {
         let Ok(text) = std::fs::read_to_string(dir.join("leshouche.inc")) else {
             continue;
         };
@@ -848,8 +820,11 @@ fn idup_tables(name: &str) -> Vec<Vec<Vec<i64>>> {
 fn head_census(name: &str, file: &LheFile, failures: &mut Vec<String>) {
     let tables = idup_tables(name);
     if tables.is_empty() {
-        println!("{name}: no leshouche.inc in the bundle; head census not run");
-        return;
+        vibegraph::validation::require(
+            GATE,
+            "the process directories' leshouche.inc",
+            format!("validation/madgraph/output/{name}/SubProcesses"),
+        );
     }
     let find = |legs: &[i64]| tables.iter().position(|t| t.iter().any(|r| r == legs));
     let (mut order_ok, mut compared, mut stale, mut foreign) = (0usize, 0usize, 0usize, 0usize);
@@ -919,6 +894,29 @@ fn head_census(name: &str, file: &LheFile, failures: &mut Vec<String>) {
     }
 }
 
+/// The gate's name, for an input it finds missing.
+const GATE: &str = "the_mgrwt_record_is_madevents_on_every_banked_mlm_event";
+
+/// Every entry of a row's `SubProcesses` directory, sorted.
+fn process_directories(name: &str) -> Vec<PathBuf> {
+    let subprocesses = root()
+        .join("validation/madgraph/output")
+        .join(name)
+        .join("SubProcesses");
+    let entries = std::fs::read_dir(&subprocesses).unwrap_or_else(|e| {
+        vibegraph::validation::require(
+            GATE,
+            "the banked process directories",
+            format!("{}: {e}", subprocesses.display()),
+        )
+    });
+    let mut dirs: Vec<PathBuf> = entries
+        .map(|e| e.expect("a directory entry reads").path())
+        .collect();
+    dirs.sort();
+    dirs
+}
+
 #[test]
 fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
     let mut failures = Vec::new();
@@ -945,16 +943,8 @@ fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
 
         // The same replay on MadGraph's generated forests, where the bundle
         // carries the process directories' `configs.inc`.
-        let subprocesses = root()
-            .join("validation/madgraph/output")
-            .join(name)
-            .join("SubProcesses");
         let mut directories: Vec<Generated> = Vec::new();
-        let mut entries: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
-            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
-            .unwrap_or_default();
-        entries.sort();
-        for dir in entries {
+        for dir in process_directories(name) {
             if dir.join("configs.inc").is_file() && dir.join("config_subproc_map.inc").is_file() {
                 directories.push(Generated::load(&dir, &row));
             }

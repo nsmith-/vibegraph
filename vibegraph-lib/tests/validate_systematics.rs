@@ -12,9 +12,9 @@
 //! digit, and the fraction equal is reported.
 //!
 //! What this cannot see: how this crate *fills* the record (the gate reads
-//! MadGraph's), the MLM emission and chain terms (no banked MLM weights), any
-//! set but 247000 with member-level couplings, and the dynamical-scale frame
-//! and `scalefact` on the seven runs whose final states are massless at
+//! MadGraph's), any set but 247000 with member-level couplings unless CMS's
+//! 880 members are on disk (below), and the dynamical-scale frame and
+//! `scalefact` on the seven runs whose final states are massless at
 //! `scalefact = 1` — the third negative control below measures exactly that
 //! blindness.
 //!
@@ -32,7 +32,6 @@
 //! where the 880 members are on disk, every weight.
 
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -49,6 +48,10 @@ use vibegraph::systematics::record::{LoRecord, RecordKinematics};
 use vibegraph::systematics::request::{Axis, DynScale, RequestSource, VariationRequest};
 use vibegraph::systematics::weight::{lo_weight, Variation, VariationPdf};
 use vibegraph::ufo::identity::digest_bytes;
+
+mod common;
+
+use common::banked_lhe::{banked_events_dir, banked_text, banner_card, read_lhe};
 
 /// The banked runs carrying MadGraph's default systematics weights.
 const RUNS: [&str; 12] = [
@@ -115,50 +118,6 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-fn banked_text(run: &str) -> String {
-    let path = root()
-        .join("validation/madgraph/output")
-        .join(run)
-        .join("Events/run_01/unweighted_events.lhe.gz");
-    let file = std::fs::File::open(&path).unwrap_or_else(|e| {
-        panic!(
-            "{}: {e}; fetch the banked runs with `pixi run fetch-refdata`",
-            path.display()
-        )
-    });
-    let mut text = String::new();
-    flate2::read::GzDecoder::new(file)
-        .read_to_string(&mut text)
-        .expect("a gzip LHE file");
-    text
-}
-
-/// An event file, plain or gzipped.
-fn read_lhe(path: &Path) -> String {
-    let file = std::fs::File::open(path).unwrap_or_else(|e| {
-        panic!(
-            "{}: {e}; fetch the banked runs with `pixi run fetch-refdata`",
-            path.display()
-        )
-    });
-    let mut text = String::new();
-    if path.extension().is_some_and(|e| e == "gz") {
-        flate2::read::GzDecoder::new(file).read_to_string(&mut text)
-    } else {
-        std::io::BufReader::new(file).read_to_string(&mut text)
-    }
-    .expect("the file reads");
-    text
-}
-
-fn banked_events_dir(run: &str, events: &str) -> PathBuf {
-    root()
-        .join("validation/madgraph/output")
-        .join(run)
-        .join("Events")
-        .join(events)
-}
-
 /// The module arguments of the banked `command.txt`: every `--` option on
 /// the line that runs `systematics.py`, less the two that name output and
 /// tools.
@@ -180,13 +139,6 @@ fn initrwgt_block(text: &str) -> String {
     let start = text.find("<initrwgt>").expect("an <initrwgt> block");
     let end = text.find("</initrwgt>").expect("</initrwgt>") + "</initrwgt>\n".len();
     text[start..end].to_string()
-}
-
-/// The `<MGRunCard>` text the banner records.
-fn banner_card(text: &str) -> String {
-    let start = text.find("<MGRunCard>").expect("an <MGRunCard>") + "<MGRunCard>".len();
-    let end = text.find("</MGRunCard>").expect("</MGRunCard>");
-    text[start..end].replace("<![CDATA[", "").replace("]]>", "")
 }
 
 fn refuse(request: &DownloadRequest) -> Result<Box<dyn Fetch>, String> {
@@ -217,17 +169,6 @@ fn central(tiers: &Tiers) -> LoadedPdf {
 fn writer(request: &VariationRequest, tiers: &Tiers, central: &LoadedPdf) -> Writer {
     let resolved = resolve(request, central, tiers, &refuse).expect("the request resolves");
     Writer::new(request, &resolved).expect("the request expands")
-}
-
-/// The header this crate writes for `writer`, as the block MadGraph writes.
-fn our_block(writer: &Writer) -> String {
-    let mut block = String::from("<initrwgt>\n");
-    for line in writer.header_lines() {
-        block.push_str(line);
-        block.push('\n');
-    }
-    block.push_str("</initrwgt>\n");
-    block
 }
 
 /// The request each MadGraph entry point reads off the banked card: the
@@ -432,6 +373,8 @@ struct RunResult {
     alps_events: u64,
     alps_still: u64,
     alps_moved: u64,
+    /// The weights classed `alps`, which the two counts above read.
+    alps_weights: u64,
 }
 
 fn measure(run: &str, writer: &Writer) -> RunResult {
@@ -526,7 +469,10 @@ fn measure_text(
             r
         })
         .collect();
-    let mut total = RunResult::default();
+    let mut total = RunResult {
+        alps_weights: classes.iter().filter(|c| **c == "alps").count() as u64,
+        ..RunResult::default()
+    };
     for r in per_event {
         total.weights += r.weights;
         total.exact += r.exact;
@@ -565,7 +511,7 @@ fn the_header_is_madgraphs_byte_for_byte_from_every_entry_point() {
             "{run}: the banked block moved"
         );
         for (entry, request) in entry_points(&text) {
-            let ours = our_block(&writer(&request, &tiers, &central));
+            let ours = block_of(writer(&request, &tiers, &central).header_lines());
             let identical = ours == banked;
             println!(
                 "header {run:<20} {entry:<12} sha256 {} identical={identical}",
@@ -612,7 +558,11 @@ fn every_banked_weight_is_reproduced_and_the_controls_detect() {
                 r.weights, r.beyond
             ));
         }
-        for (name, by_class) in &r.controls {
+        for (_, name) in CONTROLS {
+            let Some(by_class) = r.controls.get(name) else {
+                failures.push(format!("{run}: control '{name}' was not evaluated"));
+                continue;
+            };
             let worst = by_class.values().copied().fold(0.0f64, f64::max);
             let detected = worst > DETECTION;
             let classes = by_class
@@ -624,7 +574,7 @@ fn every_banked_weight_is_reproduced_and_the_controls_detect() {
                 "    control {name:<28} {} (max {worst:.3e}; {classes})",
                 if detected { "DETECTED" } else { "blind   " }
             );
-            let expected = match *name {
+            let expected = match name {
                 "setscales.f dynamical scale" => FRAME_DETECTED.contains(&run),
                 _ => true,
             };
@@ -726,6 +676,17 @@ fn module_gate(
         ));
     }
     if request.alps.iter().any(|&a| a != 1.0) {
+        // Each factor off one, varied alone, is one weight: the two counts
+        // below read those weights, and over none they would hold vacuously.
+        let alone = !request.together.iter().any(|b| b.contains(&Axis::Alps));
+        let factors = request.alps.iter().filter(|&&a| a != 1.0).count() as u64;
+        if !alone || r.alps_weights != factors {
+            failures.push(format!(
+                "{label}: {} weights vary --alps alone, the request's {factors} factors off one \
+                 (varied alone: {alone})",
+                r.alps_weights
+            ));
+        }
         if r.alps_still != events - r.alps_events {
             failures.push(format!(
                 "{label}: --alps moved a weight on {} events with nothing to vary",
@@ -748,7 +709,11 @@ fn module_gate(
             ));
         }
     }
-    for (name, by_class) in &r.controls {
+    for (_, name) in controls {
+        let Some(by_class) = r.controls.get(name) else {
+            failures.push(format!("{label}: control '{name}' was not evaluated"));
+            continue;
+        };
         let worst = by_class.values().copied().fold(0.0f64, f64::max);
         let detected = worst > DETECTION;
         println!(
@@ -984,6 +949,7 @@ fn tiers_at(path: &Path) -> (Tiers, tempfile::TempDir) {
     )
 }
 
+/// `<initrwgt>` lines between the tags, as the block MadGraph writes.
 fn block_of(lines: &[String]) -> String {
     let mut block = String::from("<initrwgt>\n");
     for line in lines {
