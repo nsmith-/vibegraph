@@ -626,6 +626,31 @@ fn banked_alpha_s() -> f64 {
     })
 }
 
+/// The `(id, value text)` of every `<wgt>` line of an event, in order.
+fn written_weights(event: &LheEvent) -> Vec<(String, String)> {
+    event
+        .trailer
+        .iter()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("<wgt id='")?;
+            let (id, rest) = rest.split_once("'>")?;
+            Some((
+                id.to_string(),
+                rest.strip_suffix("</wgt>")?.trim().to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// How many units of the eighth significant digit `ours` (a weight as
+/// [`wgt_text`](vibegraph::systematics::format::wgt_text) spells it) is from
+/// the file's `text`.
+fn units_apart(ours: &str, text: &str) -> f64 {
+    let theirs: f64 = text.parse().unwrap();
+    let unit = 10f64.powi(text.split_once('e').unwrap().1.parse::<i32>().unwrap() - 7);
+    ((ours.parse::<f64>().unwrap() - theirs).abs() / unit).round()
+}
+
 /// The writer of MadGraph's default request on the banked set, read from
 /// `validation/pdf` alone.
 fn default_systematics_writer() -> vibegraph::systematics::plan::Writer {
@@ -723,18 +748,7 @@ fn the_systematics_weights_round_trip_through_the_written_file() {
         let record = LoRecord::parse(&event.trailer)
             .expect("the record parses")
             .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
-        let written: Vec<(String, String)> = event
-            .trailer
-            .iter()
-            .filter_map(|l| {
-                let rest = l.strip_prefix("<wgt id='")?;
-                let (id, rest) = rest.split_once("'>")?;
-                Some((
-                    id.to_string(),
-                    rest.strip_suffix("</wgt>")?.trim().to_string(),
-                ))
-            })
-            .collect();
+        let written = written_weights(event);
         let ids: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(
             ids,
@@ -745,10 +759,10 @@ fn the_systematics_weights_round_trip_through_the_written_file() {
             .expect("the weights evaluate");
         for (w, (_, text)) in again.iter().zip(&written) {
             let ours = vibegraph::systematics::format::wgt_text(*w);
-            let theirs: f64 = text.parse().unwrap();
-            let unit = 10f64.powi(text.split_once('e').unwrap().1.parse::<i32>().unwrap() - 7);
-            let apart = ((ours.parse::<f64>().unwrap() - theirs).abs() / unit).round();
-            assert!(apart <= 1.0, "event {n}: {ours} written as {text}");
+            assert!(
+                units_apart(&ours, text) <= 1.0,
+                "event {n}: {ours} written as {text}"
+            );
             weights += 1;
             exact += usize::from(ours == *text);
         }
@@ -1482,14 +1496,9 @@ fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() 
         let record = LoRecord::parse(&event.trailer)
             .expect("the record parses")
             .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
-        let written: Vec<String> = event
-            .trailer
-            .iter()
-            .filter_map(|l| {
-                let rest = l.strip_prefix("<wgt id='")?;
-                let (_, rest) = rest.split_once("'>")?;
-                Some(rest.strip_suffix("</wgt>")?.trim().to_string())
-            })
+        let written: Vec<String> = written_weights(event)
+            .into_iter()
+            .map(|(_, text)| text)
             .collect();
         assert_eq!(written.len(), writer.ids().len(), "event {n}");
         let again = writer
@@ -1497,10 +1506,10 @@ fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() 
             .expect("the weights evaluate");
         for (w, text) in again.iter().zip(&written) {
             let ours = vibegraph::systematics::format::wgt_text(*w);
-            let theirs: f64 = text.parse().unwrap();
-            let unit = 10f64.powi(text.split_once('e').unwrap().1.parse::<i32>().unwrap() - 7);
-            let apart = ((ours.parse::<f64>().unwrap() - theirs).abs() / unit).round();
-            assert!(apart <= 1.0, "event {n}: {ours} written as {text}");
+            assert!(
+                units_apart(&ours, text) <= 1.0,
+                "event {n}: {ours} written as {text}"
+            );
             weights += 1;
             exact += usize::from(ours == *text);
         }
