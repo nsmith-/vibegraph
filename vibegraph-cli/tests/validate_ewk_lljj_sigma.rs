@@ -77,14 +77,21 @@ impl SeedValue for SeedResult {
 
 const ROW: &str = "pp_to_epemjj_qcd0";
 
-/// The integration budget per seed.
+/// The integration budget per seed: about 0.8 million points over twelve
+/// iterations (68 channels, most at the 512-point floor). On these seeds the
+/// mean moves by +0.04% ± 0.4% between twelve and twenty-four iterations at
+/// this `--neval`, where it falls by 2% between three and twelve; one seed
+/// scatters by about 1%.
 const NEVAL: &str = "40000";
 const NITER: &str = "12";
 const SEEDS: [u64; 5] = [20261031, 20261032, 20261033, 20261034, 20261035];
 
 const MAX_PULL: f64 = 3.0;
+/// About three times the combined error of two five-seed means at this side's
+/// measured one-seed scatter of 1%, with MadEvent's at a similar size.
 const MAX_REL: f64 = 0.02;
-const CHI2_PER_DOF_BAND: (f64, f64) = (0.1, 4.0);
+/// The 0.1% and 99.9% quantiles of χ²/dof on four degrees of freedom.
+const CHI2_PER_DOF_BAND: (f64, f64) = (0.023, 4.617);
 
 fn output_dir() -> PathBuf {
     validation_dir().join("output")
