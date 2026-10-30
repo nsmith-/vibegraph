@@ -8,6 +8,7 @@
 * [S-F1: systematics weights for unmatched events](S-F1.md) - Implement the approved design's S-F1 scope: the typed request at artifact version 15, the PDF member metadata cascade, the weight function and record, MadGraph's exact header and weight format, and the per-event gate on the twelve banked runs.
 * [S-F2: systematics weights for MLM events, and S-F1's FA and FE](S-F2.md) - LoRecord from the MLM Rewgt record, <mgrwt> on matched events, the matched refusal lifted; n_qcd from the clustering graph under a dynamical scale (FA); <MGRunCard> on every use_syst sample (FE).
 * [S-V1: the CMS-arguments gate, the MLM gates in CI, and FG](S-V1.md) - Gate the 926-weight CMS runs per event and on the banked header; make MadGraph's default-argument MLM runs a CI gate; fix the dump test's unmatched branch; explain or fix the permuted-P1 record differences (FG); measure memory and time on the 880 members.
+* [S-V2: the permuted-event flavour code, the xqcut_only branch, and FG's close](S-V2.md) - Fix the production <pdfrwt> flavour code on permuted-P1 MLM events (ttx); make the dump test's unmatched branch correct, with diagnostics; classify ll_0j2j's permuted events under H1; hand the M3 a final re-run.
 
 ## Session Report
 
