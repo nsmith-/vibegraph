@@ -3717,6 +3717,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "statrs",
  "tar",
  "tempfile",
  "toml",

@@ -560,6 +560,34 @@ integrals = { tier = "banked", mode = "gate", note = "REGISTERED DEVIATION (user
 samples = { tier = "banked", mode = "gate", note = "the same invocation's events. y(l-) and the per-beam incoming-energy KS are the columns that see the boost direction and x_i E_i per beam, which sigma cannot. REGISTERED DEVIATION (user, 2026-10-22; madgraph-defects): MadEvent's mirrored-ordering cut admits mirrored events (the antiquark on the +z beam) with leptons in [ln(E1/E2) - etal, ln(E1/E2) + etal] = [-2.014, 2.986], so MadGraph's sample carries leptons outside its own cut and a different direct-to-mirrored share. The gate first reads the defect off MadGraph's sample and fails unless it is as registered: no direct event outside |eta| <= 2.5, every mirrored one inside the displaced window, and some outside the cut (measured: 0 / 99807 direct events with a lepton outside |eta| <= 2.5, and 8429 / 100193 mirrored ones outside it, all inside [-2.014, 2.986], the largest |eta| 2.9855); none of ours may leave the cut. On the full sample the columns the defect can move are reported, not gated, in the cell's note with the reason: the leptons' y and cos, the incoming E and pz, the pT spectra, m(l+,l-), cs_cos(ll), flavour, ICOLUP and SPINUP. The columns it cannot move stay gated: phi(l)/pi (everything, the displaced window included, is invariant under rotations about the beam axis), the beam masses (constants of the record) and SCALUP and AQCDUP (fixed by the card). The direct-ordering sub-sample (the quark on the +z beam), which MadEvent cuts on its own lab frame, is gated on every column as the direct_ordering variant. Emulating the defect in generation would need a hook in the shipped binary, so the sample is compared unemulated. Minimum p-values over three seeds of 20000 events: direct_ordering KS 0.0385, chi2 0.295, per-beam KS 0.0782; full sample, gated columns only, phi(l+)/pi KS 0.380, with the beam masses and SCALUP and AQCDUP within their tolerances (the largest AQCDUP deviation 1.1e-8 against 5e-8)" }
 
 [[process]]
+key = "pp_to_ll_mz95"
+process = "p p > e+ e-"
+script = "validation/madgraph/bank_seeded_sigma.sh"
+class = "multi-channel"
+n_final = 2
+rationale = "Drell-Yan in the m_ll in [60,120] window at MZ = 95 GeV: the first cross section at a moved parameter point, vibegraph's integrate --param-card against a MadGraph run made at the same card (not the reweight oracle, which evaluates the moved point on the default sample). The Z peak sits inside the window, so the move shifts sigma by about +16%, and through MW = MW(MZ, aEWM1, Gf) it moves the weak mixing as well. The card is MadGraph's own SM card (dy13_param_card.dat) with the MZ line changed; MadGraph's restriction fuses no coupling pair that this point splits (check_coupling_fusion.py)."
+artifacts = ["output/seeded_sigma/dy13_mmll_60_120_mz95", "dy13_mmll_run_card.dat", "dy13_mz95_param_card.dat", "dy13_proc_card.dat"]
+[process.categories]
+diagrams = { tier = "covered-by", rows = ["pp_to_ll"] }
+amplitudes = { tier = "covered-by", rows = ["uux_to_mumu"], note = "the amplitude conventions are the default card's; what the card moves is a parameter value, which only the cross section here sees" }
+integrals = { tier = "banked", mode = "gate", note = "Gated by vibegraph-cli's validate_param_card_sigma as pp_to_ll's dy13 cells are: five seeds of integrate --param-card dy13_mz95_param_card.dat a side under the seed policy, |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Measured at 5 seeds a side: vibegraph 746.890 +- 0.461 pb (chi2/dof 2.00) against MadGraph 746.860 +- 0.158 (pull +0.06, rel +0.00004)" }
+samples = { tier = "uncovered", note = "no event sample at the moved card is banked; the seeded runs keep their <init> block, not their events" }
+
+[[process]]
+key = "ee_to_tth_ymt250"
+process = "e+ e- > t t~ h"
+script = "validation/madgraph/scripts/ee_to_tth_ymt250.mg5"
+class = "multi-channel"
+n_final = 3
+rationale = "e+ e- > t t~ h at sqrt(s) = 1 TeV with ymt = 250 GeV and MT at 173 GeV: a cross section at a moved Yukawa, where only the t t~ h vertex moves and the top mass, every propagator and the phase space stay put, so sigma about doubles on the coupling alone. The reweight oracle's ee_tth_ymt process, beams and hypothesis, so a fresh run at the card and MadGraph's per-event reweight ratio meet on one point. MadGraph's restriction fuses no coupling pair that this point splits (check_coupling_fusion.py)."
+artifacts = ["output/ee_to_tth_ymt250", "output/seeded_sigma/ee_to_tth_ymt250"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the process directory is banked (output/ee_to_tth_ymt250) but its diagram census is not; extract-diagrams can bank it" }
+amplitudes = { tier = "uncovered", note = "no amplitude table for a three-body t t~ h final state is banked; ee_to_ttx and ee_to_zh cover its massive-fermion and VVS conventions separately" }
+integrals = { tier = "banked", mode = "gate", note = "Gated by vibegraph-cli's validate_param_card_sigma on the banked run's own Cards/run_card.dat and Cards/param_card.dat: five seeds of integrate --param-card a side under the seed policy, |pull| < 3 and |rel| < 0.005 together, seeds' chi2/dof < 4. Beside it, reported and not enforced, vibegraph's sigma(250)/sigma(default) on the reweight oracle's card against MadGraph's per-event reweight ratio. Measured at 5 seeds a side: vibegraph 4.09619e-3 +- 1.01e-6 pb (chi2/dof 1.02) against MadGraph 4.09582e-3 +- 2.35e-6 (pull +0.14, rel +0.00009). The ratio, reported: sigma(250)/sigma(default) = 2.03073 +- 0.00079 against the reweight ratio 2.03726 +- 0.00550 over 200 events (pull -1.18)" }
+samples = { tier = "uncovered", note = "no sample comparison at a moved card is planned for this row" }
+
+[[process]]
 key = "pp_to_ll_etau"
 process = "p p > l+ l-"
 script = "validation/madgraph/bank_seeded_sigma.sh"

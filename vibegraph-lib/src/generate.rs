@@ -39,7 +39,7 @@ use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
-use crate::lhef::write::{generator_element, mg_run_card, InputsRead};
+use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
     MultiplicitySum,
@@ -150,7 +150,8 @@ pub struct GenerateAssets<'a> {
     pub card: &'a SupportedCard,
     /// The model that card names, at the digest the artifact records.
     pub model: &'a UFOModel,
-    /// `model` evaluated at its own parameters.
+    /// `model` evaluated at the parameters the artifact records
+    /// (`ufo::bind::bind_recorded`).
     pub evaluated: &'a EvaluatedModel,
     /// The PDF set and the member the artifact was integrated with; required
     /// where [`reads_parton_densities`], unread otherwise.
@@ -561,7 +562,7 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header_blocks: vec![assets.inputs.header_block()],
+        header_blocks: vec![slha_block(evaluated), assets.inputs.header_block()],
         header: Some(file_header(
             options,
             artifact,
@@ -1026,15 +1027,17 @@ fn generate_proton_sample(
             "",
         )],
         // The card a shower's MLM matching reads its parameters from, and
-        // MadGraph's systematics module its beams and PDF, then what the
-        // weights were computed from.
+        // MadGraph's systematics module its beams and PDF, the parameter card
+        // it reads masses and widths from, then what the weights were
+        // computed from.
         header_blocks: if matched || settings.systematics.enabled {
             vec![
                 mg_run_card(rc, settings, options.seed),
+                slha_block(evaluated),
                 assets.inputs.header_block(),
             ]
         } else {
-            vec![assets.inputs.header_block()]
+            vec![slha_block(evaluated), assets.inputs.header_block()]
         },
         header: Some(file_header(
             options,

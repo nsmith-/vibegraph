@@ -67,11 +67,6 @@ pub enum ArtifactError {
     },
     #[error("zstd (de)compression failed: {0}")]
     Zstd(io::Error),
-    #[error(
-        "the artifact records {count} model parameter(s) moved off the model's defaults, and \
-         this build binds none from an artifact"
-    )]
-    MovedParams { count: usize },
 }
 
 /// One file a run read, by its name in the set directory, and the lowercase-hex
@@ -111,10 +106,11 @@ pub struct MovedParam {
 /// What an integration read besides its cards: the parton densities and the
 /// model parameters that differ from the model's defaults.
 ///
-/// No integration binds a parameter card yet, so `params` is empty in every
-/// artifact this build writes, and one that is not is refused on writing and on
-/// reading: a reader that dropped the list would replay the grid at the wrong
-/// parameter point.
+/// `params` is the only record of the parameter card an integration bound
+/// (`ufo::bind::bind_card`): every external parameter whose value differs from
+/// the restricted model's default, in the model's external order. A run with no
+/// card, an empty card or a card restating the defaults records none.
+/// `ufo::bind::bind_recorded` rebinds the model from it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunInputs {
     pub pdf: PdfInput,
@@ -127,13 +123,6 @@ impl RunInputs {
         RunInputs {
             pdf,
             params: Vec::new(),
-        }
-    }
-
-    fn refuse_moved_params(&self) -> Result<(), ArtifactError> {
-        match self.params.len() {
-            0 => Ok(()),
-            count => Err(ArtifactError::MovedParams { count }),
         }
     }
 }
@@ -389,7 +378,6 @@ impl IntegrateArtifact {
                 expected: FORMAT_VERSION,
             });
         }
-        self.inputs.refuse_moved_params()?;
         if !force && path.exists() {
             return Err(ArtifactError::AlreadyExists {
                 path: path.display().to_string(),
@@ -426,7 +414,6 @@ impl IntegrateArtifact {
         match header.format_version {
             FORMAT_VERSION => {
                 let artifact: Self = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
-                artifact.inputs.refuse_moved_params()?;
                 Ok((artifact, sha256))
             }
             found => Err(ArtifactError::UnsupportedVersion {
@@ -848,32 +835,32 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// A moved parameter is refused on writing, and on reading a file that
-    /// carries one, since nothing here binds it.
+    /// Moved parameters round-trip in order and bit for bit.
     #[test]
-    fn moved_parameters_are_refused_on_writing_and_reading() {
+    fn moved_parameters_round_trip() {
         let dir = scratch_dir("params");
         let mut artifact = sample_artifact();
-        artifact.inputs.params.push(MovedParam {
-            name: "MZ".to_string(),
-            block: "MASS".to_string(),
-            code: vec![23],
-            value: 91.0,
-        });
+        artifact.inputs.params = vec![
+            MovedParam {
+                name: "MZ".to_string(),
+                block: "MASS".to_string(),
+                code: vec![23],
+                value: 91.0 + f64::EPSILON * 64.0,
+            },
+            MovedParam {
+                name: "ymt".to_string(),
+                block: "YUKAWA".to_string(),
+                code: vec![6],
+                value: 250.0,
+            },
+        ];
         let path = dir.join("params.bin.zst");
-        let err = artifact.write_to_path(&path, true).unwrap_err();
-        assert!(
-            matches!(err, ArtifactError::MovedParams { count: 1 }),
-            "{err}"
-        );
-        assert!(!path.exists());
-
-        let raw = bincode::serialize(&artifact).unwrap();
-        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
-        let err = IntegrateArtifact::read_from_path(&path).unwrap_err();
-        assert!(
-            matches!(err, ArtifactError::MovedParams { count: 1 }),
-            "{err}"
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.inputs, artifact.inputs);
+        assert_eq!(
+            reloaded.inputs.params[0].value.to_bits(),
+            artifact.inputs.params[0].value.to_bits()
         );
         std::fs::remove_dir_all(&dir).ok();
     }
