@@ -318,7 +318,7 @@ generates its own never-run template.
 
    Expect five `seed ...: σ = ...` lines, then one `[pp_to_epemjj_qcd0] GATE`
    line and `test result: ok. 1 passed`. The pass condition is |pull| < 3,
-   |rel| < 0.02 and this side's seed χ²/dof inside (0.1, 4.0).
+   |rel| < 0.02 and this side's seed χ²/dof inside (0.023, 4.617).
    vibegraph's side was measured here at 3.5804 ± 0.0159 pb on the gate's five seeds (3.5760 ± 0.0085 over ten; one seed scatters by about 1%).
    A failure is a finding, not a reason to re-bank: send it back as is.
 
