@@ -763,6 +763,21 @@ impl VegasGrid {
         self.draw_into(rng, x, |_, _| {})
     }
 
+    /// The Jacobian [`draw`](Self::draw) returns at `x`, one factor per
+    /// dimension: `nbins` times the width of the bin `x` falls in, so the product
+    /// is the draw's `1/p(x)`. A factor above one marks a dimension the grid has
+    /// widened at the point, i.e. thinned its sampling there.
+    pub fn jacobian_factors(&self, x: &[f64]) -> Vec<f64> {
+        let nbins = self.nbins;
+        x.iter()
+            .zip(&self.xi)
+            .map(|(&xd, edges)| {
+                let k = edges.partition_point(|&e| e <= xd).clamp(1, nbins) - 1;
+                nbins as f64 * (edges[k + 1] - edges[k])
+            })
+            .collect()
+    }
+
     /// Draw one point: fill `x` (length `ndim`) and `ks` (length `ndim`,
     /// bin index per dimension) and return the VEGAS Jacobian weight.
     fn draw_point(&self, rng: &mut impl Rng, x: &mut [f64], ks: &mut [usize]) -> f64 {
@@ -1716,6 +1731,37 @@ mod tests {
             sum += w * f(&x);
         }
         assert_eq!((sum / n as f64).to_bits(), frozen.integral.to_bits());
+    }
+
+    /// The per-dimension Jacobian factors at a drawn point multiply to the
+    /// Jacobian the draw returned, on an adapted, non-uniform grid.
+    #[test]
+    fn test_jacobian_factors_rebuild_the_draw() {
+        let mut grid = VegasGrid::new(3, 40, 1.5);
+        let mut warm = rand::rngs::StdRng::seed_from_u64(5);
+        grid.adapt(
+            |u| (-(u[0] - 0.3).powi(2) / 0.01).exp() * (1.0 + u[1]) / (0.01 + u[2]),
+            5_000,
+            5,
+            &mut warm,
+        );
+        let mut rng = rand::rngs::StdRng::seed_from_u64(31);
+        let mut x = vec![0.0; grid.ndim()];
+        let mut spread = (f64::INFINITY, 0.0f64);
+        for _ in 0..2_000 {
+            let w = grid.draw(&mut rng, &mut x);
+            let factors = grid.jacobian_factors(&x);
+            let product: f64 = factors.iter().product();
+            assert!(
+                (product - w).abs() <= 1e-12 * w,
+                "{product} vs {w} at {x:?}"
+            );
+            spread = (spread.0.min(w), spread.1.max(w));
+        }
+        assert!(
+            spread.1 > 10.0 * spread.0,
+            "the grid did not adapt: {spread:?}"
+        );
     }
 
     // ── Seeked-substream parallelism: identical to the sequential form ───

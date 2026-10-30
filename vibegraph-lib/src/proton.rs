@@ -1195,6 +1195,40 @@ pub struct ProtonSelection {
     pub m2: f64,
 }
 
+/// What one point's multichannel weight is made of
+/// ([`ProtonIntegrand::point_anatomy`]).
+#[derive(Clone, Debug)]
+pub struct PointAnatomy {
+    /// The channel the point was drawn in.
+    pub channel: usize,
+    /// The partonic collision energy.
+    pub sqrt_shat: f64,
+    /// The `(τ, y)` map's Jacobian ([`OuterPoint::jac`]).
+    pub outer_jacobian: f64,
+    /// Every channel's selection weight `αₖ`, in channel order.
+    pub alphas: Vec<f64>,
+    /// Every channel's own density `gₖ` at the point, in channel order.
+    pub densities: Vec<f64>,
+    /// The point itself, carrying the channel term's value `αⱼ f/g`.
+    pub event: ProtonEvent,
+}
+
+impl PointAnatomy {
+    /// The mixture density `g = Σₖ αₖ gₖ`.
+    pub fn mixture_density(&self) -> f64 {
+        self.alphas
+            .iter()
+            .zip(&self.densities)
+            .map(|(a, g)| a * g)
+            .sum()
+    }
+
+    /// The integrand `f = value · g/αⱼ`, independent of how the point was drawn.
+    pub fn integrand(&self) -> f64 {
+        self.event.weight * self.mixture_density() / self.alphas[self.channel]
+    }
+}
+
 /// The laboratory energies of two head-on proton beams, beam 1 along `+z` and
 /// beam 2 along `−z`, taken massless.
 ///
@@ -2746,6 +2780,32 @@ impl<'a> ProtonIntegrand<'a> {
             group_records: sc.group_records.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
+        })
+    }
+
+    /// A point's weight taken apart into the factors it is a product of: the
+    /// channel term's value `αⱼ f/g`, the selection weight `αⱼ`, and every
+    /// channel's own density `gₖ` at the point, from which `g = Σₖ αₖ gₖ` and the
+    /// integrand `f = value · g/αⱼ` follow. `None` where the point carries no
+    /// weight.
+    ///
+    /// The densities are the ones the weight was formed from: the same sweep, at
+    /// the same momenta and energy, as [`value_in_channel`](Self::value_in_channel).
+    pub fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<PointAnatomy> {
+        let event = self.event_in_channel(channel, u)?;
+        let (grid_u, _) = self.split_point(u);
+        let m = self.map_point(grid_u);
+        let mut densities = Vec::with_capacity(self.channel_count());
+        let out = &event.cm[2..];
+        self.combiner
+            .channel_weight_at_recording(channel, m.sqrt_shat, out, &mut densities);
+        Some(PointAnatomy {
+            channel,
+            sqrt_shat: m.sqrt_shat,
+            outer_jacobian: m.jac,
+            alphas: self.combiner.alphas().to_vec(),
+            densities,
+            event,
         })
     }
 

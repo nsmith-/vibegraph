@@ -329,6 +329,29 @@ pub struct UnweightStats {
     pub(crate) excess_sum: f64,
     /// The largest `r` seen, i.e. how far past its channel's maximum the pass got.
     pub ratio_max: f64,
+    /// The [`HEAVIEST_KEPT`] overweight trials with the largest `r`, heaviest
+    /// first: where the tail the overweight share measures comes from.
+    pub heaviest: Vec<HeavyTrial>,
+}
+
+/// How many of a pass's heaviest overweight trials [`UnweightStats::heaviest`]
+/// keeps.
+pub const HEAVIEST_KEPT: usize = 8;
+
+/// One overweight trial, kept whole so the point can be rebuilt and taken apart:
+/// its weight is `jacobian · value`, and `ratio` is that over its channel's
+/// `w_max`.
+#[derive(Debug, Clone)]
+pub struct HeavyTrial {
+    pub ratio: f64,
+    pub channel: usize,
+    /// The trial's coordinates, grid part then trailing uniforms, as
+    /// [`ChannelIntegrand::value_in_channel`] read them.
+    pub u: Vec<f64>,
+    /// The frozen grid's Jacobian at the point, `1/p(u)` of the VEGAS density.
+    pub jacobian: f64,
+    /// The integrand's value at the point, already carrying the channel's `αⱼ`.
+    pub value: f64,
 }
 
 impl UnweightStats {
@@ -359,6 +382,17 @@ impl UnweightStats {
     /// The mean weight of a kept event; `1` when no trial ever went overweight.
     pub fn mean_event_weight(&self) -> f64 {
         ratio(self.event_weight_sum, self.accepted as f64)
+    }
+
+    /// Keep `trial` if it is among the [`HEAVIEST_KEPT`] heaviest so far.
+    fn keep_if_heavy(&mut self, trial: impl FnOnce() -> HeavyTrial, r: f64) {
+        let full = self.heaviest.len() == HEAVIEST_KEPT;
+        if full && self.heaviest.last().is_some_and(|h| h.ratio >= r) {
+            return;
+        }
+        let at = self.heaviest.partition_point(|h| h.ratio >= r);
+        self.heaviest.insert(at, trial());
+        self.heaviest.truncate(HEAVIEST_KEPT);
     }
 }
 
@@ -663,7 +697,8 @@ impl Unweighter {
         let point = &mut self.u[..grid_ndim + self.scale_ndim];
         let jac = channel.grid.draw(rng, &mut point[..grid_ndim]);
         self.scale_draw[j].fill_uniforms(&mut point[grid_ndim..]);
-        let w = jac * integrand.value_in_channel(j, point);
+        let value = integrand.value_in_channel(j, point);
+        let w = jac * value;
         let r = w / channel.w_max;
         let accept: f64 = rng.random();
 
@@ -678,6 +713,17 @@ impl Unweighter {
             self.stats.overweight += 1;
             self.stats.overweight_ratio_sum += r;
             self.stats.excess_sum += r - 1.0;
+            let u = &self.u[..grid_ndim + self.scale_ndim];
+            self.stats.keep_if_heavy(
+                || HeavyTrial {
+                    ratio: r,
+                    channel: j,
+                    u: u.to_vec(),
+                    jacobian: jac,
+                    value,
+                },
+                r,
+            );
         }
         if accept >= r {
             return None;
@@ -1127,6 +1173,37 @@ mod tests {
             err,
             "overweight events keep the integral unbiased",
         );
+    }
+
+    /// The kept heavy trials are the heaviest overweights of the pass, heaviest
+    /// first, and each one rebuilds its own ratio: its channel's integrand at its
+    /// coordinates, times its Jacobian, over that channel's maximum.
+    #[test]
+    fn the_heaviest_overweight_trials_are_kept_whole() {
+        let integ = PowerChannels {
+            sigma: vec![1.0, 0.5],
+            power: vec![9.0, 5.0],
+        };
+        let (_g, mut uw) = scan_of(&integ, 200, 5);
+        let mut rng = ChaCha8Rng::seed_from_u64(17);
+        for _ in 0..200_000 {
+            uw.trial(&integ, &mut rng);
+        }
+        let s = uw.stats();
+        assert!(
+            s.overweight as usize > HEAVIEST_KEPT,
+            "too few overweights to rank"
+        );
+        assert_eq!(s.heaviest.len(), HEAVIEST_KEPT);
+        assert_eq!(s.heaviest[0].ratio, s.ratio_max);
+        assert!(s.heaviest.windows(2).all(|w| w[0].ratio >= w[1].ratio));
+        for h in &s.heaviest {
+            let rebuilt =
+                h.jacobian * integ.value_in_channel(h.channel, &h.u) / uw.w_max()[h.channel];
+            assert_eq!(rebuilt.to_bits(), h.ratio.to_bits(), "{h:?}");
+            assert_eq!(h.value, integ.value_in_channel(h.channel, &h.u));
+            assert!(h.ratio > 1.0);
+        }
     }
 
     /// Truncating overweights instead of keeping them would bias the integral low by

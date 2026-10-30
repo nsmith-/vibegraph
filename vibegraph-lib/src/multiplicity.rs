@@ -39,7 +39,7 @@ use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
-    derive_flavor_groups, process_shape, FlavorGroups, ProtonEvent, ProtonIntegrand,
+    derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonEvent, ProtonIntegrand,
 };
 use crate::runcard::RunCard;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -388,6 +388,15 @@ impl<'a> MultiplicitySum<'a> {
         self.parts[k]
             .event_in_channel(j, self.part_point(k, u))
             .map(|event| (k, event))
+    }
+
+    /// [`ProtonIntegrand::point_anatomy`] at a channel of the sum, with the part
+    /// it belongs to; the anatomy's channel indices are that part's own.
+    pub fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<(usize, PointAnatomy)> {
+        let (k, j) = self.locate(channel);
+        self.parts[k]
+            .point_anatomy(j, self.part_point(k, u))
+            .map(|anatomy| (k, anatomy))
     }
 
     /// The key each channel's grid is banked under, in channel order. A single

@@ -1045,7 +1045,106 @@ fn generate_proton_sample(
         settings.event_norm,
         Observable::CrossSection,
     );
+    report_heaviest(artifact, &integ, source.unweighter.stats());
     Ok(summary)
+}
+
+/// Name the channel the heaviest overweight trial was drawn in and, at debug
+/// level, take each kept heavy trial apart: the frozen grid's Jacobian per
+/// coordinate, the channel's `αⱼ`, the integrand `f`, the mixture density `g` and
+/// the channels carrying the most of it, and the point's momenta.
+///
+/// The weight is `jacobian · αⱼ f/g`, so the dump says which factor made it
+/// large: a grid that thinned its sampling there, a channel with too small a
+/// selection weight, or a point no channel's density follows.
+fn report_heaviest(
+    artifact: &IntegrateArtifact,
+    integ: &MultiplicitySum<'_>,
+    stats: &UnweightStats,
+) {
+    let Some(top) = stats.heaviest.first() else {
+        return;
+    };
+    info!(
+        "heaviest: w/w_max {:.3} in channel {} {:?}",
+        top.ratio, top.channel, artifact.channels[top.channel].key
+    );
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    let unit = Observable::CrossSection.per_natural_unit();
+    let map_keys = integ.channel_map_keys();
+    for (rank, trial) in stats.heaviest.iter().enumerate() {
+        let banked = &artifact.channels[trial.channel];
+        let ndim = banked.grid.ndim();
+        let factors = banked.grid.jacobian_factors(&trial.u[..ndim]);
+        let w_max = trial.jacobian * trial.value / trial.ratio;
+        tracing::debug!(
+            "heavy {rank}: w/w_max {:.4e} in channel {} {:?} (σⱼ {:.4e} pb, α {:.4e}), \
+             w_max {:.4e}, Jacobian {:.4e} = {:.3?}, value {:.4e}, u {:.6?}",
+            trial.ratio,
+            trial.channel,
+            banked.key,
+            banked.sigma_pb,
+            banked.alpha,
+            w_max * unit,
+            trial.jacobian,
+            factors,
+            trial.value * unit,
+            trial.u,
+        );
+        let Some((part, anatomy)) = integ.point_anatomy(trial.channel, &trial.u) else {
+            tracing::debug!("heavy {rank}: the point carries no weight when rebuilt");
+            continue;
+        };
+        let offset = integ.offsets()[part];
+        let g = anatomy.mixture_density();
+        let j = anatomy.channel;
+        let mut shares: Vec<(usize, f64)> = anatomy
+            .alphas
+            .iter()
+            .zip(&anatomy.densities)
+            .map(|(a, gk)| a * gk / g)
+            .enumerate()
+            .collect();
+        shares.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let leaders: Vec<String> = shares
+            .iter()
+            .take(5)
+            .map(|&(k, share)| {
+                format!(
+                    "{} (α {:.3e}, g {:.3e}, share {share:.3e})",
+                    offset + k,
+                    anatomy.alphas[k],
+                    anatomy.densities[k]
+                )
+            })
+            .collect();
+        tracing::debug!(
+            "heavy {rank}: part {part}, x {:.6e} {:.6e}, √ŝ {:.6e}, f {:.4e}, g {:.4e}, \
+             own αⱼgⱼ/g {:.4e}, own gⱼ {:.4e}; leading channels {}",
+            anatomy.event.x[0],
+            anatomy.event.x[1],
+            anatomy.sqrt_shat,
+            anatomy.integrand() * unit,
+            g,
+            anatomy.alphas[j] * anatomy.densities[j] / g,
+            anatomy.densities[j],
+            leaders.join(", "),
+        );
+        let cm: Vec<[f64; 4]> = anatomy
+            .event
+            .cm
+            .iter()
+            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
+            .collect();
+        tracing::debug!("heavy {rank}: partonic-CM momenta {cm:?}");
+        tracing::debug!(
+            "heavy {rank}: channel {} map {}",
+            trial.channel,
+            map_keys[trial.channel]
+        );
+    }
 }
 
 /// Each part's integrated cross section, from its channels'
