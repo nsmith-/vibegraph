@@ -264,10 +264,13 @@ impl MapOptions {
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
     /// * `pair_order`: [`PairOrder::Symmetric`]. The ordered draw leaves half of
-    ///   an `H → ZZ*` peak in a Breit–Wigner tail; on `b b~ > c c~ e+ e- mu+ mu-`
-    ///   points there carried most of the largest single-point weights of the
-    ///   20-seed budget ladder. Where both daughters can sit on their poles the
-    ///   two orders' densities nearly coincide and the choice moves little.
+    ///   an `H → ZZ*` peak in a Breit–Wigner tail. On `b b~ > c c~ e+ e- mu+ mu-`
+    ///   (20 paired seeds, 600k and 1.2M evaluations, 8 iterations) points there
+    ///   carried most of the largest single-point weights, and the per-seed
+    ///   spread rose with budget, ×1.23. Under the symmetric order it falls,
+    ///   ×0.78 (1.888e-9 pb at 1.2M against 3.330e-9), with no point on that half
+    ///   above 1e-3 of its iteration. Where both daughters can sit on their poles
+    ///   the two orders' densities nearly coincide and the choice moves little.
     ///
     /// The ratios are evaluations measured on the M3 Max host off the 2026-09-23
     /// code, twenty seeds per arm at the banked rows' own cards, with the map
