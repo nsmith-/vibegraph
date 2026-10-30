@@ -9,7 +9,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-30}
 Worktree `/home/user/wt/S`, branch `sprinte-systematics`, from `03d00872`.
 Implements the [S-V2 brief](S-V2.md), plus the manager's mid-session merge of
 `origin/main` (#82). Commits: `9381617c` (the merge), `e83defe3` (the tests),
-and the commit adding this report. Logs are in the session's scratchpad
+`01335e6e` (the report draft) and the commit completing it. Logs are in the session's scratchpad
 (`S-V2-*`).
 
 ## 1. The `ttx` flavour code: MadEvent's slot, not our record
@@ -292,8 +292,34 @@ conflict. **Artifact version:** main is at 14 and this branch at 15. Of
 uses it, `CARGO_BUILD_JOBS=2`, no debug info, on `e83defe3`:
 
 ```
-GATES-PLACEHOLDER
+fmt                        cargo fmt --all --check                                     rc=0
+clippy                     cargo clippy --workspace --all-targets -- -D warnings       rc=0
+clippy-ext                 … --features vibegraph/extended-validation,vibegraph-lib/extended-validation
+                           rc=101 (clippy::type_complexity on the stale-head tuple), then rc=0
+                           after the fix folded into e83defe3
+test-workspace             cargo test --workspace --no-fail-fast                       rc=0
+                           47 suites: 1788 passed, 0 failed, 19 ignored
+kb lint                    python3 scripts/kb.py lint   rc=1 (index stale), then
+                           1019 concepts, 333 backlog items; 0 errors, 4 warnings (backlog, pre-existing)
+validate_mlm_records       ok. 1 passed (the census and table of §1, §2)
+validate_systematics       ok. 4 passed; 3 ignored (stale-head events 0/19/219/0, pinned)
+validate_lhef              ok. 3 passed
+validate_mlm_dumps         ok. 0 passed; 3 ignored (needs the dumps: the oracle part not run)
+cli_systematics            ok. 4 passed
+cli_reweight_proton        ok. 2 passed (162.7 s)
+validate_param_card_sigma  ok. 3 passed: pp_to_ll_mz95 pull +0.06, rel +0.00004;
+                           ee_to_tth_ymt250 pull +0.14, rel +0.00009
+validate-mlm-samples       ok. 1 passed: Z +0.44, jet at sqrt(s) +0.01, <asrwt> 0.8877 vs 0.8877,
+                           chains 0.4438 vs 0.4439
+validate-mlm-sigma         ok. 5 passed (7125 s, relaunched after a container restart):
+                           xqcut_only +0.85, alps2 +0.88, llj_mlm +1.00, ttx_0j1j total +0.75
+                           (@0 +0.28, @1 +0.71; 1092.332), ll_0j2j total +1.54 (@0 +0.50,
+                           @1 +0.37, @2 +2.08): every value as S-V1 measured
 ```
+
+Not run: `validate_mlm_dumps`'s oracle part, `validate_kt_cluster`'s (no
+dumps), `validate-pythia`/`validate-mlm-pythia` (no Pythia), the validation
+report's collate step, and the targets this change does not touch.
 
 ## Mutations
 
