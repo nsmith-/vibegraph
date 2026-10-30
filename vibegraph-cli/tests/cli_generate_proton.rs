@@ -626,6 +626,182 @@ fn banked_alpha_s() -> f64 {
     })
 }
 
+/// The `(id, value text)` of every `<wgt>` line of an event, in order.
+fn written_weights(event: &LheEvent) -> Vec<(String, String)> {
+    event
+        .trailer
+        .iter()
+        .filter_map(|l| {
+            let rest = l.strip_prefix("<wgt id='")?;
+            let (id, rest) = rest.split_once("'>")?;
+            Some((
+                id.to_string(),
+                rest.strip_suffix("</wgt>")?.trim().to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// How many units of the eighth significant digit `ours` (a weight as
+/// [`wgt_text`](vibegraph::systematics::format::wgt_text) spells it) is from
+/// the file's `text`.
+fn units_apart(ours: &str, text: &str) -> f64 {
+    let theirs: f64 = text.parse().unwrap();
+    let unit = 10f64.powi(text.split_once('e').unwrap().1.parse::<i32>().unwrap() - 7);
+    ((ours.parse::<f64>().unwrap() - theirs).abs() / unit).round()
+}
+
+/// The writer of MadGraph's default request on the banked set, read from
+/// `validation/pdf` alone.
+fn default_systematics_writer() -> vibegraph::systematics::plan::Writer {
+    systematics_writer(&vibegraph::systematics::request::VariationRequest::madgraph_default())
+}
+
+/// The writer of `request` on the banked set, read from `validation/pdf`
+/// alone.
+fn systematics_writer(
+    request: &vibegraph::systematics::request::VariationRequest,
+) -> vibegraph::systematics::plan::Writer {
+    use vibegraph::cache::lhapdf::{DownloadRequest, Tier, Tiers};
+    use vibegraph::cache::store::Fetch;
+    let cache = tempfile::tempdir().unwrap();
+    let tiers = Tiers {
+        lhapdf_data_path: vec![pdf_dir()],
+        data_path_tier: Tier::LhapdfDataPath,
+        cvmfs: None,
+        cache_root: cache.path().to_path_buf(),
+    };
+    let refuse = |r: &DownloadRequest| -> Result<Box<dyn Fetch>, String> {
+        Err(format!("no download: {}", r.what))
+    };
+    let central = vibegraph::pdf::select::load_for_lhaid(247000, &tiers, &refuse).unwrap();
+    let resolved =
+        vibegraph::systematics::plan::resolve(request, &central, &tiers, &refuse).unwrap();
+    vibegraph::systematics::plan::Writer::new(request, &resolved).unwrap()
+}
+
+/// The systematics weights round-trip through the written file: MadGraph's own
+/// card asks for its default request, and every weight of every event, read
+/// back with the gate's parser and re-evaluated from the event's own
+/// `<mgrwt>` record and particles, is within one unit of the eighth digit of
+/// what was written. The header is MadGraph's banked block byte for byte.
+///
+/// A round trip sees an inconsistent record, not a wrong one, so it is paired
+/// with the record's own cross-checks against the same event, each at the
+/// record's printed digits: the chain's `x` is the incoming parton's
+/// `E/ebeam`, its `q` the event's factorisation scale (`SCALUP` on this
+/// fixed-scale card), `αs(μR)` off the set is `AQCDUP`, and the nominal
+/// group's first weight (id 45) is `XWGTUP`'s spelling.
+#[test]
+fn the_systematics_weights_round_trip_through_the_written_file() {
+    use vibegraph::systematics::format::as_written_e15_8;
+    use vibegraph::systematics::record::{LoRecord, RecordKinematics};
+    if !banked_present() {
+        vibegraph::validation::require(
+            "the_systematics_weights_round_trip_through_the_written_file",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let run = integrated();
+    let (file, text) = run.generate_text_at(400, "systematics.lhe", "20261028");
+    let writer = default_systematics_writer();
+    let banked_text = {
+        use std::io::Read;
+        let mut t = String::new();
+        flate2::read::GzDecoder::new(
+            std::fs::File::open(run_dir().join("Events/run_01/unweighted_events.lhe.gz")).unwrap(),
+        )
+        .read_to_string(&mut t)
+        .unwrap();
+        t
+    };
+    let block = |t: &str| {
+        let a = t.find("<initrwgt>").expect("<initrwgt>");
+        let b = t.find("</initrwgt>").expect("</initrwgt>");
+        t[a..b].to_string()
+    };
+    assert_eq!(
+        block(&text),
+        block(&banked_text),
+        "the header is MadGraph's"
+    );
+    assert!(
+        text.contains("<pdf use=\"systematics\" set=\"NNPDF23_lo_as_0130_qed\" lhaid=\"247000\""),
+        "the inputs record the systematics set"
+    );
+    // MadGraph's own systematics module reads the beams, the PDF and
+    // `use_syst` off the run card in the header.
+    let card = mg_run_card_fields(&text).expect("an <MGRunCard> inside <header>");
+    for (name, want) in [("use_syst", "True"), ("lhaid", "247000"), ("lpp1", "1")] {
+        assert_eq!(
+            card.get(name).map(String::as_str),
+            Some(want),
+            "<MGRunCard> {name}"
+        );
+    }
+    let set = PdfSet::load(&pdf_dir().join(PDF_SET), PDF_SET).unwrap();
+    let alphas = vibegraph::pdf::alphas::GridAlphaS::from_info(&set.info.alpha_s).unwrap();
+    let ebeam = run.artifact.run_card.ebeam1;
+    let (mut weights, mut exact) = (0usize, 0usize);
+    for (n, event) in file.events.iter().enumerate() {
+        let record = LoRecord::parse(&event.trailer)
+            .expect("the record parses")
+            .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
+        let written = written_weights(event);
+        let ids: Vec<&str> = written.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(
+            ids,
+            writer.ids().iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        let again = writer
+            .weights(&record, &RecordKinematics::of(event), event.weight)
+            .expect("the weights evaluate");
+        for (w, (_, text)) in again.iter().zip(&written) {
+            let ours = vibegraph::systematics::format::wgt_text(*w);
+            assert!(
+                units_apart(&ours, text) <= 1.0,
+                "event {n}: {ours} written as {text}"
+            );
+            weights += 1;
+            exact += usize::from(ours == *text);
+        }
+        assert_eq!(
+            written[44].1,
+            vibegraph::systematics::format::wgt_text(event.weight),
+            "event {n}: id 45"
+        );
+        for (b, incoming) in event.particles[..2].iter().enumerate() {
+            let chain = &record.beams[b].entries;
+            assert_eq!(chain.len(), 1, "an unmatched chain is one entry");
+            let (pdg, x, q) = chain[0];
+            assert_eq!(pdg, i64::from(incoming.pdg), "event {n} beam {}", b + 1);
+            // `E/ebeam` from the eleven digits the particle line keeps, against
+            // the record's eight: half a unit of `E15.8`'s eighth digit is at
+            // most 5e-8 relative.
+            let from_line = incoming.momentum[0] / ebeam;
+            assert!(
+                (x / from_line - 1.0).abs() < 6e-8,
+                "event {n} beam {}: x {x} against E/ebeam {from_line}",
+                b + 1
+            );
+            assert_eq!(q, as_written_e15_8(event.scale), "event {n}");
+        }
+        let alpha = alphas.eval(record.mu_r);
+        assert!(
+            ((alpha - event.alpha_qcd) / alpha).abs() < 1e-7,
+            "event {n}: alpha_s(muR) {alpha} against AQCDUP {}",
+            event.alpha_qcd
+        );
+    }
+    println!(
+        "round trip: {} events, {weights} weights, {exact} exact ({:.4}%)",
+        file.events.len(),
+        100.0 * exact as f64 / weights as f64
+    );
+    assert!(weights > 0);
+}
+
 /// `generate` takes no PDF choice: it locates the set the artifact recorded,
 /// by name, through `$LHAPDF_DATA_PATH` and the cache. With the data path
 /// pointing at a directory without it, an empty cache and downloads refused,
@@ -1195,16 +1371,190 @@ fn a_matched_sample_carries_the_shower_record() {
     assert!(jets_at_etot > 0, "no jet came from a non-jet vertex");
 }
 
+/// Every matched event carries its `<mgrwt>` record under `use_syst = T`
+/// with `systematics_program = none`, and no weights. Against the event's own
+/// lines, at the record's printed digits: each beam's chain starts at its
+/// incoming parton with that parton's `E/ebeam`; the QCD power is the
+/// process's one (every `p p > e+ e- j` diagram has one strong coupling);
+/// `<rscale>` is that power less the emission scales, and `αs` at its scale is
+/// `AQCDUP`; every emission scale is above the 2 GeV `rewgt` kills below. The
+/// header carries the run card the systematics module reads.
+#[test]
+fn a_matched_sample_carries_its_mgrwt_record() {
+    use vibegraph::systematics::record::LoRecord;
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "a_matched_sample_carries_its_mgrwt_record",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let (_, file, text) = matched_sample();
+    let card = mg_run_card_fields(text).expect("an <MGRunCard> inside <header>");
+    assert_eq!(card.get("use_syst").map(String::as_str), Some("True"));
+    assert!(!text.contains("<initrwgt>") && !text.contains("<rwgt>"));
+    let set = PdfSet::load(&pdf_dir().join(PDF_SET), PDF_SET).unwrap();
+    let alphas = vibegraph::pdf::alphas::GridAlphaS::from_info(&set.info.alpha_s).unwrap();
+    let ebeam = 6500.0;
+    let (mut emitting, mut long_chains, mut flipped) = (0usize, 0usize, 0usize);
+    for (n, event) in file.events.iter().enumerate() {
+        let record = LoRecord::parse(&event.trailer)
+            .expect("the record parses")
+            .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
+        assert_eq!(record.n_qcd, 1, "event {n}: the QCD power");
+        assert!(record.emission_scales.len() <= 1, "event {n}");
+        assert!(
+            record.emission_scales.iter().all(|&q| q > 2.0),
+            "event {n}: an emission scale at or below 2 GeV"
+        );
+        for (b, incoming) in event.particles[..2].iter().enumerate() {
+            let chain = &record.beams[b].entries;
+            let (pdg, x, _) = chain[0];
+            assert_eq!(pdg, i64::from(incoming.pdg), "event {n} beam {}", b + 1);
+            let from_line = incoming.momentum[0] / ebeam;
+            assert!(
+                (x / from_line - 1.0).abs() < 6e-8,
+                "event {n} beam {}: x {x} against E/ebeam {from_line}",
+                b + 1
+            );
+            long_chains += usize::from(chain.len() > 1);
+        }
+        let alpha = alphas.eval(record.mu_r);
+        assert!(
+            ((alpha - event.alpha_qcd) / alpha).abs() < 1e-7,
+            "event {n}: alpha_s(muR) {alpha} against AQCDUP {}",
+            event.alpha_qcd
+        );
+        emitting += usize::from(!record.emission_scales.is_empty());
+        flipped += usize::from(record.beam_order == [2, 1]);
+    }
+    eprintln!(
+        "{} matched events: {emitting} with an emission scale, {long_chains} chains longer \
+         than one, {flipped} written beam 2 first",
+        file.events.len()
+    );
+    assert!(emitting > 0 && long_chains > 0 && flipped > 0);
+}
+
+/// A matched sample generated with MadGraph's default request and
+/// `--alps=0.5,1,2` (the arguments MadGraph's own card writes for a merged
+/// process): every weight re-evaluated from the written record and particles
+/// is within one unit of the eighth digit of what was written, and the two
+/// `--alps`-only weights equal `XWGTUP` on every event whose record gives
+/// them nothing to vary (no emission scale, no chain longer than one entry),
+/// and move on events that have one.
+#[test]
+fn matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events() {
+    use vibegraph::systematics::record::{LoRecord, RecordKinematics};
+    use vibegraph::systematics::request::{DynScale, VariationRequest};
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "matched_systematics_weights_round_trip_and_alps_moves_only_emitting_events",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let (tmp, _, _) = matched_sample();
+    let arguments = "--mur=0.5,1,2 --muf=0.5,1,2 --pdf=errorset --alps=0.5,1,2";
+    let lhe = tmp.path().join("systematics.lhe");
+    let generate = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(tmp.path().join("out/grid.bin.zst"))
+        .pdf_data_path(pdf_dir())
+        .args(["--seed", SEED, "--nevents", "400"])
+        .args(["--systematics", arguments])
+        .arg("-o")
+        .arg(&lhe)
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        generate.status.success(),
+        "generate failed:\n{}",
+        common::stderr_of(&generate)
+    );
+    let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("parses");
+    let request = VariationRequest::from_command_line(arguments).unwrap();
+    let writer = systematics_writer(&request);
+    assert_eq!(writer.ids().len(), 147);
+    let variations = writer.variations();
+    let nominal_pdf = variations[0].pdf as *const _ as *const ();
+    // Weight `k` is variation `k + 1`.
+    let alps_only: Vec<usize> = (0..writer.ids().len())
+        .filter(|&k| {
+            let v = &variations[k + 1];
+            v.alps != 1.0
+                && v.mur == 1.0
+                && v.muf == 1.0
+                && v.dyn_scale == DynScale::Nominal
+                && std::ptr::eq(v.pdf as *const _ as *const (), nominal_pdf)
+        })
+        .collect();
+    assert_eq!(alps_only.len(), 2, "--alps=0.5 and --alps=2 alone");
+    let (mut weights, mut exact, mut moved, mut emitting) = (0usize, 0usize, 0usize, 0usize);
+    for (n, event) in file.events.iter().enumerate() {
+        let record = LoRecord::parse(&event.trailer)
+            .expect("the record parses")
+            .unwrap_or_else(|| panic!("event {n} carries no <mgrwt>"));
+        let written: Vec<String> = written_weights(event)
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(written.len(), writer.ids().len(), "event {n}");
+        let again = writer
+            .weights(&record, &RecordKinematics::of(event), event.weight)
+            .expect("the weights evaluate");
+        for (w, text) in again.iter().zip(&written) {
+            let ours = vibegraph::systematics::format::wgt_text(*w);
+            assert!(
+                units_apart(&ours, text) <= 1.0,
+                "event {n}: {ours} written as {text}"
+            );
+            weights += 1;
+            exact += usize::from(ours == *text);
+        }
+        let something =
+            !record.emission_scales.is_empty() || record.beams.iter().any(|c| c.entries.len() > 1);
+        emitting += usize::from(something);
+        let nominal = vibegraph::systematics::format::wgt_text(event.weight);
+        for &k in &alps_only {
+            if something {
+                moved += usize::from(written[k] != nominal);
+            } else {
+                assert_eq!(
+                    written[k],
+                    nominal,
+                    "event {n}: --alps weight {} moved",
+                    k + 1
+                );
+            }
+        }
+    }
+    eprintln!(
+        "matched round trip: {} events, {weights} weights, {exact} exact ({:.4}%); --alps moved \
+         {moved} weights on the {emitting} events with an emission scale or a longer chain",
+        file.events.len(),
+        100.0 * exact as f64 / weights as f64
+    );
+    assert!(emitting > 0 && emitting < file.events.len());
+    assert!(moved > 0, "--alps moved no weight");
+}
+
 /// The matched sample's record against MadEvent's banked `pp_to_llj_mlm` run,
 /// as population fractions (the events are different events, so this is the
-/// record read as a distribution): the share of events listing the Z, and the
-/// share whose jet sits at the collider energy (a jet no jet vertex reaches).
-/// Each is a two-sample binomial comparison, required within five standard
-/// deviations of the pooled estimate.
+/// record read as a distribution): the share of events listing the Z, the
+/// share whose jet sits at the collider energy (a jet no jet vertex reaches),
+/// and from `<mgrwt>` the share of events with an emission scale and of beams
+/// whose density chain is longer than one entry. Each is a two-sample binomial
+/// comparison, required within five standard deviations of the pooled
+/// estimate.
 #[test]
 #[ignore = "oracle layer: M0's matched MadEvent runs are outside the reference bundle; `pixi run validate-mlm-samples` runs this against them"]
 fn matched_sample_record_fractions_against_madevent() {
+    use std::cell::Cell;
+    use vibegraph::systematics::record::LoRecord;
     let (_, ours, _) = matched_sample();
+    let (emitting, long_chains) = (Cell::new(0usize), Cell::new(0usize));
     let path = output_dir().join("pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz");
     let out = Command::new("gzip")
         .args(["-dc", path.to_str().unwrap()])
@@ -1216,6 +1566,13 @@ fn matched_sample_record_fractions_against_madevent() {
         let mut z = 0;
         let mut etot = 0;
         for event in &file.events {
+            let record = LoRecord::parse(&event.trailer)
+                .expect("the record parses")
+                .expect("every event carries <mgrwt>");
+            emitting.set(emitting.get() + usize::from(!record.emission_scales.is_empty()));
+            long_chains.set(
+                long_chains.get() + record.beams.iter().filter(|c| c.entries.len() > 1).count(),
+            );
             if event.particles.iter().any(|p| p.status == 2) {
                 z += 1;
             }
@@ -1236,7 +1593,9 @@ fn matched_sample_record_fractions_against_madevent() {
         (z, etot, file.events.len())
     };
     let (z1, e1, n1) = fractions(ours);
+    let (m1, c1) = (emitting.replace(0), long_chains.replace(0));
     let (z2, e2, n2) = fractions(&theirs);
+    let (m2, c2) = (emitting.replace(0), long_chains.replace(0));
     let pull = |a: usize, b: usize| {
         let (p1, p2) = (a as f64 / n1 as f64, b as f64 / n2 as f64);
         let pooled = (a + b) as f64 / (n1 + n2) as f64;
@@ -1253,5 +1612,21 @@ fn matched_sample_record_fractions_against_madevent() {
         "events with the jet at the collider energy: vibegraph {eo:.4} ({e1}/{n1}), MadEvent \
          {et:.4} ({e2}/{n2}), pull {ep:+.2}"
     );
-    assert!(zp.abs() < 5.0 && ep.abs() < 5.0);
+    let (mo, mt, mp) = pull(m1, m2);
+    eprintln!(
+        "events with an <asrwt> emission scale: vibegraph {mo:.4} ({m1}/{n1}), MadEvent {mt:.4} \
+         ({m2}/{n2}), pull {mp:+.2}"
+    );
+    // Per beam: two chains per event.
+    let (p1, p2) = (c1 as f64 / (2 * n1) as f64, c2 as f64 / (2 * n2) as f64);
+    let pooled = (c1 + c2) as f64 / (2 * (n1 + n2)) as f64;
+    let sd = (pooled * (1.0 - pooled) * (1.0 / (2 * n1) as f64 + 1.0 / (2 * n2) as f64)).sqrt();
+    let cp = (p1 - p2) / sd;
+    eprintln!(
+        "<pdfrwt> chains longer than one entry, per beam: vibegraph {p1:.4} ({c1}/{}), MadEvent \
+         {p2:.4} ({c2}/{}), pull {cp:+.2}",
+        2 * n1,
+        2 * n2
+    );
+    assert!(zp.abs() < 5.0 && ep.abs() < 5.0 && mp.abs() < 5.0 && cp.abs() < 5.0);
 }

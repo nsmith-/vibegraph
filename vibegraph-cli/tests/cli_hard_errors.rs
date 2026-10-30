@@ -564,7 +564,7 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
 
     let generate_at = |name: &str, beams: &str, sqrt_s_had: f64| {
         let mut artifact = integrated.clone();
-        let (run_card, _) = RunCard::parse(beams).unwrap().split();
+        let (run_card, _) = RunCard::parse(beams).unwrap().split().unwrap();
         artifact.run_card = run_card;
         artifact.sqrt_s_had = sqrt_s_had;
         let path = cwd.path().join(format!("{name}.bin.zst"));

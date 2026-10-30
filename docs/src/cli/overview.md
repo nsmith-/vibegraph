@@ -99,7 +99,9 @@ grids together with the run that trained them: the proc card's text, the
 process, the model identity (its import label and a SHA-256 digest of the
 parsed model), the PDF set, the seed and evaluation counts, the fully
 resolved run card, and the run card's generation settings (`nevents`,
-`event_norm`, the systematics request). Like a gridpack, it is all
+`event_norm`, `use_syst` and the systematics request, typed: the scale, PDF
+and αs variations MadGraph's systematics module would compute, which
+`generate --systematics` can replace). Like a gridpack, it is all
 `generate` needs besides the assets: `generate` takes no proc card, run card
 or PDF choice, and a command line that passes one is an argument error.
 

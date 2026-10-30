@@ -20,13 +20,14 @@
 //! and retained by name so the compiled cut filter ([`crate::cuts`]) can read
 //! cut thresholds and so nothing is silently dropped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::generate::{GenerateSettings, Systematics};
+use crate::systematics::request::{RequestError, VariationRequest};
 
 pub(crate) mod classes;
 mod matching;
@@ -233,6 +234,14 @@ pub enum RunCardError {
     NegativeSeed { iseed: i64 },
     #[error("run card sets nevents = {nevents}: an event count is 0 or a positive integer")]
     NegativeEventCount { nevents: i64 },
+    #[error("systematics request refused at integrate: {0}")]
+    SystematicsRequest(RequestError),
+    #[error("run card sets {field} = '{value}': {why}")]
+    SystematicsField {
+        field: &'static str,
+        value: String,
+        why: &'static str,
+    },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -346,10 +355,14 @@ pub struct RunCard {
     /// from the resolved one ([`banner_values`](Self::banner_values)). Recorded
     /// with the card, since the resolved values alone do not determine them.
     banner_overrides: BTreeMap<String, ParamValue>,
-    /// Whether the card spelled `pdlabel` on a line of its own. MadGraph's
-    /// `PDFSUP` reads that line and nothing else, so on fixed-energy beams a
-    /// card without it reports MadGraph's template label ([`RunCard::pdfsup`]).
-    pdlabel_written: bool,
+    /// The canonical names of the parameters the card wrote on a line of its
+    /// own: MadGraph's `user_set`, which `RunCard.read` fills for every line
+    /// whatever the value, except a list-valued field set to `auto`
+    /// (`banner.py:1106-1115`). MadGraph's `PDFSUP` reads the `pdlabel` line
+    /// and nothing else ([`RunCard::pdfsup`]), and its systematics module
+    /// takes the `systematics_arguments` entry point only when that line is
+    /// there (`systematics.py:1371`).
+    written: BTreeSet<String>,
 }
 
 /// The `pdlabel` of MadGraph's LO template (`banner.py:4253`), which its
@@ -357,14 +370,76 @@ pub struct RunCard {
 const MADGRAPH_TEMPLATE_PDLABEL: &str = "nn23lo1";
 
 impl Default for RunCard {
-    /// The MadGraph LO out-of-the-box configuration (an empty run card).
+    /// The MadGraph LO out-of-the-box configuration (an empty run card), as
+    /// MadGraph's own default card writes it: with its `systematics_arguments`
+    /// line, so the systematics request is read from the arguments.
     fn default() -> Self {
         let mut values = BTreeMap::new();
         for (name, default) in PARAM_DEFAULTS {
             values.insert((*name).to_string(), default.to_value());
         }
-        Self::from_values(values).expect("MG defaults must be self-consistent")
+        let mut card = Self::from_values(values).expect("MG defaults must be self-consistent");
+        card.written.insert("systematics_arguments".to_string());
+        card
     }
+}
+
+/// The systematics fields MadGraph records in an event file's `<MGRunCard>`
+/// as the card wrote them, whatever this crate made of them.
+const SYSTEMATICS_CARD_FIELDS: [&str; 7] = [
+    "systematics_program",
+    "systematics_arguments",
+    "sys_scalefact",
+    "sys_alpsfact",
+    "sys_matchscale",
+    "sys_pdf",
+    "sys_scalecorrelation",
+];
+
+/// The variation request a card makes, `None` under `systematics_program =
+/// none`: MadGraph's dispatch (`madevent_interface.py:2625-2645`) and
+/// `call_systematics`' choice of entry point (`systematics.py:1371`).
+fn systematics_request(
+    taken: &BTreeMap<&str, ParamValue>,
+    written: &BTreeSet<String>,
+) -> Result<Option<VariationRequest>, RunCardError> {
+    let program = taken["systematics_program"].as_str();
+    let refuse = |why: &'static str| RunCardError::SystematicsField {
+        field: "systematics_program",
+        value: program.to_string(),
+        why,
+    };
+    match program {
+        "systematics" | "auto" => {}
+        _ if program.eq_ignore_ascii_case("none") => return Ok(None),
+        _ if program.eq_ignore_ascii_case("syscalc") => {
+            return Err(refuse(
+                "SysCalc is MadGraph's retired C++ program; set systematics_program = systematics",
+            ))
+        }
+        _ if program.eq_ignore_ascii_case("systematics") => {
+            return Err(refuse(
+                "MadGraph tests the program case-insensitively but dispatches on the exact \
+                 spelling, so it silently writes no weights; spell it systematics",
+            ))
+        }
+        _ => {
+            return Err(refuse(
+                "not a program MadGraph runs (none, systematics, auto); MadGraph logs it and \
+                 writes no weights",
+            ))
+        }
+    }
+    let request = if written.contains("systematics_arguments") {
+        VariationRequest::from_card_arguments(taken["systematics_arguments"].as_str())
+    } else {
+        VariationRequest::from_sys_fields(
+            taken["sys_scalefact"].as_str(),
+            taken["sys_alpsfact"].as_str(),
+            taken["sys_pdf"].as_str(),
+        )
+    };
+    request.map(Some).map_err(RunCardError::SystematicsRequest)
 }
 
 impl RunCard {
@@ -424,8 +499,25 @@ impl RunCard {
     /// generate-stage fields that are refused off their default
     /// (`time_of_flight`, `boost_event`, `lhe_version`) are not carried.
     ///
+    /// The systematics request is read here, so a refused one fails before
+    /// anything is integrated. On fixed-energy beams `use_syst` resolves to
+    /// off unless the card writes it, and a card that writes it on is refused:
+    /// MadGraph's own lepton card sets it off, and its module refuses the
+    /// `pdlabel = none` such a card carries.
+    ///
     /// Panics on a card that has already been split.
-    pub fn split(mut self) -> (RunCard, GenerateSettings) {
+    pub fn split(self) -> Result<(RunCard, GenerateSettings), RunCardError> {
+        self.split_as(false)
+    }
+
+    /// [`split`](Self::split) for a `1 → n` decay's card: `use_syst` is kept
+    /// as the card resolves it, whatever its beams, and generation bypasses it,
+    /// as MadGraph's `--from_card` path does on a decay.
+    pub fn split_decay(self) -> Result<(RunCard, GenerateSettings), RunCardError> {
+        self.split_as(true)
+    }
+
+    fn split_as(mut self, decay: bool) -> Result<(RunCard, GenerateSettings), RunCardError> {
         let mut taken = BTreeMap::new();
         for name in classes::generate_fields() {
             let value = self
@@ -437,9 +529,31 @@ impl RunCard {
         }
         let event_norm = EventNorm::parse(taken["event_norm"].as_str())
             .expect("from_values admits only MadGraph's event_norm values");
+        let use_syst = taken["use_syst"].as_bool();
+        let enabled = if !decay && self.beam_mode() == BeamMode::FixedEnergy {
+            if use_syst && self.written.contains("use_syst") {
+                return Err(RunCardError::SystematicsField {
+                    field: "use_syst",
+                    value: "True".to_string(),
+                    why: "fixed-energy beams carry no parton density to vary; MadGraph's own \
+                          lepton card sets use_syst = F, and its systematics module refuses \
+                          pdlabel = none",
+                });
+            }
+            false
+        } else {
+            use_syst
+        };
+        let request = if enabled {
+            systematics_request(&taken, &self.written)?
+        } else {
+            None
+        };
         let systematics = Systematics {
-            enabled: taken["use_syst"].as_bool(),
-            fields: classes::systematics_request_fields()
+            enabled,
+            request,
+            card_fields: SYSTEMATICS_CARD_FIELDS
+                .iter()
                 .map(|name| (name.to_string(), card_text(&taken[name])))
                 .collect(),
         };
@@ -450,7 +564,7 @@ impl RunCard {
             systematics,
             clustering_info: taken["clusinfo"].as_bool(),
         };
-        (self, settings)
+        Ok((self, settings))
     }
 
     /// Every parameter of a run as MadGraph records it in an event file's
@@ -486,7 +600,7 @@ impl RunCard {
         );
         set("use_syst", ParamValue::Bool(settings.systematics.enabled));
         set("clusinfo", ParamValue::Bool(settings.clustering_info));
-        for (name, text) in &settings.systematics.fields {
+        for (name, text) in &settings.systematics.card_fields {
             set(name, ParamValue::Str(text.clone()));
         }
         if let Ok(seed) = i32::try_from(seed) {
@@ -527,7 +641,7 @@ impl RunCard {
     pub fn pdfsup(&self) -> i32 {
         let label = match self.pdf_choice() {
             Ok(PdfChoice::Lhapdf { lhaid }) => return i32::try_from(lhaid).unwrap_or(0),
-            Ok(PdfChoice::None) if !self.pdlabel_written => MADGRAPH_TEMPLATE_PDLABEL,
+            Ok(PdfChoice::None) if !self.written.contains("pdlabel") => MADGRAPH_TEMPLATE_PDLABEL,
             _ => self.pdlabel.as_str(),
         };
         match label {
@@ -566,7 +680,7 @@ impl RunCard {
 
     /// Parse a run card from text.
     pub fn parse(text: &str) -> Result<Self, RunCardError> {
-        let mut pdlabel_written = false;
+        let mut written = BTreeSet::new();
         let mut values = BTreeMap::new();
         for (name, default) in PARAM_DEFAULTS {
             values.insert((*name).to_string(), default.to_value());
@@ -592,12 +706,18 @@ impl RunCard {
                 value: value_tok.to_string(),
                 line: line_no,
             })?;
-            pdlabel_written |= canonical == "pdlabel";
+            let auto_list =
+                matches!(&parsed, ParamValue::Opaque(v) if v.eq_ignore_ascii_case("auto"));
+            if auto_list {
+                written.remove(canonical);
+            } else {
+                written.insert(canonical.to_string());
+            }
             values.insert(canonical.to_string(), parsed);
         }
 
         let mut card = Self::from_values(values)?;
-        card.pdlabel_written = pdlabel_written;
+        card.written = written;
         Ok(card)
     }
 
@@ -626,7 +746,9 @@ impl RunCard {
         }
         values.insert("SDE_strategy".to_string(), ParamValue::Int(1));
         values.insert("use_syst".to_string(), ParamValue::Bool(false));
-        Self::from_values(values).expect("the decay defaults are self-consistent")
+        let mut card = Self::from_values(values).expect("the decay defaults are self-consistent");
+        card.written.insert("systematics_arguments".to_string());
+        card
     }
 
     /// This card as MadEvent runs it for the decay of a particle of pole mass
@@ -667,7 +789,7 @@ impl RunCard {
         card.values.retain(|name, _| self.values.contains_key(name));
         card.banner_overrides
             .retain(|name, _| self.values.contains_key(name));
-        card.pdlabel_written = self.pdlabel_written;
+        card.written = self.written.clone();
         card
     }
 
@@ -724,7 +846,6 @@ impl RunCard {
             }
         }
         classes::refuse_ignored_physics(&values)?;
-        classes::warn_unwritten_systematics(&values);
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         let iseed = i("iseed");
@@ -750,7 +871,7 @@ impl RunCard {
             dsqrt_q2fact2: f("dsqrt_q2fact2"),
             maxjetflavor: i("maxjetflavor"),
             banner_overrides: matching::banner_overrides(&as_parsed, &values),
-            pdlabel_written: false,
+            written: BTreeSet::new(),
             values,
         })
     }
@@ -810,7 +931,9 @@ fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
 /// structural lines. The comment is stripped first, at the first `#` or `!`, so
 /// a hidden field written `<value> = <name> # hidden_parameter` reads as
 /// `<value> = <name>`; a value cannot itself contain `#` or `!`. The line is
-/// then split on its first `=`.
+/// then split on its last `=`, as `RunCard.read` splits it (`banner.py:2902`),
+/// so a value holding `=` (`['--mur=0.5,1,2'] = systematics_arguments`) reads
+/// whole.
 fn split_line(raw: &str) -> Option<(&str, &str)> {
     let no_comment = match raw.find(['#', '!']) {
         Some(pos) => &raw[..pos],
@@ -820,7 +943,7 @@ fn split_line(raw: &str) -> Option<(&str, &str)> {
     if trimmed.is_empty() || trimmed.starts_with('$') {
         return None;
     }
-    let (value, name) = trimmed.split_once('=')?;
+    let (value, name) = trimmed.rsplit_once('=')?;
     let name = name.trim();
     // A bare template placeholder (`%(x)s`) or empty name is not a parameter.
     if name.is_empty() || name.contains(' ') {
@@ -1239,7 +1362,10 @@ mod tests {
     /// the parse rather than carried to the writer.
     #[test]
     fn event_norm_is_parsed_against_madgraphs_allowed_list() {
-        assert_eq!(RunCard::default().split().1.event_norm, EventNorm::Average);
+        assert_eq!(
+            RunCard::default().split().unwrap().1.event_norm,
+            EventNorm::Average
+        );
         for (text, norm) in [
             ("average", EventNorm::Average),
             ("sum", EventNorm::Sum),
@@ -1248,7 +1374,7 @@ mod tests {
         ] {
             let card = RunCard::parse(&format!("  {text} = event_norm\n")).expect(text);
             assert_eq!(card.get("event_norm").unwrap().as_str(), norm.as_str());
-            assert_eq!(card.split().1.event_norm, norm, "{text}");
+            assert_eq!(card.split().unwrap().1.event_norm, norm, "{text}");
         }
         for text in ["unit", "bias", "mean", "average sum"] {
             let err = RunCard::parse(&format!("  {text} = event_norm\n"))
@@ -1272,7 +1398,7 @@ mod tests {
              15 = ptl\n",
         )
         .expect("card");
-        let (card, settings) = parsed.clone().split();
+        let (card, settings) = parsed.clone().split().unwrap();
         let generate: Vec<&str> = classes::generate_fields().collect();
         for (name, value) in parsed.iter() {
             if generate.contains(&name) {
@@ -1290,7 +1416,7 @@ mod tests {
         let field = |name: &str| {
             settings
                 .systematics
-                .fields
+                .card_fields
                 .iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, v)| v.as_str())
@@ -1298,7 +1424,179 @@ mod tests {
         assert_eq!(field("sys_scalefact"), Some("0.5 1"));
         assert_eq!(field("sys_scalecorrelation"), Some("3"));
         assert_eq!(field("sys_pdf"), Some("errorset"));
-        assert_eq!(settings.systematics.fields.len(), 7);
+        assert_eq!(settings.systematics.card_fields.len(), 7);
+        let request = settings
+            .systematics
+            .request
+            .expect("use_syst = T asks for weights");
+        assert_eq!(request.mur, [0.5, 1.0], "read from sys_scalefact");
+    }
+
+    fn split_err(text: &str) -> RunCardError {
+        RunCard::parse(text)
+            .expect("card")
+            .split()
+            .expect_err("refused at integrate")
+    }
+
+    /// Which entry point a card takes: `systematics_arguments` when the card
+    /// writes its line (an `auto` line not counted), the `sys_*` fields
+    /// otherwise; the default card writes it; `none` asks for nothing.
+    #[test]
+    fn the_request_is_read_from_the_entry_point_madgraph_takes() {
+        let request = |text: &str| {
+            RunCard::parse(text)
+                .unwrap()
+                .split()
+                .unwrap()
+                .1
+                .systematics
+                .request
+        };
+        let source = |text: &str| request(text).expect("a request").source;
+        use crate::systematics::request::RequestSource;
+        assert_eq!(
+            source("['--mur=2', '--pdf=errorset'] = systematics_arguments\n"),
+            RequestSource::Arguments
+        );
+        assert_eq!(
+            request("['--mur=2', '--pdf=errorset'] = systematics_arguments\n")
+                .unwrap()
+                .mur,
+            [2.0]
+        );
+        assert_eq!(source(""), RequestSource::SysFields);
+        assert_eq!(
+            source("auto = systematics_arguments\n"),
+            RequestSource::SysFields
+        );
+        assert_eq!(
+            RunCard::default()
+                .split()
+                .unwrap()
+                .1
+                .systematics
+                .request
+                .unwrap()
+                .source,
+            RequestSource::Arguments
+        );
+        assert!(request("none = systematics_program\n").is_none());
+        assert!(request("F = use_syst\n").is_none());
+        assert_eq!(
+            source("auto = systematics_program\n"),
+            RequestSource::SysFields
+        );
+    }
+
+    /// Refusal table: SysCalc.
+    #[test]
+    fn syscalc_is_refused_at_integrate() {
+        for spelling in ["syscalc", "SysCalc"] {
+            let e = split_err(&format!("{spelling} = systematics_program\n"));
+            assert!(
+                e.to_string().contains("SysCalc is MadGraph's retired"),
+                "{e}"
+            );
+        }
+    }
+
+    /// Refusal table: a program MadGraph does not run.
+    #[test]
+    fn an_unknown_program_is_refused_at_integrate() {
+        let e = split_err("mysyst = systematics_program\n");
+        assert!(
+            matches!(
+                e,
+                RunCardError::SystematicsField {
+                    field: "systematics_program",
+                    ..
+                }
+            ) && e.to_string().contains("writes no weights"),
+            "{e}"
+        );
+    }
+
+    /// Refusal table: `Systematics` with capitals, which MadGraph accepts and
+    /// then silently runs nothing for.
+    #[test]
+    fn a_capitalised_program_is_refused_at_integrate() {
+        let e = split_err("Systematics = systematics_program\n");
+        assert!(e.to_string().contains("dispatches on the exact"), "{e}");
+    }
+
+    /// Refusal table: a refused argument in the card's list fails at
+    /// integrate, naming it.
+    #[test]
+    fn a_refused_argument_on_the_card_fails_at_integrate() {
+        let e = split_err("['--weight_format=x'] = systematics_arguments\n");
+        assert!(
+            matches!(e, RunCardError::SystematicsRequest(_))
+                && e.to_string().contains("--weight_format"),
+            "{e}"
+        );
+        // An unquoted list splits at every comma, so `2` is an argument.
+        let e = split_err("--mur=1,2 = systematics_arguments\n");
+        assert!(e.to_string().contains("'2'"), "{e}");
+    }
+
+    /// Refusal table: `use_syst = T` written on fixed-energy beams; the
+    /// default resolves off there, and a decay's card keeps its value.
+    #[test]
+    fn use_syst_on_fixed_energy_beams_is_refused_or_resolved_off() {
+        let fixed = "0 = lpp1\n0 = lpp2\n";
+        let e = split_err(&format!("{fixed}T = use_syst\n"));
+        assert!(
+            matches!(
+                e,
+                RunCardError::SystematicsField {
+                    field: "use_syst",
+                    ..
+                }
+            ),
+            "{e}"
+        );
+        let (_, settings) = RunCard::parse(fixed).unwrap().split().unwrap();
+        assert!(!settings.systematics.enabled);
+        assert!(settings.systematics.request.is_none());
+        let (_, decay) = RunCard::parse(&format!("{fixed}T = use_syst\n"))
+            .unwrap()
+            .split_decay()
+            .unwrap();
+        assert!(decay.systematics.enabled);
+    }
+
+    /// A matched card asks for weights as an unmatched one does: the default
+    /// request, `alps` included where the card lists it, and under
+    /// `systematics_program = none` the record without weights.
+    #[test]
+    fn a_matched_card_asks_for_weights_as_any_card_does() {
+        let (_, settings) = RunCard::parse(
+            "1 = ickkw\n30 = xqcut\n['--mur=0.5,1,2', '--alps=0.5,1,2'] = systematics_arguments\n",
+        )
+        .unwrap()
+        .split()
+        .unwrap();
+        let request = settings.systematics.request.expect("a request");
+        assert!(settings.systematics.enabled);
+        assert_eq!(request.alps, [0.5, 1.0, 2.0]);
+        let (_, settings) = RunCard::parse("1 = ickkw\n30 = xqcut\nnone = systematics_program\n")
+            .unwrap()
+            .split()
+            .unwrap();
+        assert!(settings.systematics.enabled && settings.systematics.request.is_none());
+    }
+
+    /// Refusal table: the `sys_pdf` rows reach integrate through the card.
+    #[test]
+    fn a_refused_sys_pdf_fails_at_integrate() {
+        for value in ["'3 CT14lo'", "'247000 2'", "'CT14lo 3 && NNPDF23_lo'"] {
+            let e = split_err(&format!("{value} = sys_pdf\n"));
+            assert!(
+                matches!(e, RunCardError::SystematicsRequest(_)),
+                "{value}: {e}"
+            );
+        }
     }
 
     /// The integration card survives the artifact's encoding with MadGraph's
@@ -1306,9 +1604,11 @@ mod tests {
     /// resolved card no longer holds, reads back.
     #[test]
     fn a_split_card_keeps_madgraphs_record_through_an_encoding() {
-        let (card, _) = RunCard::parse("1 = ickkw\n30 = xqcut\n45 = ptj\n")
-            .expect("card")
-            .split();
+        let (card, _) =
+            RunCard::parse("1 = ickkw\n30 = xqcut\n45 = ptj\nnone = systematics_program\n")
+                .expect("card")
+                .split()
+                .unwrap();
         let back: RunCard =
             bincode::deserialize(&bincode::serialize(&card).expect("encode")).expect("decode");
         let banner = |rc: &RunCard| -> Vec<(String, ParamValue)> {
@@ -1335,7 +1635,7 @@ mod tests {
         assert_eq!(unset.integration_seed(Some(5)), 5);
         assert_eq!(set.integration_seed(None), 31);
         assert_eq!(set.integration_seed(Some(5)), 5);
-        assert_eq!(set.clone().split().0.integration_seed(None), 31);
+        assert_eq!(set.clone().split().unwrap().0.integration_seed(None), 31);
         let explicit_zero = RunCard::parse("  0 = iseed\n").expect("card");
         assert_eq!(
             explicit_zero.integration_seed(None),
@@ -1366,7 +1666,7 @@ mod tests {
     /// the same parameters, no generate field brought back.
     #[test]
     fn a_decay_card_of_a_split_card_holds_the_same_parameters() {
-        let (card, _) = RunCard::decay_default().split();
+        let (card, _) = RunCard::decay_default().split_decay().unwrap();
         let decay = card.for_decay(125.0);
         let names = |rc: &RunCard| rc.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>();
         assert_eq!(names(&decay), names(&card));
@@ -1486,6 +1786,22 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    /// A value holding `=` reads whole: the line splits at its last `=`, as
+    /// MadGraph's reader splits it, so MadGraph's own `systematics_arguments`
+    /// line is read and recorded as written.
+    #[test]
+    fn a_value_holding_an_equals_sign_reads_whole() {
+        let card = RunCard::parse(
+            "  ['--mur=0.5,1,2', '--muf=0.5,1,2', '--pdf=errorset']\t= systematics_arguments ! see\n",
+        )
+        .unwrap();
+        assert_eq!(
+            card.get("systematics_arguments").unwrap().as_str(),
+            "['--mur=0.5,1,2', '--muf=0.5,1,2', '--pdf=errorset']"
+        );
+        assert!(card.written.contains("systematics_arguments"));
     }
 
     #[test]

@@ -70,6 +70,13 @@ pub struct EventScales {
     /// instead of in the channel the point was integrated in. `None` without
     /// matching.
     pub clustered_config: Option<usize>,
+    /// The configuration the event's last clustering names first
+    /// (`igraphs(1)`), indexed from zero, wherever the prescription clusters
+    /// the event, matched or not; `None` where the scale is a closed form or
+    /// fixed. MadEvent's `<mgrwt>` takes the event's QCD power from it
+    /// (`nqcd(igraphs(1))`, `reweight.f:1276`). Under matching it is
+    /// [`clustered_config`](Self::clustered_config).
+    pub graph: Option<usize>,
 }
 
 impl EventScales {
@@ -82,6 +89,7 @@ impl EventScales {
             mu_f,
             mu_f_record: mu_f,
             clustered_config: None,
+            graph: None,
         }
     }
 }
@@ -748,6 +756,13 @@ pub struct MatchedRecord {
     /// for a propagator of the clustered configuration exactly when its leg set
     /// is one of these.
     pub on_shell: Vec<u32>,
+    /// The second call's factorisation scales, GeV², per clustering beam:
+    /// `q2fact` when `rewgt` seeds each beam's `<pdfrwt>` chain
+    /// (`reweight.f:1475-1482`), before it restores `q2bck`.
+    pub q2fact: [f64; 2],
+    /// The second call's `μR`, which `<rscale>` writes (`s_scale`,
+    /// `reweight.f:1275`).
+    pub mu_r: f64,
 }
 
 impl ClusterHistory {
@@ -797,6 +812,8 @@ impl ClusterHistory {
                 .iter()
                 .map(|&(mask, _)| mask)
                 .collect(),
+            q2fact: second.q2fact,
+            mu_r: second.mu_r,
         })
     }
 
@@ -810,15 +827,20 @@ impl ClusterHistory {
         let first = &self.first;
         let mu_f = [0, 1].map(|beam| first.q2fact[beam].sqrt());
         let (Some(second), Some(q2bck)) = (&self.second, self.q2bck) else {
-            return EventScales::unmatched(first.mu_r, mu_f);
+            return EventScales {
+                graph: Some(first.clustering.graphs[0] - 1),
+                ..EventScales::unmatched(first.mu_r, mu_f)
+            };
         };
         let recorded = if self.pdfwgt { q2bck } else { second.q2fact };
+        let graph = second.clustering.graphs[0] - 1;
         EventScales {
             mu_r: first.mu_r,
             mu_f: [0, 1].map(|beam| self.fixed_fac[beam].unwrap_or(mu_f[beam])),
             mu_f_record: [0, 1]
                 .map(|beam| self.fixed_fac[beam].unwrap_or_else(|| recorded[beam].sqrt())),
-            clustered_config: Some(second.clustering.graphs[0] - 1),
+            clustered_config: Some(graph),
+            graph: Some(graph),
         }
     }
 }
@@ -1278,7 +1300,15 @@ mod tests {
         let passed = cut
             .cluster_scales(&ev, &proc.input(1))
             .expect("above xqcut");
-        assert_eq!(passed, EventScales::unmatched(91.188, [91.188, 91.188]));
+        // The scales are the card's; the clustering's graph is kept.
+        assert_eq!(
+            EventScales {
+                graph: None,
+                ..passed
+            },
+            EventScales::unmatched(91.188, [91.188, 91.188])
+        );
+        assert!(passed.graph.is_some());
         let (incoming, outgoing) = llj_event(20.0);
         let soft = ScaleEvent {
             incoming,
