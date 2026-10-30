@@ -167,11 +167,68 @@ open(out, "w").write("%d\n" % n)
 PY
 }
 
-# mes_launch_sets SCRIPT — the `set key value` lines of a .mg5 script's launch
-# block, one `key value` per line.
-mes_launch_sets() {
+# The `set` lines of a .mg5 script's launch block, comments dropped, one per
+# line as the words after `set`. MadGraph reads `set KEY VALUE` and
+# `set run_card KEY VALUE` as run-card settings, and `set BLOCK CODE... VALUE`
+# and `set param_card BLOCK CODE... VALUE` (three words or more after `set`) as
+# param-card ones.
+mes_launch_set_lines() {
   sed -n '/^[[:space:]]*launch[[:space:]]*$/,/^[[:space:]]*done[[:space:]]*$/p' "$1" |
-    awk '$1 == "set" { print $2, $3 }'
+    sed 's/#.*//' | awk '$1 == "set" { $1 = ""; sub(/^ /, ""); print }'
+}
+
+# mes_launch_sets SCRIPT — the run-card settings of a .mg5 script's launch
+# block, one `key value` per line. Param-card settings are left out: they are
+# not run-card keys (mes_launch_param_sets lists them).
+mes_launch_sets() {
+  mes_launch_set_lines "$1" | awk '
+    NF == 2 { print $1, $2 }
+    NF == 3 && $1 == "run_card" { print $2, $3 }'
+}
+
+# mes_launch_param_sets SCRIPT — the param-card settings of a .mg5 script's
+# launch block, one `block code... value` per line.
+mes_launch_param_sets() {
+  mes_launch_set_lines "$1" | awk '
+    $1 == "param_card" { $1 = ""; sub(/^ /, ""); if (NF >= 3) print; next }
+    NF >= 3 && $1 != "run_card" { print }'
+}
+
+# mes_check_param_card SCRIPT CARD — every param-card setting of SCRIPT's launch
+# block is what the param card CARD says (block case-insensitive, `DECAY` widths
+# included), so a run made on CARD is at the point SCRIPT describes. A script
+# with no param-card setting passes: its card is the model's default one.
+mes_check_param_card() {
+  mes_launch_param_sets "$1" | python3 -c '
+import sys
+card, block, values = sys.argv[1], None, {}
+for raw in open(card):
+    words = raw.split("#")[0].split()
+    if not words:
+        continue
+    head = words[0].lower()
+    if head == "block":
+        block = words[1].lower() if len(words) > 1 else None
+    elif head == "decay":
+        block = None
+        if len(words) >= 3:
+            values[("decay", words[1])] = words[2]
+    elif block is not None:
+        values[(block, " ".join(words[:-1]))] = words[-1]
+bad = []
+for line in sys.stdin:
+    words = line.split()
+    key = (words[0].lower(), " ".join(words[1:-1]))
+    got = values.get(key)
+    try:
+        same = got is not None and float(got) == float(words[-1])
+    except ValueError:
+        same = got is not None and got.lower() == words[-1].lower()
+    if not same:
+        bad.append("%s %s: script %s, card %s" % (key[0], key[1], words[-1], got))
+if bad:
+    sys.exit("param card disagrees with the script launch block: " + "; ".join(bad))
+' "$2"
 }
 
 # mes_check_card SCRIPT CARD [KEYS] — every launch-block setting of SCRIPT is
