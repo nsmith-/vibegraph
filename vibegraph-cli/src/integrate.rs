@@ -32,8 +32,8 @@ use std::sync::Arc;
 use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{
-    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, MovedParam, PdfInput, RunInputs,
-    FORMAT_VERSION,
+    channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, MovedParam,
+    PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
@@ -559,6 +559,8 @@ struct RunOutput {
     channels: Vec<ChannelGrid>,
     /// The phase-space maps the run integrated under, every choice settled.
     maps: MapChoices,
+    /// [`channel_map_digest`] of the channels the grids were trained through.
+    channel_map_digest: String,
     /// The rule the integrand refined its grids under.
     grid_rule: GridRule,
     result: VegasResult,
@@ -776,6 +778,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         chi2_per_dof: output.result.chi2_per_dof,
         maps: output.maps,
         grid_rule: Some(output.grid_rule),
+        channel_map_digest: output.channel_map_digest,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -963,6 +966,7 @@ fn integrate_hadronic(
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
+        channel_map_digest: channel_map_digest(&integ.channel_map_keys()),
         grid_rule: integ.grid_rule(),
         result,
         convergence,
@@ -1091,6 +1095,7 @@ fn integrate_fixed_energy(
             })
             .collect(),
         maps,
+        channel_map_digest: channel_map_digest(integ.channel_map_keys()),
         grid_rule: integ.grid_rule(),
         result,
         convergence,

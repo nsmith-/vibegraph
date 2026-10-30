@@ -1195,6 +1195,40 @@ pub struct ProtonSelection {
     pub m2: f64,
 }
 
+/// What one point's multichannel weight is made of
+/// ([`ProtonIntegrand::point_anatomy`]).
+#[derive(Clone, Debug)]
+pub struct PointAnatomy {
+    /// The channel the point was drawn in.
+    pub channel: usize,
+    /// The partonic collision energy.
+    pub sqrt_shat: f64,
+    /// The `(τ, y)` map's Jacobian ([`OuterPoint::jac`]).
+    pub outer_jacobian: f64,
+    /// Every channel's selection weight `αₖ`, in channel order.
+    pub alphas: Vec<f64>,
+    /// Every channel's own density `gₖ` at the point, in channel order.
+    pub densities: Vec<f64>,
+    /// The point itself, carrying the channel term's value `αⱼ f/g`.
+    pub event: ProtonEvent,
+}
+
+impl PointAnatomy {
+    /// The mixture density `g = Σₖ αₖ gₖ`.
+    pub fn mixture_density(&self) -> f64 {
+        self.alphas
+            .iter()
+            .zip(&self.densities)
+            .map(|(a, g)| a * g)
+            .sum()
+    }
+
+    /// The integrand `f = value · g/αⱼ`, independent of how the point was drawn.
+    pub fn integrand(&self) -> f64 {
+        self.event.weight * self.mixture_density() / self.alphas[self.channel]
+    }
+}
+
 /// The laboratory energies of two head-on proton beams, beam 1 along `+z` and
 /// beam 2 along `−z`, taken massless.
 ///
@@ -1325,6 +1359,9 @@ pub struct ProtonIntegrand<'a> {
     /// it was built and kept because the built channels are type-erased behind
     /// [`ScaledChannel`] afterwards.
     channel_samplers: Vec<ChannelSampler>,
+    /// Each channel's [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key),
+    /// in channel order: the map a banked grid is replayed through.
+    channel_map_keys: Vec<String>,
     /// Total hadronic invariant `s = 4E₁E₂` (head-on beams).
     s_had: f64,
     beams: ProtonBeams,
@@ -1443,11 +1480,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// within a group or across groups, share one channel at their summed
     /// selection weight: a point's value does not depend on which of them drew it.
     ///
-    /// The peripheral channels are floored at [`Cuts::spacelike_floor`], the scale
-    /// the process's own transverse-momentum cuts imply. The floor is passed because
-    /// a final state of more than two legs has no peripheral spine without one; it
-    /// also reshapes a `2 → 2` process's spine, which leaves the estimator unbiased
-    /// but does change the map a banked run was taken with.
+    /// The peripheral channels are regulated at [`Cuts::spacelike_floor`], the scale
+    /// the process's own transverse-momentum cuts imply: it bounds each rung's
+    /// transfer and sets its pole floor. A run with no such cut gets a spine on the
+    /// default pole floor and an unbounded transfer.
     pub fn new(
         groups: &'a FlavorGroups,
         amps: &'a [BoundAmplitude<'a, f64>],
@@ -1581,6 +1617,7 @@ impl<'a> ProtonIntegrand<'a> {
         let mut channel_ids = Vec::new();
         let mut channel_members: Vec<Vec<ChannelId>> = Vec::new();
         let mut channel_samplers = Vec::new();
+        let mut channel_map_keys = Vec::new();
         let mut by_identity: HashMap<MapIdentity, usize> = HashMap::new();
         for (gi, g) in groups.groups().iter().enumerate() {
             for (di, d) in channel_diagrams(g.diagrams(), model)
@@ -1616,6 +1653,7 @@ impl<'a> ProtonIntegrand<'a> {
                     }
                 }
                 channel_samplers.push(ChannelSampler::of(&channel));
+                channel_map_keys.push(channel.map_key());
                 channels.push(Box::new(channel));
                 channel_ids.push(id);
                 channel_members.push(vec![id]);
@@ -1655,6 +1693,7 @@ impl<'a> ProtonIntegrand<'a> {
             channel_ids,
             channel_members,
             channel_samplers,
+            channel_map_keys,
             s_had,
             beams,
             tau_min,
@@ -1923,6 +1962,13 @@ impl<'a> ProtonIntegrand<'a> {
     /// order — the map kind and the propagator poles that shaped it.
     pub fn channel_samplers(&self) -> &[ChannelSampler] {
         &self.channel_samplers
+    }
+
+    /// Each sampling channel's
+    /// [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key), in
+    /// channel order.
+    pub fn channel_map_keys(&self) -> &[String] {
+        &self.channel_map_keys
     }
 
     /// Which diagram of which group each sampling channel was first built from,
@@ -2734,6 +2780,32 @@ impl<'a> ProtonIntegrand<'a> {
             group_records: sc.group_records.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
+        })
+    }
+
+    /// A point's weight taken apart into the factors it is a product of: the
+    /// channel term's value `αⱼ f/g`, the selection weight `αⱼ`, and every
+    /// channel's own density `gₖ` at the point, from which `g = Σₖ αₖ gₖ` and the
+    /// integrand `f = value · g/αⱼ` follow. `None` where the point carries no
+    /// weight.
+    ///
+    /// The densities are the ones the weight was formed from: the same sweep, at
+    /// the same momenta and energy, as [`value_in_channel`](Self::value_in_channel).
+    pub fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<PointAnatomy> {
+        let event = self.event_in_channel(channel, u)?;
+        let (grid_u, _) = self.split_point(u);
+        let m = self.map_point(grid_u);
+        let mut densities = Vec::with_capacity(self.channel_count());
+        let out = &event.cm[2..];
+        self.combiner
+            .channel_weight_at_recording(channel, m.sqrt_shat, out, &mut densities);
+        Some(PointAnatomy {
+            channel,
+            sqrt_shat: m.sqrt_shat,
+            outer_jacobian: m.jac,
+            alphas: self.combiner.alphas().to_vec(),
+            densities,
+            event,
         })
     }
 
@@ -4170,9 +4242,10 @@ mod tests {
                 );
                 let without =
                     DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, SQRT_S_HAD, 0.0);
-                assert!(
-                    without.spine_poles().is_empty(),
-                    "a three-body spine was built without a floor"
+                assert_eq!(
+                    without.spine_poles().len(),
+                    with.spine_poles().len(),
+                    "the spine was built with a floor and not without one, or the reverse"
                 );
                 match with.spine_poles().as_slice() {
                     [] => unfloored += 1,

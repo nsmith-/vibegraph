@@ -26,12 +26,27 @@ use crate::vegas::{GridRule, VegasGrid};
 /// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
 /// integration parsed. A version-13 file names its PDF set but records no
 /// checksum, so a generation could not tell whether the densities it reads are
-/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
-/// version.
-pub const FORMAT_VERSION: u32 = 14;
+/// the ones the grid was trained on.
+///
+/// `15` changes which phase-space map a stored channel grid is replayed
+/// through: a peripheral diagram's channel is built on its t-channel spine
+/// whether or not the run card gives a fiducial scale, with the spine's
+/// massless poles floored at a default scale when it does not. A version-14
+/// file integrated with no spacelike floor holds grids adapted to other maps:
+/// the all-timelike tree for a final state past two legs (a decay chain and an
+/// on-shell-veto run included), an unfloored pole for a `2 → 2` exchange. Its
+/// `(group, diagram)` keys and grid dimensions match the new channels', so it
+/// would replay silently against maps it was not trained on. The same version
+/// adds [`IntegrateArtifact::channel_map_digest`], which a generation compares
+/// against the maps it rebuilds, so a later change to which map a channel
+/// gets (its topology, poles, floors, transfer bounds) refuses the artifacts
+/// trained on the old maps without a version bump. A change to how a map
+/// with an unchanged key draws or weighs a point is invisible to it and still
+/// needs one. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 15;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -345,6 +360,28 @@ pub struct IntegrateArtifact {
     /// needs the rule to sample. `None` is an artifact whose channels were
     /// trained by no VEGAS grid; no writer produces one yet.
     pub grid_rule: Option<GridRule>,
+    /// [`channel_map_digest`] of the channels the grids were trained through,
+    /// in [`channels`](Self::channels) order. A generation recomputes it from
+    /// the channels it rebuilds and refuses a mismatch: equal `(group, diagram)`
+    /// keys and grid dimensions do not make two maps the same function. The
+    /// key encodes a map's parameters, not the code that samples it.
+    pub channel_map_digest: String,
+}
+
+/// SHA-256 over every channel's
+/// [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key), in
+/// channel order, each key terminated by a newline. A key is printable ASCII
+/// with no newline, so the encoding is injective on the ordered list: no
+/// reordering or re-splitting of keys gives the same bytes.
+pub fn channel_map_digest<S: AsRef<str>>(keys: &[S]) -> String {
+    let mut bytes = Vec::new();
+    for key in keys {
+        let key = key.as_ref();
+        debug_assert!(!key.contains('\n'), "a map key holds a newline: {key:?}");
+        bytes.extend_from_slice(key.as_bytes());
+        bytes.push(b'\n');
+    }
+    crate::ufo::identity::digest_bytes(&bytes)
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -478,6 +515,7 @@ mod tests {
             chi2_per_dof: 1.02,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            channel_map_digest: channel_map_digest(&["n=2;T"]),
         }
     }
 
@@ -796,8 +834,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 13,
-                    oldest: 14,
-                    expected: 14
+                    oldest: 15,
+                    expected: 15
                 }
             ),
             "{err}"
@@ -806,6 +844,61 @@ mod tests {
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-14 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 14's real shape: every field of this
+    /// build's but the trailing `channel_map_digest`, so its grids sit at the
+    /// same offsets a version-15 reader would decode them from. Its grids were
+    /// adapted to channel maps that version 15 builds differently for the same
+    /// `(group, diagram)` keys.
+    #[test]
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        let artifact = sample_artifact();
+        let mut raw = bincode::serialize(&artifact).unwrap();
+        let digest_field = 8 + artifact.channel_map_digest.len();
+        let tail = raw.split_off(raw.len() - digest_field);
+        assert_eq!(
+            tail[8..],
+            *artifact.channel_map_digest.as_bytes(),
+            "the digest is the last field"
+        );
+        raw[..4].copy_from_slice(&14u32.to_le_bytes());
+        let path = dir.join("v14.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 14,
+                    oldest: 15,
+                    expected: 15
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The digest reads every key, in order, with each key's boundary: moving a
+    /// character across a boundary changes it.
+    #[test]
+    fn the_channel_map_digest_reads_order_and_boundaries() {
+        let d = |keys: &[&str]| channel_map_digest(keys);
+        assert_eq!(d(&["a", "b"]), d(&["a", "b"]));
+        assert_ne!(d(&["a", "b"]), d(&["b", "a"]));
+        assert_ne!(d(&["ab", "c"]), d(&["a", "bc"]));
+        assert_ne!(d(&["a"]), d(&["a", ""]));
+        assert_eq!(
+            d(&["a", "b"]),
+            crate::ufo::identity::digest_bytes(b"a\nb\n")
+        );
     }
 
     /// The fixed-energy record round-trips too, as `PdfInput::None`.

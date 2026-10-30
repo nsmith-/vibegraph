@@ -22,7 +22,7 @@ to the current directory). It holds the trained VEGAS grids plus every input
 that produced them, so that `vibegraph generate` needs no card of its own and
 can refuse assets that changed instead of silently sampling against the wrong
 grid. The type is `IntegrateArtifact` in `vibegraph-lib/src/artifact.rs`, at
-`FORMAT_VERSION = 13`, which is also the oldest version read.
+`FORMAT_VERSION = 15`, which is also the oldest version read.
 Its encoding and version rules are in
 [artifact format versioning](artifact-format-versioning.md). Replay and event
 writing are in [generate](../events/generate.md).
@@ -42,7 +42,7 @@ writing are in [generate](../events/generate.md).
 
 | Field | Meaning |
 |---|---|
-| `format_version` | `FORMAT_VERSION` (13); every artifact is written at the current version. |
+| `format_version` | `FORMAT_VERSION` (15); every artifact is written at the current version. |
 | `process` | The canonical process string, every process line with its number. |
 | `proc_card` | The proc card's text, verbatim, which `generate` re-parses. |
 | `model` | `ModelIdentity { name, restrict, digest }`: the `import model` label and a SHA-256 of the restricted model. |
@@ -56,6 +56,7 @@ writing are in [generate](../events/generate.md).
 | `channels` | One `ChannelGrid` per phase-space channel, in the combiner's order. |
 | `sigma_pb`, `sigma_err_pb`, `chi2_per_dof` | `Σⱼ σⱼ`, the channel errors in quadrature, and χ²/dof. **On a 1→n decay run this field holds the partial width in GeV**, not a cross section in pb. |
 | `maps` | `MapChoices` (split angle, τ map, rung order): every map choice the run settled. |
+| `channel_map_digest` | SHA-256 over every channel's `DiagramChannel::map_key`, in channel order, each key newline-terminated (`artifact::channel_map_digest`). Empty key list on a flat-RAMBO run. Since version 15. |
 
 Each `ChannelGrid` holds:
 
@@ -101,7 +102,7 @@ every such run used.[^n37-maps]
 what it checks are the assets it reads again
 ([events/generate](../events/generate.md) lists the steps).
 
-1. **The version.** Below 13 is refused by `UnsupportedVersion`, which says
+1. **The version.** Below 15 is refused by `UnsupportedVersion`, which says
    to regenerate with `vibegraph integrate` (rules in
    [artifact format versioning](artifact-format-versioning.md)).
 2. **The process.** The recorded `proc_card` is re-parsed and its process
@@ -115,6 +116,17 @@ what it checks are the assets it reads again
    a different order would install every grid on the wrong channel, and that
    samples a plausible wrong distribution. Comparing counts or key sets would
    not see it.[^generate-keys]
+6. **The channel maps** (`check_channel_maps`, both the hadronic and the
+   fixed-energy path). The digest is recomputed from the channels `generate`
+   rebuilt and must equal `channel_map_digest`. Equal keys and grid
+   dimensions say the channels are the same diagrams, not that each diagram
+   got the same map: the no-cut spine change (version 15) kept every key and
+   dimension while moving `2 → 2` poles and turning timelike trees into
+   spines. A mismatch is refused naming both digests, with the remedy to
+   re-integrate. **Blind spot:** `map_key` encodes a map's parameters
+   (topology, poles, floors, transfer bounds, beam masses, `√s`), not the code
+   that draws from them. A change to how a map with an unchanged key samples
+   or weighs a point passes this check and still needs a version bump.
 
 `generate` writes `XSECUP` from the artifact's `sigma_pb`, and also reports the
 sample's own σ beside it.

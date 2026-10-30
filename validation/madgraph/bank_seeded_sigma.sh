@@ -16,6 +16,9 @@
 #                 against the param card.
 #        mlm      the same script, on the committed <row>_run_card.dat
 #                 (gen_mlm_references.sh's card).
+#        card     the same as mlm, for a row with no banked run of its own: a
+#                 script whose run card is committed beside it as
+#                 <row>_run_card.dat (pp_to_epemjj_qcd0).
 #        dy13     `generate p p > e+ e-` on dy13_default_run_card.dat or
 #                 dy13_mmll_run_card.dat or dy_beams_6500_4000_run_card.dat
 #                 (gen_hadronic_sigma.sh's): the references the pp_to_ll gate
@@ -114,7 +117,7 @@
 #
 # Usage: pixi run -e madgraph bank-seeded-sigma
 #   ROWS     rows or groups, space-separated (required): @fixed22 @fixed23
-#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @all,
+#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj @all,
 #            or row names (uu_tt is in no group)
 #   SEEDS    iseeds at the budget (default 20261101-20261105)
 #   SEEDS_4X iseeds at four times the budget (default 20261111 20261112)
@@ -189,9 +192,10 @@ group_rows() {
     @mlm-multi) echo pp_to_ttx_0j1j_mlm pp_to_ll_0j2j_mlm ;;
     @ee-mumua) echo ee_to_mumua ;;
     @long) echo uux_to_ccx_emmm_qcd0 bbx_to_ccx_emmm_qcd0 ;;
+    @ewk-lljj) echo pp_to_epemjj_qcd0 ;;
     @all)
       local g
-      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long; do
+      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj; do
         group_rows "$g"
       done
       ;;
@@ -208,7 +212,15 @@ row_kind() {
     pp_to_llj_mlm | pp_to_llj_xqcut_only | pp_to_llj_mlm_alps2 | pp_to_ll_0j2j_mlm | pp_to_ttx_0j1j_mlm)
       echo mlm ;;
     uu_tt) echo onshell ;;
-    *) if [ -f "$HERE/scripts/$1.mg5" ]; then echo script; else echo unknown; fi ;;
+    *)
+      if [ ! -f "$HERE/scripts/$1.mg5" ]; then
+        echo unknown
+      elif [ -f "$HERE/${1}_run_card.dat" ]; then
+        echo card
+      else
+        echo script
+      fi
+      ;;
   esac
 }
 
@@ -227,7 +239,7 @@ card_value() {
 write_generation_script() {
   local row="$1" kind="$2" tmpl="$3" out="$4"
   case "$kind" in
-    script | mlm)
+    script | mlm | card)
       local driver
       driver="$(script_driver "$HERE/scripts/$row.mg5" "$tmpl" "$WORK/$row/models" no-launch)" ||
         die "$row: no generation script"
@@ -430,6 +442,12 @@ row_setup() {
         die "$row: scripts/$row.mg5 and ${row}_run_card.dat disagree"
       generator="scripts/$row.mg5 without its launch block; run card ${row}_run_card.dat"
       ;;
+    card)
+      card="$HERE/${row}_run_card.dat"
+      mes_check_card "$HERE/scripts/$row.mg5" "$card" "iseed nevents" ||
+        die "$row: scripts/$row.mg5 and ${row}_run_card.dat disagree"
+      generator="scripts/$row.mg5 without its launch block; run card ${row}_run_card.dat; the model's default param card"
+      ;;
     dy13)
       case "$row" in
         dy13_default) card="$HERE/dy13_default_run_card.dat" ;;
@@ -479,9 +497,15 @@ dry_row() {
     local probe
     probe="$(mktemp "${TMPDIR:-/tmp}/vg_dry_XXXXXX")"
     mes_install_card "$card" "$probe" "$overrides" 0
-    printf '    budget     nevents %s\n' "${NEVENTS:-$(card_value "$probe" nevents)}"
+    printf '    budget     nevents %s at [%s], %s at [%s]\n' \
+      "${NEVENTS:-$(card_value "$probe" nevents)}" "$SEEDS" \
+      "$((4 * ${NEVENTS:-$(card_value "$probe" nevents)}))" "$SEEDS_4X"
     rm -f "$probe"
   fi
+  case "$kind" in
+    script | mlm | card) printf '    launch-block check  %s settings agree with the run card\n' \
+      "$(mes_launch_sets "$HERE/scripts/$row.mg5" | awk '$1 != "iseed" && $1 != "nevents"' | wc -l | tr -d ' ')" ;;
+  esac
   if [ "$kind" = dy13 ] && [ -n "$param" ]; then
     printf '    param card entries that differ from dy13_param_card.dat:\n'
     diff "$HERE/dy13_param_card.dat" "$param" | sed -n 's/^> /        /p' || true

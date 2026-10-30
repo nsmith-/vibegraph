@@ -42,6 +42,14 @@ concept.
    written the old rule's σ as `XSECUP` on a new-rule sample, a boundary a card
    reaches silently. So `generate` refuses a `< 7` artifact only on a card that
    selects the clustering scale. Fixed-scale artifacts keep working.[^n29-b9]
+   For the integrate artifact's channel maps, the check is automatic from
+   version 15: the artifact banks `channel_map_digest`, a SHA-256 over every
+   channel's `DiagramChannel::map_key` in channel order, and `generate`
+   refuses an artifact whose digest differs from the one its rebuilt channels
+   give. A change to which map a channel gets (topology, poles, floors,
+   transfer bounds) therefore refuses old artifacts without a bump. The key
+   encodes parameters, not sampling code, so a change to how a map with an
+   unchanged key draws or weighs a point still bumps by hand.
 4. **Upgrades keep the file's own version.** An upgraded struct carries the
    version the file was written at, not the current one. A guard downstream
    (`format_version < SCALE_DRAW_VERSION`, `< MULTIPLICITY_VERSION`,
@@ -92,9 +100,11 @@ committed file or test consumes a banked integrate artifact: every test writes
 its own with `vibegraph integrate`. So raising the floor breaks only users'
 files, and they are told to regenerate.
 
-The integrate artifact's floor is its current version, 13: no older file
-records a proc card, so `generate`, which takes none, has nothing to replay
-from one. The `v3`–`v9` readers, `version_for` and the threshold constants
+The integrate artifact's floor is its current version, 15. No file older
+than 13 records a proc card, so `generate`, which takes none, has nothing to
+replay from one; 13 records no PDF checksums; 14 holds grids trained under
+channel maps that 15 builds differently for the same keys, and no channel-map
+digest that could tell. The `v3`–`v9` readers, `version_for` and the threshold constants
 went with the versions they served, so rules 5–7 have no live instance in it;
 the examples above are their history.
 

@@ -662,6 +662,51 @@ fn generate_locates_the_recorded_pdf_set_by_name() {
     assert!(!lhe.exists());
 }
 
+/// A hadronic artifact generates under the channel maps it was integrated
+/// with, and the same artifact with only its recorded channel-map digest
+/// changed is refused, naming both digests: the `(group, diagram)` keys and grid
+/// dimensions still match, so the digest is all that can refuse it.
+#[test]
+fn a_hadronic_channel_map_digest_that_moved_is_refused() {
+    if !banked_present() {
+        vibegraph::validation::require(
+            "a_hadronic_channel_map_digest_that_moved_is_refused",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let run = integrated();
+    run.generate_text_at(10, "maps-unchanged.lhe", SEED);
+
+    let moved = vibegraph::ufo::identity::digest_bytes(b"other maps");
+    let mut edited = run.artifact.clone();
+    edited.channel_map_digest = moved.clone();
+    let edited_path = run.dir.join("moved-maps.bin.zst");
+    edited.write_to_path(&edited_path, true).unwrap();
+    let lhe = run.dir.join("never.lhe");
+    let out = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(&edited_path)
+        .pdf_data_path(pdf_dir())
+        .args(["--seed", SEED, "--nevents", "10", "-o"])
+        .arg(&lhe)
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&out);
+    assert!(
+        !out.status.success(),
+        "a moved channel-map digest was accepted"
+    );
+    assert!(
+        stderr.contains("the phase-space maps changed since this grid was trained")
+            && stderr.contains(&run.artifact.channel_map_digest)
+            && stderr.contains(&moved)
+            && stderr.contains("re-integrate"),
+        "the refusal does not name both digests and the remedy:\n{stderr}"
+    );
+    assert!(!lhe.exists());
+}
+
 /// A dynamical scale on this process runs to a cross section, and nothing in the
 /// coupling-and-densities layer stops it.
 ///
