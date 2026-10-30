@@ -309,3 +309,138 @@ Every arm agrees with flat RAMBO on ee → eeμμ within 1.5σ. On `u c` the pol
 scales, which share no floor, agree within 1σ of the production arm, as does
 the flat-remainder map. That is T-F1's independent check, now also across the
 remainder change.
+
+## 4. The CMS DY card (TV2, shipped param card)
+
+### Overweight at R1, before and after (same harness)
+
+- **Harness.** `T-F2-gen.sh`: `generate --seed 7 --nevents 600` with the dump,
+  on R1 grids (`--neval 10000 --niter 3`).
+- **Before** is T-V2's R1 grids, seeds 1–4, under `T-F2-bin-before` (TV2
+  `e28f084b`: T-V2's maps plus the dump).
+- **After** is new R1 grids, seeds 1–4, under `T-F2-bin-after` (TV2
+  `45d9fe28`, the fix).
+
+Results lines are in `T-F2-results-gen.txt`.
+
+| R1 seed | before: overweight share | before: largest w/w_max (channel) | before: trials | after: overweight share | after: largest w/w_max (channel) | after: trials |
+|---|---|---|---|---|---|---|
+| 1 | **0.751** | **1546.5** (2, γγ e) | 324124 | 0.085 | 6.3 (77) | 83597 |
+| 2 | 0.328 | 207.7 (2, γγ e) | 1641029 | 0.125 | 11.0 (53) | 42879 |
+| 3 | 0.205 | 25.4 (78) | 407246 | 0.124 | 11.1 (71, γγ τ) | 38258 |
+| 4 | 0.151 | 12.9 (57) | 372961 | 0.155 | 18.1 (3, γγ e) | 48823 |
+
+The other per-seed figures:
+
+| R1 seed | integration σ before → after (pb) | sample − integration pull, before → after | predicted unweighting efficiency, before → after |
+|---|---|---|---|
+| 1 | 11.97 → 12.78 | +1.05 → +0.05 | 1.86e-3 → 7.48e-3 |
+| 2 | 14.94 → 12.63 | +0.30 → +0.94 | 4.62e-4 → 1.43e-2 |
+| 3 | 11.80 → 13.38 | +0.87 → +0.13 | 1.59e-3 → 1.66e-2 |
+| 4 | 14.00 → 12.87 | −0.58 → +1.07 | 1.91e-3 → 1.24e-2 |
+
+- **The largest ratio** falls from 13–1547 to 6–18. The γγ ladder channels
+  (2, 3, 70, 71) still appear among the heaviest, at 11–18×, but no longer at
+  hundreds.
+- **The overweight share** falls on the seeds whose tail was the corner
+  (0.75 → 0.09, 0.33 → 0.13). It stays at 0.12–0.16 elsewhere.
+- **The unweighting efficiency** the frozen scan predicts rises 4–30×.
+- **Caveat on the harness.** 600 events cost 4–40× fewer trials after the fix,
+  so the after samples see fewer trials in which to meet a rare tail. The
+  before samples' tails are single events: seed 1's 1547 is one trial in
+  3.2·10⁵. Four seeds bound how often such an event appears only loosely.
+
+### Re-gates of the moved rows
+
+Each re-gate ran as a separate detached target on `cd8775e0`'s tree, with
+`--profile release-debug --config 'profile.release-debug.debug=0'` and
+`--features extended-validation`, under each target's own seed policy.
+`T-F2-regate-summary.log`:
+
+```
+decay-chain rc=0 wall=390s   cargo test -p vibegraph --test cli_decay_chain
+onshell-uu-tt rc=0 wall=300s cargo test -p vibegraph --test cli_onshell_veto -- a_top_pair
+sigma rc=0 wall=1053s        cargo test -p vibegraph-lib --test validate_sigma    → test result: ok. 8 passed; 0 failed; 33 ignored
+samples rc=0 wall=373s       cargo test -p vibegraph-lib --test validate_samples  → test result: ok. 6 passed; 0 failed; 2 ignored
+```
+
+"Before" is T-F1's recorded after-values, the tree this session started
+from.
+
+| row (gate) | before (T-F1's after) | after (this session) |
+|---|---|---|
+| `ee_to_wpwm` (validate_sigma, 5 seeds) | 7.196160 ± 1.56e-3, pull +0.47, χ² 0.55 | 7.196325 ± 1.56e-3, pull +0.51, χ² 0.55 |
+| `ee_to_wpwm_cw` | 7.287786 ± 1.62e-3, +0.39, χ² 0.38 | 7.287743 ± 1.62e-3, +0.38, χ² 0.42 |
+| `ee_to_wp0wm` default / transverse / unpolarized (10 seeds) | 0.2578659 (+0.05) / 6.938526 (+0.76) / 7.196430 (+0.26) | 0.2578741 (+0.08) / 6.938531 (+0.76) / 7.196464 (+0.27) |
+| `ud_to_epemud_qcd0` (5 seeds) | 1.413063e-2 ± 1.19e-5, pull +1.47, χ² 0.36 | 1.413128e-2 ± 1.04e-5, pull +1.55, χ² 0.64 |
+| `zz_ee` (informational) | 4.731459e-4 ± 1.64e-7, pull +3.20 | 4.731611e-4 ± 1.64e-7, pull +3.24 |
+| `zz_emu` | 9.447290e-4 ± 2.29e-7, +1.15 | 9.447292e-4 ± 2.29e-7, +1.15 |
+| `uu_tt` on-shell veto (5 seeds) | 4.975220e-2 ± 3.1e-5, +4.69, χ² 0.20 | 4.977760e-2 ± 3.4e-5, +4.81, χ² 1.26 |
+| `ee_to_wpwm` samples (validate_samples, 3 seeds × 20000) | min KS p 1.27e-4 (T-F1's after) | worst KS per seed `pt(w+)` 2.80e-2 / 1.06e-2 / 1.43e-4, min χ² p 0.29, gate passes |
+| controls: `zz_emu_cut`, `pp_ttx_lep` (census: unchanged) | 6.661582e-4; 6.410089 | 6.661582e-4; 6.410089 (identical) |
+
+- Every gated row passes, at the same pulls to within a few tenths.
+- `uu_tt` keeps its known +2% offset from MadEvent; it is gated as
+  "reported against".
+- `zz_emu_cut` and `pp_ttx_lep` reproduce to every printed digit, which
+  confirms the census's unchanged verdict on two rows.
+
+**Not re-gated:**
+- `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0`: `Plan::Long`, oracle tier.
+- MLM `pp_to_ll_0j2j_mlm`, `pp_to_ttx_0j1j_mlm`: long tier, `#[ignore]`,
+  `pixi run validate-mlm-sigma`.
+- `uu_full`, `uu_tt_mg371`: references of the `uu_tt` comparison, no gate of
+  their own.
+
+## Gates (on `/home/user/wt/T`)
+
+The final gate ran on `cd8775e0`. Its code is `d54f0e46`; `cd8775e0` adds
+only report text. `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+CARGO_PROFILE_TEST_DEBUG=0` throughout. `T-F2-gates-final.log`:
+
+```
+fmt rc=0           cargo fmt --all --check
+clippy rc=0        cargo clippy -j 2 --workspace --all-targets -- -D warnings
+clippy-ev rc=0     cargo clippy -j 2 --workspace --all-targets --features vibegraph/extended-validation -- -D warnings
+clippy-ev-lib rc=0 cargo clippy -j 2 -p vibegraph-lib --all-targets --features extended-validation -- -D warnings
+test rc=0          cargo test -j 2 --workspace --no-fail-fast -- --test-threads 2
+                   48 suites, 1713 passed, 0 failed, 24 ignored
+kblint rc=0        python3 scripts/kb.py lint → 1004 concepts, 333 backlog items; 0 errors, 4 warnings
+```
+
+The four kb warnings are pre-existing `state: blocked` backlog items.
+
+**`spine_sigma`**, under its feature (`--profile release-debug --config
+'profile.release-debug.debug=0' --features extended-validation`), on the tree
+with both fixes (`T-F2-gate-spine-sigma.log`, `-M1.log`):
+
+```
+u c > e+ e- u c QCD=0 at √ŝ = 1000 GeV, 200000 × 8 a seed: 10 peripheral channels of 10
+  16 seeds: mean 1.799563e-2 pb, spread 1.65e-5 (rel 9.15e-4), seed χ²/dof 1.27, 62 s
+test result: ok. 1 passed; 0 failed; 1 ignored
+
+M1 (spine withheld, the restored condition `&& (n_out == 2 || fiducial_scale > F::zero())`):
+u c > e+ e- u c QCD=0 at √ŝ = 1000 GeV, 200000 × 8 a seed: 0 peripheral channels of 10
+  16 seeds: mean 1.829004e-2 pb, spread 6.74e-4 (rel 3.68e-2), seed χ²/dof 5.74, 106 s
+the seeds' relative spread 3.68e-2 exceeds 3.0e-3
+test result: FAILED. 0 passed; 1 failed; 1 ignored
+```
+
+The source was restored from a backup and `cmp` reported it identical.
+
+**Recalibration from 40 seeds per arm.** The default changed, so the spread
+bound was re-derived as T-V2 did: `probe_the_seed_scatter_of_the_no_scale_spine`,
+seeds 1001–1040, with 16-of-40 resampling by `T-V2-calib.py`.
+
+| arm | 40-seed mean (pb) | per-seed rel. sd | sd / quoted | 16 of 40: rel. spread 0.1% / 50% / 99.9% | 16 of 40: χ²/dof 0.1% / 50% / 99.9% |
+|---|---|---|---|---|---|
+| spine (as committed) | 1.797511e-2 | 3.11e-3 | 1.05 | 3.9e-4 / 7.7e-4 / 1.08e-3 | 0.28 / 1.08 / 2.09 |
+| spine withheld (M1) | 1.809914e-2 | 1.27e-1 | 1.46 | 7.5e-3 / 2.9e-2 / 4.4e-2 | 0.38 / 2.36 / 7.17 |
+| T-V2's spine arm (10⁴, flat remainders) | 1.79781e-2 | 3.29e-3 | 0.91 | 4.5e-4 / 8.2e-4 / 1.11e-3 | 0.25 / 0.85 / 1.57 |
+
+- The M1 arm is T-V2's to every printed digit, as it should be: with no
+  spine, neither change applies.
+- The spine arm's 99.9% spread quantile, 1.08e-3, is below T-V2's.
+  `REL_SPREAD_MAX = 3.0e-3` keeps a factor 2.8 over it and 2.5 under M1's 0.1%
+  quantile. `CHI2_PER_DOF_BAND = (0.15, 4.0)` brackets the spine arm's
+  0.28–2.09. **Neither constant changes.**
