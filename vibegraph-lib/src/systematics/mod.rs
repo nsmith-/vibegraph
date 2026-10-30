@@ -15,7 +15,7 @@
 //! * [`header`]: the variation list and the `<initrwgt>` block.
 //! * [`plan`]: the request resolved against its PDF sets, and the writer that
 //!   gives an event its weights.
-//! * [`format`]: Python's `str(float)` and Fortran's `Ew.d`.
+//! * [`format`](mod@format): Python's `str(float)` and Fortran's `Ew.d`.
 
 pub mod format;
 pub mod header;
