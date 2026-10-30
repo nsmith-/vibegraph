@@ -397,6 +397,16 @@ kb-log = "python scripts/kb.py log"
 # Scaffold research/kb/sprints/<name>/ for a new sprint (note 42 §4).
 new-sprint = "python scripts/kb.py new-sprint"
 
+# --- CMS gridpack survey: scrape CVMFS gridpacks into SQLite, run the CLI on them ---
+# Standard library only (sqlite3, ast); the environment just pins a Python.
+[feature.gridpacks.dependencies]
+python = ">=3.11,<3.14"
+
+[feature.gridpacks.tasks]
+# `pixi run -e gridpacks gpdb --help`; the pipeline is inventory -> sample -> scrape -> run.
+gpdb = "python validation/cms_gridpacks/gpdb.py"
+test-gpdb = "python -m unittest discover -s validation/cms_gridpacks -p 'test_*.py' -v"
+
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
@@ -404,3 +414,4 @@ helas-validation = { features = ["helas-validation"], solve-group = "helas-valid
 pythia = { features = ["pythia"], solve-group = "pythia" }
 markitdown = { features = ["markitdown"], solve-group = "markitdown" }
 kb = { features = ["kb"], solve-group = "kb" }
+gridpacks = { features = ["gridpacks"], solve-group = "gridpacks" }
