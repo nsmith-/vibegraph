@@ -38,6 +38,26 @@
 //!
 //! * **Rejected points.** Only written events are dumped, so the `xqcut`
 //!   decision is checked in one direction: no written event is rejected.
+//! * **H1's moved first call.** Grouped MadEvent's first call clusters the
+//!   unpermuted `PP` (the registered deviation H1); this crate clusters `P1`.
+//!   On a permuted event whose first call handed on other scales or another
+//!   `q2bck` than this crate's, every field is reported (`info, H1 first call
+//!   moved`) and none is gated: a production error in the first call that
+//!   shows only on such events, and the first-call rejections H1 causes on
+//!   points never written, are invisible here. The other permuted events are
+//!   gated like any.
+//!
+//! # The record's chain heads
+//!
+//! `rewgt` writes each chain's first code from the slot `ipdgcl(j,
+//! igraphs(1))` read after its own clustering (`reweight.f:1479`), which
+//! `:1439-1440` filled with the event's flavours under the graph the first
+//! call named. Where H1 makes the two calls name different graphs, the slot
+//! holds the flavour an earlier point of the same subprocess left, and
+//! `<totfact>` reads its density for it. The record is compared under
+//! MadEvent's slot as `RWLEG` dumps it; this crate writes the event's own
+//! flavours, gated equal to the slot wherever one graph was named, and such
+//! heads are gated to occur only on permuted events.
 //!
 //! # `rewgt`, factor by factor
 //!
@@ -644,6 +664,16 @@ impl Row {
 
 // ── the tally ────────────────────────────────────────────────────────────────
 
+/// A matched event whose record names, at a chain's head, a flavour MadEvent's
+/// slot kept from another point.
+struct StaleHead {
+    event: usize,
+    subdir: String,
+    permuted: bool,
+    own: [i64; 2],
+    heads: [i64; 2],
+}
+
 /// Agreement per compared field: `(agreeing, checked, first divergent event)`.
 #[derive(Default)]
 struct Tally {
@@ -680,6 +710,13 @@ struct Tally {
     /// `<mgrwt>` records printed whole where they differ from MadEvent's:
     /// (on non-permuted events, on permuted ones).
     mgrwt_shown: (usize, usize),
+    /// Of the permuted events, those whose first call handed on other scales
+    /// or another `q2bck` than this crate's (H1), reported and not gated.
+    h1: usize,
+    /// Events whose record chain heads are not the event's own flavours.
+    stale_heads: Vec<StaleHead>,
+    /// Unmatched events whose diagnostics were printed.
+    unmatched_shown: usize,
 }
 
 impl Tally {
@@ -717,9 +754,26 @@ impl Tally {
             println!("  {field:<44} {ok:>6}/{checked:<6}{worst}{first}");
         }
         println!(
-            "  events whose P1 is a symmetry permutation of PP: {}",
-            self.permuted
+            "  events whose P1 is a symmetry permutation of PP: {}; of them, with the first \
+             call's scales or q2bck moved by H1 (reported, not gated): {}",
+            self.permuted, self.h1
         );
+        let on_permuted = self.stale_heads.iter().filter(|s| s.permuted).count();
+        println!(
+            "  events whose record chain heads are another point's flavours (MadEvent's slot, \
+             H1's two graphs): {}, on permuted events {on_permuted}",
+            self.stale_heads.len()
+        );
+        for s in self.stale_heads.iter().take(6) {
+            println!(
+                "    event {} {}{}: own flavours {:?}, MadEvent's heads {:?}",
+                s.event,
+                s.subdir,
+                if s.permuted { " (permuted P1)" } else { "" },
+                s.own,
+                s.heads
+            );
+        }
         println!(
             "  events with a status-2 line expected: {}; of them, read in the integration \
              channel's forest the lines carry other codes on {}",
@@ -1268,15 +1322,41 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 .iter()
                 .zip(&momenta)
                 .any(|(b, a)| (0..4).any(|k| rel(unmirror(*b)[k], a[k]) > 1e-9));
+        // H1 reaches a permuted event's fields through what the first call
+        // hands on: its `μR` and `q2fact` (the densities `DSIG` reads) and its
+        // `q2bck` (the chains' central scales). Where those are this crate's,
+        // clustered on `P1`, every field is gated; where they differ, every
+        // field built on them is the relabelled event's and is reported, not
+        // gated. The graph it names reaches only the record's chain heads,
+        // which the head rule below reads from MadEvent's own slot.
+        let first_call_moved = {
+            let (mu_r, q2fact) = first.out();
+            let scales = rel(history.first.mu_r, mu_r)
+                .max(rel(history.first.q2fact[0], q2fact[0]))
+                .max(rel(history.first.q2fact[1], q2fact[1]));
+            let q2bck = match (
+                calls
+                    .get(1)
+                    .and_then(|c| c.all("Q2BCK").find(|r| r.s(1) == "OUT")),
+                history.q2bck,
+            ) {
+                (Some(out), Some(q)) => rel(q[0], out.f(3)).max(rel(q[1], out.f(4))),
+                (None, None) => 0.0,
+                _ => 1.0,
+            };
+            scales.max(q2bck) >= AGREEMENT
+        };
+        let h1 = permuted && first_call_moved;
         let f = |name: &'static str| -> &'static str {
-            if permuted {
-                Box::leak(format!("info, permuted P1: {name}").into_boxed_str())
+            if h1 {
+                Box::leak(format!("info, H1 first call moved: {name}").into_boxed_str())
             } else {
                 name
             }
         };
         if permuted {
             tally.permuted += 1;
+            tally.h1 += usize::from(h1);
             let from_pp = row
                 .choice
                 .cluster_history(
@@ -1424,12 +1504,37 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 // which the event's `SYST` record holds unrounded; the written
                 // energies carry `x` only to about 2e-7. `unwgt.f` writes the
                 // chain of matrix-element leg 1 under beam 2 when that leg runs
-                // along -z (`flip`), in the momenta the clustering read.
+                // along −z (`flip`, `:622-630`) in the momenta `DSIG` hands it,
+                // `P1`, which `DSIGPROC` rotates by π about the x axis under
+                // `IMIRROR = 2`. The first call, the only one dumped here,
+                // reads the unrotated `PP`, whose leg 1 runs along +z.
                 let syst = event.only("SYST").expect("a SYST record");
                 let flavours = [syst.i(6), syst.i(10)];
                 let x = [syst.f(7), syst.f(11)];
-                let flip = first.momenta(first.n_external())[0][3] < 0.0;
-                let labels = if flip { [2, 1] } else { [1, 2] };
+                let pp = first.momenta(first.n_external());
+                let p1_leg1_pz = unmirror(pp[0])[3];
+                let labels = if p1_leg1_pz < 0.0 { [2, 1] } else { [1, 2] };
+                if tally.unmatched_shown < 4 {
+                    if let Ok(Some(theirs)) = LoRecord::parse(&banked.trailer) {
+                        if theirs.beam_order != labels {
+                            tally.unmatched_shown += 1;
+                            println!(
+                                "  unmatched diagnostics, event {i} {subdir} channel {}: IMIRROR \
+                                 {}, PP leg 1 pz {:.6e}, P1 leg 1 pz {p1_leg1_pz:.6e}, labels \
+                                 ours {labels:?} theirs {:?}; SYST codes {flavours:?} x {x:?} q \
+                                 [{:.8e}, {:.8e}]; this crate's muF {:?}\n    theirs {}",
+                                first.iconfig(),
+                                first.scl().u(4),
+                                pp[0][3],
+                                theirs.beam_order,
+                                syst.f(8),
+                                syst.f(12),
+                                history.first.q2fact.map(f64::sqrt),
+                                theirs.lines()[1..].join(" "),
+                            );
+                        }
+                    }
+                }
                 compare_mgrwt(
                     &mut tally,
                     &row,
@@ -1515,9 +1620,8 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 );
             }
         }
-        let Some(mine) = compare_rewgt(
-            &mut tally, &row, &event, &history, &physical, i, !permuted, &f,
-        ) else {
+        let Some(mine) = compare_rewgt(&mut tally, &row, &event, &history, &physical, i, !h1, &f)
+        else {
             continue;
         };
         if let (true, Some(lhe), Some(begin)) = (use_syst, &lhe, event.only("RWBEG")) {
@@ -1538,13 +1642,47 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 calls.last().and_then(q2bck),
                 history.q2bck
             );
+            // The chain heads are `ipdgcl(j, igraphs(1))` as `rewgt` reads them
+            // after its own clustering (`reweight.f:1479`): a slot that
+            // `:1439-1440` filled with the event's flavours (`idup(j, IPSEL)`)
+            // under the graph the first call named, and that `RWLEG` dumps as
+            // it stood. Where the two calls named different graphs (H1's
+            // unpermuted first call) the slot holds whatever an earlier point
+            // of the same subprocess left there, and `<totfact>` reads its
+            // density for that flavour (`:1811`). The record is compared under
+            // MadEvent's slot; this crate writes the event's own flavours,
+            // which the gate below holds equal to it wherever one graph was
+            // named.
+            let own = [legs[0].i(2), legs[1].i(2)];
+            let heads = [legs[0].i(3), legs[1].i(3)];
+            let graph = |c: &CallRecords<'_>| c.last("SCLOUT").map(|r| r.u(4));
+            let one_graph = graph(first) == calls.get(1).and_then(graph);
+            tally.check(
+                "mgrwt: chain heads are the event's flavours where both calls named one graph",
+                i,
+                !one_graph || heads == own,
+            );
+            tally.check(
+                "mgrwt: chain heads other than the event's flavours only on permuted events",
+                i,
+                permuted || heads == own,
+            );
+            if heads != own {
+                tally.stale_heads.push(StaleHead {
+                    event: i,
+                    subdir: subdir.clone(),
+                    permuted,
+                    own,
+                    heads,
+                });
+            }
             compare_mgrwt(
                 &mut tally,
                 &row,
                 &subdir,
                 &history,
                 Some(&mine),
-                [legs[0].i(2), legs[1].i(2)],
+                heads,
                 [begin.f(6), begin.f(7)],
                 labels,
                 first.iconfig(),

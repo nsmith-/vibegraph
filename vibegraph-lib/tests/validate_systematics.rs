@@ -39,7 +39,7 @@ use rayon::prelude::*;
 use vibegraph::cache::lhapdf::{DownloadRequest, Tier, Tiers};
 use vibegraph::cache::store::Fetch;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::lhef::record::LheEvent;
+use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING};
 use vibegraph::pdf::alphas::GridAlphaS;
 use vibegraph::pdf::select::{load_for_lhaid, open_set_for_lhaid, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
@@ -794,8 +794,104 @@ fn madgraphs_default_arguments_on_the_banked_mlm_runs() {
             &writer,
             Some(alps_events),
         ));
+        let (events, worst, mean) = written_head_shift(&text, &writer);
+        if events > 0 {
+            println!(
+                "  info, chain heads other than the written flavours on {events} events: with \
+                 the written flavours MadGraph's module would move their weights by at most {} \
+                 (mean of each event's largest move {mean:.3e})",
+                worst
+                    .iter()
+                    .map(|(c, v)| format!("{c} {v:.3e}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        } else {
+            println!("  info, every chain head is the written flavour");
+        }
+        let pinned = STALE_HEAD_EVENTS
+            .iter()
+            .find(|(r, _)| *r == run)
+            .map(|r| r.1);
+        if Some(events) != pinned {
+            failures.push(format!(
+                "{run}: chain heads other than the written flavours on {events} events, pinned {pinned:?}"
+            ));
+        }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Per default-argument MLM run, the events whose record names another
+/// flavour than the written one at the head of a chain: MadEvent's
+/// `ipdgcl(j, igraphs(1))` slot, filled for the graph its first call named and
+/// read after `rewgt`'s own clustering named another (`reweight.f:1439-1440`,
+/// `:1479`), on symmetry-permuted channels.
+const STALE_HEAD_EVENTS: [(&str, usize); 4] = [
+    ("pp_to_llj_mlm", 0),
+    ("pp_to_ll_0j2j_mlm", 19),
+    ("pp_to_ttx_0j1j_mlm", 219),
+    ("pp_to_llj_xqcut_only", 0),
+];
+
+/// What MadGraph's module computes for the chain heads its record names,
+/// against the written flavours: over the events whose head differs, the
+/// relative change of each weight when each chain's head is the written
+/// parton of its beam, worst per class and the mean of each event's worst.
+fn written_head_shift(text: &str, writer: &Writer) -> (usize, BTreeMap<&'static str, f64>, f64) {
+    let file = LheFile::parse(text).expect("the file parses");
+    let variations = writer.variations();
+    let classes: Vec<&'static str> = variations[1..]
+        .iter()
+        .map(|v| class(v, &variations[0]))
+        .collect();
+    let shifts: Vec<(BTreeMap<&'static str, f64>, f64)> = file
+        .events
+        .par_iter()
+        .filter_map(|event| {
+            let record = LoRecord::parse(&event.trailer).ok()??.as_written();
+            let mut incoming: Vec<_> = event
+                .particles
+                .iter()
+                .filter(|p| p.status == STATUS_INCOMING)
+                .collect();
+            incoming.sort_by(|a, b| b.momentum[3].total_cmp(&a.momentum[3]));
+            let mut written = record.clone();
+            let mut moved = false;
+            for (chain, parton) in written.beams.iter_mut().zip(&incoming) {
+                if let Some(head) = chain.entries.first_mut() {
+                    moved |= head.0 != i64::from(parton.pdg);
+                    head.0 = i64::from(parton.pdg);
+                }
+            }
+            if !moved {
+                return None;
+            }
+            let kinematics = RecordKinematics::of(event);
+            let ours = writer
+                .weights(&written, &kinematics, event.weight)
+                .expect("the weights evaluate");
+            let mut by_class: BTreeMap<&'static str, f64> = BTreeMap::new();
+            let mut worst = 0.0f64;
+            for ((w, (_, theirs)), class) in ours.iter().zip(banked_weights(event)).zip(&classes) {
+                let value: f64 = theirs.parse().expect("a number");
+                let rel = (w / value - 1.0).abs();
+                let slot = by_class.entry(class).or_insert(0.0);
+                *slot = slot.max(rel);
+                worst = worst.max(rel);
+            }
+            Some((by_class, worst))
+        })
+        .collect();
+    let mut total: BTreeMap<&'static str, f64> = BTreeMap::new();
+    for (by_class, _) in &shifts {
+        for (class, rel) in by_class {
+            let slot = total.entry(class).or_insert(0.0);
+            *slot = slot.max(*rel);
+        }
+    }
+    let mean = shifts.iter().map(|s| s.1).sum::<f64>() / shifts.len().max(1) as f64;
+    (shifts.len(), total, mean)
 }
 
 /// MadGraph's own systematics module on event files outside the bundle:

@@ -79,7 +79,7 @@ use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::lhef::build::scalup;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
+use vibegraph::lhef::record::{LheEvent, LheParticle, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::runcard::RunCard;
 use vibegraph::systematics::record::{LoRecord, RecordInputs};
@@ -547,6 +547,14 @@ fn compare_event(
     // the two beams (a rapidity offset of the boost to the lab), which is more
     // than the eighth digit the record keeps.
     let x = labels.map(|l| theirs.beams[usize::from(l) - 1].entries[0].1);
+    // Each chain's first code is `ipdgcl(j, igraphs(1))` as `rewgt` reads it
+    // after its own clustering (`reweight.f:1479`), a slot `:1439-1440` filled
+    // with the event's flavour under the graph the first call named. Where the
+    // two calls named different graphs the slot holds the flavour another
+    // point of the same subprocess left there, which the file cannot say: such
+    // a code is read off the record here, and `head_census` gates that every
+    // one is a flavour of the event's own subprocess on that leg.
+    let heads = labels.map(|l| theirs.beams[usize::from(l) - 1].entries[0].0);
     let printed_pt = if matched { pt_clust(event) } else { None };
 
     let mut out = Outcome::default();
@@ -618,7 +626,7 @@ fn compare_event(
         let inputs = RecordInputs {
             n_qcd,
             mu_r: last.mu_r,
-            incoming: [legs[0], legs[1]],
+            incoming: heads,
             x,
             mu_f: last.q2fact.map(f64::sqrt),
             labels,
@@ -788,6 +796,129 @@ fn tabulate(
     }
 }
 
+/// Per row, the chain heads that are not the written flavour of their leg,
+/// counted per beam over the banked file: MadEvent's slot left by another
+/// point (see `compare_event`), on the rows with symmetry-permuted channels.
+const STALE_HEADS: [(&str, usize); 4] = [
+    ("pp_to_llj_mlm", 0),
+    ("pp_to_llj_xqcut_only", 0),
+    ("pp_to_ttx_0j1j_mlm", 219),
+    ("pp_to_ll_0j2j_mlm", 31),
+];
+
+/// Every subprocess of a row's process directories, one entry per
+/// `(directory, IPROC)`, each holding its `IDUP(i, IPSEL, IPROC)` rows; empty
+/// where the bundle carries no `leshouche.inc`.
+fn idup_tables(name: &str) -> Vec<Vec<Vec<i64>>> {
+    let subprocesses = root()
+        .join("validation/madgraph/output")
+        .join(name)
+        .join("SubProcesses");
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
+        .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    dirs.sort();
+    let mut tables = Vec::new();
+    for dir in dirs {
+        let Ok(text) = std::fs::read_to_string(dir.join("leshouche.inc")) else {
+            continue;
+        };
+        let mut by_iproc: BTreeMap<i64, Vec<Vec<i64>>> = BTreeMap::new();
+        for line in statements(&text) {
+            if let Some((_, iproc, v)) = data_args(&line, "(IDUP(I,") {
+                by_iproc.entry(iproc).or_default().push(v);
+            }
+        }
+        tables.extend(by_iproc.into_values());
+    }
+    tables
+}
+
+/// What the banked records say of each event's incoming partons, against the
+/// subprocess tables, gated:
+///
+/// * the beam order: the record writes the matrix element's first leg under
+///   beam 2 (`unwgt.f`'s `flip`, `P1`'s first leg along −z) exactly where the
+///   written flavours, beam 1 first, are no subprocess's row and beam 2 first
+///   are one (`IMIRROR = 2`);
+/// * each chain head that is not its leg's written flavour is a flavour
+///   another `IPSEL` of the event's own `IPROC` carries on that leg, as a slot
+///   only that subprocess's points write can hold, and their number is the
+///   one pinned in [`STALE_HEADS`].
+fn head_census(name: &str, file: &LheFile, failures: &mut Vec<String>) {
+    let tables = idup_tables(name);
+    if tables.is_empty() {
+        println!("{name}: no leshouche.inc in the bundle; head census not run");
+        return;
+    }
+    let find = |legs: &[i64]| tables.iter().position(|t| t.iter().any(|r| r == legs));
+    let (mut order_ok, mut compared, mut stale, mut foreign) = (0usize, 0usize, 0usize, 0usize);
+    let mut pairs: BTreeMap<(i64, i64), usize> = BTreeMap::new();
+    for event in &file.events {
+        let Ok(Some(theirs)) = LoRecord::parse(&event.trailer) else {
+            continue;
+        };
+        let mut incoming: Vec<&LheParticle> = event
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_INCOMING)
+            .collect();
+        incoming.sort_by(|a, b| b.momentum[3].total_cmp(&a.momentum[3]));
+        let outgoing = event
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_OUTGOING)
+            .map(|p| i64::from(p.pdg));
+        let beam = [i64::from(incoming[0].pdg), i64::from(incoming[1].pdg)];
+        let direct: Vec<i64> = beam.iter().copied().chain(outgoing.clone()).collect();
+        let mirror: Vec<i64> = [beam[1], beam[0]].into_iter().chain(outgoing).collect();
+        let (expected, legs, table) = match (find(&direct), find(&mirror)) {
+            (Some(t), _) => ([1u8, 2], direct, t),
+            (None, Some(t)) => ([2, 1], mirror, t),
+            (None, None) => continue,
+        };
+        compared += 1;
+        order_ok += usize::from(theirs.beam_order == expected);
+        for j in 0..2 {
+            let label = usize::from(expected[j]);
+            let Some(&(head, _, _)) = theirs.beams[label - 1].entries.first() else {
+                continue;
+            };
+            if head != legs[j] {
+                stale += 1;
+                *pairs.entry((legs[j], head)).or_default() += 1;
+                foreign += usize::from(!tables[table].iter().any(|r| r[j] == head));
+            }
+        }
+    }
+    let pinned = STALE_HEADS
+        .iter()
+        .find(|(row, _)| *row == name)
+        .map(|(_, n)| *n);
+    println!(
+        "\n{name}: head census over {compared} events: beam order the mirror reading on \
+         {order_ok}/{compared}; chain heads other than the written flavour: {stale} (pinned \
+         {pinned:?}), of which outside the event's own subprocess {foreign}; (written, head) {pairs:?}"
+    );
+    if order_ok != compared {
+        failures.push(format!(
+            "{name}: beam order not the mirror reading on {} events",
+            compared - order_ok
+        ));
+    }
+    if foreign != 0 || Some(stale) != pinned {
+        failures.push(format!(
+            "{name}: {stale} stale chain heads (pinned {pinned:?}), {foreign} outside the event's subprocess"
+        ));
+    }
+    if compared * 10 < file.events.len() * 9 {
+        failures.push(format!(
+            "{name}: the head census read only {compared} of {} events",
+            file.events.len()
+        ));
+    }
+}
+
 #[test]
 fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
     let mut failures = Vec::new();
@@ -796,6 +927,7 @@ fn the_mgrwt_record_is_madevents_on_every_banked_mlm_event() {
         let file = LheFile::parse(&text).expect("the banked file parses");
         let row = Row::load(name, &banner_card(&text));
         assert!(row.card.get("use_syst").expect("known").as_bool());
+        head_census(name, &file, &mut failures);
         let keys = event_legs(&file);
         let derived: HashMap<Vec<i64>, Option<(ChannelSet, usize)>> = keys
             .par_iter()
