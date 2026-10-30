@@ -183,16 +183,11 @@ impl ParamCard {
                 CardValue::Value(v) => v.to_string(),
                 CardValue::Auto => "Auto".to_owned(),
             };
-            let code = key
-                .1
-                .iter()
-                .map(i32::to_string)
-                .collect::<Vec<_>>()
-                .join(" ");
             return Err(SlhaError::Parse {
                 line: lineno,
                 msg: format!(
-                    "block {block} code {code} is set to {} here and to {} on line {first_line}",
+                    "block {block} code {} is set to {} here and to {} on line {first_line}",
+                    code_text(&key.1),
                     show(value),
                     show(first),
                 ),
@@ -220,7 +215,7 @@ impl ParamCard {
 
     /// Set the value at `block` (case-insensitive) and `code`, replacing any
     /// value already there.
-    pub fn insert(&mut self, block: &str, code: Vec<i32>, value: f64) {
+    pub(crate) fn insert(&mut self, block: &str, code: Vec<i32>, value: f64) {
         self.blocks
             .entry(block.to_lowercase())
             .or_default()
@@ -230,7 +225,7 @@ impl ParamCard {
     /// Every value the card sets, as `(block, code, value)` with the block
     /// lower-cased and a `DECAY` line's width under block `decay`; sorted by
     /// block, then code.
-    pub fn entries(&self) -> Vec<(&str, &[i32], f64)> {
+    pub(crate) fn entries(&self) -> Vec<(&str, &[i32], f64)> {
         let mut out: Vec<(&str, &[i32], f64)> = self
             .blocks
             .iter()
@@ -246,9 +241,17 @@ impl ParamCard {
 
     /// The PDG codes whose width the card leaves to MadGraph to compute
     /// (`DECAY <pdg> Auto`), in card order.
-    pub fn auto_widths(&self) -> &[i32] {
+    pub(crate) fn auto_widths(&self) -> &[i32] {
         &self.auto_widths
     }
+}
+
+/// An LHA code as a card line writes it: the integers separated by spaces.
+pub(crate) fn code_text(code: &[i32]) -> String {
+    code.iter()
+        .map(i32::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -288,10 +291,9 @@ DECAY 6 1.49
         }
     }
 
-    /// The lines a card used to drop without a word are errors at their own
-    /// line: a `DECAY` width that is neither a number nor `Auto`, a `DECAY`
-    /// line with no width or a non-integer code, a block entry with a
-    /// non-integer code, a `(block, code)` set twice to different values
+    /// The lines a card cannot honour are errors at their own line: a `DECAY`
+    /// width that is neither a number nor `Auto`, a `DECAY` line with no width
+    /// or a non-integer code, a block entry with a non-integer code, a `(block, code)` set twice to different values
     /// (MadGraph's "is already define"), `DECAY` widths and `Auto` included, and
     /// a block opened twice.
     #[test]

@@ -30,7 +30,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use super::parameters::{ParamNature, ParameterSet};
-use super::slha::ParamCard;
+use super::slha::{code_text, ParamCard};
 use super::{EvaluatedModel, UFOModel};
 use crate::artifact::MovedParam;
 
@@ -137,13 +137,6 @@ pub struct BoundCard {
     pub ignored: Vec<IgnoredEntry>,
 }
 
-fn code_text(code: &[i32]) -> String {
-    code.iter()
-        .map(i32::to_string)
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// The external parameter at `block` (case-insensitive) and `code`, with its
 /// restricted default.
 fn external_at<'m>(model: &'m UFOModel, block: &str, code: &[i32]) -> Option<(&'m str, f64)> {
@@ -179,38 +172,33 @@ struct Bound<'a> {
     block: &'a str,
     code: &'a [i32],
     default: f64,
-    /// The card's value, or the default where the card has none or the
-    /// restriction fixed the parameter to zero.
+    /// The value [`EvaluatedModel::from_model_card`] evaluates it at
+    /// ([`ParameterSet::bound_value`]).
     value: f64,
 }
 
-/// Every external parameter of `params` as `card` binds it, in model order:
-/// the value [`EvaluatedModel::from_model_card`] evaluates it at.
+/// Every external parameter of `params` as `card` binds it, in model order.
 fn bound_externals<'a>(
     params: &'a ParameterSet,
     card: &'a ParamCard,
 ) -> impl Iterator<Item = Bound<'a>> {
-    params
-        .externals
-        .iter()
-        .filter_map(move |p| match &p.nature {
-            ParamNature::External {
-                default_value,
-                lha_block,
-                lha_code,
-            } => Some(Bound {
-                name: &p.name,
-                block: lha_block,
-                code: lha_code,
-                default: *default_value,
-                value: if params.zeros.contains(&p.name) {
-                    *default_value
-                } else {
-                    card.get(lha_block, lha_code).unwrap_or(*default_value)
-                },
-            }),
-            ParamNature::Internal { .. } => None,
+    params.externals.iter().filter_map(move |p| {
+        let ParamNature::External {
+            default_value,
+            lha_block,
+            lha_code,
+        } = &p.nature
+        else {
+            return None;
+        };
+        Some(Bound {
+            name: &p.name,
+            block: lha_block,
+            code: lha_code,
+            default: *default_value,
+            value: params.bound_value(p, card)?,
         })
+    })
 }
 
 /// Refuse a card whose values break a relation the restriction merged
@@ -567,6 +555,26 @@ mod tests {
         );
         let mw = &bound.ignored[2];
         assert_eq!(mw.computed, defaults.param_values["MW"].re);
+    }
+
+    /// A computed entry within `%e`'s rounding of the computed value (5e-7
+    /// relative, the width of MadGraph's own entries) is not reported, and one
+    /// beyond [`DEPENDENT_TOLERANCE`] is, on either side.
+    #[test]
+    fn a_dependent_entry_is_reported_beyond_the_cards_rounding() {
+        let mw = EvaluatedModel::from_model(sm()).param_values["MW"].re;
+        let reported = |rel: f64| {
+            bind(&format!("Block MASS\n 24 {:e}\n", mw * (1.0 + rel)))
+                .unwrap()
+                .ignored
+                .len()
+        };
+        for rel in [4e-7, -4e-7] {
+            assert_eq!(reported(rel), 0, "MW off by {rel:e}");
+        }
+        for rel in [2e-6, -2e-6] {
+            assert_eq!(reported(rel), 1, "MW off by {rel:e}");
+        }
     }
 
     /// A model whose restriction gives two parameters of one block the same

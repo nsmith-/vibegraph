@@ -22,8 +22,9 @@ use crate::artifact::PdfInput;
 use crate::cache::lhapdf::Tier;
 use crate::generate::GenerateSettings;
 use crate::runcard::{card_text, RunCard};
-use crate::ufo::parameters::ParamNature;
-use crate::ufo::EvaluatedModel;
+use crate::ufo::parameters::{ParamNature, ParameterSet};
+use crate::ufo::particles::Particle;
+use crate::ufo::{EvaluatedModel, UFOModel};
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -339,7 +340,7 @@ fn slha_number(value: f64) -> String {
 /// * The free external parameters, at the values `evaluated` binds them to,
 ///   ordered as `order_param` orders them: by block name with `DECAY` last,
 ///   then by code. A parameter the restriction fixed to zero is not written,
-///   as MadGraph's restricted model no longer has it.
+///   as MadGraph's restriction removes it from the model.
 /// * After the `MASS` and after the `DECAY` entries, the masses and widths
 ///   that are not free parameters (computed, `ZERO`, or fixed to zero), one per
 ///   physical particle by ascending PDG code, then any particle whose mass or
@@ -347,20 +348,71 @@ fn slha_number(value: f64) -> String {
 ///   name lower-cased, as MadGraph's model names it. A computed entry's
 ///   comment names the parameter, where MadGraph prints its expression.
 /// * A `QNUMBERS` block for every physical particle outside MadGraph's SM list.
-pub fn slha_block(evaluated: &EvaluatedModel) -> String {
+pub(crate) fn slha_block(evaluated: &EvaluatedModel) -> String {
     let model = evaluated.model();
-    let params = &model.params;
-    let value = |name: &str| evaluated.param_values.get(name).map_or(0.0, |v| v.re);
-    let free_at = |name: &str| -> Option<&[i32]> {
-        if params.zeros.contains(name) {
-            return None;
-        }
-        params.externals.iter().find_map(|p| match &p.nature {
-            ParamNature::External { lha_code, .. } if p.name == name => Some(lha_code.as_slice()),
-            _ => None,
-        })
-    };
+    let particles = slha_particles(model);
+    let dependents = |block: &str| slha_dependent_lines(evaluated, &particles, block);
 
+    let mut body = String::from(
+        "######################################################################\n\
+         ## PARAM_CARD OF THE RUN: THE PARAMETERS VIBEGRAPH EVALUATED AT     ##\n\
+         ######################################################################\n",
+    );
+    let mut todo = vec!["MASS", "DECAY"];
+    let mut current: Option<&str> = None;
+    let externals = slha_externals(&model.params);
+    for (block, code, name) in &externals {
+        if current != Some(block.as_str()) {
+            if let Some(previous) = current {
+                body.push_str(&dependents(previous));
+            }
+            current = Some(block.as_str());
+            todo.retain(|b| b != block);
+            body.push_str(&slha_heading(block));
+        }
+        body.push_str(&slha_external_line(
+            block,
+            code,
+            name,
+            slha_value(evaluated, name),
+        ));
+    }
+    if let Some(previous) = current {
+        body.push_str(&dependents(previous));
+    }
+    for block in todo {
+        body.push_str(&slha_heading(block));
+        body.push_str(&dependents(block));
+    }
+    body.push_str(&slha_qnumbers(&particles));
+
+    format!(
+        "<slha>\n{}\n</slha>",
+        quick_xml::escape::partial_escape(body.trim_end())
+    )
+}
+
+/// The real part of `name`'s value in `evaluated`; zero for `ZERO` and any
+/// name the evaluation does not hold.
+fn slha_value(evaluated: &EvaluatedModel, name: &str) -> f64 {
+    evaluated.param_values.get(name).map_or(0.0, |v| v.re)
+}
+
+/// The code of `name` when it is a free external parameter: an external the
+/// restriction did not fix to zero.
+fn slha_free_code<'m>(params: &'m ParameterSet, name: &str) -> Option<&'m [i32]> {
+    if params.zeros.contains(name) {
+        return None;
+    }
+    params.externals.iter().find_map(|p| match &p.nature {
+        ParamNature::External { lha_code, .. } if p.name == name => Some(lha_code.as_slice()),
+        _ => None,
+    })
+}
+
+/// The free external parameters as `(upper-cased block, code, name)`, in
+/// MadGraph's `order_param` order: by block with `DECAY` last, then by code.
+fn slha_externals(params: &ParameterSet) -> Vec<(String, &[i32], &str)> {
     let mut externals: Vec<(String, &[i32], &str)> = params
         .externals
         .iter()
@@ -379,134 +431,141 @@ pub fn slha_block(evaluated: &EvaluatedModel) -> String {
         })
         .collect();
     externals.sort_by(|a, b| (a.0 == "DECAY", &a.0, a.1).cmp(&(b.0 == "DECAY", &b.0, b.1)));
+    externals
+}
 
-    let particles: Vec<_> = {
-        let mut seen = Vec::new();
-        model
-            .particles
-            .values()
-            .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
-            .filter(|p| {
-                let new = !seen.contains(&p.pdg_code);
-                seen.push(p.pdg_code);
-                new
-            })
-            .collect()
-    };
-    // MadGraph's `define_not_dep_param`: a particle whose mass (width) is a free
-    // parameter at another particle's code, or one an earlier particle already
-    // uses, is a duplicate; one whose parameter is not free is dependent.
-    let derived = |width: bool| {
-        let mut dependent = Vec::new();
-        let mut duplicate = Vec::new();
-        let mut used: Vec<&str> = Vec::new();
-        for p in &particles {
-            let param = if width {
-                p.width_param.as_str()
-            } else {
-                p.mass_param.as_str()
-            };
-            match free_at(param) {
-                Some(code) if code.first() != Some(&(p.pdg_code as i32)) => {
-                    duplicate.push((*p, param));
-                    continue;
-                }
-                _ if used.contains(&param) => {
-                    duplicate.push((*p, param));
-                    continue;
-                }
-                Some(_) => used.push(param),
-                None => {
-                    if param != "ZERO" {
-                        used.push(param);
-                    }
-                    dependent.push((*p, param));
-                }
-            }
-        }
-        dependent.sort_by_key(|(p, _)| p.pdg_code);
-        dependent.extend(duplicate);
-        dependent
-    };
-    let dependent_lines = |block: &str| -> String {
-        let (width, prefix) = match block {
-            "MASS" => (false, " "),
-            "DECAY" => (true, "DECAY "),
-            _ => return String::new(),
-        };
-        let mut text = String::new();
-        for (p, param) in derived(width) {
-            let what = if param == "ZERO" || params.zeros.contains(param) {
-                "0.0"
-            } else {
-                param
-            };
-            text.push_str(&format!(
-                "{prefix} {} {} # {} : {what} \n",
-                p.pdg_code,
-                c_exponential(value(param), 6, false, 0),
-                p.name.to_lowercase()
-            ));
-        }
-        if text.is_empty() {
-            return text;
-        }
-        format!(
-            "## Dependent parameters: computed from the ones above, or fixed by the\n\
-             ## model's restriction. Written for programs that read masses and widths\n\
-             ## from this card, such as a shower.\n{text}"
-        )
-    };
-    let block_header = |name: &str| {
-        let mut text = format!(
-            "\n###################################\n## INFORMATION FOR {name}\n###################################\n"
-        );
-        if name != "DECAY" {
-            text.push_str(&format!("Block {} \n", name.to_lowercase()));
-        }
-        text
-    };
+/// The model's physical particles with a positive PDG code, the first of each
+/// code, in model order.
+fn slha_particles(model: &UFOModel) -> Vec<&Particle> {
+    let mut seen = Vec::new();
+    model
+        .particles
+        .values()
+        .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
+        .filter(|p| {
+            let new = !seen.contains(&p.pdg_code);
+            seen.push(p.pdg_code);
+            new
+        })
+        .collect()
+}
 
-    let mut body = String::from(
-        "######################################################################\n\
-         ## PARAM_CARD OF THE RUN: THE PARAMETERS VIBEGRAPH EVALUATED AT     ##\n\
-         ######################################################################\n",
-    );
-    let mut todo = vec!["MASS", "DECAY"];
-    let mut current: Option<&str> = None;
-    for (block, code, name) in &externals {
-        if current != Some(block.as_str()) {
-            if let Some(previous) = current {
-                body.push_str(&dependent_lines(previous));
-            }
-            current = Some(block.as_str());
-            todo.retain(|b| b != block);
-            body.push_str(&block_header(block));
-        }
-        let lhacode = code
-            .iter()
-            .map(|k| format!("{k:>3}"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let mut info = (*name).to_string();
-        if block == "SMINPUTS" && *code == [3] {
-            info.push_str(" (Note: this Parameter is not used if you use a PDF set)");
-        }
-        let number = slha_number(value(name));
-        if block == "DECAY" {
-            body.push_str(&format!("DECAY {lhacode} {number} # {info} \n"));
+/// The particles whose mass (`width = false`) or width is written in the
+/// dependent section, each with its parameter: the dependent ones by PDG code,
+/// then the duplicates in model order.
+///
+/// MadGraph's `define_not_dep_param`: a particle whose mass (width) is a free
+/// parameter at another particle's code, or one an earlier particle already
+/// uses, is a duplicate; one whose parameter is not free is dependent.
+fn slha_derived<'m>(
+    params: &ParameterSet,
+    particles: &[&'m Particle],
+    width: bool,
+) -> Vec<(&'m Particle, &'m str)> {
+    let mut dependent = Vec::new();
+    let mut duplicate = Vec::new();
+    let mut used: Vec<&str> = Vec::new();
+    for p in particles {
+        let param = if width {
+            p.width_param.as_str()
         } else {
-            body.push_str(&format!("  {lhacode} {number} # {info} \n"));
+            p.mass_param.as_str()
+        };
+        match slha_free_code(params, param) {
+            Some(code) if code.first() != Some(&(p.pdg_code as i32)) => {
+                duplicate.push((*p, param));
+                continue;
+            }
+            _ if used.contains(&param) => {
+                duplicate.push((*p, param));
+                continue;
+            }
+            Some(_) => used.push(param),
+            None => {
+                if param != "ZERO" {
+                    used.push(param);
+                }
+                dependent.push((*p, param));
+            }
         }
     }
-    if let Some(previous) = current {
-        body.push_str(&dependent_lines(previous));
-    }
-    for block in todo {
-        body.push_str(&block_header(block));
-        body.push_str(&dependent_lines(block));
-    }
+    dependent.sort_by_key(|(p, _)| p.pdg_code);
+    dependent.extend(duplicate);
+    dependent
+}
 
+/// The dependent section written after `block`'s entries: for `MASS` and
+/// `DECAY`, the [`slha_derived`] masses or widths under a preamble, or nothing
+/// when there are none; nothing for any other block.
+fn slha_dependent_lines(
+    evaluated: &EvaluatedModel,
+    particles: &[&Particle],
+    block: &str,
+) -> String {
+    let params = &evaluated.model().params;
+    let (width, prefix) = match block {
+        "MASS" => (false, " "),
+        "DECAY" => (true, "DECAY "),
+        _ => return String::new(),
+    };
+    let mut text = String::new();
+    for (p, param) in slha_derived(params, particles, width) {
+        let what = if param == "ZERO" || params.zeros.contains(param) {
+            "0.0"
+        } else {
+            param
+        };
+        text.push_str(&format!(
+            "{prefix} {} {} # {} : {what} \n",
+            p.pdg_code,
+            c_exponential(slha_value(evaluated, param), 6, false, 0),
+            p.name.to_lowercase()
+        ));
+    }
+    if text.is_empty() {
+        return text;
+    }
+    format!(
+        "## Dependent parameters: computed from the ones above, or fixed by the\n\
+         ## model's restriction. Written for programs that read masses and widths\n\
+         ## from this card, such as a shower.\n{text}"
+    )
+}
+
+/// The `INFORMATION FOR` heading of block `name`, and its `Block` line except
+/// for `DECAY`, whose entries are lines of their own.
+fn slha_heading(name: &str) -> String {
+    let mut text = format!(
+        "\n###################################\n## INFORMATION FOR {name}\n###################################\n"
+    );
+    if name != "DECAY" {
+        text.push_str(&format!("Block {} \n", name.to_lowercase()));
+    }
+    text
+}
+
+/// One free external parameter's line in block `block` (upper-cased).
+fn slha_external_line(block: &str, code: &[i32], name: &str, value: f64) -> String {
+    let lhacode = code
+        .iter()
+        .map(|k| format!("{k:>3}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut info = name.to_string();
+    if block == "SMINPUTS" && code == [3] {
+        info.push_str(" (Note: this Parameter is not used if you use a PDF set)");
+    }
+    let number = slha_number(value);
+    if block == "DECAY" {
+        format!("DECAY {lhacode} {number} # {info} \n")
+    } else {
+        format!("  {lhacode} {number} # {info} \n")
+    }
+}
+
+/// The `QNUMBERS` section: one block for each of `particles` outside
+/// MadGraph's SM list, under MadGraph's banner; nothing when there is none.
+fn slha_qnumbers(particles: &[&Particle]) -> String {
     let mut qnumbers = String::new();
     for p in particles.iter().filter(|p| !SM_PDG.contains(&p.pdg_code)) {
         let charge = (3.0 * p.charge * 1e6).round() / 1e6;
@@ -523,18 +582,13 @@ pub fn slha_block(evaluated: &EvaluatedModel) -> String {
             if p.is_self_conjugate { 0 } else { 1 },
         ));
     }
-    if !qnumbers.is_empty() {
-        body.push_str(
-            "#===========================================================\n\
-             # QUANTUM NUMBERS OF NEW STATE(S) (NON SM PDG CODE)\n\
-             #===========================================================\n\n",
-        );
-        body.push_str(&qnumbers);
+    if qnumbers.is_empty() {
+        return qnumbers;
     }
-
     format!(
-        "<slha>\n{}\n</slha>",
-        quick_xml::escape::partial_escape(body.trim_end())
+        "#===========================================================\n\
+         # QUANTUM NUMBERS OF NEW STATE(S) (NON SM PDG CODE)\n\
+         #===========================================================\n\n{qnumbers}"
     )
 }
 

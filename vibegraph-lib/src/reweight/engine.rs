@@ -1023,8 +1023,7 @@ mod tests {
     /// plan's parameter propagation.
     fn fresh(at: &EvaluatedModel, moved: &[(String, f64)]) -> EvaluatedModel {
         let model = at.model().clone();
-        // One block per name: a card that opens a block twice is refused.
-        let mut blocks: Vec<(String, String)> = Vec::new();
+        let mut card = crate::ufo::slha::ParamCard::default();
         for p in &model.params.externals {
             let crate::ufo::parameters::ParamNature::External {
                 lha_block,
@@ -1039,21 +1038,9 @@ mod tests {
                 .rev()
                 .find(|(n, _)| *n == p.name)
                 .map_or(at.param_values[&p.name].re, |(_, v)| *v);
-            let code: Vec<String> = lha_code.iter().map(i32::to_string).collect();
-            let line = format!(" {} {value:.17e}\n", code.join(" "));
-            match blocks
-                .iter_mut()
-                .find(|(b, _)| b.eq_ignore_ascii_case(lha_block))
-            {
-                Some((_, body)) => *body += &line,
-                None => blocks.push((lha_block.clone(), line)),
-            }
+            card.insert(lha_block, lha_code.clone(), value);
         }
-        let card: String = blocks
-            .iter()
-            .map(|(b, body)| format!("BLOCK {b}\n{body}"))
-            .collect();
-        EvaluatedModel::from_model_card(model, &card.parse().unwrap())
+        EvaluatedModel::from_model_card(model, &card)
     }
 
     /// The oracle every path answers to: the unpruned amplitude bound directly at

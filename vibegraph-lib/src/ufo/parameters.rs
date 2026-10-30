@@ -96,30 +96,38 @@ impl ParameterSet {
             .any(|p| p.name == name)
     }
 
+    /// The value `card` binds the external parameter `p` to: the card's where it
+    /// sets one, the restricted default otherwise. A parameter zeroed by a
+    /// restriction is locked to zero: the card cannot revive it (see
+    /// [`apply_restrict`](Self::apply_restrict)). `None` for an internal
+    /// parameter.
+    pub(crate) fn bound_value(&self, p: &Parameter, card: &ParamCard) -> Option<f64> {
+        let ParamNature::External {
+            default_value,
+            lha_block,
+            lha_code,
+        } = &p.nature
+        else {
+            return None;
+        };
+        Some(if self.zeros.contains(&p.name) {
+            0.0
+        } else {
+            card.get(lha_block, lha_code).unwrap_or(*default_value)
+        })
+    }
+
     /// Evaluate all parameters using the given param_card for external inputs.
     pub(crate) fn evaluate(&self, slha: &ParamCard) -> HashMap<String, Complex64> {
         let mut values: HashMap<String, Complex64> = HashMap::new();
 
         for p in &self.externals {
-            let v = match &p.nature {
-                ParamNature::External {
-                    default_value,
-                    lha_block,
-                    lha_code,
-                } => {
-                    // A parameter zeroed by a restriction is locked to zero: the
-                    // user's param card cannot revive it (see `apply_restrict`).
-                    // Keep it in the map as 0.0 — internal params still reference
-                    // it (e.g. CKM via `lamWS`, `ye` via `yme`), and `eval` panics
-                    // on a missing name.
-                    if self.zeros.contains(&p.name) {
-                        0.0
-                    } else {
-                        slha.get(lha_block, lha_code).unwrap_or(*default_value)
-                    }
-                }
-                _ => unreachable!(),
-            };
+            // A zeroed parameter stays in the map as 0.0: internal params still
+            // reference it (e.g. CKM via `lamWS`, `ye` via `yme`), and `eval`
+            // panics on a missing name.
+            let v = self
+                .bound_value(p, slha)
+                .expect("externals are external parameters");
             values.insert(p.name.clone(), Complex64::new(v, 0.0));
         }
 
