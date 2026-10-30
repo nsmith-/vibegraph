@@ -3655,3 +3655,199 @@ fn probe_the_photon_pair_corner_against_the_pole_scale() {
         }
     }
 }
+
+/// One banked σ row the census below reads: its key, its process line (a full
+/// proc card when it carries its own `import`/`define` lines), the run card's
+/// text, and whether it is evaluated in the row's own model.
+struct CensusRow {
+    key: String,
+    card: String,
+    run_card: String,
+    row_model: bool,
+}
+
+/// Apply a reference file's `k=v;k=v` run-card overrides to a card's text.
+fn override_card(text: &str, overrides: &str) -> String {
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    for kv in overrides.split(';').filter(|s| !s.is_empty()) {
+        let (k, v) = kv.split_once('=').expect("k=v");
+        let hit = lines.iter_mut().find(|l| {
+            l.split('!')
+                .next()
+                .unwrap_or("")
+                .split('=')
+                .nth(1)
+                .map(str::trim)
+                == Some(k)
+        });
+        match hit {
+            Some(line) => *line = format!("{v} = {k}"),
+            None => lines.push(format!("{v} = {k}")),
+        }
+    }
+    lines.join("\n")
+}
+
+/// Every banked σ row with a process and run card in the reference files.
+fn census_rows() -> Vec<CensusRow> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph");
+    let read = |p: &std::path::Path| std::fs::read_to_string(p).unwrap_or_default();
+    let mut rows = Vec::new();
+    let sigma: serde_json::Value =
+        serde_json::from_str(&read(&dir.join("sigma_reference.json"))).expect("sigma reference");
+    for (key, row) in sigma.as_object().expect("rows") {
+        let card = dir.join("output").join(key).join("Cards/run_card.dat");
+        rows.push(CensusRow {
+            key: key.clone(),
+            card: format!("generate {}", row["process"].as_str().expect("process")),
+            run_card: read(&card),
+            row_model: true,
+        });
+    }
+    for file in [
+        "decay_chain_sigma_reference.json",
+        "onshell_veto_reference.json",
+        "grammar_sigma_reference.json",
+        "mlm_sigma_reference.json",
+    ] {
+        let v: serde_json::Value = serde_json::from_str(&read(&dir.join(file))).expect(file);
+        for (key, row) in v["rows"].as_object().expect("rows") {
+            let card_name = row["run_card"].as_str().unwrap_or("");
+            let base = if card_name == "generated default" {
+                String::new()
+            } else {
+                read(&dir.join(card_name))
+            };
+            let run_card = override_card(&base, row["overrides"].as_str().unwrap_or(""));
+            let card = match row["script"].as_str() {
+                Some(script) => read(&dir.join(script))
+                    .lines()
+                    .filter(|l| {
+                        let l = l.trim_start();
+                        l.starts_with("generate")
+                            || l.starts_with("add process")
+                            || l.starts_with("define")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                None => format!("generate {}", row["process"].as_str().expect("process")),
+            };
+            rows.push(CensusRow {
+                key: format!("{file}:{key}"),
+                card,
+                run_card,
+                row_model: false,
+            });
+        }
+    }
+    rows
+}
+
+/// Which banked σ rows the spine changes move: for every row above, every
+/// channel's [`DiagramChannel::map_key`] as production builds it against the
+/// key of the same diagram with its straddling remainders drawn flat and, with
+/// no fiducial scale, its pole floored from `10⁴ GeV²`. A row is moved when any
+/// key differs. The keys are compared at the row's own fiducial scale
+/// ([`Cuts::spacelike_floor`]) and at one energy, the card's `ebeam1 + ebeam2`;
+/// the energy enters both keys alike.
+///
+/// What it reads is the base map a channel is derived from. The split-angle,
+/// timelike-floor and rung-order layers a hadronic run adds are functions of
+/// that map and the run's options, which neither change here touches.
+#[test]
+#[ignore]
+fn probe_the_banked_rows_whose_maps_moved() {
+    use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use vibegraph::hadronic::{channel_diagrams, compile_subprocesses, process_external_legs};
+
+    let (mut moved, mut kept, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+    for row in census_rows() {
+        let model = if row.row_model {
+            match common::model_for_row(&row.key) {
+                Ok(m) => m,
+                Err(e) => {
+                    failed.push(format!("{}: model: {e}", row.key));
+                    continue;
+                }
+            }
+        } else {
+            common::sm_model()
+        };
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let built = parse_proc_card(&row.card, &ParsingOptions::default())
+            .map_err(|e| format!("{e:?}"))
+            .and_then(|c| generate_from_proc_card(&c, &model).map_err(|e| format!("{e:?}")));
+        let sets: Vec<_> = match built {
+            Ok(s) => s.into_iter().filter(|s| !s.diagrams.is_empty()).collect(),
+            Err(e) => {
+                failed.push(format!("{}: generate: {e}", row.key));
+                continue;
+            }
+        };
+        let run_card = match RunCard::parse(&row.run_card) {
+            Ok(c) => c,
+            Err(e) => {
+                failed.push(format!("{}: run card: {e:?}", row.key));
+                continue;
+            }
+        };
+        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let (mut channels, mut changed, mut rungs) = (0usize, 0usize, 0usize);
+        let mut floors = std::collections::BTreeSet::new();
+        for set in &sets {
+            let evals = match compile_subprocesses(std::slice::from_ref(set), &model, &evaluated) {
+                Ok(e) => e,
+                Err(e) => {
+                    failed.push(format!("{}: compile: {e:?}", row.key));
+                    continue;
+                }
+            };
+            let legs = process_external_legs(&evals[0], &model, &evaluated);
+            let fid = match Cuts::compile(&run_card, &legs) {
+                Ok(c) => c.spacelike_floor(),
+                Err(e) => {
+                    failed.push(format!("{}: cuts: {e:?}", row.key));
+                    continue;
+                }
+            };
+            floors.insert(format!("{fid:e}"));
+            for d in channel_diagrams(&set.diagrams, &evaluated) {
+                let new = DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, fid);
+                let old = if fid > 0.0 {
+                    DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, fid)
+                } else {
+                    DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, 1e4)
+                        .without_transfer_bound()
+                }
+                .with_flat_remainders();
+                channels += 1;
+                rungs = rungs.max(new.spine_poles().len());
+                if new.map_key() != old.map_key() {
+                    changed += 1;
+                }
+            }
+        }
+        let line = format!(
+            "{}: {changed} of {channels} channels moved, longest chain {rungs} rungs, fiducial \
+             scale {floors:?}",
+            row.key
+        );
+        if changed > 0 {
+            moved.push(line);
+        } else {
+            kept.push(line);
+        }
+    }
+    eprintln!("MOVED ({}):", moved.len());
+    for l in &moved {
+        eprintln!("  {l}");
+    }
+    eprintln!("UNCHANGED ({}):", kept.len());
+    for l in &kept {
+        eprintln!("  {l}");
+    }
+    eprintln!("NOT CENSUSED ({}):", failed.len());
+    for l in &failed {
+        eprintln!("  {l}");
+    }
+}

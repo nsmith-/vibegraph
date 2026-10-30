@@ -239,8 +239,8 @@ struct SpineRung<F: Real> {
     rest_floor: F,
     /// Whether the remainder `R_i`'s invariant, where it bounds no line of the
     /// diagram, is drawn from [`draw_rest`]'s mixture of a flat and a `1/ŝ_i`
-    /// map rather than flat alone. Read only for the remainders before the last
-    /// rung; the last one is the recoil subsystem and carries its own resonance.
+    /// map rather than flat alone. Set only on rungs before the last: the last
+    /// remainder is the recoil subsystem and carries its own resonance.
     rest_mixed: bool,
 }
 
@@ -841,7 +841,12 @@ impl<F: Real> DiagramChannel<F> {
                     }
                     out.push(',');
                     key_scalar(rung.rest_floor, &mut out);
-                    out.push(if rung.rest_mixed { 'M' } else { 'F' });
+                    // Written only when set: a chain whose remainders are all
+                    // flat, every single-rung chain among them, encodes exactly
+                    // as a chain with no such field.
+                    if rung.rest_mixed {
+                        out.push('M');
+                    }
                     out.push(',');
                     key_node(&rung.emitted, &mut out);
                     out.push(')');
@@ -1039,7 +1044,14 @@ impl<F: Real> DiagramChannel<F> {
                     "order repeats a rung"
                 );
             }
+            // The remainder mixture belongs to a position in the chain, not to a
+            // line: it is set on every rung but the last, whichever line that is.
+            let mixed = spine.rungs.iter().any(|r| r.rest_mixed);
             spine.rungs = order.iter().map(|&i| spine.rungs[i].clone()).collect();
+            let last = spine.rungs.len() - 1;
+            for (i, rung) in spine.rungs.iter_mut().enumerate() {
+                rung.rest_mixed = mixed && i < last;
+            }
         }
         self
     }
@@ -1081,6 +1093,19 @@ impl<F: Real> DiagramChannel<F> {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.rest_mixed = false;
+            }
+        }
+        self
+    }
+
+    /// Draw every straddling remainder from [`draw_rest`]'s mixture, as a chain
+    /// derived from a diagram does: for a hand-built ladder under test.
+    #[cfg(test)]
+    pub(crate) fn with_mixed_remainders(mut self) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            let last = spine.rungs.len() - 1;
+            for (i, rung) in spine.rungs.iter_mut().enumerate() {
+                rung.rest_mixed = i < last;
             }
         }
         self
@@ -1762,7 +1787,7 @@ fn spine_chain<F: Real>(
     let pole_floor = pole_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
     let mut rungs = Vec::with_capacity(sides.len());
     let mut previous = 0u64;
-    for &(side, m2) in &sides {
+    for (i, &(side, m2)) in sides.iter().enumerate() {
         let blob = side & !previous;
         if blob == 0 {
             return None;
@@ -1772,7 +1797,7 @@ fn spine_chain<F: Real>(
             t_mass2: m2.max(pole_floor),
             t_max_cap: bounded.then(|| -fiducial_scale),
             rest_floor: F::zero(),
-            rest_mixed: true,
+            rest_mixed: i + 1 < sides.len(),
         });
         previous = side;
     }
@@ -4130,6 +4155,7 @@ mod tests {
             ),
             ("transfer bound", base().with_fiducial_t_max(-400.0)),
             ("rung order", base().with_rung_order(&[1, 0])),
+            ("remainder mixture", base().with_mixed_remainders()),
             (
                 "blob floor",
                 base().with_timelike_floors(&|slots| if slots == 0b0011 { 25.0 } else { 0.0 }),
