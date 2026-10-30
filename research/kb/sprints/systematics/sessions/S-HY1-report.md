@@ -41,6 +41,17 @@ it) or *suspected*.
 | H20 | 2 | `runcard.rs` `a_refused_sys_pdf_fails_at_integrate` | matches `SystematicsRequest(_)`, any inner variant | — | checked | leave: each inner variant is pinned by its own `request.rs` test; this one pins that the card reaches it |
 | H21 | 1 | `generate/source.rs:626`, `:441` | a record that cannot be filled (`LoRecord::fill(…).ok()`, `?`) ends the source, which `draw_all` reports as `Exhausted { wanted, drawn }`: the density error is lost and the message says the trial budget ran out | — | checked | Found: the source's `Option` contract is shared by every failure there (`record_scales(…).ok()?` is the same shape on `main`) |
 
+Final dispositions: **fixed** H1–H9, H11–H14 (and H24 below); **Found** H10 (FHY1), H15 (FHY2), H21 (FHY3), H18 (FHY4, the pattern; the site left); **leave** H16, H17, H19, H20; **routed** none; **not reproduced** none. Every point-2 finding (H4, H5, H6, H14) was confirmed by its mutation passing the old test before it was fixed.
+
+Found after the first edit, while the gate ran (kept apart so the count of
+findings made before editing stays 21):
+
+| id | pt | where | evidence | conf. | disposition |
+|---|---|---|---|---|---|
+| H22 | 4 | `generate.rs:1084`, `vibegraph-cli/src/generate.rs` (`if settings.systematics.enabled` on the resolve), `vibegraph-cli/src/integrate.rs` (`.filter(\|_\| generate_settings.systematics.enabled)`) | "the request, if `use_syst` is on" written three times; `RunCard::split` already leaves `request` `None` when off | checked | Found (FHY7) |
+| H23 | 4 | `generate.rs:930`, `vibegraph-cli/src/integrate.rs:972` | `Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s))` twice, across crates | checked | Found (FHY7) |
+| H24 | 1 | `systematics/mod.rs:18` | the gate's `cargo doc`: "`format` is both a module and a macro", the one rustdoc warning the PR adds (the other eight blame to `main`) | checked | fixed, `d07ef835` |
+
 ### Census commands
 
 - Visibility: every `pub` item the diff adds to `vibegraph-lib/src`, with the
@@ -65,7 +76,7 @@ it) or *suspected*.
 ## Fixed
 
 Commits `24d637c5` (library), `c2ad1f67` (the two banked lib targets),
-`94746dd8` (the CLI round trips).
+`94746dd8` (the CLI round trips), `d07ef835` (H24, a doc link).
 
 | finding | commit | what changed | evidence |
 |---|---|---|---|
@@ -93,12 +104,12 @@ Commits `24d637c5` (library), `c2ad1f67` (the two banked lib targets),
 - **H8, H9 (the two lib targets).** Both run with `--nocapture
   --test-threads=1` under `release-debug` before any test edit
   (`S-HY1-base-banked.log`) and after the fixes (the gate's logs); diffed
-  with the `finished in` lines removed: IDENTITY_LIB.
+  with cargo's progress and `finished in` lines removed. `validate_mlm_records`: 211 lines, byte-identical (sha256 `82cd2289ac337e02…` both). `validate_systematics`: 121 lines, identical as a sorted multiset; 24 lines differ by position only, because H4's fix prints each run's controls in the requested order (`muR <-> muF`, `alpha_s power …`, `setscales.f …`) where the old loop printed the measured map's alphabetical order: one `alpha_s power n_qcd + 1` line moves below the `muR <-> muF` line on each of the twelve runs, every value unchanged. That reordering is H4's, a tightening, not part of the H8/H9 refactor.
 - **H11.** `cli_generate_proton`'s two round trips on the committed test
   file (restored afterwards, `S-HY1-cli-before.log`) and on the new one:
   `round trip: 400 events, 58000 weights, 57994 exact (99.9897%)` and
   `matched round trip: 400 events, 58800 weights, 58797 exact (99.9949%);
-  --alps moved 696 weights on the 348 events …` before, IDENTITY_CLI after.
+  --alps moved 696 weights on the 348 events …` before, and the same two lines, character for character, after (the gate's run of the whole target: `ok. 8 passed; 0 failed; 2 ignored`).
 
 ## Mutations
 
@@ -132,7 +143,48 @@ convention; none rests on speed.
 
 ## Gate
 
-GATE_BLOCK
+`S-HY1-gate.sh` (scratchpad): one step at a time on `94746dd8`,
+`CARGO_INCREMENTAL=0`, debug info off, `CARGO_BUILD_JOBS=2`, banked targets
+under `release-debug`. Summary (`S-HY1-gate.summary`):
+
+```
+fmt                        cargo fmt --all --check                                     rc=0
+clippy                     cargo clippy --workspace --all-targets -- -D warnings       rc=0
+                           Finished `dev` profile [optimized] target(s) in 49.99s
+clippy-ext                 … --features vibegraph/extended-validation,vibegraph-lib/extended-validation
+                           -- -D warnings                                              rc=0
+clippy-all                 … --all-features -- -D warnings                             rc=0
+test                       cargo test --workspace --no-fail-fast                       rc=0
+                           50 suites: 1788 passed, 0 failed, 19 ignored
+doc-lib                    cargo doc -p vibegraph-lib --no-deps --document-private-items   rc=0
+                           9 warnings: 8 on main's lines (git blame), 1 the PR's
+                           (systematics/mod.rs:18, H24), none from this session's edits
+doc-cli                    cargo doc -p vibegraph --no-deps --document-private-items   rc=0, 0 warnings
+kb                         python3 scripts/kb.py lint                                  rc=0
+                           1020 concepts, 332 backlog items; 0 errors, 4 warnings (backlog, pre-existing)
+validate_systematics       ok. 4 passed; 0 failed; 3 ignored; finished in 43.35s
+validate_mlm_records       ok. 1 passed; 0 failed; 0 ignored; finished in 4.25s
+validate_lhef              ok. 3 passed; 0 failed; 0 ignored; finished in 117.61s
+cli_generate_proton        ok. 8 passed; 0 failed; 2 ignored; finished in 30.80s
+validate_param_card_sigma  ok. 3 passed; 0 failed; 0 ignored; finished in 30.69s
+```
+
+After H24 (`d07ef835`, a doc comment): `cargo doc -p vibegraph-lib --no-deps
+--document-private-items` rc=0 with 8 warnings, all on `main`'s lines;
+`cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D
+warnings` rc=0.
+
+The suite count is S-V2's 1788 passed and 19 ignored: this session added and
+deleted no test (the identity probe was temporary and removed before
+`24d637c5`). `cli_systematics` ran inside the workspace suite (hermetic).
+Why each banked target: `validate_systematics` and `validate_mlm_records`
+(their test code changed), `cli_generate_proton` (its test code changed, and
+it writes and re-reads `<wgt>` lines through H1), `validate_lhef` (the
+`<rwgt>` writer H1 touches), `validate_param_card_sigma` (the brief's list).
+
+Not run: the extended-validation targets this change does not reach,
+`validate_mlm_dumps`' oracle part (no dumps here), and the validation
+report's collate step.
 
 ## Method
 
@@ -201,6 +253,13 @@ GATE_BLOCK
   mirror rule: the replay reads the labels off MadEvent's record (H7). The
   head census (`10000/10000` against `leshouche.inc`, and MR2) is the
   evidence, and it holds. A one-line correction for the sprint record.
+- **FHY7. Two one-line patterns written at more than one site.** "The
+  request, if `use_syst` is on" (`generate.rs:1084`, the CLI's `generate.rs`
+  resolve guard, `integrate.rs`'s `.filter(|_| …enabled)`) and "the member's
+  coupling, the set's where the member has none"
+  (`Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s))`, `generate.rs:930`
+  and `integrate.rs:972`). Closes with `Systematics::active_request()` and a
+  `PdfMember`-level accessor, each used at every site.
 
 ## Brief corrections
 
