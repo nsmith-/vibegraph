@@ -49,6 +49,9 @@ toml = "1"
 tar = "0.4.46"
 flate2 = "1.1.9"
 ureq = "3.3.0"
+# The moved-card sigma gate reads MadEvent's seed records through the library
+# gates' own reader (`vibegraph-lib/tests/common/seed_record.rs`), which needs it.
+statrs = { version = "0.19", default-features = false }
 
 # `required-features` is how a test declares its dependency layer: everything
 # listed here needs a fetched PDF set or a frozen MadGraph run, so it is absent
@@ -81,4 +84,8 @@ required-features = ["extended-validation"]
 
 [[test]]
 name = "cli_reweight_proton"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_param_card_sigma"
 required-features = ["extended-validation"]
