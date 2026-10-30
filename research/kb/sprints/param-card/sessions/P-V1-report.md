@@ -239,7 +239,7 @@ with the reference bundle and PDFs in place (`pixi run fetch-refdata`, `pixi run
 
 1. Coupling-fusion check (MadGraph's own restriction, no generation; seconds):
 
-       python3 -I validation/madgraph/check_coupling_fusion.py
+       pixi run -e madgraph python -I validation/madgraph/check_coupling_fusion.py
 
    Expect: 14 fused groups listed; `holds` for the restriction point,
    `dy13_mmll_60_120_mz95: MZ = 95`, `ee_to_tth_ymt250: ymt = 250` and the generic point;
@@ -259,7 +259,7 @@ with the reference bundle and PDFs in place (`pixi run fetch-refdata`, `pixi run
 
        pixi run -e madgraph build-diagrams
        grep -E '^ +6 2\.500000e\+02 # ymt' validation/madgraph/output/ee_to_tth_ymt250/Cards/param_card.dat
-       grep -E '^ +6 1\.730000e\+02 # MT' validation/madgraph/output/ee_to_tth_ymt250/Cards/param_card.dat
+       grep -iE '^ +6 1\.730000e\+02 # MT' validation/madgraph/output/ee_to_tth_ymt250/Cards/param_card.dat
 
    Expect: `Processing: ee_to_tth_ymt250.mg5`, `✓ Completed`, every other script skipped;
    both greps print one line (ymt moved, MT not).
