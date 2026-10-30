@@ -1,12 +1,16 @@
 ---
 type: Session Report
-title: "T-F2 report: the γγ → ℓℓ corner on DY"
-description: "In progress. The campaign plan, written before the long runs."
+title: "T-F2 report: the γγ → ℓℓ corner was the flat draw between rungs; a flat/1/ŝ remainder mixture and a 10³ GeV² pole scale"
+description: "DY's 1547× event is drawn by the γγ ladder channel itself. The weight comes from the flat draw of the invariants between rungs (1/ŝ there) and a lepton line 0.66 GeV² off shell under the 10 GeV² floor. Those remainders are now drawn from an even flat/1/ŝ mixture, and the default pole scale is 10³ GeV². On DY at R1 the largest w/w_max falls from 13–1547 to 6–18. Over 12 seeds the seed spread falls 2–3× and the paired R1 → R4 climb from +0.54 ± 0.27 to +0.32 ± 0.12 pb: smaller, not stopped. Bias checks hold, spine_sigma still fails under M1, and 15 banked rows move and pass their re-gates."
 status: draft
 tags: [phase-space, spine, vbf, cms, overweight, sprint-e, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-30}
 ---
-The session brief is [T-F2](T-F2.md).
+The session brief is [T-F2](T-F2.md). Code commits on `sprinte-spine-fallback`:
+`7263d4c8` (the weight-ranked dump), `9dc80f04` (the remainder mixture and the
+10³ GeV² default), and `d54f0e46` (the mixture tied to chain positions, the
+key written only when set, and the census probe). The report commits follow
+them.
 
 ## Campaign plan (written before launch)
 
@@ -44,6 +48,18 @@ cores for the first hour or two, so the first phases run slower.
   both rungs per seed from one run.
 - The "before" climb is T-V2's seeds 1–12, same command and budget.
 - If phase D runs late, it stops at 12 seeds and τ (brief §5) is not run.
+
+## What actually ran
+
+| phase | ran | wall (UTC) |
+|---|---|---|
+| A. before generations, R1 seeds 1–4 | 4 of 4 | 02:07–04:38. Seed 2 took 2.5 h at efficiency 3.7e-4; the host was shared with P-V2 and with this session's probes |
+| B. diagnosis, fix, mutations | – | 02:30–04:05 |
+| C. after: R1 seeds 1–4, then generations | 4 + 4 of 4 + 4 | 04:04–05:43 |
+| D. R4 seeds 1–12 | 12 of 12 | 04:58–09:37 |
+| E. gates, census, re-gates | all listed below | 04:08–05:53, with one restart after ENOSPC |
+
+Total, from first action to the last result: about 8 h.
 
 ## 1. Diagnosis at the point
 
@@ -134,7 +150,7 @@ peak at w/w_max 25 and 13. Seed 4's heaviest is drawn in a channel holding
 fit. But `configs.inc` is not in this checkout, so G1's diagram is not
 identified here.
 
-## 2. The fix (`9dc80f04`)
+## 2. The fix (`9dc80f04`, corrected in `d54f0e46`)
 
 The fix has two parts, both in `vibegraph-lib/src/phasespace/diagram_channel.rs`.
 
@@ -144,11 +160,13 @@ The fix has two parts, both in `vibegraph-lib/src/phasespace/diagram_channel.rs`
    `REST_LOG_SHARE = 0.5`. The log map is the existing zero-width `log_scale`
    under a massless pole, with its 10 GeV² floor and linear tail. The walk and
    the density both use the mixture's density, so it is one map. Each rung
-   records the choice in `SpineRung::rest_mixed`. It enters `map_key` (`M`/`F`)
-   and `map_identity`, so the channel-map digest sees the change, which is
-   intended. `with_flat_remainders()` rebuilds the flat draw for measurement.
-   The hand-built `from_topology_ladder` / `from_topology_tchannel` keep flat
-   remainders.
+   records the choice in `SpineRung::rest_mixed`, which is set on every rung
+   but the last; `with_rung_order` re-derives it by position. `map_key` writes
+   an `M` only when it is set, and `map_identity` carries it, so the
+   channel-map digest sees the change, which is intended, while a chain with
+   no straddling remainder keeps its key. `with_flat_remainders()` rebuilds the
+   flat draw for measurement. The hand-built `from_topology_ladder` /
+   `from_topology_tchannel` keep flat remainders.
 2. **`DEFAULT_POLE_SCALE` goes from 10⁴ to 10³ GeV²**, a pole floor of 1 GeV².
    It still applies only with no fiducial scale. The support bound is still
    only from `Cuts::spacelike_floor`, unchanged. The floor sits about 2.5·10⁷
@@ -184,13 +202,16 @@ Against 10⁴, the choice costs `u c` 1.2× and ee → eeμμ 1.4×; against ee'
 (10⁵) it costs 2.1×. It gains the DY corner 2.4× in variance and 6× in the
 corner point's weight. This is not tuned to MadGraph: no σ enters the choice.
 
-## Mutations (`T-F2-mut.log`)
+## Mutations (`T-F2-mut.log` on `9dc80f04`, `T-F2-mut-final.log` on `d54f0e46`)
 
 Each mutation is applied to `diagram_channel.rs`, the named tests run, and the
-file restored from a backup. `cmp` reports it identical every time.
+file restored from a backup. `cmp` reports it identical every time. The three
+were run on both commits with the same outcome and the same numbers. On
+`d54f0e46` MR replaces `rest_mixed: i + 1 < sides.len()` with `false`. The
+output shown is the final commit's.
 
 ```
-== MR: remainders flat in production       (spine_chain: rest_mixed: true -> false)
+== MR: remainders flat in production       (spine_chain: rest_mixed: i + 1 < sides.len() -> false)
 R1 seed 1, heaviest (56%): |M|²/g at the point over the mean weight, production 1.804e4, remainders flat 1.804e4 (bound 4e3)
 the production chain weighs the γγ → ℓℓ corner at 1.804e4 times its mean
 test the_photon_pair_corner_is_mapped_by_the_chain ... FAILED
@@ -205,9 +226,9 @@ the production chain weighs the γγ → ℓℓ corner at 1.919e10 times its mea
 test result: FAILED. 0 passed; 3 failed
 ```
 
-On the committed tree the same test reads production 4.13e3 / flat 1.10e5
-before the default moved, and passes after it. Its committed numbers are in
-the gate log.
+On the committed tree the same test passes, reading
+`production 1.586e3, remainders flat 1.804e4 (bound 4e3)`
+(`T-F2-gate-dc-final.log`).
 
 **One existing test changed.** `the_rung_ordering_test_fires_on_a_swapped_chain`
 failed under the mixture. Its raw `ln|t|` occupancy bound (1.2% a bin,
@@ -270,6 +291,48 @@ an inference from a suite passing. `T-F2-gate-census.log`:
   so their electron exchange moves 10 → 1 GeV². They are re-gated below on that
   record. `zz_emu_cut` (`cut_decays = T`) and `pp_ttx_lep` (top exchange,
   m² ≫ floor) do not move.
+
+### Re-gates of the moved rows
+
+Each re-gate ran as a separate detached target on `cd8775e0`'s tree, with
+`--profile release-debug --config 'profile.release-debug.debug=0'` and
+`--features extended-validation`, under each target's own seed policy.
+`T-F2-regate-summary.log`:
+
+```
+decay-chain rc=0 wall=390s   cargo test -p vibegraph --test cli_decay_chain
+onshell-uu-tt rc=0 wall=300s cargo test -p vibegraph --test cli_onshell_veto -- a_top_pair
+sigma rc=0 wall=1053s        cargo test -p vibegraph-lib --test validate_sigma    → test result: ok. 8 passed; 0 failed; 33 ignored
+samples rc=0 wall=373s       cargo test -p vibegraph-lib --test validate_samples  → test result: ok. 6 passed; 0 failed; 2 ignored
+```
+
+"Before" is T-F1's recorded after-values, the tree this session started
+from.
+
+| row (gate) | before (T-F1's after) | after (this session) |
+|---|---|---|
+| `ee_to_wpwm` (validate_sigma, 5 seeds) | 7.196160 ± 1.56e-3, pull +0.47, χ² 0.55 | 7.196325 ± 1.56e-3, pull +0.51, χ² 0.55 |
+| `ee_to_wpwm_cw` | 7.287786 ± 1.62e-3, +0.39, χ² 0.38 | 7.287743 ± 1.62e-3, +0.38, χ² 0.42 |
+| `ee_to_wp0wm` default / transverse / unpolarized (10 seeds) | 0.2578659 (+0.05) / 6.938526 (+0.76) / 7.196430 (+0.26) | 0.2578741 (+0.08) / 6.938531 (+0.76) / 7.196464 (+0.27) |
+| `ud_to_epemud_qcd0` (5 seeds) | 1.413063e-2 ± 1.19e-5, pull +1.47, χ² 0.36 | 1.413128e-2 ± 1.04e-5, pull +1.55, χ² 0.64 |
+| `zz_ee` (informational) | 4.731459e-4 ± 1.64e-7, pull +3.20 | 4.731611e-4 ± 1.64e-7, pull +3.24 |
+| `zz_emu` | 9.447290e-4 ± 2.29e-7, +1.15 | 9.447292e-4 ± 2.29e-7, +1.15 |
+| `uu_tt` on-shell veto (5 seeds) | 4.975220e-2 ± 3.1e-5, +4.69, χ² 0.20 | 4.977760e-2 ± 3.4e-5, +4.81, χ² 1.26 |
+| `ee_to_wpwm` samples (validate_samples, 3 seeds × 20000) | min KS p 1.27e-4 (T-F1's after) | worst KS per seed `pt(w+)` 2.80e-2 / 1.06e-2 / 1.43e-4, min χ² p 0.29, gate passes |
+| controls: `zz_emu_cut`, `pp_ttx_lep` (census: unchanged) | 6.661582e-4; 6.410089 | 6.661582e-4; 6.410089 (identical) |
+
+- Every gated row passes, at the same pulls to within a few tenths.
+- `uu_tt` keeps its known +2% offset from MadEvent; it is gated as
+  "reported against".
+- `zz_emu_cut` and `pp_ttx_lep` reproduce to every printed digit, which
+  confirms the census's unchanged verdict on two rows.
+
+**Not re-gated:**
+- `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0`: `Plan::Long`, oracle tier.
+- MLM `pp_to_ll_0j2j_mlm`, `pp_to_ttx_0j1j_mlm`: long tier, `#[ignore]`,
+  `pixi run validate-mlm-sigma`.
+- `uu_full`, `uu_tt_mg371`: references of the `uu_tt` comparison, no gate of
+  their own.
 
 ## 3. Bias checks
 
@@ -350,47 +413,66 @@ The other per-seed figures:
   before samples' tails are single events: seed 1's 1547 is one trial in
   3.2·10⁵. Four seeds bound how often such an event appears only loosely.
 
-### Re-gates of the moved rows
+### The paired R1 → R4 climb, 12 seeds
 
-Each re-gate ran as a separate detached target on `cd8775e0`'s tree, with
-`--profile release-debug --config 'profile.release-debug.debug=0'` and
-`--features extended-validation`, under each target's own seed policy.
-`T-F2-regate-summary.log`:
+- **Rungs.** R1 is `--neval 10000 --niter 3`, R4 is `--niter 12` at the same
+  `--neval`. The rungs nest, so a seed's R1 is its R4 log's iteration-3 line.
+  This was checked on both sides: `after-r4-s1`'s iteration 3 reads 12.7805 pb,
+  `after-r1-s1`'s σ is 12.780548. `T-F2-paired.py` reproduces T-V2's
+  +0.538 ± 0.268 from T-V2's own R4 logs.
+- **Runs.** Seeds 1–12, `T-F2-results-campaign.txt`, 1186–1307 s a run once
+  the host was free (2886 s for seed 1, run beside the gates). Every run's
+  rc is 0.
 
-```
-decay-chain rc=0 wall=390s   cargo test -p vibegraph --test cli_decay_chain
-onshell-uu-tt rc=0 wall=300s cargo test -p vibegraph --test cli_onshell_veto -- a_top_pair
-sigma rc=0 wall=1053s        cargo test -p vibegraph-lib --test validate_sigma    → test result: ok. 8 passed; 0 failed; 33 ignored
-samples rc=0 wall=373s       cargo test -p vibegraph-lib --test validate_samples  → test result: ok. 6 passed; 0 failed; 2 ignored
-```
+| | before (T-V2) R1 | before R4 | **after R1** | **after R4** |
+|---|---|---|---|---|
+| mean (pb) | 12.357 | 12.895 | 13.058 | 13.378 |
+| median | 12.048 | 12.877 | 13.017 | 13.335 |
+| seed sd | 1.201 | 0.636 | 0.560 | 0.224 |
+| sd/√12 | 0.347 | 0.184 | 0.162 | 0.065 |
+| seed χ²/dof | 3.55 | 3.45 | 1.62 | 0.52 |
+| sd / mean quoted error | 1.32 | 1.17 | 1.00 | 0.77 |
+| **paired R4 − R1** | | +0.538 ± 0.268 (sd 0.927), 9 of 12 rise | | **+0.320 ± 0.124** (sd 0.429), 9 of 12 rise |
 
-"Before" is T-F1's recorded after-values, the tree this session started
-from.
+Per seed after, R1 → R4: 1: 12.78 → 13.15, 2: 12.63 → 13.23,
+3: 13.38 → 13.55, 4: 12.87 → 13.34, 5: 13.14 → 13.24, 6: 12.91 → 13.33,
+7: 13.41 → 13.16, 8: 13.95 → 13.87, 9: 13.80 → 13.72, 10: 13.12 → 13.37,
+11: 11.83 → 13.22, 12: 12.86 → 13.37.
 
-| row (gate) | before (T-F1's after) | after (this session) |
-|---|---|---|
-| `ee_to_wpwm` (validate_sigma, 5 seeds) | 7.196160 ± 1.56e-3, pull +0.47, χ² 0.55 | 7.196325 ± 1.56e-3, pull +0.51, χ² 0.55 |
-| `ee_to_wpwm_cw` | 7.287786 ± 1.62e-3, +0.39, χ² 0.38 | 7.287743 ± 1.62e-3, +0.38, χ² 0.42 |
-| `ee_to_wp0wm` default / transverse / unpolarized (10 seeds) | 0.2578659 (+0.05) / 6.938526 (+0.76) / 7.196430 (+0.26) | 0.2578741 (+0.08) / 6.938531 (+0.76) / 7.196464 (+0.27) |
-| `ud_to_epemud_qcd0` (5 seeds) | 1.413063e-2 ± 1.19e-5, pull +1.47, χ² 0.36 | 1.413128e-2 ± 1.04e-5, pull +1.55, χ² 0.64 |
-| `zz_ee` (informational) | 4.731459e-4 ± 1.64e-7, pull +3.20 | 4.731611e-4 ± 1.64e-7, pull +3.24 |
-| `zz_emu` | 9.447290e-4 ± 2.29e-7, +1.15 | 9.447292e-4 ± 2.29e-7, +1.15 |
-| `uu_tt` on-shell veto (5 seeds) | 4.975220e-2 ± 3.1e-5, +4.69, χ² 0.20 | 4.977760e-2 ± 3.4e-5, +4.81, χ² 1.26 |
-| `ee_to_wpwm` samples (validate_samples, 3 seeds × 20000) | min KS p 1.27e-4 (T-F1's after) | worst KS per seed `pt(w+)` 2.80e-2 / 1.06e-2 / 1.43e-4, min χ² p 0.29, gate passes |
-| controls: `zz_emu_cut`, `pp_ttx_lep` (census: unchanged) | 6.661582e-4; 6.410089 | 6.661582e-4; 6.410089 (identical) |
+**Reading it against the measured spread:**
+- **The seed spread fell 2.1× at R1 and 2.8× at R4.** Seed χ²/dof fell from
+  3.5 to 1.6 (R1) and 0.5 (R4). The quoted errors now cover the scatter.
+  At R4 they slightly overstate it (sd/quoted 0.77). A χ²/dof of 0.5 over 12
+  seeds is within its own sampling range, but it is the low side to watch.
+- **The climb is smaller but has not stopped.** +0.32 ± 0.12 pb is 2.6σ on
+  its own spread. Nine of twelve seeds still rise, and the one large riser
+  (seed 11, +1.39) is an R1 low outlier being corrected. This is the same
+  pattern AGENTS.md describes, at about 60% of the size and half the scatter.
+  **The pass condition "the climb has stopped" is not met** at R4. A third rung
+  (R16), or 20+ seeds on these two, would be needed to say more.
+- **Against the corrected MadGraph reference** (survey per-P, the CERN host's
+  note), quoted only as residuals and not tuned toward:
+  - total R4 13.378 ± 0.065 against 13.12 ± 0.031, a ratio of
+    1.020 ± 0.005;
+  - e/μ part 9.149 ± 0.046 against 9.0052 ± 0.028, a ratio of 1.016;
+  - τ part 4.229 ± 0.050 against 4.1146 ± 0.013, a ratio of 1.028.
 
-- Every gated row passes, at the same pulls to within a few tenths.
-- `uu_tt` keeps its known +2% offset from MadEvent; it is gated as
-  "reported against".
-- `zz_emu_cut` and `pp_ttx_lep` reproduce to every printed digit, which
-  confirms the census's unchanged verdict on two rows.
+  Before, at R4: e/μ 8.598 (0.955) and τ 4.297 (1.044). The opposite-signed
+  split between the parts is gone; both now sit 1.6–2.8% high. That fits the
+  CERN-host hypothesis that one under-mapped corner moved both parts, though
+  it does not prove it. With the climb still running, neither number is a
+  converged residual.
 
-**Not re-gated:**
-- `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0`: `Plan::Long`, oracle tier.
-- MLM `pp_to_ll_0j2j_mlm`, `pp_to_ttx_0j1j_mlm`: long tier, `#[ignore]`,
-  `pixi run validate-mlm-sigma`.
-- `uu_full`, `uu_tt_mg371`: references of the `uu_tt` comparison, no gate of
-  their own.
+## 5. The τ part under the fix
+
+From the same R4 runs (the `masses 1.777, 1.777, 0, 0` part of each log):
+4.229 ± 0.050 pb after, against 4.297 ± 0.099 before. That is 1.028 of the
+corrected MadGraph τ value (4.1146 ± 0.013), against 1.044 before. The e/μ
+part moved up by 0.55 pb and the τ part down by 0.07. The fix (the heavy τ
+point was the same γγ corner) touches both, but most of the τ excess over
+MadGraph is not explained by it. No τ-only card was run (**not run**). The
+VBF-4to50 τ reference is soft on MadGraph's side, per the note, and was not
+used.
 
 ## Gates (on `/home/user/wt/T`)
 
@@ -444,3 +526,123 @@ seeds 1001–1040, with 16-of-40 resampling by `T-V2-calib.py`.
   `REL_SPREAD_MAX = 3.0e-3` keeps a factor 2.8 over it and 2.5 under M1's 0.1%
   quantile. `CHI2_PER_DOF_BAND = (0.15, 4.0)` brackets the spine arm's
   0.28–2.09. **Neither constant changes.**
+
+## Corrections to the brief
+
+- **"Whether a channel exists with both photon rungs as spacelike lines."**
+  It exists and draws the heavy points: channel 2 is the photon → lepton →
+  photon chain, holding 80% of `g` there. The brief's three candidate causes
+  (no channel, the floor, the channel weights) miss the dominant one, the
+  flat draw of the remainder invariants between rungs. The fix therefore
+  includes a channel change the brief did not list (the remainder mixture),
+  alongside a lower default floor, which it did list.
+- **"Re-calibrate its spread bound from 40 seeds per arm."** Done. The bound
+  did not need to move (table above).
+- **The overweight harness.** "The same harness before and after" holds: one
+  command, one binary family. But 600 events cost 4–40× fewer trials after the
+  fix, so the before/after comparison is not at equal trial counts (see the
+  caveat under the table).
+
+## Incidents
+
+- **Isolation leak into the main checkout, 03:49:55 UTC.**
+  - *What happened:* a command of the form
+    `cd /home/user/wt/T && cp … && sed -i … && ( cargo test … ) &` put the
+    whole `&&` chain in the background, its `cd` included. The foreground
+    `cp <backup> vibegraph-lib/tests/diagram_channel.rs` and `grep` that
+    followed ran in the default cwd, `/home/user/vibegraph`.
+  - *Effect on main:* the main checkout's `diagram_channel.rs` received T's
+    file. It is byte-identical to my backup
+    (`cmp T-F2-leaked-main-diagram_channel.rs T-F2-dc-tests.rs.bak`). The
+    coordinator restored it, and `git -C /home/user/vibegraph status --short`
+    is empty.
+  - *Effect on T:* T was left with the temporary `n_flat = 1_000` in
+    `probe_the_no_scale_spine_on_a_mass_cut_peripheral_process`, restored
+    before any commit.
+  - *Results affected:* none. No build or test ran in `/home/user/vibegraph`,
+    since every cargo command ran with an explicit `cd /home/user/wt/T` in the
+    foreground or under `setsid bash -c`. The one run using the temporary
+    `n_flat` is `T-F2-sigma-probe2.log`, whose token flat arm is set aside
+    above. From then on every write used an absolute path.
+- **ENOSPC during the first workspace test build (about 04:24).**
+  - *What happened:* `T/target/debug` with debuginfo reached 17 GB. I killed
+    my gate processes by PID, deleted only `T/target/debug`, and re-ran every
+    gate with debuginfo off.
+  - *Effect on the campaign:* it ran through it. `after-r1-s1` had already
+    written its grid. `after-r1-s2`'s log is complete (every iteration line
+    present) and so is its grid.
+
+## Found
+
+- **The remainder mixture's share is fixed at ½.**
+  - *Evidence:* on `e⁺e⁻ → e⁺e⁻µ⁺µ⁻` the mixture costs 1.4× per-draw variance
+    against the flat draw (124 against 90 at 10⁴). The DY corner gains 8×
+    from it. Neither process is served by a fixed even split.
+  - *To close:* adapt the share per channel, as the α-survey adapts channel
+    weights. The map then needs one more parameter in its key, or a VEGAS
+    dimension that already exists (the remainder's own coordinate) could carry
+    it. Measure on both processes.
+- **10³ GeV² costs ee → eeμμ 2.1× against its best scale.**
+  - *Evidence:* the variance table (84 at 10⁵, 174 at 10³). The leptonic
+    process wants a high floor, because the default `|η_l| < 2.5` keeps its
+    exchanges hard. The DY corner wants a low one.
+  - *To close:* derive the floor from what the cuts allow per rung, for
+    example an η cut implying a pT floor on a massless leg, instead of one
+    constant.
+- **The census probe misreads decay-chain fiducial scales.**
+  - *Evidence:* `probe_the_banked_rows_whose_maps_moved` compiles `Cuts` over
+    every leg and reads `zz_ee`/`zz_emu` at 100 GeV². Production exempts the
+    decay products under `cut_decays = F` (floor 0, T-F1).
+  - *To close:* take the fiducial scale from the integrand production builds
+    (`FixedBeamIntegrand` / the decay-chain cut filter), not from
+    `Cuts::compile` on the full leg list.
+- **`wpwm_to_wpwmz_cw` cannot be censused.**
+  - *Evidence:* its banked run card sets `nhel = 1`, which `RunCard::parse`
+    refuses (`UnsupportedField`).
+  - *To close:* parse the card with the field tolerated for map-only
+    purposes, or record how that row's gate builds its cuts.
+- **`with_rung_order` carries `rest_floor` with the line, not the position.**
+  - *Evidence:* `with_rung_order` clones whole rungs, and `rest_floor` is
+    installed per remainder `R_i` by `with_timelike_floors`, which is a
+    property of the position. A reordering after the floors are installed
+    leaves each remainder with another one's floor. `rest_mixed` had the same
+    defect and is fixed here (`d54f0e46`).
+  - *To close:* re-derive `rest_floor` by position in `with_rung_order`, or
+    assert that floors are installed after any reordering. It is a test-only
+    API today.
+- **The rung-ordering test's coverage share is calibrated on flat remainders.**
+  - *Evidence:* under the production mixture the derived two-rung chain's Z
+    rung holds 0.88% in its thinnest bin, against the 1.2% bound (first run,
+    `T-F2-dc-tests.log`). The test now measures flat remainders on both arms.
+  - *To close:* recalibrate `T_ORD_MIN_BIN_SHARE` on the production map, or
+    give the probe integrand the remainder structure a real matrix element
+    has.
+- **MadEvent's dominant DY channel G1 is not identified.**
+  - *Evidence:* the CSV names G1 (48% of e/μ, 43% of τ, climbing 17× over
+    its first iterations), but `configs.inc` is not in this checkout.
+  - *To close:* map G1 and G78.22 to their diagrams from the gridpack's
+    `configs.inc` and compare with channels 2/3/70/71 here.
+- **`generate`'s scan runs on every core whatever else is running.**
+  - *Evidence:* four generation jobs, started as "one thread each" with no
+    `-j`, each ran its maxima scan multithreaded, at load average 22. Only
+    the trial loop is serial. T-V2's "generate is serial" holds for the trial
+    loop only.
+  - *To close:* document `-j` for `generate`, or pass it through to the scan.
+- **T-V2's report miscounts the rising seeds.**
+  - *Evidence:* its R1 → R4 per-seed list has seed 5 at 12.13 → 12.09, a
+    fall. So 9 of 12 rise, not "ten of twelve" with only 2 and 4 falling.
+    `T-F2-paired.py` reproduces the paired +0.538 ± 0.268 from the R4 logs'
+    iteration-3 lines.
+  - *To close:* correct the sentence in the T-V2 report.
+- **Process: a backgrounded `cd … && … &` leaked an edit into the main
+  checkout.**
+  - *Evidence:* the `&` backgrounded the whole `&&` chain, its `cd` included,
+    so a following foreground `cp` ran in `/home/user/vibegraph`. The
+    coordinator restored main's file.
+  - *To close:* agent prompts should require absolute paths in every command
+    that writes, never relying on a `cd` in a chain that may be backgrounded.
+- **Process: a debug workspace test build with debuginfo filled the disk.**
+  - *Evidence:* `T/target/debug` reached 17 GB, and the workspace test build
+    died with ENOSPC (`T-F2-gate-test.log`, first attempt).
+  - *To close:* the gate scripts in the agent prompts should set
+    `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` by default.
