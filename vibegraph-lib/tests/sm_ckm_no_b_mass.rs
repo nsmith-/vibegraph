@@ -362,7 +362,9 @@ fn madgraph_default_couplings_hold_outside_the_b_and_ckm_sectors() {
 /// different factor; a parameter the card sets to zero stays locked there.
 fn moved_card(variant: SMRestrict) -> String {
     let card = card(variant);
-    let mut moved_card = String::new();
+    let mut decays = String::new();
+    // One header per block: a card that opens a block twice is refused.
+    let mut blocks: Vec<(String, String)> = Vec::new();
     for (i, p) in sm_parsed_model().params.externals.iter().enumerate() {
         let (lha_block, lha_code) = common::lha_slot(p);
         let Some(value) = card.get(lha_block, lha_code) else {
@@ -374,14 +376,23 @@ fn moved_card(variant: SMRestrict) -> String {
         let moved = value * (1.0 + 0.0137 * (i as f64 + 1.0));
         let code: Vec<String> = lha_code.iter().map(i32::to_string).collect();
         if lha_block.eq_ignore_ascii_case("decay") {
-            moved_card.push_str(&format!("DECAY {} {moved:e}\n", code.join(" ")));
+            decays.push_str(&format!("DECAY {} {moved:e}\n", code.join(" ")));
         } else {
-            moved_card.push_str(&format!(
-                "Block {lha_block}\n {} {moved:e}\n",
-                code.join(" ")
-            ));
+            let line = format!(" {} {moved:e}\n", code.join(" "));
+            match blocks
+                .iter_mut()
+                .find(|(b, _)| b.eq_ignore_ascii_case(lha_block))
+            {
+                Some((_, body)) => body.push_str(&line),
+                None => blocks.push((lha_block.to_string(), line)),
+            }
         }
     }
+    let mut moved_card: String = blocks
+        .iter()
+        .map(|(b, body)| format!("Block {b}\n{body}"))
+        .collect();
+    moved_card.push_str(&decays);
     moved_card
 }
 
