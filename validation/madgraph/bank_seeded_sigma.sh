@@ -13,6 +13,9 @@
 #                 settings are checked against that card first.
 #        mlm      the same script, on the committed <row>_run_card.dat
 #                 (gen_mlm_references.sh's card).
+#        card     the same as mlm, for a row with no banked run of its own: a
+#                 script whose run card is committed beside it as
+#                 <row>_run_card.dat (pp_to_epemjj_qcd0).
 #        dy13     `generate p p > e+ e-` on dy13_default_run_card.dat or
 #                 dy13_mmll_run_card.dat or dy_beams_6500_4000_run_card.dat
 #                 (gen_hadronic_sigma.sh's): the references the pp_to_ll gate
@@ -105,7 +108,7 @@
 #
 # Usage: pixi run -e madgraph bank-seeded-sigma
 #   ROWS     rows or groups, space-separated (required): @fixed22 @fixed23
-#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @all,
+#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj @all,
 #            or row names (uu_tt is in no group)
 #   SEEDS    iseeds at the budget (default 20261101-20261105)
 #   SEEDS_4X iseeds at four times the budget (default 20261111 20261112)
@@ -121,6 +124,8 @@
 #            ones the gate reads (default none)
 #   SEEDED_OUT   where records are written (default output/seeded_sigma)
 #   SEEDED_WORK  templates, run directories and logs (default work/seeded_sigma)
+#   DRY_RUN  1: print each row's kind, generation script, run card and budget,
+#            with the launch-block check, and run nothing (no MadGraph, no cargo)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -178,9 +183,10 @@ group_rows() {
     @mlm-multi) echo pp_to_ttx_0j1j_mlm pp_to_ll_0j2j_mlm ;;
     @ee-mumua) echo ee_to_mumua ;;
     @long) echo uux_to_ccx_emmm_qcd0 bbx_to_ccx_emmm_qcd0 ;;
+    @ewk-lljj) echo pp_to_epemjj_qcd0 ;;
     @all)
       local g
-      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long; do
+      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj; do
         group_rows "$g"
       done
       ;;
@@ -197,7 +203,15 @@ row_kind() {
     pp_to_llj_mlm | pp_to_llj_xqcut_only | pp_to_llj_mlm_alps2 | pp_to_ll_0j2j_mlm | pp_to_ttx_0j1j_mlm)
       echo mlm ;;
     uu_tt) echo onshell ;;
-    *) if [ -f "$HERE/scripts/$1.mg5" ]; then echo script; else echo unknown; fi ;;
+    *)
+      if [ ! -f "$HERE/scripts/$1.mg5" ]; then
+        echo unknown
+      elif [ -f "$HERE/${1}_run_card.dat" ]; then
+        echo card
+      else
+        echo script
+      fi
+      ;;
   esac
 }
 
@@ -216,7 +230,7 @@ card_value() {
 write_generation_script() {
   local row="$1" kind="$2" tmpl="$3" out="$4"
   case "$kind" in
-    script | mlm)
+    script | mlm | card)
       local driver
       driver="$(script_driver "$HERE/scripts/$row.mg5" "$tmpl" "$WORK/$row/models" no-launch)" ||
         die "$row: no generation script"
@@ -391,11 +405,12 @@ seed_record_bin() {
   echo "${CARGO_TARGET_DIR:-$ROOT/target}/debug/seed-record"
 }
 
-# run_row ROW — every seed of one row, then its record.
-run_row() {
-  local row="$1" kind card="" param="" overrides="" tree=pinned generator base seed
+# row_setup ROW — the row's kind, run card, param card, overrides, tree and
+# generator text, set in the caller's `kind card param overrides tree generator`
+# (bash's dynamic scope); dies on a row whose card disagrees with its script.
+row_setup() {
+  local row="$1"
   kind="$(row_kind "$row")"
-  mkdir -p "$WORK/$row/logs" "$OUTDIR/$row"
   case "$kind" in
     script)
       card="$HERE/output/$row/Cards/run_card.dat"
@@ -410,6 +425,12 @@ run_row() {
       mes_check_card "$HERE/scripts/$row.mg5" "$card" "iseed nevents" ||
         die "$row: scripts/$row.mg5 and ${row}_run_card.dat disagree"
       generator="scripts/$row.mg5 without its launch block; run card ${row}_run_card.dat"
+      ;;
+    card)
+      card="$HERE/${row}_run_card.dat"
+      mes_check_card "$HERE/scripts/$row.mg5" "$card" "iseed nevents" ||
+        die "$row: scripts/$row.mg5 and ${row}_run_card.dat disagree"
+      generator="scripts/$row.mg5 without its launch block; run card ${row}_run_card.dat; the model's default param card"
       ;;
     dy13)
       case "$row" in
@@ -435,6 +456,44 @@ run_row() {
       ;;
     *) die "$row: not a row this driver knows (no scripts/$row.mg5)" ;;
   esac
+}
+
+# dry_row ROW — what run_row would run the row on, printed; nothing is run.
+dry_row() {
+  local row="$1" kind card="" param="" overrides="" tree=pinned generator script probe
+  printf '=== %s\n' "$row"
+  if ! (row_setup "$row") 2>&1 | sed 's/^/    /'; then
+    printf '    WOULD FAIL: the row setup above refused it\n'
+    return 0
+  fi
+  row_setup "$row"
+  printf '    kind       %s\n    run card   %s\n    param card %s\n' "$kind" "$card" "${param:-none, the template default}"
+  if [ -n "$overrides" ]; then printf '    overrides  %s\n' "$overrides"; fi
+  printf '    tree       %s\n    generator  %s\n' "$tree" "$generator"
+  if [ "$kind" != pta ]; then
+    script="$(mktemp "${TMPDIR:-/tmp}/vg_dry_XXXXXX")"
+    write_generation_script "$row" "$kind" "$WORK/$row/template" "$script"
+    printf '    generation script:\n'
+    sed 's/^/        /' "$script"
+    rm -f "$script"
+    probe="$(mktemp "${TMPDIR:-/tmp}/vg_dry_XXXXXX")"
+    mes_install_card "$card" "$probe" "$overrides" 0
+    printf '    budget     nevents %s at [%s], %s at [%s]\n' \
+      "${NEVENTS:-$(card_value "$probe" nevents)}" "$SEEDS" \
+      "$((4 * ${NEVENTS:-$(card_value "$probe" nevents)}))" "$SEEDS_4X"
+    rm -f "$probe"
+  fi
+  case "$kind" in
+    script | mlm | card) printf '    launch-block check  %s settings agree with the run card\n' \
+      "$(mes_launch_sets "$HERE/scripts/$row.mg5" | awk '$1 != "iseed" && $1 != "nevents"' | wc -l | tr -d ' ')" ;;
+  esac
+}
+
+# run_row ROW — every seed of one row, then its record.
+run_row() {
+  local row="$1" kind card="" param="" overrides="" tree=pinned generator base seed
+  row_setup "$row"
+  mkdir -p "$WORK/$row/logs" "$OUTDIR/$row"
   generator="bank_seeded_sigma.sh, one fresh directory per seed, hard_survey = $HARD_SURVEY on every run's card: $generator"
 
   if [ "$kind" = pta ]; then
@@ -466,6 +525,10 @@ if [ "${1:-}" = --row ]; then
   run_row "$2"
   exit 0
 fi
+if [ "${1:-}" = --dry-row ]; then
+  dry_row "$2"
+  exit 0
+fi
 
 [ -n "${ROWS:-}" ] || {
   sed -n '/^# Usage:/,/^set -euo/p' "$SELF" | sed '$d' >&2
@@ -481,6 +544,12 @@ done
 for seed in $SEEDS_4X; do
   case " $SEEDS " in *" $seed "*) die "iseed $seed is in both SEEDS and SEEDS_4X" ;; esac
 done
+
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo ">>> dry run: ${#rows[@]} row(s), seeds [$SEEDS] at the budget and [$SEEDS_4X] at 4x" >&2
+  for row in "${rows[@]}"; do bash "$SELF" --dry-row "$row"; done
+  exit 0
+fi
 
 echo ">>> building seed-record" >&2
 cargo build -q --manifest-path "$ROOT/Cargo.toml" -p vibegraph-validation-report --bin seed-record

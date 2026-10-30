@@ -106,6 +106,10 @@ validate-sigma-2to6 = "cargo test -p vibegraph-lib --profile release-debug --fea
 ladder-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture probe_2to6_budget_ladder"
 ladder-bb = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture probe_bb_budget_ladder"
 ladder-recarded = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture probe_recarded_budget_ladder"
+# The no-pT-cut electroweak e+ e- j j sigma (pp_to_epemjj_qcd0) against its
+# MadEvent seed record, five integrate seeds. While the row is planned and has
+# no seed record it prints this side's sigma as AWAITING THE BANK.
+validate-ewk-lljj-sigma = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test validate_ewk_lljj_sigma -- --ignored --nocapture", depends-on = ["fetch-pdf"] }
 
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
 validate-deep = '''printf '%s\n' "The oracle layer runs the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0), measured and reported: pixi run validate-sigma-2to6, then pixi run validation-report to collate their cells" "  - the budget ladders behind the enforced sigma budgets: pixi run ladder-2to6, pixi run ladder-bb, pixi run ladder-recarded" "  - the kT clustering replay against MadGraph's own per-event intermediates: pixi run -e madgraph validate-kt-cluster" "Still without a driver: the 2 -> 6 sample rows, the full seed sweep for the multi-channel sigma rows, and the full rooting-soundness sweep over every candidate re-rooting. The ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
