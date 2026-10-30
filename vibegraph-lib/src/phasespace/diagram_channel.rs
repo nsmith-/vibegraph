@@ -46,7 +46,11 @@
 //! A ladder — several spacelike lines in one diagram — is the same construction
 //! repeated. Its spacelike lines nest, so they form an *ordered chain* of rungs,
 //! each emitting one blob against the running momentum transfer left by the rungs
-//! before it, which is what [`DiagramChannel::from_diagram_regulated`] builds. A
+//! before it, which is what [`DiagramChannel::from_diagram_regulated`] builds. The
+//! system each rung leaves behind, until the last, bounds no line of the diagram;
+//! its invariant `ŝ_i` is drawn from an even mixture of a flat and a `1/ŝ_i` map,
+//! the latter for the small momentum fraction a soft exchange further along the
+//! chain carries in (see [`Spine::rest_mixed`]). A
 //! chain importance-samples every spacelike propagator of the diagram; the
 //! all-timelike tree, which is what a derivation admitting only one rung falls
 //! back to, samples none of them and both under-covers the peripheral region and
@@ -233,6 +237,11 @@ struct SpineRung<F: Real> {
     /// rung leaves behind, or zero for no bound. The blob's own bound lives on
     /// `emitted`; installed together by [`DiagramChannel::with_timelike_floors`].
     rest_floor: F,
+    /// Whether the remainder `R_i`'s invariant, where it bounds no line of the
+    /// diagram, is drawn from [`draw_rest`]'s mixture of a flat and a `1/ŝ_i`
+    /// map rather than flat alone. Read only for the remainders before the last
+    /// rung; the last one is the recoil subsystem and carries its own resonance.
+    rest_mixed: bool,
 }
 
 /// A t-channel spine: the ordered chain of peripheral emissions a diagram's
@@ -279,7 +288,7 @@ impl<F: Real> Spine<F> {
 
     /// The propagator pole `R_i`'s invariant sits on. Only the last remainder is a
     /// timelike subsystem of the diagram — the earlier ones straddle the chain and
-    /// bound no line of their own, so their invariant is drawn flat.
+    /// bound no line of their own (see [`rest_mixed`](Self::rest_mixed)).
     fn rest_resonance(&self, i: usize) -> Option<Resonance<F>> {
         if i + 1 < self.rungs.len() {
             return None;
@@ -288,6 +297,19 @@ impl<F: Real> Spine<F> {
             Node::Branch(b) => b.resonance,
             Node::Leaf { .. } => None,
         }
+    }
+
+    /// Whether `R_i`'s invariant is drawn from [`draw_rest`]'s mixture: a
+    /// remainder before the last rung, on a rung that asks for it.
+    ///
+    /// Every rung after `i` hangs off `R_i`, so `ŝ_i ≈ x_i ŝ_{i−1}` with `x_i` the
+    /// momentum fraction the exchange at rung `i + 1` carries in from beam `0`. A
+    /// soft exchange — a quasi-real photon, the lepton line of `γγ → ℓℓ` — puts
+    /// `|M|² ∝ 1/x_i` there, which a flat draw in `ŝ_i` thins by `ŝ_{i−1}/ŝ_i`;
+    /// where cuts keep the exchanges hard, a `1/ŝ_i` draw alone spends most of its
+    /// points where nothing passes. The mixture covers both.
+    fn rest_mixed(&self, i: usize) -> bool {
+        i + 1 < self.rungs.len() && self.rungs[i].rest_mixed
     }
 
     /// The forced window on `R_i`'s invariant, which only the last remainder —
@@ -686,6 +708,7 @@ impl<F: Real> DiagramChannel<F> {
                 t_mass2: t_mass * t_mass,
                 t_max_cap: None,
                 rest_floor: F::zero(),
+                rest_mixed: false,
             }],
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
         };
@@ -705,7 +728,8 @@ impl<F: Real> DiagramChannel<F> {
     /// disjoint outgoing-leg slot set, an optional [`Resonance`] on its own
     /// invariant, and the mass of the spacelike propagator the rung's transfer sits
     /// on (width zero) — and `recoil` is what the chain leaves behind. Together they
-    /// must partition `0..masses.len()`.
+    /// must partition `0..masses.len()`. The remainders between rungs are drawn
+    /// flat, as [`with_flat_remainders`](Self::with_flat_remainders) leaves them.
     pub fn from_topology_ladder(
         sqrt_s: F,
         beam_masses: [F; 2],
@@ -753,6 +777,7 @@ impl<F: Real> DiagramChannel<F> {
                     t_mass2,
                     t_max_cap: None,
                     rest_floor: F::zero(),
+                    rest_mixed: false,
                 })
                 .collect(),
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
@@ -816,6 +841,7 @@ impl<F: Real> DiagramChannel<F> {
                     }
                     out.push(',');
                     key_scalar(rung.rest_floor, &mut out);
+                    out.push(if rung.rest_mixed { 'M' } else { 'F' });
                     out.push(',');
                     key_node(&rung.emitted, &mut out);
                     out.push(')');
@@ -1048,6 +1074,18 @@ impl<F: Real> DiagramChannel<F> {
         self
     }
 
+    /// Draw every straddling remainder's invariant flat instead of from
+    /// [`draw_rest`]'s mixture, leaving the channel otherwise unchanged: for
+    /// measuring the mixture against the flat draw on the same diagrams and seeds.
+    pub fn with_flat_remainders(mut self) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            for rung in &mut spine.rungs {
+                rung.rest_mixed = false;
+            }
+        }
+        self
+    }
+
     /// The CM beam momenta at energy `sqrt_s`, beam `0` along `+z`.
     fn beams_at(&self, sqrt_s: F) -> [LorentzVector<F>; 2] {
         beam_momenta(sqrt_s, self.beam_masses[0], self.beam_masses[1])
@@ -1085,12 +1123,14 @@ impl<F: Real> DiagramChannel<F> {
                     t_mass2,
                     t_max_cap,
                     rest_floor,
+                    rest_mixed,
                 } in rungs
                 {
                     w.node(emitted);
                     w.real(*t_mass2);
                     w.option_real(*t_max_cap);
                     w.real(*rest_floor);
+                    w.word(u64::from(*rest_mixed));
                 }
                 w.node(recoil);
             }
@@ -1666,16 +1706,26 @@ const POLE_FRACTION_OF_FIDUCIAL_SCALE: f64 = 1e-3;
 /// It is a sampling choice and never a bound: the floor moves the density the
 /// transfer is drawn from, not the support, so any positive value is unbiased and
 /// the value is chosen for variance. Measured as the relative per-draw variance of
-/// plain Monte Carlo over the production channel set, eight seeds of `2·10⁶`, on
-/// two finite peripheral processes with no single-leg `pT` cut: `u c → e⁺e⁻ u c`
-/// (`QCD = 0`, `√ŝ = 1 TeV`, `mmjj > 300`, `mmll > 50`) reads `1.37e3`, `8.2e2`,
-/// `5.4e2`, `3.7e3` and `6.1e3` at scales `1`, `10²`, `10⁴`, `10⁵` and
-/// `10⁶ GeV²`, and `e⁺e⁻ → e⁺e⁻ µ⁺µ⁻` (`√ŝ = 500 GeV`, `mmll > 50`) reads `240`,
-/// `154`, `90`, `62` and `59`. `10⁴ GeV²` — a pole floor of `10 GeV²` — is the
-/// best on the first and within `1.5×` of the best on the second, where the
-/// larger scales cost the first a factor of seven or more. Every scale's σ agreed
-/// with the others, and on the second process with flat RAMBO.
-const DEFAULT_POLE_SCALE: f64 = 1e4;
+/// plain Monte Carlo over the production channel set (remainders on
+/// [`draw_rest`]'s mixture), eight seeds of `2·10⁶`, at scales `1`, `10²`, `10³`,
+/// `10⁴` and `10⁵ GeV²`:
+///
+/// * `u c → e⁺e⁻ u c` (`QCD = 0`, `√ŝ = 1 TeV`, `mmjj > 300`, `mmll > 50`):
+///   `1.04e3`, `606`, `433`, `355`, `784`;
+/// * `e⁺e⁻ → e⁺e⁻ µ⁺µ⁻` (`√ŝ = 500 GeV`, `mmll > 50`): `337`, `224`, `174`,
+///   `124`, `84`;
+/// * `u u → e⁺e⁻ u u` at the `γγ → ℓℓ` corner of a DY generation (`√ŝ = 1047 GeV`,
+///   `mℓℓ > 50`, quark `pT > 2 GeV`, `4·10⁵` draws): `620`, `356`, `273`, `664`,
+///   `2.4e3`, with the corner's own weight at `1.6e3` times the mean at `10³` and
+///   `9.9e3` at `10⁴` — a lepton line `0.66 GeV²` off shell there sits under a
+///   `10 GeV²` floor.
+///
+/// `10³ GeV²` — a pole floor of `1 GeV²` — costs the first two a factor of
+/// `1.2–1.4` against `10⁴` (the second `2.1` against its best, at `10⁵`) and
+/// gains the third `2.4` in variance and `6` in the corner's weight. Every scale's σ agreed with the others, and on the second
+/// process with flat RAMBO. The floor sits seven orders above a massless edge's
+/// rounding noise (`~4e-8 GeV²` at `ŝ = 2.5·10⁵ GeV²`).
+const DEFAULT_POLE_SCALE: f64 = 1e3;
 
 /// Order a diagram's spacelike lines into a chain of rungs, or report that they do
 /// not form one.
@@ -1722,6 +1772,7 @@ fn spine_chain<F: Real>(
             t_mass2: m2.max(pole_floor),
             t_max_cap: bounded.then(|| -fiducial_scale),
             rest_floor: F::zero(),
+            rest_mixed: true,
         });
         previous = side;
     }
@@ -1891,6 +1942,53 @@ fn log_scale<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>) -> Option<LogMap<
         t_hi,
         frac,
     })
+}
+
+/// Share of a straddling remainder's draw ([`draw_rest`]) spent on the `1/ŝ_i`
+/// map; the rest is flat.
+const REST_LOG_SHARE: f64 = 0.5;
+
+/// The `1/ŝ_i` map a straddling remainder's draw mixes in: [`log_scale`] under a
+/// massless zero-width pole, `None` where that map does not apply on `[lo, hi]`.
+fn rest_log_map<F: Real>(lo: F, hi: F) -> Option<Resonance<F>> {
+    let massless = Resonance {
+        mass: F::zero(),
+        width: F::zero(),
+    };
+    log_scale(lo, hi, Some(massless)).map(|_| massless)
+}
+
+/// Draw a straddling remainder's invariant from the mixture
+/// `p(s) = REST_LOG_SHARE · p_log(s) + (1 − REST_LOG_SHARE)/(hi − lo)` of the
+/// `1/ŝ_i` map and the flat one ([`Spine::rest_mixed`]); flat alone where the log
+/// map does not apply.
+///
+/// A defensive mixture: its density is at least each component's share of that
+/// component's, so its weight is at most `1/share` times either map's, and it
+/// costs at most that factor in variance against whichever suits the integrand.
+/// [`rest_measure`] is its `ds/dx`.
+fn draw_rest<F: Real>(lo: F, hi: F, x: F) -> F {
+    let Some(pole) = rest_log_map(lo, hi) else {
+        return draw_invariant(lo, hi, None, x);
+    };
+    let share: F = cast(REST_LOG_SHARE);
+    if x < share {
+        draw_invariant(lo, hi, Some(pole), x / share)
+    } else {
+        draw_invariant(lo, hi, None, (x - share) / (F::one() - share))
+    }
+}
+
+/// [`draw_rest`]'s measure `ds/dx` at `s`: the reciprocal of the mixture
+/// density, whichever component drew `s`.
+fn rest_measure<F: Real>(lo: F, hi: F, s: F) -> F {
+    let Some(pole) = rest_log_map(lo, hi) else {
+        return invariant_measure(lo, hi, None, s);
+    };
+    let share: F = cast(REST_LOG_SHARE);
+    let density = share / invariant_measure(lo, hi, Some(pole), s)
+        + (F::one() - share) / invariant_measure(lo, hi, None, s);
+    F::one() / density
 }
 
 /// The lower edge of an invariant draw over `[·, hi]`: the kinematic threshold
@@ -2605,9 +2703,15 @@ fn sample_spine<F: Real>(
             );
             let x = u[*cursor];
             *cursor += 1;
-            let drawn = draw_invariant(lo, hi, rest_res, x);
-            *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
-            drawn
+            if spine.rest_mixed(i) {
+                let drawn = draw_rest(lo, hi, x);
+                *weight = *weight * rest_measure(lo, hi, drawn);
+                drawn
+            } else {
+                let drawn = draw_invariant(lo, hi, rest_res, x);
+                *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
+                drawn
+            }
         } else {
             mu_rest * mu_rest
         };
@@ -2721,7 +2825,11 @@ fn spine_jacobian<F: Real>(
             if outside_window(lo, hi, narrowed, s_rest) {
                 return F::infinity();
             }
-            f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
+            f = f * if spine.rest_mixed(i) {
+                rest_measure(lo, hi, s_rest)
+            } else {
+                invariant_measure(lo, hi, spine.rest_resonance(i), s_rest)
+            };
         }
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);

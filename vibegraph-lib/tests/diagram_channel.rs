@@ -2170,8 +2170,13 @@ fn the_rung_ordering_test_fires_on_a_swapped_chain() {
     );
     assert_eq!(chain.blobs.len(), 2, "the ordering chain has two rungs");
 
-    let build =
-        || DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale);
+    // The remainders are drawn flat on both arms, so the rung order is the only
+    // difference between them and the coverage bound reads it alone: the remainder
+    // mixture moves where the probe's rungs land whatever their order.
+    let build = || {
+        DiagramChannel::<f64>::from_diagram_regulated(&d, &evaluated, LADDER_SQRT_S, scale)
+            .with_flat_remainders()
+    };
     let good = ordering_report(&build(), &chain, &cuts, mz2, mg, 0xC0DE_0DDE);
     describe_ordering("derived", &good);
     let bad = ordering_report(
@@ -3100,6 +3105,8 @@ type ProbeArm = (String, Box<dyn PhaseSpaceMap<f64> + Sync>, usize, usize);
 /// * the same set with the pole floored from scales `1` to `10⁶ GeV²`, the support
 ///   whole — the candidates the default pole scale is chosen among, which share no
 ///   floor and so no floor-driven bias;
+/// * the production set with every straddling remainder drawn flat
+///   ([`DiagramChannel::with_flat_remainders`]);
 /// * the all-timelike tree for every diagram, which is what a final state past two
 ///   legs got with no scale before the spine was built for it: the known-wrong row.
 ///
@@ -3117,7 +3124,7 @@ fn probe_the_no_scale_spine_on_a_mass_cut_peripheral_process() {
     let seeds = 8u64;
     let n_flat = 40_000_000;
     let n_multi = 2_000_000;
-    let pole_scales = [1.0, 1e2, 1e4, 1e5, 1e6];
+    let pole_scales = [1.0, 1e2, 1e3, 1e4, 1e5, 1e6];
 
     for (process, card_text) in [
         (MASS_CUT_PROCESS, MASS_CUT_CARD),
@@ -3174,6 +3181,13 @@ fn probe_the_no_scale_spine_on_a_mass_cut_peripheral_process() {
                 spine_count(&production),
             ),
         ];
+        let flat_remainders = |d: &Diagram| production(d).with_flat_remainders();
+        arms.push((
+            "production, flat remainders".to_string(),
+            Box::new(build(&flat_remainders)),
+            n_multi,
+            spine_count(&flat_remainders),
+        ));
         for &x in &pole_scales {
             let at = |d: &Diagram| {
                 DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, x)
@@ -3356,6 +3370,287 @@ fn probe_the_no_scale_production_sigma_against_flat_rambo() {
                 sd / k.sqrt(),
                 sd / k.sqrt() / mean,
                 start.elapsed().as_secs_f64()
+            );
+        }
+    }
+}
+
+/// A heavy point of a DY MLL-50 generation, as the generation's weight dump
+/// printed it: the subprocess and its partonic-CM momenta, beams first.
+struct CornerPoint {
+    label: &'static str,
+    process: &'static str,
+    lepton_masses: bool,
+    momenta: [[f64; 4]; 6],
+}
+
+/// The two heaviest events of DY MLL-50's R1 seed-1 sample (generation seed 7),
+/// carrying 56% and 7% of its weight, read back from the event file and boosted
+/// to the partonic CM.
+const CORNER_POINTS: &[CornerPoint] = &[
+    CornerPoint {
+        label: "R1 seed 1, heaviest (56%)",
+        process: "u u > e+ e- u u QCD=0",
+        lepton_masses: false,
+        momenta: [
+            [5.236045044926e2, 0.0, 0.0, 5.236045044926e2],
+            [5.236045044926e2, 0.0, 0.0, -5.236045044926e2],
+            [
+                1.600662122362e1,
+                3.2979470285,
+                2.1202096015,
+                1.551902637535e1,
+            ],
+            [
+                5.563687873494e1,
+                -5.7123935023,
+                2.4092020629e-2,
+                -5.534284285923e1,
+            ],
+            [
+                5.076859467411e2,
+                -2.659863827,
+                -1.8123654002,
+                5.076757439293e2,
+            ],
+            [
+                4.678795622989e2,
+                5.0743103008,
+                -3.3193622191e-1,
+                -4.678519274465e2,
+            ],
+        ],
+    },
+    CornerPoint {
+        label: "R1 seed 1, second (7%)",
+        process: "u u > ta+ ta- u u QCD=0",
+        lepton_masses: true,
+        momenta: [
+            [1.039459121251e3, 0.0, 0.0, 1.039459121251e3],
+            [1.039459121251e3, 0.0, 0.0, -1.039459121251e3],
+            [
+                6.789907929884e1,
+                -5.3818506259,
+                -2.3590934896,
+                -6.762098492676e1,
+            ],
+            [
+                1.527771017891e1,
+                7.9793400488,
+                -4.6167923591,
+                1.205263705597e1,
+            ],
+            [
+                1.025645310803e3,
+                1.1014724477,
+                1.7308892587,
+                1.025643258817e3,
+            ],
+            [
+                9.700961422181e2,
+                -3.6989618705,
+                5.24499659,
+                -9.700749109031e2,
+            ],
+        ],
+    },
+];
+
+/// The DY card's acceptance as it reaches a `q q → ℓ ℓ q q` point: `mℓℓ > 50`,
+/// `mjj > 4`, and each outgoing quark at `pT > 2 GeV`, the edge the clustering
+/// scale's `μF ≥ 2 GeV` veto puts on a t-channel quark. Legs are
+/// `[ℓ⁺, ℓ⁻, q, q]` after the beams.
+fn corner_acceptance(p: &[LorentzVector<f64>]) -> bool {
+    let pt = |v: &LorentzVector<f64>| (v.px() * v.px() + v.py() * v.py()).sqrt();
+    s_pair(p, 2, 3) > 50.0 * 50.0
+        && s_pair(p, 4, 5) > 4.0 * 4.0
+        && pt(&p[4]) > 2.0
+        && pt(&p[5]) > 2.0
+}
+
+/// The weight bound the heaviest DY corner point must stay under, as a multiple of
+/// the mean weight of the production mixture's own draws at its `√ŝ`.
+///
+/// Measured over `4·10⁵` draws (`probe_the_photon_pair_corner_against_the_pole_scale`):
+/// the production chain — remainders on the flat/`1/ŝ_i` mixture, pole scale
+/// `10³ GeV²` — puts the point at `1.6e3` times the mean. Each half of that
+/// choice undone puts it past the bound: the remainders drawn flat give `1.7e4`,
+/// and the mixture at a pole scale of `10⁴ GeV²` gives `9.9e3`.
+const CORNER_WEIGHT_MAX: f64 = 4e3;
+
+/// Draws per arm of the corner weight check.
+const CORNER_DRAWS: usize = 100_000;
+
+/// The heaviest event of a DY MLL-50 sample, a `u u → e⁺e⁻ u u` point where two
+/// quasi-real photons make the lepton pair through a lepton line `0.66 GeV²` off
+/// shell, is one the production chain maps: its `|M|²/g` stays within
+/// [`CORNER_WEIGHT_MAX`] of the mixture's mean weight at its `√ŝ`.
+///
+/// The control arm is the same channel set with every straddling remainder drawn
+/// flat, which is required to put the point past the bound, so the check is a
+/// measurement of the remainder map and not of a point any map would cover. The
+/// pole scale is the production default; the bound also fails at `10⁴ GeV²`
+/// (measured, not asserted here: the arm builds only the default).
+#[test]
+fn the_photon_pair_corner_is_mapped_by_the_chain() {
+    use std::cell::RefCell;
+    use vibegraph::hadronic::{channel_diagrams, compile_subprocesses};
+    use vibegraph::helas::eval::{BoundAmplitude, ScratchSpace};
+
+    let point = &CORNER_POINTS[0];
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let sets = common::generate_with(point.process, &model);
+    let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+    let amp = BoundAmplitude::<f64>::bind(&evals[0], &evaluated);
+    let reps = channel_diagrams(&sets[0].diagrams, &evaluated);
+    let ext: Vec<LorentzVector<f64>> = point
+        .momenta
+        .iter()
+        .map(|p| LorentzVector::new(p[0], p[1], p[2], p[3]))
+        .collect();
+    let sqrt_s = ext[0].e() + ext[1].e();
+    let scratch = RefCell::new(ScratchSpace::default());
+    let m2 = |p: &[LorentzVector<f64>]| -> f64 {
+        let mut full = vec![ext[0], ext[1]];
+        full.extend_from_slice(p);
+        if !corner_acceptance(&full) {
+            return 0.0;
+        }
+        amp.eval_m2(&full, &mut scratch.borrow_mut())
+    };
+    let at_point = m2(&ext[2..]);
+    assert!(at_point > 0.0, "the corner point must pass the acceptance");
+    let ratio = |flat: bool| -> f64 {
+        let channels: Vec<Box<dyn Channel<f64>>> = reps
+            .iter()
+            .map(|d| {
+                let ch = DiagramChannel::<f64>::from_diagram(d, &evaluated, sqrt_s);
+                Box::new(if flat { ch.with_flat_remainders() } else { ch }) as Box<dyn Channel<f64>>
+            })
+            .collect();
+        let mix = MultiChannel::uniform(channels);
+        let (mean, _) = mc_estimate(&mix, 0xC0_44E5, 7, CORNER_DRAWS, m2);
+        at_point * mix.density(&ext[2..]).recip() / mean
+    };
+    let (production, flat) = (ratio(false), ratio(true));
+    eprintln!(
+        "{}: |M|²/g at the point over the mean weight, production {production:.3e}, \
+         remainders flat {flat:.3e} (bound {CORNER_WEIGHT_MAX:e})",
+        point.label
+    );
+    assert!(
+        production < CORNER_WEIGHT_MAX,
+        "the production chain weighs the γγ → ℓℓ corner at {production:.3e} times its mean"
+    );
+    assert!(
+        flat > CORNER_WEIGHT_MAX,
+        "with the remainders drawn flat the corner weighs only {flat:.3e} times the mean, so \
+         the bound does not measure the remainder map"
+    );
+}
+
+/// How a mixture with uniform α over every configuration's channel weighs the
+/// heavy points of a DY generation, as a function of the pole scale, with no
+/// VEGAS grid in between: the point's `|M|²/g` against the distribution of the
+/// same estimator over the mixture's own draws at the point's `√ŝ`, under
+/// [`corner_acceptance`], with the straddling remainders drawn flat and from
+/// the production flat/`1/ŝ_i` mixture. A point whose ratio to that
+/// distribution's tail stays large at every pole scale is not a floor effect.
+#[test]
+#[ignore]
+fn probe_the_photon_pair_corner_against_the_pole_scale() {
+    use std::cell::RefCell;
+    use vibegraph::hadronic::{channel_diagrams, compile_subprocesses};
+    use vibegraph::helas::eval::{BoundAmplitude, ScratchSpace};
+
+    let draws = 400_000usize;
+    let scales = [1.0, 10.0, 1e2, 1e3, 1e4, 1e5];
+    for point in CORNER_POINTS {
+        let model = if point.lepton_masses {
+            common::sm_lepton_masses_model()
+        } else {
+            common::sm_model()
+        };
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let sets = common::generate_with(point.process, &model);
+        let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
+        let amp = BoundAmplitude::<f64>::bind(&evals[0], &evaluated);
+        let diagrams = &sets[0].diagrams;
+        let reps = channel_diagrams(diagrams, &evaluated);
+        let ext: Vec<LorentzVector<f64>> = point
+            .momenta
+            .iter()
+            .map(|p| LorentzVector::new(p[0], p[1], p[2], p[3]))
+            .collect();
+        let sqrt_s = ext[0].e() + ext[1].e();
+        let beams = [ext[0], ext[1]];
+        let scratch = RefCell::new(ScratchSpace::default());
+        let m2 = |p: &[LorentzVector<f64>]| -> f64 {
+            let mut full = Vec::with_capacity(6);
+            full.extend_from_slice(&beams);
+            full.extend_from_slice(p);
+            if !corner_acceptance(&full) {
+                return 0.0;
+            }
+            amp.eval_m2(&full, &mut scratch.borrow_mut())
+        };
+        let at_point = m2(&ext[2..]);
+        eprintln!(
+            "{}: {} at √ŝ = {sqrt_s:.4} GeV, {} channels, |M|² {at_point:.4e}",
+            point.label,
+            point.process,
+            reps.len()
+        );
+        for (&x, flat) in scales.iter().flat_map(|x| [(x, true), (x, false)]) {
+            let channels: Vec<DiagramChannel<f64>> = reps
+                .iter()
+                .map(|d| {
+                    let ch =
+                        DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, x)
+                            .without_transfer_bound();
+                    if flat {
+                        ch.with_flat_remainders()
+                    } else {
+                        ch
+                    }
+                })
+                .collect();
+            let n = channels.len() as f64;
+            let dens: Vec<f64> = channels.iter().map(|c| c.density(&ext[2..])).collect();
+            let g = dens.iter().sum::<f64>() / n;
+            let mut lead: Vec<(usize, f64)> = dens.iter().map(|&d| d / n / g).enumerate().collect();
+            lead.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let mix = MultiChannel::uniform(
+                channels
+                    .into_iter()
+                    .map(|c| Box::new(c) as Box<dyn Channel<f64>>)
+                    .collect(),
+            );
+            let mut stream = SubStream::from_stream(0x7F2_C0, 3);
+            let mut w = Vec::with_capacity(draws);
+            for _ in 0..draws {
+                let u = stream.uniforms::<f64>(mix.ndim());
+                let pt = mix.sample(&u);
+                w.push(pt.weight * m2(&pt.momenta));
+            }
+            let mean = w.iter().sum::<f64>() / draws as f64;
+            let var = w.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / draws as f64;
+            w.sort_by(f64::total_cmp);
+            let total: f64 = w.iter().sum();
+            let q999 = w[draws - draws / 1000];
+            let w_point = at_point / g;
+            eprintln!(
+                "  pole scale {x:>6.0e}, remainders {}: point |M|²/g = {:.3e} × mean, {:.3e} × \
+                 99.9% quantile; σ̂ {mean:.4e}, rel. var {:.3e}, largest draw {:.3e} × mean \
+                 ({:.3e} of the total); leading channels {:?}",
+                if flat { "flat " } else { "mixed" },
+                w_point / mean,
+                w_point / q999,
+                var / (mean * mean),
+                w[draws - 1] / mean,
+                w[draws - 1] / total,
+                &lead[..3.min(lead.len())]
             );
         }
     }
