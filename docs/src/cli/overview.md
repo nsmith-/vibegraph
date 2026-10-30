@@ -86,7 +86,8 @@ it evaluates at the recorded values, and writes the card it evaluated at into
 the event file's `<slha>` header block, where a shower reads masses and widths.
 `integrate` refuses a card it cannot honour: a width given as `Auto` (MadGraph
 computes those at launch and writes the number into the card it ran with), a
-non-zero value for a parameter the restriction zeroes, a value that splits two
+non-zero value for a parameter the restriction zeroes, a value other than one
+for a parameter the restriction fixes to one, a value that splits two
 parameters the restriction merged, and an entry the model has no parameter
 for. A value for a mass or width the model computes, such as the W mass in
 the Standard Model, is ignored, as MadGraph ignores it, with a warning when it

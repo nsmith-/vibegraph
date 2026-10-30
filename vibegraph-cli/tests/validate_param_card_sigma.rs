@@ -19,10 +19,9 @@
 //! own. Both rows gate as the Drell-Yan σ cells do: `|pull| < 3` and
 //! `|rel| < 0.005` together, and the vibegraph seeds' χ²/dof below 4.
 //!
-//! A row whose seed record is not in this checkout is reported as awaiting its
-//! bank, and only while the manifest declares it `status = "planned"`; a
-//! banked row, or an absent one the manifest does not declare planned, is
-//! compared or fails.
+//! Both rows are banked: a seed record or a card missing from this checkout is
+//! an incomplete environment, and the gate fails naming it
+//! ([`vibegraph::validation::require`]).
 //!
 //! # Beside the gate
 //!
@@ -62,9 +61,6 @@ mod seed_record;
 
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
 mod report;
-
-#[path = "../../vibegraph-lib/tests/common/manifest.rs"]
-mod manifest;
 
 use report::{IntegralsRow, SeedResult, Stopwatch};
 use seeds::{combine, SeedMean, SeedValue};
@@ -195,32 +191,20 @@ fn seeds(
         .collect()
 }
 
-/// The row's MadGraph reference, or `None` (after saying so) for a row the
-/// manifest declares planned and this checkout has no seed record of.
-fn reference(row: &MovedRow) -> Option<seed_record::SeedReference> {
-    if let Some(reference) = seed_record::reference(&output_dir(), row.record) {
-        return Some(reference);
-    }
-    assert!(
-        manifest::planned_rows().contains(row.key),
-        "[{}] no seed record output/{}/{}/{}, and the manifest does not declare row {} \
-         planned: bank it with `ROWS={} pixi run -e madgraph bank-seeded-sigma`",
-        row.key,
-        seed_record::RECORD_DIR,
-        row.record,
-        seed_record::RECORD_FILE,
-        row.key,
-        row.record
-    );
-    eprintln!(
-        "[{}] AWAITING THE BANK (the manifest marks row {} planned and this checkout has no \
-         seed record output/{}/{}, so nothing is compared and no cell is written)",
-        row.key,
-        row.key,
-        seed_record::RECORD_DIR,
-        row.record
-    );
-    None
+/// The row's MadGraph reference, its banked seed record.
+fn reference(row: &MovedRow) -> seed_record::SeedReference {
+    seed_record::reference(&output_dir(), row.record).unwrap_or_else(|| {
+        vibegraph::validation::require(
+            "validate_param_card_sigma",
+            "the row's seed record",
+            format!(
+                "output/{}/{}/{}",
+                seed_record::RECORD_DIR,
+                row.record,
+                seed_record::RECORD_FILE
+            ),
+        )
+    })
 }
 
 /// Integrate the row at its card, compare with its seed record, write the
@@ -293,9 +277,7 @@ fn check(
 #[test]
 fn drell_yan_at_mz_95_matches_madgraphs_run_at_the_card() {
     let row = DRELL_YAN_MZ95;
-    let Some(reference) = reference(&row) else {
-        return;
-    };
+    let reference = reference(&row);
     check(
         &row,
         &reference,
@@ -309,9 +291,7 @@ fn drell_yan_at_mz_95_matches_madgraphs_run_at_the_card() {
 #[test]
 fn ttbar_higgs_at_ymt_250_matches_madgraphs_run_at_the_card() {
     let row = TTH_YMT250;
-    let Some(reference) = reference(&row) else {
-        return;
-    };
+    let reference = reference(&row);
     let cards = output_dir().join(row.record).join("Cards");
     let run_card = cards.join("run_card.dat");
     let param_card = cards.join("param_card.dat");
@@ -357,9 +337,9 @@ fn reweight_oracle_ratio() -> (f64, f64, usize) {
 /// The oracle's events were integrated at a fixed budget and its own σ₀ sits
 /// below a converged one, so its absolute reweighted σ is not a reference; the
 /// ratio is. It is a different estimator from the gate's (one MadGraph sample
-/// reweighted, against a fresh run at the card), and is kept beside the gate
-/// as the comparison that existed before the row was banked. The known-wrong
-/// comparison, σ(250) against σ(default), is printed beside it.
+/// reweighted, against a fresh run at the card), so the two meet on one point
+/// from two directions. The known-wrong comparison, σ(250) against σ(default),
+/// is printed beside it.
 #[test]
 fn ttbar_higgs_at_ymt_250_against_the_reweight_oracle_ratio() {
     let run_card = validation_dir().join("onshell_ee_run_card.dat");
