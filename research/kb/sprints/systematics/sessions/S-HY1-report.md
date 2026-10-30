@@ -61,3 +61,152 @@ it) or *suspected*.
   (`split_line` uses `rsplit_once('=')`, pinned by
   `a_value_holding_an_equals_sign_reads_whole` on the banked line): Found.
   None of the others names a site this change gets wrong.
+
+## Fixed
+
+Commits `24d637c5` (library), `c2ad1f67` (the two banked lib targets),
+`94746dd8` (the CLI round trips).
+
+| finding | commit | what changed | evidence |
+|---|---|---|---|
+| H1 | `24d637c5` | `wgt_text` is `c_exponential(v, 7, true, 0)`, the event writer's call; `rwgt_block` and `Writer::weights` spell through it | identity probe below; the banked round trips print the same counts before and after |
+| H3 | `24d637c5` | the two test comments say what they pin, without the design's labels | — |
+| H12, H13 | `24d637c5` | 4 items private, 14 narrowed to `pub(crate)` (and `c_exponential` widened from private to `pub(crate)` for H1) | every target builds under both feature sets; `cargo doc` gate below |
+| H14 | `24d637c5` | each refusal asserted by its message, `HalfHt` included | mutation M-H14 |
+| H2, H4, H5, H8, H9 | `c2ad1f67` | `validate_systematics`: the doc's blind spots; each requested control looked up, a missing one a failure; the `alps`-class weight count checked against the request's factors off one (and `--alps` varied alone); one block writer; the event-file readers moved to `tests/common/banked_lhe.rs` | M-H4, M-H5; output byte-identical |
+| H6, H7, H9 | `c2ad1f67` | `validate_mlm_records`: the head census required through `validation::require`, `read_dir` loud, one `process_directories`; the doc names the replay's inputs | M-H6; output byte-identical |
+| H11 | `94746dd8` | `cli_generate_proton`: `written_weights` and `units_apart` | output identical |
+
+### Byte-unchanged proofs
+
+- **H1, the spelling.** A temporary test (removed before `24d637c5`)
+  compared the new `wgt_text` with the old body, inlined, over 16 edge values
+  (±0, the subnormal extremes, `f64::MAX`/`MIN`, ±∞, NaN, carries such as
+  `9.99999995`) and 6 000 000 xorshift values (raw bit patterns and a dense
+  linear range), and the parse `Writer::weights` takes of each against the
+  old `format!("{v:+.7e}")`:
+  `S-HY1 probe: 6000016 values identical, 5998541 parse to identical bits`
+  (the 1 475 others are the non-finite bit patterns), then
+  `test result: ok. 121 passed; 0 failed` over `systematics::`,
+  `lhef::write` and `pdf::`. `rwgt_block` now calls `wgt_text`, which is the
+  call it made before.
+- **H8, H9 (the two lib targets).** Both run with `--nocapture
+  --test-threads=1` under `release-debug` before any test edit
+  (`S-HY1-base-banked.log`) and after the fixes (the gate's logs); diffed
+  with the `finished in` lines removed: IDENTITY_LIB.
+- **H11.** `cli_generate_proton`'s two round trips on the committed test
+  file (restored afterwards, `S-HY1-cli-before.log`) and on the new one:
+  `round trip: 400 events, 58000 weights, 57994 exact (99.9897%)` and
+  `matched round trip: 400 events, 58800 weights, 58797 exact (99.9949%);
+  --alps moved 696 weights on the 348 events …` before, IDENTITY_CLI after.
+
+## Mutations
+
+`S-HY1-mut/run.py` (scratchpad): one exact replacement, the target, the
+restore (checked by content, then `git diff --stat`). "Old" is the test as
+committed at `db54af68`, "new" the fixed test. The old runs used the
+library of `24d637c5`'s working tree, which the probe shows identical in
+behaviour.
+
+| id | mutation | target | old test | new test |
+|---|---|---|---|---|
+| M-H4 | `measure_text` evaluates no control: `for &(control, name) in controls.iter().take(0)` | `validate_systematics` (`every_banked_weight…`, `madgraphs_default_arguments…`) | `ok. 2 passed` | `FAILED. 0 passed; 2 failed`: `pp_to_ll: control 'muR <-> muF' was not evaluated` (every run, every control), `pp_to_llj_mlm: control 'MLM terms dropped' was not evaluated` |
+| M-H5 | `class()` never returns `"alps"`: `} else if v.alps != 1.0 && false {` | `validate_systematics::madgraphs_default_arguments…` | `ok. 1 passed` | `FAILED. 0 passed; 1 failed`: `pp_to_llj_mlm: 0 weights vary --alps alone, the request's 2 factors off one (varied alone: true)`, the same on the other three runs |
+| M-H6 | `idup_tables` reads `leshouche.incX` | `validate_mlm_records` | `ok. 1 passed` (the census printed "not run") | `FAILED. 0 passed; 1 failed`: `` `the_mgrwt_record_is_madevents_on_every_banked_mlm_event` needs the process directories' leshouche.inc (validation/madgraph/output/pp_to_llj_mlm/SubProcesses) `` |
+| M-H14 | `ht_scale` without `if radicand < 0.0 { return None; }` | `vibegraph-lib --lib systematics::weight` | `ok. 3 passed` | `FAILED. 2 passed; 1 failed`: `dynamical scale choice 2 (HT) is NaN on this event, not a finite positive scale` |
+
+Sites no mutation reaches: H2, H3, H7 (docs and comments), H12/H13
+(visibility, which the compiler checks), H8, H9, H11 (refactors, shown
+identical instead). The pinned head counts were checked independently
+instead of by mutation: a Python count over the banked files (both
+`run_01` and `run_01_syst_default`) gives `pp_to_ll_0j2j_mlm` 19 events
+with 31 heads (12 events with both heads stale) and `pp_to_ttx_0j1j_mlm`
+219 events with 219 heads, which are the two targets' pins (19/219 events in
+`validate_systematics`, 31/219 heads in `validate_mlm_records`). The two
+pins count different things on the same records and agree.
+
+## Routed
+
+None. No finding moves a computed number, a gate's threshold or a
+convention; none rests on speed.
+
+## Gate
+
+GATE_BLOCK
+
+## Method
+
+- **Read the brief's priority list in order, then the tests.** About 35% of
+  the session: `systematics/` file by file, `runcard.rs`, `pdf/grid.rs`'s
+  metadata section, the LHEF writer, and the four test files' helpers and
+  gates.
+- **Grep a new definition across the workspace** (point 1, 4): H1 (a
+  formatter the writer already had under another name), H8, H9, H10, H11,
+  H17. The most productive technique here, as in the hygiene sprint.
+- **Ask what each gate's loop iterates over** (point 2): H4 and H5 came from
+  asking, of each `for … in` over a result map and each `all()`, what it
+  does on an empty input. H6 from the `exists()`/`read_dir`/`return` grep.
+  All three were confirmed by running the mutation on the old test.
+- **Visibility census** by a script over the diff's new `pub` items and
+  their callers (point 3): 18 items narrowed. About 10%.
+- **Comment grep** for plan labels: two sites (H3); the `H1` defect id was
+  judged a registry name, not a plan label.
+- **Function-length census** (`S-HY1-fnlen.py`): seven over 100 lines; none
+  fixed (H15 Found, H16 left with reasons).
+- **Independent recount of the pinned counts** (Python over the banked
+  files): both targets' pins reproduced.
+- **Leads that did not hold up.** The replay's "beam labels" field in
+  `validate_mlm_records` looked tautological (the labels are read off the
+  record), but it still pins that `LoRecord::fill` carries the labels
+  through, so it was documented (H7) rather than removed. The record-fill
+  `?` in `generate/source.rs` looked like a silently dropped event; it ends
+  the run, so it is a misleading message (H21), not a biased sample. The
+  `split_card_list` / `shlex` / `py_float` code was checked as a possible
+  hand-written standard primitive: each is a port of a MadGraph or CPython
+  rule with no crate equivalent.
+
+## Found
+
+- **FHY1. `within_one_unit` twice** (`tests/validate_mlm_records.rs:125`,
+  `tests/validate_mlm_dumps.rs:1730`, identical). Not moved here: the dump
+  target cannot run without the M3's dumps, so its output cannot be shown
+  unchanged. Closes with the function in `tests/common` and the dump target
+  re-run on the M3.
+- **FHY2. `validate_mlm_dumps::replay_row` is 549 lines** (345 on `main`)
+  and `compare_mgrwt` 161, both grown by this PR. A split needs the dump run
+  as its identity oracle (the printed field tables byte-identical). Closes
+  with the split and that run.
+- **FHY3. A record that cannot be filled ends `generate` as "exhausted".**
+  `generate/source.rs:441` discards `LoRecord::fill`'s error (`.ok()`), and
+  `:626`'s `?` ends the source, which `lhef/emit.rs:517` reports as
+  `EmitError::Exhausted { wanted, drawn }`: the density failure reads as a
+  trial budget run out. The same shape already carries the scale
+  prescription's refusals (`record_scales(…).ok()?`, on `main`). Closes with
+  an `EventSource` that can return its refusal, and a test that a failing
+  density names itself.
+- **FHY4. `cfg_attr(not(test), allow(dead_code))` on `FieldClass` payloads**
+  (`runcard/classes.rs:29`, `:32`). `Consumed`'s predates this PR;
+  `IgnoredBenign`'s was added when the systematics warning, its payload's
+  only production reader, was removed. The rationale strings are read only
+  by tests. Closes by gating the payloads behind `cfg(any(test, doc))`
+  accessors or by making the strings production-read (the
+  `runcard-rationale-readers-unchecked` item touches the same strings).
+- **FHY5. The backlog item `runcard-value-with-equals-dropped` is closed by
+  this PR.** `split_line` uses `rsplit_once('=')` (`runcard.rs`), pinned by
+  `runcard::tests::a_value_holding_an_equals_sign_reads_whole` on the banked
+  line; the item's `closes_when` is met. Its file can be deleted with this
+  PR's close-out.
+- **FHY6. The S-V2 report's evidence "the replay of `xqcut_only` passes every
+  field on 10000/10000, the labels included"** is not evidence for the
+  mirror rule: the replay reads the labels off MadEvent's record (H7). The
+  head census (`10000/10000` against `leshouche.inc`, and MR2) is the
+  evidence, and it holds. A one-line correction for the sprint record.
+
+## Brief corrections
+
+- The brief lists `cli_systematics` among the banked targets to re-run; it
+  is a hermetic target (no `required-features`), so `cargo test --workspace`
+  runs it.
+- The brief's clippy line names `--features vibegraph/extended-validation`;
+  the gate here also ran `vibegraph-lib/extended-validation` (as S-F2, S-V1
+  and S-V2 did) and `--all-features` (the agent definition's line).
