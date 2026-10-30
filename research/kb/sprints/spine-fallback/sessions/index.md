@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [T-F1: build the peripheral spine without a single-leg pT cut](T-F1.md) - Separate the pole floor (always on, from a fixed default scale) from the support bound (only from a provable pT floor), build the spine for every final state, and measure bias and variance before any σ gate.
+* [T-F2: the γγ → ℓℓ corner and the default pole scale](T-F2.md) - Find why DY's overweight tail sits at the 10 GeV² pole floor (γγ → ℓℓ with both photon rungs near it), fix the channel or the floor, keep every bias check, and re-measure DY's budget climb.
 * [T-V1: version bump, then is the CMS VBF σ well defined?](T-V1.md) - Bump the artifact version for the new channel maps; re-run mutation M1; then measure whether the three CMS cards' σ is regulated (ptj = 0, etaj = -1) on both vibegraph's and MadGraph's side, before any ladder.
 * [T-V2: budget study and the CMS VBF/EWK ladder; a committed σ-level spine test](T-V2.md) - In a throwaway merge of #81 and #82, measure the seed spread at two budgets, then run the 5-seed ladder on the three CMS cards with their shipped param cards; on #81 itself, commit a σ-level test that the no-spine defect fails.
 
