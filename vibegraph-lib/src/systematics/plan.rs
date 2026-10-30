@@ -16,6 +16,7 @@ use std::sync::Arc;
 use rayon::prelude::*;
 use thiserror::Error;
 
+use super::format::wgt_text;
 use super::header::{banner_lines, expand, Arg, SetHeader, SlotId};
 use super::record::{LoRecord, RecordKinematics};
 use super::request::{MemberRef, PdfEntry, PdfRef, VariationRequest};
@@ -70,7 +71,7 @@ pub enum ResolveError {
 
 /// A loaded member as the weights read it: its densities and its own
 /// strong coupling.
-pub struct MemberEval {
+struct MemberEval {
     member: PdfMember,
     alphas: GridAlphaS,
 }
@@ -652,7 +653,7 @@ impl Writer {
 
     /// `W` of every variation on one event, nominal first: what a ratio is
     /// taken of.
-    pub fn raw_weights(
+    fn raw_weights(
         &self,
         record: &LoRecord,
         kinematics: &RecordKinematics,
@@ -679,7 +680,7 @@ impl Writer {
                 "the event's nominal weight W is {nominal}, so no variation has a ratio"
             ));
         }
-        let xwgtup: f64 = format!("{xwgtup:+.7e}")
+        let xwgtup: f64 = wgt_text(xwgtup)
             .parse()
             .expect("a finite weight's spelling parses");
         Ok(raw[1..].iter().map(|w| xwgtup * w / nominal).collect())

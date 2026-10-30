@@ -52,7 +52,7 @@ pub enum DynScale {
 
 impl DynScale {
     /// MadGraph's integer for the choice.
-    pub fn code(self) -> i32 {
+    pub(crate) fn code(self) -> i32 {
         match self {
             DynScale::Nominal => -1,
             DynScale::SumEt => 1,
@@ -74,7 +74,7 @@ impl DynScale {
     }
 
     /// `write_banner`'s description of the choice.
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             DynScale::Nominal => "",
             DynScale::SumEt => "sum pt",
@@ -508,7 +508,7 @@ impl VariationRequest {
     /// Parse the card's `systematics_arguments` payload: the list split as
     /// `banner.py`'s list reader splits it ([`split_card_list`]), then read
     /// as arguments.
-    pub fn from_card_arguments(payload: &str) -> Result<Self, RequestError> {
+    pub(crate) fn from_card_arguments(payload: &str) -> Result<Self, RequestError> {
         let arguments = split_card_list(payload);
         Self::from_arguments(&arguments, RequestSource::Arguments)
     }
@@ -517,7 +517,7 @@ impl VariationRequest {
     /// `mur = muf = sys_scalefact`, `alps = sys_alpsfact` (`None` → `[1]`),
     /// every dynamical choice, the four scale axes varied together, and
     /// `sys_pdf` tokenised as `call_systematics` does.
-    pub fn from_sys_fields(
+    pub(crate) fn from_sys_fields(
         scalefact: &str,
         alpsfact: &str,
         pdf: &str,
@@ -597,7 +597,7 @@ impl VariationRequest {
 /// brackets dropped, the text split at unescaped whitespace and commas except
 /// inside quotes, a quoted run glued to the token just before it, and each
 /// item's outer quotes stripped.
-pub fn split_card_list(payload: &str) -> Vec<String> {
+fn split_card_list(payload: &str) -> Vec<String> {
     let mut value = payload.trim();
     if value.starts_with('[') && value.ends_with(']') && value.len() >= 2 {
         value = &value[1..value.len() - 1];

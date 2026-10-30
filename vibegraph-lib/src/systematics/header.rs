@@ -17,7 +17,7 @@ use super::request::{Axis, DynScale, VariationRequest};
 
 /// One resolved PDF slot, as the header reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SlotId {
+pub(crate) struct SlotId {
     /// `pdf.lhapdfID`.
     pub lhapdf_id: i64,
     /// `pdf.memberID`.
@@ -26,14 +26,14 @@ pub struct SlotId {
 
 impl SlotId {
     /// The set's `SetIndex`, `lhapdfID − memberID`.
-    pub fn set_index(self) -> i64 {
+    pub(crate) fn set_index(self) -> i64 {
         self.lhapdf_id - i64::from(self.member)
     }
 }
 
 /// A whole set the request named (`self.pdfsets`), keyed by its `SetIndex`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SetHeader {
+pub(crate) struct SetHeader {
     pub name: String,
     /// LHAPDF's `errorType`: the `.info` `ErrorType` lowercased, `unknown`
     /// when absent.
@@ -44,7 +44,7 @@ pub struct SetHeader {
 
 /// One variation: the scale factors, the dynamical choice and the PDF slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Arg {
+pub(crate) struct Arg {
     pub mur: f64,
     pub muf: f64,
     pub alps: f64,
@@ -91,7 +91,7 @@ fn axis_values(request: &VariationRequest, axis: Axis, list_slots: usize) -> Vec
 ///
 /// `slots[..list_slots]` are the `--pdf` list's members in order and
 /// `nominal` is the slot the nominal reads.
-pub fn expand(
+pub(crate) fn expand(
     request: &VariationRequest,
     slots: &[SlotId],
     list_slots: usize,
@@ -199,7 +199,7 @@ fn info(arg: &Arg, slot: SlotId, nominal: usize) -> String {
 
 /// `write_banner`'s weight groups and weights for `args[1..]`, ids from
 /// `first_id`, as the lines between `<initrwgt>` and `</initrwgt>`.
-pub fn banner_lines(
+pub(crate) fn banner_lines(
     args: &[Arg],
     slots: &[SlotId],
     sets: &BTreeMap<i64, SetHeader>,
@@ -350,7 +350,8 @@ mod tests {
     }
 
     /// `--pdf=errorset,central`: the second reading of the run's own member is
-    /// a different slot, so it is not the nominal (quirk J).
+    /// a different slot, so it is not the nominal: MadGraph compares the PDF
+    /// objects by identity.
     #[test]
     fn a_second_slot_of_the_nominal_member_is_not_the_nominal() {
         let mut request = VariationRequest::madgraph_default();

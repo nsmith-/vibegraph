@@ -25,7 +25,7 @@ fn shortest_digits(value: f64) -> (String, i32) {
 /// leading digit's position `decpt` satisfies `-4 < decpt ≤ 16`, otherwise
 /// `d.ddde±XX` with at least two exponent digits and no `.0` added
 /// (CPython's `float_repr_style = 'short'`, `format_float_short`).
-pub fn py_float(value: f64) -> String {
+pub(crate) fn py_float(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_string();
     }
@@ -62,7 +62,7 @@ pub fn py_float(value: f64) -> String {
 /// digits after `0.`, an exponent `E±XX`, right-justified in `w` columns
 /// (` 0.88513229E+02` for `E15.8`). An exponent of three digits drops the
 /// `E` (`0.10000000+101`), as the standard prescribes for `Ew.d`.
-pub fn fortran_e(value: f64, width: usize, digits: usize) -> String {
+pub(crate) fn fortran_e(value: f64, width: usize, digits: usize) -> String {
     let body = if !value.is_finite() {
         value.to_string()
     } else if value == 0.0 {
@@ -89,22 +89,14 @@ pub fn fortran_e(value: f64, width: usize, digits: usize) -> String {
 
 /// C's `%+.7e`, the spelling of a `<wgt>` value (`lhe_parser.py:2620`):
 /// eight significant digits, a sign always, and an exponent of at least two
-/// digits with its sign.
+/// digits with its sign. It is the spelling the event writer puts in each
+/// `<rwgt>` block, so a weight compared through it is compared as written.
 pub fn wgt_text(value: f64) -> String {
-    if !value.is_finite() {
-        return value.to_string();
-    }
-    let text = format!("{value:+.7e}");
-    let (mantissa, exponent) = text
-        .split_once('e')
-        .expect("an exponential spelling carries an exponent");
-    let exponent: i32 = exponent.parse().expect("integer exponent");
-    let sign = if exponent < 0 { '-' } else { '+' };
-    format!("{mantissa}e{sign}{:02}", exponent.abs())
+    crate::lhef::write::c_exponential(value, 7, true, 0)
 }
 
 /// Fortran's `Iw`: the integer right-justified in `w` columns.
-pub fn fortran_i(value: i64, width: usize) -> String {
+pub(crate) fn fortran_i(value: i64, width: usize) -> String {
     format!("{value:>width$}")
 }
 

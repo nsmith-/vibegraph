@@ -396,7 +396,7 @@ fn parse_alpha_s(map: &RawMap, path: &str) -> Result<AlphaSInfo, GridError> {
 /// as LHAPDF cascades them: what the member's strong coupling and positivity
 /// clamp are read from.
 #[derive(Debug, Clone, PartialEq)]
-pub struct MemberMeta {
+pub(crate) struct MemberMeta {
     pub alpha_s: AlphaSInfo,
     pub force_positive: i32,
 }

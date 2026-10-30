@@ -22,6 +22,7 @@ use crate::artifact::PdfInput;
 use crate::cache::lhapdf::Tier;
 use crate::generate::GenerateSettings;
 use crate::runcard::{card_text, RunCard};
+use crate::systematics::format::wgt_text;
 use crate::systematics::plan::SystematicsSet;
 use crate::ufo::parameters::{ParamNature, ParameterSet};
 use crate::ufo::particles::Particle;
@@ -35,7 +36,12 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 /// itself (`NaN`, `inf`), which no parser accepts — a record carrying one is a bug
 /// upstream, and this makes it fail loudly at the file rather than silently at the
 /// physics.
-fn c_exponential(value: f64, precision: usize, force_sign: bool, width: usize) -> String {
+pub(crate) fn c_exponential(
+    value: f64,
+    precision: usize,
+    force_sign: bool,
+    width: usize,
+) -> String {
     let formatted = if !value.is_finite() {
         value.to_string()
     } else {
@@ -704,10 +710,7 @@ pub(crate) fn rwgt_block(ids: &[String], weights: &[f64]) -> Vec<String> {
     let mut lines = Vec::with_capacity(ids.len() + 2);
     lines.push("<rwgt>".to_string());
     for (id, &w) in ids.iter().zip(weights) {
-        lines.push(format!(
-            "<wgt id='{id}'> {} </wgt>",
-            c_exponential(w, 7, true, 0)
-        ));
+        lines.push(format!("<wgt id='{id}'> {} </wgt>", wgt_text(w)));
     }
     lines.push("</rwgt>".to_string());
     lines

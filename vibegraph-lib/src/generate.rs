@@ -1608,8 +1608,8 @@ mod tests {
         }
     }
 
-    /// Refusal table (O3): `--dyn=1` where a subprocess's written final state
-    /// is one particle, and nowhere else.
+    /// `--dyn=1` is refused where a subprocess's written final state is one
+    /// particle, and nowhere else.
     #[test]
     fn the_sum_et_scale_is_refused_on_a_one_particle_final_state() {
         let default = VariationRequest::madgraph_default();

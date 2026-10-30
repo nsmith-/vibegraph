@@ -80,7 +80,7 @@ fn sqrts_scale(k: &RecordKinematics) -> Option<f64> {
 /// The scale a dynamical choice gives the written event, lab frame and no
 /// `scalefact` (MadGraph's Python definitions, not `setscales.f`'s); `None`
 /// for [`DynScale::Nominal`], which reads the record instead.
-pub fn dynamical_scale(choice: DynScale, k: &RecordKinematics) -> Result<Option<f64>, String> {
+fn dynamical_scale(choice: DynScale, k: &RecordKinematics) -> Result<Option<f64>, String> {
     let value = match choice {
         DynScale::Nominal => return Ok(None),
         DynScale::SumEt => Some(et_scale(k)),
@@ -273,11 +273,17 @@ mod tests {
             incoming: vec![[1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, -1.0]],
             final_state: vec![[1.0, 0.0, 0.0, 0.5]],
         };
-        assert!(dynamical_scale(DynScale::SumEt, &k).is_err());
+        // No transverse momentum: Σ E_T is zero.
+        let e = dynamical_scale(DynScale::SumEt, &k).unwrap_err();
+        assert!(e.contains("is 0 on this event"), "{e}");
+        // A spacelike final state: m² + pT² is negative, so HT has no reading.
         let tachyon = RecordKinematics {
             incoming: k.incoming.clone(),
             final_state: vec![[1.0, 0.0, 0.0, 2.0]],
         };
-        assert!(dynamical_scale(DynScale::Ht, &tachyon).is_err());
+        for choice in [DynScale::Ht, DynScale::HalfHt] {
+            let e = dynamical_scale(choice, &tachyon).unwrap_err();
+            assert!(e.contains("has no real value"), "{e}");
+        }
     }
 }
