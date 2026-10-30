@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [P-F1: integrate --param-card and the recorded parameter point](P-F1.md) - integrate --param-card binds through from_model_card and fills inputs.params; generate rebinds from it; reweight denominators at the recorded point; refusals for Auto widths, revived zeroed parameters and split merged pairs; <slha> header block.
+* [P-HY1: hygiene review of #82](P-HY1.md) - Review the integrate --param-card change for maintainability, test non-vacuity, visibility and reusable abstractions; write findings before editing; fix with mutation evidence.
 * [P-V1: banking inputs, MadGraph's coupling fusion, and the silent-card fixes](P-V1.md) - Prepare the two moved-parameter MadGraph rows (cards, driver fixes), check whether MadGraph's merged couplings break at a moved MZ or ymt, fix the SLHA parser's silent drops and the unlocked 1-valued parameters, and write the σ gate awaiting the bank.
 * [P-V2: gate the banked moved-parameter rows on refdata-12](P-V2.md) - Declare ee_to_tth_ymt250 in the alpha_s and scales inventories, unplan the two moved-parameter σ rows, and run their gate and the banked targets on refdata-12.
 
