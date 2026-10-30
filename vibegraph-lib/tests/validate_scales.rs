@@ -149,6 +149,7 @@ const CLUSTERED_RUNS: &[&str] = &[
     "ee_to_mumua",
     "ee_to_tatah",
     "ee_to_tlt",
+    "ee_to_tth_ymt250",
     "ee_to_ttx",
     "ee_to_ttx_dipole",
     "ee_to_ttx_smeft",

@@ -10,7 +10,10 @@
 #        script   scripts/<row>.mg5 without its launch block (build.sh's
 #                 script_driver), on the banked run's own Cards/run_card.dat and
 #                 Cards/param_card.dat from output/<row>/. The launch block's
-#                 settings are checked against that card first.
+#                 settings are checked against those cards first: `set key
+#                 value` against the run card, `set block code value` (a
+#                 param-card setting, ee_to_tth_ymt250's `set yukawa 6 250`)
+#                 against the param card.
 #        mlm      the same script, on the committed <row>_run_card.dat
 #                 (gen_mlm_references.sh's card).
 #        card     the same as mlm, for a row with no banked run of its own: a
@@ -19,7 +22,10 @@
 #        dy13     `generate p p > e+ e-` on dy13_default_run_card.dat or
 #                 dy13_mmll_run_card.dat or dy_beams_6500_4000_run_card.dat
 #                 (gen_hadronic_sigma.sh's): the references the pp_to_ll gate
-#                 and the unequal-beam Drell-Yan gate read.
+#                 and the unequal-beam Drell-Yan gate read. dy13_mmll_60_120_mz95
+#                 is the m_ll window card on the param card
+#                 dy13_mz95_param_card.dat (MZ = 95 GeV), installed as every
+#                 seed's Cards/param_card.dat.
 #        dy13etau dy13_etau_default: `p p > l+ l-` with `l = e, ta` on
 #                 dy13_default_run_card.dat, whose two lepton masses give two
 #                 P directories.
@@ -30,9 +36,10 @@
 #                 (--stage mll-371), five windows per seed, each its own fresh
 #                 directory; the seed's value is the sum over its windows.
 #   2. Per seed, the template is copied, the card installed with `iseed` and
-#      `hard_survey = 2` set (and `nevents` times four for SEEDS_4X), and
-#      generate_events run from a scratch working directory. The committed and
-#      banked cards are not edited. A run fails when generate_events fails, when
+#      `hard_survey = 2` set (and `nevents` times four for SEEDS_4X), the row's
+#      param card (if it has one) copied in beside it, and generate_events run
+#      from a scratch working directory. The committed and banked cards are not
+#      edited. A run fails when generate_events fails, when
 #      results.dat holds no positive finite cross section, or when the event
 #      file holds fewer events than the card asked for (mes_check_run):
 #      generate_events has exited 0 on runs that hold neither. A failed run is
@@ -41,10 +48,12 @@
 #   3. The run keeps, under output/seeded_sigma/<row>/s<iseed>/:
 #      SubProcesses/results.dat, every P*/symfact.dat and the G*/results.dat it
 #      lists, the banner, the event file's <init> block, Source/run_config.inc
-#      (the min_events/max_events the survey mode left), the event count and
-#      madevent_seeds.sh's vg_seed_result.txt. The run directory is then
-#      dropped. A seed whose kept files exist under the same run card is read
-#      back, not re-run (VG_FORCE=1 re-runs it).
+#      (the min_events/max_events the survey mode left), the event count,
+#      madevent_seeds.sh's vg_seed_result.txt and the param card it ran on
+#      (param_card.dat, for a row that installs one). The run directory is then
+#      dropped. A seed whose kept files exist under the same run card, and
+#      under the same param card where it kept one, is read back, not re-run
+#      (VG_FORCE=1 re-runs it).
 #   4. `seed-record` (validation-report/src/bin/seed-record.rs) writes
 #      output/seeded_sigma/<row>/seed_record.json: per seed the reported value,
 #      the equal-weight recombination of each channel's iterations, the budget
@@ -124,8 +133,8 @@
 #            ones the gate reads (default none)
 #   SEEDED_OUT   where records are written (default output/seeded_sigma)
 #   SEEDED_WORK  templates, run directories and logs (default work/seeded_sigma)
-#   DRY_RUN  1: print each row's kind, generation script, run card and budget,
-#            with the launch-block check, and run nothing (no MadGraph, no cargo)
+#   DRY_RUN  1: print each row's kind, generation script, run card, param card
+#            and launch-block checks, and run nothing (no MadGraph, no cargo)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -198,7 +207,7 @@ group_rows() {
 row_kind() {
   case "$1" in
     ee_to_mumua) echo pta ;;
-    dy13_default | dy13_mmll_60_120 | dy13_beams_6500_4000) echo dy13 ;;
+    dy13_default | dy13_mmll_60_120 | dy13_beams_6500_4000 | dy13_mmll_60_120_mz95) echo dy13 ;;
     dy13_etau_default) echo dy13etau ;;
     pp_to_llj_mlm | pp_to_llj_xqcut_only | pp_to_llj_mlm_alps2 | pp_to_ll_0j2j_mlm | pp_to_ttx_0j1j_mlm)
       echo mlm ;;
@@ -326,6 +335,10 @@ run_fresh() {
   mes_install_card "$card" "$tmpcard" "${overrides:+$overrides;}hard_survey=$HARD_SURVEY;nevents=$nev" "$seed"
   sha="$(mes_sha256 "$tmpcard")"
   [ -s "$keep/vg_seed_result.txt" ] && read -r _ _ _ have < "$keep/vg_seed_result.txt"
+  # A seed kept with its param card is read back only under that same card.
+  if [ -n "$param" ] && [ -f "$keep/param_card.dat" ] && ! cmp -s "$param" "$keep/param_card.dat"; then
+    have=""
+  fi
   if [ "${VG_FORCE:-0}" != 1 ] && [ "$have" = "$sha" ]; then
     echo ">>> [$row s$seed] kept under this card; read back" >&2
     return 0
@@ -348,6 +361,7 @@ run_fresh() {
   rm -rf "$keep.tmp"
   keep_run "$rundir" "$tag" "$keep.tmp"
   cp "$rundir/Events/run_$tag/vg_seed_result.txt" "$keep.tmp/"
+  if [ -n "$param" ]; then cp "$param" "$keep.tmp/param_card.dat"; fi
   rm -rf "$keep"
   mv "$keep.tmp" "$keep"
   rm -rf "$rundir"
@@ -407,7 +421,7 @@ seed_record_bin() {
 
 # row_setup ROW — the row's kind, run card, param card, overrides, tree and
 # generator text, set in the caller's `kind card param overrides tree generator`
-# (bash's dynamic scope); dies on a row whose card disagrees with its script.
+# (bash's dynamic scope); dies on a row whose cards disagree with its script.
 row_setup() {
   local row="$1"
   kind="$(row_kind "$row")"
@@ -418,6 +432,8 @@ row_setup() {
       [ -f "$card" ] && [ -f "$param" ] || die "$row: no banked cards under output/$row (pixi run fetch-refdata)"
       mes_check_card "$HERE/scripts/$row.mg5" "$card" "iseed nevents" ||
         die "$row: scripts/$row.mg5 and output/$row/Cards/run_card.dat disagree"
+      mes_check_param_card "$HERE/scripts/$row.mg5" "$param" ||
+        die "$row: scripts/$row.mg5 and output/$row/Cards/param_card.dat disagree"
       generator="scripts/$row.mg5 without its launch block; run card and param card of output/$row/Cards"
       ;;
     mlm)
@@ -437,8 +453,10 @@ row_setup() {
         dy13_default) card="$HERE/dy13_default_run_card.dat" ;;
         dy13_mmll_60_120) card="$HERE/dy13_mmll_run_card.dat" ;;
         dy13_beams_6500_4000) card="$HERE/dy_beams_6500_4000_run_card.dat" ;;
+        dy13_mmll_60_120_mz95) card="$HERE/dy13_mmll_run_card.dat"; param="$HERE/dy13_mz95_param_card.dat" ;;
       esac
       generator="generate p p > e+ e- (gen_hadronic_sigma.sh); run card $(basename "$card")"
+      if [ -n "$param" ]; then generator="$generator; param card $(basename "$param")"; fi
       ;;
     dy13etau)
       card="$HERE/dy13_default_run_card.dat"
@@ -460,7 +478,7 @@ row_setup() {
 
 # dry_row ROW — what run_row would run the row on, printed; nothing is run.
 dry_row() {
-  local row="$1" kind card="" param="" overrides="" tree=pinned generator script probe
+  local row="$1" kind card="" param="" overrides="" tree=pinned generator script
   printf '=== %s\n' "$row"
   if ! (row_setup "$row") 2>&1 | sed 's/^/    /'; then
     printf '    WOULD FAIL: the row setup above refused it\n'
@@ -476,6 +494,7 @@ dry_row() {
     printf '    generation script:\n'
     sed 's/^/        /' "$script"
     rm -f "$script"
+    local probe
     probe="$(mktemp "${TMPDIR:-/tmp}/vg_dry_XXXXXX")"
     mes_install_card "$card" "$probe" "$overrides" 0
     printf '    budget     nevents %s at [%s], %s at [%s]\n' \
@@ -487,6 +506,10 @@ dry_row() {
     script | mlm | card) printf '    launch-block check  %s settings agree with the run card\n' \
       "$(mes_launch_sets "$HERE/scripts/$row.mg5" | awk '$1 != "iseed" && $1 != "nevents"' | wc -l | tr -d ' ')" ;;
   esac
+  if [ "$kind" = dy13 ] && [ -n "$param" ]; then
+    printf '    param card entries that differ from dy13_param_card.dat:\n'
+    diff "$HERE/dy13_param_card.dat" "$param" | sed -n 's/^> /        /p' || true
+  fi
 }
 
 # run_row ROW — every seed of one row, then its record.
