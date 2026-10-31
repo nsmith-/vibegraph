@@ -665,7 +665,9 @@ fn generate_locates_the_recorded_pdf_set_by_name() {
 /// A hadronic artifact generates under the channel maps it was integrated
 /// with, and the same artifact with only its recorded channel-map digest
 /// changed is refused, naming both digests: the `(group, diagram)` keys and grid
-/// dimensions still match, so the digest is all that can refuse it.
+/// dimensions still match, so the digest is all that can refuse it. The banked
+/// digest is not the empty list's, which a key list never filled would give on
+/// both sides.
 #[test]
 fn a_hadronic_channel_map_digest_that_moved_is_refused() {
     if !banked_present() {
@@ -676,6 +678,11 @@ fn a_hadronic_channel_map_digest_that_moved_is_refused() {
         );
     }
     let run = integrated();
+    assert_ne!(
+        run.artifact.channel_map_digest,
+        vibegraph::artifact::channel_map_digest::<&str>(&[]),
+        "the hadronic artifact banks the digest of no channel's map"
+    );
     run.generate_text_at(10, "maps-unchanged.lhe", SEED);
 
     let moved = vibegraph::ufo::identity::digest_bytes(b"other maps");

@@ -712,10 +712,17 @@ fn a_model_whose_digest_moved_is_refused() {
 /// The channel maps a generation rebuilds are checked by digest against the
 /// ones the grids were trained through. `run()`'s own artifact generates; the
 /// same artifact with only the recorded digest changed is refused, so the
-/// digest is all that can refuse it.
+/// digest is all that can refuse it. The banked digest is not the empty list's:
+/// integrate and generate read the same integrand's keys, so a key list that is
+/// never filled would round-trip on both sides and refuse nothing.
 #[test]
 fn a_channel_map_digest_that_moved_is_refused() {
     let run = run();
+    assert_ne!(
+        run.artifact.channel_map_digest,
+        vibegraph::artifact::channel_map_digest::<&str>(&[]),
+        "the multichannel artifact banks the digest of no channel's map"
+    );
     run.generate_with(&[], SEED_A, "maps-unchanged.lhe");
     let edited = run.edited_artifact("moved-maps.bin.zst", |a| {
         a.channel_map_digest = vibegraph::ufo::identity::digest_bytes(b"other maps");
