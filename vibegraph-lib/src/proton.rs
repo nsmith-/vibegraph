@@ -120,8 +120,8 @@ use crate::phasespace::diagram_channel::MapIdentity;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
-    identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap, RamboChannel,
-    ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
+    floored_alphas, identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap,
+    RamboChannel, ScaledChannel, ScaledMultiChannel, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB,
 };
 use crate::progress;
 use crate::runcard::RunCard;
@@ -1353,6 +1353,10 @@ pub struct ProtonIntegrand<'a> {
     /// The mean of the mixture estimator `f/g` over the last α-survey — that
     /// survey's estimate of the cross section — and zero before any survey.
     survey_mean: f64,
+    /// The floor every selection weight is raised to after the α survey
+    /// ([`floored_alphas`]), or `None` to install the survey's weights as they
+    /// came out.
+    alpha_floor: Option<f64>,
     /// Per flavour group, the channel forests MadEvent's enhancement weight is a
     /// product over, where the run card makes that weight something other than the
     /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
@@ -1572,10 +1576,12 @@ impl<'a> ProtonIntegrand<'a> {
         let shape = process_shape(groups, model, sqrt_s_had);
         let maps = map_options.resolve(&shape);
         tracing::info!(
-            "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
+            "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs, \
+             {} resonant pairs)",
             maps.describe(&map_options),
             shape.soft_emission_splits,
-            shape.max_rungs
+            shape.max_rungs,
+            shape.resonant_pair_splits
         );
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
@@ -1667,6 +1673,7 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
             survey_mean: 0.0,
+            alpha_floor: Some(DEFAULT_ALPHA_FLOOR),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
             alpha_s_dependent: false,
@@ -1968,6 +1975,22 @@ impl<'a> ProtonIntegrand<'a> {
     /// If `alphas` is not one normalised set of positive weights per channel.
     pub fn set_channel_alphas(&mut self, alphas: Vec<f64>) {
         self.combiner.set_alphas(alphas);
+    }
+
+    /// Raise every selection weight [`adapt_alphas`](Self::adapt_alphas) settles
+    /// on to at least `floor` and renormalise ([`floored_alphas`]);
+    /// [`DEFAULT_ALPHA_FLOOR`] unless set, and `None` installs the survey's
+    /// weights as they are. A survey that leaves no weight below the floor
+    /// installs its weights bit for bit either way. Weights installed by
+    /// [`set_channel_alphas`](Self::set_channel_alphas) are taken as given.
+    pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
+        self.alpha_floor = floor;
+    }
+
+    /// The floor [`adapt_alphas`](Self::adapt_alphas) raises the surveyed
+    /// weights to ([`set_alpha_floor`](Self::set_alpha_floor)).
+    pub fn alpha_floor(&self) -> Option<f64> {
+        self.alpha_floor
     }
 
     /// The coordinates one channel's grid is built over: the two outer `(τ, y)`
@@ -2959,6 +2982,12 @@ impl<'a> ProtonIntegrand<'a> {
     /// flux, the cut and the luminosity-weighted sum over groups — so weight flows to
     /// the channels that carry variance *of the hadronic integral*, not of a partonic
     /// one at some representative energy.
+    ///
+    /// The surveyed weights are then raised to the α floor
+    /// ([`set_alpha_floor`](Self::set_alpha_floor), [`DEFAULT_ALPHA_FLOOR`] unless
+    /// set) where any lies below it, and the floored set is installed as the
+    /// trajectory's last entry: the entry before it stays the weights the final
+    /// survey drew with.
     pub fn adapt_alphas(
         &mut self,
         seed: u64,
@@ -2988,6 +3017,15 @@ impl<'a> ProtonIntegrand<'a> {
                 it as u64 + 1,
                 Some(n_iter as u64),
             );
+        }
+        if let Some(floored) = self
+            .alpha_floor
+            .and_then(|floor| floored_alphas(self.combiner.alphas(), floor))
+        {
+            self.combiner.set_alphas(floored.clone());
+            *trajectory
+                .last_mut()
+                .expect("the trajectory starts at the starting weights") = floored;
         }
         report_alpha_spread(&variance_shares, self.combiner.alphas());
         AlphaAdaptation {

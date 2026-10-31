@@ -8,6 +8,7 @@
 
 ## Directories
 
+* [alpha-share-tails](alpha-share-tails/index.md)
 * [amplitude-signs](amplitude-signs/index.md)
 * [banked-open-ends](banked-open-ends/index.md)
 * [ckm-no-b-mass](ckm-no-b-mass/index.md)

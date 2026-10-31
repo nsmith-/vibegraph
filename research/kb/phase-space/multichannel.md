@@ -72,8 +72,15 @@ leaves `α` alone and stops. The fixed point is `Wⱼ = const` over channels wit
 weight, the stationarity condition of `∫f²/g` under `Σαⱼ = 1`: a converged `α`
 equalises the per-channel variance shares. The surveyed integrand is evaluated
 at the drawn point *and* the drawing channel, because a per-event scale may
-read the channel. After the survey `α` is frozen; VEGAS then refines each
-channel's hypercube.
+read the channel. After the survey every `α` under `1e-4` is raised to it and
+the set renormalised (no change when none is under it), and `α` is then
+frozen; VEGAS refines each channel's hypercube. The floor keeps a channel
+whose peak the survey never sampled from being driven to `α ≈ 1e-11`, where
+it adds nothing to the mixture denominator on its own peak; on
+`bbx_to_ccx_emmm_qcd0` it took the 600k → 1.2M seed-sd ratio from 0.784 to
+0.708 over 20 paired seeds, with quoted errors about 20% above the seed
+spread (χ²/dof 0.66–0.69) ([alpha-share-tails F1](../sprints/alpha-share-tails/sessions/F1-report.md)).
+`--alpha-floor off` restores the survey's own `α`.
 
 - **Fixed beams** (`FixedBeamIntegrand::use_multichannel`): the survey runs
   inside `MultiChannel::adapt_alphas` on the process's `Σ|M|²` with the cut

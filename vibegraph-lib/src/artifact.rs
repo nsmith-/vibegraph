@@ -22,16 +22,15 @@ use crate::vegas::{GridRule, VegasGrid};
 /// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
 /// artifact is written at this version.
 ///
-/// `14` records the run's external inputs as [`IntegrateArtifact::inputs`]:
-/// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
-/// integration parsed. A version-13 file names its PDF set but records no
-/// checksum, so a generation could not tell whether the densities it reads are
-/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
+/// `15` banks the pair order ([`PairOrder`](crate::phasespace::maps::PairOrder))
+/// among the map choices, and the α floor the survey's weights were raised to
+/// ([`IntegrateArtifact::alpha_floor`]). A version-14 file has neither field, so
+/// it cannot decode into this shape, and [`OLDEST_READABLE_VERSION`] is this
 /// version.
-pub const FORMAT_VERSION: u32 = 14;
+pub const FORMAT_VERSION: u32 = 15;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -345,6 +344,11 @@ pub struct IntegrateArtifact {
     /// needs the rule to sample. `None` is an artifact whose channels were
     /// trained by no VEGAS grid; no writer produces one yet.
     pub grid_rule: Option<GridRule>,
+    /// The floor the α survey's selection weights were raised to before the
+    /// grids were trained, or `None` for weights installed as surveyed.
+    /// Recorded for provenance: the channels' [`ChannelGrid::alpha`] are the
+    /// weights as installed, which is all a replay reads.
+    pub alpha_floor: Option<f64>,
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -478,6 +482,7 @@ mod tests {
             chi2_per_dof: 1.02,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            alpha_floor: Some(crate::phasespace::DEFAULT_ALPHA_FLOOR),
         }
     }
 
@@ -526,6 +531,7 @@ mod tests {
         assert_eq!(card(&reloaded), card(&artifact));
         assert!(reloaded.run_card.get("nevents").is_none());
         assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
+        assert_eq!(reloaded.alpha_floor, artifact.alpha_floor);
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
@@ -783,21 +789,21 @@ mod tests {
         path
     }
 
-    /// A version-13 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records no
-    /// checksum of the PDF files it was integrated with.
+    /// A version-14 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode: its map choices do
+    /// not record the pair order its grids were trained under.
     #[test]
-    fn a_version_13_artifact_is_refused() {
-        let dir = scratch_dir("v13");
-        let path = stamped(&sample_artifact(), &dir, 13);
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        let path = stamped(&sample_artifact(), &dir, 14);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
         assert!(
             matches!(
                 err,
                 ArtifactError::UnsupportedVersion {
-                    found: 13,
-                    oldest: 14,
-                    expected: 14
+                    found: 14,
+                    oldest: 15,
+                    expected: 15
                 }
             ),
             "{err}"
