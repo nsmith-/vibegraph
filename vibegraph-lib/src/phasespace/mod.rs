@@ -77,7 +77,8 @@ pub(crate) use channel::{
     floored_alphas, kleiss_pittau_step, PhaseSpacePoint, ScaledChannel, ScaledMultiChannel,
 };
 pub use channel::{
-    AlphaAdaptation, Channel, Combiner, MultiChannel, PhaseSpaceMap, RamboChannel, SubsystemMemo,
+    parse_alpha_floor, AlphaAdaptation, Channel, Combiner, MultiChannel, PhaseSpaceMap,
+    RamboChannel, SubsystemMemo, DEFAULT_ALPHA_FLOOR,
 };
 pub use diagram_channel::{DiagramChannel, Resonance, RungSpec};
 pub use maps::MapOptions;

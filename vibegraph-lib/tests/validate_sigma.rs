@@ -132,7 +132,7 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
-use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
+use vibegraph::phasespace::{parse_alpha_floor, AlphaAdaptation, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
@@ -1023,7 +1023,7 @@ fn with_integrand<R>(
         n_survey,
         n_adapt_iter,
         mmll_override,
-        None,
+        Some(DEFAULT_ALPHA_FLOOR),
         |parts| f(parts.integ, parts.adaptation),
     )
 }
@@ -1043,8 +1043,8 @@ struct IntegrandParts<'p, 'a> {
 }
 
 /// [`with_integrand`], handing `f` the integrand's inputs beside it, with every
-/// surveyed selection weight raised to `alpha_floor` where one is given
-/// ([`FixedBeamIntegrand::set_alpha_floor`]).
+/// surveyed selection weight raised to `alpha_floor`, or installed as surveyed
+/// where it is `None` ([`FixedBeamIntegrand::set_alpha_floor`]).
 #[allow(clippy::too_many_arguments)]
 fn with_integrand_parts<R>(
     dir: &str,
@@ -2107,7 +2107,8 @@ fn probe_2to6_density_decomposition() {
 ///   accepted points are recorded per seed in the TSV's `watch` column.
 /// * `VG_2TO6_ALPHA_FLOOR`: a floor every surveyed selection weight is raised
 ///   to before the integration, the set renormalised
-///   ([`FixedBeamIntegrand::set_alpha_floor`]); unset, the survey's weights.
+///   ([`FixedBeamIntegrand::set_alpha_floor`]), or `off` for the survey's
+///   weights as they came out; unset, [`DEFAULT_ALPHA_FLOOR`].
 /// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
 ///   so a killed run keeps what it measured. Columns: `row sampler alloc neval
 ///   niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
@@ -2284,11 +2285,10 @@ fn probe_2to6_budget_ladder() {
         .iter()
         .map(|s| parse_usize(s, "VG_2TO6_WATCH"))
         .collect();
-    let alpha_floor: Option<f64> = std::env::var("VG_2TO6_ALPHA_FLOOR").ok().map(|s| {
-        s.trim()
-            .parse()
-            .unwrap_or_else(|_| panic!("VG_2TO6_ALPHA_FLOOR: `{s}` is not a number"))
-    });
+    let alpha_floor: Option<f64> = match std::env::var("VG_2TO6_ALPHA_FLOOR") {
+        Ok(s) => parse_alpha_floor(&s).unwrap_or_else(|e| panic!("VG_2TO6_ALPHA_FLOOR: {e}")),
+        Err(_) => Some(DEFAULT_ALPHA_FLOOR),
+    };
     let mut out = std::env::var("VG_2TO6_OUT").ok().map(|path| {
         let fresh = std::fs::metadata(&path)
             .map(|m| m.len() == 0)

@@ -31,6 +31,7 @@ use rand_chacha::ChaCha8Rng;
 use super::*;
 use crate::budget::{floor_for_acceptance, MIN_CHANNEL_NEVAL};
 use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+use crate::phasespace::parse_alpha_floor;
 use crate::ufo::slha::ParamCard;
 use crate::ufo::sm::{sm_model, SMRestrict};
 
@@ -275,10 +276,11 @@ fn decompose(
 ///   index wgt first_point x …` lines recorded during a run; each one of a
 ///   selected seed, budget and channel is decomposed instead of replaying.
 /// * `VG_TAIL_ALPHA_FLOOR`: a floor the installed α vector is raised to and
-///   renormalised by before anything is replayed ([`floored_alphas`]): on the
-///   survey's weights as [`FixedBeamIntegrand::set_alpha_floor`] raises them, and
-///   on a trace's weights as given, so a trace whose run was already floored
-///   is named without it.
+///   renormalised by before anything is replayed ([`floored_alphas`]), or `off`:
+///   on the survey's weights as [`FixedBeamIntegrand::set_alpha_floor`] raises
+///   them, and on a trace's weights as given. Unset, a survey takes the
+///   integrand's [`DEFAULT_ALPHA_FLOOR`] and a trace is installed as recorded,
+///   since a trace records the weights its run installed.
 /// * `VG_TAIL_ALPHA_FLOORS`: comma list of α floors; each accepted point's
 ///   `g/g'` under each is appended to its `D` line.
 /// * `VG_TAIL_PARTITIONS`: `1` appends the two partition ratios of
@@ -309,9 +311,9 @@ fn probe_2to6_tail_points() {
     let top = env_usizes("VG_TAIL_TOP", "4")[0];
     let trace = std::env::var("VG_TAIL_TRACE").ok();
     let recorded = std::env::var("VG_TAIL_RECORDED").ok();
-    let alpha_floor: Option<f64> = std::env::var("VG_TAIL_ALPHA_FLOOR")
+    let alpha_floor: Option<Option<f64>> = std::env::var("VG_TAIL_ALPHA_FLOOR")
         .ok()
-        .map(|s| s.trim().parse().expect("VG_TAIL_ALPHA_FLOOR: a number"));
+        .map(|s| parse_alpha_floor(&s).unwrap_or_else(|e| panic!("VG_TAIL_ALPHA_FLOOR: {e}")));
     let alpha_floors: Vec<f64> = env_list("VG_TAIL_ALPHA_FLOORS", "")
         .iter()
         .map(|s| s.parse().expect("VG_TAIL_ALPHA_FLOORS: a number"))
@@ -398,8 +400,8 @@ fn probe_2to6_tail_points() {
         match &trace {
             Some(path) => {
                 let traced = traced_alphas(path, seed, channel_diags.len());
-                let alphas = match alpha_floor {
-                    Some(floor) => floored_alphas(&traced, floor),
+                let alphas = match alpha_floor.flatten() {
+                    Some(floor) => floored_alphas(&traced, floor).unwrap_or(traced),
                     None => traced,
                 };
                 integ
@@ -408,14 +410,16 @@ fn probe_2to6_tail_points() {
                     .expect("one α per channel");
             }
             None => {
-                integ.set_alpha_floor(alpha_floor);
+                if let Some(floor) = alpha_floor {
+                    integ.set_alpha_floor(floor);
+                }
                 integ.use_multichannel(&diagrams, &evaluated, SURVEY, SURVEY_ITERS, seed);
             }
         }
         let alphas = integ.channel_alphas();
         let floored: Vec<Vec<f64>> = alpha_floors
             .iter()
-            .map(|&floor| floored_alphas(&alphas, floor))
+            .map(|&floor| floored_alphas(&alphas, floor).unwrap_or_else(|| alphas.clone()))
             .collect();
         let mut head = format!("A {seed} {}\n", join(alphas.iter().copied()));
         for &j in &watched {

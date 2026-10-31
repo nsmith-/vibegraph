@@ -56,6 +56,7 @@ use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{
     MapChoices, MapOptions, PairOrder, RungOrder, SplitAngle, TauMap,
 };
+use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::bind::bind_card;
@@ -313,6 +314,27 @@ impl std::fmt::Display for MaxBinWidthArg {
     }
 }
 
+/// `--alpha-floor`: a floor in `(0, 1)`, or `off`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AlphaFloorArg(pub(crate) Option<f64>);
+
+impl std::str::FromStr for AlphaFloorArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_alpha_floor(s).map(AlphaFloorArg)
+    }
+}
+
+impl std::fmt::Display for AlphaFloorArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(floor) => write!(f, "{floor:e}"),
+            None => write!(f, "off"),
+        }
+    }
+}
+
 /// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are
 /// [`GridRule::default`]; the rule a run used is recorded in its artifact.
 #[derive(Args, Debug, Clone, Copy)]
@@ -458,6 +480,19 @@ pub(crate) struct IntegrateArgs {
     #[arg(long, value_enum)]
     pub(crate) allocate: Option<Allocation>,
 
+    /// Raise every channel's selection weight to at least this after the
+    /// α-survey, and renormalise; `off` installs the survey's weights as they
+    /// came out.
+    ///
+    /// A channel whose peak the survey's draws never reach measures no variance,
+    /// and its weight falls geometrically over the survey to `1e-11` and below;
+    /// the integration's rare points in that peak then carry a mixture density
+    /// set by channels that do not follow it. A survey that leaves every weight
+    /// above the floor installs its weights unchanged. The floor a run used is
+    /// recorded in its artifact.
+    #[arg(long, value_name = "FLOOR", default_value_t = AlphaFloorArg(Some(DEFAULT_ALPHA_FLOOR)))]
+    pub(crate) alpha_floor: AlphaFloorArg,
+
     /// RNG seed for the integration; defaults to the run card's `iseed` when it
     /// is not 0, and to 20260719 otherwise. The seed used is recorded in the
     /// artifact.
@@ -589,6 +624,8 @@ struct RunOutput {
     maps: MapChoices,
     /// The rule the integrand refined its grids under.
     grid_rule: GridRule,
+    /// The floor the surveyed selection weights were raised to.
+    alpha_floor: Option<f64>,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -804,6 +841,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         chi2_per_dof: output.result.chi2_per_dof,
         maps: output.maps,
         grid_rule: Some(output.grid_rule),
+        alpha_floor: output.alpha_floor,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -965,6 +1003,7 @@ fn integrate_hadronic(
     let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
     integ.set_grid_rule(args.grid.rule()?);
+    integ.set_alpha_floor(args.alpha_floor.0);
 
     tui::state::note_channels(integ.channel_count());
 
@@ -992,6 +1031,7 @@ fn integrate_hadronic(
         channels,
         maps: integ.maps(),
         grid_rule: integ.grid_rule(),
+        alpha_floor: integ.alpha_floor(),
         result,
         convergence,
     })
@@ -1084,6 +1124,7 @@ fn integrate_fixed_energy(
     integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
     integ.set_grid_rule(args.grid.rule()?);
+    integ.set_alpha_floor(args.alpha_floor.0);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
@@ -1120,6 +1161,8 @@ fn integrate_fixed_energy(
             .collect(),
         maps,
         grid_rule: integ.grid_rule(),
+        // Flat RAMBO surveys nothing, so no floor raised anything.
+        alpha_floor: integ.maps().and(integ.alpha_floor()),
         result,
         convergence,
     })

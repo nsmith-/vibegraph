@@ -1480,6 +1480,7 @@ mod tests {
             chi2_per_dof: 1.0,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            alpha_floor: None,
         }
     }
 

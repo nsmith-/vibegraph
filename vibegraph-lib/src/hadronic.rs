@@ -58,7 +58,7 @@ use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     floored_alphas, identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel,
-    MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
+    MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB,
 };
 use crate::progress;
 use crate::runcard::{RunCard, RunCardError};
@@ -1984,7 +1984,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             unpolarized,
             map_options: MapOptions::default(),
             maps: None,
-            alpha_floor: None,
+            alpha_floor: Some(DEFAULT_ALPHA_FLOOR),
             vetoes: Vec::new(),
             resonances: &[],
             grid_rule: GridRule::default(),
@@ -2058,13 +2058,20 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Raise every selection weight the α survey of
     /// [`use_multichannel`](Self::use_multichannel) settles on to at least
-    /// `floor` and renormalise ([`floored_alphas`]); `None`, the default,
-    /// installs the survey's weights as they are. Weights installed from a
-    /// completed integration
+    /// `floor` and renormalise ([`floored_alphas`]); [`DEFAULT_ALPHA_FLOOR`]
+    /// unless set, and `None` installs the survey's weights as they are. A
+    /// survey that leaves no weight below the floor installs its weights bit
+    /// for bit either way. Weights installed from a completed integration
     /// ([`use_multichannel_with_alphas`](Self::use_multichannel_with_alphas))
     /// are taken as given.
     pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
         self.alpha_floor = floor;
+    }
+
+    /// The floor [`use_multichannel`](Self::use_multichannel) raises the
+    /// surveyed weights to ([`set_alpha_floor`](Self::set_alpha_floor)).
+    pub fn alpha_floor(&self) -> Option<f64> {
+        self.alpha_floor
     }
 
     /// Refine the channels' grids under `rule` in every per-channel adaptation:
@@ -2488,6 +2495,11 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// cuts do not have. Without one, a final state of more than two legs has no
     /// peripheral spine at all, and a spacelike line's transfer is drawn flat.
     ///
+    /// The surveyed weights are then raised to the α floor
+    /// ([`set_alpha_floor`](Self::set_alpha_floor), [`DEFAULT_ALPHA_FLOOR`] unless
+    /// set) where any lies below it, and the floored set is installed as the
+    /// path's last entry.
+    ///
     /// Returns the α refinement path, or `None` if `diagrams` is empty (the flat
     /// sampler is then left in place).
     pub fn use_multichannel(
@@ -2529,10 +2541,15 @@ impl<'a> FixedBeamIntegrand<'a> {
             0.5,
         );
         let mut report = report;
-        if let Some(floor) = self.alpha_floor {
-            let floored = floored_alphas(combiner.alphas(), floor);
+        if let Some(floored) = self
+            .alpha_floor
+            .and_then(|floor| floored_alphas(combiner.alphas(), floor))
+        {
             combiner.set_alphas(floored.clone());
-            report.trajectory.push(floored);
+            *report
+                .trajectory
+                .last_mut()
+                .expect("a survey reports its starting weights") = floored;
         }
         self.sampler = Sampler::Multi(combiner);
         self.channel_samplers = samplers;
@@ -3719,6 +3736,68 @@ mod tests {
                 v_flat / analytic - 1.0,
             );
         }
+    }
+
+    /// A floor no surveyed weight lies below installs the survey's weights bit for
+    /// bit, its trajectory with them, so the default floor leaves a process whose
+    /// survey keeps every channel above it exactly where no floor would. A floor
+    /// that raises a weight installs [`floored_alphas`]' set in place of the
+    /// trajectory's last entry, so the entry before it is still the weights the
+    /// final survey drew with.
+    #[test]
+    fn an_alpha_floor_moves_nothing_unless_it_raises_a_weight() {
+        let (m, evaluated, sets, diagrams) = fixed_energy_case("e+ e- > ta+ ta- h");
+        assert!(diagrams.len() >= 2, "a floor needs channels to share");
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let survey = |floor: Option<f64>| {
+            let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
+            let mut integ = FixedBeamIntegrand::new(
+                amps,
+                &cuts,
+                FixedBeams::massless(500.0),
+                masses.clone(),
+                avg,
+            );
+            assert_eq!(integ.alpha_floor(), Some(DEFAULT_ALPHA_FLOOR));
+            integ.set_alpha_floor(floor);
+            let report = integ
+                .use_multichannel(&diagrams, &evaluated, 2_000, 3, 0x5EED_F2)
+                .expect("resonant process yields channels");
+            (report.trajectory, integ.channel_alphas())
+        };
+        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        let bits_all = |t: &[Vec<f64>]| t.iter().map(|v| bits(v)).collect::<Vec<_>>();
+
+        let (off, off_alphas) = survey(None);
+        assert_eq!(off.len(), 4, "three surveys, each followed by a step");
+        let lowest = off_alphas.iter().copied().fold(f64::INFINITY, f64::min);
+
+        let (under, under_alphas) = survey(Some(lowest / 2.0));
+        assert_eq!(bits(&under_alphas), bits(&off_alphas));
+        assert_eq!(bits_all(&under), bits_all(&off));
+
+        let raised =
+            floored_alphas(&off_alphas, 2.0 * lowest).expect("the lowest weight is raised");
+        let (over, over_alphas) = survey(Some(2.0 * lowest));
+        assert_eq!(bits(&over_alphas), bits(&raised));
+        assert_eq!(over.len(), off.len());
+        assert_eq!(
+            bits_all(&over[..off.len() - 1]),
+            bits_all(&off[..off.len() - 1])
+        );
+        assert_eq!(bits(over.last().unwrap()), bits(&raised));
     }
 
     /// The production wiring's efficiency win: on a genuinely resonant fixed-energy

@@ -319,6 +319,30 @@ impl<'a> MultiplicitySum<'a> {
         self.grid_rule = rule;
     }
 
+    /// Raise every part's surveyed selection weights to at least `floor`
+    /// ([`ProtonIntegrand::set_alpha_floor`]); `None` installs the surveys'
+    /// weights as they are.
+    pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
+        for part in &mut self.parts {
+            part.set_alpha_floor(floor);
+        }
+    }
+
+    /// The floor the parts' surveys raise their weights to, which
+    /// [`set_alpha_floor`](Self::set_alpha_floor) keeps common to every part.
+    ///
+    /// # Panics
+    ///
+    /// If the parts were given different floors before they were composed.
+    pub fn alpha_floor(&self) -> Option<f64> {
+        let floor = self.parts[0].alpha_floor();
+        assert!(
+            self.parts.iter().all(|p| p.alpha_floor() == floor),
+            "every part surveys under the same α floor"
+        );
+        floor
+    }
+
     /// The parts, in non-decreasing multiplicity.
     pub fn parts(&self) -> &[ProtonIntegrand<'a>] {
         &self.parts
@@ -489,8 +513,9 @@ impl<'a> MultiplicitySum<'a> {
     }
 
     /// Adapt every part's selection weights on its own hadronic mixture
-    /// ([`ProtonIntegrand::adapt_alphas`]), and split the budget across the parts
-    /// by what the final surveys measured.
+    /// ([`ProtonIntegrand::adapt_alphas`], each part's weights raised to the α
+    /// floor of [`set_alpha_floor`](Self::set_alpha_floor)), and split the budget
+    /// across the parts by what the final surveys measured.
     ///
     /// For independent terms estimated from `nₖ` points each, the summed variance
     /// `Σ sₖ²/nₖ` is least at `nₖ ∝ sₖ`, so a part's share is `∝ sₖ`, the standard
