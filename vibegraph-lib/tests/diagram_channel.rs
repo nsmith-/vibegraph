@@ -27,6 +27,8 @@ use vibegraph::phasespace::{
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::EvaluatedModel;
 
+use common::seeds::{combine, SeedMean};
+
 fn total(momenta: &[LorentzVector<f64>]) -> [f64; 4] {
     momenta.iter().fold([0.0; 4], |a, p| {
         [a[0] + p.e(), a[1] + p.px(), a[2] + p.py(), a[3] + p.pz()]
@@ -2791,9 +2793,9 @@ fn no_scale_peripheral_diagrams(
 /// above zero, the same floor on every such rung, and a massive line keeps its own
 /// mass wherever that lies above the floor.
 ///
-/// Both halves are what the scale used to decide. Withholding the spine past two
-/// legs leaves `spine_poles` empty, and switching the floor off leaves a massless
-/// rung's pole at zero, where the transfer's upper edge sits on rounding noise.
+/// Each half fails on its own defect: withholding the spine past two legs leaves
+/// `spine_poles` empty, and switching the floor off leaves a massless rung's pole
+/// at zero, where the transfer's upper edge sits on rounding noise.
 #[test]
 fn without_a_fiducial_scale_every_peripheral_diagram_gets_its_spine_on_a_pole_floor() {
     let model = common::sm_model();
@@ -3051,33 +3053,16 @@ const MASS_CUT_PROCESS: &str = "u c > e+ e- u c QCD=0";
 const MASS_CUT_CARD: &str =
     "0 = lpp1\n0 = lpp2\n500 = ebeam1\n500 = ebeam2\n0 = ptj\n0 = ptl\n300 = mmjj\n50 = mmll\n";
 
-/// Several seeds of one estimator, combined as the AGENTS.md seed policy reads
-/// them: the unweighted mean, its spread (the seeds' standard deviation over
-/// `√S`), the seeds' `χ²/dof` about that mean against the error each claims, and
-/// the mean per-draw variance.
-struct SeedSweep {
-    mean: f64,
-    spread: f64,
-    chi2: f64,
-    var: f64,
-}
-
-fn seed_sweep(runs: &[(f64, f64)], n: usize) -> SeedSweep {
-    let s = runs.len() as f64;
-    let mean = runs.iter().map(|r| r.0).sum::<f64>() / s;
-    let sd = (runs.iter().map(|r| (r.0 - mean).powi(2)).sum::<f64>() / (s - 1.0)).sqrt();
-    let chi2 = runs
+/// Several seeds of plain Monte Carlo, each a `(mean, per-draw variance)` over
+/// `n` draws, read under the seed policy: [`combine`] on each seed's mean and
+/// its error `√(var/n)`, beside the seeds' mean per-draw variance.
+fn seed_sweep(runs: &[(f64, f64)], n: usize) -> (SeedMean, f64) {
+    let seeds: Vec<(f64, f64)> = runs
         .iter()
-        .map(|r| (r.0 - mean).powi(2) / (r.1 / n as f64))
-        .sum::<f64>()
-        / (s - 1.0);
-    let var = runs.iter().map(|r| r.1).sum::<f64>() / s;
-    SeedSweep {
-        mean,
-        spread: sd / s.sqrt(),
-        chi2,
-        var,
-    }
+        .map(|&(mean, var)| (mean, (var / n as f64).sqrt()))
+        .collect();
+    let var = runs.iter().map(|r| r.1).sum::<f64>() / runs.len() as f64;
+    (combine(&seeds), var)
 }
 
 /// A second finite process with no single-leg `pT` cut: `e+ e- → e+ e- µ+ µ-` at
@@ -3107,8 +3092,8 @@ type ProbeArm = (String, Box<dyn PhaseSpaceMap<f64> + Sync>, usize, usize);
 ///   floor and so no floor-driven bias;
 /// * the production set with every straddling remainder drawn flat
 ///   ([`DiagramChannel::with_flat_remainders`]);
-/// * the all-timelike tree for every diagram, which is what a final state past two
-///   legs got with no scale before the spine was built for it: the known-wrong row.
+/// * the all-timelike tree for every diagram, which samples no spacelike propagator:
+///   the known-wrong row.
 ///
 /// Read as a measurement: each arm reports its seed mean, spread and `χ²/dof`, its
 /// ratio to flat RAMBO and its per-draw variance.
@@ -3245,7 +3230,7 @@ fn probe_the_no_scale_spine_on_a_mass_cut_peripheral_process() {
                     .map(|h| h.join().expect("seed"))
                     .collect()
             });
-            let sw = seed_sweep(&runs, *n);
+            let (sw, var) = seed_sweep(&runs, *n);
             if label == "flat RAMBO" {
                 flat_mean = sw.mean;
             }
@@ -3257,9 +3242,9 @@ fn probe_the_no_scale_spine_on_a_mass_cut_peripheral_process() {
                 sw.mean,
                 sw.spread,
                 sw.spread / sw.mean,
-                sw.chi2,
+                sw.chi2_per_dof,
                 sw.mean / flat_mean,
-                sw.var / (sw.mean * sw.mean),
+                var / (sw.mean * sw.mean),
                 start.elapsed().as_secs_f64(),
                 per_seed.join(", ")
             );
@@ -3356,19 +3341,14 @@ fn probe_the_no_scale_production_sigma_against_flat_rambo() {
                 );
                 runs.push((s, e));
             }
-            let k = runs.len() as f64;
-            let mean = runs.iter().map(|r| r.0).sum::<f64>() / k;
-            let sd = (runs.iter().map(|r| (r.0 - mean).powi(2)).sum::<f64>() / (k - 1.0)).sqrt();
-            let chi2 = runs
-                .iter()
-                .map(|r| ((r.0 - mean) / r.1).powi(2))
-                .sum::<f64>()
-                / (k - 1.0);
+            let sw = combine(&runs);
             eprintln!(
-                "  {label}: unweighted mean {mean:.5e} pb, spread {:.2e} (rel {:.2e}), seed \
-                 χ²/dof {chi2:.2}, {:.0} s",
-                sd / k.sqrt(),
-                sd / k.sqrt() / mean,
+                "  {label}: unweighted mean {:.5e} pb, spread {:.2e} (rel {:.2e}), seed \
+                 χ²/dof {:.2}, {:.0} s",
+                sw.mean,
+                sw.spread,
+                sw.spread / sw.mean,
+                sw.chi2_per_dof,
                 start.elapsed().as_secs_f64()
             );
         }
@@ -3384,12 +3364,13 @@ struct CornerPoint {
     momenta: [[f64; 4]; 6],
 }
 
-/// The two heaviest events of DY MLL-50's R1 seed-1 sample (generation seed 7),
-/// carrying 56% and 7% of its weight, read back from the event file and boosted
-/// to the partonic CM.
+/// The two heaviest events of a DY MLL-50 sample, carrying 56% and 7% of its
+/// weight: integration seed 1 at `--neval 10000 --niter 3` with the remainders
+/// drawn flat at a `10⁴ GeV²` pole scale, generation seed 7. Read back from the
+/// event file and boosted to the partonic CM.
 const CORNER_POINTS: &[CornerPoint] = &[
     CornerPoint {
-        label: "R1 seed 1, heaviest (56%)",
+        label: "DY MLL-50, heaviest (56%)",
         process: "u u > e+ e- u u QCD=0",
         lepton_masses: false,
         momenta: [
@@ -3422,7 +3403,7 @@ const CORNER_POINTS: &[CornerPoint] = &[
         ],
     },
     CornerPoint {
-        label: "R1 seed 1, second (7%)",
+        label: "DY MLL-50, second (7%)",
         process: "u u > ta+ ta- u u QCD=0",
         lepton_masses: true,
         momenta: [
@@ -3743,24 +3724,26 @@ fn census_rows() -> Vec<CensusRow> {
     rows
 }
 
-/// Which banked σ rows the spine changes move: for every row above, every
-/// channel's [`DiagramChannel::map_key`] as production builds it against the
-/// key of the same diagram with its straddling remainders drawn flat and, with
-/// no fiducial scale, its pole floored from `10⁴ GeV²`. A row is moved when any
-/// key differs. The keys are compared at the row's own fiducial scale
-/// ([`Cuts::spacelike_floor`]) and at one energy, the card's `ebeam1 + ebeam2`;
-/// the energy enters both keys alike.
+/// The channel maps of every banked σ row above, one line a row: its channel
+/// count, its longest chain, the fiducial scales ([`Cuts::spacelike_floor`]) it
+/// is built at and the [`channel_map_digest`] of every channel's
+/// [`DiagramChannel::map_key`] as production derives it, at one energy, the
+/// card's `ebeam1 + ebeam2`. Run on two builds and diff the output: a row whose
+/// digest moved is a row a phase-space change reaches, and so one to re-gate.
 ///
 /// What it reads is the base map a channel is derived from. The split-angle,
 /// timelike-floor and rung-order layers a hadronic run adds are functions of
-/// that map and the run's options, which neither change here touches.
+/// that map and the run's options. The cuts are compiled on every leg, so a
+/// decay-chain row with `cut_decays = F` is read at the fiducial scale its
+/// decay products would imply, not at the zero production gives it.
 #[test]
 #[ignore]
-fn probe_the_banked_rows_whose_maps_moved() {
+fn probe_the_channel_maps_of_the_banked_rows() {
+    use vibegraph::artifact::channel_map_digest;
     use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use vibegraph::hadronic::{channel_diagrams, compile_subprocesses, process_external_legs};
 
-    let (mut moved, mut kept, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut censused, mut failed) = (Vec::new(), Vec::new());
     for row in census_rows() {
         let model = if row.row_model {
             match common::model_for_row(&row.key) {
@@ -3792,7 +3775,7 @@ fn probe_the_banked_rows_whose_maps_moved() {
             }
         };
         let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
-        let (mut channels, mut changed, mut rungs) = (0usize, 0usize, 0usize);
+        let (mut keys, mut rungs) = (Vec::new(), 0usize);
         let mut floors = std::collections::BTreeSet::new();
         for set in &sets {
             let evals = match compile_subprocesses(std::slice::from_ref(set), &model, &evaluated) {
@@ -3812,38 +3795,20 @@ fn probe_the_banked_rows_whose_maps_moved() {
             };
             floors.insert(format!("{fid:e}"));
             for d in channel_diagrams(&set.diagrams, &evaluated) {
-                let new = DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, fid);
-                let old = if fid > 0.0 {
-                    DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, fid)
-                } else {
-                    DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, 1e4)
-                        .without_transfer_bound()
-                }
-                .with_flat_remainders();
-                channels += 1;
-                rungs = rungs.max(new.spine_poles().len());
-                if new.map_key() != old.map_key() {
-                    changed += 1;
-                }
+                let ch = DiagramChannel::<f64>::from_diagram_regulated(d, &evaluated, sqrt_s, fid);
+                rungs = rungs.max(ch.spine_poles().len());
+                keys.push(ch.map_key());
             }
         }
-        let line = format!(
-            "{}: {changed} of {channels} channels moved, longest chain {rungs} rungs, fiducial \
-             scale {floors:?}",
-            row.key
-        );
-        if changed > 0 {
-            moved.push(line);
-        } else {
-            kept.push(line);
-        }
+        censused.push(format!(
+            "{}: {} channels, longest chain {rungs} rungs, fiducial scale {floors:?}, maps {}",
+            row.key,
+            keys.len(),
+            channel_map_digest(&keys)
+        ));
     }
-    eprintln!("MOVED ({}):", moved.len());
-    for l in &moved {
-        eprintln!("  {l}");
-    }
-    eprintln!("UNCHANGED ({}):", kept.len());
-    for l in &kept {
+    eprintln!("CENSUSED ({}):", censused.len());
+    for l in &censused {
         eprintln!("  {l}");
     }
     eprintln!("NOT CENSUSED ({}):", failed.len());

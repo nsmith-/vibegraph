@@ -66,10 +66,11 @@ const SEEDS: [u64; 16] = [
 
 /// The band the seeds' `χ²/dof` about their unweighted mean must fall in.
 ///
-/// Over 40 calibration seeds (1001–1040) a seed scatters by 0.91 of its quoted
-/// error; the 16 gated seeds read 1.06, and an earlier gate of eight of them
-/// 1.55. `χ²₁₅/15` lies in 0.23–2.5 at the 0.1% and 99.9% quantiles, so the
-/// band leaves room for quoted errors up to about 1.25× too small. Its lower
+/// Over 40 calibration seeds (1001–1040) a seed scatters by 1.05 of its quoted
+/// error, and sixteen drawn from them read 0.28–2.09 at the 0.1% and 99.9%
+/// quantiles; the 16 gated seeds read 1.27. `χ²₁₅/15` lies in 0.23–2.5 at the
+/// same quantiles, so the band leaves room for quoted errors up to about 1.25×
+/// too small. Its lower
 /// edge catches seeds that are not independent, its upper edge a region the
 /// seeds find only sometimes. With the spine withheld the gated seeds read
 /// 5.7, but sixteen drawn from 40 such seeds read a median of 2.4: the
@@ -80,9 +81,9 @@ const CHI2_PER_DOF_BAND: (f64, f64) = (0.15, 4.0);
 /// The bound on the seeds' spread (their standard deviation over `√n`) over
 /// their unweighted mean.
 ///
-/// A seed scatters by 3.3e-3 relative over the 40 calibration seeds and by
-/// 5.4e-3 over the first eight gated ones, so sixteen are expected at
-/// 0.8–1.4e-3; the gated sixteen read 1.05e-3. With the spine withheld a seed
+/// A seed scatters by 3.1e-3 relative over the 40 calibration seeds, and
+/// sixteen drawn from them read 3.9e-4–1.08e-3 at the 0.1% and 99.9%
+/// quantiles; the gated sixteen read 9.2e-4. With the spine withheld a seed
 /// scatters by 0.13 relative, sixteen drawn from 40 such seeds read 7.5e-3 at
 /// the 0.1% quantile, and the gated sixteen read 3.7e-2.
 const REL_SPREAD_MAX: f64 = 3.0e-3;

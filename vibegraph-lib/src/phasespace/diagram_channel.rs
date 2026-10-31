@@ -1772,9 +1772,10 @@ const POLE_FRACTION_OF_FIDUCIAL_SCALE: f64 = 1e-3;
 ///
 /// `10³ GeV²` — a pole floor of `1 GeV²` — costs the first two a factor of
 /// `1.2–1.4` against `10⁴` (the second `2.1` against its best, at `10⁵`) and
-/// gains the third `2.4` in variance and `6` in the corner's weight. Every scale's σ agreed with the others, and on the second
-/// process with flat RAMBO. The floor sits seven orders above a massless edge's
-/// rounding noise (`~4e-8 GeV²` at `ŝ = 2.5·10⁵ GeV²`).
+/// gains the third `2.4` in variance and `6` in the corner's weight. Every
+/// scale's σ agreed with the others, and on the second process with flat RAMBO.
+/// The floor sits seven orders above a massless edge's rounding noise
+/// (`~4e-8 GeV²` at `ŝ = 2.5·10⁵ GeV²`).
 const DEFAULT_POLE_SCALE: f64 = 1e3;
 
 /// Order a diagram's spacelike lines into a chain of rungs, or report that they do
@@ -4521,13 +4522,15 @@ mod tests {
         );
         let mut reordered = spine_keys.clone();
         reordered.reverse();
-        if reordered != spine_keys {
-            assert_ne!(
-                channel_map_digest(&spine_keys),
-                channel_map_digest(&reordered),
-                "the digest reads the channel order"
-            );
-        }
+        assert_ne!(
+            reordered, spine_keys,
+            "reversing the channels must reorder the keys"
+        );
+        assert_ne!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&reordered),
+            "the digest reads the channel order"
+        );
     }
 
     // ── Diagram classification against the momentum-routing convention ──────────
