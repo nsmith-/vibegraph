@@ -43,6 +43,24 @@ the table was written and is updated in the final column after the work.
 | H22 | 2 | `tests/spine_sigma.rs` `census` | The census rebuilds channels with `from_diagram_regulated` instead of reading what `use_multichannel` built, and only prints `spines of channels`. The spread bound fails under M1 (T-V2, T-F2), so the gate is not vacuous. | – | checked | leave |
 | H23 | 1 | `POLE_FRACTION_OF_FIDUCIAL_SCALE` name | It now scales the default too; its doc says "Fraction of the pole scale". | – | checked | leave: two kb concepts cite the name; renaming is churn against them |
 
+### Final dispositions
+
+| id | final | commit |
+|---|---|---|
+| H1 | fixed (MD1 and MD2 both survived the old tests; the new asserts fail them) | `39c92205` |
+| H2 | **not reproduced**: MD5 fails `the_rung_ordering_test_fires_on_a_swapped_chain` at `tests/diagram_channel.rs:2280`, the three-rung reversal's check that the last rung's projection does not move. Left alone | – |
+| H3 | fixed (MD3 fails it, and the precondition now asserts) | `e4c89e65` |
+| H4, H5, H6 | fixed | `e4c89e65` |
+| H7 | fixed, readings from the T-F2 report's recalibration table | `e4c89e65` |
+| H8 | fixed; printed output identical on 200000 lines | `e4c89e65` |
+| H9 | fixed; the new census runs, 76 rows censused, 1 not (`wpwm_to_wpwmz_cw`, `nhel`), the same split as T-F2's 15 + 61 + 1 | `e4c89e65` |
+| H10 | fixed; byte-identical dump | `5eefe683` |
+| H11–H15 | fixed | `983c08ff` |
+| H16 | fixed | `e4c89e65` |
+| H17 | routed to validation-dev | – |
+| H18, H19, H20 | Found | – |
+| H21, H22, H23 | leave | – |
+
 **Backlog items naming reviewed paths.** `feature/three-body-spine-requires-fiducial-scale`
 (the item this PR closes; its body describes the old policy, which is the
 manager's close-out); `performance/generic-scalar-constants-via-numcast`
@@ -52,3 +70,138 @@ now 15); `hygiene/cli-tests-define-pdf-dir-per-file` (eight files; the new
 `validate_ewk_lljj_sigma.rs` is a ninth); the `generate.rs` and
 `bank_seeded_sigma.sh` items concern other code. None is a finding here; the two
 stale counts go to Found.
+
+## Fixed
+
+- **H10, `5eefe683`.** `Spine::draw_rest_invariant` and
+  `Spine::rest_invariant_measure` choose a remainder's map (the mixture where
+  `rest_mixed`, otherwise `draw_invariant` under `rest_resonance`); `sample_spine`
+  and `spine_jacobian` call them instead of branching each on its own.
+- **H11–H15, `983c08ff`.** `PointAnatomy` (struct, fields, both methods),
+  `ProtonIntegrand::point_anatomy`, `MultiplicitySum::point_anatomy`,
+  `HeavyTrial` (fields documented), `HEAVIEST_KEPT`, `UnweightStats::heaviest`,
+  `VegasGrid::jacobian_factors` and `ProtonIntegrand::channel_map_keys` are
+  `pub(crate)`. `PointAnatomy::outer_jacobian`, never read, is deleted.
+  `cargo check --workspace --all-targets` gives no warning, so no user outside
+  the crate existed.
+- **H1, `39c92205`.** `a_channel_map_digest_that_moved_is_refused` and
+  `a_hadronic_channel_map_digest_that_moved_is_refused` assert the banked
+  digest differs from `channel_map_digest::<&str>(&[])`.
+- **H3–H9, H16, `e4c89e65`.** As listed in the table. The census probe is now
+  `probe_the_channel_maps_of_the_banked_rows`: one line a row with its
+  channel count, longest chain, fiducial scales and the digest of its keys,
+  with its decay-chain blind spot (T-F2's Found) written into its doc.
+
+## Mutations
+
+Driver `T-HY1-mut.py` / `T-HY1-mut2.py` (scratchpad): apply by exact string
+replacement with an asserted count, run, restore from a copy. After each batch
+`git diff --stat` showed only the session's own edits.
+
+| id | mutation | old tests | new tests |
+|---|---|---|---|
+| MD1 | `hadronic.rs`: both `self.channel_map_keys = map_keys;` → `Vec::new()` | `cli_generate::a_channel_map_digest_that_moved_is_refused ... ok`; lib `channel_map` + `hadronic::` 25 passed | `... FAILED`, `cli_generate.rs:721: the multichannel artifact banks the digest of no channel's map` |
+| MD2 | `proton.rs`: drop `channel_map_keys.push(channel.map_key())` | lib `channel_map` + `proton::` 48 passed; the CLI test was **not run** on the old code (the first batch omitted `--features extended-validation`, so cargo refused the target) | `... FAILED`, `cli_generate_proton.rs:681: the hadronic artifact banks the digest of no channel's map` |
+| MD3 | `channel_map_digest` sorts its keys | both digest tests FAILED (`artifact.rs:896`; `diagram_channel.rs:4511` "the digest reads the channel order") | same, now without the conditional |
+| MD4 | `map_key` never writes `M` | `map_key_separates_every_field_the_map_reads` FAILED: "'base' and 'remainder mixture' share a key" | unchanged test |
+| MD5 | `with_rung_order` no longer re-derives `rest_mixed` | `the_rung_ordering_test_fires_on_a_swapped_chain` FAILED (`tests/diagram_channel.rs:2280`) | H2 not reproduced |
+| MD6 | `Spine::rest_mixed` drops its `i + 1 < len` guard | every `phasespace::` and `diagram_channel` test passes | **unreachable**: every constructor already clears the last rung's flag, so the guard is redundant; no test can see it |
+| ID-M | (oracle power) `rest_invariant_measure` never takes the mixture | – | the identity dump differs on 35100 of 79200 lines |
+
+Unreachable or unclaimed: MD6 above. The AWAITING path of
+`validate_ewk_lljj_sigma` (H17) cannot fail on this side's σ while the row is
+planned; that is routed, not fixed. `point_anatomy` has no test (H20).
+
+## Byte-unchanged proofs
+
+- **H10.** A temporary ignored test (`hy1_identity_dump`, appended to
+  `tests/diagram_channel.rs`, then removed by restoring the file from its copy)
+  wrote every `to_bits` of the walk's weight, its momenta and the rebuilt
+  density for 300 draws per arm over the 75 no-scale peripheral diagrams, in
+  four arms: production, the 400 GeV² fiducial scale, flat remainders, and every
+  multi-rung chain reversed through `with_rung_order` — 79200 lines.
+  Before and after: `sha256 e082777e8508608886493efd24222dc58ba6ae823e83af89e0bb701c32d3f0f8`
+  both, `cmp` identical. The dump sees the mixture: the ID-M mutation moves
+  35100 lines.
+- **H8.** A temporary ignored test (`hy1_seed_sweep_identity`, removed the same
+  way) fed 100000 synthetic seed sets (5 or 8 seeds, scales 10⁻⁴…10⁴) to the
+  old private formulas and to the new `combine` path, formatting both with the
+  probes' own format strings: **200000 printed lines, 0 differ**. The f64 values
+  are not bit-identical (66500 of 100000 sets differ in some bit:
+  `sqrt(var/n)` against `sd/sqrt(n)`, and the χ² term's division order), so the
+  claim is the probes' printed output, not their bits.
+- **H11–H15.** No executable change: visibility, and a field nothing read.
+- **H9** changes what the probe prints, by design; it is not claimed unchanged.
+  Its run: `CENSUSED (76)`, `NOT CENSUSED (1)`, 11 s, e.g.
+  `bbx_to_ccx_emmm_qcd0: 615 channels, longest chain 2 rungs, fiducial scale {"4e2"}, maps c6691efc…`.
+
+## Routed
+
+- **H17 → validation-dev.** `validate_ewk_lljj_sigma.rs:220-226`: while the
+  row is planned the test integrates five seeds (about 34 minutes) and passes
+  whatever they read. The side's own χ²/dof band (`CHI2_PER_DOF_BAND`,
+  0.023–4.617) needs no record and the recorded reading (2.42) sits inside it,
+  so it could be asserted on the AWAITING path; doing so changes what the gate
+  means while planned, which is not a hygiene call.
+
+## Found
+
+- **H18. Seeded-σ CLI gates copy one scaffolding.** `validate_ewk_lljj_sigma.rs`
+  and `validate_param_card_sigma.rs` each define `output_dir`, `pdf_dir`, a
+  CLI `integrate` into a temp dir, the seed-record `reference`, the
+  pull/rel/χ² check and the `IntegralsRow` write; the first adds a ninth
+  `pdf_dir` to the eight of `hygiene/cli-tests-define-pdf-dir-per-file`, whose
+  count is now stale. To close: a `tests/common` seeded-gate helper both use.
+- **H19. `rest_mixed` is per rung but means per spine.** `spine_chain`,
+  `with_rung_order`, `with_mixed_remainders` and `Spine::rest_mixed` each
+  restate "every rung but the last" (MD6 shows the guard is redundant). A
+  spine-level flag removes the restatements, but `map_key` would encode it
+  differently and every digest would move. To close: decide whether a key
+  format change is worth it; if so, do it with the next map change that moves
+  digests anyway.
+- **H20. `point_anatomy` is untested.** Its doc claims the densities are the
+  ones the weight was formed from; a wrong channel index in
+  `channel_weight_at_recording` would go unseen and mislead an overweight
+  diagnosis. To close: a unit test that rebuilds `value_in_channel(j, u)` as
+  `αⱼ f/g` from the anatomy for points drawn in several channels.
+- **Stale kb and item sites** (not edited; bookkeeping):
+  - `research/kb/phase-space/channel-contract.md:136-139`: "A spine is built
+    for more than two outgoing legs only when that scale is positive …
+    otherwise the channel is the all-timelike tree."
+  - `research/kb/phase-space/spacelike-floor.md:110-113`: "When the floor is 0
+    … a final state of more than two legs gets no spine"; its `dc-chain` source
+    anchor `#L1643-L1708` no longer covers `spine_chain`.
+  - `research/kb/phase-space/t-channel-spine.md:116`: "floor no spine is built
+    past two outgoing legs".
+  - None of the three mentions the remainder mixture or `DEFAULT_POLE_SCALE`.
+  - `hygiene/kb-concepts-stale-after-sprint-d` cites `artifact.rs` at
+    version 14; it is 15.
+  - `hygiene/cli-tests-define-pdf-dir-per-file`: eight files, now nine (H18).
+
+## Method
+
+- Diff read in full, file by file, with the five reports beside it (about
+  35%). Leads: the stale calibration (H7) came from reading the docs' numbers
+  against T-F2's recalibration table; the history comments from the grep plus
+  reading.
+- Caller greps for every new `pub` item and accessor (about 15%): H11–H15 and
+  the unread field H12, and H1's "no test reads `channel_map_keys`".
+- Mutations run, not reasoned (about 30%): H1 confirmed, H2 **not
+  reproduced** (an existing three-rung check catches MD5), MD6 unreachable.
+- Identity dumps for the two refactors (about 15%). For H8 the bit-level
+  comparison failed as expected and the printed-output comparison is the
+  claim.
+- Leads that did not hold: H2; a suspected silent change of kind for other
+  `scripts/*.mg5` rows under the new `card` rule in `bank_seeded_sigma.sh`
+  (only `pp_to_epemjj_qcd0` and the five explicit MLM rows have a committed
+  `<row>_run_card.dat`); `jacobian_factors` as a second copy of a bin lookup
+  (none exists).
+
+## Brief corrections
+
+- The brief's mutation suggestion for the digest refusal ("each gate must be
+  able to fail") was met by the existing tests for a *changed* digest; the gap
+  was the opposite case, a digest that is trivially equal on both sides (H1).
+- The first mutation batch's hadronic CLI target needs
+  `--features extended-validation` even in the hermetic layer
+  (`cli_generate_proton` is `required-features`).
