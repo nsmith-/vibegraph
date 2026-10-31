@@ -312,6 +312,31 @@ impl<F: Real> Spine<F> {
         i + 1 < self.rungs.len() && self.rungs[i].rest_mixed
     }
 
+    /// Draw `R_i`'s invariant on `[lo, hi]` from the uniform `x`: from
+    /// [`draw_rest`]'s mixture where [`rest_mixed`](Self::rest_mixed) asks for
+    /// it, otherwise from [`draw_invariant`] under
+    /// [`rest_resonance`](Self::rest_resonance). The walk and the density read
+    /// the matching measure from
+    /// [`rest_invariant_measure`](Self::rest_invariant_measure), so the two
+    /// cannot pick different maps.
+    fn draw_rest_invariant(&self, i: usize, lo: F, hi: F, x: F) -> F {
+        if self.rest_mixed(i) {
+            draw_rest(lo, hi, x)
+        } else {
+            draw_invariant(lo, hi, self.rest_resonance(i), x)
+        }
+    }
+
+    /// The measure `ds/dx` of [`draw_rest_invariant`](Self::draw_rest_invariant)
+    /// at `s`.
+    fn rest_invariant_measure(&self, i: usize, lo: F, hi: F, s: F) -> F {
+        if self.rest_mixed(i) {
+            rest_measure(lo, hi, s)
+        } else {
+            invariant_measure(lo, hi, self.rest_resonance(i), s)
+        }
+    }
+
     /// The forced window on `R_i`'s invariant, which only the last remainder —
     /// the recoil subsystem — can carry.
     fn rest_window(&self, i: usize) -> Option<(F, F)> {
@@ -2718,7 +2743,6 @@ fn sample_spine<F: Real>(
             }
         };
         let sqrt_s_blob = s_blob.sqrt();
-        let rest_res = spine.rest_resonance(i);
         let s_rest = if spine.rest_is_composite(i) {
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
             let (lo, hi, _) = windowed(
@@ -2728,15 +2752,9 @@ fn sample_spine<F: Real>(
             );
             let x = u[*cursor];
             *cursor += 1;
-            if spine.rest_mixed(i) {
-                let drawn = draw_rest(lo, hi, x);
-                *weight = *weight * rest_measure(lo, hi, drawn);
-                drawn
-            } else {
-                let drawn = draw_invariant(lo, hi, rest_res, x);
-                *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
-                drawn
-            }
+            let drawn = spine.draw_rest_invariant(i, lo, hi, x);
+            *weight = *weight * spine.rest_invariant_measure(i, lo, hi, drawn);
+            drawn
         } else {
             mu_rest * mu_rest
         };
@@ -2850,11 +2868,7 @@ fn spine_jacobian<F: Real>(
             if outside_window(lo, hi, narrowed, s_rest) {
                 return F::infinity();
             }
-            f = f * if spine.rest_mixed(i) {
-                rest_measure(lo, hi, s_rest)
-            } else {
-                invariant_measure(lo, hi, spine.rest_resonance(i), s_rest)
-            };
+            f = f * spine.rest_invariant_measure(i, lo, hi, s_rest);
         }
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
