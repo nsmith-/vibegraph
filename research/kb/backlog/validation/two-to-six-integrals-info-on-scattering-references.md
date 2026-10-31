@@ -6,7 +6,7 @@ area: validation
 state: open
 priority: medium
 closes_when: "Either the SCATTER rule is amended for flagged channels that carry a negligible share of σ, and both cells gate against their 20-seed equal-weight references, or the cells are recorded as info for good with that reason."
-blocked_by: [bbx-ladder-excess-in-alpha-share-tails]
+blocked_by: []
 opened: 2026-10-23
 tags: [two-to-six, madevent-reference, gate-promotion, scatter]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-23}

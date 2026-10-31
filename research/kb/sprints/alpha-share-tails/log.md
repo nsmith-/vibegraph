@@ -56,3 +56,34 @@ deviation from MadEvent. The notes are kept beside the session reports
 
 The user chose the α floor on by default (D1) and to file the both-off H
 component rather than add it here. F2 dispatched for the default flip.
+
+## 2026-10-31
+
+A container restart stopped F2 once; it was resumed and moved its working
+files to `/home/user/scratch/ast-F2/` when the session scratchpad was retired.
+F2 reported (`567c02c` merge of main, `fea0dfc` change, `59e10b5` report). The
+1e-4 α floor is the default (`--alpha-floor off` restores the survey's α), and
+it returns the α vector untouched when nothing is under it, pinned by two tests
+that fail by 1 ulp with the early return removed. Against F1's split-only
+tree, the banked validate pair moved 6 cells (`gg_to_gg`, `gg_to_gg_cg`,
+`uux_to_uux` integrals and samples), all pass → pass; F1's 41 ulp moves are
+gone. The MLM σ gate moved only `pp_to_ttx_0j1j_mlm`, pass → pass.
+
+Manager checks: commits by the repo identity with the trailer, tree clean.
+The validate and MLM pairs are F2's claims.
+
+Setup note: main's #82 needs refdata-12, which this worktree did not have; F2
+added refdata-12's 487 new members to it. Later worktrees should fetch the
+pinned bundle current at their base.
+
+Close-out: deleted `bbx-ladder-excess-in-alpha-share-tails` (the ladder now
+falls 0.708 over 20 paired seeds with the default). Unblocked
+`two-to-six-integrals-info-on-scattering-references`, and added T1's
+per-point record to `two-to-six-tail-point-unlocated`. Filed
+`h-to-zz-both-off-region-unmapped` (F1 Found 1),
+`alpha-survey-differs-between-builds` (T1 Found 4),
+`long-tier-rows-unmeasured-under-alpha-floor` (F2 Found 1),
+`uux-2to6-low-seed-at-1200k` (F1 Found 3) and
+`ee-wpwm-samples-gate-thin-headroom` (F1 Found 4). Updated the multichannel
+(α frozen → floored then frozen), resonance-and-pole-maps (either-order pair
+draw, MadEvent's split) and seed-sweeps concepts.

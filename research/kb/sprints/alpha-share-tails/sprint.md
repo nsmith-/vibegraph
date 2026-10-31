@@ -3,7 +3,7 @@ type: Sprint
 title: "bbx's ladder excess: the tails in channels sized by their α share"
 description: "Diagnose why channels 613, 614 and 590 of bbx_to_ccx_emmm_qcd0 carry tails whose variance does not fall as points double, locate the tail points in phase space, and propose a sampler fix or a heavy-tail error model."
 status: draft
-active: true
+active: false
 tags: [two-to-six, multichannel, heavy-tail, budget-ladder, vegas, diagnosis]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-28}
 ---
