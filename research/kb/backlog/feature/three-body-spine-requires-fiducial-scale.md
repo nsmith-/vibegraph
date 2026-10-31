@@ -4,8 +4,8 @@ title: Peripheral spines past two outgoing legs are built only when the cuts sup
 description: With no active single-leg pT cut, a final state of more than two legs gets no spine at all; whether this conservative fallback is still right is unmeasured.
 area: feature
 state: open
-priority: low
-closes_when: A measurement on cut-free peripheral processes with more than two outgoing legs either justifies keeping the no-spine fallback or replaces it with a default that builds a spine safely.
+priority: high
+closes_when: "The banked no-pT-cut row pp_to_epemjj_qcd0 (p p > e+ e- j j QCD=0, ptj = ptl = 0, confirmed under the seed policy) gates vibegraph's σ in CI, alongside the committed spine_sigma test and the density walk check (WALK_DENSITY_TOL); the three CMS VBF/EWK Drell-Yan gridpacks are informational (cms-vbf-dy-references-are-unrefined-surveys)."
 blocked_by: []
 opened: 2026-08-06
 tags: [phase-space, spine, t-channel, conditioning]
