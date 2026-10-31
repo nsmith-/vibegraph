@@ -1198,24 +1198,22 @@ pub struct ProtonSelection {
 /// What one point's multichannel weight is made of
 /// ([`ProtonIntegrand::point_anatomy`]).
 #[derive(Clone, Debug)]
-pub struct PointAnatomy {
+pub(crate) struct PointAnatomy {
     /// The channel the point was drawn in.
-    pub channel: usize,
+    pub(crate) channel: usize,
     /// The partonic collision energy.
-    pub sqrt_shat: f64,
-    /// The `(τ, y)` map's Jacobian ([`OuterPoint::jac`]).
-    pub outer_jacobian: f64,
+    pub(crate) sqrt_shat: f64,
     /// Every channel's selection weight `αₖ`, in channel order.
-    pub alphas: Vec<f64>,
+    pub(crate) alphas: Vec<f64>,
     /// Every channel's own density `gₖ` at the point, in channel order.
-    pub densities: Vec<f64>,
+    pub(crate) densities: Vec<f64>,
     /// The point itself, carrying the channel term's value `αⱼ f/g`.
-    pub event: ProtonEvent,
+    pub(crate) event: ProtonEvent,
 }
 
 impl PointAnatomy {
     /// The mixture density `g = Σₖ αₖ gₖ`.
-    pub fn mixture_density(&self) -> f64 {
+    pub(crate) fn mixture_density(&self) -> f64 {
         self.alphas
             .iter()
             .zip(&self.densities)
@@ -1224,7 +1222,7 @@ impl PointAnatomy {
     }
 
     /// The integrand `f = value · g/αⱼ`, independent of how the point was drawn.
-    pub fn integrand(&self) -> f64 {
+    pub(crate) fn integrand(&self) -> f64 {
         self.event.weight * self.mixture_density() / self.alphas[self.channel]
     }
 }
@@ -1967,7 +1965,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// Each sampling channel's
     /// [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key), in
     /// channel order.
-    pub fn channel_map_keys(&self) -> &[String] {
+    pub(crate) fn channel_map_keys(&self) -> &[String] {
         &self.channel_map_keys
     }
 
@@ -2791,7 +2789,7 @@ impl<'a> ProtonIntegrand<'a> {
     ///
     /// The densities are the ones the weight was formed from: the same sweep, at
     /// the same momenta and energy, as [`value_in_channel`](Self::value_in_channel).
-    pub fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<PointAnatomy> {
+    pub(crate) fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<PointAnatomy> {
         let event = self.event_in_channel(channel, u)?;
         let (grid_u, _) = self.split_point(u);
         let m = self.map_point(grid_u);
@@ -2802,7 +2800,6 @@ impl<'a> ProtonIntegrand<'a> {
         Some(PointAnatomy {
             channel,
             sqrt_shat: m.sqrt_shat,
-            outer_jacobian: m.jac,
             alphas: self.combiner.alphas().to_vec(),
             densities,
             event,

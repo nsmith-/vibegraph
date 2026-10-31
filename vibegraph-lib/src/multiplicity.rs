@@ -392,7 +392,7 @@ impl<'a> MultiplicitySum<'a> {
 
     /// [`ProtonIntegrand::point_anatomy`] at a channel of the sum, with the part
     /// it belongs to; the anatomy's channel indices are that part's own.
-    pub fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<(usize, PointAnatomy)> {
+    pub(crate) fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<(usize, PointAnatomy)> {
         let (k, j) = self.locate(channel);
         self.parts[k]
             .point_anatomy(j, self.part_point(k, u))

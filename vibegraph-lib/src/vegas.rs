@@ -767,7 +767,7 @@ impl VegasGrid {
     /// dimension: `nbins` times the width of the bin `x` falls in, so the product
     /// is the draw's `1/p(x)`. A factor above one marks a dimension the grid has
     /// widened at the point, i.e. thinned its sampling there.
-    pub fn jacobian_factors(&self, x: &[f64]) -> Vec<f64> {
+    pub(crate) fn jacobian_factors(&self, x: &[f64]) -> Vec<f64> {
         let nbins = self.nbins;
         x.iter()
             .zip(&self.xi)

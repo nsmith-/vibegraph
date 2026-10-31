@@ -331,27 +331,29 @@ pub struct UnweightStats {
     pub ratio_max: f64,
     /// The [`HEAVIEST_KEPT`] overweight trials with the largest `r`, heaviest
     /// first: where the tail the overweight share measures comes from.
-    pub heaviest: Vec<HeavyTrial>,
+    pub(crate) heaviest: Vec<HeavyTrial>,
 }
 
 /// How many of a pass's heaviest overweight trials [`UnweightStats::heaviest`]
 /// keeps.
-pub const HEAVIEST_KEPT: usize = 8;
+pub(crate) const HEAVIEST_KEPT: usize = 8;
 
 /// One overweight trial, kept whole so the point can be rebuilt and taken apart:
 /// its weight is `jacobian · value`, and `ratio` is that over its channel's
 /// `w_max`.
 #[derive(Debug, Clone)]
-pub struct HeavyTrial {
-    pub ratio: f64,
-    pub channel: usize,
+pub(crate) struct HeavyTrial {
+    /// The trial's weight over its channel's `w_max`.
+    pub(crate) ratio: f64,
+    /// The channel the trial was drawn in.
+    pub(crate) channel: usize,
     /// The trial's coordinates, grid part then trailing uniforms, as
     /// [`ChannelIntegrand::value_in_channel`] read them.
-    pub u: Vec<f64>,
+    pub(crate) u: Vec<f64>,
     /// The frozen grid's Jacobian at the point, `1/p(u)` of the VEGAS density.
-    pub jacobian: f64,
+    pub(crate) jacobian: f64,
     /// The integrand's value at the point, already carrying the channel's `αⱼ`.
-    pub value: f64,
+    pub(crate) value: f64,
 }
 
 impl UnweightStats {
