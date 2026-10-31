@@ -135,6 +135,48 @@ planned; that is routed, not fixed. `point_anatomy` has no test (H20).
   Its run: `CENSUSED (76)`, `NOT CENSUSED (1)`, 11 s, e.g.
   `bbx_to_ccx_emmm_qcd0: 615 channels, longest chain 2 rungs, fiducial scale {"4e2"}, maps c6691efc…`.
 
+## Gate
+
+On `a8bbd140`'s tree (the code is `e4c89e65`'s; the later commits touch only
+`research/kb/`), detached, `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+CARGO_PROFILE_TEST_DEBUG=0`, `-j 2` (`T-HY1-gate.log`):
+
+```
+fmt rc=0            cargo fmt --all --check
+clippy rc=0         cargo clippy --workspace --all-targets -- -D warnings
+clippy-ev rc=0      cargo clippy --workspace --all-targets --features vibegraph/extended-validation -- -D warnings
+clippy-ev-lib rc=0  cargo clippy -p vibegraph-lib --all-targets --features extended-validation -- -D warnings
+test rc=0           cargo test --workspace --no-fail-fast -- --test-threads 2
+                    49 suites, 1745 passed, 0 failed, 24 ignored
+doc-lib rc=0        cargo doc -p vibegraph-lib --no-deps --document-private-items   8 warnings, none in a touched file
+doc-cli rc=0        cargo doc -p vibegraph --no-deps --document-private-items       0 warnings
+kblint rc=0         python3 scripts/kb.py lint   1020 concepts, 333 backlog items; 0 errors, 4 warnings
+```
+
+The suite count moves by no test of this session: the only test-set change is
+the ignored census probe's rename. The four kb warnings are pre-existing
+`state: blocked` items.
+
+**Banked targets**, `--profile release-debug --config profile.release-debug.debug=0
+--features extended-validation`, rerun because `5eefe683` touches the spine's
+walk and density:
+
+```
+spine-sigma rc=0 177s   --test spine_sigma
+  16 seeds: mean 1.799563e-2 pb, spread 1.65e-5 (rel 9.15e-4), seed χ²/dof 1.27
+  test result: ok. 1 passed; 0 failed; 1 ignored
+cli-gen-ev rc=0 184s    -p vibegraph --test cli_generate_proton    ok. 6 passed; 0 failed; 2 ignored
+decay-chain rc=0 144s   -p vibegraph --test cli_decay_chain        ok. 1 passed; 0 failed
+onshell rc=0 207s       -p vibegraph --test cli_onshell_veto -- a_top_pair   ok. 1 passed; 0 failed; 3 filtered out
+sigma rc=0 986s         --test validate_sigma                      ok. 8 passed; 0 failed; 33 ignored
+```
+
+`spine_sigma` reads T-F2's gate run on `d54f0e46` to every printed digit
+(1.799563e-2, 9.15e-4, 1.27): the refactor is identical end to end on the
+production integrator as well as in the dump. Not run: the long-tier
+`validate_ewk_lljj_sigma` (34 minutes, untouched by any fix) and the MLM σ
+targets.
+
 ## Routed
 
 - **H17 → validation-dev.** `validate_ewk_lljj_sigma.rs:220-226`: while the
