@@ -16,7 +16,7 @@ recorded measurement.
 
 Backlog items claimed (one `Backlog: <slug>` line in the draft PR):
 
-- `three-body-spine-requires-fiducial-scale` (rewritten in #80; until #80
+- `three-body-spine-requires-fiducial-scale` (closed on #81; rewritten in #80; until #80
   merges, read it from `origin/claude/fervent-mayer-2hv310`)
 
 Part of sprint E (param card, systematics, this item), added by the user
