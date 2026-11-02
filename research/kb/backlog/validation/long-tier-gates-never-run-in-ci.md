@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: No CI job runs the long-tier σ gates
-description: "Every long-tier gate is an ignored test that no workflow runs, so a regression in a 2→6 row, an MLM σ, a ladder or the no-pT-cut EWK e+ e- j j row is caught only when someone runs validate-deep by hand."
+description: "Every long-tier gate is an ignored test that no workflow runs, so a regression in a 2→6 row, an MLM σ, a ladder or the no-pT-cut EWK e+ e- j j row shows only when someone runs validate-deep by hand."
 area: validation
 state: open
 priority: medium
