@@ -136,11 +136,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 12
-archive = "vibegraph-refdata-12.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-12/vibegraph-refdata-12.tar.zst"
-sha256 = "04fd869b583a5b27cc01a84a4cfae799ab9b074f77130942ffb924df117cc9d5"
-size_bytes = 344565873
+version = 13
+archive = "vibegraph-refdata-13.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-13/vibegraph-refdata-13.tar.zst"
+sha256 = "5a99624aa283d306814afb5a7bb42d3678487b198dba685f16b886626015eb5d"
+size_bytes = 344699459
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -225,6 +225,13 @@ unpacks_to = "validation/madgraph/output"
 # which `validate_mlm_dumps` parses beside its per-event dumps (the dumps stay
 # outside the bundle). Generated on macOS 15 by the pinned 3.7.1 submodule
 # (b7687064).
+#
+# Cut 13 is cut 12's 16361 files, all byte-identical, plus the 22 seed directories
+# and `seed_record.json` of one `seeded_sigma/` record, `pp_to_epemjj_qcd0`: the
+# electroweak e+ e- j j row with no pT cut, 20 seeds at 10000 events and 2 at 40000.
+# Its SCATTER line reads CONFIRMED (channels `P1_qq_llqq/G45` and `G13` scatter
+# beyond their errors, at 0.1% and 0.3% of sigma). Generated on macOS 15 by the
+# pinned 3.7.1 submodule (b7687064).
 #
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
