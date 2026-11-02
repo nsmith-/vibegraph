@@ -10,6 +10,7 @@
 * [T-V1: version bump, then is the CMS VBF σ well defined?](T-V1.md) - Bump the artifact version for the new channel maps; re-run mutation M1; then measure whether the three CMS cards' σ is regulated (ptj = 0, etaj = -1) on both vibegraph's and MadGraph's side, before any ladder.
 * [T-V2: budget study and the CMS VBF/EWK ladder; a committed σ-level spine test](T-V2.md) - In a throwaway merge of #81 and #82, measure the seed spread at two budgets, then run the 5-seed ladder on the three CMS cards with their shipped param cards; on #81 itself, commit a σ-level test that the no-spine defect fails.
 * [T-V3: a banked no-pT-cut EWK ℓℓjj row, and the MLM re-gates](T-V3.md) - Prepare the M3 banking of p p > e+ e- j j QCD=0 with ptj = ptl = 0 (cards, manifest row, driver support, the σ gate awaiting its bank, a smoke-sized cost estimate); re-gate the two MLM rows T-F2's maps changed.
+* [T-V4: gate the banked pp_to_epemjj_qcd0 row and refresh the spine concepts](T-V4.md) - On refdata-13, turn the planned no-pT-cut EWK e+ e- j j row into an enforced long-tier gate against the confirmed 20-seed MadGraph record (resolving H17), and bring the spine concepts up to date with the pole floor, the remainder mixture and DEFAULT_POLE_SCALE.
 
 ## Session Report
 
