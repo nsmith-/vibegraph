@@ -27,6 +27,8 @@ pub(crate) mod extrap;
 pub mod grid;
 pub(crate) mod interp;
 pub mod select;
+#[cfg(all(test, feature = "extended-validation"))]
+mod table_oracle;
 
 use std::path::{Path, PathBuf};
 
