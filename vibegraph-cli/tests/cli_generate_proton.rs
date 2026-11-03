@@ -1771,3 +1771,252 @@ fn matched_sample_record_fractions_against_madevent() {
     );
     assert!(zp.abs() < 5.0 && ep.abs() < 5.0 && mp.abs() < 5.0 && cp.abs() < 5.0);
 }
+
+/// The `pp_to_ttx_0j1j_mlm` row's own process, `p p > t t~ @0` and
+/// `p p > t t~ j @1` with the gluon in `j`, generated under the row's card and
+/// read against MadEvent's banked `run_01` as population fractions: the share
+/// of `@1` events; among them the gluon-jet share, each light flavour's share
+/// and the antiquark share of the quark jets; the gg, qg and qq̄ initial-state
+/// shares, overall and per `@N`; and from `<mgrwt>` the share of events with
+/// an emission scale and of beams whose density chain is longer than one
+/// entry. The two samples are different events, so each share is a
+/// two-sample comparison, required within five standard deviations.
+///
+/// This side's fractions are weighted: generate keeps an event drawn above its
+/// channel's maximum at a weight above one, and normalises each `@N` to its
+/// own integration, so a count would read the accept/reject pass rather than
+/// the distribution. A share's variance is then `Σ w²(1{sel} − p)² / (Σw)²`;
+/// MadEvent's weights are equal and it reduces to the binomial `p(1 − p)/n`.
+///
+/// Neither side lists a status-2 line (the tops are external legs and nothing
+/// timelike in the process has a width), and `@0` has no qg initial state;
+/// both are asserted exactly on both files. `IDPRUP` names each event's
+/// multiplicity on both.
+///
+/// At 10 000 events against 10 000, five standard deviations resolve a shift
+/// of about 3.5 % absolute on a share near one half, 2.4 % on the qg share
+/// and 1.2 % on the strange-jet share (about 75 % of it): this pins the
+/// labelling and the multiplicity, flavour and record populations against
+/// gross error, not percent-level shapes.
+#[test]
+fn ttx_matched_sample_record_fractions_against_madevent() {
+    use vibegraph::systematics::record::LoRecord;
+    let banked = output_dir().join("pp_to_ttx_0j1j_mlm/Events/run_01/unweighted_events.lhe.gz");
+    if !pdf_dir().join(PDF_SET).is_dir() || !banked.is_file() {
+        vibegraph::validation::require(
+            "ttx_matched_sample_record_fractions_against_madevent",
+            "the fetched PDF set and the banked pp_to_ttx_0j1j_mlm run",
+            banked.display(),
+        );
+    }
+    let theirs = {
+        use std::io::Read;
+        let mut t = String::new();
+        flate2::read::GzDecoder::new(std::fs::File::open(&banked).unwrap())
+            .read_to_string(&mut t)
+            .unwrap();
+        LheFile::parse(&t).expect("MadEvent's file parses")
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let proc_card = dir.join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate p p > t t~ @0\nadd process p p > t t~ j @1\n",
+    )
+    .unwrap();
+    let run_card = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/pp_to_ttx_0j1j_mlm_run_card.dat");
+    let out = dir.join("out");
+    let integrate = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .pdf_data_path(pdf_dir())
+        .args(["--fixed-budget", "--neval", "20000", "--niter", "4"])
+        .args(["--seed", SEED])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrate.status.success(),
+        "integrate failed:\n{}",
+        common::stderr_of(&integrate)
+    );
+    let lhe = dir.join("events.lhe");
+    let generate = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(out.join("grid.bin.zst"))
+        .pdf_data_path(pdf_dir())
+        .args(["--seed", SEED, "--nevents", "10000"])
+        .arg("-o")
+        .arg(&lhe)
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        generate.status.success(),
+        "generate failed:\n{}",
+        common::stderr_of(&generate)
+    );
+    let ours = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our file parses");
+    assert_eq!(ours.events.len(), 10_000);
+
+    struct Event {
+        weight: f64,
+        jet: Option<i32>,
+        initial: &'static str,
+        emitting: bool,
+        long_chains: [bool; 2],
+    }
+    let read = |file: &LheFile, side: &str| -> Vec<Event> {
+        file.events
+            .iter()
+            .enumerate()
+            .map(|(n, event)| {
+                assert!(
+                    event.particles.iter().all(|p| p.status != 2),
+                    "{side} event {n}: a status-2 line"
+                );
+                let jets: Vec<i32> = event
+                    .particles
+                    .iter()
+                    .filter(|p| p.status == STATUS_OUTGOING && p.pdg.abs() != 6)
+                    .map(|p| p.pdg)
+                    .collect();
+                let jet = match jets.as_slice() {
+                    [] => None,
+                    [j] => Some(*j),
+                    _ => panic!("{side} event {n}: outgoing partons {jets:?}"),
+                };
+                assert_eq!(
+                    event.process_id,
+                    i32::from(jet.is_some()),
+                    "{side} event {n}: IDPRUP against the multiplicity"
+                );
+                let [a, b] = [event.particles[0].pdg, event.particles[1].pdg];
+                let initial = match (a == 21, b == 21) {
+                    (true, true) => "gg",
+                    (true, false) | (false, true) => "qg",
+                    (false, false) if a == -b => "qq~",
+                    _ => panic!("{side} event {n}: initial state {a} {b}"),
+                };
+                assert!(
+                    jet.is_some() || initial != "qg",
+                    "{side} event {n}: a qg initial state at @0"
+                );
+                let record = LoRecord::parse(&event.trailer)
+                    .expect("the record parses")
+                    .unwrap_or_else(|| panic!("{side} event {n} carries no <mgrwt>"));
+                Event {
+                    weight: event.weight,
+                    jet,
+                    initial,
+                    emitting: !record.emission_scales.is_empty(),
+                    long_chains: [0, 1].map(|b| record.beams[b].entries.len() > 1),
+                }
+            })
+            .collect()
+    };
+    let (ours, theirs) = (read(&ours, "vibegraph"), read(&theirs, "MadEvent"));
+
+    // (share, its variance, selected count, numerator count) over the events
+    // `among` keeps, each counted `units` times.
+    let share =
+        |events: &[Event], among: &dyn Fn(&Event) -> bool, units: &dyn Fn(&Event) -> Vec<bool>| {
+            let terms: Vec<(f64, bool)> = events
+                .iter()
+                .filter(|e| among(e))
+                .flat_map(|e| units(e).into_iter().map(move |hit| (e.weight, hit)))
+                .collect();
+            let total: f64 = terms.iter().map(|(w, _)| w).sum();
+            let p = terms
+                .iter()
+                .filter(|(_, h)| *h)
+                .map(|(w, _)| w)
+                .sum::<f64>()
+                / total;
+            let var = terms
+                .iter()
+                .map(|(w, h)| (w * (f64::from(u8::from(*h)) - p)).powi(2))
+                .sum::<f64>()
+                / (total * total);
+            (
+                p,
+                var,
+                terms.len(),
+                terms.iter().filter(|(_, h)| *h).count(),
+            )
+        };
+    let all = |_: &Event| true;
+    let one_jet = |e: &Event| e.jet.is_some();
+    let no_jet = |e: &Event| e.jet.is_none();
+    let quark_jet = |e: &Event| e.jet.is_some_and(|j| j != 21);
+    type Among<'a> = &'a dyn Fn(&Event) -> bool;
+    type Unit = Box<dyn Fn(&Event) -> Vec<bool>>;
+    let mut rows: Vec<(String, Among, Unit)> = vec![
+        (
+            "@1".into(),
+            &all,
+            Box::new(|e: &Event| vec![e.jet.is_some()]),
+        ),
+        (
+            "@1: a gluon jet".into(),
+            &one_jet,
+            Box::new(|e: &Event| vec![e.jet == Some(21)]),
+        ),
+    ];
+    for q in 1..=4 {
+        rows.push((
+            format!("@1: a jet of |pdg| {q}"),
+            &one_jet,
+            Box::new(move |e: &Event| vec![e.jet.is_some_and(|j| j.abs() == q)]),
+        ));
+    }
+    rows.push((
+        "@1 quark jets: an antiquark".into(),
+        &quark_jet,
+        Box::new(|e: &Event| vec![e.jet.is_some_and(|j| j < 0)]),
+    ));
+    for (label, among) in [("", &all as Among), ("@0: ", &no_jet), ("@1: ", &one_jet)] {
+        for initial in ["gg", "qg", "qq~"] {
+            if label == "@0: " && initial == "qg" {
+                continue;
+            }
+            rows.push((
+                format!("{label}initial {initial}"),
+                among,
+                Box::new(move |e: &Event| vec![e.initial == initial]),
+            ));
+        }
+    }
+    rows.push((
+        "an <asrwt> emission scale".into(),
+        &all,
+        Box::new(|e: &Event| vec![e.emitting]),
+    ));
+    rows.push((
+        "@1: an <asrwt> emission scale".into(),
+        &one_jet,
+        Box::new(|e: &Event| vec![e.emitting]),
+    ));
+    rows.push((
+        "a <pdfrwt> chain longer than one, per beam".into(),
+        &all,
+        Box::new(|e: &Event| e.long_chains.to_vec()),
+    ));
+    let mut worst = 0.0f64;
+    for (name, among, units) in &rows {
+        let (p1, v1, n1, k1) = share(&ours, among, units);
+        let (p2, v2, n2, k2) = share(&theirs, among, units);
+        let pull = (p1 - p2) / (v1 + v2).sqrt();
+        eprintln!(
+            "{name}: vibegraph {p1:.4} ({k1}/{n1}), MadEvent {p2:.4} ({k2}/{n2}), pull {pull:+.2}"
+        );
+        assert!(pull.is_finite(), "{name}: no events to compare");
+        worst = worst.max(pull.abs());
+    }
+    eprintln!("largest |pull| {worst:.2} over {} shares", rows.len());
+    assert!(worst < 5.0, "a share is {worst:.2} standard deviations off");
+}
