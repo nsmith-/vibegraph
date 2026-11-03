@@ -69,6 +69,9 @@ Options:
       --run-card <RUN_CARD>
           MadGraph `run_card.dat`; absent → MadGraph LO defaults
 
+      --param-card <PARAM_CARD>
+          SLHA `param_card.dat` to evaluate the model at; absent → the model's defaults under its restriction. The artifact records every parameter the card moves, and `generate` evaluates at those values. Refused: a width given as `Auto`, a non-zero value for a parameter the restriction fixed to zero, a value other than one for a parameter it fixed to one, a move that splits parameters the restriction merged, and an entry the model has no parameter for. A mass or width the model computes (MW in the SM) is ignored, with a warning when it disagrees
+
       --out <OUT>
           Output directory for the grid artifact (`<out>/grid.bin.zst`)
           
@@ -83,6 +86,9 @@ Options:
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
 
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
       --neval <NEVAL>
           VEGAS evaluations per adaptation iteration.
           
@@ -90,19 +96,21 @@ Options:
           
           [default: 120000]
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
-
   -q, --quiet
           Report only warnings and errors
+
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -116,11 +124,6 @@ Options:
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
 
-      --log-level <LEVEL>
-          Report at this level, instead of counting `-v`s
-          
-          [possible values: off, error, warn, info, debug, trace]
-
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
@@ -131,6 +134,9 @@ Options:
           
           [default: 6]
 
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
           
@@ -138,16 +144,13 @@ Options:
           
           [default: 500]
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
-
-      --no-tui
-          Never draw the live status pane; report in plain lines
 
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
@@ -157,6 +160,13 @@ Options:
           Possible values:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
+
+      --alpha-floor <FLOOR>
+          Raise every channel's selection weight to at least this after the α-survey, and renormalise; `off` installs the survey's weights as they came out.
+          
+          A channel whose peak the survey's draws never reach measures no variance, and its weight falls geometrically over the survey to `1e-11` and below; the integration's rare points in that peak then carry a mixture density set by channels that do not follow it. A survey that leaves every weight above the floor installs its weights unchanged. The floor a run used is recorded in its artifact.
+          
+          [default: 1e-4]
 
       --seed <SEED>
           RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
@@ -202,6 +212,18 @@ Options:
           - auto
           - derived:  Outward from beam 0, as the diagram's spacelike lines nest
           - reversed: The same rungs in reverse — a control, not a recommendation
+          
+          [default: auto]
+
+      --map-pair-order <PAIR_ORDER>
+          The order a split whose two daughters both carry a finite-width resonance draws their invariants in.
+          
+          `auto` is `symmetric`: either daughter first with probability ½. `ordered` draws one daughter on its pole first, which below the two poles' sum (`H → ZZ*`) leaves the half of the peak with the other daughter on shell in a Breit–Wigner tail.
+
+          Possible values:
+          - auto
+          - ordered:   The left daughter first, on its pole
+          - symmetric: Either daughter first with probability ½
           
           [default: auto]
 
@@ -318,6 +340,9 @@ Options:
 
       --reweight-couplings <NAME,...>
           Track the amplitude as a polynomial jointly in these external parameters (comma-separated names), so every hypothesis costs a quadratic form rather than an amplitude evaluation: an event costs one evaluation per monomial of the amplitude — `1 + n` for `n` couplings entering at most once per diagram — whatever the number of hypotheses. The card may then move only these, and each must enter every subprocess polynomially
+
+      --systematics <ARGUMENTS>
+          MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
 
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output

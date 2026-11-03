@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
 title: Stochastic-rounding output refuses mixed-multiplicity cards
-description: --strategy stochastic-rounding is refused on @0 + @1 + … cards because unit weights leave each part's share of the file to the realised sample.
+description: --strategy stochastic-rounding is refused on cards of several parts (@N multiplicities, or outgoing-mass sets) because unit weights leave each part's share of the file to the realised sample.
 area: feature
 state: open
 priority: medium
-closes_when: generate --strategy stochastic-rounding accepts a mixed-multiplicity card, and each @N part's event count follows its integrated σ (checked against the buffered strategy's per-part normalisation).
+closes_when: generate --strategy stochastic-rounding accepts a card of several parts (multiplicities or outgoing-mass sets), and each part's event count follows its integrated σ (checked against the buffered strategy's per-part normalisation).
 blocked_by: []
 opened: 2026-10-01
 tags: [mlm, lhef, unweighting, mixed-multiplicity]
@@ -17,10 +17,13 @@ sources:
 share of the file is whatever the realised sample gives. `Buffer` instead
 normalises each part to its own integrated σ. A plan of several parts is
 therefore refused in the CLI (`refuse_rounding_on_mixed_multiplicity`,
-`vibegraph-cli/src/generate.rs:436`) and in the emitter
+`vibegraph-lib/src/generate.rs:330`) and in the emitter
 (`vibegraph-lib/src/lhef/emit.rs`, the per-part check near L228).
 
 Lifting it needs a per-part event count drawn from the parts' integrated σ
+A mixed-mass card (`p p > l+ l-` with `l = e, ta`) has two such parts under one
+`@0`, split by outgoing masses.
+
 (MadEvent's `unwgt.f` scales by `xsecabs/xsum`). Each part is then rounded to
 its own target count.
 

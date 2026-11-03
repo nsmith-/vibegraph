@@ -38,6 +38,26 @@
 //!
 //! * **Rejected points.** Only written events are dumped, so the `xqcut`
 //!   decision is checked in one direction: no written event is rejected.
+//! * **H1's moved first call.** Grouped MadEvent's first call clusters the
+//!   unpermuted `PP` (the registered deviation H1); this crate clusters `P1`.
+//!   On a permuted event whose first call handed on other scales or another
+//!   `q2bck` than this crate's, every field is reported (`info, H1 first call
+//!   moved`) and none is gated: a production error in the first call that
+//!   shows only on such events, and the first-call rejections H1 causes on
+//!   points never written, are invisible here. The other permuted events are
+//!   gated like any.
+//!
+//! # The record's chain heads
+//!
+//! `rewgt` writes each chain's first code from the slot `ipdgcl(j,
+//! igraphs(1))` read after its own clustering (`reweight.f:1479`), which
+//! `:1439-1440` filled with the event's flavours under the graph the first
+//! call named. Where H1 makes the two calls name different graphs, the slot
+//! holds the flavour an earlier point of the same subprocess left, and
+//! `<totfact>` reads its density for it. The record is compared under
+//! MadEvent's slot as `RWLEG` dumps it; this crate writes the event's own
+//! flavours, gated equal to the slot wherever one graph was named, and such
+//! heads are gated to occur only on permuted events.
 //!
 //! # `rewgt`, factor by factor
 //!
@@ -51,6 +71,21 @@
 //! `αs` and the densities come from this crate's reading of the PDF set's grid,
 //! MadEvent's from LHAPDF; they agree to a few ulp, so every field is compared
 //! at [`AGREEMENT`]'s scale.
+//!
+//! # `<mgrwt>`, field by field
+//!
+//! On every row (`use_syst = T` on all but `pp_to_llj_mlm_alps2`) each event's
+//! `<mgrwt>` record is rebuilt with [`LoRecord::fill`] from the production
+//! path's clustering and, under matching, the `rewgt` recomputed above, and
+//! compared with the banked file's: the `<rscale>` power and scale, the
+//! `<asrwt>` scales, and each `<pdfrwt>` line's beam label, order, codes,
+//! fractions and scales at the eight digits `E15.8` prints (one unit in the
+//! last digit allowed, the half unit both roundings can straddle), and
+//! `<totfact>` at [`TOTFACT_AGREEMENT`]. The record rule cannot see a field the
+//! systematics module does not read differently (`<totfact>`), so the
+//! reported controls are the readings it replaces: the chain's fraction after
+//! the vertex's `z` instead of before it, and the integration channel's QCD
+//! power instead of the clustered graph's.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{BufRead, BufReader};
@@ -69,9 +104,10 @@ use vibegraph::coupling::cluster::setclscales::{
 use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
 use vibegraph::lhef::build::scalup;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::lhef::record::{LheEvent, STATUS_INTERMEDIATE, STATUS_OUTGOING};
+use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::runcard::RunCard;
+use vibegraph::systematics::record::{LoRecord, RecordInputs};
 use vibegraph::ufo::slha::ParamCard;
 
 mod common;
@@ -90,6 +126,10 @@ const AQCDUP_AGREEMENT: f64 = 1e-6;
 /// same `αs` tabulation), and agree to a few ulp (worst 9e-16 measured on the
 /// llj rows), so the bound is the scales' own.
 const PDF_AGREEMENT: f64 = 1e-12;
+
+/// Relative agreement for `<totfact>`: `E15.8` keeps eight digits, and the
+/// densities and coupling behind it agree to a few ulp.
+const TOTFACT_AGREEMENT: f64 = 1e-7;
 
 /// The least σ shift dropping `rewgt`'s `αs` ratios must cause on a matched
 /// row: ten times the ~0.1% the seeded σ references resolve.
@@ -624,6 +664,16 @@ impl Row {
 
 // ── the tally ────────────────────────────────────────────────────────────────
 
+/// A matched event whose record names, at a chain's head, a flavour MadEvent's
+/// slot kept from another point.
+struct StaleHead {
+    event: usize,
+    subdir: String,
+    permuted: bool,
+    own: [i64; 2],
+    heads: [i64; 2],
+}
+
 /// Agreement per compared field: `(agreeing, checked, first divergent event)`.
 #[derive(Default)]
 struct Tally {
@@ -650,9 +700,23 @@ struct Tally {
     inverse_alpha: (f64, f64, usize),
     /// Mean `rewgt` over the gated events.
     rewgt_sum: f64,
+    /// Events on which the `<mgrwt>` record read two other ways would print
+    /// differently: a density chain's fraction after its vertex's `z`, and
+    /// the integration channel's QCD power for the clustered graph's.
+    mgrwt_controls: (usize, usize),
     /// Permuted events whose first-call scales differ from this crate's:
     /// (event, subprocess directory, MadEvent's weight factor over this crate's).
     rescaled: Vec<(usize, String, f64)>,
+    /// `<mgrwt>` records printed whole where they differ from MadEvent's:
+    /// (on non-permuted events, on permuted ones).
+    mgrwt_shown: (usize, usize),
+    /// Of the permuted events, those whose first call handed on other scales
+    /// or another `q2bck` than this crate's (H1), reported and not gated.
+    h1: usize,
+    /// Events whose record chain heads are not the event's own flavours.
+    stale_heads: Vec<StaleHead>,
+    /// Unmatched events whose diagnostics were printed.
+    unmatched_shown: usize,
 }
 
 impl Tally {
@@ -690,9 +754,26 @@ impl Tally {
             println!("  {field:<44} {ok:>6}/{checked:<6}{worst}{first}");
         }
         println!(
-            "  events whose P1 is a symmetry permutation of PP: {}",
-            self.permuted
+            "  events whose P1 is a symmetry permutation of PP: {}; of them, with the first \
+             call's scales or q2bck moved by H1 (reported, not gated): {}",
+            self.permuted, self.h1
         );
+        let on_permuted = self.stale_heads.iter().filter(|s| s.permuted).count();
+        println!(
+            "  events whose record chain heads are another point's flavours (MadEvent's slot, \
+             H1's two graphs): {}, on permuted events {on_permuted}",
+            self.stale_heads.len()
+        );
+        for s in self.stale_heads.iter().take(6) {
+            println!(
+                "    event {} {}{}: own flavours {:?}, MadEvent's heads {:?}",
+                s.event,
+                s.subdir,
+                if s.permuted { " (permuted P1)" } else { "" },
+                s.own,
+                s.heads
+            );
+        }
         println!(
             "  events with a status-2 line expected: {}; of them, read in the integration \
              channel's forest the lines carry other codes on {}",
@@ -702,6 +783,11 @@ impl Tally {
             "  controls: a beam's record scale differs from its density scale on {}, CFG \
              from the integration channel on {}, SCALUP from the density-scale reading on {}",
             self.controls.0, self.controls.1, self.controls.2
+        );
+        println!(
+            "  mgrwt controls: a chain fraction read after its vertex's z prints otherwise on {}, \
+             the integration channel's QCD power differs from the clustered graph's on {}",
+            self.mgrwt_controls.0, self.mgrwt_controls.1
         );
         let (mine, theirs, n) = self.inverse_alpha;
         if n > 0 {
@@ -1100,8 +1186,10 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
     let matched = row.settings.ickkw > 0;
     let mut tally = Tally::default();
     let mut memo_counts: BTreeMap<(String, usize), BTreeSet<usize>> = BTreeMap::new();
-    // The banked event file the dump was replayed from, in the dump's order.
-    let lhe = matched.then(|| banked_events(name));
+    // The banked event file the dump was replayed from, in the dump's order:
+    // the matched record fields read it, and every row writing `<mgrwt>`.
+    let use_syst = row.card.get("use_syst").expect("known").as_bool();
+    let lhe = (matched || use_syst).then(|| banked_events(name));
 
     for event in events {
         tally.events += 1;
@@ -1234,15 +1322,41 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 .iter()
                 .zip(&momenta)
                 .any(|(b, a)| (0..4).any(|k| rel(unmirror(*b)[k], a[k]) > 1e-9));
+        // H1 reaches a permuted event's fields through what the first call
+        // hands on: its `μR` and `q2fact` (the densities `DSIG` reads) and its
+        // `q2bck` (the chains' central scales). Where those are this crate's,
+        // clustered on `P1`, every field is gated; where they differ, every
+        // field built on them is the relabelled event's and is reported, not
+        // gated. The graph it names reaches only the record's chain heads,
+        // which the head rule below reads from MadEvent's own slot.
+        let first_call_moved = {
+            let (mu_r, q2fact) = first.out();
+            let scales = rel(history.first.mu_r, mu_r)
+                .max(rel(history.first.q2fact[0], q2fact[0]))
+                .max(rel(history.first.q2fact[1], q2fact[1]));
+            let q2bck = match (
+                calls
+                    .get(1)
+                    .and_then(|c| c.all("Q2BCK").find(|r| r.s(1) == "OUT")),
+                history.q2bck,
+            ) {
+                (Some(out), Some(q)) => rel(q[0], out.f(3)).max(rel(q[1], out.f(4))),
+                (None, None) => 0.0,
+                _ => 1.0,
+            };
+            scales.max(q2bck) >= AGREEMENT
+        };
+        let h1 = permuted && first_call_moved;
         let f = |name: &'static str| -> &'static str {
-            if permuted {
-                Box::leak(format!("info, permuted P1: {name}").into_boxed_str())
+            if h1 {
+                Box::leak(format!("info, H1 first call moved: {name}").into_boxed_str())
             } else {
                 name
             }
         };
         if permuted {
             tally.permuted += 1;
+            tally.h1 += usize::from(h1);
             let from_pp = row
                 .choice
                 .cluster_history(
@@ -1383,6 +1497,60 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 i,
                 end == 1.0 && row.choice.rewgt_settings().is_none(),
             );
+            if let (true, Some(lhe)) = (use_syst, &lhe) {
+                let banked = &lhe.events[i];
+                // Without matching, `rewgt` fills each clustering beam's chain
+                // from `ipdgcl(j)` and `xbk(ib(j))` (`reweight.f:1450-1457`),
+                // which the event's `SYST` record holds unrounded; the written
+                // energies carry `x` only to about 2e-7. `unwgt.f` writes the
+                // chain of matrix-element leg 1 under beam 2 when that leg runs
+                // along −z (`flip`, `:622-630`) in the momenta `DSIG` hands it,
+                // `P1`, which `DSIGPROC` rotates by π about the x axis under
+                // `IMIRROR = 2`. The first call, the only one dumped here,
+                // reads the unrotated `PP`, whose leg 1 runs along +z.
+                let syst = event.only("SYST").expect("a SYST record");
+                let flavours = [syst.i(6), syst.i(10)];
+                let x = [syst.f(7), syst.f(11)];
+                let pp = first.momenta(first.n_external());
+                let p1_leg1_pz = unmirror(pp[0])[3];
+                let labels = if p1_leg1_pz < 0.0 { [2, 1] } else { [1, 2] };
+                if tally.unmatched_shown < 4 {
+                    if let Ok(Some(theirs)) = LoRecord::parse(&banked.trailer) {
+                        if theirs.beam_order != labels {
+                            tally.unmatched_shown += 1;
+                            println!(
+                                "  unmatched diagnostics, event {i} {subdir} channel {}: IMIRROR \
+                                 {}, PP leg 1 pz {:.6e}, P1 leg 1 pz {p1_leg1_pz:.6e}, labels \
+                                 ours {labels:?} theirs {:?}; SYST codes {flavours:?} x {x:?} q \
+                                 [{:.8e}, {:.8e}]; this crate's muF {:?}\n    theirs {}",
+                                first.iconfig(),
+                                first.scl().u(4),
+                                pp[0][3],
+                                theirs.beam_order,
+                                syst.f(8),
+                                syst.f(12),
+                                history.first.q2fact.map(f64::sqrt),
+                                theirs.lines()[1..].join(" "),
+                            );
+                        }
+                    }
+                }
+                compare_mgrwt(
+                    &mut tally,
+                    &row,
+                    &subdir,
+                    &history,
+                    None,
+                    flavours,
+                    x,
+                    labels,
+                    first.iconfig(),
+                    banked,
+                    i,
+                    &f,
+                    "",
+                );
+            }
             continue;
         }
         if let Some(lhe) = &lhe {
@@ -1397,11 +1565,133 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                 &f,
             );
         }
-        let Some(mine) = compare_rewgt(
-            &mut tally, &row, &event, &history, &physical, i, !permuted, &f,
-        ) else {
+        if let (true, Some(lhe)) = (use_syst, &lhe) {
+            // What a replay from the event file alone clusters: the written
+            // event boosted to the partonic frame from its energies, the
+            // matrix element's first leg first by the record's beam order.
+            // The clustering cannot tell it from the clustered point up to the
+            // mirror, a rotation by π about the x axis.
+            let banked = &lhe.events[i];
+            if let Ok(Some(record)) = LoRecord::parse(&banked.trailer) {
+                let side = |status| {
+                    (0..banked.particles.len())
+                        .filter(move |&k| banked.particles[k].status == status)
+                        .collect::<Vec<_>>()
+                };
+                let (incoming, outgoing) = (side(STATUS_INCOMING), side(STATUS_OUTGOING));
+                let flipped = record.beam_order == [2, 1];
+                let ebeam = [row.card.ebeam1, row.card.ebeam2];
+                let x = [0, 1].map(|b| banked.particles[incoming[b]].momentum[0] / ebeam[b]);
+                let beta = (x[0] - x[1]) / (x[0] + x[1]);
+                let gamma = 1.0 / (1.0 - beta * beta).sqrt();
+                let to_cm = |p: [f64; 4]| {
+                    let e = gamma * (p[0] - beta * p[3]);
+                    let pz = gamma * (p[3] - beta * p[0]);
+                    if flipped {
+                        [e, p[1], -p[2], -pz]
+                    } else {
+                        [e, p[1], p[2], pz]
+                    }
+                };
+                let me_in = if flipped {
+                    [incoming[1], incoming[0]]
+                } else {
+                    [incoming[0], incoming[1]]
+                };
+                let rebuilt: Vec<[f64; 4]> = me_in
+                    .iter()
+                    .chain(&outgoing)
+                    .map(|&k| to_cm(banked.particles[k].momentum))
+                    .collect();
+                let close = |a: &[[f64; 4]], b: &[[f64; 4]]| {
+                    a.len() == b.len()
+                        && a.iter().zip(b).all(|(p, q)| {
+                            (0..4).all(|k| (p[k] - q[k]).abs() <= 1e-5 * q[0].abs().max(1.0))
+                        })
+                };
+                let mirrored: Vec<[f64; 4]> = physical
+                    .iter()
+                    .map(|p| [p[0], p[1], -p[2], -p[3]])
+                    .collect();
+                tally.check(
+                    f("info: the written event rebuilt is the clustered point"),
+                    i,
+                    close(&rebuilt, &physical) || close(&rebuilt, &mirrored),
+                );
+            }
+        }
+        let Some(mine) = compare_rewgt(&mut tally, &row, &event, &history, &physical, i, !h1, &f)
+        else {
             continue;
         };
+        if let (true, Some(lhe), Some(begin)) = (use_syst, &lhe, event.only("RWBEG")) {
+            let mut legs: Vec<Rec<'_>> = event.recs().filter(|r| r.tag() == "RWLEG").collect();
+            legs.sort_by_key(|r| r.u(1));
+            // `ib(1)`: the physical beam the clustering's first beam arrives on.
+            let labels = if begin.u(8) == 1 { [1, 2] } else { [2, 1] };
+            let q2bck = |c: &CallRecords<'_>| {
+                c.all("Q2BCK")
+                    .find(|r| r.s(1) == "OUT")
+                    .map(|r| [r.f(3), r.f(4)])
+            };
+            let context = format!(
+                "MadEvent 1st call muR, q2fact {:?}, this crate's {:?}; q2bck MadEvent {:?}, \
+                 this crate's {:?}",
+                first.out(),
+                (history.first.mu_r, history.first.q2fact),
+                calls.last().and_then(q2bck),
+                history.q2bck
+            );
+            // The chain heads are `ipdgcl(j, igraphs(1))` as `rewgt` reads them
+            // after its own clustering (`reweight.f:1479`): a slot that
+            // `:1439-1440` filled with the event's flavours (`idup(j, IPSEL)`)
+            // under the graph the first call named, and that `RWLEG` dumps as
+            // it stood. Where the two calls named different graphs (H1's
+            // unpermuted first call) the slot holds whatever an earlier point
+            // of the same subprocess left there, and `<totfact>` reads its
+            // density for that flavour (`:1811`). The record is compared under
+            // MadEvent's slot; this crate writes the event's own flavours,
+            // which the gate below holds equal to it wherever one graph was
+            // named.
+            let own = [legs[0].i(2), legs[1].i(2)];
+            let heads = [legs[0].i(3), legs[1].i(3)];
+            let graph = |c: &CallRecords<'_>| c.last("SCLOUT").map(|r| r.u(4));
+            let one_graph = graph(first) == calls.get(1).and_then(graph);
+            tally.check(
+                "mgrwt: chain heads are the event's flavours where both calls named one graph",
+                i,
+                !one_graph || heads == own,
+            );
+            tally.check(
+                "mgrwt: chain heads other than the event's flavours only on permuted events",
+                i,
+                permuted || heads == own,
+            );
+            if heads != own {
+                tally.stale_heads.push(StaleHead {
+                    event: i,
+                    subdir: subdir.clone(),
+                    permuted,
+                    own,
+                    heads,
+                });
+            }
+            compare_mgrwt(
+                &mut tally,
+                &row,
+                &subdir,
+                &history,
+                Some(&mine),
+                heads,
+                [begin.f(6), begin.f(7)],
+                labels,
+                first.iconfig(),
+                &lhe.events[i],
+                i,
+                &f,
+                &context,
+            );
+        }
         // Where the first call's scales differ from this crate's, the weight
         // factor it drives differs too: `rewgt · αs(μR)^n · f₁ f₂` at the
         // densities' scales, each side at its own scales and momentum fractions'
@@ -1433,6 +1723,189 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
         }
     }
     (tally, memo_counts)
+}
+
+/// Whether two values printed at `E15.8` are equal or one unit of the last
+/// digit apart.
+fn within_one_unit(a: f64, b: f64) -> bool {
+    if a == b {
+        return true;
+    }
+    let scale = a.abs().max(b.abs());
+    let unit = 10f64.powi(scale.log10().floor() as i32 - 7);
+    (a - b).abs() <= unit * (1.0 + 1e-6)
+}
+
+/// One event's `<mgrwt>` against the banked file's, field by field.
+///
+/// The record is filled as generation fills it ([`LoRecord::fill`]) from the
+/// production path's clustering: the QCD power of the last call's first graph,
+/// that call's `μR` and factorisation scales, the drawn combination's incoming
+/// codes and momentum fractions in clustering order, and under matching
+/// `asref` and the recomputed `rewgt`. Each printed field is compared at its
+/// printed digits; the controls count the events on which the two readings
+/// the rule replaces would print something else.
+#[allow(clippy::too_many_arguments)]
+fn compare_mgrwt(
+    tally: &mut Tally,
+    row: &Row,
+    subdir: &str,
+    history: &vibegraph::coupling::scales::ClusterHistory,
+    rewgt: Option<&Rewgt>,
+    incoming: [i64; 2],
+    x: [f64; 2],
+    labels: [u8; 2],
+    channel: usize,
+    banked: &LheEvent,
+    i: usize,
+    f: &dyn Fn(&'static str) -> &'static str,
+    context: &str,
+) {
+    let theirs = match LoRecord::parse(&banked.trailer) {
+        Ok(Some(r)) => r,
+        _ => {
+            tally.check(f("mgrwt: the banked event carries one"), i, false);
+            return;
+        }
+    };
+    let last = history.second.as_ref().unwrap_or(&history.first);
+    let configs = &row.directories[subdir].configs;
+    let graph = history.event_scales().graph.expect("a clustered event") + 1;
+    let n_qcd = u32::try_from(configs[graph - 1].nqcd).expect("a QCD power");
+    let inputs = RecordInputs {
+        n_qcd,
+        mu_r: last.mu_r,
+        incoming,
+        x,
+        mu_f: last.q2fact.map(f64::sqrt),
+        labels,
+        asref: if rewgt.is_some() {
+            row.alpha_s.eval(history.first.mu_r)
+        } else {
+            0.0
+        },
+        rewgt,
+    };
+    let pdf = &row.pdf;
+    let Ok(full) = LoRecord::fill(&inputs, |pdg, x, q2| pdf.try_xfx_q2(pdg as i32, x, q2)) else {
+        tally.check(f("mgrwt: the record fills"), i, false);
+        return;
+    };
+    let ours = full.as_written();
+    let lines_equal =
+        ours.lines()[..ours.lines().len() - 2] == theirs.lines()[..theirs.lines().len() - 2];
+    tally.check("info: mgrwt lines identical but <totfact>", i, lines_equal);
+    // The first few differing records of each kind, whole, with the
+    // clustering they came from: what tells a channel or permutation reading
+    // from a record rule.
+    let permuted = f("").starts_with("info");
+    let shown = if permuted {
+        &mut tally.mgrwt_shown.1
+    } else {
+        &mut tally.mgrwt_shown.0
+    };
+    if (!lines_equal || rel(full.tot_fact, theirs.tot_fact) > TOTFACT_AGREEMENT) && *shown < 4 {
+        *shown += 1;
+        println!(
+            "  mgrwt differs, event {i} {subdir} channel {channel} graph {graph}{}:\n    ours   \
+             {}\n    theirs {}\n    inputs: legs {incoming:?} x {x:?} labels {labels:?} \
+             muF {:?} muR {}\n    {context}",
+            if permuted { " (permuted P1)" } else { "" },
+            ours.lines()[1..].join(" "),
+            theirs.lines()[1..].join(" "),
+            inputs.mu_f,
+            inputs.mu_r,
+        );
+        if let Some(r) = rewgt {
+            for (beam, chain) in r.pdf_chain.iter().enumerate() {
+                for step in chain {
+                    println!(
+                        "    rewgt beam {}: merge {} flavour {} {:?} x {} x_entering {} \
+                         q2_prev {} q2_now {}",
+                        beam + 1,
+                        step.n,
+                        step.flavour,
+                        step.outcome,
+                        step.x,
+                        step.x_entering,
+                        step.q2_prev,
+                        step.q2_now
+                    );
+                }
+            }
+        }
+    }
+    let n_em = |r: &LoRecord| r.n_qcd as i64 - r.emission_scales.len() as i64;
+    tally.check(f("mgrwt: <rscale> power"), i, n_em(&ours) == n_em(&theirs));
+    tally.check(
+        f("mgrwt: <rscale> scale"),
+        i,
+        within_one_unit(ours.mu_r, theirs.mu_r),
+    );
+    tally.check(
+        f("mgrwt: <asrwt> scales"),
+        i,
+        ours.emission_scales.len() == theirs.emission_scales.len()
+            && ours
+                .emission_scales
+                .iter()
+                .zip(&theirs.emission_scales)
+                .all(|(a, b)| within_one_unit(*a, *b)),
+    );
+    tally.check(
+        f("mgrwt: <pdfrwt> beam labels in order"),
+        i,
+        ours.beam_order == theirs.beam_order,
+    );
+    for beam in 0..2 {
+        let (a, b) = (&ours.beams[beam].entries, &theirs.beams[beam].entries);
+        let fields = if beam == 0 {
+            [
+                "mgrwt: <pdfrwt beam=1> count and codes",
+                "mgrwt: <pdfrwt beam=1> x",
+                "mgrwt: <pdfrwt beam=1> q",
+            ]
+        } else {
+            [
+                "mgrwt: <pdfrwt beam=2> count and codes",
+                "mgrwt: <pdfrwt beam=2> x",
+                "mgrwt: <pdfrwt beam=2> q",
+            ]
+        };
+        let codes = a.len() == b.len() && a.iter().zip(b).all(|(p, q)| p.0 == q.0);
+        tally.check(f(fields[0]), i, codes);
+        tally.check(
+            f(fields[1]),
+            i,
+            codes && a.iter().zip(b).all(|(p, q)| within_one_unit(p.1, q.1)),
+        );
+        tally.check(
+            f(fields[2]),
+            i,
+            codes && a.iter().zip(b).all(|(p, q)| within_one_unit(p.2, q.2)),
+        );
+    }
+    tally.within(
+        f("mgrwt: <totfact>"),
+        i,
+        rel(full.tot_fact, theirs.tot_fact),
+        TOTFACT_AGREEMENT,
+    );
+
+    // The controls: the fraction after the vertex's `z`, and the QCD power of
+    // the integration channel, each where it would print something else.
+    let written = vibegraph::systematics::format::as_written_e15_8;
+    if rewgt.is_some_and(|r| {
+        r.pdf_chain.iter().flatten().any(|s| {
+            matches!(s.outcome, PdfOutcome::Ratio { .. })
+                && !within_one_unit(written(s.x), written(s.x_entering))
+        })
+    }) {
+        tally.mgrwt_controls.0 += 1;
+    }
+    if configs[channel - 1].nqcd != configs[graph - 1].nqcd {
+        tally.mgrwt_controls.1 += 1;
+    }
 }
 
 /// The samples-grade MadEvent run a matched row's dump was replayed from.
@@ -1872,7 +2345,8 @@ fn mg_run_card_matches_madevents_banner() {
         let (card, settings) =
             RunCard::parse_file(&madgraph_dir().join(format!("{name}_run_card.dat")))
                 .expect("run card")
-                .split();
+                .split()
+                .expect("the matched card splits");
         let ours = run_card_fields(&body(&vibegraph::lhef::write::mg_run_card(
             &card, &settings, 0,
         )));

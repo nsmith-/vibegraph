@@ -6,6 +6,10 @@
 
 * [Proton runs with unequal beam energies](sprint.md) - A proton run with unequal beams uses √s = 2√(E1E2), partons at x_i·E_i and MadGraph's cm_rap boost, bit-identical for equal beams, pinned by a unit test and a banked unequal-beam MadGraph σ row.
 
+## Sprint Record
+
+* [Proton runs with unequal beam energies](closeout.md) - √s = 2√(E1E2), partons at x_i·E_i and MadGraph's cm_rap boost, bit-identical at equal beams; the 6500 x 4000 row exposed MadEvent's mirrored-ordering cut defect, registered as a deviation, and gates at pull +0.95 against an emulation.
+
 ## Directories
 
 * [sessions](sessions/index.md)

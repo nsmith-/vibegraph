@@ -3,7 +3,7 @@ type: Sprint
 title: "The run card picks the PDF set and member"
 description: "integrate and generate take no PDF option: lhaid/pdlabel choose set and member, looked up through LHAPDF_DATA_PATH, CVMFS, the cache, then a consented download, and the artifact records them with a checksum."
 status: draft
-active: true
+active: false
 tags: [pdf, lhapdf, runcard, artifact, cli, cms, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

@@ -39,7 +39,7 @@ use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
-    derive_flavor_groups, process_shape, FlavorGroups, ProtonEvent, ProtonIntegrand,
+    derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonEvent, ProtonIntegrand,
 };
 use crate::runcard::RunCard;
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -239,6 +239,7 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
         .fold(ProcessShape::default(), |acc, s| ProcessShape {
             soft_emission_splits: acc.soft_emission_splits + s.soft_emission_splits,
             max_rungs: acc.max_rungs.max(s.max_rungs),
+            resonant_pair_splits: acc.resonant_pair_splits + s.resonant_pair_splits,
             whole_state_resonance: acc.whole_state_resonance || s.whole_state_resonance,
         })
 }
@@ -318,6 +319,30 @@ impl<'a> MultiplicitySum<'a> {
         self.grid_rule = rule;
     }
 
+    /// Raise every part's surveyed selection weights to at least `floor`
+    /// ([`ProtonIntegrand::set_alpha_floor`]); `None` installs the surveys'
+    /// weights as they are.
+    pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
+        for part in &mut self.parts {
+            part.set_alpha_floor(floor);
+        }
+    }
+
+    /// The floor the parts' surveys raise their weights to, which
+    /// [`set_alpha_floor`](Self::set_alpha_floor) keeps common to every part.
+    ///
+    /// # Panics
+    ///
+    /// If the parts were given different floors before they were composed.
+    pub fn alpha_floor(&self) -> Option<f64> {
+        let floor = self.parts[0].alpha_floor();
+        assert!(
+            self.parts.iter().all(|p| p.alpha_floor() == floor),
+            "every part surveys under the same α floor"
+        );
+        floor
+    }
+
     /// The parts, in non-decreasing multiplicity.
     pub fn parts(&self) -> &[ProtonIntegrand<'a>] {
         &self.parts
@@ -390,6 +415,15 @@ impl<'a> MultiplicitySum<'a> {
             .map(|event| (k, event))
     }
 
+    /// [`ProtonIntegrand::point_anatomy`] at a channel of the sum, with the part
+    /// it belongs to; the anatomy's channel indices are that part's own.
+    pub(crate) fn point_anatomy(&self, channel: usize, u: &[f64]) -> Option<(usize, PointAnatomy)> {
+        let (k, j) = self.locate(channel);
+        self.parts[k]
+            .point_anatomy(j, self.part_point(k, u))
+            .map(|anatomy| (k, anatomy))
+    }
+
     /// The key each channel's grid is banked under, in channel order. A single
     /// part keeps its own [`ChannelKey::GroupChannel`] keys, so its artifact is
     /// the one a single-multiplicity card has always written. A channel whose map
@@ -456,6 +490,15 @@ impl<'a> MultiplicitySum<'a> {
             .collect()
     }
 
+    /// Every channel's [`map_key`](crate::phasespace::DiagramChannel::map_key), in
+    /// channel order.
+    pub fn channel_map_keys(&self) -> Vec<String> {
+        self.parts
+            .iter()
+            .flat_map(|p| p.channel_map_keys().iter().cloned())
+            .collect()
+    }
+
     /// Every channel's selection weight in its own part's mixture, in channel
     /// order — the `αⱼ` each term carries. They sum to one per part.
     pub(crate) fn channel_alphas(&self) -> Vec<f64> {
@@ -488,8 +531,9 @@ impl<'a> MultiplicitySum<'a> {
     }
 
     /// Adapt every part's selection weights on its own hadronic mixture
-    /// ([`ProtonIntegrand::adapt_alphas`]), and split the budget across the parts
-    /// by what the final surveys measured.
+    /// ([`ProtonIntegrand::adapt_alphas`], each part's weights raised to the α
+    /// floor of [`set_alpha_floor`](Self::set_alpha_floor)), and split the budget
+    /// across the parts by what the final surveys measured.
     ///
     /// For independent terms estimated from `nₖ` points each, the summed variance
     /// `Σ sₖ²/nₖ` is least at `nₖ ∝ sₖ`, so a part's share is `∝ sₖ`, the standard

@@ -18,12 +18,13 @@ mod audit;
 mod source;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
 
-use crate::artifact::IntegrateArtifact;
+use crate::artifact::{channel_map_digest, IntegrateArtifact};
 use crate::cuts::{Cuts, ForcedResonances};
 use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
@@ -38,7 +39,7 @@ use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
-use crate::lhef::write::{generator_element, mg_run_card, InputsRead};
+use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
     MultiplicitySum,
@@ -50,12 +51,15 @@ use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
 use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
+use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
+use crate::systematics::request::{DynScale, VariationRequest};
 use crate::ufo::identity::ModelIdentity;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter};
 
 use source::{
-    ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, SampleSource,
+    ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, RecordFill,
+    SampleSource,
 };
 
 /// Seed offsets, so the weight scan, the event generation and a strategy's own
@@ -80,24 +84,26 @@ pub struct GenerateSettings {
     pub nevents: u64,
     /// How the written event weights are normalised.
     pub event_norm: EventNorm,
-    /// The systematics request, carried to the record verbatim.
+    /// The systematics weights asked for.
     pub systematics: Systematics,
     /// Whether a matched event carries its clustering record (`clusinfo`). No
     /// such block is written yet, so it reaches only the `<MGRunCard>` record.
     pub clustering_info: bool,
 }
 
-/// A request for post-hoc systematics variation weights, as the card spells it.
-///
-/// Nothing here evaluates the variations; the request is carried so the written
-/// record says what was asked for.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// The systematics weights a run writes: MadGraph's `use_syst` and the
+/// variation request its systematics module would read, typed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Systematics {
-    /// Whether variation weights are requested (`use_syst`).
+    /// `use_syst`: every proton event, matched or not, carries its `<mgrwt>`
+    /// record, and the file its `<MGRunCard>`.
     pub enabled: bool,
-    /// The program, its arguments and the variations, each as its run-card name
-    /// and the card's text for it, in the run card's order.
-    pub fields: Vec<(String, String)>,
+    /// The variations each event carries a weight for; `None` under
+    /// `systematics_program = none` or `use_syst = F`.
+    pub request: Option<VariationRequest>,
+    /// The systematics fields as the card wrote them, each as its name and
+    /// text, for the `<MGRunCard>` record only.
+    pub card_fields: Vec<(String, String)>,
 }
 
 /// How the accept/reject weights become the file's events.
@@ -144,13 +150,18 @@ pub struct GenerateAssets<'a> {
     pub card: &'a SupportedCard,
     /// The model that card names, at the digest the artifact records.
     pub model: &'a UFOModel,
-    /// `model` evaluated at its own parameters.
+    /// `model` evaluated at the parameters the artifact records
+    /// (`ufo::bind::bind_recorded`).
     pub evaluated: &'a EvaluatedModel,
     /// The PDF set and the member the artifact was integrated with; required
     /// where [`reads_parton_densities`], unread otherwise.
     pub pdf: Option<(&'a PdfSet, &'a PdfMember)>,
     /// What was read to build these, written to the event file's header.
     pub inputs: &'a InputsRead,
+    /// The PDF members the systematics request reads, resolved and loaded;
+    /// required where the settings ask for variation weights on a proton
+    /// scattering, unread otherwise.
+    pub systematics: Option<&'a ResolvedPdfs>,
 }
 
 /// Why a generation stopped.
@@ -302,6 +313,12 @@ pub fn generate(
 ) -> Result<EmitSummary, GenerateError> {
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
     check_collider_energy(artifact, assets.card)?;
+    if assets.card.is_decay() && settings.systematics.enabled {
+        warn!(
+            "use_syst = T on a decay: no <mgrwt> record and no systematics weights are written, \
+             as MadGraph bypasses them on a decay"
+        );
+    }
     if reads_parton_densities(artifact, assets.card) {
         let Some((set, pdf)) = assets.pdf else {
             return Err(err(
@@ -466,6 +483,7 @@ fn generate_sample(
             }
         }
     }
+    check_channel_maps(artifact, integ.channel_map_keys())?;
     for (j, channel) in artifact.channels.iter().enumerate() {
         if channel.grid.ndim() != integ.channel_grid_ndim() {
             return Err(err(format!(
@@ -545,7 +563,7 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header_blocks: vec![assets.inputs.header_block()],
+        header_blocks: vec![slha_block(evaluated), assets.inputs.header_block()],
         header: Some(file_header(
             options,
             artifact,
@@ -554,6 +572,7 @@ fn generate_sample(
         )),
         reweights: declared_reweights(reweight_plan.as_ref()),
         event_norm: settings.event_norm,
+        systematics: None,
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
@@ -825,6 +844,24 @@ fn check_channel_keys(
     Ok(())
 }
 
+/// The rebuilt channels' maps against the ones the artifact's grids were
+/// trained through, compared by [`channel_map_digest`]. Equal keys and grid
+/// dimensions say the channels are the same diagrams; they do not say the
+/// diagrams got the same maps, and a grid replayed through another map samples
+/// a plausible wrong distribution.
+fn check_channel_maps(artifact: &IntegrateArtifact, keys: &[String]) -> Result<(), GenerateError> {
+    let rebuilt = channel_map_digest(keys);
+    if rebuilt != artifact.channel_map_digest {
+        return Err(err(format!(
+            "the artifact's channel-map digest is {} but this build's channels give {rebuilt}: \
+             the phase-space maps changed since this grid was trained, so re-integrate with \
+             `vibegraph integrate`",
+            artifact.channel_map_digest
+        )));
+    }
+    Ok(())
+}
+
 /// Rebuild the hadronic integrand the artifact describes, unweight against its
 /// frozen grids, and write the file.
 ///
@@ -905,7 +942,12 @@ fn generate_proton_sample(
         .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
         integ.use_onshell_veto(part_vetoes, evaluated);
         integ
-            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+            .use_run_card_scales(
+                model,
+                evaluated,
+                rc,
+                Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
+            )
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
         if has_decay_chains(parsed) {
             integ.use_resonances(&records.resonances);
@@ -915,6 +957,7 @@ fn generate_proton_sample(
     let mut integ = MultiplicitySum::new(parts);
 
     check_channel_keys(artifact, &integ)?;
+    check_channel_maps(artifact, &integ.channel_map_keys())?;
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
     for k in 0..groups.len() {
         check_alphas(&alphas[integ.offsets()[k]..integ.offsets()[k + 1]])?;
@@ -939,6 +982,17 @@ fn generate_proton_sample(
         })
         .transpose()?;
     let beam_pdg = PROTON_BEAM_PDG;
+
+    let systematics = systematics_writer(
+        settings,
+        assets.systematics,
+        &groups,
+        &declared_reweights(reweight_plan.as_ref()),
+    )?;
+    let record_fill = settings
+        .systematics
+        .enabled
+        .then(|| RecordFill::new(&groups, model, pdf));
 
     let rule = options.max_rule;
     let scan = Unweighter::scan_with(
@@ -971,6 +1025,7 @@ fn generate_proton_sample(
         options.seed ^ GEN_SEED_OFFSET,
         alpha_qed,
         reweight_plan.as_ref().map(ReweightPlan::bind),
+        record_fill,
     );
 
     let strategy = weight_strategy(options);
@@ -991,15 +1046,18 @@ fn generate_proton_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        // The card a shower's MLM matching reads its parameters from, then
-        // what the weights were computed from.
-        header_blocks: if matched {
+        // The card a shower's MLM matching reads its parameters from, and
+        // MadGraph's systematics module its beams and PDF, the parameter card
+        // it reads masses and widths from, then what the weights were
+        // computed from.
+        header_blocks: if matched || settings.systematics.enabled {
             vec![
                 mg_run_card(rc, settings, options.seed),
+                slha_block(evaluated),
                 assets.inputs.header_block(),
             ]
         } else {
-            vec![assets.inputs.header_block()]
+            vec![slha_block(evaluated), assets.inputs.header_block()]
         },
         header: Some(file_header(
             options,
@@ -1009,6 +1067,7 @@ fn generate_proton_sample(
         )),
         reweights: declared_reweights(reweight_plan.as_ref()),
         event_norm: settings.event_norm,
+        systematics,
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
@@ -1025,7 +1084,195 @@ fn generate_proton_sample(
         settings.event_norm,
         Observable::CrossSection,
     );
+    report_heaviest(artifact, &integ, source.unweighter.stats());
     Ok(summary)
+}
+
+/// Name the channel the heaviest overweight trial was drawn in and, at debug
+/// level, take each kept heavy trial apart: the frozen grid's Jacobian per
+/// coordinate, the channel's `αⱼ`, the integrand `f`, the mixture density `g` and
+/// the channels carrying the most of it, and the point's momenta.
+///
+/// The weight is `jacobian · αⱼ f/g`, so the dump says which factor made it
+/// large: a grid that thinned its sampling there, a channel with too small a
+/// selection weight, or a point no channel's density follows.
+fn report_heaviest(
+    artifact: &IntegrateArtifact,
+    integ: &MultiplicitySum<'_>,
+    stats: &UnweightStats,
+) {
+    let Some(top) = stats.heaviest.first() else {
+        return;
+    };
+    info!(
+        "heaviest: w/w_max {:.3} in channel {} {:?}",
+        top.ratio, top.channel, artifact.channels[top.channel].key
+    );
+    if !tracing::enabled!(tracing::Level::DEBUG) {
+        return;
+    }
+    let unit = Observable::CrossSection.per_natural_unit();
+    let map_keys = integ.channel_map_keys();
+    for (rank, trial) in stats.heaviest.iter().enumerate() {
+        let banked = &artifact.channels[trial.channel];
+        let ndim = banked.grid.ndim();
+        let factors = banked.grid.jacobian_factors(&trial.u[..ndim]);
+        let w_max = trial.jacobian * trial.value / trial.ratio;
+        tracing::debug!(
+            "heavy {rank}: w/w_max {:.4e} in channel {} {:?} (σⱼ {:.4e} pb, α {:.4e}), \
+             w_max {:.4e}, Jacobian {:.4e} = {:.3?}, value {:.4e}, u {:.6?}",
+            trial.ratio,
+            trial.channel,
+            banked.key,
+            banked.sigma_pb,
+            banked.alpha,
+            w_max * unit,
+            trial.jacobian,
+            factors,
+            trial.value * unit,
+            trial.u,
+        );
+        let Some((part, anatomy)) = integ.point_anatomy(trial.channel, &trial.u) else {
+            tracing::debug!("heavy {rank}: the point carries no weight when rebuilt");
+            continue;
+        };
+        let offset = integ.offsets()[part];
+        let g = anatomy.mixture_density();
+        let j = anatomy.channel;
+        let mut shares: Vec<(usize, f64)> = anatomy
+            .alphas
+            .iter()
+            .zip(&anatomy.densities)
+            .map(|(a, gk)| a * gk / g)
+            .enumerate()
+            .collect();
+        shares.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let leaders: Vec<String> = shares
+            .iter()
+            .take(5)
+            .map(|&(k, share)| {
+                format!(
+                    "{} (α {:.3e}, g {:.3e}, share {share:.3e})",
+                    offset + k,
+                    anatomy.alphas[k],
+                    anatomy.densities[k]
+                )
+            })
+            .collect();
+        tracing::debug!(
+            "heavy {rank}: part {part}, x {:.6e} {:.6e}, √ŝ {:.6e}, f {:.4e}, g {:.4e}, \
+             own αⱼgⱼ/g {:.4e}, own gⱼ {:.4e}; leading channels {}",
+            anatomy.event.x[0],
+            anatomy.event.x[1],
+            anatomy.sqrt_shat,
+            anatomy.integrand() * unit,
+            g,
+            anatomy.alphas[j] * anatomy.densities[j] / g,
+            anatomy.densities[j],
+            leaders.join(", "),
+        );
+        let cm: Vec<[f64; 4]> = anatomy
+            .event
+            .cm
+            .iter()
+            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
+            .collect();
+        tracing::debug!("heavy {rank}: partonic-CM momenta {cm:?}");
+        tracing::debug!(
+            "heavy {rank}: channel {} map {}",
+            trial.channel,
+            map_keys[trial.channel]
+        );
+    }
+}
+
+/// The writer of the run's systematics weights: `None` unless the settings ask
+/// for them. Refused before any event is drawn: a request with no resolved
+/// PDFs, a weight id the reweighting also writes, and `--dyn=1` on a process
+/// whose written final state is one particle, where `Σ E_T` is zero.
+fn systematics_writer(
+    settings: &GenerateSettings,
+    resolved: Option<&ResolvedPdfs>,
+    groups: &[FlavorGroups],
+    reweights: &[(String, String)],
+) -> Result<Option<Arc<SystematicsWriter>>, GenerateError> {
+    let Some(request) = settings
+        .systematics
+        .request
+        .as_ref()
+        .filter(|_| settings.systematics.enabled)
+    else {
+        return Ok(None);
+    };
+    let Some(resolved) = resolved else {
+        return Err(err(
+            "the settings ask for systematics weights, and no PDF members were resolved for \
+             them",
+        ));
+    };
+    refuse_single_particle_et(request, groups)?;
+    let writer =
+        SystematicsWriter::new(request, resolved).map_err(|e| err(format!("systematics: {e}")))?;
+    refuse_id_collision(writer.ids(), reweights)?;
+    info!(
+        "systematics: {} weights per event over {} PDF member(s)",
+        writer.ids().len(),
+        resolved.members_loaded()
+    );
+    Ok(Some(Arc::new(writer)))
+}
+
+/// A reweighting hypothesis whose id is also a systematics weight id: the
+/// file would carry two weights under one name. MadGraph cannot reach it,
+/// since it writes a numeric `--rwgt_name` as `rwgt_N`; this crate writes it as
+/// given.
+fn refuse_id_collision(
+    ids: &[String],
+    reweights: &[(String, String)],
+) -> Result<(), GenerateError> {
+    if let Some((id, _)) = reweights.iter().find(|(id, _)| ids.contains(id)) {
+        return Err(err(format!(
+            "the reweighting hypothesis id '{id}' is also a systematics weight id (ids {} to {}); \
+             name the launch with a non-numeric --rwgt_name, or move the systematics ids with \
+             --start_id",
+            ids.first().map_or("", String::as_str),
+            ids.last().map_or("", String::as_str),
+        )));
+    }
+    Ok(())
+}
+
+/// `--dyn=1` on a process whose written final state is one particle: its
+/// transverse energy is zero, the scale MadGraph divides by, and MadGraph
+/// writes `NaN`. Integrate refuses it too, before anything is integrated.
+pub fn refuse_single_particle_et(
+    request: &VariationRequest,
+    groups: &[FlavorGroups],
+) -> Result<(), GenerateError> {
+    let finals: Vec<usize> = groups
+        .iter()
+        .flat_map(FlavorGroups::groups)
+        .map(|g| {
+            let e = g.evaluator();
+            e.external_particles().len() - e.n_in()
+        })
+        .collect();
+    refuse_sum_et_on_one_particle(request, &finals)
+}
+
+/// [`refuse_single_particle_et`] over each subprocess's final-state
+/// particle count.
+fn refuse_sum_et_on_one_particle(
+    request: &VariationRequest,
+    final_counts: &[usize],
+) -> Result<(), GenerateError> {
+    if request.dynamical.contains(&DynScale::SumEt) && final_counts.contains(&1) {
+        return Err(err(
+            "the systematics request holds --dyn=1 (sum of E_T) on a process whose written \
+             final state is one particle, where it is zero; drop it: --dyn=-1,2,3,4",
+        ));
+    }
+    Ok(())
 }
 
 /// Each part's integrated cross section, from its channels'
@@ -1440,7 +1687,7 @@ mod tests {
     fn proton_artifact() -> IntegrateArtifact {
         use crate::ufo::sm::SMRestrict;
         let text = UUBAR_EE;
-        let (run_card, settings) = RunCard::default().split();
+        let (run_card, settings) = RunCard::default().split().expect("the default card splits");
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: "u u~ > e+ e-".to_string(),
@@ -1477,7 +1724,38 @@ mod tests {
             chi2_per_dof: 1.0,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            channel_map_digest: String::new(),
+            alpha_floor: None,
         }
+    }
+
+    /// `--dyn=1` is refused where a subprocess's written final state is one
+    /// particle, and nowhere else.
+    #[test]
+    fn the_sum_et_scale_is_refused_on_a_one_particle_final_state() {
+        let default = VariationRequest::madgraph_default();
+        let e = refuse_sum_et_on_one_particle(&default, &[2, 1]).unwrap_err();
+        assert!(e.to_string().contains("--dyn=-1,2,3,4"), "{e}");
+        assert!(refuse_sum_et_on_one_particle(&default, &[2, 3]).is_ok());
+        let mut without = default;
+        without.dynamical.retain(|d| *d != DynScale::SumEt);
+        assert!(refuse_sum_et_on_one_particle(&without, &[1]).is_ok());
+    }
+
+    /// A reweighting id that is also a systematics id is refused, naming it;
+    /// MadGraph's own `rwgt_N` spelling passes.
+    #[test]
+    fn a_reweighting_id_colliding_with_a_systematics_id_is_refused() {
+        let ids: Vec<String> = (1..=145).map(|i| i.to_string()).collect();
+        let hypothesis = |id: &str| vec![(id.to_string(), String::new())];
+        let e = refuse_id_collision(&ids, &hypothesis("5")).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("'5' is also a systematics weight id"),
+            "{e}"
+        );
+        assert!(refuse_id_collision(&ids, &hypothesis("rwgt_5")).is_ok());
+        assert!(refuse_id_collision(&ids, &hypothesis("146")).is_ok());
     }
 
     /// The two stochastic-rounding refusals are phrased in the library's terms:
@@ -1617,6 +1895,7 @@ mod tests {
         let inputs = InputsRead {
             pdf: None,
             grid_sha256: String::new(),
+            systematics: Vec::new(),
         };
         let assets = GenerateAssets {
             card: &parsed,
@@ -1624,6 +1903,7 @@ mod tests {
             evaluated: &evaluated,
             pdf: None,
             inputs: &inputs,
+            systematics: None,
         };
         let options = GenerateOptions {
             seed: 1,
