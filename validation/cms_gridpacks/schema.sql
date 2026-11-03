@@ -288,7 +288,8 @@ CREATE TABLE vg_campaign (
 -- result is exactly a row with patches = '[]'.
 -- AUTOINCREMENT: run_id names runs/<run_id>.trace.log.gz, so an id freed by
 -- --rerun must never be handed out again.
--- ufo_model_sha256 has no FK: a --bake run hashes a rewritten copy of the model.
+-- ufo_model_sha256 has no FK: the staged copy drops the bundled model's symlinks,
+-- so its hash need not match a ufo_model row.
 CREATE TABLE vg_run (
   run_id INTEGER PRIMARY KEY AUTOINCREMENT,
   gridpack_id INTEGER NOT NULL REFERENCES gridpack ON DELETE RESTRICT,

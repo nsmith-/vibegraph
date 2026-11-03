@@ -1,6 +1,6 @@
 """Drive the vibegraph CLI over a scraped sample and record every attempt.
 
-    gpdb run <sample> --campaign NAME [--adapt gpmodel,strip,runpatch] [--bake]
+    gpdb run <sample> --campaign NAME [--adapt gpmodel,strip,runpatch] [--param-card]
 
 Attempt 1 runs the gridpack's own proc card with the run card MadGraph used.
 `--adapt` lets later attempts react to the previous refusal, cumulatively:
@@ -11,9 +11,10 @@ Attempt 1 runs the gridpack's own proc card with the run card MadGraph used.
             `launch` on)
   runpatch  reset the run-card field a refusal names to the MadGraph default
             the refusal quotes
-One change applies up front instead: `--bake` writes the gridpack's param card
-into a copy of its model's external parameters (the CLI has no param-card
-option). The run card's lhaid picks the PDF set; the CLI finds it under
+`--param-card` passes the gridpack's param card to `integrate --param-card`, so
+the model is evaluated where MadGraph evaluated it. When the CLI refuses the
+card, the next attempt runs without it and records `param-card:dropped`.
+The run card's lhaid picks the PDF set; the CLI finds it under
 `--lhapdf-data-path`, passed to it as LHAPDF_DATA_PATH.
 Every change made is listed in the attempt's `patches`, so `patches = '[]'`
 marks an as-shipped result.
@@ -49,7 +50,7 @@ def add_parser(sub):
     p.add_argument("--binary", default=DEFAULT_BINARY)
     p.add_argument("--only", nargs="*", help="label prefixes")
     p.add_argument("--adapt", default="", help="comma list of gpmodel,strip,runpatch")
-    p.add_argument("--bake", action="store_true", help="bake the gridpack param card into its model")
+    p.add_argument("--param-card", action="store_true", help="evaluate the model at the gridpack's param card")
     p.add_argument("--lhapdf-data-path", default=CVMFS_PDF if os.path.isdir(CVMFS_PDF) else
                    os.path.join(gpdb.REPO, "validation", "pdf"), help="LHAPDF_DATA_PATH for the CLI")
     p.add_argument("--neval", type=int, default=10000)
@@ -134,44 +135,6 @@ def stage_model(src, dest_root, name, restriction=None):
     return target
 
 
-def bake(model_dir, param_text):
-    """Write param-card values into the model's external Parameter(value=...) entries."""
-    vals, block = {}, None
-    for raw in param_text.splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        tok = line.split()
-        if tok[0].upper() == "BLOCK":
-            block = tok[1].upper() if len(tok) > 1 else None
-        elif tok[0].upper() == "DECAY":
-            block = None
-            if len(tok) >= 3:
-                vals[("DECAY", (int(tok[1]),))] = tok[2]
-        elif block and len(tok) >= 2:
-            try:
-                vals[(block, tuple(int(t) for t in tok[:-1]))] = tok[-1]
-            except ValueError:
-                pass
-    path = os.path.join(model_dir, "parameters.py")
-    text = open(path).read()
-    out, n = [], 0
-    for chunk in re.split(r"(?=\n\s*\w+\s*=\s*Parameter\()", text):
-        if re.search(r"nature\s*=\s*['\"]external['\"]", chunk):
-            b = re.search(r"lhablock\s*=\s*['\"](\w+)['\"]", chunk)
-            c = re.search(r"lhacode\s*=\s*\[([^\]]*)\]", chunk)
-            if b and c:
-                key = (b.group(1).upper(), tuple(int(x) for x in c.group(1).split(",") if x.strip()))
-                if key in vals:
-                    new = re.sub(r"value\s*=\s*[-+0-9.eEdD]+", "value = %s" % vals[key], chunk, count=1)
-                    n += new != chunk
-                    chunk = new
-        out.append(chunk)
-    with open(path, "w") as fh:
-        fh.write("".join(out))
-    return n
-
-
 def model_sha(model_dir):
     files = gpdb.walk_files(model_dir)
     return P.model_identity({r: sha_file(p) for r, p in files.items() if r.endswith(".py")})
@@ -208,7 +171,7 @@ def gridpack_inputs(base, cache_rel):
 
 def register_campaign(db, args):
     """A campaign name is bound to the policy it was first run with."""
-    policy = json.dumps({"adapt": sorted(a for a in args.adapt.split(",") if a), "bake": args.bake,
+    policy = json.dumps({"adapt": sorted(a for a in args.adapt.split(",") if a), "param_card": args.param_card,
                          "lhapdf_data_path": args.lhapdf_data_path, "neval": args.neval,
                          "niter": args.niter, "seed": args.seed, "threads": args.threads, "timeout": args.timeout,
                          "max_attempts": args.max_attempts, "allow_network": args.allow_network,
@@ -270,16 +233,10 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
             new.append("import model %s%s" % (gp_name, (" " + pi[2]) if pi and pi[2] else "") if pi else l)
         return "\n".join(new) + "\n"
 
-    if inp["ufomodel"] and (args.bake or (imp and imp[0] != "sm")):
-        if args.bake:
-            staged = stage_model(inp["ufomodel"], models, gp_name)
-            proc_text = use_gridpack_model(proc_text)
-            patches.append("model:%s" % gp_name)
-            n = bake(staged, gpdb.text(inp["param"])) if inp["param"] else 0
-            patches.append("bake:%d" % n)
-        else:
-            staged = stage_model(inp["ufomodel"], models, imp[0].rsplit("/", 1)[-1], imp[1])
+    if inp["ufomodel"] and imp and imp[0] != "sm":
+        staged = stage_model(inp["ufomodel"], models, imp[0].rsplit("/", 1)[-1], imp[1])
         ufo_dir = models
+    param_text = gpdb.text(inp["param"]) if args.param_card and inp["param"] else None
     env = dict(os.environ, LHAPDF_DATA_PATH=args.lhapdf_data_path)
 
     summary = None
@@ -289,6 +246,9 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         pc, rc = os.path.join(adir, "proc_card.dat"), os.path.join(adir, "run_card.dat")
         open(pc, "w").write(proc_text)
         open(rc, "w").write(run_text)
+        card = os.path.join(adir, "param_card.dat") if param_text is not None else None
+        if card:
+            open(card, "w").write(param_text)
         out_dir, trace = os.path.join(adir, "out"), os.path.join(adir, "trace.log")
         cmd = [args.binary, "integrate", pc, "--run-card", rc,
                "--neval", str(args.neval), "--niter", str(args.niter), "--fixed-budget", "--seed", str(args.seed),
@@ -296,6 +256,8 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         cmd += ["--yes"] if args.allow_network else ["--no-network"]
         if ufo_dir:
             cmd += ["--ufo-dir", ufo_dir]
+        if card:
+            cmd += ["--param-card", card]
         cmd += args.extra
         started = gpdb.now()
         code, timed_out, wall, rss = execute(cmd, os.path.join(adir, "output.txt"), args.timeout, env)
@@ -347,6 +309,10 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         if r["outcome"] in ("ok", "timeout"):
             break
         err = r["error_text"] or ""
+        if card and card in err:
+            param_text = None
+            patches.append("param-card:dropped")
+            continue
         rp = next((m for m in (rx.search(err) for rx in RUNPATCH) if m), None) if "runpatch" in adapt else None
         if rp:
             run_text = patch_run(run_text, rp.group(1), rp.group(2).strip())
