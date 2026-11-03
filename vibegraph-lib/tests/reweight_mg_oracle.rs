@@ -108,6 +108,12 @@ fn madgraph_card(card: &Value) -> ParamCard {
             .map(|c| c.as_i64().unwrap().to_string())
             .collect();
         let value = entry[2].as_f64().unwrap();
+        // The banked entries name each new state's `QNUMBERS` block without its
+        // PDG code, so they cannot be put back under their states; quantum
+        // numbers carry no model parameter, and the rebuilt card leaves them out.
+        if name == "qnumbers" {
+            continue;
+        }
         if name == "decay" {
             text += &format!("DECAY {} {value:e}\n", code.join(" "));
             block.clear();

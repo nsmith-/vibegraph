@@ -3,7 +3,7 @@ type: Sprint
 title: "The built-in SM gains the ckm_no_b_mass restriction"
 description: "'import model sm-ckm_no_b_mass' loads the built-in SM with the CMS-supplied restrict card, vendored with its provenance, and couplings are pinned at that restriction."
 status: draft
-active: true
+active: false
 tags: [model, restriction, ckm, sm, cms, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

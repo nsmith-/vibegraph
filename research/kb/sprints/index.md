@@ -8,6 +8,7 @@
 
 ## Directories
 
+* [alpha-share-tails](alpha-share-tails/index.md)
 * [amplitude-signs](amplitude-signs/index.md)
 * [banked-open-ends](banked-open-ends/index.md)
 * [ckm-no-b-mass](ckm-no-b-mass/index.md)
@@ -25,6 +26,7 @@
 * [event-norm-sum](event-norm-sum/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
 * [flavour-mixed-masses](flavour-mixed-masses/index.md)
+* [floor-bound-neyman](floor-bound-neyman/index.md)
 * [fnv-refusal](fnv-refusal/index.md)
 * [gridpack-generate](gridpack-generate/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)
@@ -36,6 +38,7 @@
 * [mlm](mlm/index.md)
 * [mlm-pythia-tolerance](mlm-pythia-tolerance/index.md)
 * [note-29-validation](note-29-validation/index.md)
+* [param-card](param-card/index.md)
 * [pdf-from-run-card](pdf-from-run-card/index.md)
 * [perf-3-addendum](perf-3-addendum/index.md)
 * [perf-sprint-3](perf-sprint-3/index.md)
@@ -43,6 +46,7 @@
 * [refdata10-cell-flips](refdata10-cell-flips/index.md)
 * [resonance-sampling](resonance-sampling/index.md)
 * [runcard-hidden-lines](runcard-hidden-lines/index.md)
+* [scaling-floor](scaling-floor/index.md)
 * [seed-record-tooling](seed-record-tooling/index.md)
 * [sigma-2to4-offset](sigma-2to4-offset/index.md)
 * [sigma-calibration-rerecord](sigma-calibration-rerecord/index.md)
@@ -53,7 +57,9 @@
 * [sigma-reference-scatter](sigma-reference-scatter/index.md)
 * [sigma-ttx-mlm-at1](sigma-ttx-mlm-at1/index.md)
 * [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
+* [spine-fallback](spine-fallback/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
+* [systematics](systematics/index.md)
 * [two-to-six-gate](two-to-six-gate/index.md)
 * [ufo-conditional-params](ufo-conditional-params/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)

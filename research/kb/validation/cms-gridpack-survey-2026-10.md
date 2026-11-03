@@ -230,7 +230,7 @@ Other refusals:
 ## Backlog filed from this survey
 
 - Silent σ changes: run-card `# hidden_parameter` lines dropped (fixed: `split_line` strips `#` comments),
-  [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
+  no param card in the CLI (`cli-has-no-param-card-option`, since closed),
   PDF set not taken from the run card (`pdf-set-not-taken-from-run-card`, since closed).
 - Bugs and panics: WEIGHTED search cap (closed by [the weighted-cap sprint](../sprints/weighted-cap/sprint.md)),
   UFO `if configuration` branches (closed: refused by name at load),
@@ -239,7 +239,7 @@ Other refusals:
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),
   [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
-- Feature gaps: [variation weights](../backlog/feature/systematics-variation-weights-not-written.md)
+- Feature gaps: variation weights (`systematics-variation-weights-not-written`, since closed)
   and the silent drop of a systematics request (now a warning),
   `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
   `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),

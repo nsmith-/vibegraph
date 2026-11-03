@@ -132,7 +132,7 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
-use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
+use vibegraph::phasespace::{parse_alpha_floor, AlphaAdaptation, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
@@ -1023,6 +1023,7 @@ fn with_integrand<R>(
         n_survey,
         n_adapt_iter,
         mmll_override,
+        Some(DEFAULT_ALPHA_FLOOR),
         |parts| f(parts.integ, parts.adaptation),
     )
 }
@@ -1041,7 +1042,10 @@ struct IntegrandParts<'p, 'a> {
     spin_color_avg: f64,
 }
 
-/// [`with_integrand`], handing `f` the integrand's inputs beside it.
+/// [`with_integrand`], handing `f` the integrand's inputs beside it, with every
+/// surveyed selection weight raised to `alpha_floor`, or installed as surveyed
+/// where it is `None` ([`FixedBeamIntegrand::set_alpha_floor`]).
+#[allow(clippy::too_many_arguments)]
 fn with_integrand_parts<R>(
     dir: &str,
     process: &str,
@@ -1049,6 +1053,7 @@ fn with_integrand_parts<R>(
     n_survey: usize,
     n_adapt_iter: usize,
     mmll_override: Option<f64>,
+    alpha_floor: Option<f64>,
     f: impl FnOnce(&IntegrandParts) -> R,
 ) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
@@ -1127,6 +1132,7 @@ fn with_integrand_parts<R>(
     // production sampler `vibegraph integrate` drives — so the narrow electroweak
     // peaks that flat RAMBO under-samples converge. α is adapted to this process's
     // own |M|² on a survey substream disjoint from the integration seed.
+    integ.set_alpha_floor(alpha_floor);
     let report = (n_survey > 0)
         .then(|| integ.use_multichannel(&diagrams, &evaluated, n_survey, n_adapt_iter, seed))
         .flatten()
@@ -2089,21 +2095,44 @@ fn probe_2to6_density_decomposition() {
 ///   default rungs).
 /// * `VG_2TO6_SEEDS`: a single integer `N` is a count, giving `SEED` followed by
 ///   `11 k` for `k = 1..N` (`N = 5` is `SEED, 11, 22, 33, 44`, today's seeds); a
-///   comma list is taken verbatim.
+///   value with a comma is a list taken verbatim, so `11,` is the one seed 11.
+///   A rung run on one seed records it and prints no summary.
 /// * `VG_2TO6_NITER`: iterations per run.
+/// * `VG_2TO6_ALLOC`: comma list from `alpha` (`BlockAllocation::ByAlpha`, the
+///   default) and `neyman` (`BlockAllocation::Neyman`), the rules the
+///   multichannel sampler splits each iteration by; every rung runs under each.
+///   The flat sampler is one channel with nothing to split, runs once, and is
+///   labelled `single`.
+/// * `VG_2TO6_WATCH`: comma list of channel indices whose own term, drawn and
+///   accepted points are recorded per seed in the TSV's `watch` column.
+/// * `VG_2TO6_ALPHA_FLOOR`: a floor every surveyed selection weight is raised
+///   to before the integration, the set renormalised
+///   ([`FixedBeamIntegrand::set_alpha_floor`]), or `off` for the survey's
+///   weights as they came out; unset, [`DEFAULT_ALPHA_FLOOR`].
 /// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
-///   so a killed run keeps what it measured. Columns: `row sampler neval niter
-///   seed sigma_pb err_pb wall_s`. Rerunning with the same path appends; remove
-///   the file to start over.
+///   so a killed run keeps what it measured. Columns: `row sampler alloc neval
+///   niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
+///   `points` is every channel's draws over the run. `share_floor_bound` counts
+///   the channels whose α share of the last iteration was at or under their
+///   accepted-point floor — under `alpha` the channels that drew the floor, under
+///   `neyman` the channels the α split would have left there. `watch` is
+///   `j:term_pb:err_pb:drawn:accepted` per watched channel, comma-separated.
+///   Rerunning with the same path appends, and a file whose header differs is
+///   refused; remove the file to start over.
 ///
 /// # Output
 ///
 /// Per seed, a progress line. Per rung, a summary: the unweighted mean, the
 /// error `max(quoted, spread/√n)`, χ²/dof, and the pull against both the row's
 /// MadEvent seed record (read the way the gates read it) and the single-run
-/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler,
-/// the separation of the means against `√(s₁²/n₁ + s₂²/n₂)` from the measured
-/// seed spreads, printed as information.
+/// `sigma_reference.json` value. For each adjacent pair of rungs of one sampler
+/// and allocation, the per-seed paired difference: its mean and its standard
+/// deviation over the seeds, with the ratio of the two rungs' seed standard
+/// deviations, printed as information. The rungs share their seeds, and a
+/// channel whose allocation is the floor at both draws the same points at both,
+/// so the two rungs of one seed are correlated and the difference of their
+/// means is read against the spread of the paired differences, not against the
+/// rungs' separate spreads.
 ///
 /// # Running the 20-seed multichannel ladder
 ///
@@ -2115,7 +2144,7 @@ fn probe_2to6_density_decomposition() {
 /// cargo test -p vibegraph-lib --profile release-debug --features extended-validation \
 ///     --test validate_sigma --no-run
 /// VG_2TO6_SAMPLERS=multi VG_2TO6_RUNGS=600000,1200000 VG_2TO6_SEEDS=20 \
-///     VG_2TO6_OUT=$PWD/ladder-2to6.tsv \
+///     VG_2TO6_ALLOC=alpha,neyman VG_2TO6_OUT=$PWD/ladder-2to6.tsv \
 ///     nohup setsid cargo test -p vibegraph-lib --profile release-debug \
 ///     --features extended-validation --test validate_sigma -- --ignored \
 ///     --nocapture --exact probe_2to6_budget_ladder > ladder-2to6.log 2>&1 &
@@ -2129,7 +2158,11 @@ fn probe_2to6_density_decomposition() {
 #[test]
 #[ignore]
 fn probe_2to6_budget_ladder() {
-    use std::io::Write;
+    use std::io::{BufRead, Write};
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+
+    const TSV_HEADER: &str = "row\tsampler\talloc\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s\t\
+                              points\tshare_floor_bound\twatch";
 
     const DEFAULT_NITER: usize = 8;
     const FLAT_RUNGS: [usize; 4] = [100_000, 200_000, 400_000, 800_000];
@@ -2213,7 +2246,12 @@ fn probe_2to6_budget_ladder() {
     };
     let seeds: Vec<u64> = match var_list("VG_2TO6_SEEDS") {
         None => vec![SEED, 11, 22, 33, 44],
-        Some(items) if items.len() == 1 => {
+        Some(items)
+            if items.len() == 1
+                && !std::env::var("VG_2TO6_SEEDS")
+                    .unwrap_or_default()
+                    .contains(',') =>
+        {
             let n = parse_usize(&items[0], "VG_2TO6_SEEDS");
             (0..n as u64)
                 .map(|k| if k == 0 { SEED } else { 11 * k })
@@ -2227,26 +2265,57 @@ fn probe_2to6_budget_ladder() {
             })
             .collect(),
     };
-    assert!(seeds.len() >= 2, "the seed combination needs two seeds");
+    assert!(!seeds.is_empty(), "VG_2TO6_SEEDS names no seed");
     let niter = std::env::var("VG_2TO6_NITER")
         .map(|s| parse_usize(&s, "VG_2TO6_NITER"))
         .unwrap_or(DEFAULT_NITER);
+    let allocations: Vec<(&str, BlockAllocation)> = match var_list("VG_2TO6_ALLOC") {
+        None => vec![("alpha", BlockAllocation::ByAlpha)],
+        Some(names) => names
+            .iter()
+            .map(|n| match n.as_str() {
+                "alpha" => ("alpha", BlockAllocation::ByAlpha),
+                "neyman" => ("neyman", BlockAllocation::Neyman),
+                other => panic!("VG_2TO6_ALLOC: `{other}` is not `alpha` or `neyman`"),
+            })
+            .collect(),
+    };
+    let watch: Vec<usize> = var_list("VG_2TO6_WATCH")
+        .unwrap_or_default()
+        .iter()
+        .map(|s| parse_usize(s, "VG_2TO6_WATCH"))
+        .collect();
+    let alpha_floor: Option<f64> = match std::env::var("VG_2TO6_ALPHA_FLOOR") {
+        Ok(s) => parse_alpha_floor(&s).unwrap_or_else(|e| panic!("VG_2TO6_ALPHA_FLOOR: {e}")),
+        Err(_) => Some(DEFAULT_ALPHA_FLOOR),
+    };
     let mut out = std::env::var("VG_2TO6_OUT").ok().map(|path| {
         let fresh = std::fs::metadata(&path)
             .map(|m| m.len() == 0)
             .unwrap_or(true);
+        if !fresh {
+            let existing = std::fs::File::open(&path)
+                .map(std::io::BufReader::new)
+                .and_then(|mut r| {
+                    let mut line = String::new();
+                    r.read_line(&mut line).map(|_| line)
+                })
+                .unwrap_or_else(|e| panic!("VG_2TO6_OUT {path}: {e}"));
+            assert_eq!(
+                existing.trim_end(),
+                TSV_HEADER,
+                "VG_2TO6_OUT {path} has other columns; remove it or name another file"
+            );
+        }
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
             .unwrap_or_else(|e| panic!("VG_2TO6_OUT {path}: {e}"));
         if fresh {
-            writeln!(
-                file,
-                "row\tsampler\tneval\tniter\tseed\tsigma_pb\terr_pb\twall_s"
-            )
-            .and_then(|_| file.flush())
-            .expect("TSV header writable");
+            writeln!(file, "{TSV_HEADER}")
+                .and_then(|_| file.flush())
+                .expect("TSV header writable");
         }
         file
     });
@@ -2257,7 +2326,9 @@ fn probe_2to6_budget_ladder() {
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
     eprintln!(
-        "ladder: rows {rows:?}, samplers {samplers:?}, {} seeds {seeds:?}, niter {niter}",
+        "ladder: rows {rows:?}, samplers {samplers:?}, allocations {:?}, {} seeds {seeds:?}, \
+         niter {niter}, alpha floor {alpha_floor:?}",
+        allocations.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
         seeds.len(),
     );
     for dir in rows {
@@ -2274,67 +2345,134 @@ fn probe_2to6_budget_ladder() {
                 "flat" => ("flat RAMBO  ", 0, 0),
                 _ => ("multichannel", MULTICHANNEL_SURVEY, MULTICHANNEL_ITERS),
             };
-            let mut previous: Option<(usize, SeedMean)> = None;
-            for neval in rungs_for(sampler) {
-                let clock = Stopwatch::start();
-                let mut runs: Vec<SeedResult> = Vec::new();
-                for &seed in &seeds {
-                    let seed_clock = Stopwatch::start();
-                    let (sigma_pb, sigma_err_pb, _, _) =
-                        integrate_with(dir, &entry.process, neval, niter, seed, n_survey, n_adapt);
-                    let wall = seed_clock.seconds();
-                    eprintln!(
-                        "    {label} {neval:>9} x {niter} seed {seed:>10}: σ {sigma_pb:.6e} \
-                         ± {sigma_err_pb:.3e} pb | rel vs single run {:+.2e} | {wall:6.0} s",
-                        sigma_pb / entry.sigma_pb - 1.0,
-                    );
-                    if let Some(file) = out.as_mut() {
-                        writeln!(
-                            file,
-                            "{dir}\t{sampler}\t{neval}\t{niter}\t{seed}\t{sigma_pb:.9e}\t\
-                             {sigma_err_pb:.6e}\t{wall:.1}",
-                        )
-                        .and_then(|_| file.flush())
-                        .expect("TSV line writable");
+            let rules: Vec<(&str, BlockAllocation)> = if *sampler == "flat" {
+                vec![("single", BlockAllocation::ByAlpha)]
+            } else {
+                allocations.clone()
+            };
+            for &(alloc, allocation) in &rules {
+                let mut previous: Option<(usize, SeedMean, Vec<f64>)> = None;
+                for neval in rungs_for(sampler) {
+                    let clock = Stopwatch::start();
+                    let mut runs: Vec<SeedResult> = Vec::new();
+                    for &seed in &seeds {
+                        let seed_clock = Stopwatch::start();
+                        let (sigma_pb, sigma_err_pb, points, share_floor_bound, watched) =
+                            with_integrand_parts(
+                                dir,
+                                &entry.process,
+                                seed,
+                                n_survey,
+                                n_adapt,
+                                None,
+                                alpha_floor,
+                                |parts| {
+                                    let integ = parts.integ;
+                                    let (per_channel, total, report) = integ.adapt_grids_budget(
+                                        Budget::Fixed { neval, niter },
+                                        allocation,
+                                        seed,
+                                        &StopSignal::default(),
+                                    );
+                                    let watched: Vec<String> = watch
+                                        .iter()
+                                        .map(|&j| {
+                                            let c = per_channel.get(j).unwrap_or_else(|| {
+                                                panic!(
+                                                    "VG_2TO6_WATCH: channel {j} of {}",
+                                                    per_channel.len()
+                                                )
+                                            });
+                                            format!(
+                                                "{j}:{:.6e}:{:.4e}:{}:{}",
+                                                c.result.integral * GEV2_TO_PB,
+                                                c.result.std_dev * GEV2_TO_PB,
+                                                report.channel_points[j],
+                                                report.channel_accepted[j],
+                                            )
+                                        })
+                                        .collect();
+                                    (
+                                        total.integral * GEV2_TO_PB,
+                                        total.std_dev * GEV2_TO_PB,
+                                        report.points,
+                                        report.floor_bound_channels,
+                                        watched,
+                                    )
+                                },
+                            );
+                        let wall = seed_clock.seconds();
+                        eprintln!(
+                            "    {label} {alloc} {neval:>9} x {niter} seed {seed:>10}: \
+                             σ {sigma_pb:.6e} ± {sigma_err_pb:.3e} pb | rel vs single run \
+                             {:+.2e} | {points} points, {share_floor_bound} share-floor-bound \
+                             | {wall:6.0} s",
+                            sigma_pb / entry.sigma_pb - 1.0,
+                        );
+                        if let Some(file) = out.as_mut() {
+                            writeln!(
+                                file,
+                                "{dir}\t{sampler}\t{alloc}\t{neval}\t{niter}\t{seed}\t\
+                                 {sigma_pb:.9e}\t{sigma_err_pb:.6e}\t{wall:.1}\t{points}\t\
+                                 {share_floor_bound}\t{}",
+                                watched.join(","),
+                            )
+                            .and_then(|_| file.flush())
+                            .expect("TSV line writable");
+                        }
+                        runs.push(SeedResult {
+                            seed,
+                            sigma_pb,
+                            sigma_err_pb,
+                        });
                     }
-                    runs.push(SeedResult {
-                        seed,
-                        sigma_pb,
-                        sigma_err_pb,
-                    });
-                }
-                let read = combine(&runs);
-                let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
-                let pull_record = match &seeded {
-                    Some(r) => format!("{:+.2}", read.pull(r.mean(), r.err())),
-                    None => "n/a (no seed record)".to_string(),
-                };
-                eprintln!(
-                    "  {label} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
-                     ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}) | χ²/dof {:.2} \
-                     | pull vs seed record {pull_record} | pull vs single run \
-                     {pull_single:+.2} | rel vs single run {:+.2e}",
-                    read.n,
-                    clock.seconds(),
-                    read.mean,
-                    read.err,
-                    read.quoted,
-                    read.spread,
-                    read.chi2_per_dof,
-                    read.mean / entry.sigma_pb - 1.0,
-                );
-                if let Some((prev_neval, prev)) = previous {
-                    // Measured per-rung seed sd: spread is sd/√n.
-                    let sigma = (prev.spread.powi(2) + read.spread.powi(2)).sqrt();
+                    if runs.len() < 2 {
+                        continue;
+                    }
+                    let read = combine(&runs);
+                    let pull_single = read.pull(entry.sigma_pb, entry.sigma_err_pb);
+                    let pull_record = match &seeded {
+                        Some(r) => format!("{:+.2}", read.pull(r.mean(), r.err())),
+                        None => "n/a (no seed record)".to_string(),
+                    };
+                    let sd = read.spread * (read.n as f64).sqrt();
                     eprintln!(
-                        "    {label} {prev_neval} -> {neval}: Δmean {:+.3e} pb ({:+.2e} rel) \
-                         over √(s₁²/n₁ + s₂²/n₂) = {sigma:.3e} pb: {:+.2}σ (information)",
-                        read.mean - prev.mean,
-                        (read.mean - prev.mean) / prev.mean,
-                        (read.mean - prev.mean) / sigma,
+                        "  {label} {alloc} {neval:>9} x {niter} ({} seeds, {:.0} s): σ = {:.6e} \
+                         ± {:.3e} pb (quoted {:.3e}, spread/√n {:.3e}, seed sd {sd:.3e}) \
+                         | χ²/dof {:.2} | pull vs seed record {pull_record} | pull vs single \
+                         run {pull_single:+.2} | rel vs single run {:+.2e}",
+                        read.n,
+                        clock.seconds(),
+                        read.mean,
+                        read.err,
+                        read.quoted,
+                        read.spread,
+                        read.chi2_per_dof,
+                        read.mean / entry.sigma_pb - 1.0,
                     );
+                    let values: Vec<f64> = runs.iter().map(|r| r.sigma_pb).collect();
+                    if let Some((prev_neval, prev, prev_values)) = &previous {
+                        let diffs: Vec<f64> =
+                            values.iter().zip(prev_values).map(|(b, a)| b - a).collect();
+                        let n = diffs.len() as f64;
+                        let d_mean = diffs.iter().sum::<f64>() / n;
+                        let d_sd = (diffs.iter().map(|d| (d - d_mean).powi(2)).sum::<f64>()
+                            / (n - 1.0))
+                            .sqrt();
+                        let prev_sd = prev.spread * (prev.n as f64).sqrt();
+                        eprintln!(
+                            "    {label} {alloc} {prev_neval} -> {neval}: paired Δ over {} seeds \
+                             {d_mean:+.3e} pb ({:+.2e} rel), sd of Δ {d_sd:.3e} pb, Δ/(sd/√n) \
+                             {:+.2} | seed sd {prev_sd:.3e} -> {sd:.3e}, ratio {:.3} \
+                             (information)",
+                            diffs.len(),
+                            d_mean / prev.mean,
+                            d_mean / (d_sd / n.sqrt()),
+                            sd / prev_sd,
+                        );
+                    }
+                    previous = Some((neval, read, values));
                 }
-                previous = Some((neval, read));
             }
         }
     }
@@ -3172,123 +3310,124 @@ fn probe_fixed_density_llj_annihilation() {
             density.sqrt_s, density.q2_lo, density.q2_hi
         );
 
-        let (analytic, flat_check) = with_integrand_parts(dir, &process, SEED, 0, 0, None, |p| {
-            assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
-            // The analytic density writes its legs as (e+, e-, g).
-            let rep = &p.evals[0];
-            let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
-                .iter()
-                .map(|&id| p.model.particle(id).pdg_code)
-                .collect();
-            assert_eq!(
-                final_pdg,
-                [-11, 11, 21],
-                "[{dir}] outgoing legs (e+, e-, g)"
-            );
-            let integ = p.integ;
-            let n_final = integ.final_masses().len();
-            assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
-            assert!(
-                integ.final_masses().iter().all(|&m| m == 0.0),
-                "[{dir}] massless final state"
-            );
-            let alpha_s = integ
-                .alpha_s_source()
-                .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
-            let s = density.s;
-            let prefactor = p.spin_color_avg / (2.0 * s);
-            let point_ndim = integ.point_ndim();
-            let scale_draw = integ.scale_draw_ndim();
-
-            // The analytic density's integrand without its phase-space weight, in
-            // GeV⁻² per unit dΦ₃: zero outside the cuts.
-            let value = |amp: &mut ScaleAwareAmplitude<f64>,
-                         scratch: &mut _,
-                         momenta: &[LorentzVector<f64>],
-                         u: &[f64]|
-             -> f64 {
-                let mut ext = integ.incoming().to_vec();
-                ext.extend_from_slice(momenta);
-                if !p.cuts.pass(&ext) {
-                    return 0.0;
-                }
-                let scales = integ
-                    .event_scales_at(momenta, 0, u)
-                    .expect("a per-event prescription")
-                    .expect("a scale at a point that passes the cuts");
-                amp.set_alpha_s(alpha_s.eval(scales.mu_r));
-                prefactor * amp.eval_m2(&ext, scratch)
-            };
-
-            // The hand-assembled integrand against the crate's own, on flat RAMBO,
-            // where the map's weight is the constant massless volume.
-            let volume = s / (256.0 * std::f64::consts::PI.powi(3));
-            let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
-            let mut scratch = amp.scratch_space();
-            let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
-            let mut momenta = Vec::new();
-            let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
-            let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
-            for _ in 0..200_000 {
-                let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
-                let theirs = integ.event_in_channel(0, &u, &mut momenta);
-                let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
-                checked += 1;
+        let (analytic, flat_check) =
+            with_integrand_parts(dir, &process, SEED, 0, 0, None, None, |p| {
+                assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
+                // The analytic density writes its legs as (e+, e-, g).
+                let rep = &p.evals[0];
+                let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
+                    .iter()
+                    .map(|&id| p.model.particle(id).pdg_code)
+                    .collect();
                 assert_eq!(
-                    theirs == 0.0,
-                    ours == 0.0,
-                    "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                    final_pdg,
+                    [-11, 11, 21],
+                    "[{dir}] outgoing legs (e+, e-, g)"
                 );
-                if ours != 0.0 {
-                    passed += 1;
-                    worst = worst.max((ours / theirs - 1.0).abs());
-                    let q2 = (momenta[0] + momenta[1]).m2();
-                    q2_min = q2_min.min(q2);
-                    q2_max = q2_max.max(q2);
+                let integ = p.integ;
+                let n_final = integ.final_masses().len();
+                assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
+                assert!(
+                    integ.final_masses().iter().all(|&m| m == 0.0),
+                    "[{dir}] massless final state"
+                );
+                let alpha_s = integ
+                    .alpha_s_source()
+                    .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
+                let s = density.s;
+                let prefactor = p.spin_color_avg / (2.0 * s);
+                let point_ndim = integ.point_ndim();
+                let scale_draw = integ.scale_draw_ndim();
+
+                // The analytic density's integrand without its phase-space weight, in
+                // GeV⁻² per unit dΦ₃: zero outside the cuts.
+                let value = |amp: &mut ScaleAwareAmplitude<f64>,
+                             scratch: &mut _,
+                             momenta: &[LorentzVector<f64>],
+                             u: &[f64]|
+                 -> f64 {
+                    let mut ext = integ.incoming().to_vec();
+                    ext.extend_from_slice(momenta);
+                    if !p.cuts.pass(&ext) {
+                        return 0.0;
+                    }
+                    let scales = integ
+                        .event_scales_at(momenta, 0, u)
+                        .expect("a per-event prescription")
+                        .expect("a scale at a point that passes the cuts");
+                    amp.set_alpha_s(alpha_s.eval(scales.mu_r));
+                    prefactor * amp.eval_m2(&ext, scratch)
+                };
+
+                // The hand-assembled integrand against the crate's own, on flat RAMBO,
+                // where the map's weight is the constant massless volume.
+                let volume = s / (256.0 * std::f64::consts::PI.powi(3));
+                let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                let mut scratch = amp.scratch_space();
+                let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
+                let mut momenta = Vec::new();
+                let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
+                let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
+                for _ in 0..200_000 {
+                    let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
+                    let theirs = integ.event_in_channel(0, &u, &mut momenta);
+                    let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
+                    checked += 1;
+                    assert_eq!(
+                        theirs == 0.0,
+                        ours == 0.0,
+                        "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                    );
+                    if ours != 0.0 {
+                        passed += 1;
+                        worst = worst.max((ours / theirs - 1.0).abs());
+                        let q2 = (momenta[0] + momenta[1]).m2();
+                        q2_min = q2_min.min(q2);
+                        q2_max = q2_max.max(q2);
+                    }
                 }
-            }
-            assert!(
-                passed > 1000,
-                "[{dir}] {passed} flat points passed the cuts"
-            );
-            assert!(
-                worst < 1e-12,
-                "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
-            );
-            assert!(
-                density.q2_lo < q2_min && q2_max < density.q2_hi,
-                "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
+                assert!(
+                    passed > 1000,
+                    "[{dir}] {passed} flat points passed the cuts"
+                );
+                assert!(
+                    worst < 1e-12,
+                    "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
+                );
+                assert!(
+                    density.q2_lo < q2_min && q2_max < density.q2_hi,
+                    "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
                  the density's [{}, {}]",
-                density.q2_lo,
-                density.q2_hi
-            );
-            let flat_check = format!(
-                "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
+                    density.q2_lo,
+                    density.q2_hi
+                );
+                let flat_check = format!(
+                    "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
                  matches event_in_channel to {worst:.2e} worst relative; their m(ll)² spans \
                  [{q2_min:.2}, {q2_max:.1}] GeV²"
-            );
+                );
 
-            let analytic: Vec<DensityRead> = seeds
-                .par_iter()
-                .map(|&seed| {
-                    let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
-                    let mut scratch = amp.scratch_space();
-                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                    let mut u = vec![0.5; point_ndim];
-                    let mut acc = DensityRead::new(seed);
-                    for _ in 0..n_points {
-                        let (momenta, ps_weight) = density.draw(&mut rng);
-                        if scale_draw == 1 {
-                            u[point_ndim - 1] = rng.random::<f64>();
+                let analytic: Vec<DensityRead> = seeds
+                    .par_iter()
+                    .map(|&seed| {
+                        let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                        let mut scratch = amp.scratch_space();
+                        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                        let mut u = vec![0.5; point_ndim];
+                        let mut acc = DensityRead::new(seed);
+                        for _ in 0..n_points {
+                            let (momenta, ps_weight) = density.draw(&mut rng);
+                            if scale_draw == 1 {
+                                u[point_ndim - 1] = rng.random::<f64>();
+                            }
+                            let f = value(&mut amp, &mut scratch, &momenta, &u);
+                            acc.push(f * ps_weight * GEV2_TO_PB);
                         }
-                        let f = value(&mut amp, &mut scratch, &momenta, &u);
-                        acc.push(f * ps_weight * GEV2_TO_PB);
-                    }
-                    acc
-                })
-                .collect();
-            (analytic, flat_check)
-        });
+                        acc
+                    })
+                    .collect();
+                (analytic, flat_check)
+            });
         eprintln!("  check: {flat_check}");
 
         let frozen: Vec<DensityRead> = with_integrand(

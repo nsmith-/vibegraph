@@ -6,6 +6,10 @@
 
 * [gridpack-generate](sprint.md) - generate takes the integrate artifact plus generate-time inputs only: the run card split by stage, artifact version 13, a required --seed, and LHAPDF_DATA_PATH.
 
+## Sprint Record
+
+* [generate runs from the integrate artifact plus generate-time inputs](closeout.md) - generate <ARTIFACT> --seed S takes no proc card, run card or PDF option; the run card splits by stage into the artifact (version 13); the model is checked by digest; LHAPDF_DATA_PATH replaces VIBEGRAPH_PDF_DIR; event files byte-identical to the baseline.
+
 ## Directories
 
 * [sessions](sessions/index.md)

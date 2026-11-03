@@ -72,6 +72,14 @@ vg_say ">>> selecting banked files under $WORK_AREA"
     find "$proc/SubProcesses" -maxdepth 1 -type f -name results.dat 2>/dev/null || true
     find "$proc/SubProcesses" -maxdepth 2 -type f \
       \( -name leshouche.inc -o -name 'matrix[0-9]*_orig.f' \) 2>/dev/null || true
+    # The matched rows' channel forests and process characteristics, which
+    # validate_mlm_dumps parses beside the per-event dumps.
+    case "$proc" in
+      pp_to_llj_mlm|pp_to_llj_mlm_alps2|pp_to_llj_xqcut_only|pp_to_ll_0j2j_mlm|pp_to_ttx_0j1j_mlm)
+        find "$proc/SubProcesses" -maxdepth 2 -type f \
+          \( -name nexternal.inc -o -name configs.inc -o -name config_nqcd.inc \
+             -o -name config_subproc_map.inc \) 2>/dev/null || true ;;
+    esac
     # Per-channel integration logs: where MadGraph prints the alpha_s source rule
     # and its own alpha_s at the scales the run evaluated.
     find "$proc/SubProcesses" -maxdepth 3 -type f -name 'run_*_log.txt' 2>/dev/null || true

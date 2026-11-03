@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod banked_lhe;
 pub mod leshouche;
 pub mod manifest;
 pub mod mg_graphs;

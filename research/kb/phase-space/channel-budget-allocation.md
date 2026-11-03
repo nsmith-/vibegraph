@@ -46,15 +46,19 @@ integrand `h_j = f/g` the rule reads `N_j ∝ α_j · sd(h_j)`.
 The α split is not naive: Kleiss–Pittau adaptation sets `α_j` from a variance
 survey, so it is most of a variance estimate already. On `p p > l+ l- j`, `α_j`
 spans ~100× across 24 channels while `s_j/α_j` spans 2–4.5, and re-splitting a
-fixed budget by Neyman buys only 1.00–1.22× in variance (1.000 on
-`p p > e+ e-`'s four channels). Neyman pays against a **target**: the channels
-it feeds are the ones whose iterations disagree with themselves, and the
-stopping rule's consistency factor charges exactly those. On `p p > l+ l- j`
-at a 0.179% target over 8 seeds it took 2.94M evaluations against 6.41M, and
-the seed-to-seed spread of the spend narrowed from 2.75M–12.4M to 1.97M–4.26M,
-with σ agreeing in both arms. These readings predate channel merging
-([phase-space/channel-set](channel-set.md)): `p p > l+ l- j` integrates 6
-channels and `p p > e+ e-` one.
+fixed budget by Neyman was measured at 1.00–1.22× in variance (1.000 on
+`p p > e+ e-`'s four channels), with channel terms combined by point count, a
+combine since found biased low under Neyman; under the plain mean, fixed-budget
+Neyman has not been shown to beat the α split (on `bbx_to_ccx_emmm_qcd0` it
+costs variance × time 1.84e-14 against 1.44e-14). Neyman pays against a
+**target**: the channels it feeds are the ones whose iterations disagree with
+themselves, and the stopping rule's consistency factor charges exactly those.
+On `p p > l+ l- j` (6 channels after merging, [phase-space/channel-set](channel-set.md))
+at a 0.179% target over 20 paired seeds it takes 1.49M evaluations (1.20–1.80M)
+against 1.58M (1.32–2.04M), fewer on 15 of 20 seeds (paired t +2.26), with σ
+agreeing in both arms ([floor-bound-neyman C1](../sprints/floor-bound-neyman/sessions/C1-report.md)).
+The 2.94M against 6.41M measured before merging and before the pooled stop
+factor no longer holds.
 
 ## Coverage floors
 
@@ -78,7 +82,7 @@ region is how a multichannel integral becomes confidently wrong.
 - `acceptance_j` is read from the channel's own **completed** iterations,
   never from the draws it sizes. Counting draws until enough are accepted was
   rejected: that count correlates with the iteration's own estimate, the bias
-  the point-count combination rule exists to avoid.
+  the plain-mean combination of a channel's iterations exists to avoid.
 - Where the cap binds, the coverage promise is not kept, and the run says so
   (`report_floor_correction`).
 
@@ -103,6 +107,15 @@ row fell from +3.82% to +0.46% and its over-seed χ²/dof from 13.5 to 0.33;
 `p p > l+ l- j`'s 512-accepted promise, which a draw-denominated floor misses by 2×, was met; wide
 rows went from 0–3 to 5–14 accepted points per channel per iteration. The
 cost: wide-row oracle runs spend about 2×, and the full `validate` run +1.9%.
+
+A floor that grows with the budget does not buy precision on the wide rows.
+Holding each channel to `max(512, ⌈512 · neval / 600 000⌉)` accepted points
+doubled every floor-held channel's points on `bbx_to_ccx_emmm_qcd0` at 1.2M,
+for 1.48× the run's points, and left the seed spread where the fixed floor
+leaves it (sd 3.41e-9 against 3.34e-9 pb over 20 paired seeds): the ~570
+floor-held channels carry about 2% of the quoted variance, and the excursions
+come from channels sized by their α share. The rule was measured and not
+kept ([scaling-floor S1](../sprints/scaling-floor/sessions/S1-report.md)).
 
 ## Neyman is handed the α split's own spend
 

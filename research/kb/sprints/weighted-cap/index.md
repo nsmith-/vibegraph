@@ -6,6 +6,10 @@
 
 * [The automatic WEIGHTED search reaches MadGraph's cap](sprint.md) - With no explicit orders, the lowest-WEIGHTED search runs up to (n_ext−2) × the largest WEIGHTED of any model interaction, as MadGraph's does, so a QED+NP vertex's diagrams are found.
 
+## Sprint Record
+
+* [The automatic WEIGHTED search reaches MadGraph's cap](closeout.md) - The search runs MadGraph's loop: start at get_minimum_WEIGHTED, step by one, cap at (n_ext−2) × the largest interaction WEIGHTED, no search for a top-level decay; four MadGraph rows pin counts and the bound each search accepts.
+
 ## Directories
 
 * [sessions](sessions/index.md)

@@ -1,0 +1,57 @@
+# MadGraph5 batch script: electroweak e+ e- j j production with no pT cut.
+# built-by: validation/madgraph/bank_seeded_sigma.sh (seeded sigma record only)
+#
+# The no-pT-cut regime of the electroweak l l j j spine: every jet and lepton
+# pT cut, every rapidity and every Delta-R cut is off, so the t-channel photon
+# and lepton lines are regulated only by mmjj = 4 GeV, mmll = 50 GeV and the
+# matrix element itself. Phase-space maps meet the gamma gamma -> l l corner and
+# the soft photon fractions there with nothing between them and the pole.
+#
+# The process is the one of the CMS card DYto2L-2Jets-EWK_Bin-MLL-50
+# (`p p > ell+ ell- j j QCD=0 QED=4 $ h`), reduced to what a generic reference
+# needs:
+#
+#   - one massless lepton flavour (e), where the CMS card sums e, mu and tau;
+#   - `import model sm-no_b_mass` for a five-flavour p and j (the restriction
+#     sets MB = ymb = 0, so b and b~ join both multiparticles), where the CMS
+#     card loads loop_sm-ckm_no_b_mass with its own param card: the CKM matrix
+#     stays diagonal and the SM default card is used unchanged;
+#   - the CMS card's `$ h`, kept. With massless electrons and quarks no tree
+#     diagram of this final state carries a Higgs line, so it removes nothing
+#     here; it is kept so that the process line is the CMS one.
+#
+# The run card (pp_to_epemjj_qcd0_run_card.dat) is pp_to_ll_0j2j_mlm's with
+# matching off and the cuts of the CMS card: 13 TeV, lhaid 247000 (LO,
+# alpha_s(MZ) = 0.130), dynamical_scale_choice = -1 with fixed_fac_scale =
+# False, so the kT-clustering scale and MadEvent's 2 GeV floor on mu_F apply;
+# ptj = ptl = 0, etaj = etal = -1, drjj = drll = drjl = 0, mmjj = 4,
+# mmll = 50; maxjetflavor = 5, so the mmjj cut reaches b pairs as in the CMS
+# card. vector_size = 1 and systematics_program = none stay as in the MLM card.
+import model sm-no_b_mass
+generate p p > e+ e- j j QCD=0 QED=4 $ h
+output pp_to_epemjj_qcd0 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set lhaid 247000
+  set pdlabel lhapdf
+  set fixed_ren_scale False
+  set fixed_fac_scale False
+  set dynamical_scale_choice -1
+  set ickkw 0
+  set xqcut 0
+  set auto_ptj_mjj False
+  set maxjetflavor 5
+  set asrwgtflavor 5
+  set ptj 0
+  set ptl 0
+  set etaj -1
+  set etal -1
+  set drjj 0
+  set drll 0
+  set drjl 0
+  set mmjj 4
+  set mmll 50
+  set vector_size 1
+  set systematics_program none
+  done

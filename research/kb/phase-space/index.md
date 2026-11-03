@@ -12,7 +12,7 @@
 * [Massive RAMBO](rambo.md) - The Kleiss–Stirling–Ellis massive RAMBO map and weight, its F-generic signature, and the uniforms-replay oracle that pins it.
 * [Breit–Wigner, massless-pole and forced-resonance maps for timelike invariants](resonance-and-pole-maps.md) - BW tan substitution, the logarithmic map for zero-width poles with its floor, ForcedResonances windows for decay chains (union over pairings), and how MadEvent's setgrid/cut_bw differ.
 * [Soft-shaped 2-body split angle (SoftSplit) with energy floors](soft-shaped-split-angle.md) - Draws a split's angle from the parent's flight direction with density ∝ 1/(E₁E₂) inside cut-implied energy floors: the z(1−z) structure, the map, reciprocity, and where it fires.
-* [The multi-rung t-channel spine](t-channel-spine.md) - Spacelike lines nest into an ordered rung chain of peripheral 2-body steps: the logarithmic t map and its Jacobian, beam anchoring, flat fallback, multi-body spines, and the ordering firing test.
+* [The multi-rung t-channel spine](t-channel-spine.md) - Spacelike lines nest into an ordered rung chain of peripheral 2-body steps: the logarithmic t map and its Jacobian, the remainder mixture, beam anchoring, flat fallback, multi-body spines, and the ordering firing test.
 * [The VEGAS integrator: grid adaptation, damping, adapt and frozen phases](vegas-integrator.md) - VegasGrid's Lepage importance grid, the damping exponent (1.5 raw, 0.5 on mapped multichannel integrands), adapt vs sample_frozen, serialisation, and what VEGAS+ would add.
 
 ## Caveat
@@ -38,7 +38,7 @@
 * [Phase-space map choices: --map-* flags, the auto rules and the measurements behind them](map-choices.md) - MapOptions/MapChoices (split angle, τ map, rung order); auto = soft-all / MadEvent's τ rule (1/τ², log τ under a whole-state resonance) / derived order, banked in the artifact; why those are the defaults, from 20-seed evaluations-to-0.1%.
 * [One VEGAS grid per multichannel term](per-channel-vegas-grids.md) - Each channel gets its own frozen grid in its own map coordinates as MadEvent does, so errors and w_max are per channel; absolute grid coordinates are designed, not built.
 * [Counter-based RNG substreams and thread-count-independent integration](rng-substreams-and-parallel-determinism.md) - ChaCha8 addressed by (stream, position) replaces RANMAR; each chunk seeks its substream by global point index and reduces in point order, so -j changes wall time, never a bit of the artifact.
-* [Regulate massless t-channel transfers with a cut-implied spacelike floor](spacelike-floor.md) - Where cuts imply a floor ((max single-leg pT cut)²), bound each rung's t_max at −floor and keep a token pole; elsewhere use the flat fallback. With the before/after σ that decided it.
+* [Regulate massless t-channel transfers with a cut-implied spacelike floor](spacelike-floor.md) - Every spine rung draws against a pole floored at 1e-3 of a scale: the cut-implied floor ((max single-leg pT cut)²) where the cuts imply one, which also bounds each rung's t_max at −floor, and DEFAULT_POLE_SCALE (1e3 GeV²) otherwise, with the window whole. With the before/after σ that decided the bound.
 * [VEGAS iterations combine by unweighted mean after a warm-up](vegas-iteration-combination.md) - Lepage's 1/σ² iteration weighting correlates weights with estimates and biases σ low at small budgets; default is the arithmetic mean with warm-up 2, InverseVariance kept for goldens.
 
 ## Physics Convention

@@ -35,7 +35,8 @@ external parameter the card names: [^code-params]
 
 - the card's value becomes the parameter's **default**, whether zero or not;
 - a parameter set to exactly **zero** is also **locked** (`ParameterSet::zeros`): a later
-  param card cannot revive it, and `dependents()` reports nothing downstream of it.
+  param card cannot revive it (`integrate --param-card` refuses a card that tries), and
+  `dependents()` reports nothing downstream of it.
 
 This is MadGraph's semantics. MadGraph assigns every external the card names
 (`model_reader.set_parameters_and_couplings`) and writes those values into the
@@ -104,9 +105,15 @@ not a single coupling inside a surviving one.
   that form, and each variant's card is applied at load (`ufo::sm::sm_model`).
 - The restriction is baked in before the model digest is taken, so the card contributes
   to [model identity](model-identity-digest.md) through its effect, not its text.
-- Every CLI run computes at the selected restriction's values: there is no param-card
-  option yet ([backlog](../backlog/feature/cli-has-no-param-card-option.md)). The
-  library binds a separate card through `EvaluatedModel::from_model_card`.
+- A CLI run computes at the selected restriction's values unless `integrate
+  --param-card` binds a card (`ufo::bind::bind_card`, through
+  `EvaluatedModel::from_model_card`). The binding refuses a non-zero value for a
+  locked parameter rather than ignoring it, and refuses a card that moves one
+  parameter of a group MadGraph's restriction merges
+  (`detect_identical_parameters`: same block, defaults equal up to sign, not 0, 1 or a
+  width; `ParameterSet::merged`) without the others. The artifact records the
+  parameters the card moved, and `generate` rebinds from that record
+  ([run inputs](../pipeline/run-inputs-in-the-artifact.md) §1).
 
 ## Evidence on a non-SM model
 

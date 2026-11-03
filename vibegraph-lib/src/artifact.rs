@@ -26,12 +26,40 @@ use crate::vegas::{GridRule, VegasGrid};
 /// the PDF set and member by LHAPDF id, with the SHA-256 of every PDF file the
 /// integration parsed. A version-13 file names its PDF set but records no
 /// checksum, so a generation could not tell whether the densities it reads are
-/// the ones the grid was trained on, and [`OLDEST_READABLE_VERSION`] is this
-/// version.
-pub const FORMAT_VERSION: u32 = 14;
+/// the ones the grid was trained on.
+///
+/// `15` records the systematics request typed
+/// ([`crate::generate::Systematics`]): the variations MadGraph's module would
+/// compute, with every default filled in, in place of the card's text for
+/// them. A version-14 file recorded the fields' values but not whether the
+/// card wrote `systematics_arguments` on a line of its own, and MadGraph reads
+/// the request from that list or from the `sys_*` fields according to exactly
+/// that, so a version-14 file cannot be upgraded.
+///
+/// `16` banks the pair order ([`PairOrder`](crate::phasespace::maps::PairOrder))
+/// among the map choices, and the α floor the survey's weights were raised to
+/// ([`IntegrateArtifact::alpha_floor`]). A version-15 file has neither field, so
+/// it cannot decode into this shape.
+///
+/// `17` changes which phase-space map a stored channel grid is replayed
+/// through: a peripheral diagram's channel is built on its t-channel spine
+/// whether or not the run card gives a fiducial scale, with the spine's
+/// massless poles floored at a default scale when it does not. A version-16
+/// file integrated with no spacelike floor holds grids adapted to other maps:
+/// the all-timelike tree for a final state past two legs (a decay chain and an
+/// on-shell-veto run included), an unfloored pole for a `2 → 2` exchange. Its
+/// `(group, diagram)` keys and grid dimensions match the new channels', so it
+/// would replay silently against maps it was not trained on. The same version
+/// adds [`IntegrateArtifact::channel_map_digest`], which a generation compares
+/// against the maps it rebuilds, so a later change to which map a channel
+/// gets (its topology, poles, floors, transfer bounds) refuses the artifacts
+/// trained on the old maps without a version bump. A change to how a map
+/// with an unchanged key draws or weighs a point is invisible to it and still
+/// needs one. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 17;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 14;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 17;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -65,11 +93,6 @@ pub enum ArtifactError {
     },
     #[error("zstd (de)compression failed: {0}")]
     Zstd(io::Error),
-    #[error(
-        "the artifact records {count} model parameter(s) moved off the model's defaults, and \
-         this build binds none from an artifact"
-    )]
-    MovedParams { count: usize },
 }
 
 /// One file a run read, by its name in the set directory, and the lowercase-hex
@@ -109,10 +132,11 @@ pub struct MovedParam {
 /// What an integration read besides its cards: the parton densities and the
 /// model parameters that differ from the model's defaults.
 ///
-/// No integration binds a parameter card yet, so `params` is empty in every
-/// artifact this build writes, and one that is not is refused on writing and on
-/// reading: a reader that dropped the list would replay the grid at the wrong
-/// parameter point.
+/// `params` is the only record of the parameter card an integration bound
+/// (`ufo::bind::bind_card`): every external parameter whose value differs from
+/// the restricted model's default, in the model's external order. A run with no
+/// card, an empty card or a card restating the defaults records none.
+/// `ufo::bind::bind_recorded` rebinds the model from it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunInputs {
     pub pdf: PdfInput,
@@ -125,13 +149,6 @@ impl RunInputs {
         RunInputs {
             pdf,
             params: Vec::new(),
-        }
-    }
-
-    fn refuse_moved_params(&self) -> Result<(), ArtifactError> {
-        match self.params.len() {
-            0 => Ok(()),
-            count => Err(ArtifactError::MovedParams { count }),
         }
     }
 }
@@ -356,6 +373,33 @@ pub struct IntegrateArtifact {
     /// needs the rule to sample. `None` is an artifact whose channels were
     /// trained by no VEGAS grid; no writer produces one yet.
     pub grid_rule: Option<GridRule>,
+    /// The floor the α survey's selection weights were raised to before the
+    /// grids were trained, or `None` for weights installed as surveyed.
+    /// Recorded for provenance: the channels' [`ChannelGrid::alpha`] are the
+    /// weights as installed, which is all a replay reads.
+    pub alpha_floor: Option<f64>,
+    /// [`channel_map_digest`] of the channels the grids were trained through,
+    /// in [`channels`](Self::channels) order. A generation recomputes it from
+    /// the channels it rebuilds and refuses a mismatch: equal `(group, diagram)`
+    /// keys and grid dimensions do not make two maps the same function. The
+    /// key encodes a map's parameters, not the code that samples it.
+    pub channel_map_digest: String,
+}
+
+/// SHA-256 over every channel's
+/// [`DiagramChannel::map_key`](crate::phasespace::DiagramChannel::map_key), in
+/// channel order, each key terminated by a newline. A key is printable ASCII
+/// with no newline, so the encoding is injective on the ordered list: no
+/// reordering or re-splitting of keys gives the same bytes.
+pub fn channel_map_digest<S: AsRef<str>>(keys: &[S]) -> String {
+    let mut bytes = Vec::new();
+    for key in keys {
+        let key = key.as_ref();
+        debug_assert!(!key.contains('\n'), "a map key holds a newline: {key:?}");
+        bytes.extend_from_slice(key.as_bytes());
+        bytes.push(b'\n');
+    }
+    crate::ufo::identity::digest_bytes(&bytes)
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -387,7 +431,6 @@ impl IntegrateArtifact {
                 expected: FORMAT_VERSION,
             });
         }
-        self.inputs.refuse_moved_params()?;
         if !force && path.exists() {
             return Err(ArtifactError::AlreadyExists {
                 path: path.display().to_string(),
@@ -424,7 +467,6 @@ impl IntegrateArtifact {
         match header.format_version {
             FORMAT_VERSION => {
                 let artifact: Self = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
-                artifact.inputs.refuse_moved_params()?;
                 Ok((artifact, sha256))
             }
             found => Err(ArtifactError::UnsupportedVersion {
@@ -483,14 +525,22 @@ mod tests {
             neval: 1000,
             niter: 2,
             seed: 42,
-            run_card: RunCard::default().split().0,
-            generate: RunCard::default().split().1,
+            run_card: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .0,
+            generate: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .1,
             channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            channel_map_digest: channel_map_digest(&["n=2;T"]),
+            alpha_floor: Some(crate::phasespace::DEFAULT_ALPHA_FLOOR),
         }
     }
 
@@ -539,6 +589,7 @@ mod tests {
         assert_eq!(card(&reloaded), card(&artifact));
         assert!(reloaded.run_card.get("nevents").is_none());
         assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
+        assert_eq!(reloaded.alpha_floor, artifact.alpha_floor);
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
@@ -796,21 +847,69 @@ mod tests {
         path
     }
 
-    /// A version-13 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records no
-    /// checksum of the PDF files it was integrated with.
+    /// A version-14 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode. Version 16 holds
+    /// grids trained through maps this build no longer builds for the same
+    /// keys; version 15 does not record the pair order its grids were trained
+    /// under; version 14 records the systematics fields' values but not whether
+    /// the card wrote `systematics_arguments`, which decides MadGraph's request;
+    /// version 13 records no checksum of its PDF files.
     #[test]
-    fn a_version_13_artifact_is_refused() {
-        let dir = scratch_dir("v13");
-        let path = stamped(&sample_artifact(), &dir, 13);
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        for version in [13, 14, 15, 16] {
+            let path = stamped(&sample_artifact(), &dir, version);
+            let err = IntegrateArtifact::read_from_path(&path).expect_err("an older file");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::UnsupportedVersion {
+                        found,
+                        oldest: 17,
+                        expected: 17
+                    } if found == version
+                ),
+                "{err}"
+            );
+        }
+        let path = stamped(&sample_artifact(), &dir, 14);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-16 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 16's real shape: every field of this
+    /// build's but the trailing `channel_map_digest`, so its grids sit at the
+    /// same offsets a version-17 reader would decode them from. Its grids were
+    /// adapted to channel maps that version 17 builds differently for the same
+    /// `(group, diagram)` keys.
+    #[test]
+    fn a_version_16_artifact_is_refused() {
+        let dir = scratch_dir("v16");
+        let artifact = sample_artifact();
+        let mut raw = bincode::serialize(&artifact).unwrap();
+        let digest_field = 8 + artifact.channel_map_digest.len();
+        let tail = raw.split_off(raw.len() - digest_field);
+        assert_eq!(
+            tail[8..],
+            *artifact.channel_map_digest.as_bytes(),
+            "the digest is the last field"
+        );
+        raw[..4].copy_from_slice(&16u32.to_le_bytes());
+        let path = dir.join("v16.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-16 file");
         assert!(
             matches!(
                 err,
                 ArtifactError::UnsupportedVersion {
-                    found: 13,
-                    oldest: 14,
-                    expected: 14
+                    found: 16,
+                    oldest: 17,
+                    expected: 17
                 }
             ),
             "{err}"
@@ -819,6 +918,21 @@ mod tests {
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The digest reads every key, in order, with each key's boundary: moving a
+    /// character across a boundary changes it.
+    #[test]
+    fn the_channel_map_digest_reads_order_and_boundaries() {
+        let d = |keys: &[&str]| channel_map_digest(keys);
+        assert_eq!(d(&["a", "b"]), d(&["a", "b"]));
+        assert_ne!(d(&["a", "b"]), d(&["b", "a"]));
+        assert_ne!(d(&["ab", "c"]), d(&["a", "bc"]));
+        assert_ne!(d(&["a"]), d(&["a", ""]));
+        assert_eq!(
+            d(&["a", "b"]),
+            crate::ufo::identity::digest_bytes(b"a\nb\n")
+        );
     }
 
     /// The fixed-energy record round-trips too, as `PdfInput::None`.
@@ -834,32 +948,32 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// A moved parameter is refused on writing, and on reading a file that
-    /// carries one, since nothing here binds it.
+    /// Moved parameters round-trip in order and bit for bit.
     #[test]
-    fn moved_parameters_are_refused_on_writing_and_reading() {
+    fn moved_parameters_round_trip() {
         let dir = scratch_dir("params");
         let mut artifact = sample_artifact();
-        artifact.inputs.params.push(MovedParam {
-            name: "MZ".to_string(),
-            block: "MASS".to_string(),
-            code: vec![23],
-            value: 91.0,
-        });
+        artifact.inputs.params = vec![
+            MovedParam {
+                name: "MZ".to_string(),
+                block: "MASS".to_string(),
+                code: vec![23],
+                value: 91.0 + f64::EPSILON * 64.0,
+            },
+            MovedParam {
+                name: "ymt".to_string(),
+                block: "YUKAWA".to_string(),
+                code: vec![6],
+                value: 250.0,
+            },
+        ];
         let path = dir.join("params.bin.zst");
-        let err = artifact.write_to_path(&path, true).unwrap_err();
-        assert!(
-            matches!(err, ArtifactError::MovedParams { count: 1 }),
-            "{err}"
-        );
-        assert!(!path.exists());
-
-        let raw = bincode::serialize(&artifact).unwrap();
-        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
-        let err = IntegrateArtifact::read_from_path(&path).unwrap_err();
-        assert!(
-            matches!(err, ArtifactError::MovedParams { count: 1 }),
-            "{err}"
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.inputs, artifact.inputs);
+        assert_eq!(
+            reloaded.inputs.params[0].value.to_bits(),
+            artifact.inputs.params[0].value.to_bits()
         );
         std::fs::remove_dir_all(&dir).ok();
     }

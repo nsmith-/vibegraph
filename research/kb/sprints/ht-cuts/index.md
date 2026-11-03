@@ -6,6 +6,10 @@
 
 * [ht-cuts](sprint.md) - Compile MadGraph's HT cuts (htjmin, htjmax, ihtmin, ihtmax) instead of refusing them, matching cuts.f's definitions, with σ validated on an HT-binned card.
 
+## Sprint Record
+
+* [MadGraph's HT cuts compiled](closeout.md) - htjmin, htjmax, ihtmin and ihtmax are compiled per cuts.f (htj over the jet class, iht adding the b class, no do_cuts gate); two HT-binned rows gate against MadGraph at pulls −0.35 and −0.05.
+
 ## Directories
 
 * [sessions](sessions/index.md)

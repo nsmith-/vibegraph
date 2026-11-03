@@ -13,13 +13,13 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L807-L809", title: "TODO.md entry T064"}
 ---
-`Strategy::Buffer` (`vibegraph-cli/src/generate.rs:97`) holds the whole sample in
+`Strategy::Buffer` (`vibegraph-lib/src/generate.rs:105`) holds the whole sample in
 memory and writes the weights (`IDWTUP = -4`). The file's header needs σ before
 any event is written, so streaming needs two passes. The first pass accumulates σ
 and the second regenerates the identical events and writes them. The hook for that
 is `EventSource::restart` (`vibegraph-lib/src/lhef/emit.rs:86`). Its contract
 requires every stream reseeded and every accumulator reset. Both implementations
-honour it (`generate.rs:601`, `:1670`), and the
+honour it (`emit_to`, `vibegraph-lib/src/generate.rs:734`), and the
 `restarting_the_source_replays_the_same_events` test pins it.
 
 This is not needed today: a 100k-event run buffers in about 42 MB. It becomes worth

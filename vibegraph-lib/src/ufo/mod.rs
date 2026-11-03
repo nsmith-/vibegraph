@@ -1,4 +1,5 @@
 pub(crate) mod ast_util;
+pub mod bind;
 pub(crate) mod color;
 pub(crate) mod couplings;
 pub(crate) mod expr;

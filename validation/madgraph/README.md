@@ -83,6 +83,16 @@ Committed reference files, each the output of one generator:
 | `higgs_window_reference.json` | `gen_higgs_window.sh` | the h → ττ pole window measurement |
 | `kt_cluster_dump_manifest.json` | `gen_kt_cluster_dumps.sh` | what the kT-clustering dumps are, and their checksums |
 
+**Rows at a moved parameter point** (`pp_to_ll_mz95` on `dy13_mz95_param_card.dat`,
+`ee_to_tth_ymt250` through its script's `set yukawa 6 250`) are fresh MadGraph runs
+at the card, banked as seeds by `bank_seeded_sigma.sh`. MadGraph's restriction
+fuses couplings that are equal at the restriction point, and evaluates the fused
+ones through the first whatever the card says; `check_coupling_fusion.py` runs
+MadGraph's own restriction (no generation) and checks that no fused pair splits,
+no removed coupling revives and no fixed parameter moves at each row's point.
+Run it before banking a new moved-parameter row, adding the row's point with
+`--point`.
+
 ## Regenerating
 
 One entry point, staged, over every generator here and in the sibling

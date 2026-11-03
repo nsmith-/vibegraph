@@ -46,7 +46,11 @@
 //! A ladder — several spacelike lines in one diagram — is the same construction
 //! repeated. Its spacelike lines nest, so they form an *ordered chain* of rungs,
 //! each emitting one blob against the running momentum transfer left by the rungs
-//! before it, which is what [`DiagramChannel::from_diagram_regulated`] builds. A
+//! before it, which is what [`DiagramChannel::from_diagram_regulated`] builds. The
+//! system each rung leaves behind, until the last, bounds no line of the diagram;
+//! its invariant `ŝ_i` is drawn from an even mixture of a flat and a `1/ŝ_i` map,
+//! the latter for the small momentum fraction a soft exchange further along the
+//! chain carries in (see [`Spine::rest_mixed`]). A
 //! chain importance-samples every spacelike propagator of the diagram; the
 //! all-timelike tree, which is what a derivation admitting only one rung falls
 //! back to, samples none of them and both under-covers the peripheral region and
@@ -74,17 +78,24 @@
 //! subsystem**, whose drawn invariant cancels against `ŝ` in the edge and puts it on
 //! either side of zero at the rounding scale.
 //!
-//! [`DiagramChannel::from_diagram_regulated`] therefore takes the **fiducial
-//! scale** the process's own transverse-momentum cuts imply and regulates each rung
-//! with it two ways. It bounds the transfer at `t ≤ −scale`, which is where the
-//! draw stops before reaching the degenerate edge and is also where the cuts stop
-//! accepting; and it floors the pole location at a small fraction of that scale, so
-//! a configuration whose window the bound cannot narrow still draws against a pole
-//! far above the cancellation noise. The floor moves only the sampling density —
-//! `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is unbiased
-//! for any non-negative value — while the bound narrows the channel's *support*,
-//! which [`Channel::density`] reports as an exact zero above the edge. A spine is
-//! built for a final state of more than two legs only when a scale is supplied.
+//! Every rung therefore draws against a **pole floor**: its propagator pole is
+//! raised to at least `POLE_FRACTION_OF_FIDUCIAL_SCALE` times a scale, so the
+//! log map is always on and its pole sits orders above the cancellation noise,
+//! whichever side of zero the edge lands on. The floor moves only the sampling
+//! density — `draw_t` and `t_measure` read the same `t_mass2`, so the estimator is
+//! unbiased for any non-negative value — and so it needs no justification from the
+//! cuts. The scale is the **fiducial scale** the process's own single-leg
+//! transverse-momentum cuts imply where they imply one, and the fixed
+//! `DEFAULT_POLE_SCALE` where they do not.
+//!
+//! The fiducial scale does a second job that the default never does: it **bounds**
+//! each rung's transfer at `t ≤ −scale`, which is where the cuts provably stop
+//! accepting. The bound narrows the channel's *support*, which
+//! [`Channel::density`] reports as an exact zero above the edge, so it is applied
+//! only from a scale the cuts guarantee ([`DiagramChannel::from_diagram_regulated`]);
+//! a run with no single-leg `pT` cut keeps the whole kinematic window. With the
+//! floor always on, a spine is built for every final state whose spacelike lines
+//! form a chain, cut or no cut.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
@@ -176,6 +187,11 @@ struct Branch<F: Real> {
     /// bounds (GeV) on the two daughters' CM energies admit. Installed by
     /// [`DiagramChannel::with_split_angles`].
     angle: AngleMap<F>,
+    /// Whether the split draws its two daughters' invariants in either order,
+    /// each with probability ½, rather than the left one first. Installed by
+    /// [`DiagramChannel::with_symmetric_pairs`] on the splits whose daughters
+    /// both carry a finite-width resonance.
+    either_first: bool,
 }
 
 impl<F: Real> Node<F> {
@@ -226,6 +242,11 @@ struct SpineRung<F: Real> {
     /// rung leaves behind, or zero for no bound. The blob's own bound lives on
     /// `emitted`; installed together by [`DiagramChannel::with_timelike_floors`].
     rest_floor: F,
+    /// Whether the remainder `R_i`'s invariant, where it bounds no line of the
+    /// diagram, is drawn from [`draw_rest`]'s mixture of a flat and a `1/ŝ_i`
+    /// map rather than flat alone. Set only on rungs before the last: the last
+    /// remainder is the recoil subsystem and carries its own resonance.
+    rest_mixed: bool,
 }
 
 /// A t-channel spine: the ordered chain of peripheral emissions a diagram's
@@ -272,7 +293,7 @@ impl<F: Real> Spine<F> {
 
     /// The propagator pole `R_i`'s invariant sits on. Only the last remainder is a
     /// timelike subsystem of the diagram — the earlier ones straddle the chain and
-    /// bound no line of their own, so their invariant is drawn flat.
+    /// bound no line of their own (see [`rest_mixed`](Self::rest_mixed)).
     fn rest_resonance(&self, i: usize) -> Option<Resonance<F>> {
         if i + 1 < self.rungs.len() {
             return None;
@@ -280,6 +301,44 @@ impl<F: Real> Spine<F> {
         match &self.recoil {
             Node::Branch(b) => b.resonance,
             Node::Leaf { .. } => None,
+        }
+    }
+
+    /// Whether `R_i`'s invariant is drawn from [`draw_rest`]'s mixture: a
+    /// remainder before the last rung, on a rung that asks for it.
+    ///
+    /// Every rung after `i` hangs off `R_i`, so `ŝ_i ≈ x_i ŝ_{i−1}` with `x_i` the
+    /// momentum fraction the exchange at rung `i + 1` carries in from beam `0`. A
+    /// soft exchange — a quasi-real photon, the lepton line of `γγ → ℓℓ` — puts
+    /// `|M|² ∝ 1/x_i` there, which a flat draw in `ŝ_i` thins by `ŝ_{i−1}/ŝ_i`;
+    /// where cuts keep the exchanges hard, a `1/ŝ_i` draw alone spends most of its
+    /// points where nothing passes. The mixture covers both.
+    fn rest_mixed(&self, i: usize) -> bool {
+        i + 1 < self.rungs.len() && self.rungs[i].rest_mixed
+    }
+
+    /// Draw `R_i`'s invariant on `[lo, hi]` from the uniform `x`: from
+    /// [`draw_rest`]'s mixture where [`rest_mixed`](Self::rest_mixed) asks for
+    /// it, otherwise from [`draw_invariant`] under
+    /// [`rest_resonance`](Self::rest_resonance). The walk and the density read
+    /// the matching measure from
+    /// [`rest_invariant_measure`](Self::rest_invariant_measure), so the two
+    /// cannot pick different maps.
+    fn draw_rest_invariant(&self, i: usize, lo: F, hi: F, x: F) -> F {
+        if self.rest_mixed(i) {
+            draw_rest(lo, hi, x)
+        } else {
+            draw_invariant(lo, hi, self.rest_resonance(i), x)
+        }
+    }
+
+    /// The measure `ds/dx` of [`draw_rest_invariant`](Self::draw_rest_invariant)
+    /// at `s`.
+    fn rest_invariant_measure(&self, i: usize, lo: F, hi: F, s: F) -> F {
+        if self.rest_mixed(i) {
+            rest_measure(lo, hi, s)
+        } else {
+            invariant_measure(lo, hi, self.rest_resonance(i), s)
         }
     }
 
@@ -357,7 +416,8 @@ pub struct DiagramChannel<F: Real> {
 
 impl<F: Real> DiagramChannel<F> {
     /// Build the channel from a diagram's propagator chain at CM energy `sqrt_s`,
-    /// with an unregulated spacelike pole.
+    /// with no fiducial scale: every peripheral rung keeps its whole kinematic
+    /// window and draws against the pole floor `DEFAULT_POLE_SCALE` implies.
     ///
     /// Outgoing-leg masses and each internal line's mass/width are read from
     /// `model`. The incoming legs are externals `0..n_in`: two beams, or on a
@@ -369,7 +429,8 @@ impl<F: Real> DiagramChannel<F> {
 
     /// [`from_diagram`](Self::from_diagram) with the peripheral rungs regulated at
     /// the process's own `fiducial_scale` (GeV², the largest single-leg `pT_min`
-    /// squared), so a massless exchanged line still gives a well-posed draw.
+    /// squared): each rung's transfer bounded at `t ≤ −fiducial_scale` and its pole
+    /// floored at a fraction of it. A scale of zero is [`from_diagram`](Self::from_diagram).
     ///
     /// A diagram with several spacelike lines is a ladder, and this decomposes it
     /// as the ordered chain of rungs those lines imply, each drawing its own `t`
@@ -389,7 +450,8 @@ impl<F: Real> DiagramChannel<F> {
     ///
     /// Nothing derives a cap this way — production admits every rung. It exists so
     /// the chain can be measured against a truncated map; at `max_rungs = 1` every
-    /// ladder falls back to the all-timelike tree.
+    /// ladder falls back to the all-timelike tree, and at `max_rungs = 0` every
+    /// diagram does.
     pub fn from_diagram_capped(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -403,20 +465,18 @@ impl<F: Real> DiagramChannel<F> {
     /// The shared construction, admitting a peripheral chain of at most `max_rungs`
     /// rungs and falling back to the all-timelike tree otherwise.
     ///
-    /// `fiducial_scale` regulates the collinear edge two ways at once. It bounds
-    /// each rung's transfer at `t ≤ −fiducial_scale`, the region a process's own
-    /// transverse-momentum cuts reject anyway, and it puts a token floor
-    /// `POLE_FRACTION_OF_FIDUCIAL_SCALE · fiducial_scale` under the propagator pole
-    /// so a configuration the bound cannot narrow still has a well-posed draw
-    /// rather than one whose pole sits on the transfer's own rounding noise. Both
-    /// enter `draw_t` and `t_measure` alike, so the pole floor reshapes the sampling
-    /// density and nothing else; the bound additionally narrows the channel's
-    /// support, which the density reports honestly as an exact zero above the edge.
+    /// Every rung's propagator pole is floored at `POLE_FRACTION_OF_FIDUCIAL_SCALE`
+    /// times a scale, so the draw is well posed rather than one whose pole sits on
+    /// the transfer's own rounding noise. The floor enters `draw_t` and `t_measure`
+    /// alike, so it reshapes the sampling density and nothing else, and it is on
+    /// whatever the cuts: the scale is `fiducial_scale` when that is positive and
+    /// `DEFAULT_POLE_SCALE` otherwise.
     ///
-    /// A scale of zero — a run with no active single-leg `pT` cut — leaves both off,
-    /// which for a final state of more than two legs means no spine is built at all:
-    /// the module docs record why an unregulated three-body spine is biased rather
-    /// than merely noisy.
+    /// A positive `fiducial_scale` — a run with an active single-leg `pT` cut —
+    /// additionally bounds each rung's transfer at `t ≤ −fiducial_scale`, the region
+    /// those cuts reject anyway. The bound narrows the channel's support, which the
+    /// density reports honestly as an exact zero above the edge. A scale of zero
+    /// leaves the support whole.
     fn from_diagram_with(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -470,23 +530,19 @@ impl<F: Real> DiagramChannel<F> {
 
         let subsystems: Vec<u64> = resonances.keys().copied().collect();
         // Spacelike lines are peripheral: they are decomposed as a chain of t-channel
-        // rungs rather than as an all-timelike tree. Past two outgoing legs the
-        // transfer's upper edge is a cancelling difference of drawn invariants, so
-        // the chain is built only when a fiducial scale keeps the draw clear of it.
-        let regulated = fiducial_scale > F::zero();
-        let chain =
-            if !spacelike.is_empty() && spacelike.len() <= max_rungs && (n_out == 2 || regulated) {
-                spine_chain(
-                    &spacelike,
-                    n_out,
-                    fiducial_scale,
-                    &masses,
-                    &subsystems,
-                    &resonances,
-                )
-            } else {
-                None
-            };
+        // rungs rather than as an all-timelike tree.
+        let chain = if !spacelike.is_empty() && spacelike.len() <= max_rungs {
+            spine_chain(
+                &spacelike,
+                n_out,
+                fiducial_scale,
+                &masses,
+                &subsystems,
+                &resonances,
+            )
+        } else {
+            None
+        };
         let topology = match chain {
             Some(spine) => ChannelTopology::Spine(spine),
             None => ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances)),
@@ -682,6 +738,7 @@ impl<F: Real> DiagramChannel<F> {
                 t_mass2: t_mass * t_mass,
                 t_max_cap: None,
                 rest_floor: F::zero(),
+                rest_mixed: false,
             }],
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
         };
@@ -701,7 +758,8 @@ impl<F: Real> DiagramChannel<F> {
     /// disjoint outgoing-leg slot set, an optional [`Resonance`] on its own
     /// invariant, and the mass of the spacelike propagator the rung's transfer sits
     /// on (width zero) — and `recoil` is what the chain leaves behind. Together they
-    /// must partition `0..masses.len()`.
+    /// must partition `0..masses.len()`. The remainders between rungs are drawn
+    /// flat, as [`with_flat_remainders`](Self::with_flat_remainders) leaves them.
     pub fn from_topology_ladder(
         sqrt_s: F,
         beam_masses: [F; 2],
@@ -749,6 +807,7 @@ impl<F: Real> DiagramChannel<F> {
                     t_mass2,
                     t_max_cap: None,
                     rest_floor: F::zero(),
+                    rest_mixed: false,
                 })
                 .collect(),
             recoil: build_node(recoil_mask, &masses, &subsystems, &resonances),
@@ -812,6 +871,12 @@ impl<F: Real> DiagramChannel<F> {
                     }
                     out.push(',');
                     key_scalar(rung.rest_floor, &mut out);
+                    // Written only when set: a chain whose remainders are all
+                    // flat, every single-rung chain among them, encodes exactly
+                    // as a chain with no such field.
+                    if rung.rest_mixed {
+                        out.push('M');
+                    }
                     out.push(',');
                     key_node(&rung.emitted, &mut out);
                     out.push(')');
@@ -990,6 +1055,59 @@ impl<F: Real> DiagramChannel<F> {
         self
     }
 
+    /// Draw the daughters of every split whose two daughters both carry a
+    /// finite-width resonance in either order, each with probability ½.
+    ///
+    /// The ordered draw puts the left daughter on its Breit–Wigner over
+    /// `[lo, (√s − μ_r)²]` and the right one over what the left leaves,
+    /// `[lo, (√s − √s_l)²]`. Where the parent sits below the sum of the two poles
+    /// (`H → ZZ*`), the right daughter cannot reach its pole while the left sits
+    /// on its own, so the configurations with the right daughter on shell lie in
+    /// the left one's Breit–Wigner tail, at a density orders of magnitude below
+    /// the one the matrix element asks for. Drawing either daughter first covers
+    /// both halves.
+    ///
+    /// The split's first coordinate picks the order (the left daughter first
+    /// below ½) and, rescaled to the unit interval, draws the first invariant;
+    /// the second coordinate draws the other, so the dimension is unchanged. The
+    /// density is the mean of the two orders' densities ([`either_order_measure`]),
+    /// so the weight stays the exact reciprocal of the density; where one order
+    /// alone already covered a configuration, the density there falls by at most
+    /// a factor 2.
+    pub(crate) fn with_symmetric_pairs(mut self) -> Self {
+        match &mut self.topology {
+            ChannelTopology::Timelike(root) => pair_branch(root),
+            ChannelTopology::Spine(spine) => {
+                for rung in &mut spine.rungs {
+                    pair_node(&mut rung.emitted);
+                }
+                pair_node(&mut spine.recoil);
+            }
+        }
+        self
+    }
+
+    /// How many splits of this channel have two daughters that both carry a
+    /// finite-width resonance: the splits
+    /// [`with_symmetric_pairs`](Self::with_symmetric_pairs) draws in either order.
+    pub(crate) fn resonant_pair_splits(&self) -> usize {
+        fn count<F: Real>(node: &Node<F>) -> usize {
+            match node {
+                Node::Leaf { .. } => 0,
+                Node::Branch(b) => count_branch(b),
+            }
+        }
+        fn count_branch<F: Real>(b: &Branch<F>) -> usize {
+            usize::from(resonant_pair(b)) + count(&b.left) + count(&b.right)
+        }
+        match &self.topology {
+            ChannelTopology::Timelike(root) => count_branch(root),
+            ChannelTopology::Spine(spine) => {
+                spine.rungs.iter().map(|r| count(&r.emitted)).sum::<usize>() + count(&spine.recoil)
+            }
+        }
+    }
+
     /// Reorder the peripheral chain's rungs, `order[i]` naming the rung that moves
     /// into position `i`. The blobs and the recoil are unchanged, so the resulting
     /// channel is a valid map over the same phase space — a *different* map, whose
@@ -1009,7 +1127,14 @@ impl<F: Real> DiagramChannel<F> {
                     "order repeats a rung"
                 );
             }
+            // The remainder mixture belongs to a position in the chain, not to a
+            // line: it is set on every rung but the last, whichever line that is.
+            let mixed = spine.rungs.iter().any(|r| r.rest_mixed);
             spine.rungs = order.iter().map(|&i| spine.rungs[i].clone()).collect();
+            let last = spine.rungs.len() - 1;
+            for (i, rung) in spine.rungs.iter_mut().enumerate() {
+                rung.rest_mixed = mixed && i < last;
+            }
         }
         self
     }
@@ -1030,11 +1155,40 @@ impl<F: Real> DiagramChannel<F> {
     ///
     /// Production always bounds where a fiducial scale exists. This exists so the
     /// bound's effect can be measured against the same channels without it, on the
-    /// same seeds, rather than against a differently-poled map.
-    pub(crate) fn without_transfer_bound(mut self) -> Self {
+    /// same seeds, rather than against a differently-poled map — and so a channel
+    /// floored from any pole scale `X` can be built without the bound, as
+    /// `from_diagram_regulated(.., X).without_transfer_bound()`, which at
+    /// `X = DEFAULT_POLE_SCALE` is the channel [`from_diagram`](Self::from_diagram)
+    /// builds.
+    pub fn without_transfer_bound(mut self) -> Self {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.t_max_cap = None;
+            }
+        }
+        self
+    }
+
+    /// Draw every straddling remainder's invariant flat instead of from
+    /// [`draw_rest`]'s mixture, leaving the channel otherwise unchanged: for
+    /// measuring the mixture against the flat draw on the same diagrams and seeds.
+    pub fn with_flat_remainders(mut self) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            for rung in &mut spine.rungs {
+                rung.rest_mixed = false;
+            }
+        }
+        self
+    }
+
+    /// Draw every straddling remainder from [`draw_rest`]'s mixture, as a chain
+    /// derived from a diagram does: for a hand-built ladder under test.
+    #[cfg(test)]
+    pub(crate) fn with_mixed_remainders(mut self) -> Self {
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            let last = spine.rungs.len() - 1;
+            for (i, rung) in spine.rungs.iter_mut().enumerate() {
+                rung.rest_mixed = i < last;
             }
         }
         self
@@ -1077,12 +1231,14 @@ impl<F: Real> DiagramChannel<F> {
                     t_mass2,
                     t_max_cap,
                     rest_floor,
+                    rest_mixed,
                 } in rungs
                 {
                     w.node(emitted);
                     w.real(*t_mass2);
                     w.option_real(*t_max_cap);
                     w.real(*rest_floor);
+                    w.word(u64::from(*rest_mixed));
                 }
                 w.node(recoil);
             }
@@ -1154,6 +1310,7 @@ impl IdentityWords {
             resonance,
             window,
             angle,
+            either_first,
         } = branch;
         self.node(left);
         self.node(right);
@@ -1189,6 +1346,7 @@ impl IdentityWords {
                 self.real(floors.1);
             }
         }
+        self.word(u64::from(*either_first));
     }
 }
 
@@ -1421,6 +1579,7 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         resonance,
         window: None,
         angle: AngleMap::Isotropic,
+        either_first: false,
     }))
 }
 
@@ -1533,6 +1692,29 @@ fn angle_node<F: Real>(
     }
 }
 
+/// Whether both daughters of `branch` are subsystems drawn on a finite-width
+/// Breit–Wigner.
+fn resonant_pair<F: Real>(branch: &Branch<F>) -> bool {
+    match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) => {
+            bw_scale(l.resonance).is_some() && bw_scale(r.resonance).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn pair_branch<F: Real>(branch: &mut Branch<F>) {
+    branch.either_first = resonant_pair(branch);
+    pair_node(&mut branch.left);
+    pair_node(&mut branch.right);
+}
+
+fn pair_node<F: Real>(node: &mut Node<F>) {
+    if let Node::Branch(b) = node {
+        pair_branch(b);
+    }
+}
+
 /// Append a scalar's exact `(mantissa, exponent, sign)` decomposition, so two keys
 /// compare equal only for bit-identical values.
 fn key_scalar<F: Real>(x: F, out: &mut String) {
@@ -1595,6 +1777,9 @@ fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
         key_scalar(e2, out);
         out.push_str("),");
     }
+    if branch.either_first {
+        out.push_str("E,");
+    }
     key_node(&branch.left, out);
     out.push(',');
     key_node(&branch.right, out);
@@ -1642,15 +1827,43 @@ fn spine_partition(momentum: &[i8], n_in: usize, n_ext: usize) -> (u64, u64) {
     (emitted, full & !emitted)
 }
 
-/// Fraction of the fiducial scale left under a bounded rung's propagator pole.
+/// Fraction of the pole scale left under a rung's propagator pole.
 ///
-/// The bound is what shapes the draw, so the pole only has to be far enough below
-/// the bound to leave the propagator map essentially bare `1/|t|` over the window,
-/// and far enough above the scale at which a massless transfer's upper edge is a
-/// cancelling difference of large quantities for the draw to be well posed at all
-/// on a configuration the bound could not narrow. Three orders below the bound sits
-/// between those.
+/// Where the scale is a fiducial bound, the bound is what shapes the draw, so the
+/// pole only has to be far enough below it to leave the propagator map essentially
+/// bare `1/|t|` over the window, and far enough above the scale at which a massless
+/// transfer's upper edge is a cancelling difference of large quantities for the
+/// draw to be well posed at all on a configuration the bound could not narrow.
+/// Three orders below the bound sits between those.
 const POLE_FRACTION_OF_FIDUCIAL_SCALE: f64 = 1e-3;
+
+/// The pole scale (GeV²) a rung is floored from when the cuts supply no fiducial
+/// scale, giving a pole floor of `POLE_FRACTION_OF_FIDUCIAL_SCALE` times this.
+///
+/// It is a sampling choice and never a bound: the floor moves the density the
+/// transfer is drawn from, not the support, so any positive value is unbiased and
+/// the value is chosen for variance. Measured as the relative per-draw variance of
+/// plain Monte Carlo over the production channel set (remainders on
+/// [`draw_rest`]'s mixture), eight seeds of `2·10⁶`, at scales `1`, `10²`, `10³`,
+/// `10⁴` and `10⁵ GeV²`:
+///
+/// * `u c → e⁺e⁻ u c` (`QCD = 0`, `√ŝ = 1 TeV`, `mmjj > 300`, `mmll > 50`):
+///   `1.04e3`, `606`, `433`, `355`, `784`;
+/// * `e⁺e⁻ → e⁺e⁻ µ⁺µ⁻` (`√ŝ = 500 GeV`, `mmll > 50`): `337`, `224`, `174`,
+///   `124`, `84`;
+/// * `u u → e⁺e⁻ u u` at the `γγ → ℓℓ` corner of a DY generation (`√ŝ = 1047 GeV`,
+///   `mℓℓ > 50`, quark `pT > 2 GeV`, `4·10⁵` draws): `620`, `356`, `273`, `664`,
+///   `2.4e3`, with the corner's own weight at `1.6e3` times the mean at `10³` and
+///   `9.9e3` at `10⁴` — a lepton line `0.66 GeV²` off shell there sits under a
+///   `10 GeV²` floor.
+///
+/// `10³ GeV²` — a pole floor of `1 GeV²` — costs the first two a factor of
+/// `1.2–1.4` against `10⁴` (the second `2.1` against its best, at `10⁵`) and
+/// gains the third `2.4` in variance and `6` in the corner's weight. Every
+/// scale's σ agreed with the others, and on the second process with flat RAMBO.
+/// The floor sits seven orders above a massless edge's rounding noise
+/// (`~4e-8 GeV²` at `ŝ = 2.5·10⁵ GeV²`).
+const DEFAULT_POLE_SCALE: f64 = 1e3;
 
 /// Order a diagram's spacelike lines into a chain of rungs, or report that they do
 /// not form one.
@@ -1679,19 +1892,25 @@ fn spine_chain<F: Real>(
         }
     }
     let bounded = fiducial_scale > F::zero();
-    let pole_floor = fiducial_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
+    let pole_scale = if bounded {
+        fiducial_scale
+    } else {
+        cast(DEFAULT_POLE_SCALE)
+    };
+    let pole_floor = pole_scale * cast(POLE_FRACTION_OF_FIDUCIAL_SCALE);
     let mut rungs = Vec::with_capacity(sides.len());
     let mut previous = 0u64;
-    for &(side, m2) in &sides {
+    for (i, &(side, m2)) in sides.iter().enumerate() {
         let blob = side & !previous;
         if blob == 0 {
             return None;
         }
         rungs.push(SpineRung {
             emitted: build_node(blob, masses, subsystems, resonances),
-            t_mass2: if bounded { m2.max(pole_floor) } else { m2 },
+            t_mass2: m2.max(pole_floor),
             t_max_cap: bounded.then(|| -fiducial_scale),
             rest_floor: F::zero(),
+            rest_mixed: i + 1 < sides.len(),
         });
         previous = side;
     }
@@ -1863,6 +2082,53 @@ fn log_scale<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>) -> Option<LogMap<
     })
 }
 
+/// Share of a straddling remainder's draw ([`draw_rest`]) spent on the `1/ŝ_i`
+/// map; the rest is flat.
+const REST_LOG_SHARE: f64 = 0.5;
+
+/// The `1/ŝ_i` map a straddling remainder's draw mixes in: [`log_scale`] under a
+/// massless zero-width pole, `None` where that map does not apply on `[lo, hi]`.
+fn rest_log_map<F: Real>(lo: F, hi: F) -> Option<Resonance<F>> {
+    let massless = Resonance {
+        mass: F::zero(),
+        width: F::zero(),
+    };
+    log_scale(lo, hi, Some(massless)).map(|_| massless)
+}
+
+/// Draw a straddling remainder's invariant from the mixture
+/// `p(s) = REST_LOG_SHARE · p_log(s) + (1 − REST_LOG_SHARE)/(hi − lo)` of the
+/// `1/ŝ_i` map and the flat one ([`Spine::rest_mixed`]); flat alone where the log
+/// map does not apply.
+///
+/// A defensive mixture: its density is at least each component's share of that
+/// component's, so its weight is at most `1/share` times either map's, and it
+/// costs at most that factor in variance against whichever suits the integrand.
+/// [`rest_measure`] is its `ds/dx`.
+fn draw_rest<F: Real>(lo: F, hi: F, x: F) -> F {
+    let Some(pole) = rest_log_map(lo, hi) else {
+        return draw_invariant(lo, hi, None, x);
+    };
+    let share: F = cast(REST_LOG_SHARE);
+    if x < share {
+        draw_invariant(lo, hi, Some(pole), x / share)
+    } else {
+        draw_invariant(lo, hi, None, (x - share) / (F::one() - share))
+    }
+}
+
+/// [`draw_rest`]'s measure `ds/dx` at `s`: the reciprocal of the mixture
+/// density, whichever component drew `s`.
+fn rest_measure<F: Real>(lo: F, hi: F, s: F) -> F {
+    let Some(pole) = rest_log_map(lo, hi) else {
+        return invariant_measure(lo, hi, None, s);
+    };
+    let share: F = cast(REST_LOG_SHARE);
+    let density = share / invariant_measure(lo, hi, Some(pole), s)
+        + (F::one() - share) / invariant_measure(lo, hi, None, s);
+    F::one() / density
+}
+
 /// The lower edge of an invariant draw over `[·, hi]`: the kinematic threshold
 /// `mu²`, raised to a cut-implied `floor` where one is installed.
 ///
@@ -1951,6 +2217,51 @@ fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> 
         };
     }
     hi - lo
+}
+
+/// The range a daughter subsystem's invariant is drawn over when its sibling
+/// has invariant mass `sibling` (the sibling's threshold `μ` when this daughter
+/// is drawn first, its drawn `√s` when second): `[lo, (√s − sibling)²]`, the
+/// lower edge raised to the daughter's cut-implied floor and the range narrowed
+/// to its forced window, with whether the window narrowed it.
+fn daughter_range<F: Real>(b: &Branch<F>, sqrt_s: F, sibling: F) -> (F, F, bool) {
+    let hi = (sqrt_s - sibling).powi(2);
+    windowed(draw_lo(b.mu, b.floor, hi), hi, b.window)
+}
+
+/// Map `x ∈ [0,1]` to a daughter's invariant over [`daughter_range`].
+fn draw_daughter<F: Real>(b: &Branch<F>, sqrt_s: F, sibling: F, x: F) -> F {
+    let (lo, hi, _) = daughter_range(b, sqrt_s, sibling);
+    draw_invariant(lo, hi, b.resonance, x)
+}
+
+/// The measure `ds_a ds_b / dx dy` of drawing daughter `a`'s invariant first,
+/// over the range `b`'s threshold leaves it, and then `b`'s over the range `s_a`
+/// leaves: the product of the two invariant measures, or infinity — density
+/// zero — where either invariant lies outside its forced window.
+fn ordered_pair_measure<F: Real>(a: &Branch<F>, b: &Branch<F>, sqrt_s: F, s_a: F, s_b: F) -> F {
+    let (lo, hi, narrowed) = daughter_range(a, sqrt_s, b.mu);
+    if outside_window(lo, hi, narrowed, s_a) {
+        return F::infinity();
+    }
+    let first = invariant_measure(lo, hi, a.resonance, s_a);
+    let (lo, hi, narrowed) = daughter_range(b, sqrt_s, s_a.sqrt());
+    if outside_window(lo, hi, narrowed, s_b) {
+        return F::infinity();
+    }
+    first * invariant_measure(lo, hi, b.resonance, s_b)
+}
+
+/// The measure of a split that draws its daughters `l` and `r` in either order
+/// with probability ½: the reciprocal of the mean of the two orders' densities,
+/// so a configuration only one order reaches keeps half that order's density,
+/// and one neither reaches reads infinity.
+fn either_order_measure<F: Real>(l: &Branch<F>, r: &Branch<F>, sqrt_s: F, sl: F, sr: F) -> F {
+    let two = F::one() + F::one();
+    let density = (F::one() / ordered_pair_measure(l, r, sqrt_s, sl, sr)
+        + F::one() / ordered_pair_measure(r, l, sqrt_s, sr, sl))
+        / two;
+    F::one() / density
 }
 
 /// The soft-emission angular map of a 2-body split: the decay angle `θ*` measured
@@ -2137,29 +2448,48 @@ fn sample_branch<F: Real>(
     let mu_l = branch.left.mu();
     let mu_r = branch.right.mu();
 
-    let sl = match &branch.left {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let hi = (sqrt_s - mu_r).powi(2);
-            let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+    let (sl, sr) = match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) if branch.either_first => {
             let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+            let y = u[*cursor + 1];
+            *cursor += 2;
+            let (sl, sr) = if x + x < F::one() {
+                let sl = draw_daughter(l, sqrt_s, mu_r, x + x);
+                (sl, draw_daughter(r, sqrt_s, sl.sqrt(), y))
+            } else {
+                let sr = draw_daughter(r, sqrt_s, mu_l, x + x - F::one());
+                (draw_daughter(l, sqrt_s, sr.sqrt(), y), sr)
+            };
+            *weight = *weight * either_order_measure(l, r, sqrt_s, sl, sr);
+            (sl, sr)
         }
-    };
-    let sqrt_sl = sl.sqrt();
-    let sr = match &branch.right {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let hi = (sqrt_s - sqrt_sl).powi(2);
-            let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
-            let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+        _ => {
+            let sl = match &branch.left {
+                Node::Leaf { mass, .. } => *mass * *mass,
+                Node::Branch(b) => {
+                    let hi = (sqrt_s - mu_r).powi(2);
+                    let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+                    let x = u[*cursor];
+                    *cursor += 1;
+                    let s = draw_invariant(lo, hi, b.resonance, x);
+                    *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+                    s
+                }
+            };
+            let sqrt_sl = sl.sqrt();
+            let sr = match &branch.right {
+                Node::Leaf { mass, .. } => *mass * *mass,
+                Node::Branch(b) => {
+                    let hi = (sqrt_s - sqrt_sl).powi(2);
+                    let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
+                    let x = u[*cursor];
+                    *cursor += 1;
+                    let s = draw_invariant(lo, hi, b.resonance, x);
+                    *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+                    s
+                }
+            };
+            (sl, sr)
         }
     };
     *weight = *weight * r2_factor(s, sqrt_s, sl, sr);
@@ -2287,21 +2617,32 @@ fn branch_jacobian<F: Real>(
     let sr = node_invariant(&branch.right, momenta, memo);
 
     let mut f = F::one();
-    if let Node::Branch(b) = &branch.left {
-        let hi = (sqrt_s - mu_r).powi(2);
-        let (lo, hi, narrowed) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
-        if outside_window(lo, hi, narrowed, sl) {
-            return F::infinity();
+    match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) if branch.either_first => {
+            let m = either_order_measure(l, r, sqrt_s, sl, sr);
+            if m.is_infinite() {
+                return m;
+            }
+            f = m;
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sl);
-    }
-    if let Node::Branch(b) = &branch.right {
-        let hi = (sqrt_s - sqrt_sl).powi(2);
-        let (lo, hi, narrowed) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
-        if outside_window(lo, hi, narrowed, sr) {
-            return F::infinity();
+        _ => {
+            if let Node::Branch(b) = &branch.left {
+                let hi = (sqrt_s - mu_r).powi(2);
+                let (lo, hi, narrowed) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+                if outside_window(lo, hi, narrowed, sl) {
+                    return F::infinity();
+                }
+                f = f * invariant_measure(lo, hi, b.resonance, sl);
+            }
+            if let Node::Branch(b) = &branch.right {
+                let hi = (sqrt_s - sqrt_sl).powi(2);
+                let (lo, hi, narrowed) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
+                if outside_window(lo, hi, narrowed, sr) {
+                    return F::infinity();
+                }
+                f = f * invariant_measure(lo, hi, b.resonance, sr);
+            }
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
     if !matches!(branch.angle, AngleMap::Isotropic) {
@@ -2565,7 +2906,6 @@ fn sample_spine<F: Real>(
             }
         };
         let sqrt_s_blob = s_blob.sqrt();
-        let rest_res = spine.rest_resonance(i);
         let s_rest = if spine.rest_is_composite(i) {
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
             let (lo, hi, _) = windowed(
@@ -2575,8 +2915,8 @@ fn sample_spine<F: Real>(
             );
             let x = u[*cursor];
             *cursor += 1;
-            let drawn = draw_invariant(lo, hi, rest_res, x);
-            *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
+            let drawn = spine.draw_rest_invariant(i, lo, hi, x);
+            *weight = *weight * spine.rest_invariant_measure(i, lo, hi, drawn);
             drawn
         } else {
             mu_rest * mu_rest
@@ -2691,7 +3031,7 @@ fn spine_jacobian<F: Real>(
             if outside_window(lo, hi, narrowed, s_rest) {
                 return F::infinity();
             }
-            f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
+            f = f * spine.rest_invariant_measure(i, lo, hi, s_rest);
         }
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
@@ -3992,6 +4332,7 @@ mod tests {
             ),
             ("transfer bound", base().with_fiducial_t_max(-400.0)),
             ("rung order", base().with_rung_order(&[1, 0])),
+            ("remainder mixture", base().with_mixed_remainders()),
             (
                 "blob floor",
                 base().with_timelike_floors(&|slots| if slots == 0b0011 { 25.0 } else { 0.0 }),
@@ -4291,6 +4632,67 @@ mod tests {
             }
         }
         assert!(spines > 0, "no t-channel spine built for u u~ > u u~");
+    }
+
+    /// The artifact's channel-map digest separates a spine from the all-timelike
+    /// tree on the same diagrams. `u u~ > u u~` built with the spine admitted and
+    /// with it capped at zero rungs gives the same channel count and the same
+    /// grid dimension per channel, which is everything the `(group, diagram)` key
+    /// check reads, so only the digest can tell the two sets apart.
+    #[test]
+    fn the_channel_map_digest_separates_a_spine_from_the_timelike_tree() {
+        use crate::artifact::channel_map_digest;
+        let m = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card("generate u u~ > u u~", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let diagrams: Vec<&Diagram> = sets.iter().flat_map(|s| s.diagrams.iter()).collect();
+        let build = |max_rungs: usize| -> Vec<DiagramChannel<f64>> {
+            diagrams
+                .iter()
+                .map(|d| DiagramChannel::from_diagram_capped(d, &ev, 500.0, 0.0, max_rungs))
+                .collect()
+        };
+        let spine = build(usize::MAX);
+        let timelike = build(0);
+        assert!(
+            spine
+                .iter()
+                .any(|c| matches!(c.topology, ChannelTopology::Spine(_))),
+            "no diagram of u u~ > u u~ was built on a spine"
+        );
+        assert!(timelike
+            .iter()
+            .all(|c| matches!(c.topology, ChannelTopology::Timelike(_))));
+        assert_eq!(spine.len(), timelike.len());
+        for (s, t) in spine.iter().zip(&timelike) {
+            assert_eq!(s.ndim(), t.ndim());
+        }
+
+        let keys = |chs: &[DiagramChannel<f64>]| -> Vec<String> {
+            chs.iter().map(DiagramChannel::map_key).collect()
+        };
+        let (spine_keys, timelike_keys) = (keys(&spine), keys(&timelike));
+        assert_eq!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&keys(&build(usize::MAX))),
+            "one build of the same maps gives one digest"
+        );
+        assert_ne!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&timelike_keys)
+        );
+        let mut reordered = spine_keys.clone();
+        reordered.reverse();
+        assert_ne!(
+            reordered, spine_keys,
+            "reversing the channels must reorder the keys"
+        );
+        assert_ne!(
+            channel_map_digest(&spine_keys),
+            channel_map_digest(&reordered),
+            "the digest reads the channel order"
+        );
     }
 
     // ── Diagram classification against the momentum-routing convention ──────────
@@ -4910,6 +5312,146 @@ mod tests {
         assert_ne!(
             zz_channel([[0, 1], [2, 3]], true).map_key(),
             zz_channel([[0, 1], [2, 3]], false).map_key()
+        );
+    }
+
+    /// `H → Z Z*` at rest: four massless legs as two Z pairs under a 125 GeV
+    /// parent, below the two poles' sum.
+    fn h_to_zz(symmetric: bool) -> DiagramChannel<f64> {
+        let ch = zz_like(125.0);
+        if symmetric {
+            ch.with_symmetric_pairs()
+        } else {
+            ch
+        }
+    }
+
+    fn zz_like(sqrt_s: f64) -> DiagramChannel<f64> {
+        let z = Some(z_resonance());
+        DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            vec![0.0; 4],
+            &[(vec![0, 1], z), (vec![2, 3], z)],
+        )
+    }
+
+    /// The configuration with the two pairs exchanged: the point the other draw
+    /// order reaches the way this one reaches `momenta`.
+    fn pairs_swapped(momenta: &[LorentzVector<f64>]) -> Vec<LorentzVector<f64>> {
+        vec![momenta[2], momenta[3], momenta[0], momenta[1]]
+    }
+
+    /// The either-order density is the mean of the two orders' densities, each
+    /// order computed by the ordered map itself — at the point, and at the point
+    /// with the pairs exchanged, which is where the ordered map draws the other
+    /// pair first. A density that counted one order only would read the ordered
+    /// map's value, which differs from the mean by orders of magnitude on the
+    /// half of the peak the ordered map leaves in a tail.
+    #[test]
+    fn an_either_order_split_has_the_mean_density_of_the_two_orders() {
+        let sym = h_to_zz(true);
+        let ordered = h_to_zz(false);
+        assert_eq!(sym.resonant_pair_splits(), 1);
+        let mut stream = SubStream::from_stream(0x5E77, 3);
+        let (mut first_left, mut largest_gain) = (0usize, 0.0_f64);
+        let n = 20_000;
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(sym.ndim());
+            let pt = sym.sample(&u);
+            let g = sym.density(&pt.momenta);
+            let mean =
+                0.5 * (ordered.density(&pt.momenta) + ordered.density(&pairs_swapped(&pt.momenta)));
+            // The exchanged configuration re-forms every subsystem sum in another
+            // order, so the two agree to rounding, not to the bit.
+            assert!(
+                (g - mean).abs() <= 1e-9 * mean,
+                "density {g:e} against the two orders' mean {mean:e}"
+            );
+            assert!(
+                (pt.weight * g - 1.0).abs() < 1e-9,
+                "weight {:e} is not the reciprocal of density {g:e}",
+                pt.weight
+            );
+            first_left += usize::from(u[0] < 0.5);
+            largest_gain = largest_gain.max(g / ordered.density(&pt.momenta));
+        }
+        // Either pair first, each half the time.
+        let frac = first_left as f64 / n as f64;
+        assert!((frac - 0.5).abs() < 0.02, "left first on {frac} of draws");
+        // The half the ordered map leaves in its first pair's tail.
+        assert!(
+            largest_gain > 100.0,
+            "the either-order map gains at most {largest_gain}x on the ordered map"
+        );
+    }
+
+    /// Drawing either order is a parametrisation of the same phase space: the
+    /// channel still integrates to the massless volume `V_4`, below the two
+    /// poles' sum and above it.
+    #[test]
+    fn an_either_order_split_keeps_the_phase_space_volume() {
+        for sqrt_s in [125.0, 500.0] {
+            let ch = zz_like(sqrt_s).with_symmetric_pairs();
+            let (mean, err) = mc_volume(&ch, 0x5E78, 1_000_000);
+            let analytic = massless_volume(sqrt_s, 4);
+            eprintln!("√s {sqrt_s}: V_4 = {mean:.6e} ± {err:.2e}, analytic {analytic:.6e}");
+            assert!(
+                (mean - analytic).abs() < 6.0 * err,
+                "√s {sqrt_s}: V_4 {mean:e} ± {err:e} against {analytic:e}"
+            );
+        }
+    }
+
+    /// A forced window on each pair holds in either order, and the density stays
+    /// the reciprocal of the weight with the windows' ranges read per order.
+    #[test]
+    fn an_either_order_split_respects_forced_windows() {
+        let ch = zz_channel([[0, 1], [2, 3]], true).with_symmetric_pairs();
+        let (lo, hi) = z_window();
+        let mut stream = SubStream::from_stream(0x5E79, 3);
+        for _ in 0..5_000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            for (i, j) in [(0, 1), (2, 3)] {
+                let s = pair_s(&pt.momenta, i, j);
+                assert!(
+                    s >= lo * (1.0 - 1e-9) && s <= hi * (1.0 + 1e-9),
+                    "{s} outside"
+                );
+            }
+            assert!((pt.weight * ch.density(&pt.momenta) - 1.0).abs() < 1e-9);
+        }
+    }
+
+    /// Only a split whose two daughters both carry a finite-width resonance is
+    /// drawn in either order: on any other channel the installer changes nothing,
+    /// and on one it does change, the map's identity and key say so.
+    #[test]
+    fn only_a_resonant_pair_is_drawn_in_either_order() {
+        let z = Some(z_resonance());
+        let single = DiagramChannel::from_topology_resonant(
+            500.0,
+            vec![0.0; 4],
+            &[(vec![0, 1], z), (vec![2, 3], None)],
+        );
+        assert_eq!(single.resonant_pair_splits(), 0);
+        let installed = single.clone().with_symmetric_pairs();
+        assert_eq!(installed.map_identity(), single.map_identity());
+        assert_eq!(installed.map_key(), single.map_key());
+        let mut stream = SubStream::from_stream(0x5E7A, 3);
+        for _ in 0..200 {
+            let u = stream.uniforms::<f64>(single.ndim());
+            let (a, b) = (single.sample(&u), installed.sample(&u));
+            assert_eq!(a.weight.to_bits(), b.weight.to_bits());
+        }
+        let pair = zz_like(500.0);
+        assert_ne!(
+            pair.clone().with_symmetric_pairs().map_identity(),
+            pair.map_identity()
+        );
+        assert_ne!(
+            pair.clone().with_symmetric_pairs().map_key(),
+            pair.map_key()
         );
     }
 }
