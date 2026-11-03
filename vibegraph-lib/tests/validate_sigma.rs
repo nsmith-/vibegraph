@@ -132,7 +132,7 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
-use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
+use vibegraph::phasespace::{parse_alpha_floor, AlphaAdaptation, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
@@ -1023,6 +1023,7 @@ fn with_integrand<R>(
         n_survey,
         n_adapt_iter,
         mmll_override,
+        Some(DEFAULT_ALPHA_FLOOR),
         |parts| f(parts.integ, parts.adaptation),
     )
 }
@@ -1041,7 +1042,10 @@ struct IntegrandParts<'p, 'a> {
     spin_color_avg: f64,
 }
 
-/// [`with_integrand`], handing `f` the integrand's inputs beside it.
+/// [`with_integrand`], handing `f` the integrand's inputs beside it, with every
+/// surveyed selection weight raised to `alpha_floor`, or installed as surveyed
+/// where it is `None` ([`FixedBeamIntegrand::set_alpha_floor`]).
+#[allow(clippy::too_many_arguments)]
 fn with_integrand_parts<R>(
     dir: &str,
     process: &str,
@@ -1049,6 +1053,7 @@ fn with_integrand_parts<R>(
     n_survey: usize,
     n_adapt_iter: usize,
     mmll_override: Option<f64>,
+    alpha_floor: Option<f64>,
     f: impl FnOnce(&IntegrandParts) -> R,
 ) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
@@ -1127,6 +1132,7 @@ fn with_integrand_parts<R>(
     // production sampler `vibegraph integrate` drives — so the narrow electroweak
     // peaks that flat RAMBO under-samples converge. α is adapted to this process's
     // own |M|² on a survey substream disjoint from the integration seed.
+    integ.set_alpha_floor(alpha_floor);
     let report = (n_survey > 0)
         .then(|| integ.use_multichannel(&diagrams, &evaluated, n_survey, n_adapt_iter, seed))
         .flatten()
@@ -2099,6 +2105,10 @@ fn probe_2to6_density_decomposition() {
 ///   labelled `single`.
 /// * `VG_2TO6_WATCH`: comma list of channel indices whose own term, drawn and
 ///   accepted points are recorded per seed in the TSV's `watch` column.
+/// * `VG_2TO6_ALPHA_FLOOR`: a floor every surveyed selection weight is raised
+///   to before the integration, the set renormalised
+///   ([`FixedBeamIntegrand::set_alpha_floor`]), or `off` for the survey's
+///   weights as they came out; unset, [`DEFAULT_ALPHA_FLOOR`].
 /// * `VG_2TO6_OUT`: a TSV appended to, one line per finished seed and flushed,
 ///   so a killed run keeps what it measured. Columns: `row sampler alloc neval
 ///   niter seed sigma_pb err_pb wall_s points share_floor_bound watch`.
@@ -2275,6 +2285,10 @@ fn probe_2to6_budget_ladder() {
         .iter()
         .map(|s| parse_usize(s, "VG_2TO6_WATCH"))
         .collect();
+    let alpha_floor: Option<f64> = match std::env::var("VG_2TO6_ALPHA_FLOOR") {
+        Ok(s) => parse_alpha_floor(&s).unwrap_or_else(|e| panic!("VG_2TO6_ALPHA_FLOOR: {e}")),
+        Err(_) => Some(DEFAULT_ALPHA_FLOOR),
+    };
     let mut out = std::env::var("VG_2TO6_OUT").ok().map(|path| {
         let fresh = std::fs::metadata(&path)
             .map(|m| m.len() == 0)
@@ -2313,7 +2327,7 @@ fn probe_2to6_budget_ladder() {
 
     eprintln!(
         "ladder: rows {rows:?}, samplers {samplers:?}, allocations {:?}, {} seeds {seeds:?}, \
-         niter {niter}",
+         niter {niter}, alpha floor {alpha_floor:?}",
         allocations.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
         seeds.len(),
     );
@@ -2344,14 +2358,16 @@ fn probe_2to6_budget_ladder() {
                     for &seed in &seeds {
                         let seed_clock = Stopwatch::start();
                         let (sigma_pb, sigma_err_pb, points, share_floor_bound, watched) =
-                            with_integrand(
+                            with_integrand_parts(
                                 dir,
                                 &entry.process,
                                 seed,
                                 n_survey,
                                 n_adapt,
                                 None,
-                                |integ, _| {
+                                alpha_floor,
+                                |parts| {
+                                    let integ = parts.integ;
                                     let (per_channel, total, report) = integ.adapt_grids_budget(
                                         Budget::Fixed { neval, niter },
                                         allocation,
@@ -3294,123 +3310,124 @@ fn probe_fixed_density_llj_annihilation() {
             density.sqrt_s, density.q2_lo, density.q2_hi
         );
 
-        let (analytic, flat_check) = with_integrand_parts(dir, &process, SEED, 0, 0, None, |p| {
-            assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
-            // The analytic density writes its legs as (e+, e-, g).
-            let rep = &p.evals[0];
-            let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
-                .iter()
-                .map(|&id| p.model.particle(id).pdg_code)
-                .collect();
-            assert_eq!(
-                final_pdg,
-                [-11, 11, 21],
-                "[{dir}] outgoing legs (e+, e-, g)"
-            );
-            let integ = p.integ;
-            let n_final = integ.final_masses().len();
-            assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
-            assert!(
-                integ.final_masses().iter().all(|&m| m == 0.0),
-                "[{dir}] massless final state"
-            );
-            let alpha_s = integ
-                .alpha_s_source()
-                .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
-            let s = density.s;
-            let prefactor = p.spin_color_avg / (2.0 * s);
-            let point_ndim = integ.point_ndim();
-            let scale_draw = integ.scale_draw_ndim();
-
-            // The analytic density's integrand without its phase-space weight, in
-            // GeV⁻² per unit dΦ₃: zero outside the cuts.
-            let value = |amp: &mut ScaleAwareAmplitude<f64>,
-                         scratch: &mut _,
-                         momenta: &[LorentzVector<f64>],
-                         u: &[f64]|
-             -> f64 {
-                let mut ext = integ.incoming().to_vec();
-                ext.extend_from_slice(momenta);
-                if !p.cuts.pass(&ext) {
-                    return 0.0;
-                }
-                let scales = integ
-                    .event_scales_at(momenta, 0, u)
-                    .expect("a per-event prescription")
-                    .expect("a scale at a point that passes the cuts");
-                amp.set_alpha_s(alpha_s.eval(scales.mu_r));
-                prefactor * amp.eval_m2(&ext, scratch)
-            };
-
-            // The hand-assembled integrand against the crate's own, on flat RAMBO,
-            // where the map's weight is the constant massless volume.
-            let volume = s / (256.0 * std::f64::consts::PI.powi(3));
-            let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
-            let mut scratch = amp.scratch_space();
-            let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
-            let mut momenta = Vec::new();
-            let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
-            let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
-            for _ in 0..200_000 {
-                let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
-                let theirs = integ.event_in_channel(0, &u, &mut momenta);
-                let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
-                checked += 1;
+        let (analytic, flat_check) =
+            with_integrand_parts(dir, &process, SEED, 0, 0, None, None, |p| {
+                assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
+                // The analytic density writes its legs as (e+, e-, g).
+                let rep = &p.evals[0];
+                let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
+                    .iter()
+                    .map(|&id| p.model.particle(id).pdg_code)
+                    .collect();
                 assert_eq!(
-                    theirs == 0.0,
-                    ours == 0.0,
-                    "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                    final_pdg,
+                    [-11, 11, 21],
+                    "[{dir}] outgoing legs (e+, e-, g)"
                 );
-                if ours != 0.0 {
-                    passed += 1;
-                    worst = worst.max((ours / theirs - 1.0).abs());
-                    let q2 = (momenta[0] + momenta[1]).m2();
-                    q2_min = q2_min.min(q2);
-                    q2_max = q2_max.max(q2);
+                let integ = p.integ;
+                let n_final = integ.final_masses().len();
+                assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
+                assert!(
+                    integ.final_masses().iter().all(|&m| m == 0.0),
+                    "[{dir}] massless final state"
+                );
+                let alpha_s = integ
+                    .alpha_s_source()
+                    .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
+                let s = density.s;
+                let prefactor = p.spin_color_avg / (2.0 * s);
+                let point_ndim = integ.point_ndim();
+                let scale_draw = integ.scale_draw_ndim();
+
+                // The analytic density's integrand without its phase-space weight, in
+                // GeV⁻² per unit dΦ₃: zero outside the cuts.
+                let value = |amp: &mut ScaleAwareAmplitude<f64>,
+                             scratch: &mut _,
+                             momenta: &[LorentzVector<f64>],
+                             u: &[f64]|
+                 -> f64 {
+                    let mut ext = integ.incoming().to_vec();
+                    ext.extend_from_slice(momenta);
+                    if !p.cuts.pass(&ext) {
+                        return 0.0;
+                    }
+                    let scales = integ
+                        .event_scales_at(momenta, 0, u)
+                        .expect("a per-event prescription")
+                        .expect("a scale at a point that passes the cuts");
+                    amp.set_alpha_s(alpha_s.eval(scales.mu_r));
+                    prefactor * amp.eval_m2(&ext, scratch)
+                };
+
+                // The hand-assembled integrand against the crate's own, on flat RAMBO,
+                // where the map's weight is the constant massless volume.
+                let volume = s / (256.0 * std::f64::consts::PI.powi(3));
+                let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                let mut scratch = amp.scratch_space();
+                let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
+                let mut momenta = Vec::new();
+                let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
+                let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
+                for _ in 0..200_000 {
+                    let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
+                    let theirs = integ.event_in_channel(0, &u, &mut momenta);
+                    let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
+                    checked += 1;
+                    assert_eq!(
+                        theirs == 0.0,
+                        ours == 0.0,
+                        "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                    );
+                    if ours != 0.0 {
+                        passed += 1;
+                        worst = worst.max((ours / theirs - 1.0).abs());
+                        let q2 = (momenta[0] + momenta[1]).m2();
+                        q2_min = q2_min.min(q2);
+                        q2_max = q2_max.max(q2);
+                    }
                 }
-            }
-            assert!(
-                passed > 1000,
-                "[{dir}] {passed} flat points passed the cuts"
-            );
-            assert!(
-                worst < 1e-12,
-                "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
-            );
-            assert!(
-                density.q2_lo < q2_min && q2_max < density.q2_hi,
-                "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
+                assert!(
+                    passed > 1000,
+                    "[{dir}] {passed} flat points passed the cuts"
+                );
+                assert!(
+                    worst < 1e-12,
+                    "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
+                );
+                assert!(
+                    density.q2_lo < q2_min && q2_max < density.q2_hi,
+                    "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
                  the density's [{}, {}]",
-                density.q2_lo,
-                density.q2_hi
-            );
-            let flat_check = format!(
-                "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
+                    density.q2_lo,
+                    density.q2_hi
+                );
+                let flat_check = format!(
+                    "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
                  matches event_in_channel to {worst:.2e} worst relative; their m(ll)² spans \
                  [{q2_min:.2}, {q2_max:.1}] GeV²"
-            );
+                );
 
-            let analytic: Vec<DensityRead> = seeds
-                .par_iter()
-                .map(|&seed| {
-                    let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
-                    let mut scratch = amp.scratch_space();
-                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                    let mut u = vec![0.5; point_ndim];
-                    let mut acc = DensityRead::new(seed);
-                    for _ in 0..n_points {
-                        let (momenta, ps_weight) = density.draw(&mut rng);
-                        if scale_draw == 1 {
-                            u[point_ndim - 1] = rng.random::<f64>();
+                let analytic: Vec<DensityRead> = seeds
+                    .par_iter()
+                    .map(|&seed| {
+                        let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                        let mut scratch = amp.scratch_space();
+                        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                        let mut u = vec![0.5; point_ndim];
+                        let mut acc = DensityRead::new(seed);
+                        for _ in 0..n_points {
+                            let (momenta, ps_weight) = density.draw(&mut rng);
+                            if scale_draw == 1 {
+                                u[point_ndim - 1] = rng.random::<f64>();
+                            }
+                            let f = value(&mut amp, &mut scratch, &momenta, &u);
+                            acc.push(f * ps_weight * GEV2_TO_PB);
                         }
-                        let f = value(&mut amp, &mut scratch, &momenta, &u);
-                        acc.push(f * ps_weight * GEV2_TO_PB);
-                    }
-                    acc
-                })
-                .collect();
-            (analytic, flat_check)
-        });
+                        acc
+                    })
+                    .collect();
+                (analytic, flat_check)
+            });
         eprintln!("  check: {flat_check}");
 
         let frozen: Vec<DensityRead> = with_integrand(

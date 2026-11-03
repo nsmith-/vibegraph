@@ -176,6 +176,11 @@ struct Branch<F: Real> {
     /// bounds (GeV) on the two daughters' CM energies admit. Installed by
     /// [`DiagramChannel::with_split_angles`].
     angle: AngleMap<F>,
+    /// Whether the split draws its two daughters' invariants in either order,
+    /// each with probability ½, rather than the left one first. Installed by
+    /// [`DiagramChannel::with_symmetric_pairs`] on the splits whose daughters
+    /// both carry a finite-width resonance.
+    either_first: bool,
 }
 
 impl<F: Real> Node<F> {
@@ -990,6 +995,59 @@ impl<F: Real> DiagramChannel<F> {
         self
     }
 
+    /// Draw the daughters of every split whose two daughters both carry a
+    /// finite-width resonance in either order, each with probability ½.
+    ///
+    /// The ordered draw puts the left daughter on its Breit–Wigner over
+    /// `[lo, (√s − μ_r)²]` and the right one over what the left leaves,
+    /// `[lo, (√s − √s_l)²]`. Where the parent sits below the sum of the two poles
+    /// (`H → ZZ*`), the right daughter cannot reach its pole while the left sits
+    /// on its own, so the configurations with the right daughter on shell lie in
+    /// the left one's Breit–Wigner tail, at a density orders of magnitude below
+    /// the one the matrix element asks for. Drawing either daughter first covers
+    /// both halves.
+    ///
+    /// The split's first coordinate picks the order (the left daughter first
+    /// below ½) and, rescaled to the unit interval, draws the first invariant;
+    /// the second coordinate draws the other, so the dimension is unchanged. The
+    /// density is the mean of the two orders' densities ([`either_order_measure`]),
+    /// so the weight stays the exact reciprocal of the density; where one order
+    /// alone already covered a configuration, the density there falls by at most
+    /// a factor 2.
+    pub(crate) fn with_symmetric_pairs(mut self) -> Self {
+        match &mut self.topology {
+            ChannelTopology::Timelike(root) => pair_branch(root),
+            ChannelTopology::Spine(spine) => {
+                for rung in &mut spine.rungs {
+                    pair_node(&mut rung.emitted);
+                }
+                pair_node(&mut spine.recoil);
+            }
+        }
+        self
+    }
+
+    /// How many splits of this channel have two daughters that both carry a
+    /// finite-width resonance: the splits
+    /// [`with_symmetric_pairs`](Self::with_symmetric_pairs) draws in either order.
+    pub(crate) fn resonant_pair_splits(&self) -> usize {
+        fn count<F: Real>(node: &Node<F>) -> usize {
+            match node {
+                Node::Leaf { .. } => 0,
+                Node::Branch(b) => count_branch(b),
+            }
+        }
+        fn count_branch<F: Real>(b: &Branch<F>) -> usize {
+            usize::from(resonant_pair(b)) + count(&b.left) + count(&b.right)
+        }
+        match &self.topology {
+            ChannelTopology::Timelike(root) => count_branch(root),
+            ChannelTopology::Spine(spine) => {
+                spine.rungs.iter().map(|r| count(&r.emitted)).sum::<usize>() + count(&spine.recoil)
+            }
+        }
+    }
+
     /// Reorder the peripheral chain's rungs, `order[i]` naming the rung that moves
     /// into position `i`. The blobs and the recoil are unchanged, so the resulting
     /// channel is a valid map over the same phase space — a *different* map, whose
@@ -1154,6 +1212,7 @@ impl IdentityWords {
             resonance,
             window,
             angle,
+            either_first,
         } = branch;
         self.node(left);
         self.node(right);
@@ -1189,6 +1248,7 @@ impl IdentityWords {
                 self.real(floors.1);
             }
         }
+        self.word(u64::from(*either_first));
     }
 }
 
@@ -1421,6 +1481,7 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         resonance,
         window: None,
         angle: AngleMap::Isotropic,
+        either_first: false,
     }))
 }
 
@@ -1533,6 +1594,29 @@ fn angle_node<F: Real>(
     }
 }
 
+/// Whether both daughters of `branch` are subsystems drawn on a finite-width
+/// Breit–Wigner.
+fn resonant_pair<F: Real>(branch: &Branch<F>) -> bool {
+    match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) => {
+            bw_scale(l.resonance).is_some() && bw_scale(r.resonance).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn pair_branch<F: Real>(branch: &mut Branch<F>) {
+    branch.either_first = resonant_pair(branch);
+    pair_node(&mut branch.left);
+    pair_node(&mut branch.right);
+}
+
+fn pair_node<F: Real>(node: &mut Node<F>) {
+    if let Node::Branch(b) = node {
+        pair_branch(b);
+    }
+}
+
 /// Append a scalar's exact `(mantissa, exponent, sign)` decomposition, so two keys
 /// compare equal only for bit-identical values.
 fn key_scalar<F: Real>(x: F, out: &mut String) {
@@ -1594,6 +1678,9 @@ fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
         out.push(',');
         key_scalar(e2, out);
         out.push_str("),");
+    }
+    if branch.either_first {
+        out.push_str("E,");
     }
     key_node(&branch.left, out);
     out.push(',');
@@ -1953,6 +2040,51 @@ fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> 
     hi - lo
 }
 
+/// The range a daughter subsystem's invariant is drawn over when its sibling
+/// has invariant mass `sibling` (the sibling's threshold `μ` when this daughter
+/// is drawn first, its drawn `√s` when second): `[lo, (√s − sibling)²]`, the
+/// lower edge raised to the daughter's cut-implied floor and the range narrowed
+/// to its forced window, with whether the window narrowed it.
+fn daughter_range<F: Real>(b: &Branch<F>, sqrt_s: F, sibling: F) -> (F, F, bool) {
+    let hi = (sqrt_s - sibling).powi(2);
+    windowed(draw_lo(b.mu, b.floor, hi), hi, b.window)
+}
+
+/// Map `x ∈ [0,1]` to a daughter's invariant over [`daughter_range`].
+fn draw_daughter<F: Real>(b: &Branch<F>, sqrt_s: F, sibling: F, x: F) -> F {
+    let (lo, hi, _) = daughter_range(b, sqrt_s, sibling);
+    draw_invariant(lo, hi, b.resonance, x)
+}
+
+/// The measure `ds_a ds_b / dx dy` of drawing daughter `a`'s invariant first,
+/// over the range `b`'s threshold leaves it, and then `b`'s over the range `s_a`
+/// leaves: the product of the two invariant measures, or infinity — density
+/// zero — where either invariant lies outside its forced window.
+fn ordered_pair_measure<F: Real>(a: &Branch<F>, b: &Branch<F>, sqrt_s: F, s_a: F, s_b: F) -> F {
+    let (lo, hi, narrowed) = daughter_range(a, sqrt_s, b.mu);
+    if outside_window(lo, hi, narrowed, s_a) {
+        return F::infinity();
+    }
+    let first = invariant_measure(lo, hi, a.resonance, s_a);
+    let (lo, hi, narrowed) = daughter_range(b, sqrt_s, s_a.sqrt());
+    if outside_window(lo, hi, narrowed, s_b) {
+        return F::infinity();
+    }
+    first * invariant_measure(lo, hi, b.resonance, s_b)
+}
+
+/// The measure of a split that draws its daughters `l` and `r` in either order
+/// with probability ½: the reciprocal of the mean of the two orders' densities,
+/// so a configuration only one order reaches keeps half that order's density,
+/// and one neither reaches reads infinity.
+fn either_order_measure<F: Real>(l: &Branch<F>, r: &Branch<F>, sqrt_s: F, sl: F, sr: F) -> F {
+    let two = F::one() + F::one();
+    let density = (F::one() / ordered_pair_measure(l, r, sqrt_s, sl, sr)
+        + F::one() / ordered_pair_measure(r, l, sqrt_s, sr, sl))
+        / two;
+    F::one() / density
+}
+
 /// The soft-emission angular map of a 2-body split: the decay angle `θ*` measured
 /// from the parent's direction of flight in the collision CM, drawn with density
 /// `∝ 1/(E₁E₂)` in the daughters' CM energies, over the angles at which both
@@ -2137,29 +2269,48 @@ fn sample_branch<F: Real>(
     let mu_l = branch.left.mu();
     let mu_r = branch.right.mu();
 
-    let sl = match &branch.left {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let hi = (sqrt_s - mu_r).powi(2);
-            let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+    let (sl, sr) = match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) if branch.either_first => {
             let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+            let y = u[*cursor + 1];
+            *cursor += 2;
+            let (sl, sr) = if x + x < F::one() {
+                let sl = draw_daughter(l, sqrt_s, mu_r, x + x);
+                (sl, draw_daughter(r, sqrt_s, sl.sqrt(), y))
+            } else {
+                let sr = draw_daughter(r, sqrt_s, mu_l, x + x - F::one());
+                (draw_daughter(l, sqrt_s, sr.sqrt(), y), sr)
+            };
+            *weight = *weight * either_order_measure(l, r, sqrt_s, sl, sr);
+            (sl, sr)
         }
-    };
-    let sqrt_sl = sl.sqrt();
-    let sr = match &branch.right {
-        Node::Leaf { mass, .. } => *mass * *mass,
-        Node::Branch(b) => {
-            let hi = (sqrt_s - sqrt_sl).powi(2);
-            let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
-            let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
-            s
+        _ => {
+            let sl = match &branch.left {
+                Node::Leaf { mass, .. } => *mass * *mass,
+                Node::Branch(b) => {
+                    let hi = (sqrt_s - mu_r).powi(2);
+                    let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+                    let x = u[*cursor];
+                    *cursor += 1;
+                    let s = draw_invariant(lo, hi, b.resonance, x);
+                    *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+                    s
+                }
+            };
+            let sqrt_sl = sl.sqrt();
+            let sr = match &branch.right {
+                Node::Leaf { mass, .. } => *mass * *mass,
+                Node::Branch(b) => {
+                    let hi = (sqrt_s - sqrt_sl).powi(2);
+                    let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
+                    let x = u[*cursor];
+                    *cursor += 1;
+                    let s = draw_invariant(lo, hi, b.resonance, x);
+                    *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+                    s
+                }
+            };
+            (sl, sr)
         }
     };
     *weight = *weight * r2_factor(s, sqrt_s, sl, sr);
@@ -2287,21 +2438,32 @@ fn branch_jacobian<F: Real>(
     let sr = node_invariant(&branch.right, momenta, memo);
 
     let mut f = F::one();
-    if let Node::Branch(b) = &branch.left {
-        let hi = (sqrt_s - mu_r).powi(2);
-        let (lo, hi, narrowed) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
-        if outside_window(lo, hi, narrowed, sl) {
-            return F::infinity();
+    match (&branch.left, &branch.right) {
+        (Node::Branch(l), Node::Branch(r)) if branch.either_first => {
+            let m = either_order_measure(l, r, sqrt_s, sl, sr);
+            if m.is_infinite() {
+                return m;
+            }
+            f = m;
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sl);
-    }
-    if let Node::Branch(b) = &branch.right {
-        let hi = (sqrt_s - sqrt_sl).powi(2);
-        let (lo, hi, narrowed) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
-        if outside_window(lo, hi, narrowed, sr) {
-            return F::infinity();
+        _ => {
+            if let Node::Branch(b) = &branch.left {
+                let hi = (sqrt_s - mu_r).powi(2);
+                let (lo, hi, narrowed) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+                if outside_window(lo, hi, narrowed, sl) {
+                    return F::infinity();
+                }
+                f = f * invariant_measure(lo, hi, b.resonance, sl);
+            }
+            if let Node::Branch(b) = &branch.right {
+                let hi = (sqrt_s - sqrt_sl).powi(2);
+                let (lo, hi, narrowed) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
+                if outside_window(lo, hi, narrowed, sr) {
+                    return F::infinity();
+                }
+                f = f * invariant_measure(lo, hi, b.resonance, sr);
+            }
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
     if !matches!(branch.angle, AngleMap::Isotropic) {
@@ -4910,6 +5072,146 @@ mod tests {
         assert_ne!(
             zz_channel([[0, 1], [2, 3]], true).map_key(),
             zz_channel([[0, 1], [2, 3]], false).map_key()
+        );
+    }
+
+    /// `H → Z Z*` at rest: four massless legs as two Z pairs under a 125 GeV
+    /// parent, below the two poles' sum.
+    fn h_to_zz(symmetric: bool) -> DiagramChannel<f64> {
+        let ch = zz_like(125.0);
+        if symmetric {
+            ch.with_symmetric_pairs()
+        } else {
+            ch
+        }
+    }
+
+    fn zz_like(sqrt_s: f64) -> DiagramChannel<f64> {
+        let z = Some(z_resonance());
+        DiagramChannel::from_topology_resonant(
+            sqrt_s,
+            vec![0.0; 4],
+            &[(vec![0, 1], z), (vec![2, 3], z)],
+        )
+    }
+
+    /// The configuration with the two pairs exchanged: the point the other draw
+    /// order reaches the way this one reaches `momenta`.
+    fn pairs_swapped(momenta: &[LorentzVector<f64>]) -> Vec<LorentzVector<f64>> {
+        vec![momenta[2], momenta[3], momenta[0], momenta[1]]
+    }
+
+    /// The either-order density is the mean of the two orders' densities, each
+    /// order computed by the ordered map itself — at the point, and at the point
+    /// with the pairs exchanged, which is where the ordered map draws the other
+    /// pair first. A density that counted one order only would read the ordered
+    /// map's value, which differs from the mean by orders of magnitude on the
+    /// half of the peak the ordered map leaves in a tail.
+    #[test]
+    fn an_either_order_split_has_the_mean_density_of_the_two_orders() {
+        let sym = h_to_zz(true);
+        let ordered = h_to_zz(false);
+        assert_eq!(sym.resonant_pair_splits(), 1);
+        let mut stream = SubStream::from_stream(0x5E77, 3);
+        let (mut first_left, mut largest_gain) = (0usize, 0.0_f64);
+        let n = 20_000;
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(sym.ndim());
+            let pt = sym.sample(&u);
+            let g = sym.density(&pt.momenta);
+            let mean =
+                0.5 * (ordered.density(&pt.momenta) + ordered.density(&pairs_swapped(&pt.momenta)));
+            // The exchanged configuration re-forms every subsystem sum in another
+            // order, so the two agree to rounding, not to the bit.
+            assert!(
+                (g - mean).abs() <= 1e-9 * mean,
+                "density {g:e} against the two orders' mean {mean:e}"
+            );
+            assert!(
+                (pt.weight * g - 1.0).abs() < 1e-9,
+                "weight {:e} is not the reciprocal of density {g:e}",
+                pt.weight
+            );
+            first_left += usize::from(u[0] < 0.5);
+            largest_gain = largest_gain.max(g / ordered.density(&pt.momenta));
+        }
+        // Either pair first, each half the time.
+        let frac = first_left as f64 / n as f64;
+        assert!((frac - 0.5).abs() < 0.02, "left first on {frac} of draws");
+        // The half the ordered map leaves in its first pair's tail.
+        assert!(
+            largest_gain > 100.0,
+            "the either-order map gains at most {largest_gain}x on the ordered map"
+        );
+    }
+
+    /// Drawing either order is a parametrisation of the same phase space: the
+    /// channel still integrates to the massless volume `V_4`, below the two
+    /// poles' sum and above it.
+    #[test]
+    fn an_either_order_split_keeps_the_phase_space_volume() {
+        for sqrt_s in [125.0, 500.0] {
+            let ch = zz_like(sqrt_s).with_symmetric_pairs();
+            let (mean, err) = mc_volume(&ch, 0x5E78, 1_000_000);
+            let analytic = massless_volume(sqrt_s, 4);
+            eprintln!("√s {sqrt_s}: V_4 = {mean:.6e} ± {err:.2e}, analytic {analytic:.6e}");
+            assert!(
+                (mean - analytic).abs() < 6.0 * err,
+                "√s {sqrt_s}: V_4 {mean:e} ± {err:e} against {analytic:e}"
+            );
+        }
+    }
+
+    /// A forced window on each pair holds in either order, and the density stays
+    /// the reciprocal of the weight with the windows' ranges read per order.
+    #[test]
+    fn an_either_order_split_respects_forced_windows() {
+        let ch = zz_channel([[0, 1], [2, 3]], true).with_symmetric_pairs();
+        let (lo, hi) = z_window();
+        let mut stream = SubStream::from_stream(0x5E79, 3);
+        for _ in 0..5_000 {
+            let u = stream.uniforms::<f64>(ch.ndim());
+            let pt = ch.sample(&u);
+            for (i, j) in [(0, 1), (2, 3)] {
+                let s = pair_s(&pt.momenta, i, j);
+                assert!(
+                    s >= lo * (1.0 - 1e-9) && s <= hi * (1.0 + 1e-9),
+                    "{s} outside"
+                );
+            }
+            assert!((pt.weight * ch.density(&pt.momenta) - 1.0).abs() < 1e-9);
+        }
+    }
+
+    /// Only a split whose two daughters both carry a finite-width resonance is
+    /// drawn in either order: on any other channel the installer changes nothing,
+    /// and on one it does change, the map's identity and key say so.
+    #[test]
+    fn only_a_resonant_pair_is_drawn_in_either_order() {
+        let z = Some(z_resonance());
+        let single = DiagramChannel::from_topology_resonant(
+            500.0,
+            vec![0.0; 4],
+            &[(vec![0, 1], z), (vec![2, 3], None)],
+        );
+        assert_eq!(single.resonant_pair_splits(), 0);
+        let installed = single.clone().with_symmetric_pairs();
+        assert_eq!(installed.map_identity(), single.map_identity());
+        assert_eq!(installed.map_key(), single.map_key());
+        let mut stream = SubStream::from_stream(0x5E7A, 3);
+        for _ in 0..200 {
+            let u = stream.uniforms::<f64>(single.ndim());
+            let (a, b) = (single.sample(&u), installed.sample(&u));
+            assert_eq!(a.weight.to_bits(), b.weight.to_bits());
+        }
+        let pair = zz_like(500.0);
+        assert_ne!(
+            pair.clone().with_symmetric_pairs().map_identity(),
+            pair.map_identity()
+        );
+        assert_ne!(
+            pair.clone().with_symmetric_pairs().map_key(),
+            pair.map_key()
         );
     }
 }
