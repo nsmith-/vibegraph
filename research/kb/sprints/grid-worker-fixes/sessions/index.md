@@ -10,3 +10,4 @@
 ## Session Report
 
 * [G-F1 report: a PDF set on the data path is found with no home directory](G-F1-report.md) - Tiers.cache_root is optional; the cache and download tiers refuse with a named NoCacheRoot error, and CLI tests run as a user with no home directory pin both outcomes.
+* [G-F2 report: a quark line in a mixed-flavour group takes each member's quark](G-F2-report.md) - member_line_pdg assumed a group's members differ from the representative only by conjugation; a QCD group joins u and d. A line whose flavour a leg below it carries now takes the member's flavour of that leg. generate writes events on the quark-jet and the full-jet ttx cards, and the per-subprocess counts agree with separate integrations (chi2 3.90 / 7).

@@ -1488,6 +1488,95 @@ fn a_matched_sample_carries_its_mgrwt_record() {
     assert!(emitting > 0 && long_chains > 0 && flipped > 0);
 }
 
+/// `p p > t t~ j` with a quark-only `j`, matched under the `ttx` MLM row's
+/// card: a QCD matrix element does not see quark flavour, so one flavour group
+/// joins `g u > t t~ u` with `g d > t t~ d`, and generate names each member's own
+/// flavour on the group's `s`-channel quark line before it draws an event. The
+/// sample labels up- and down-type quarks alike and lists no status-2 line, since
+/// none of the process's timelike lines has a width.
+///
+/// It cannot see how often each subprocess is drawn: the budget buys a sample,
+/// not a split.
+#[test]
+fn a_quark_jet_top_pair_is_generated_across_a_mixed_flavour_group() {
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "a_quark_jet_top_pair_is_generated_across_a_mixed_flavour_group",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let proc_card = dir.join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\n\
+         define p = g u c d s u~ c~ d~ s~\n\
+         define j = u c d s u~ c~ d~ s~\n\
+         generate p p > t t~ j\n",
+    )
+    .unwrap();
+    let run_card = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/pp_to_ttx_0j1j_mlm_run_card.dat");
+    let out = dir.join("out");
+    let integrate = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .pdf_data_path(pdf_dir())
+        .args(["--fixed-budget", "--neval", "20000", "--niter", "3"])
+        .args(["--seed", SEED])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrate.status.success(),
+        "integrate failed:\n{}",
+        common::stderr_of(&integrate)
+    );
+    let lhe = dir.join("events.lhe");
+    let generate = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(out.join("grid.bin.zst"))
+        .pdf_data_path(pdf_dir())
+        .args(["--seed", SEED, "--nevents", "1000"])
+        .arg("-o")
+        .arg(&lhe)
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        generate.status.success(),
+        "generate failed:\n{}",
+        common::stderr_of(&generate)
+    );
+    let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our file parses");
+    assert_eq!(file.events.len(), 1000);
+    let mut quarks = BTreeSet::new();
+    for (i, event) in file.events.iter().enumerate() {
+        assert!(
+            event.particles.iter().all(|p| p.status != 2),
+            "event {i}: a status-2 line"
+        );
+        let jets: Vec<i32> = event
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_OUTGOING && p.pdg.abs() <= 4)
+            .map(|p| p.pdg)
+            .collect();
+        let [quark] = jets.as_slice() else {
+            panic!("event {i}: outgoing light quarks {jets:?}");
+        };
+        quarks.insert(*quark);
+    }
+    eprintln!("outgoing quarks labelled: {quarks:?}");
+    for q in [1, 2, -1, -2] {
+        assert!(quarks.contains(&q), "no event labelled with quark {q}");
+    }
+}
+
 /// A matched sample generated with MadGraph's default request and
 /// `--alps=0.5,1,2` (the arguments MadGraph's own card writes for a merged
 /// process): every weight re-evaluated from the written record and particles
