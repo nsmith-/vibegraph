@@ -66,6 +66,7 @@
 * [unequal-beams](unequal-beams/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)
 * [ux-mini-sprint](ux-mini-sprint/index.md)
+* [v02-cli-output](v02-cli-output/index.md)
 * [v3-backlog](v3-backlog/index.md)
 * [validation-2](validation-2/index.md)
 * [validation-3](validation-3/index.md)
