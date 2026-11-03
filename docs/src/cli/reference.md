@@ -161,6 +161,13 @@ Options:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
+      --alpha-floor <FLOOR>
+          Raise every channel's selection weight to at least this after the α-survey, and renormalise; `off` installs the survey's weights as they came out.
+          
+          A channel whose peak the survey's draws never reach measures no variance, and its weight falls geometrically over the survey to `1e-11` and below; the integration's rare points in that peak then carry a mixture density set by channels that do not follow it. A survey that leaves every weight above the floor installs its weights unchanged. The floor a run used is recorded in its artifact.
+          
+          [default: 1e-4]
+
       --seed <SEED>
           RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
 
@@ -205,6 +212,18 @@ Options:
           - auto
           - derived:  Outward from beam 0, as the diagram's spacelike lines nest
           - reversed: The same rungs in reverse — a control, not a recommendation
+          
+          [default: auto]
+
+      --map-pair-order <PAIR_ORDER>
+          The order a split whose two daughters both carry a finite-width resonance draws their invariants in.
+          
+          `auto` is `symmetric`: either daughter first with probability ½. `ordered` draws one daughter on its pole first, which below the two poles' sum (`H → ZZ*`) leaves the half of the peak with the other daughter on shell in a Breit–Wigner tail.
+
+          Possible values:
+          - auto
+          - ordered:   The left daughter first, on its pole
+          - symmetric: Either daughter first with probability ½
           
           [default: auto]
 

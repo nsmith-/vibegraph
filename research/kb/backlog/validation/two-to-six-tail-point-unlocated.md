@@ -18,4 +18,11 @@ test. Also open: why `uux` (the same topologies with massless u exchange)
 shows no such spread. One rarer tail remains on main: seed 55 at 1.2M, one
 point in channel 613, which is not floor-bound.
 
+The per-point half now exists on main's tree: `probe_2to6_tail_points`
+(`vibegraph-lib/src/hadronic/tail_probe.rs`) records and decomposes any
+channel's largest points, and seed 55's 613 point was an uncovered H → ZZ*
+half, fixed by the symmetric pair draw ([alpha-share-tails T1](../../sprints/alpha-share-tails/sessions/T1-report.md)).
+Channel 551's pooled tail index on main is 1.0–1.5 at the 2% threshold. The
+`784582d` attribution (#48 or #51) is still open.
+
 Filed at the close-out of [two-to-six-gate](../../sprints/two-to-six-gate/sprint.md).

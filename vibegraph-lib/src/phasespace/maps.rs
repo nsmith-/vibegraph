@@ -64,6 +64,20 @@ pub enum RungOrder {
     Reversed,
 }
 
+/// The order a split whose two daughters both carry a finite-width resonance
+/// draws their invariants in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PairOrder {
+    /// The left daughter first, on its Breit–Wigner, and the right over the range
+    /// the left leaves: the map of every artifact written before the choice was
+    /// banked. Below the two poles' sum (`H → ZZ*`) it covers only the half of
+    /// the parent's peak with the left daughter on shell.
+    Ordered,
+    /// Either daughter first with probability ½, the density the mean of the
+    /// two orders' ([`DiagramChannel::with_symmetric_pairs`]).
+    Symmetric,
+}
+
 /// What a caller asks of the maps: each choice named, or `None` for the rule in
 /// [`MapOptions::resolve`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,6 +85,7 @@ pub struct MapOptions {
     pub split_angle: Option<SplitAngle>,
     pub tau: Option<TauMap>,
     pub rung_order: Option<RungOrder>,
+    pub pair_order: Option<PairOrder>,
 }
 
 /// The maps a run integrates under, every choice settled. Banked in the
@@ -80,6 +95,7 @@ pub struct MapChoices {
     pub(crate) split_angle: SplitAngle,
     pub(crate) tau: TauMap,
     pub(crate) rung_order: RungOrder,
+    pub(crate) pair_order: PairOrder,
 }
 
 /// What the rule needs to know about a process to settle the choices: read off
@@ -91,6 +107,9 @@ pub struct ProcessShape {
     pub(crate) soft_emission_splits: usize,
     /// The longest peripheral chain any channel draws.
     pub(crate) max_rungs: usize,
+    /// Splits whose two daughters both carry a finite-width resonance, summed
+    /// over the channel set: the splits [`PairOrder`] decides.
+    pub(crate) resonant_pair_splits: usize,
     /// Whether any channel's diagram carries a finite-width s-channel resonance
     /// spanning the whole final state, whose peak then sits in the `τ` draw.
     pub(crate) whole_state_resonance: bool,
@@ -113,6 +132,7 @@ impl ProcessShape {
             shape.soft_emission_splits +=
                 channel.splits_selected(&DiagramChannel::<f64>::soft_emission_rule(emitters));
             shape.max_rungs = shape.max_rungs.max(channel.rung_count());
+            shape.resonant_pair_splits += channel.resonant_pair_splits();
             shape.whole_state_resonance |=
                 DiagramChannel::<f64>::has_whole_state_resonance(d, model);
         }
@@ -127,12 +147,14 @@ impl MapChoices {
         split_angle: SplitAngle::Isotropic,
         tau: TauMap::Log,
         rung_order: RungOrder::Derived,
+        pair_order: PairOrder::Ordered,
     };
 
     /// One diagram's phase-space channel under these choices: the regulated
     /// decomposition with the cut-implied timelike floors, each line a decay chain
     /// forces on shell confined to its `bwcutoff` window, the chosen angular map
-    /// on the splits it selects, and the chosen rung order. The one place a channel
+    /// on the splits it selects, the chosen rung order and the chosen pair order.
+    /// The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
     pub(crate) fn channel(
@@ -176,12 +198,16 @@ impl MapChoices {
                 channel.with_split_angles(&|_, _| Some(AngleShape::Soft), &energy_floor)
             }
         };
-        match self.rung_order {
+        let channel = match self.rung_order {
             RungOrder::Derived => channel,
             RungOrder::Reversed => {
                 let order: Vec<usize> = (0..channel.rung_count()).rev().collect();
                 channel.with_rung_order(&order)
             }
+        };
+        match self.pair_order {
+            PairOrder::Ordered => channel,
+            PairOrder::Symmetric => channel.with_symmetric_pairs(),
         }
     }
 
@@ -189,13 +215,15 @@ impl MapChoices {
     pub(crate) fn describe(&self, asked: &MapOptions) -> String {
         let how = |named: bool| if named { "" } else { " (auto)" };
         format!(
-            "split-angle {}{}, tau {}{}, rung-order {}{}",
+            "split-angle {}{}, tau {}{}, rung-order {}{}, pair-order {}{}",
             self.split_angle.name(),
             how(asked.split_angle.is_some()),
             self.tau.name(),
             how(asked.tau.is_some()),
             self.rung_order.name(),
             how(asked.rung_order.is_some()),
+            self.pair_order.name(),
+            how(asked.pair_order.is_some()),
         )
     }
 }
@@ -207,6 +235,7 @@ impl MapOptions {
             split_angle: Some(choices.split_angle),
             tau: Some(choices.tau),
             rung_order: Some(choices.rung_order),
+            pair_order: Some(choices.pair_order),
         }
     }
 
@@ -234,6 +263,14 @@ impl MapOptions {
     ///   propagators spanning the pair, stays on it.
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
+    /// * `pair_order`: [`PairOrder::Symmetric`]. The ordered draw leaves half of
+    ///   an `H → ZZ*` peak in a Breit–Wigner tail. On `b b~ > c c~ e+ e- mu+ mu-`
+    ///   (20 paired seeds, 600k and 1.2M evaluations, 8 iterations) points there
+    ///   carried most of the largest single-point weights, and the per-seed
+    ///   spread rose with budget, ×1.23. Under the symmetric order it falls,
+    ///   ×0.78 (1.888e-9 pb at 1.2M against 3.330e-9), with no point on that half
+    ///   above 1e-3 of its iteration. Where both daughters can sit on their poles
+    ///   the two orders' densities nearly coincide and the choice moves little.
     ///
     /// The ratios are evaluations measured on the M3 Max host off the 2026-09-23
     /// code, twenty seeds per arm at the banked rows' own cards, with the map
@@ -251,6 +288,7 @@ impl MapOptions {
                 TauMap::InverseSquare
             }),
             rung_order: self.rung_order.unwrap_or(RungOrder::Derived),
+            pair_order: self.pair_order.unwrap_or(PairOrder::Symmetric),
         }
     }
 }
@@ -287,6 +325,16 @@ impl RungOrder {
     }
 }
 
+impl PairOrder {
+    /// The flag spelling of the choice.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            PairOrder::Ordered => "ordered",
+            PairOrder::Symmetric => "symmetric",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +346,7 @@ mod tests {
             split_angle: SplitAngle::SoftAll,
             tau: TauMap::InverseSquare,
             rung_order: RungOrder::Derived,
+            pair_order: PairOrder::Symmetric,
         };
         assert_eq!(auto.resolve(&ProcessShape::default()), flipped);
         let resonant = ProcessShape {
@@ -314,6 +363,7 @@ mod tests {
         let with = ProcessShape {
             soft_emission_splits: 2,
             max_rungs: 1,
+            resonant_pair_splits: 3,
             whole_state_resonance: false,
         };
         assert_eq!(auto.resolve(&with), flipped);
@@ -359,6 +409,7 @@ mod tests {
             split_angle: SplitAngle::SoftAll,
             tau,
             rung_order: RungOrder::Derived,
+            pair_order: PairOrder::Symmetric,
         };
         let dy = resolve(
             "u u~ > e+ e-",
@@ -393,6 +444,20 @@ mod tests {
         );
         assert_eq!(ggg.0, choices(TauMap::InverseSquare));
         assert!(ggg.1.soft_emission_splits > 0);
+        assert_eq!(dy.1.resonant_pair_splits, 0);
+        // The s-channel `γ*/Z → W⁺W⁻` diagrams: two W pairs under one split.
+        let four = resolve(
+            "u u~ > e+ ve mu- vm~",
+            &[
+                (2, true),
+                (-2, true),
+                (-11, false),
+                (12, false),
+                (13, false),
+                (-14, false),
+            ],
+        );
+        assert!(four.1.resonant_pair_splits > 0);
     }
 
     #[test]
@@ -400,12 +465,14 @@ mod tests {
         let shape = ProcessShape {
             soft_emission_splits: 2,
             max_rungs: 2,
+            resonant_pair_splits: 1,
             whole_state_resonance: false,
         };
         let asked = MapOptions {
             split_angle: Some(SplitAngle::Isotropic),
             tau: Some(TauMap::InverseSquare),
             rung_order: None,
+            pair_order: Some(PairOrder::Ordered),
         };
         let choices = asked.resolve(&shape);
         assert_eq!(
@@ -414,6 +481,7 @@ mod tests {
                 split_angle: SplitAngle::Isotropic,
                 tau: TauMap::InverseSquare,
                 rung_order: RungOrder::Derived,
+                pair_order: PairOrder::Ordered,
             }
         );
         assert_eq!(
@@ -422,7 +490,8 @@ mod tests {
         );
         assert_eq!(
             choices.describe(&asked),
-            "split-angle isotropic, tau inverse-square, rung-order derived (auto)"
+            "split-angle isotropic, tau inverse-square, rung-order derived (auto), pair-order \
+             ordered"
         );
     }
 }

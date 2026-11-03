@@ -28,12 +28,17 @@ use crate::vegas::{GridRule, VegasGrid};
 /// them. A version-14 file recorded the fields' values but not whether the
 /// card wrote `systematics_arguments` on a line of its own, and MadGraph reads
 /// the request from that list or from the `sys_*` fields according to exactly
-/// that, so a version-14 file cannot be upgraded and
-/// [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 15;
+/// that, so a version-14 file cannot be upgraded.
+///
+/// `16` banks the pair order ([`PairOrder`](crate::phasespace::maps::PairOrder))
+/// among the map choices, and the α floor the survey's weights were raised to
+/// ([`IntegrateArtifact::alpha_floor`]). A version-15 file has neither field, so
+/// it cannot decode into this shape, and [`OLDEST_READABLE_VERSION`] is this
+/// version.
+pub const FORMAT_VERSION: u32 = 16;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 16;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -347,6 +352,11 @@ pub struct IntegrateArtifact {
     /// needs the rule to sample. `None` is an artifact whose channels were
     /// trained by no VEGAS grid; no writer produces one yet.
     pub grid_rule: Option<GridRule>,
+    /// The floor the α survey's selection weights were raised to before the
+    /// grids were trained, or `None` for weights installed as surveyed.
+    /// Recorded for provenance: the channels' [`ChannelGrid::alpha`] are the
+    /// weights as installed, which is all a replay reads.
+    pub alpha_floor: Option<f64>,
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -486,6 +496,7 @@ mod tests {
             chi2_per_dof: 1.02,
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
+            alpha_floor: Some(crate::phasespace::DEFAULT_ALPHA_FLOOR),
         }
     }
 
@@ -534,6 +545,7 @@ mod tests {
         assert_eq!(card(&reloaded), card(&artifact));
         assert!(reloaded.run_card.get("nevents").is_none());
         assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
+        assert_eq!(reloaded.alpha_floor, artifact.alpha_floor);
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
@@ -792,14 +804,15 @@ mod tests {
     }
 
     /// A version-14 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records the
-    /// systematics fields' values but not whether the card wrote
-    /// `systematics_arguments`, which decides MadGraph's request. Version 13,
-    /// which records no checksum of its PDF files, is refused the same way.
+    /// to re-integrate, however well its bytes would decode. Version 15 does
+    /// not record the pair order its grids were trained under; version 14
+    /// records the systematics fields' values but not whether the card wrote
+    /// `systematics_arguments`, which decides MadGraph's request; version 13
+    /// records no checksum of its PDF files.
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14] {
+        for version in [13, 14, 15] {
             let path = stamped(&sample_artifact(), &dir, version);
             let err = IntegrateArtifact::read_from_path(&path).expect_err("an older file");
             assert!(
@@ -807,8 +820,8 @@ mod tests {
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 15,
-                        expected: 15
+                        oldest: 16,
+                        expected: 16
                     } if found == version
                 ),
                 "{err}"

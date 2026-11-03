@@ -98,6 +98,22 @@ Its `gen_s` draw is flat for a zero pole. Doing it as an analytic map here
 does not depend on having a per-channel grid, and the channel density stays
 grid-free, which the mixture needs ([multichannel](multichannel.md)).
 
+## Two resonant daughters: either order
+
+A split whose two daughters both carry a finite-width resonance (H → ZZ*,
+Z → l l γ* with both legs resonant) draws either daughter first with
+probability ½, and its density is the mean of the two orders' densities.
+Drawing a fixed one first left the configuration with the *other* daughter
+near shell in the first one's Breit–Wigner tail, 10²–10⁵ below the covered
+half: on `bbx_to_ccx_emmm_qcd0` those points carried 85% of the 1.2M ladder's
+recorded tail, and seed 55's 1.18e-8 pb point fell ×203 under the symmetric
+draw. MadEvent instead splits such a config into one integration channel per
+on/off-shell assignment, cut at 5Γ, with a 1/s grid for the excluded
+resonance and a third both-off channel; the both-off region has no map here
+yet ([alpha-share-tails](../sprints/alpha-share-tails/sessions/F1-report.md),
+[MadEvent's split](../sprints/alpha-share-tails/sessions/madevent-hzz-coverage.md)).
+The order is a banked map choice (`PairOrder`, `--map-pair-order`).
+
 ## Forced resonances in decay chains
 
 A decay chain (`p p > t t~, t > w+ b, …`) forces its decay lines on shell

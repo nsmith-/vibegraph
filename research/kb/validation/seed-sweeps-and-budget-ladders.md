@@ -143,8 +143,12 @@ Worked cases:
   [sigma-row gating exceptions](sigma-row-gating-exceptions.md)). On `bbx` the
   1.2M rung shares the floor-held channels' draws with 600k, but giving those
   channels more points (Neyman, or a floor scaling with `neval`) left the spread
-  unchanged: the excess is a tail in a channel sized by its α share
-  ([bbx ladder excess in α-share tails](../backlog/validation/bbx-ladder-excess-in-alpha-share-tails.md)).
+  unchanged: the excess was a tail in a channel sized by its α share. It sat
+  on the half of the H → ZZ* peak no channel mapped (every H channel drew the
+  same Z pair first) and on Z → 4f peaks the α survey had starved. Drawing
+  each resonant daughter pair in either order and flooring α at `1e-4` took
+  the 20-paired-seed sd ratio from 1.227 to 0.708
+  ([alpha-share-tails F1](../sprints/alpha-share-tails/sessions/F1-report.md)).
 - A ladder's control is rerun on the tree being measured. The α survey moves
   at the last digit when unrelated code changes the arithmetic order, so a
   per-channel trace from another commit does not replay, and seeds that agree

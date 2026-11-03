@@ -292,6 +292,54 @@ pub(crate) fn kleiss_pittau_step<F: Real>(
     Some(raw)
 }
 
+/// The α floor the multichannel integrands install after the survey unless told
+/// otherwise ([`floored_alphas`]).
+///
+/// On `b b~ > c c~ e+ e- mu+ mu-` (615 channels, 20 paired seeds at 600k and
+/// 1.2M points per iteration) it took the per-seed σ spread's ratio across the
+/// doubling from 0.784 to 0.708, against the `1/√2` a heavy-tail-free estimator
+/// shows, with σ unmoved within its seed spread.
+pub const DEFAULT_ALPHA_FLOOR: f64 = 1e-4;
+
+/// Reads an α floor as a command line or a probe spells it: `off` (or `0`) for
+/// none, otherwise a number in `(0, 1)`.
+pub fn parse_alpha_floor(s: &str) -> Result<Option<f64>, String> {
+    let s = s.trim();
+    if s.eq_ignore_ascii_case("off") {
+        return Ok(None);
+    }
+    let floor: f64 = s
+        .parse()
+        .map_err(|_| format!("`{s}` is neither `off` nor a number"))?;
+    if floor == 0.0 {
+        Ok(None)
+    } else if floor > 0.0 && floor < 1.0 {
+        Ok(Some(floor))
+    } else {
+        Err(format!("an α floor lies in [0, 1), not {s}"))
+    }
+}
+
+/// `alphas` with every weight raised to at least `floor` and the set
+/// renormalised to sum to one, so a weight that sat on the floor ends a little
+/// below it; `None` where no weight lies below `floor`, so a caller installs
+/// the weights it has, bit for bit, rather than a renormalised copy an ulp away.
+///
+/// The α survey reallocates by each channel's measured variance share, and a
+/// channel whose peak the survey's own draws never reach measures none: its
+/// weight falls geometrically over the survey's iterations, to `1e-11` and
+/// below. Every point the integration draws there then carries a mixture density
+/// set by channels that do not follow that peak. A floor keeps such a channel
+/// in the mixture's denominator at a bounded cost to the others' weights.
+pub(crate) fn floored_alphas<F: Real>(alphas: &[F], floor: F) -> Option<Vec<F>> {
+    if !alphas.iter().any(|&a| a < floor) {
+        return None;
+    }
+    let raised: Vec<F> = alphas.iter().map(|&a| a.max(floor)).collect();
+    let total = raised.iter().fold(F::zero(), |acc, &a| acc + a);
+    Some(raised.iter().map(|&a| a / total).collect())
+}
+
 /// Panics unless `alphas` is a valid set of selection weights: each strictly
 /// positive, summing to `1` within `1e-9`.
 fn assert_normalized<F: Real>(alphas: &[F]) {
@@ -1028,6 +1076,35 @@ mod tests {
                 assert_eq!(a.pz(), b.pz());
             }
         }
+    }
+
+    /// A floor no weight lies below leaves the weights to the caller; one that
+    /// raises a weight renormalises the whole set.
+    #[test]
+    fn a_floor_renormalises_only_when_it_raises_a_weight() {
+        let alphas = [0.5, 0.25, 0.1875, 0.0625];
+        assert_eq!(floored_alphas(&alphas, 0.0625), None);
+        assert_eq!(floored_alphas(&alphas, 1e-4), None);
+
+        let raised = floored_alphas(&[0.75, 0.25 - 1e-6, 1e-6], 1e-2).expect("one weight raised");
+        let total = 0.75 + (0.25 - 1e-6) + 1e-2;
+        assert_eq!(
+            raised,
+            vec![0.75 / total, (0.25 - 1e-6) / total, 1e-2 / total]
+        );
+        assert!((raised.iter().sum::<f64>() - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn an_alpha_floor_reads_off_zero_or_a_fraction() {
+        assert_eq!(parse_alpha_floor("off"), Ok(None));
+        assert_eq!(parse_alpha_floor(" OFF "), Ok(None));
+        assert_eq!(parse_alpha_floor("0"), Ok(None));
+        assert_eq!(parse_alpha_floor("1e-4"), Ok(Some(DEFAULT_ALPHA_FLOOR)));
+        assert!(parse_alpha_floor("1").is_err());
+        assert!(parse_alpha_floor("-1e-4").is_err());
+        assert!(parse_alpha_floor("NaN").is_err());
+        assert!(parse_alpha_floor("none").is_err());
     }
 
     /// A channel's density is the exact reciprocal of the weight it assigns to a
