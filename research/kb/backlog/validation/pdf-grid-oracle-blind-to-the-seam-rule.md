@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "The LHAPDF grid oracle cannot see which band reads a Q² seam"
-description: "validate_pdf_grid probes NNPDF31_lo_as_0130 member 0, whose duplicated seam rows are bit-identical, so a member read through the wrong band at an interior seam passes it; the lower-band rule is pinned against LHAPDF only on synthetic bands."
+description: "validate_pdf_grid probes NNPDF31_lo member 0, whose seam rows are bit-identical, so a member read through the wrong band at an interior seam passes it."
 area: validation
 state: open
 priority: medium
