@@ -42,6 +42,8 @@ use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
 use vibegraph::runcard::EventNorm;
+use vibegraph::systematics::plan::resolve as resolve_systematics;
+use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_recorded;
 use vibegraph::ufo::UFOModel;
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
@@ -196,6 +198,14 @@ pub(crate) struct GenerateArgs {
         requires = "reweight_card"
     )]
     pub(crate) reweight_couplings: Option<Vec<String>>,
+
+    /// MadGraph systematics arguments, as one string, replacing the request
+    /// the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's
+    /// `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries
+    /// a weight per scale, PDF and αs variation, as MadGraph's systematics
+    /// module writes them. Needs an artifact integrated with `use_syst = T`.
+    #[arg(long, value_name = "ARGUMENTS", allow_hyphen_values = true)]
+    pub(crate) systematics: Option<String>,
 
     #[command(flatten)]
     pub(crate) parallel: ParallelArgs,
@@ -368,6 +378,25 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     if let Some(norm) = args.event_norm {
         settings.event_norm = norm.into();
     }
+    if let Some(text) = &args.systematics {
+        if parsed.is_decay() {
+            return Err(err(
+                "--systematics on a decay: MadGraph's systematics module refuses an explicit \
+                 request on a decay, which carries no parton density to vary",
+            ));
+        }
+        if !settings.systematics.enabled {
+            return Err(err(format!(
+                "--systematics: the events of {} are generated without use_syst = T, so they carry \
+                 no <mgrwt> record to reweight (MadGraph: \"The events have not been generated \
+                 with use_syst=True\"); re-integrate with use_syst = T",
+                args.artifact.display()
+            )));
+        }
+        let request = VariationRequest::from_command_line(text)
+            .map_err(|e| err(format!("systematics request refused at generate: {e}")))?;
+        settings.systematics.request = Some(request);
+    }
     if settings.nevents == 0 {
         return Err(err(match args.nevents {
             Some(_) => "no events requested: --nevents is 0".to_string(),
@@ -396,9 +425,23 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     } else {
         None
     };
+    let systematics = match (&pdf, &settings.systematics.request) {
+        (Some(central), Some(request)) if settings.systematics.enabled => {
+            let tiers = assets::pdf_tiers().map_err(err)?;
+            Some(
+                resolve_systematics(request, central, &tiers, &assets::pdf_fetch(network))
+                    .map_err(|e| err(format!("systematics request refused at generate: {e}")))?,
+            )
+        }
+        _ => None,
+    };
     let inputs = InputsRead {
         pdf: pdf.as_ref().map(|p| (p.input.clone(), p.tier)),
         grid_sha256,
+        systematics: systematics
+            .as_ref()
+            .map(|s| s.inputs().to_vec())
+            .unwrap_or_default(),
     };
     let assets = GenerateAssets {
         card: &parsed,
@@ -406,6 +449,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         evaluated: &evaluated,
         pdf: pdf.as_ref().map(|p| (&p.set, &p.member)),
         inputs: &inputs,
+        systematics: systematics.as_ref(),
     };
     let options = GenerateOptions {
         seed,

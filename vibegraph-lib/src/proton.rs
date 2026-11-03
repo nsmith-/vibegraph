@@ -92,7 +92,7 @@ use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
-use crate::coupling::cluster::rewgt::{rewgt, RewgtHistory};
+use crate::coupling::cluster::rewgt::{rewgt, Rewgt, RewgtHistory};
 use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
@@ -120,8 +120,8 @@ use crate::phasespace::diagram_channel::MapIdentity;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
-    identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap, RamboChannel,
-    ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
+    floored_alphas, identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap,
+    RamboChannel, ScaledChannel, ScaledMultiChannel, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB,
 };
 use crate::progress;
 use crate::runcard::RunCard;
@@ -1139,6 +1139,10 @@ pub struct ProtonEvent {
     /// propagators); `None` without matching and where the term carries no
     /// weight.
     pub(crate) group_records: Vec<[Option<MatchedRecord>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, the matched
+    /// clustering `rewgt` read, from which the drawn member's `<mgrwt>` record
+    /// is taken; `None` without matching and where the term carries no weight.
+    pub(crate) group_histories: Vec<[Option<RewgtHistory>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1188,6 +1192,9 @@ pub struct ProtonSelection {
     /// in place (the clustering of a mirrored term sees its own first parton on
     /// the first beam); `None` without matching.
     pub record: Option<MatchedRecord>,
+    /// Under matching, the drawn member's reweighting under the drawn
+    /// ordering, factor by factor, in clustering order; `None` without it.
+    pub rewgt: Option<Rewgt>,
     /// The drawn group's `|M|²` under the drawn ordering, as this integrand
     /// evaluated it for the point's value, at the term's own coupling: what any
     /// other evaluation of the event's member at the model's own parameters, at
@@ -1388,6 +1395,10 @@ pub struct ProtonIntegrand<'a> {
     /// The mean of the mixture estimator `f/g` over the last α-survey — that
     /// survey's estimate of the cross section — and zero before any survey.
     survey_mean: f64,
+    /// The floor every selection weight is raised to after the α survey
+    /// ([`floored_alphas`]), or `None` to install the survey's weights as they
+    /// came out.
+    alpha_floor: Option<f64>,
     /// Per flavour group, the channel forests MadEvent's enhancement weight is a
     /// product over, where the run card makes that weight something other than the
     /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
@@ -1443,6 +1454,9 @@ struct ProtonScratch<'a> {
     /// The last evaluated point's matched record fields
     /// ([`ProtonEvent::group_records`]).
     group_records: RefCell<Vec<[Option<MatchedRecord>; 2]>>,
+    /// The last evaluated point's matched clusterings
+    /// ([`ProtonEvent::group_histories`]).
+    group_histories: RefCell<Vec<[Option<RewgtHistory>; 2]>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
     /// The configuration MadEvent cuts a point's mirrored term on, and which of
@@ -1606,10 +1620,12 @@ impl<'a> ProtonIntegrand<'a> {
         let shape = process_shape(groups, model, sqrt_s_had);
         let maps = map_options.resolve(&shape);
         tracing::info!(
-            "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
+            "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs, \
+             {} resonant pairs)",
             maps.describe(&map_options),
             shape.soft_emission_splits,
-            shape.max_rungs
+            shape.max_rungs,
+            shape.resonant_pair_splits
         );
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
@@ -1704,6 +1720,7 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
             survey_mean: 0.0,
+            alpha_floor: Some(DEFAULT_ALPHA_FLOOR),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
             alpha_s_dependent: false,
@@ -1749,6 +1766,7 @@ impl<'a> ProtonIntegrand<'a> {
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
                 #[cfg(any(test, feature = "extended-validation"))]
                 madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
@@ -2014,6 +2032,22 @@ impl<'a> ProtonIntegrand<'a> {
         self.combiner.set_alphas(alphas);
     }
 
+    /// Raise every selection weight [`adapt_alphas`](Self::adapt_alphas) settles
+    /// on to at least `floor` and renormalise ([`floored_alphas`]);
+    /// [`DEFAULT_ALPHA_FLOOR`] unless set, and `None` installs the survey's
+    /// weights as they are. A survey that leaves no weight below the floor
+    /// installs its weights bit for bit either way. Weights installed by
+    /// [`set_channel_alphas`](Self::set_channel_alphas) are taken as given.
+    pub fn set_alpha_floor(&mut self, floor: Option<f64>) {
+        self.alpha_floor = floor;
+    }
+
+    /// The floor [`adapt_alphas`](Self::adapt_alphas) raises the surveyed
+    /// weights to ([`set_alpha_floor`](Self::set_alpha_floor)).
+    pub fn alpha_floor(&self) -> Option<f64> {
+        self.alpha_floor
+    }
+
     /// The coordinates one channel's grid is built over: the two outer `(τ, y)`
     /// coordinates followed by the channel's own `3n − 4`.
     pub fn channel_grid_ndim(&self) -> usize {
@@ -2263,6 +2297,9 @@ impl<'a> ProtonIntegrand<'a> {
             let mut records = sc.group_records.borrow_mut();
             records.clear();
             records.resize(n_groups, [None, None]);
+            let mut histories = sc.group_histories.borrow_mut();
+            histories.clear();
+            histories.resize(n_groups, [None, None]);
         }
         let Some(scales) = scales else {
             return 0.0;
@@ -2326,6 +2363,8 @@ impl<'a> ProtonIntegrand<'a> {
         factors.clear();
         let mut records = sc.group_records.borrow_mut();
         records.clear();
+        let mut histories = sc.group_histories.borrow_mut();
+        histories.clear();
         let mut rows: Option<([f64; 2], [FlavorRow; 2])> = None;
         let mut rows_at = |mu_f: [f64; 2]| match rows {
             Some((at, r)) if at == mu_f => r,
@@ -2390,11 +2429,13 @@ impl<'a> ProtonIntegrand<'a> {
                     .as_ref()
                     .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
             });
-            let (direct, direct_record) = direct.map_or((None, None), |(s, _, r)| (Some(s), r));
-            let (mirrored, mirrored_record) =
-                mirrored.map_or((None, None), |(s, _, r)| (Some(s), r));
+            let (direct, direct_history, direct_record) =
+                direct.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
+            let (mirrored, mirrored_history, mirrored_record) =
+                mirrored.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
             out.push([direct, mirrored]);
             records.push([direct_record, mirrored_record]);
+            histories.push([direct_history, mirrored_history]);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
             let mut term = 0.0;
@@ -2441,6 +2482,36 @@ impl<'a> ProtonIntegrand<'a> {
         x: [f64; 2],
         ordering: BeamOrdering,
     ) -> Vec<f64> {
+        let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
+        (0..g.members().len())
+            .map(|i| {
+                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
+                    return 1.0;
+                }
+                self.member_rewgt(gi, g, i, history, x, &mut flavours)
+                    .weight
+            })
+            .collect()
+    }
+
+    /// Member `i`'s matched reweighting of group `gi`, with every factor it
+    /// multiplied in, from the clustering one ordering's term was scaled in and
+    /// that ordering's momentum fractions in clustering order. `flavours` is
+    /// scratch space for the member's codes.
+    ///
+    /// # Panics
+    ///
+    /// Where `reweight.f` stops the run: a colour structure `ipartupdate` does
+    /// not name.
+    fn member_rewgt(
+        &self,
+        gi: usize,
+        g: &FlavorGroup,
+        i: usize,
+        history: &RewgtHistory,
+        x: [f64; 2],
+        flavours: &mut Vec<i64>,
+    ) -> Rewgt {
         let settings = self
             .scales
             .rewgt_settings()
@@ -2454,35 +2525,25 @@ impl<'a> ProtonIntegrand<'a> {
             .scales
             .alpha_s()
             .expect("matching is installed only with a running coupling");
-        let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
-        g.members()
-            .iter()
-            .enumerate()
-            .map(|(i, member)| {
-                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
-                    return 1.0;
-                }
-                flavours.clear();
-                flavours.extend(
-                    member
-                        .incoming
-                        .iter()
-                        .chain(&member.outgoing)
-                        .map(|&c| i64::from(c)),
-                );
-                rewgt(
-                    history,
-                    colors,
-                    &settings,
-                    &flavours,
-                    x,
-                    |q| alpha_s.eval(q),
-                    |pdg, x, q2| self.pdf.xfx_q2(pdg as i32, x, q2),
-                )
-                .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
-                .weight
-            })
-            .collect()
+        let member = &g.members()[i];
+        flavours.clear();
+        flavours.extend(
+            member
+                .incoming
+                .iter()
+                .chain(&member.outgoing)
+                .map(|&c| i64::from(c)),
+        );
+        rewgt(
+            history,
+            colors,
+            &settings,
+            flavours,
+            x,
+            |q| alpha_s.eval(q),
+            |pdg, x, q2| self.pdf.xfx_q2(pdg as i32, x, q2),
+        )
+        .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
     }
 
     /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
@@ -2776,6 +2837,7 @@ impl<'a> ProtonIntegrand<'a> {
             group_scales: sc.group_scales.borrow().clone(),
             group_rewgt: sc.group_rewgt.borrow().clone(),
             group_records: sc.group_records.borrow().clone(),
+            group_histories: sc.group_histories.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -2964,6 +3026,20 @@ impl<'a> ProtonIntegrand<'a> {
         }
         let color =
             eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]], scales.clustered_config)?;
+        // The drawn member's own reweighting, with every factor it took: the
+        // event's `<mgrwt>` record is read off it.
+        let slot = ordering_slot(ordering);
+        let rewgt = event
+            .group_histories
+            .get(group)
+            .and_then(|h| h[slot].as_ref())
+            .map(|history| {
+                let x = match ordering {
+                    BeamOrdering::Direct => event.x,
+                    BeamOrdering::Exchanged => [event.x[1], event.x[0]],
+                };
+                self.member_rewgt(group, g, member, history, x, &mut Vec::new())
+            });
 
         Some(ProtonSelection {
             group,
@@ -2974,8 +3050,9 @@ impl<'a> ProtonIntegrand<'a> {
             config: color.config,
             leading: color.leading,
             scales,
-            record: event.group_records[group][ordering_slot(ordering)].clone(),
-            m2: m2[group][ordering_slot(ordering)],
+            record: event.group_records[group][slot].clone(),
+            rewgt,
+            m2: m2[group][slot],
         })
     }
 
@@ -3028,6 +3105,12 @@ impl<'a> ProtonIntegrand<'a> {
     /// flux, the cut and the luminosity-weighted sum over groups — so weight flows to
     /// the channels that carry variance *of the hadronic integral*, not of a partonic
     /// one at some representative energy.
+    ///
+    /// The surveyed weights are then raised to the α floor
+    /// ([`set_alpha_floor`](Self::set_alpha_floor), [`DEFAULT_ALPHA_FLOOR`] unless
+    /// set) where any lies below it, and the floored set is installed as the
+    /// trajectory's last entry: the entry before it stays the weights the final
+    /// survey drew with.
     pub fn adapt_alphas(
         &mut self,
         seed: u64,
@@ -3057,6 +3140,15 @@ impl<'a> ProtonIntegrand<'a> {
                 it as u64 + 1,
                 Some(n_iter as u64),
             );
+        }
+        if let Some(floored) = self
+            .alpha_floor
+            .and_then(|floor| floored_alphas(self.combiner.alphas(), floor))
+        {
+            self.combiner.set_alphas(floored.clone());
+            *trajectory
+                .last_mut()
+                .expect("the trajectory starts at the starting weights") = floored;
         }
         report_alpha_spread(&variance_shares, self.combiner.alphas());
         AlphaAdaptation {

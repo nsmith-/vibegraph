@@ -28,10 +28,23 @@ use crate::vegas::{GridRule, VegasGrid};
 /// checksum, so a generation could not tell whether the densities it reads are
 /// the ones the grid was trained on.
 ///
-/// `15` changes which phase-space map a stored channel grid is replayed
+/// `15` records the systematics request typed
+/// ([`crate::generate::Systematics`]): the variations MadGraph's module would
+/// compute, with every default filled in, in place of the card's text for
+/// them. A version-14 file recorded the fields' values but not whether the
+/// card wrote `systematics_arguments` on a line of its own, and MadGraph reads
+/// the request from that list or from the `sys_*` fields according to exactly
+/// that, so a version-14 file cannot be upgraded.
+///
+/// `16` banks the pair order ([`PairOrder`](crate::phasespace::maps::PairOrder))
+/// among the map choices, and the α floor the survey's weights were raised to
+/// ([`IntegrateArtifact::alpha_floor`]). A version-15 file has neither field, so
+/// it cannot decode into this shape.
+///
+/// `17` changes which phase-space map a stored channel grid is replayed
 /// through: a peripheral diagram's channel is built on its t-channel spine
 /// whether or not the run card gives a fiducial scale, with the spine's
-/// massless poles floored at a default scale when it does not. A version-14
+/// massless poles floored at a default scale when it does not. A version-16
 /// file integrated with no spacelike floor holds grids adapted to other maps:
 /// the all-timelike tree for a final state past two legs (a decay chain and an
 /// on-shell-veto run included), an unfloored pole for a `2 → 2` exchange. Its
@@ -43,10 +56,10 @@ use crate::vegas::{GridRule, VegasGrid};
 /// trained on the old maps without a version bump. A change to how a map
 /// with an unchanged key draws or weighs a point is invisible to it and still
 /// needs one. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 15;
+pub const FORMAT_VERSION: u32 = 17;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 15;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 17;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -360,6 +373,11 @@ pub struct IntegrateArtifact {
     /// needs the rule to sample. `None` is an artifact whose channels were
     /// trained by no VEGAS grid; no writer produces one yet.
     pub grid_rule: Option<GridRule>,
+    /// The floor the α survey's selection weights were raised to before the
+    /// grids were trained, or `None` for weights installed as surveyed.
+    /// Recorded for provenance: the channels' [`ChannelGrid::alpha`] are the
+    /// weights as installed, which is all a replay reads.
+    pub alpha_floor: Option<f64>,
     /// [`channel_map_digest`] of the channels the grids were trained through,
     /// in [`channels`](Self::channels) order. A generation recomputes it from
     /// the channels it rebuilds and refuses a mismatch: equal `(group, diagram)`
@@ -507,8 +525,14 @@ mod tests {
             neval: 1000,
             niter: 2,
             seed: 42,
-            run_card: RunCard::default().split().0,
-            generate: RunCard::default().split().1,
+            run_card: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .0,
+            generate: RunCard::default()
+                .split()
+                .expect("the default card splits")
+                .1,
             channels: vec![one_channel(VegasGrid::new(3, 64, 1.5))],
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
@@ -516,6 +540,7 @@ mod tests {
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: channel_map_digest(&["n=2;T"]),
+            alpha_floor: Some(crate::phasespace::DEFAULT_ALPHA_FLOOR),
         }
     }
 
@@ -564,6 +589,7 @@ mod tests {
         assert_eq!(card(&reloaded), card(&artifact));
         assert!(reloaded.run_card.get("nevents").is_none());
         assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
+        assert_eq!(reloaded.alpha_floor, artifact.alpha_floor);
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
@@ -821,40 +847,48 @@ mod tests {
         path
     }
 
-    /// A version-13 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode: it records no
-    /// checksum of the PDF files it was integrated with.
+    /// A version-14 file is refused by its version, with the message that says
+    /// to re-integrate, however well its bytes would decode. Version 16 holds
+    /// grids trained through maps this build no longer builds for the same
+    /// keys; version 15 does not record the pair order its grids were trained
+    /// under; version 14 records the systematics fields' values but not whether
+    /// the card wrote `systematics_arguments`, which decides MadGraph's request;
+    /// version 13 records no checksum of its PDF files.
     #[test]
-    fn a_version_13_artifact_is_refused() {
-        let dir = scratch_dir("v13");
-        let path = stamped(&sample_artifact(), &dir, 13);
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-13 file");
-        assert!(
-            matches!(
-                err,
-                ArtifactError::UnsupportedVersion {
-                    found: 13,
-                    oldest: 15,
-                    expected: 15
-                }
-            ),
-            "{err}"
-        );
+    fn a_version_14_artifact_is_refused() {
+        let dir = scratch_dir("v14");
+        for version in [13, 14, 15, 16] {
+            let path = stamped(&sample_artifact(), &dir, version);
+            let err = IntegrateArtifact::read_from_path(&path).expect_err("an older file");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::UnsupportedVersion {
+                        found,
+                        oldest: 17,
+                        expected: 17
+                    } if found == version
+                ),
+                "{err}"
+            );
+        }
+        let path = stamped(&sample_artifact(), &dir, 14);
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// A version-14 file is refused by its version, with the re-integrate
-    /// remedy. The payload is version 14's real shape: every field of this
+    /// A version-16 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 16's real shape: every field of this
     /// build's but the trailing `channel_map_digest`, so its grids sit at the
-    /// same offsets a version-15 reader would decode them from. Its grids were
-    /// adapted to channel maps that version 15 builds differently for the same
+    /// same offsets a version-17 reader would decode them from. Its grids were
+    /// adapted to channel maps that version 17 builds differently for the same
     /// `(group, diagram)` keys.
     #[test]
-    fn a_version_14_artifact_is_refused() {
-        let dir = scratch_dir("v14");
+    fn a_version_16_artifact_is_refused() {
+        let dir = scratch_dir("v16");
         let artifact = sample_artifact();
         let mut raw = bincode::serialize(&artifact).unwrap();
         let digest_field = 8 + artifact.channel_map_digest.len();
@@ -864,18 +898,18 @@ mod tests {
             *artifact.channel_map_digest.as_bytes(),
             "the digest is the last field"
         );
-        raw[..4].copy_from_slice(&14u32.to_le_bytes());
-        let path = dir.join("v14.bin.zst");
+        raw[..4].copy_from_slice(&16u32.to_le_bytes());
+        let path = dir.join("v16.bin.zst");
         std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
 
-        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-14 file");
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-16 file");
         assert!(
             matches!(
                 err,
                 ArtifactError::UnsupportedVersion {
-                    found: 14,
-                    oldest: 15,
-                    expected: 15
+                    found: 16,
+                    oldest: 17,
+                    expected: 17
                 }
             ),
             "{err}"

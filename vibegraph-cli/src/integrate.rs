@@ -40,6 +40,7 @@ use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
 };
+use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
@@ -53,9 +54,13 @@ use vibegraph::multiplicity::{
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
-use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
+use vibegraph::phasespace::maps::{
+    MapChoices, MapOptions, PairOrder, RungOrder, SplitAngle, TauMap,
+};
+use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -189,6 +194,17 @@ pub(crate) enum RungOrderArg {
     Reversed,
 }
 
+/// The order a split with two resonant daughters draws their invariants in
+/// ([`PairOrder`]); `auto` is `symmetric`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum PairOrderArg {
+    Auto,
+    /// The left daughter first, on its pole.
+    Ordered,
+    /// Either daughter first with probability ½.
+    Symmetric,
+}
+
 /// The phase-space map flags, shared by the integrator and anything that
 /// re-derives channels from a process.
 #[derive(Args, Debug, Clone, Copy)]
@@ -221,6 +237,16 @@ pub(crate) struct MapArgs {
     /// `auto` is `derived`; `reversed` reads 1.01 ± 0.02 of it on `u u~ > g g g`.
     #[arg(long = "map-rung-order", value_enum, default_value_t = RungOrderArg::Auto)]
     pub(crate) rung_order: RungOrderArg,
+
+    /// The order a split whose two daughters both carry a finite-width resonance
+    /// draws their invariants in.
+    ///
+    /// `auto` is `symmetric`: either daughter first with probability ½. `ordered`
+    /// draws one daughter on its pole first, which below the two poles' sum
+    /// (`H → ZZ*`) leaves the half of the peak with the other daughter on shell
+    /// in a Breit–Wigner tail.
+    #[arg(long = "map-pair-order", value_enum, default_value_t = PairOrderArg::Auto)]
+    pub(crate) pair_order: PairOrderArg,
 }
 
 impl MapArgs {
@@ -243,6 +269,11 @@ impl MapArgs {
                 RungOrderArg::Auto => None,
                 RungOrderArg::Derived => Some(RungOrder::Derived),
                 RungOrderArg::Reversed => Some(RungOrder::Reversed),
+            },
+            pair_order: match self.pair_order {
+                PairOrderArg::Auto => None,
+                PairOrderArg::Ordered => Some(PairOrder::Ordered),
+                PairOrderArg::Symmetric => Some(PairOrder::Symmetric),
             },
         }
     }
@@ -281,6 +312,27 @@ impl std::fmt::Display for MaxBinWidthArg {
         match self.0 {
             Some(k) => write!(f, "{k}"),
             None => f.write_str("none"),
+        }
+    }
+}
+
+/// `--alpha-floor`: a floor in `(0, 1)`, or `off`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AlphaFloorArg(pub(crate) Option<f64>);
+
+impl std::str::FromStr for AlphaFloorArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_alpha_floor(s).map(AlphaFloorArg)
+    }
+}
+
+impl std::fmt::Display for AlphaFloorArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(floor) => write!(f, "{floor:e}"),
+            None => write!(f, "off"),
         }
     }
 }
@@ -430,6 +482,19 @@ pub(crate) struct IntegrateArgs {
     #[arg(long, value_enum)]
     pub(crate) allocate: Option<Allocation>,
 
+    /// Raise every channel's selection weight to at least this after the
+    /// α-survey, and renormalise; `off` installs the survey's weights as they
+    /// came out.
+    ///
+    /// A channel whose peak the survey's draws never reach measures no variance,
+    /// and its weight falls geometrically over the survey to `1e-11` and below;
+    /// the integration's rare points in that peak then carry a mixture density
+    /// set by channels that do not follow it. A survey that leaves every weight
+    /// above the floor installs its weights unchanged. The floor a run used is
+    /// recorded in its artifact.
+    #[arg(long, value_name = "FLOOR", default_value_t = AlphaFloorArg(Some(DEFAULT_ALPHA_FLOOR)))]
+    pub(crate) alpha_floor: AlphaFloorArg,
+
     /// RNG seed for the integration; defaults to the run card's `iseed` when it
     /// is not 0, and to 20260719 otherwise. The seed used is recorded in the
     /// artifact.
@@ -563,6 +628,8 @@ struct RunOutput {
     channel_map_digest: String,
     /// The rule the integrand refined its grids under.
     grid_rule: GridRule,
+    /// The floor the surveyed selection weights were raised to.
+    alpha_floor: Option<f64>,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -621,7 +688,13 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let (rc, generate_settings) = load_run_card(&config, &parsed)?.split();
+    let card = load_run_card(&config, &parsed)?;
+    let split = if parsed.is_decay() {
+        card.split_decay()
+    } else {
+        card.split()
+    };
+    let (rc, generate_settings) = split.map_err(|e| err(e.to_string()))?;
     let seed = rc.integration_seed(args.seed);
     tui::state::describe_model(
         &model_id.label(),
@@ -639,7 +712,19 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
         }
         BeamMode::Proton => integrate_proton(
-            args, &parsed, &model, &evaluated, &rc, process, seed, network,
+            args,
+            &parsed,
+            &model,
+            &evaluated,
+            &rc,
+            process,
+            seed,
+            network,
+            generate_settings
+                .systematics
+                .request
+                .as_ref()
+                .filter(|_| generate_settings.systematics.enabled),
         )?,
         BeamMode::FixedEnergy => {
             integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
@@ -779,6 +864,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         maps: output.maps,
         grid_rule: Some(output.grid_rule),
         channel_map_digest: output.channel_map_digest,
+        alpha_floor: output.alpha_floor,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -839,6 +925,7 @@ fn integrate_proton(
     process: String,
     seed: u64,
     network: NetworkPolicy,
+    systematics: Option<&VariationRequest>,
 ) -> Result<RunOutput, CliError> {
     let tiers = assets::pdf_tiers().map_err(err)?;
     let fetch = assets::pdf_fetch(network);
@@ -854,7 +941,17 @@ fn integrate_proton(
     tracing::debug!(tier = tier.name(), dir = %set.dir().display(), "PDF set located");
 
     integrate_hadronic(
-        args, parsed, model, evaluated, rc, &set, &member, input, process, seed,
+        args,
+        parsed,
+        model,
+        evaluated,
+        rc,
+        &set,
+        &member,
+        input,
+        process,
+        seed,
+        systematics,
     )
 }
 
@@ -896,6 +993,7 @@ fn integrate_hadronic(
     pdf_input: PdfInput,
     process: String,
     seed: u64,
+    systematics: Option<&VariationRequest>,
 ) -> Result<RunOutput, CliError> {
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
@@ -903,6 +1001,10 @@ fn integrate_hadronic(
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
             .map_err(err)?;
+    if let Some(request) = systematics {
+        refuse_single_particle_et(request, &groups)
+            .map_err(|e| err(format!("systematics request refused at integrate: {e}")))?;
+    }
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
         .map(|part| {
@@ -929,10 +1031,15 @@ fn integrate_hadronic(
         .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
         integ.use_onshell_veto(part_vetoes, evaluated);
         // Both scales and the strong coupling come from the run card; the coupling
-        // is the PDF set's own tabulation, which is what the densities were fitted
-        // with.
+        // is the PDF member's own tabulation, which is what the densities were
+        // fitted with.
         let report = integ
-            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+            .use_run_card_scales(
+                model,
+                evaluated,
+                rc,
+                Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
+            )
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
         scale_report.get_or_insert(report);
         parts.push(integ);
@@ -940,6 +1047,7 @@ fn integrate_hadronic(
     let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
     integ.set_grid_rule(args.grid.rule()?);
+    integ.set_alpha_floor(args.alpha_floor.0);
 
     tui::state::note_channels(integ.channel_count());
 
@@ -968,6 +1076,7 @@ fn integrate_hadronic(
         maps: integ.maps(),
         channel_map_digest: channel_map_digest(&integ.channel_map_keys()),
         grid_rule: integ.grid_rule(),
+        alpha_floor: integ.alpha_floor(),
         result,
         convergence,
     })
@@ -1060,6 +1169,7 @@ fn integrate_fixed_energy(
     integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
     integ.set_grid_rule(args.grid.rule()?);
+    integ.set_alpha_floor(args.alpha_floor.0);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
@@ -1097,6 +1207,8 @@ fn integrate_fixed_energy(
         maps,
         channel_map_digest: channel_map_digest(integ.channel_map_keys()),
         grid_rule: integ.grid_rule(),
+        // Flat RAMBO surveys nothing, so no floor raised anything.
+        alpha_floor: integ.maps().and(integ.alpha_floor()),
         result,
         convergence,
     })

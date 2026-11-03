@@ -96,7 +96,16 @@ fn run_card(dir: &Path, name: &str, row: &Row) -> PathBuf {
         .as_deref()
         .unwrap_or_else(|| panic!("row {name} names no committed run card"));
     let mut text = std::fs::read_to_string(madgraph_dir().join(base)).unwrap();
-    for pair in row.overrides.split(';').filter(|kv| !kv.is_empty()) {
+    // The committed card writes `use_syst = True`, which this crate refuses on
+    // the fixed-energy beams the rows override to (no density to vary);
+    // MadEvent's cross section does not read it, so it is turned off here.
+    let fixed_energy = row.overrides.contains("lpp1=0");
+    let overrides = if fixed_energy {
+        format!("{};use_syst=False", row.overrides)
+    } else {
+        row.overrides.clone()
+    };
+    for pair in overrides.split(';').filter(|kv| !kv.is_empty()) {
         let (key, value) = pair.split_once('=').unwrap();
         let mut hits = 0;
         let lines: Vec<String> = text
