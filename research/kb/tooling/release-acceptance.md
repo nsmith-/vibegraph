@@ -22,10 +22,12 @@ physics gate.
 
 **State: green in CI.** Its first green run was a dispatch against `v0.1.0`
 from `main` on 2026-10-15 (run 38771664781), after the refusal check learned
-that the binary names the consent flag by its short spelling, `-y`. See
-[acceptance-yml-fails-on-refdata-releases](../backlog/hygiene/acceptance-yml-fails-on-refdata-releases.md)
-for why every `refdata-*` prerelease produces a red run. The script
-itself is exercised locally through `--binary`.
+that the binary names the consent flag by its short spelling, `-y`. Publishing a `refdata-*` reference-data prerelease
+starts a run that ends *skipped*, not red: those releases carry no binary, so
+the job's `if:` admits a `release` event only for a `v*` tag (refdata-10
+through refdata-13 were all skipped; refdata-2 through refdata-9, published
+before the guard, each failed on a 404). The script itself is exercised
+locally through `--binary`.
 
 ## The script
 
@@ -91,7 +93,8 @@ and requiring rejection.
 runner, on `release: published` and on `workflow_dispatch` (input `tag`;
 empty means the latest release). `release.yml` dispatches it after publishing,
 because its own token's release event does not start workflows
-([release binaries](release-binaries.md)).
+([release binaries](release-binaries.md)). A `release` event runs the job only
+for a `v*` tag; dispatches and the weekly schedule always run.
 
 Not on pushes or PRs, deliberately: its input is a published release asset,
 which a branch does not have, and it downloads 27 MB every run on purpose
