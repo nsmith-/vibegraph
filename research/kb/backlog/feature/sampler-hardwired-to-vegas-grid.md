@@ -28,17 +28,18 @@ batch form beside the scalar one, so `LaneField<N>` and later GPU code can draw
 many points per call; this item implements and tests them at `F = f64` only.
 Move `GridRule`, damping and `nbins` into a VEGAS config, warm-up and
 combination into `budget.rs`, and drop `grid_rule()` from `ChannelIntegrand`. A
-uniform, non-adapting implementor proves the trait is not VEGAS-shaped. The
-artifact keeps `VegasGrid`; tagging it is
+uniform, non-adapting implementor proves the trait is not VEGAS-shaped.
+`generate`'s heavy-weight log reads `VegasGrid::jacobian_factors`
+(`generate.rs:1119`): the frozen trait offers per-coordinate weight factors as
+an optional diagnostic. The artifact keeps `VegasGrid`; tagging it is
 [artifact-has-no-sampler-kind](artifact-has-no-sampler-kind.md).
 
-**The uniform.** The draw uses `rng.random::<f64>()` (`vegas.rs:583`), not the
+**The uniform.** The draw uses `rng.random::<f64>()` (`vegas.rs:799`), not the
 lane-exact `u64_to_uniform` (`phasespace/rng.rs:51-55`); both compute
 `(bits >> 11) / 2^53`. Switching to `u64_to_uniform` is pinned equal on every
 draw by a test here, so the lane-generic draw inherits it.
 
-**Lanes come next.** The lane-generic draw and accumulate, and refine's
-vectorisation over bins, are
+**Lanes come next:**
 [sampler-draw-not-lane-generic](../performance/sampler-draw-not-lane-generic.md),
 which waits on the `Real` lane extension; this item does not.
 
@@ -48,8 +49,5 @@ byte identity, not statistics ([no-change claims](../../validation/no-change-cla
 `-j 4`, a fixed-seed `generate` LHE, and an empty `pixi run --skip-deps validate`
 report diff. That leaves the σ calibrations PR #45 re-records untouched.
 
-**Sequencing.** PR #69 has moved the generation driver into
-`vibegraph-lib/src/generate.rs`; the refactor starts from there. Line numbers
-above predate it.
-Absolute grid coordinates are refused, so there is no contract inversion to
-rebase against.
+**Sequencing.** The refactor starts from the library driver
+(`vibegraph-lib/src/generate.rs`); line numbers are at `86b8e5c`.

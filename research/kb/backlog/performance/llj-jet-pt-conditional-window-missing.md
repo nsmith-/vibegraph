@@ -5,7 +5,7 @@ description: "The ℓℓj jet pT edge is pinned by (τ, m_ll²) and is two inter
 area: performance
 state: open
 priority: low
-closes_when: "A map option (off by default, recorded in MapChoices) narrows the ℓℓj polar coordinate to the jet-pT window given (τ, m_ll²), as one interval in the spine channels and a union of two in the all-timelike ones; the walk–density reciprocity test passes with it on; a point-level test finds zero accepted window-off points outside it in ≥10⁶ draws per channel; σ agrees on and off at ≥5 seeds per arm on pp_to_llj_fixed and pp_to_llj_mlm, and the gain is measured at 20+ seeds on the deciding pair."
+closes_when: "A map option (off by default, recorded in MapChoices and in each channel's map_key, so channel_map_digest refuses a replay through other windows) narrows the ℓℓj polar coordinate to the jet-pT window given (τ, m_ll²), as one interval in the spine channels and a union of two in the all-timelike ones; the walk–density reciprocity test passes with it on; a point-level test finds zero accepted window-off points outside it in ≥10⁶ draws per channel; σ agrees on and off at ≥5 seeds per arm on pp_to_llj_fixed and pp_to_llj_mlm, and the gain is measured at 20+ seeds on the deciding pair."
 blocked_by: [jj-two-to-two-cut-window-missing]
 opened: 2026-10-22
 tags: [phase-space-map, cut-edge, window, pp_to_llj]

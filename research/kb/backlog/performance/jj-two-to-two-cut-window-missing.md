@@ -5,7 +5,7 @@ description: "The jet pT and η cuts of a 2 → 2 jet process are an exact windo
 area: performance
 state: open
 priority: low
-closes_when: "A map option (off by default, recorded in MapChoices) narrows pp_to_jj's polar coordinate to |t| ∈ [t₋, ŝ − t₋] and |cos θ*| < tanh(η_max − |y|) given (τ, y); a point-level test finds zero accepted window-off points outside the window in ≥10⁶ draws per channel; σ with the window on agrees with it off at ≥5 seeds per arm, and the variance × CPU gain is measured at 20+ seeds on the deciding pair."
+closes_when: "A map option (off by default, recorded in MapChoices and in each channel's map_key, so channel_map_digest refuses a replay through other windows) narrows pp_to_jj's polar coordinate to |t| ∈ [t₋, ŝ − t₋] and |cos θ*| < tanh(η_max − |y|) given (τ, y); a point-level test finds zero accepted window-off points outside the window in ≥10⁶ draws per channel; σ with the window on agrees with it off at ≥5 seeds per arm, and the variance × CPU gain is measured at 20+ seeds on the deciding pair."
 blocked_by: []
 opened: 2026-10-22
 tags: [phase-space-map, cut-edge, window, pp_to_jj]
