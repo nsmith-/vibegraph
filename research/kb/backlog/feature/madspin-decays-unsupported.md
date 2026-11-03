@@ -33,12 +33,12 @@ What to build, in order:
 1. Generalise `ChannelIntegrand::scale_draw_ndim` into a list of trailing
    stages, each with its own substream base; byte-identical on the default
    path.
-2. Read the decay request at integrate (an integrate input under PR #60's
+2. Read the decay request at integrate (an integrate input under PR #69's
    gridpack `generate`) and record it, with its mode, in the artifact; a build
    that does not implement the mode refuses it by name.
 3. The chain mode, then the factorised stage. Read the decay weight, the
    trial count, the Breit–Wigner cutoff and the `spinmode` values from
    MadSpin's source (`research/refs/mg5amcnlo`, `MadSpin/`), not from memory.
 
-Sequencing: after PR #60's H1 and H2. Related:
+Related:
 [decay-angles-drawn-flat-in-decay-chains](../performance/decay-angles-drawn-flat-in-decay-chains.md).
