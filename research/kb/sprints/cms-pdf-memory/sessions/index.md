@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [M-P1: CMS's 880 PDF members under 1.5 GB, losslessly](M-P1.md) - Attribute the 3.76 GB first; then store each member as its knots and build the x cubic on use, bit-identical to today's interpolation; pin bytes per member in CI; measure RSS and time on the CMS request.
+* [M-V1: the bit-level oracle in the tree, the CMS fetch task, and the item closed on independent measurements](M-V1.md) - Commit an ignored test that carries the precomputed-table interpolator as an oracle over the CMS sets, a script that fetches the 880 members, and re-measure RSS and the CMS gate independently.
 
 ## Session Report
 
