@@ -63,9 +63,11 @@ not a different one. Unit tests pin the volume (`flat_volume_matches_massless_v_
 
 Spacelike lines are not subsystems: they are momentum transfers. A diagram
 with spacelike lines is decomposed as a peripheral chain of rungs instead of an
-all-timelike tree ([phase-space/t-channel-spine](t-channel-spine.md)), but only
-when the final state has two legs or a positive fiducial scale is supplied
-(`from_diagram_regulated`); otherwise it falls back to the all-timelike tree.
+all-timelike tree ([phase-space/t-channel-spine](t-channel-spine.md)) whenever
+those lines form a chain, at any multiplicity and with or without a fiducial
+scale (`from_diagram_regulated`); a positive scale adds the transfer bound,
+and the pole floor is on either way ([spacelike floor](spacelike-floor.md)).
+Lines that form no chain fall back to the all-timelike tree.
 A `1 → n` decay has no spacelike line, so its channel is always the
 all-timelike tree at `√ŝ = M`.
 

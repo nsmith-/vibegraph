@@ -130,13 +130,16 @@ positivity**, not for the channel's own unbiasedness: the correct statement is
 "the unfloored spine breaks the density contract a combiner rests on", pinned by
 `an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by` and
 `an_unregulated_spine_breaks_the_positive_density_contract`. The regulator
-production uses today is not that 5 GeV floor but the process's fiducial
-scale: each rung's transfer is bounded at `t ≤ −scale` (support narrowed,
-density exactly zero above it) and the pole is floored at
-`10⁻³ · scale` (`POLE_FRACTION_OF_FIDUCIAL_SCALE`). A spine is built for more
-than two outgoing legs only when that scale is positive
-(`DiagramChannel::from_diagram_with`); otherwise the channel is the
-all-timelike tree. The floor's construction is [phase-space/spacelike-floor](spacelike-floor.md)
+production uses is not that 5 GeV floor. Every rung's pole is floored at
+`10⁻³ · scale` (`POLE_FRACTION_OF_FIDUCIAL_SCALE`), with the scale the
+process's fiducial scale (`Cuts::spacelike_floor`, the largest single-leg
+`pT_min²`) where its cuts imply one and `DEFAULT_POLE_SCALE = 10³ GeV²`
+otherwise, so the floor is always on. Only a positive fiducial scale also
+bounds each rung's transfer at `t ≤ −scale` (support narrowed, density exactly
+zero above it). A spine is built for every diagram whose spacelike lines form
+a chain, at any multiplicity and with or without a fiducial scale
+(`DiagramChannel::from_diagram_with`); the all-timelike tree is left for a
+diagram with no spacelike line or with lines that form no chain. The floor's construction is [phase-space/spacelike-floor](spacelike-floor.md)
 and the spine itself [phase-space/t-channel-spine](t-channel-spine.md). The
 timelike counterpart, [phase-space/cut-implied-timelike-floors](cut-implied-timelike-floors.md),
 moves where a map puts its density without narrowing its support: a

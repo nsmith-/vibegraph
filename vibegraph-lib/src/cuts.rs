@@ -726,9 +726,9 @@ impl Cuts {
     /// unbiased only while the channel set as a whole covers every point the cuts
     /// accept: past three outgoing legs, where the floor is a scale rather than a
     /// bound, that is what the coverage gates check, not something the floor
-    /// guarantees. A run with no active single-leg `pT` cut gets `0`, which leaves
-    /// peripheral channels unbounded, and unbuilt beyond two outgoing legs rather
-    /// than built ill-posed.
+    /// guarantees. A run with no active single-leg `pT` cut gets `0`: its
+    /// peripheral channels are still built, unbounded, with the pole floored at
+    /// the channel's own default scale rather than at one read off other cuts.
     ///
     /// [`DiagramChannel::from_diagram_regulated`]:
     ///     crate::phasespace::diagram_channel::DiagramChannel::from_diagram_regulated
@@ -2043,9 +2043,10 @@ mod tests {
         assert_eq!(dy.spacelike_floor(), 100.0);
     }
 
-    /// A run with no active single-leg `pT` cut has no scale to regulate with, and
-    /// says so rather than inventing one — the honest failure mode, since a zero
-    /// floor leaves a peripheral channel unbuilt beyond two outgoing legs.
+    /// A run with no active single-leg `pT` cut has no scale to bound the transfer
+    /// with, and says so rather than inventing one: a zero floor leaves every
+    /// peripheral channel's support whole, and the channel floors its pole from a
+    /// default scale of its own.
     #[test]
     fn spacelike_floor_is_zero_without_an_active_pt_cut() {
         let none = Cuts::compile(&card("0 = ptj\n0 = ptl\n"), &llj_legs()).unwrap();

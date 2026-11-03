@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: Regulate massless t-channel transfers with a cut-implied spacelike floor
-description: "Where cuts imply a floor ((max single-leg pT cut)²), bound each rung's t_max at −floor and keep a token pole; elsewhere use the flat fallback. With the before/after σ that decided it."
+description: "Every spine rung draws against a pole floored at 1e-3 of a scale: the cut-implied floor ((max single-leg pT cut)²) where the cuts imply one, which also bounds each rung's t_max at −floor, and DEFAULT_POLE_SCALE (1e3 GeV²) otherwise, with the window whole. With the before/after σ that decided the bound."
 status: draft
 tags: [t-channel, spine, cuts, conditioning, madgraph-agreement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -13,11 +13,11 @@ sources:
   - {id: n28-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6, decisions D2 and D3"}
   - {id: n28-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1670-L1764", title: "Note 28 §S2.5, D3 decided by measurement"}
   - {id: n28-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1827-L1988", title: "Note 28 §S4, spine in production: coverage, B1, B2, B4, C"}
-  - {id: cuts-rs, resource: "vibegraph-lib/src/cuts.rs#L615-L653", title: "Cuts::spacelike_floor"}
-  - {id: dc-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L50-L85", title: "diagram_channel.rs module doc, 'Regulating the spacelike pole'"}
-  - {id: dc-chain, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L1643-L1708", title: "POLE_FRACTION_OF_FIDUCIAL_SCALE, spine_chain"}
-  - {id: dc-tmap, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L2363-L2456", title: "t_pole_shapes, draw_t, t_measure, apply_fiducial_t_max"}
-  - {id: hadronic-mc, resource: "vibegraph-lib/src/hadronic.rs#L2386-L2453", title: "FixedBeamIntegrand::use_multichannel"}
+  - {id: cuts-rs, resource: "vibegraph-lib/src/cuts.rs#L705-L743", title: "Cuts::spacelike_floor"}
+  - {id: dc-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L59-L98", title: "diagram_channel.rs module doc, 'Regulating the spacelike pole'"}
+  - {id: dc-chain, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L1744-L1838", title: "POLE_FRACTION_OF_FIDUCIAL_SCALE, DEFAULT_POLE_SCALE, spine_chain"}
+  - {id: dc-tmap, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L2543-L2647", title: "t_pole_shapes, draw_t, t_measure, apply_fiducial_t_max"}
+  - {id: hadronic-mc, resource: "vibegraph-lib/src/hadronic.rs#L2454-L2523", title: "FixedBeamIntegrand::use_multichannel"}
 measured:
   - {command: "probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts (tests/diagram_channel.rs), five seeds × 200 000 points per cut, √ŝ = 500 GeV"}
   - {command: "probe_qcd_seed_stability, probe_channel_map_degeneracy, every_bounded_channel_set_covers_its_own_fiducial_region (tests/validate_sigma.rs); probe_fiducial_bound_on_llj_fixed (tests/validate_hadronic.rs)"}
@@ -31,8 +31,8 @@ a cancelling difference of two large quantities ([t-channel spine](t-channel-spi
 Two conditioning fixes pin that edge at exactly zero whenever the emitted
 subsystem's invariant is *fixed* (a single on-shell leg): the Källén function
 in its grouped form, and boosts out of a blob's rest frame with `γ = E/√s`.
-The flat fallback then fires deterministically, which is why a `2 → 2` spine
-is safe. A **composite** emitted subsystem leaves a drawn invariant cancelling
+With no pole floor the propagator draw then falls back to flat
+deterministically, which is why an unfloored `2 → 2` spine is well posed. A **composite** emitted subsystem leaves a drawn invariant cancelling
 against `ŝ`, and the edge lands on either side of zero at rounding
 scale[^dc-rs]. Over 20 000 recoil invariants at `s = 2.5e5` it landed below
 zero 6 131 times, above 6 218 times and exactly zero 7 651 times, with
@@ -64,7 +64,7 @@ the density contract a combiner rests on", pinned by
 The scale is process data, read off the compiled cuts:[^cuts-rs]
 
 ```rust
-pub fn spacelike_floor(&self) -> f64   // cuts.rs:645
+pub fn spacelike_floor(&self) -> f64   // cuts.rs:735
 // (max over compiled single-leg cuts of pt_min)², or 0 when none is active
 ```
 
@@ -87,31 +87,45 @@ than asserting the algebra[^n24-p2b]. The default card's `ptj = 20` gives
 400 GeV², ten orders above the 4e-8 noise; `ptl = 10` alone gives
 100 GeV². Under MLM matching the `ptj = xqcut` rewrite makes it `xqcut²`
 ([cut-implied timelike floors](cut-implied-timelike-floors.md)).
-`ProtonIntegrand::spacelike_floor` (`proton.rs:1878`) and
+`ProtonIntegrand::spacelike_floor` (`proton.rs:1955`) and
 `FixedBeamIntegrand::use_multichannel` both read it from their own cuts, so a
 run cannot regulate at a scale its cuts do not have[^hadronic-mc].
 
 ## Decision
 
-For every rung of a spine, when `Cuts::spacelike_floor() > 0`
+Every rung of a spine draws against a **pole floor**, cut or no cut
 (`spine_chain`, `diagram_channel.rs`):[^dc-chain]
 
-- **bound the transfer** at `t_max ← −floor`. `apply_fiducial_t_max` applies it
-  per rung and per configuration, and skips a rung whose kinematic window
-  already lies below the bound or would be emptied by it, so a rung always
-  keeps a window. The bound narrows the channel's *support*, and the density
-  reports an exact zero above it;
-- **floor the pole** at `t_mass² = max(m², 1e-3 · floor)`
-  (`POLE_FRACTION_OF_FIDUCIAL_SCALE`), three orders below the bound and far
-  above the cancellation noise, so a configuration the bound cannot narrow
-  still draws against a well-posed pole. It enters `draw_t` and `t_measure`
-  alike, so it reshapes the density and nothing else.
+- **floor the pole** at `t_mass² = max(m², 1e-3 · scale)`
+  (`POLE_FRACTION_OF_FIDUCIAL_SCALE`). The scale is `Cuts::spacelike_floor()`
+  when that is positive and `DEFAULT_POLE_SCALE = 1e3 GeV²` otherwise, a
+  pole floor of 1 GeV², seven orders above a massless edge's rounding noise.
+  The floor enters `draw_t` and `t_measure` alike, so it reshapes the density
+  and nothing else, and with it `t_pole_shapes` holds on every non-degenerate
+  window: the log map is always on, and the flat draw is left only for a window
+  of zero width. `DEFAULT_POLE_SCALE` is a variance choice, measured over
+  `10⁰–10⁵ GeV²` on three processes; its doc comment carries the table.
+- **bound the transfer** at `t_max ← −floor`, only when the floor is positive.
+  The support bound is read from nothing but `Cuts::spacelike_floor`, the
+  floor the single-leg `pT` cuts imply; `DEFAULT_POLE_SCALE` never bounds.
+  `apply_fiducial_t_max` applies it per rung and per configuration, and skips
+  a rung whose kinematic window already lies below the bound or would be
+  emptied by it, so a rung always keeps a window. The bound narrows the
+  channel's *support*, and the density reports an exact zero above it. A run
+  with no active single-leg `pT` cut keeps every rung's whole window.
 
-When the floor is 0 (no active single-leg `pT` cut) nothing is regulated: a
-final state of more than two legs gets no spine, only the all-timelike tree,
-and a `2 → 2` spine keeps the flat fallback at the collinear edge. Whether that
-conservative fallback is still needed after the conditioning fixes is open:
-[three-body spine requires a fiducial scale](../backlog/feature/three-body-spine-requires-fiducial-scale.md).
+So a spine is built for every diagram whose spacelike lines form a chain,
+whatever the final-state multiplicity and whether or not the cuts imply a
+floor. On a chain of more than one rung, each remainder `R_i` between rungs,
+which bounds no line of the diagram, has its invariant drawn from an even
+mixture of a flat and a `1/ŝ_i` map (`draw_rest`, `REST_LOG_SHARE = 0.5`); the
+last rung's recoil is drawn under its own resonance
+([t-channel spine](t-channel-spine.md)).
+
+Every one of these choices is part of a channel's `map_key`: the integrate
+artifact (format version 15) banks `channel_map_digest` over the keys, and
+`generate` refuses a grid whose channels it rebuilds with a different map
+([integrate artifact](../pipeline/integrate-artifact.md)).
 
 **Why the bound and not only the pole floor.** On the six single-spacelike-line
 cuts of `u u~ > e+ e- g` and `g u > e+ e- u` at √ŝ = 500 with the default
@@ -199,6 +213,6 @@ The comparison is the decision's evidence, which is why both columns stay.
 [^cuts-rs]: `vibegraph-lib/src/cuts.rs`, `spacelike_floor` doc.
 [^n24-p2b]: Note 24 P2b.
 [^hadronic-mc]: `vibegraph-lib/src/hadronic.rs`, `use_multichannel` doc.
-[^dc-chain]: `vibegraph-lib/src/phasespace/diagram_channel.rs`, `spine_chain` and `apply_fiducial_t_max`.
+[^dc-chain]: `vibegraph-lib/src/phasespace/diagram_channel.rs`, `POLE_FRACTION_OF_FIDUCIAL_SCALE`, `DEFAULT_POLE_SCALE`, `spine_chain` and `apply_fiducial_t_max`.
 [^n28-d3]: Note 28 §S2.5.
 [^n28-s4]: Note 28 §S4; the row floors checked against `validation/madgraph/scripts/ud_to_epemud_qcd0.mg5` (`ptj 20`).

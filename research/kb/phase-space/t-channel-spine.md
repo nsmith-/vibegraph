@@ -1,7 +1,7 @@
 ---
 type: Algorithm
 title: The multi-rung t-channel spine
-description: "Spacelike lines nest into an ordered rung chain of peripheral 2-body steps: the logarithmic t map and its Jacobian, beam anchoring, flat fallback, multi-body spines, and the ordering firing test."
+description: "Spacelike lines nest into an ordered rung chain of peripheral 2-body steps: the logarithmic t map and its Jacobian, the remainder mixture, beam anchoring, flat fallback, multi-body spines, and the ordering firing test."
 status: draft
 tags: [t-channel, spine, phase-space-map, firing-test, ladder]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -80,6 +80,15 @@ rung is built in the CM of `Q_{i−1}` with `q_{i−1}` rotated onto `+z`
 (`the_inter_rung_rotation_is_a_rotation`,
 `a_spacelike_incoming_line_has_a_frame_of_its_own`)[^n28-chain].
 
+**The remainder's invariant.** For every rung but the last, the remainder
+`Q_i` bounds no line of the diagram, so no propagator says how to draw `ŝ_i`.
+It is drawn from an even mixture of a flat and a `1/ŝ_i` map (`draw_rest`,
+`REST_LOG_SHARE = 0.5`, flat alone where the `1/ŝ_i` map does not apply), the
+`1/ŝ_i` half for the small momentum fraction a soft exchange further along the
+chain carries in; the walk and the density both read the choice from
+`Spine::rest_mixed`. The last rung's remainder is the recoil subsystem, drawn
+under its own resonance (`rest_resonance`).
+
 **The `t` map.** The rung importance-samples the propagator `1/(t − m²)` with
 density `∝ 1/(m² − t)`:[^n21-spine]
 
@@ -91,6 +100,9 @@ Both endpoints are `≤ 0`. When the pole cannot shape the draw — a massless l
 whose window reaches the collinear edge `t_max = m²`, or a degenerate
 threshold window — `draw_t` falls back to flat in `t`, the analogue of the BW
 map's zero-width fallback, and the rung reduces to an isotropic 2-body split.
+Every production rung draws against a positive pole floor
+([spacelike floor](spacelike-floor.md)), so `m² − t_max > 0` always and only
+a window of zero width reaches the flat draw.
 The polar angle is fixed by `t`
 (`t = m_a² + s₁ − 2E_aE₁ + 2k·p*·cos θ`), only `φ` is free, and the 2-body
 LIPS reparametrised from `(cos θ, φ)` to `(t, φ)` gives the rung factor
@@ -111,9 +123,11 @@ t_max^(i) = t_{i−1} · ŝ_i / ŝ_{i−1}
 (`t_0 = 0`) sits on the edge; interior rungs are pushed off it in proportion
 to `t_{i−1}`, which is itself regulated rather than large, so they still need
 the regulator; the last rung is back on the edge when the recoil is a single
-massless leg. The regulator — bound `t_max ≤ −floor` and a pole floor, from
-the cuts — is [the spacelike floor](spacelike-floor.md). Without a positive
-floor no spine is built past two outgoing legs[^n24-p2b].
+massless leg. The regulator is [the spacelike floor](spacelike-floor.md): a pole
+floor on every rung, at `10⁻³` of the cut-implied floor where the cuts imply
+one and of `DEFAULT_POLE_SCALE = 10³ GeV²` otherwise, and the bound
+`t_max ≤ −floor` only where the cuts imply a floor[^n24-p2b]. A spine is built for every
+chain, at any multiplicity, whether or not the cuts imply a floor.
 
 **Degrees of freedom.** With blobs of sizes `k_1 … k_r` and the remainders
 `R_i = B_{i+1} ∪ … ∪ B_{r+1}`, a chain consumes `2r` (one `t_i`, one `φ_i` per
