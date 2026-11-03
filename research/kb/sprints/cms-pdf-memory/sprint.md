@@ -57,7 +57,7 @@ Asked before any code session is dispatched; answers recorded under
 
 ## How each claim is measured
 
-- **Where the memory goes** (M-P0): peak and steady RSS over the load and the
+- **Where the memory goes** (M-P1, first): peak and steady RSS over the load and the
   event loop; heap attributed per structure (bytes per member by field,
   transient parse buffers, allocator arenas at `-j 1` and `-j 4`).
 - **Exactness**: the new interpolator against the current one, bit for bit,
@@ -74,7 +74,6 @@ Asked before any code session is dispatched; answers recorded under
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| M-P0 | performance-dev (Opus), measurement only | – | report | – |
-| M-P1 | performance-dev (Opus) | M-P0, D1–D4 | bit-identical interpolation, CMS gate, RSS, time | – |
+| M-P1 | performance-dev (Opus) | D1–D4 | memory attribution first; bit-identical interpolation, CMS gate, RSS, time | – |
 | M-V1 | validation-dev (Opus) | M-P1 | independent re-measurement, CMS gate, grid oracles, controls | the item |
 | M-HY1 | hygiene-dev (Sonnet) | M-V1 | hermetic, fmt, clippy | – |

@@ -5,3 +5,8 @@
 ## Sprint
 
 * [CMS's 880-member systematics request under 2 GB](sprint.md) - generate with CMS's runcmsgrid.sh systematics request (43 sets, 880 members) fits a 2 GB CMS production slot, measured, with the CMS-arguments weights gate still exact.
+
+## Directories
+
+* [decisions](decisions/index.md)
+* [sessions](sessions/index.md)
