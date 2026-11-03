@@ -19,9 +19,9 @@ measured:
 Designed with the user on 2026-10-22, from M1's measurements[^m1] and the two
 drafts it answers: the [sampler seam](importance-sampler-seam.md) and
 [multi-tier VEGAS](multi-tier-vegas-and-cut-edges.md). Where this concept and
-either draft disagree, this concept holds. Code is cited at `5bc4a19`; the
-artifact section is checked against `cfd9f7a`, the main that carries the
-integrate/generate split.
+either draft disagree, this concept holds. Code is cited at `86b8e5c` (main
+on 2026-11-03) unless a line says otherwise; the measurements name their own
+commits.
 
 ## Decisions
 
@@ -66,7 +66,7 @@ and the scale-configuration draw:
    cut-accepted region. A window narrows a coordinate's range from the
    coordinates drawn before it, and the window's width enters the map's own
    weight. `windowed`, `draw_lo` and `apply_fiducial_t_max`
-   (`diagram_channel.rs:1875`, `:1889`, `:2448`) already do this.
+   (`diagram_channel.rs:2141`, `:2155`, `:2789`) already do this.
 3. At a foreign point, `density_at` recomputes every window from that point's
    own earlier coordinates. `Σ αⱼ gⱼ` therefore stays defined, and the
    walk–density reciprocity test (`WALK_DENSITY_TOL`,
@@ -121,8 +121,9 @@ Two additions, both inert on the default path:
   `DecayPolar`, `DecayAzimuth` or `Select`. Configurations address
   coordinates by role, not index. That covers the per-role `K` (D4), a
   tier if one is ever built (D3), and the probes, which today hard-code the M1 layout
-  (`x0 = τ` … `x6 = φ*_ll`). The artifact records each channel's role list as
-  its layout (D7). They go in with the sampler trait, since its VEGAS config is
+  (`x0 = τ` … `x6 = φ*_ll`). The artifact records roles only where a per-role
+  override names them (D7); the layout itself is guarded by the channel-map
+  digest. They go in with the sampler trait, since its VEGAS config is
   their first consumer.
 - **Trailing stages.** `ChannelIntegrand::scale_draw_ndim` (`unweight.rs`)
   becomes a list of trailing stages, each with its own substream base and draw
@@ -156,6 +157,11 @@ freeze, serialise, and a uniform second implementor. Agreed with the user on
 - **Mergeable accumulators.** `merge(&mut self, other)` in block-index order.
   `adapt_blocks_iteration` already reduces the blocks' histograms in point
   order. A tier's shared part would need the same operation.
+- **Per-coordinate weight factors, optional.** `generate`'s heavy-weight log
+  splits a trial's `1/p` into one factor per coordinate
+  (`VegasGrid::jacobian_factors`, `generate.rs:1119`). The frozen trait offers
+  that as an optional diagnostic; a kind without a per-coordinate factorisation
+  (a flow) returns none.
 - **No product sampler type.** D3 leaves it without a user; the roles and merge
   are what a tier would build on.
 - **A config per kind.** `VegasConfig { nbins, alpha, rule, max_bin_width_by_role }`.
@@ -188,7 +194,10 @@ the variance is evaluated on the odd-indexed draws. The arms:
 
 Each arm is applied to `τ`, to `y`, or to both. The row figure is
 `Σ_j Var_j/N_j` at the production allocation. Five seeds,
-`20261020`–`20261024`. The trained σ̂ reproduce M1's seed for seed.
+`20261020`–`20261024`. The trained σ̂ reproduce M1's seed for seed. The
+replay was re-run on the tree rebased onto `86b8e5c` (after PRs #75, #81, #83
+and #84 changed the budget, the spine maps and the α floor): all 900 `REPLAY`
+records are identical to the first run's.
 
 Variance ratios, mean ± sd over five seeds. The row columns are `Σ_j Var_j/N_j`
 of `shared` over `own`, the like-for-like effect of sharing. The starved columns
@@ -315,57 +324,70 @@ change of results by construction, and is gated statistically.
 
 ## D7: the artifact, and what `generate` refuses
 
-**What is recorded.** Per channel: the sampler kind with its trained state,
-and the coordinate role list. Per run: the window set (in `MapChoices`), any
-per-role `K` override (beside `grid_rule`), and the decay request verbatim with
-its mode.
+**What is recorded.** Per channel: the sampler kind with its trained state.
+Per run: the window set (a `MapChoices` field, as `PairOrder` became one at
+version 16), any per-role `K` override (beside `grid_rule`, keyed by role
+name), and the decay request verbatim with its mode.
+
+**What guards the coordinate layout.** Since version 17 the artifact records
+`channel_map_digest`, a SHA-256 over every channel's `DiagramChannel::map_key`
+(`artifact.rs:381-403`), and `generate` refuses a mismatch with the maps it
+rebuilds (`generate.rs` `check_channel_maps`). A map key encodes the map's
+parameters (topology, poles, floors, transfer bounds), so:
+
+- a window's parameters go into `map_key` as well as into `MapChoices`, and a
+  replay through different windows is refused by the digest;
+- no per-channel role list is recorded. A change to which map a channel gets
+  moves the digest, and a change to how a map with an unchanged key draws (for
+  example a reordered coordinate) needs a version bump, by the versioning rule
+  that introduced the digest.
 
 **What `generate` refuses**, naming the field each time:
 
 - a kind it does not know;
 - a kind whose `ndim` disagrees with the channel;
-- a role list that this build's map lays out differently (the map changed
-  under the grid);
-- a window set it does not implement;
+- a window set it does not implement, and maps that differ from the trained
+  ones (the digest);
 - a decay mode it does not implement.
 
 The kind comes from the artifact, never from a flag.
 
-### Coordination with PRs #69 and #60
+### The artifact as it stands
 
 Sprint D's [integrate/generate split](../pipeline/integrate-generate-split.md)
-has landed: H1 as PR #69 (`ef96721`, gridpack `generate`), then H2 as PR #60
-(`cfd9f7a`, the PDF from the run card, with
-[run inputs](../pipeline/run-inputs-in-the-artifact.md)). What this design rests
-on, as merged:
+landed as PR #69 (version 13, gridpack `generate`) and PR #60 (version 14, the
+PDF from the run card, with [run inputs](../pipeline/run-inputs-in-the-artifact.md)).
+Three more steps followed (`artifact.rs:22-58`):
 
-- **Version numbers.** #69 wrote version 13 and #60 version 14.
-  `FORMAT_VERSION` and `OLDEST_READABLE_VERSION` are both 14 (`artifact.rs:31`,
-  `:34`).
+- **15** (PR #83): the systematics request, typed;
+- **16** (PR #84): the pair order among the map choices, and the α floor;
+- **17** (PR #81): peripheral channels on the t-channel spine, and
+  `channel_map_digest`.
+
+`FORMAT_VERSION` and `OLDEST_READABLE_VERSION` are both 17. What this design
+rests on:
+
 - **Every artifact is written at the current version.** `version_for` and the
-  threshold constants are gone, so "a VEGAS-only artifact keeps an older
-  version" no longer holds.
+  threshold constants are gone.
 - **The floor is a per-step choice.** [Keeping old readers](../pipeline/artifact-format-versioning.md#keeping-old-readers)
-  says a version that shares a schema with a later one costs nothing to keep,
-  and raising the floor breaks users' files. #69 and #60 raised it because no
-  older file could be replayed.
+  says a version that shares a schema with a later one costs nothing to keep.
+  Every step so far raised the floor, because no older file could be replayed.
 - **Gridpack-style `generate`.** `generate` takes the artifact plus
   generate-time inputs only, and the generation driver lives in
   `vibegraph-lib/src/generate.rs`.
 
 So:
 
-- Each field above lands as one version step, from 15 on, taking the next free
+- Each field above lands as one version step, from 18 on, taking the next free
   number at merge.
-- A version-14 file holds only VEGAS grids. Under rule 5 ("upgrade only what
-  the old file knows") it can upgrade to the VEGAS kind with its role list
-  "not recorded", which skips the layout check. Whether to keep that reader or
-  raise the floor is that PR's call.
+- A version-17 file holds only VEGAS grids, so under rule 5 ("upgrade only what
+  the old file knows") it can upgrade to the VEGAS kind. Whether to keep that
+  reader or raise the floor is that PR's call.
 - A VEGAS-only, window-free artifact is checked for identical replay, the same
   LHE from the same seed, not for identical file bytes, because the version
   number changes.
-- The sampler trait refactor now starts from the library driver, so
-  `Unweighter` and the generation path are refactored in one place.
+- The sampler trait refactor starts from the library driver, so `Unweighter`
+  and the generation path are refactored in one place.
 - The decay request is an integrate input under the split's principle. It
   defines the process and σ × BR, as the `madspin_card` does inside a MadGraph
   gridpack.

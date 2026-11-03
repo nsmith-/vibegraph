@@ -46,7 +46,7 @@ the pinned commits, by research agents, with the cited lines spot-checked;
     (`vegas.rs` `draw_into`);
   - the map's windows: `windowed` branches on `l < h`, `outside_window` returns
     a `bool`, and a two-interval window chooses per point
-    (`diagram_channel.rs:1876-1905`);
+    (`diagram_channel.rs:2141-2175` at `86b8e5c`);
   - cuts, with an early exit once every lane has failed;
   - kT clustering (`coupling/cluster/kt.rs`);
   - the PDF grid lookup, a search.

@@ -40,5 +40,8 @@ What to build, in order:
    trial count, the Breit–Wigner cutoff and the `spinmode` values from
    MadSpin's source (`research/refs/mg5amcnlo`, `MadSpin/`), not from memory.
 
-Related:
+The factorised stage leaves the production event's scales and PDF inputs as
+they are, so the systematics weights (PR #83) are the production event's,
+times the constant BR; check that against how MadSpin carries `<rwgt>`
+weights. Related:
 [decay-angles-drawn-flat-in-decay-chains](../performance/decay-angles-drawn-flat-in-decay-chains.md).
