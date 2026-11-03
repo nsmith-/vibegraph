@@ -34,7 +34,7 @@ use crate::artifact::FileDigest;
 use crate::ufo::identity::digest_bytes;
 
 use extrap::{Continuation, Extrapolate2D, PdfPointError};
-use grid::{GridError, SetInfo, SubGrid};
+use grid::{AlphaSInfo, GridError, SetInfo, SubGrid};
 use interp::{Bicubic2D, LogBicubic};
 
 /// LHAPDF's flavor alias: PDG code 0 means the gluon (21) in `.dat` flavor lists.
@@ -162,7 +162,9 @@ impl PdfSet {
         &self.info_file
     }
 
-    /// Load member `id`'s subgrids from `<dir>/<name>_{id:04}.dat`.
+    /// Load member `id`'s subgrids from `<dir>/<name>_{id:04}.dat`, with the
+    /// member's own metadata: its header laid over the set's `.info`, as
+    /// LHAPDF cascades them, for its strong coupling and its positivity clamp.
     pub fn member(&self, id: u32) -> Result<PdfMember, GridError> {
         if id >= self.info.num_members {
             return Err(GridError::MemberOutOfRange {
@@ -173,7 +175,9 @@ impl PdfSet {
         }
         let dat_path = self.dir.join(format!("{}_{id:04}.dat", self.name));
         let (text, file) = read_hashed(&dat_path)?;
-        let subgrids = grid::parse_member_dat(&text, &dat_path.display().to_string())?;
+        let shown = dat_path.display().to_string();
+        let (header, subgrids) = grid::parse_member(&text, &shown)?;
+        let meta = grid::member_meta(&self.info, &header, &shown)?;
         tracing::info!("PDF member {id} of {} loaded", self.name);
         tracing::debug!(
             subgrids = subgrids.len(),
@@ -181,12 +185,13 @@ impl PdfSet {
                 .iter()
                 .map(|g| g.x.len() * g.q2.len())
                 .sum::<usize>(),
-            force_positive = self.info.force_positive,
+            force_positive = meta.force_positive,
             "PDF interpolation setup"
         );
         let mut member =
-            PdfMember::from_subgrids(subgrids).with_force_positive(self.info.force_positive);
+            PdfMember::from_subgrids(subgrids).with_force_positive(meta.force_positive);
         member.file = Some(file);
+        member.alpha_s = Some(meta.alpha_s);
         Ok(member)
     }
 }
@@ -202,6 +207,9 @@ pub struct PdfMember {
     force_positive: i32,
     /// The `.dat` file the member was parsed from, if it came from one.
     file: Option<FileDigest>,
+    /// The member's own `AlphaS_*` metadata; `None` for a member built in
+    /// memory.
+    alpha_s: Option<AlphaSInfo>,
 }
 
 impl PdfMember {
@@ -217,7 +225,20 @@ impl PdfMember {
             extrap: Continuation,
             force_positive: 0,
             file: None,
+            alpha_s: None,
         }
+    }
+
+    /// The strong coupling this member was fitted at: its header's `AlphaS_*`
+    /// entries over the set's `.info`. `None` for a member built in memory.
+    pub fn alpha_s_info(&self) -> Option<&AlphaSInfo> {
+        self.alpha_s.as_ref()
+    }
+
+    /// The `ForcePositive` level applied to every value this member hands
+    /// out.
+    pub fn force_positive(&self) -> i32 {
+        self.force_positive
     }
 
     /// The `.dat` file's name and the SHA-256 of the bytes parsed from it;
@@ -531,6 +552,47 @@ AlphaS_Vals: [0.5]\nAlphaS_Lambda4: 0.3\nAlphaS_Lambda5: 0.2\n";
         assert!(PdfMember::from_subgrids(member.subgrids().to_vec())
             .file()
             .is_none());
+    }
+
+    /// `PdfSet::member` lays each member's own header over the set's `.info`:
+    /// a member that overrides `AlphaS_MZ`, `AlphaS_Vals` and `ForcePositive`
+    /// reads its own coupling and clamp level, and the set's other member
+    /// keeps the set's.
+    #[test]
+    fn a_member_reads_its_own_coupling_and_clamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = "SetDesc: \"test\"\nSetIndex: 900000\nFormat: lhagrid1\nNumMembers: 2\n\
+Particle: 2212\nFlavors: [21]\nOrderQCD: 0\nErrorType: hessian\nXMin: 0.01\nXMax: 1\nQMin: 1\n\
+QMax: 100\nAlphaS_MZ: 0.118\nAlphaS_OrderQCD: 0\nAlphaS_Type: ipol\nAlphaS_Qs: [1.0, 2.0, 3.0]\n\
+AlphaS_Vals: [0.5, 0.4, 0.3]\nAlphaS_Lambda4: 0.3\nAlphaS_Lambda5: 0.2\n";
+        let grid = "---\n0.01 1\n1 100\n21\n-1\n2\n3\n4\n---\n";
+        std::fs::write(dir.path().join("M.info"), info).unwrap();
+        std::fs::write(
+            dir.path().join("M_0000.dat"),
+            format!("PdfType: central\nFormat: lhagrid1\n{grid}"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("M_0001.dat"),
+            format!(
+                "AlphaS_Vals: [0.6, 0.45, 0.35]\nAlphaS_MZ: 0.120\nPdfType: central\n\
+                 Format: lhagrid1\nForcePositive: 2\n{grid}"
+            ),
+        )
+        .unwrap();
+        let set = PdfSet::load(dir.path(), "M").unwrap();
+        let central = set.member(0).unwrap();
+        let varied = set.member(1).unwrap();
+        assert_eq!(central.alpha_s_info().unwrap().mz, 0.118);
+        assert_eq!(central.force_positive(), 0);
+        assert_eq!(varied.alpha_s_info().unwrap().mz, 0.120);
+        assert_eq!(varied.alpha_s_info().unwrap().vals, [0.6, 0.45, 0.35]);
+        assert_eq!(varied.force_positive(), 2);
+        let set_alpha = super::alphas::GridAlphaS::from_info(&set.info.alpha_s).unwrap();
+        let own_alpha =
+            super::alphas::GridAlphaS::from_info(varied.alpha_s_info().unwrap()).unwrap();
+        assert_eq!(set_alpha.eval(1.0), 0.5);
+        assert_eq!(own_alpha.eval(1.0), 0.6);
     }
 
     #[test]
