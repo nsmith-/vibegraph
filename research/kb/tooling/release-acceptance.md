@@ -20,9 +20,20 @@ The question this gate answers is the one no other check can: does the
 artifact a user downloads work on a machine that never built it? It is not a
 physics gate.
 
-**State: green in CI.** Its first green run was a dispatch against `v0.1.0`
-from `main` on 2026-10-15 (run 38771664781), after the refusal check learned
-that the binary names the consent flag by its short spelling, `-y`. Publishing a `refdata-*` reference-data prerelease
+**State: red in CI until the next `v*` release.** Its first green run was a
+dispatch against `v0.1.0` from `main` on 2026-10-15 (run 38771664781), after
+the refusal check learned that the binary names the consent flag by its short
+spelling, `-y`. The first scheduled run, 2026-10-19 (run 39212602644), was
+green. The scheduled runs of 2026-10-26 and 2026-11-02 (run 41400916516) were
+red from version skew: they ran `main`'s script against the `v0.1.0` binary,
+and #69 had dropped the process card from `generate`, which `v0.1.0` still
+requires. The workflow now checks the script out at the binary's own tag. That
+does not make `v0.1.0` green: its own script greps the refusal for `--yes`,
+which the binary does not print (run 38769083090, a dispatch on ref `v0.1.0`).
+The weekly gate stays red until the next `v*` release, whose script matches
+its binary; the tag-matched checkout is unverified until then.
+
+Publishing a `refdata-*` reference-data prerelease
 starts a run that ends *skipped*, not red: those releases carry no binary, so
 the job's `if:` admits a `release` event only for a `v*` tag (refdata-10
 through refdata-13 were all skipped; refdata-2 through refdata-9, published
@@ -94,7 +105,11 @@ runner, on `release: published` and on `workflow_dispatch` (input `tag`;
 empty means the latest release). `release.yml` dispatches it after publishing,
 because its own token's release event does not start workflows
 ([release binaries](release-binaries.md)). A `release` event runs the job only
-for a `v*` tag; dispatches and the weekly schedule always run.
+for a `v*` tag; dispatches and the weekly schedule always run. Each run first
+resolves one tag (the release's own, the dispatch input, or else
+`releases/latest`, which excludes prereleases), checks the repository out at
+that tag and passes it to the script as `--tag`, so the script always drives
+the binary it was released with.
 
 Not on pushes or PRs, deliberately: its input is a published release asset,
 which a branch does not have, and it downloads 27 MB every run on purpose
@@ -112,9 +127,9 @@ the data path is not platform-specific.
   verifies every run, so on a timer it would be the second detector, beside an
   ignored test, for CERN re-tarring the pinned archive
   ([asset resolution](asset-resolution.md)). It runs weekly (Mondays 06:17
-  UTC) against the latest release, so that detector is on; no scheduled run
-  has completed yet
-  ([acceptance-yml-weekly-schedule](../backlog/hygiene/acceptance-yml-weekly-schedule.md)).
+  UTC) against the latest release, so that detector is on; its first
+  scheduled run (2026-10-19) was green, but while the gate is red (see the
+  state above) a repackaging would not show up as a separate failure.
 
 An earlier two-leg transcript in note 24 (7.5 s, labelled "verified for
 real") cannot have come from the committed script; only the run quoted above is
