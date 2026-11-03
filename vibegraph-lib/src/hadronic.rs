@@ -1638,6 +1638,9 @@ pub struct FixedBeamIntegrand<'a> {
     /// because they are type-erased behind [`Channel`] afterwards. Empty under
     /// flat RAMBO, which is not a rule-based composition.
     channel_samplers: Vec<ChannelSampler>,
+    /// Each channel's [`DiagramChannel::map_key`], in channel order; empty under
+    /// flat RAMBO.
+    channel_map_keys: Vec<String>,
     /// The outgoing pole masses in leg order, the map's targets.
     final_masses: Vec<f64>,
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
@@ -1966,6 +1969,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             sqrt_s,
             sampler,
             channel_samplers: Vec::new(),
+            channel_map_keys: Vec::new(),
             final_masses,
             spin_color_avg,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
@@ -2492,8 +2496,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// this integrand's own cuts imply — the same input
     /// [`ProtonIntegrand`](crate::proton::ProtonIntegrand) passes, read off the cuts
     /// rather than taken from the caller so a run cannot regulate at a scale its
-    /// cuts do not have. Without one, a final state of more than two legs has no
-    /// peripheral spine at all, and a spacelike line's transfer is drawn flat.
+    /// cuts do not have. Without one, every peripheral spine is still built, its
+    /// transfer unbounded and its pole floored at the default scale.
     ///
     /// The surveyed weights are then raised to the α floor
     /// ([`set_alpha_floor`](Self::set_alpha_floor), [`DEFAULT_ALPHA_FLOOR`] unless
@@ -2516,6 +2520,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         self.assert_channels_match_the_scale_source(built.len());
         let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
+        let map_keys: Vec<String> = built.iter().map(DiagramChannel::map_key).collect();
         report_channel_maps(&samplers);
         let channels: Vec<Box<dyn Channel<f64>>> = built
             .into_iter()
@@ -2553,6 +2558,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         self.sampler = Sampler::Multi(combiner);
         self.channel_samplers = samplers;
+        self.channel_map_keys = map_keys;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(report)
     }
@@ -2586,6 +2592,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         self.assert_channels_match_the_scale_source(built.len());
         let samplers: Vec<ChannelSampler> = built.iter().map(ChannelSampler::of).collect();
+        let map_keys: Vec<String> = built.iter().map(DiagramChannel::map_key).collect();
         let channels: Vec<Box<dyn Channel<f64>>> = built
             .into_iter()
             .map(|c| Box::new(c) as Box<dyn Channel<f64>>)
@@ -2598,6 +2605,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         combiner.set_alphas(alphas.to_vec());
         self.sampler = Sampler::Multi(combiner);
         self.channel_samplers = samplers;
+        self.channel_map_keys = map_keys;
         self.vegas_alpha = VEGAS_ALPHA_MAPPED;
         Some(Ok(()))
     }
@@ -2638,6 +2646,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// diagram's propagator structure.
     pub fn channel_samplers(&self) -> &[ChannelSampler] {
         &self.channel_samplers
+    }
+
+    /// Each channel's [`DiagramChannel::map_key`], in channel order. Empty under
+    /// flat RAMBO.
+    pub fn channel_map_keys(&self) -> &[String] {
+        &self.channel_map_keys
     }
 
     /// Whether the integrand is a constant over the unit hypercube, decided from

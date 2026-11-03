@@ -96,10 +96,12 @@ merging are [phase-space/channel-set](../phase-space/channel-set.md).
   channel) pair whose map it is; `channel_members` lists every pair merged into it. An
   artifact must carry the dimension and the ids; a fixed-beam artifact cannot be read as
   a hadronic one by shape alone.[^n24-p2d-p3]
-- Peripheral channels are floored at `Cuts::spacelike_floor()`, the scale the process's
-  own transverse-momentum cuts imply. A final state of more than two legs has no
-  peripheral spine without it; the floor also reshapes a `2 → 2` spine, which leaves the
-  estimator unbiased but changes the map a banked run was taken with. See
+- Peripheral channels are regulated at `Cuts::spacelike_floor()`, the scale the
+  process's own transverse-momentum cuts imply: a pole floor at `10⁻³` of it and a
+  transfer bound at `t ≤ −floor`. Without one every spine is still built, unbounded, its
+  pole floored at `10⁻³ · DEFAULT_POLE_SCALE`. The floor reshapes every spine, `2 → 2`
+  included, which leaves the estimator unbiased but changes the map a banked run was
+  taken with; the artifact's `channel_map_digest` records the maps. See
   [phase-space/spacelike-floor](../phase-space/spacelike-floor.md).
 - The per-iteration budget floor is `MIN_CHANNEL_NEVAL` per channel
   (`budget.rs`), whatever `neval` says, so a process with many channels has a large
