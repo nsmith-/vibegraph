@@ -86,6 +86,15 @@ pub enum SelectFailure {
         lhaid: i64,
     },
     #[error(
+        "PDF set {set} at {dir} ({tier}) has no SetIndex in its .info, so its members have no \
+         LHAPDF ids to write"
+    )]
+    UnnumberedSet {
+        set: String,
+        dir: String,
+        tier: Tier,
+    },
+    #[error(
         "{listed_by} gives PDF set {set} SetIndex {listed}, but its .info at {dir} ({tier}) says \
          {found}"
     )]
@@ -181,24 +190,48 @@ pub fn load_for_run_card(
     }
 }
 
+/// A set opened by its `.info`, with its `SetIndex` and where it was found.
+#[derive(Debug)]
+pub struct OpenedSet {
+    pub set: PdfSet,
+    pub set_index: i64,
+    pub found: FoundSet,
+}
+
 /// The set and member LHAPDF id `lhaid` names.
 pub fn load_for_lhaid(
     lhaid: i64,
     tiers: &Tiers,
     fetch: &FetchFactory<'_>,
 ) -> Result<LoadedPdf, PdfSelectError> {
+    let OpenedSet {
+        set,
+        set_index,
+        found,
+    } = open_set_for_lhaid(lhaid, tiers, fetch)?;
+    load_member_of(lhaid, set, set_index, found)
+}
+
+/// The set holding LHAPDF id `lhaid`, opened: the one whose id range
+/// `SetIndex .. SetIndex + NumMembers` holds it, found through this build's
+/// pins and then the tiers' indices as [`load_for_lhaid`] finds it.
+pub fn open_set_for_lhaid(
+    lhaid: i64,
+    tiers: &Tiers,
+    fetch: &FetchFactory<'_>,
+) -> Result<OpenedSet, PdfSelectError> {
     if let Some(pin) = PINNED_PDF_SETS
         .iter()
         .find(|pin| (pin.set_index..pin.set_index + i64::from(pin.num_members)).contains(&lhaid))
     {
         let found = locate_set(pin.name, tiers, fetch)?;
-        return load_in_set(lhaid, pin.name, pin.set_index, "this build's pin", found);
+        return open_in_set(lhaid, pin.name, pin.set_index, "this build's pin", found);
     }
 
     let mut read: Vec<String> = Vec::new();
     let mut nearest: Option<(String, i64, u32)> = None;
     let mut try_index =
-        |path: &Path, read: &mut Vec<String>| -> Result<Option<LoadedPdf>, PdfSelectError> {
+        |path: &Path, read: &mut Vec<String>| -> Result<Option<OpenedSet>, PdfSelectError> {
             let shown = path.display().to_string();
             if !read.contains(&shown) {
                 read.push(shown);
@@ -255,13 +288,13 @@ fn try_table(
     tiers: &Tiers,
     fetch: &FetchFactory<'_>,
     nearest: &mut Option<(String, i64, u32)>,
-) -> Result<Option<LoadedPdf>, PdfSelectError> {
+) -> Result<Option<OpenedSet>, PdfSelectError> {
     let Some(entry) = table.candidate(lhaid) else {
         return Ok(None);
     };
     let found = locate_set(&entry.name, tiers, fetch)?;
     let listed_by = path.display().to_string();
-    match load_in_set(lhaid, &entry.name, entry.set_index, &listed_by, found) {
+    match open_in_set(lhaid, &entry.name, entry.set_index, &listed_by, found) {
         Err(e) => match e.kind() {
             SelectFailure::MemberOutOfRange {
                 set,
@@ -312,17 +345,17 @@ fn load_member(set: &PdfSet, member: u32, found: &FoundSet) -> Result<PdfMember,
         .map_err(PdfSelectError::from)
 }
 
-/// Load the member of set `name`, found at `found`, that `lhaid` names, given
-/// that `listed_by` lists the set at `listed` (an index, or this build's pin).
-/// The set's own `.info` has to agree with that listing, and `lhaid` has to be
+/// Open set `name`, found at `found`, as the set holding `lhaid`, given that
+/// `listed_by` lists the set at `listed` (an index, or this build's pin). The
+/// set's own `.info` has to agree with that listing, and `lhaid` has to be
 /// inside its member range.
-fn load_in_set(
+fn open_in_set(
     lhaid: i64,
     name: &str,
     listed: i64,
     listed_by: &str,
     found: FoundSet,
-) -> Result<LoadedPdf, PdfSelectError> {
+) -> Result<OpenedSet, PdfSelectError> {
     let set = open(name, &found)?;
     let set_index = set_index_of(&set, &found, lhaid)?;
     if set_index != listed {
@@ -335,7 +368,52 @@ fn load_in_set(
             tier: found.tier,
         }));
     }
-    load_member_of(lhaid, set, set_index, found)
+    member_index(lhaid, &set, set_index)?;
+    Ok(OpenedSet {
+        set,
+        set_index,
+        found,
+    })
+}
+
+/// Set `name`, found through the tiers and opened, with its `SetIndex`.
+pub fn open_set_by_name(
+    name: &str,
+    tiers: &Tiers,
+    fetch: &FetchFactory<'_>,
+) -> Result<OpenedSet, PdfSelectError> {
+    let found = locate_set(name, tiers, fetch)?;
+    let set = open(name, &found)?;
+    let set_index = set
+        .info
+        .set_index()
+        .ok_or_else(|| SelectFailure::UnnumberedSet {
+            set: name.to_string(),
+            dir: found.dir.display().to_string(),
+            tier: found.tier,
+        })?;
+    Ok(OpenedSet {
+        set,
+        set_index,
+        found,
+    })
+}
+
+/// `lhaid − set_index`, refused unless it is one of `set`'s members.
+fn member_index(lhaid: i64, set: &PdfSet, set_index: i64) -> Result<u32, PdfSelectError> {
+    let members = set.info.num_members;
+    u32::try_from(lhaid - set_index)
+        .ok()
+        .filter(|&m| m < members)
+        .ok_or_else(|| {
+            PdfSelectError::from(SelectFailure::MemberOutOfRange {
+                lhaid,
+                set: set.name().to_string(),
+                set_index,
+                member: u32::try_from(lhaid - set_index).unwrap_or(u32::MAX),
+                members,
+            })
+        })
 }
 
 /// The member `lhaid − set_index` of `set`, refused unless it is one of the
@@ -347,17 +425,7 @@ fn load_member_of(
     found: FoundSet,
 ) -> Result<LoadedPdf, PdfSelectError> {
     let name = set.name().to_string();
-    let members = set.info.num_members;
-    let member = u32::try_from(lhaid - set_index)
-        .ok()
-        .filter(|&m| m < members)
-        .ok_or_else(|| SelectFailure::MemberOutOfRange {
-            lhaid,
-            set: name.clone(),
-            set_index,
-            member: u32::try_from(lhaid - set_index).unwrap_or(u32::MAX),
-            members,
-        })?;
+    let member = member_index(lhaid, &set, set_index)?;
     let pdf = load_member(&set, member, &found)?;
     let input = PdfInput::Lhapdf {
         lhaid,

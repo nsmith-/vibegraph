@@ -38,12 +38,17 @@
 
 use std::io::{self, Write};
 
+use std::sync::Arc;
+
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use rayon::prelude::*;
 
 use crate::progress;
 
 use crate::runcard::EventNorm;
+use crate::systematics::plan::Writer as SystematicsWriter;
+use crate::systematics::record::{LoRecord, RecordKinematics};
 
 use super::record::{LheEvent, LheInit, LheProcess, WeightStrategy};
 use super::write::{initrwgt_block, rwgt_block, LheWriter};
@@ -72,6 +77,10 @@ pub struct WeightedEvent {
     /// outgoing masses) in a sum over several, `0` otherwise.
     pub part: usize,
     pub reweights: Vec<f64>,
+    /// The event's `<mgrwt>` record, written after its particles; `None` where
+    /// the run writes none. Its systematics weights are computed from it when
+    /// the event is written.
+    pub lo_record: Option<LoRecord>,
 }
 
 /// A deterministic, replayable sequence of accepted events.
@@ -141,6 +150,10 @@ pub struct EmitPlan {
     /// and the `IDWTUP` that says so. Only [`Buffer`] writes anything but
     /// [`EventNorm::Average`].
     pub event_norm: EventNorm,
+    /// The systematics variations every event carries a weight for, ahead of
+    /// the reweighting hypotheses in `<initrwgt>` and in each `<rwgt>`, as
+    /// MadGraph's launch runs its systematics module before its reweighting.
+    pub systematics: Option<Arc<SystematicsWriter>>,
 }
 
 /// One integrated part's cross section and its uncertainty, in picobarns.
@@ -215,6 +228,11 @@ pub enum EmitError {
         strategy: &'static str,
         norm: EventNorm,
     },
+    /// An event's systematics weights could not be computed.
+    Systematics {
+        event: usize,
+        why: String,
+    },
 }
 
 impl std::fmt::Display for EmitError {
@@ -238,6 +256,11 @@ impl std::fmt::Display for EmitError {
                 "{strategy} writes unit weights under IDWTUP = +3 and cannot honour \
                  event_norm = {}; use the buffered strategy",
                 norm.as_str()
+            ),
+            EmitError::Systematics { event, why } => write!(
+                f,
+                "event {event} (counting from 1 in the order drawn): the systematics weights \
+                 cannot be computed: {why}"
             ),
             EmitError::PartsUnsupported { strategy, parts } => write!(
                 f,
@@ -422,30 +445,68 @@ fn begin<'w>(
     plan: &EmitPlan,
 ) -> io::Result<LheWriter<&'w mut dyn Write>> {
     let mut blocks = plan.header_blocks.clone();
-    if !plan.reweights.is_empty() {
-        blocks.extend(initrwgt_block(&plan.reweights));
+    let systematics = plan
+        .systematics
+        .as_ref()
+        .map(|w| w.header_lines())
+        .unwrap_or_default();
+    if !plan.reweights.is_empty() || !systematics.is_empty() {
+        blocks.extend(initrwgt_block(systematics, &plan.reweights));
     }
     LheWriter::begin_with_blocks(sink, init, header, &blocks)
 }
 
-/// `record` with its `XWGTUP` set to `xwgtup` and, when the plan declares
-/// reweighting hypotheses, the `<rwgt>` block carrying the event's weight under
-/// each of them.
-fn finished_record(event: &WeightedEvent, xwgtup: f64, plan: &EmitPlan) -> LheEvent {
+/// `record` with its `XWGTUP` set to `xwgtup`, then its `<mgrwt>` record
+/// where it carries one, then, when the plan declares systematics variations
+/// or reweighting hypotheses, the `<rwgt>` block carrying the event's weight
+/// under each: the variations first. `index` is the event's position in the
+/// draw, for a refusal to name.
+fn finished_record(
+    event: &WeightedEvent,
+    xwgtup: f64,
+    plan: &EmitPlan,
+    index: usize,
+) -> Result<LheEvent, EmitError> {
     let mut record = event.record.clone();
     record.weight = xwgtup;
+    if let Some(lo) = &event.lo_record {
+        record.trailer.extend(lo.lines());
+    }
+    let mut ids: Vec<String> = Vec::new();
+    let mut weights: Vec<f64> = Vec::new();
+    if let Some(writer) = &plan.systematics {
+        let lo = event
+            .lo_record
+            .as_ref()
+            .ok_or_else(|| EmitError::Systematics {
+                event: index + 1,
+                why: "the event carries no <mgrwt> record".to_string(),
+            })?;
+        let w = writer
+            .weights(lo, &RecordKinematics::of(&record), xwgtup)
+            .map_err(|why| EmitError::Systematics {
+                event: index + 1,
+                why,
+            })?;
+        ids.extend(writer.ids().iter().cloned());
+        weights.extend(w);
+    }
     if !plan.reweights.is_empty() {
         assert_eq!(
             event.reweights.len(),
             plan.reweights.len(),
             "an event carries one ratio per declared reweighting hypothesis"
         );
-        let ids: Vec<String> = plan.reweights.iter().map(|(id, _)| id.clone()).collect();
-        let weights: Vec<f64> = event.reweights.iter().map(|r| r * xwgtup).collect();
-        record.trailer.extend(rwgt_block(&ids, &weights));
+        ids.extend(plan.reweights.iter().map(|(id, _)| id.clone()));
+        weights.extend(event.reweights.iter().map(|r| r * xwgtup));
     }
-    record
+    record.trailer.extend(rwgt_block(&ids, &weights));
+    Ok(record)
 }
+
+/// Events finished this many at a time, in parallel, before they are written
+/// in order.
+const FINISH_CHUNK: usize = 1024;
 
 /// Take `n` accepted events from the source, or report how far it got.
 fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>, EmitError> {
@@ -574,10 +635,18 @@ impl UnweightStrategy for Buffer {
 
         let init = init_block(plan, self.weight_strategy(norm), processes);
         let mut writer = begin(sink, &init, Some(&header), plan)?;
-        for event in &events {
-            let xwgtup = written_weight(norm, tally[event.part].scale, event.weight);
-            let record = finished_record(event, xwgtup, plan);
-            writer.write_event(&record)?;
+        for (c, chunk) in events.chunks(FINISH_CHUNK).enumerate() {
+            let finished: Vec<LheEvent> = chunk
+                .par_iter()
+                .enumerate()
+                .map(|(i, event)| {
+                    let xwgtup = written_weight(norm, tally[event.part].scale, event.weight);
+                    finished_record(event, xwgtup, plan, c * FINISH_CHUNK + i)
+                })
+                .collect::<Result<_, _>>()?;
+            for record in &finished {
+                writer.write_event(record)?;
+            }
         }
         let written = writer.events_written();
         writer.finish()?;
@@ -933,7 +1002,7 @@ impl UnweightStrategy for StochasticRounding {
             // budget: truncating an event's copies mid-way would bias exactly the
             // overweight tail this strategy exists to represent.
             let copies = stochastic_multiplicity(event.weight, &mut rng);
-            let record = finished_record(&event, 1.0, plan);
+            let record = finished_record(&event, 1.0, plan, drawn - 1)?;
             for _ in 0..copies {
                 writer.write_event(&record)?;
             }
@@ -1024,6 +1093,7 @@ mod tests {
                 weight,
                 part: 0,
                 reweights: Vec::new(),
+                lo_record: None,
             };
             self.next += 1;
             Some(event)
@@ -1052,6 +1122,7 @@ mod tests {
             header_blocks: Vec::new(),
             reweights: Vec::new(),
             event_norm: EventNorm::Average,
+            systematics: None,
         }
     }
 
@@ -1345,6 +1416,7 @@ mod tests {
                     weight: 1.0,
                     part: 0,
                     reweights: Vec::new(),
+                    lo_record: None,
                 })
             }
             fn restart(&mut self) {}

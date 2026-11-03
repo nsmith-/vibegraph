@@ -443,7 +443,7 @@ fn signed_toward_subtree(
 
 /// The diagram's QCD coupling order, summed over its vertices the way
 /// `calculate_orders` sums it.
-fn qcd_order(diagram: &Diagram, model: &UFOModel) -> i64 {
+pub(crate) fn qcd_order(diagram: &Diagram, model: &UFOModel) -> i64 {
     diagram
         .vertices
         .iter()

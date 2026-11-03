@@ -219,7 +219,18 @@ fn check(audit: &Audit, file: &LheFile, nevents: usize, parts: usize) {
     // is invisible far below the pole, so a few are expected, but not most.
     let mut unmoved = [0usize; 2];
     for event in &file.events {
-        let w = weights(&event.trailer);
+        // The card asks for MadGraph's default systematics weights, which come
+        // first, under numeric ids; the hypotheses follow them.
+        let all = weights(&event.trailer);
+        let systematics = all
+            .iter()
+            .filter(|(id, _)| id.parse::<u64>().is_ok())
+            .count();
+        assert!(
+            systematics == 0 || systematics == 145,
+            "{systematics} systematics weights"
+        );
+        let w = all[systematics..].to_vec();
         let ids: Vec<&str> = w.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, ["wz", "nominal", "aew"]);
         let nominal = w[1].1;

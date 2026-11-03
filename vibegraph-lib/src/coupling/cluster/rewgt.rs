@@ -195,6 +195,11 @@ pub struct PdfStep {
     pub flavour: i64,
     /// The momentum fraction after this vertex's `z`.
     pub x: f64,
+    /// The momentum fraction on the line entering the vertex, as `reweight.f`
+    /// records it for the systematics module (`:1719-1723`): `x/z` where the
+    /// vertex's `z` reduced it, `x` otherwise. It is recomputed from `x`, not
+    /// kept from before the reduction, as the reference recomputes it.
+    pub x_entering: f64,
     /// The chain's scale on the line entering, GeV²; `0` before the first vertex.
     pub q2_prev: f64,
     /// `min(pt2ijcl(n), q2bck)`, or `q2bck` exactly at `jlast`, GeV².
@@ -475,9 +480,15 @@ pub fn rewgt(
                     continue;
                 }
                 ibeam[beam] = merge.mother;
-                if merge.z > 0.0 && merge.z < 1.0 {
+                let reduces = merge.z > 0.0 && merge.z < 1.0;
+                if reduces {
                     xnow[beam] *= merge.z;
                 }
+                let x_entering = if reduces {
+                    xnow[beam] / merge.z
+                } else {
+                    xnow[beam]
+                };
                 let q2_now = if step == history.jlast[beam] {
                     history.q2bck[beam]
                 } else {
@@ -498,6 +509,7 @@ pub fn rewgt(
                             line: daughter,
                             flavour,
                             x: xnow[beam],
+                            x_entering,
                             q2_prev,
                             q2_now,
                             outcome: PdfOutcome::Ratio {
@@ -540,6 +552,7 @@ pub fn rewgt(
                     line: daughter,
                     flavour,
                     x: xnow[beam],
+                    x_entering,
                     q2_prev,
                     q2_now,
                     outcome,
@@ -736,6 +749,12 @@ mod tests {
         assert_eq!(chain[0].x, x);
         assert_eq!((chain[1].n, chain[1].flavour, chain[1].x), (3, UB, x));
         assert_eq!((chain[1].q2_prev, chain[1].q2_now), (400.0, 8100.0));
+        // The fraction recorded for the line entering a vertex is the reduced
+        // one divided back by that vertex's own `z`, and the reduced one where
+        // the vertex has no `z` in (0, 1), as at the core.
+        assert_eq!(chain[0].x_entering, x / 0.4);
+        assert_ne!(chain[0].x_entering, chain[0].x);
+        assert_eq!(chain[1].x_entering, x);
         let ratio = toy_f(UB, x, 8100.0) / toy_f(UB, x, 400.0);
         assert_eq!(
             chain[1].outcome,
