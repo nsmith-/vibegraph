@@ -71,14 +71,7 @@ fn no_home(flag: &str) -> String {
 /// process's environment.
 pub(crate) fn pdf_tiers() -> Result<Tiers, String> {
     warn_on_retired_pdf_dir();
-    let root = cache_root().ok_or_else(|| {
-        format!(
-            "cannot locate a home directory for the asset cache; set ${CACHE_ROOT_VAR}, or put \
-             the PDF set's directory on ${}",
-            AssetKind::Pdf.env_var()
-        )
-    })?;
-    Ok(Tiers::from_env(root))
+    Ok(Tiers::from_env(cache_root()))
 }
 
 /// The fetch factory a PDF lookup asks before any download: it puts the

@@ -669,7 +669,7 @@ fn systematics_writer(
         lhapdf_data_path: vec![pdf_dir()],
         data_path_tier: Tier::LhapdfDataPath,
         cvmfs: None,
-        cache_root: cache.path().to_path_buf(),
+        cache_root: Some(cache.path().to_path_buf()),
     };
     let refuse = |r: &DownloadRequest| -> Result<Box<dyn Fetch>, String> {
         Err(format!("no download: {}", r.what))

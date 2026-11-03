@@ -79,15 +79,16 @@ pub struct Tiers {
     /// The CVMFS LHAPDF directory, `None` where it is not mounted.
     pub cvmfs: Option<PathBuf>,
     /// The `~/.vibegraph` directory; sets and the fetched index live under its
-    /// `pdf/`.
-    pub cache_root: PathBuf,
+    /// `pdf/`. `None` where no home directory can be located: a lookup then
+    /// serves what the other tiers hold and refuses at the cache.
+    pub cache_root: Option<PathBuf>,
 }
 
 impl Tiers {
     /// The tiers of this process: the LHAPDF data path from `$LHAPDF_DATA_PATH`
     /// (or `$LHAPATH` when it is unset), and [`CVMFS_LHAPDF_SETS`] if it is a
     /// directory.
-    pub fn from_env(cache_root: PathBuf) -> Self {
+    pub fn from_env(cache_root: Option<PathBuf>) -> Self {
         let data = std::env::var_os(AssetKind::Pdf.env_var());
         let lhapath = std::env::var_os(super::LHAPATH_VAR);
         let data_path_tier = if data.is_none() && lhapath.is_some() {
@@ -105,8 +106,10 @@ impl Tiers {
     }
 
     /// `<cache_root>/pdf/`, where fetched sets and the fetched index live.
-    pub fn cache_pdf_dir(&self) -> PathBuf {
-        self.cache_root.join(AssetKind::Pdf.cache_subdir())
+    pub fn cache_pdf_dir(&self) -> Option<PathBuf> {
+        self.cache_root
+            .as_ref()
+            .map(|root| root.join(AssetKind::Pdf.cache_subdir()))
     }
 
     /// The local copies of `pdfsets.index` that exist, in tier order.
@@ -119,7 +122,9 @@ impl Tiers {
             .cvmfs
             .iter()
             .map(|root| (root.join(INDEX_FILENAME), Tier::Cvmfs));
-        let cache = std::iter::once((self.cache_pdf_dir().join(INDEX_FILENAME), Tier::Cache));
+        let cache = self
+            .cache_pdf_dir()
+            .map(|dir| (dir.join(INDEX_FILENAME), Tier::Cache));
         data_path
             .chain(cvmfs)
             .chain(cache)
@@ -161,6 +166,16 @@ pub enum LookupError {
     /// The fetch factory refused a download; its message, verbatim.
     #[error("{0}")]
     Refused(String),
+    /// The cache and download tiers were reached with no cache root to read or
+    /// write.
+    #[error(
+        "{what} was not found on ${} or the CVMFS LHAPDF directory, and the cache and download \
+         tiers need a home directory, which cannot be located; set $VIBEGRAPH_HOME to a \
+         writable directory, or put the PDF set's directory on ${}",
+        AssetKind::Pdf.env_var(),
+        AssetKind::Pdf.env_var()
+    )]
+    NoCacheRoot { what: String },
     #[error("`{name}` is not an LHAPDF set name")]
     NotASetName { name: String },
     #[error("cannot obtain PDF set {name}: {source}")]
@@ -232,8 +247,13 @@ pub fn locate_set(
             tier: Tier::Cvmfs,
         });
     }
-    let destination = AssetKind::Pdf.entry_dir(&tiers.cache_root, name);
-    if cached_set_is_current(&tiers.cache_root, name) {
+    let Some(cache_root) = tiers.cache_root.as_deref() else {
+        return Err(LookupError::NoCacheRoot {
+            what: format!("PDF set {name}"),
+        });
+    };
+    let destination = AssetKind::Pdf.entry_dir(cache_root, name);
+    if cached_set_is_current(cache_root, name) {
         return Ok(FoundSet {
             dir: destination,
             tier: Tier::Cache,
@@ -260,12 +280,12 @@ pub fn locate_set(
     };
     let dir = match pin {
         Some(pin) => {
-            ensure_pdf_set_pinned(&tiers.cache_root, name, &url, pin.sha256, fetcher.as_ref())
+            ensure_pdf_set_pinned(cache_root, name, &url, pin.sha256, fetcher.as_ref())
                 .map_err(obtain)?
                 .dir
         }
         None => {
-            store::cache_pdf_set(&tiers.cache_root, name, &url, fetcher.as_ref())
+            store::cache_pdf_set(cache_root, name, &url, fetcher.as_ref())
                 .map_err(|e| obtain(EnsureError::Store(e)))?
                 .dir
         }
@@ -280,7 +300,12 @@ pub fn locate_set(
 /// Fetch the current `pdfsets.index` into the cache through `fetch`, replacing
 /// any copy there, and return where it was written.
 pub fn fetch_index(tiers: &Tiers, fetch: &FetchFactory<'_>) -> Result<PathBuf, LookupError> {
-    let destination = tiers.cache_pdf_dir().join(INDEX_FILENAME);
+    let Some(dir) = tiers.cache_pdf_dir() else {
+        return Err(LookupError::NoCacheRoot {
+            what: format!("the LHAPDF set index {INDEX_FILENAME}"),
+        });
+    };
+    let destination = dir.join(INDEX_FILENAME);
     let url = format!("{LHAPDF_SETS_URL}/{INDEX_FILENAME}");
     let request = DownloadRequest {
         what: format!("the LHAPDF set index {INDEX_FILENAME}"),
@@ -301,7 +326,6 @@ pub fn fetch_index(tiers: &Tiers, fetch: &FetchFactory<'_>) -> Result<PathBuf, L
         path: path.display().to_string(),
         source,
     };
-    let dir = tiers.cache_pdf_dir();
     std::fs::create_dir_all(&dir).map_err(|e| write(&dir, e))?;
     let staging = dir.join(format!(".{INDEX_FILENAME}-{}", std::process::id()));
     std::fs::write(&staging, &bytes).map_err(|e| write(&staging, e))?;
@@ -411,7 +435,7 @@ pub(crate) mod tests {
             lhapdf_data_path: Vec::new(),
             data_path_tier: Tier::LhapdfDataPath,
             cvmfs: None,
-            cache_root: root.join("home"),
+            cache_root: Some(root.join("home")),
         }
     }
 
@@ -441,7 +465,7 @@ pub(crate) mod tests {
         let factory = Factory::refusing();
         let fetch = factory.callback();
 
-        let cached = AssetKind::Pdf.entry_dir(&t.cache_root, "Set");
+        let cached = AssetKind::Pdf.entry_dir(t.cache_root.as_ref().unwrap(), "Set");
         std::fs::create_dir_all(&cached).unwrap();
         std::fs::write(cached.join(store::PIN_FILENAME), "whatever").unwrap();
         let found = locate_set("Set", &t, &fetch).unwrap();
@@ -530,7 +554,7 @@ pub(crate) mod tests {
     fn an_unpinned_cache_entry_without_its_sidecar_is_refetched() {
         let root = tempfile::tempdir().unwrap();
         let t = tiers(root.path());
-        set_dir(&t.cache_pdf_dir(), "Unpinned");
+        set_dir(&t.cache_pdf_dir().unwrap(), "Unpinned");
         let mut server = MapFetch::default();
         server
             .files
@@ -553,7 +577,7 @@ pub(crate) mod tests {
         let factory = Factory::refusing();
         let err = locate_set("Unpinned", &t, &factory.callback()).unwrap_err();
         assert_eq!(err.to_string(), "refused: PDF set Unpinned");
-        assert!(!t.cache_pdf_dir().join("Unpinned").exists());
+        assert!(!t.cache_pdf_dir().unwrap().join("Unpinned").exists());
     }
 
     /// The pinned set: its request states the pin's URL, size and checksum; a
@@ -582,13 +606,13 @@ pub(crate) mod tests {
             ),
             "{err}"
         );
-        assert!(!t.cache_pdf_dir().join(DEFAULT_PDF_SET).exists());
+        assert!(!t.cache_pdf_dir().unwrap().join(DEFAULT_PDF_SET).exists());
         let asked = factory.asked();
         assert_eq!(asked[0].url, pin.url);
         assert_eq!(asked[0].bytes, Some(pin.archive_bytes));
         assert_eq!(asked[0].sha256.as_deref(), Some(pin.sha256));
 
-        let cached = set_dir(&t.cache_pdf_dir(), DEFAULT_PDF_SET);
+        let cached = set_dir(&t.cache_pdf_dir().unwrap(), DEFAULT_PDF_SET);
         std::fs::write(cached.join(store::PIN_FILENAME), pin.sha256).unwrap();
         let factory = Factory::refusing();
         let found = locate_set(DEFAULT_PDF_SET, &t, &factory.callback()).unwrap();
@@ -608,15 +632,19 @@ pub(crate) mod tests {
     fn the_index_is_fetched_into_the_cache_replacing_a_stale_copy() {
         let root = tempfile::tempdir().unwrap();
         let t = tiers(root.path());
-        std::fs::create_dir_all(t.cache_pdf_dir()).unwrap();
-        std::fs::write(t.cache_pdf_dir().join(INDEX_FILENAME), "1 Stale 1\n").unwrap();
+        std::fs::create_dir_all(t.cache_pdf_dir().unwrap()).unwrap();
+        std::fs::write(
+            t.cache_pdf_dir().unwrap().join(INDEX_FILENAME),
+            "1 Stale 1\n",
+        )
+        .unwrap();
         let url = format!("{LHAPDF_SETS_URL}/{INDEX_FILENAME}");
         let mut server = MapFetch::default();
         server.files.insert(url.clone(), b"2 Fresh 1\n".to_vec());
         let factory = Factory::granting(server);
 
         let path = fetch_index(&t, &factory.callback()).unwrap();
-        assert_eq!(path, t.cache_pdf_dir().join(INDEX_FILENAME));
+        assert_eq!(path, t.cache_pdf_dir().unwrap().join(INDEX_FILENAME));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "2 Fresh 1\n");
         let asked = factory.asked();
         assert_eq!(asked.len(), 1);
@@ -639,7 +667,7 @@ pub(crate) mod tests {
             root.path().join("b"),
             root.path().join("cvmfs"),
         );
-        for dir in [&b, &cvmfs, &t.cache_pdf_dir()] {
+        for dir in [&b, &cvmfs, &t.cache_pdf_dir().unwrap()] {
             std::fs::create_dir_all(dir).unwrap();
             std::fs::write(dir.join(INDEX_FILENAME), "").unwrap();
         }
@@ -650,8 +678,44 @@ pub(crate) mod tests {
             vec![
                 (b.join(INDEX_FILENAME), Tier::LhapdfDataPath),
                 (cvmfs.join(INDEX_FILENAME), Tier::Cvmfs),
-                (t.cache_pdf_dir().join(INDEX_FILENAME), Tier::Cache),
+                (t.cache_pdf_dir().unwrap().join(INDEX_FILENAME), Tier::Cache),
             ]
         );
+    }
+
+    /// With no cache root, the data path and CVMFS still serve a set without the
+    /// fetch factory being asked; a set neither holds is refused at the cache
+    /// tier, and so is the index fetch, before any download is requested.
+    #[test]
+    fn no_cache_root_serves_local_tiers_and_refuses_at_the_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = tiers(root.path());
+        t.cache_root = None;
+        let data = root.path().join("data");
+        let cvmfs = root.path().join("cvmfs");
+        let in_data = set_dir(&data, "OnPath");
+        let in_cvmfs = set_dir(&cvmfs, "OnCvmfs");
+        t.lhapdf_data_path = vec![data];
+        t.cvmfs = Some(cvmfs);
+        let factory = Factory::granting(MapFetch::default());
+        let fetch = factory.callback();
+
+        let found = locate_set("OnPath", &t, &fetch).unwrap();
+        assert_eq!((found.dir, found.tier), (in_data, Tier::LhapdfDataPath));
+        let found = locate_set("OnCvmfs", &t, &fetch).unwrap();
+        assert_eq!((found.dir, found.tier), (in_cvmfs, Tier::Cvmfs));
+
+        let err = locate_set("Absent", &t, &fetch).unwrap_err();
+        assert!(matches!(err, LookupError::NoCacheRoot { .. }), "{err}");
+        let message = err.to_string();
+        assert!(
+            message.contains("PDF set Absent was not found on $LHAPDF_DATA_PATH")
+                && message.contains("cache and download tiers need a home directory"),
+            "{message}"
+        );
+        let err = fetch_index(&t, &fetch).unwrap_err();
+        assert!(matches!(err, LookupError::NoCacheRoot { .. }), "{err}");
+        assert!(t.cache_pdf_dir().is_none() && t.local_indices().is_empty());
+        assert!(factory.asked().is_empty(), "{:?}", factory.asked());
     }
 }
