@@ -307,6 +307,41 @@ a scale variation), the mass of an external particle (the momenta sit on the old
 mass shell), and a process with a forbidden s-channel (`$`), whose amplitude
 depends on each event's position relative to the veto windows.
 
+## Scale, PDF and αs variations
+
+A proton run with `use_syst = T` (MadGraph's default, and so the default here)
+writes the run card as `<MGRunCard>` in the header, MadGraph's `<mgrwt>` record
+after every event's particles (on an MLM-matched run too, with its emission
+scales and density chains) and, unless
+`systematics_program = none`, the weights MadGraph's systematics module would
+add: one per scale, PDF and αs variation, in its `<initrwgt>` groups and its
+`<wgt id='…'>` lines, computed in-process from the same record. The variations
+are the card's request, read as MadGraph reads it: the `systematics_arguments`
+list when the card writes that line, the `sys_*` fields otherwise. Its default,
+`--mur=0.5,1,2 --muf=0.5,1,2 --pdf=errorset`, is 145 weights per event: 44 scale
+and dynamical-scale combinations and every member of the run's own PDF set.
+Each weight is `XWGTUP × W(variation)/W(nominal)`, `W` being the module's
+`get_lo_wgt` on the event's record; every PDF member is evaluated with its own
+αs. On a matched run `--alps` varies the scale of each emission's αs and of the
+density ratios along each beam's chain. Because the header carries the run card,
+MadGraph's own `systematics` command also runs on the written file.
+
+`generate --systematics '<arguments>'` replaces the recorded request with
+MadGraph's arguments as one string, as CMS passes them:
+
+```text
+vibegraph generate run/grid.bin.zst --seed 1 \
+  --systematics '--start_id=1001 --pdf=325300,316200 --mur=1,2,0.5 --muf=1,2,0.5 --together=muf,mur,dyn'
+```
+
+The sets named are looked up like the run's own, every missing one asked for
+in one question, and every member is loaded before the first event. The
+systematics weights come before any reweighting hypotheses, in the header and
+in each event. Options vibegraph does not honour (`--weight_format`,
+`--remove_wgts`, `--only_beam`, …) and SysCalc are refused, as is
+`use_syst = T` written on fixed-energy beams, where it resolves off by
+default.
+
 ## Seeds and reproducibility
 
 A `generate` run is a pure function of the artifact, the cards and a seed.

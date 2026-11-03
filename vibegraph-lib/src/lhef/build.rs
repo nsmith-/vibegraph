@@ -992,6 +992,7 @@ mod tests {
             mu_f: [25.0, 30.0],
             mu_f_record: [60.0, 55.0],
             clustered_config: Some(0),
+            graph: Some(0),
         };
         assert_eq!(scalup(&matched), 60.0);
         let unmatched = EventScales::unmatched(40.0, [25.0, 30.0]);

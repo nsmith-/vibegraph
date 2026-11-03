@@ -322,6 +322,9 @@ Options:
       --reweight-couplings <NAME,...>
           Track the amplitude as a polynomial jointly in these external parameters (comma-separated names), so every hypothesis costs a quadratic form rather than an amplitude evaluation: an event costs one evaluation per monomial of the amplitude — `1 + n` for `n` couplings entering at most once per diagram — whatever the number of hypotheses. The card may then move only these, and each must enter every subprocess polynomially
 
+      --systematics <ARGUMENTS>
+          MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
+
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
 
