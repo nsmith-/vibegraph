@@ -5,3 +5,8 @@
 ## Session Brief
 
 * [G-F1: find a set on LHAPDF_DATA_PATH with no home directory](G-F1.md) - pdf_tiers needs the cache root only when the cache or download tier is reached; a CLI test with HOME and VIBEGRAPH_HOME unset pins it.
+* [G-F2: generate on p p > t t~ j with a quark-only jet](G-F2.md) - Reproduce generate's refusal on the quark-jet ttx card, fix the member-resonance lookup in mixed-flavour groups, pin it with a test that fails before the fix, and check the events against integrate's per-subprocess split.
+
+## Session Report
+
+* [G-F1 report: a PDF set on the data path is found with no home directory](G-F1-report.md) - Tiers.cache_root is optional; the cache and download tiers refuse with a named NoCacheRoot error, and CLI tests run as a user with no home directory pin both outcomes.
