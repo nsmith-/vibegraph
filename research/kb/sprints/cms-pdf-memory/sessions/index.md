@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [M-P1: CMS's 880 PDF members under 1.5 GB, losslessly](M-P1.md) - Attribute the 3.76 GB first; then store each member as its knots and build the x cubic on use, bit-identical to today's interpolation; pin bytes per member in CI; measure RSS and time on the CMS request.
+
+## Session Report
+
+* [M-P1 report: CMS's 880 members in 0.69 GB, bit-identical](M-P1-report.md) - The 3.59 GB peak was 83% removable derived tables (coefficients 66%, a second copy of the grid 17%); a member is now its knots with the x cubic built on use, 404M interpolated values bit-identical to the old layout on 984 members, generate's LHE byte-identical, peak RSS 0.685 GB at -j 1 and 0.689 GB at -j 4, no slower end to end; a counting-allocator test pins bytes per knot.

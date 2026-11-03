@@ -7,11 +7,15 @@
 //! spline is a different algorithm and does not reproduce LHAPDF (and hence the
 //! MadGraph cross section it feeds) off-knot.
 //!
-//! The x-direction cubic is precomputed once per member as four polynomial
-//! coefficients `[a, b, c, d]` per `(x-interval, Q²-knot, flavor)`, matching
-//! LHAPDF's `KnotArray::coeff` layout. The Q²-direction cubic is assembled at
-//! evaluation time from the x-interpolated values on the four surrounding Q²
-//! knots (Hermite with central/one-sided finite-difference slopes).
+//! A member is stored as its knots. The x-direction cubic's four polynomial
+//! coefficients `[a, b, c, d]` are built on use from the `x·f` values around
+//! the point, in the arithmetic LHAPDF's `GridPDF::_computePolynomialCoefficients`
+//! precomputes them with, so each is the value a precomputed table would hold.
+//! A table of them costs four `f64` per knot against the knots' one, and a
+//! systematics request holds hundreds of members at once. The Q²-direction
+//! cubic is assembled at evaluation time from the x-interpolated values on the
+//! four surrounding Q² knots (Hermite with central/one-sided finite-difference
+//! slopes).
 //!
 //! # Kernel shape
 //!
@@ -21,22 +25,21 @@
 //!
 //! - **Index computation is separated from arithmetic.** Band selection, the two
 //!   knot searches and the two interval fractions happen once per `(x, Q²)`;
-//!   everything after them is straight-line floating point over a contiguous
-//!   coefficient block.
+//!   everything after them is straight-line floating point over the knots
+//!   around the point.
 //! - **The Q²-slope stencils are branch-free.** The forward/backward/central
 //!   finite-difference cases differ only by a clamped neighbour index and two
 //!   per-interval constants ([`QCell`]), both resolved when the member is built.
 //!   The one case that is genuinely a different formula — the bilinear fallback
 //!   for a band with two Q² knots — is a property of the band, decided at build
 //!   time, not of the point.
-//! - **The inner loop is flavor-major** over the cell's contiguous
-//!   `(flavor, coefficient)` block, which is what [`LogBicubic::xfx_all`]
-//!   evaluates in one pass, and the x-direction cubic in it is a Horner chain of
-//!   fused multiply-adds. The Q²-direction Hermite deliberately is not: see
+//! - **The x-direction stencil is resolved per point.** Its one-sided ends
+//!   ([`XCell`]) are a property of the x interval, chosen once per point, and
+//!   the x-direction cubic is a Horner chain of fused multiply-adds. The Q²-direction Hermite deliberately is not: see
 //!   [`cubic_hermite`].
 //!
 //! A batch-of-points variant is a mechanical extension of this shape: hold the
-//! per-point indices in lanes, gather the four coefficient blocks, and run the
+//! per-point indices in lanes, gather the knots around each point, and run the
 //! same arithmetic. It is not built here because no caller can feed it — the
 //! hadronic integrand is a single-point closure — and an unused batched API
 //! would be untested surface. Extrapolation stays a scalar fallback either way.
@@ -115,11 +118,14 @@ pub(crate) trait Bicubic2D {
     fn present_flavors(&self) -> &[(u8, i32)];
 }
 
-/// The precomputed log-bicubic coefficient tables for one member, one subgrid
-/// per Q² band.
+/// One member's log-bicubic interpolator: its subgrids, one per Q² band, and
+/// per band the few constants evaluation needs beside the knots.
 #[derive(Debug, Clone)]
 pub(crate) struct LogBicubic {
-    subgrids: Vec<LogBicubicSubgrid>,
+    /// The parsed subgrids, in file order: the knots every value is built from.
+    grids: Vec<SubGrid>,
+    /// Per-band evaluation constants, index-aligned with `grids`.
+    bands: Vec<Band>,
     edges: GridEdges,
     /// `(slot, pdg)` for every flavor some band carries, ascending in slot.
     present: Vec<(u8, i32)>,
@@ -168,10 +174,11 @@ struct QCell {
     iq_hi: usize,
 }
 
-/// One subgrid's precomputed x-direction cubic coefficients plus the log-knot
-/// coordinates needed for the Q²-direction Hermite assembly.
+/// One band's evaluation constants: the log-knot coordinates both directions
+/// interpolate in, the Q² stencil, and the flavor maps. The `x·f` values are
+/// the band's [`SubGrid`]'s own.
 #[derive(Debug, Clone)]
-struct LogBicubicSubgrid {
+struct Band {
     /// Flavor-list position → [`super::flavor_slot`], the scatter an all-flavor
     /// reading writes through.
     slot_of_flavor: Vec<usize>,
@@ -186,13 +193,6 @@ struct LogBicubicSubgrid {
     q2_max: f64,
     nq: usize,
     nf: usize,
-    /// x-direction cubic coefficients, shape `(nx-1, nq, nf, 4)` row-major:
-    /// `coeffs[(((ix*nq + iq)*nf + ifl)*4) + k]`, `k` in `{a, b, c, d}` with the
-    /// cubic `a·t³ + b·t² + c·t + d`.
-    coeffs: Vec<f64>,
-    /// Raw `x·f` grid values, shape `(nx, nq, nf)` row-major. Used only by the
-    /// bilinear fallback for degenerate (two-Q²-knot) bands.
-    xf: Vec<f64>,
     /// Slope stencil constants, one per Q² interval.
     qcells: Vec<QCell>,
     /// A band with two Q² knots carries no third knot to take a finite
@@ -202,13 +202,13 @@ struct LogBicubicSubgrid {
 }
 
 impl LogBicubic {
-    /// Precompute the log-bicubic coefficients for every subgrid of a member.
-    pub(crate) fn build(subgrids: &[SubGrid]) -> Self {
-        let bands: Vec<LogBicubicSubgrid> = subgrids.iter().map(LogBicubicSubgrid::build).collect();
+    /// The interpolator over a member's subgrids, which it keeps.
+    pub(crate) fn build(grids: Vec<SubGrid>) -> Self {
+        let bands: Vec<Band> = grids.iter().map(Band::build).collect();
 
         let mut has_slot = [false; FLAVOR_SLOTS];
         let mut present: Vec<(u8, i32)> = Vec::new();
-        for sg in subgrids {
+        for sg in &grids {
             for &pdg in &sg.flavors {
                 let slot = flavor_slot(pdg).expect("checked when the band was built");
                 if !has_slot[slot] {
@@ -224,12 +224,18 @@ impl LogBicubic {
         });
 
         LogBicubic {
-            subgrids: bands,
-            edges: edges_of(subgrids),
+            edges: edges_of(&grids),
+            grids,
+            bands,
             present,
             has_slot,
             bands_searchable,
         }
+    }
+
+    /// The subgrids the member was built from, in file order.
+    pub(crate) fn subgrids(&self) -> &[SubGrid] {
+        &self.grids
     }
 
     /// The band a point reads from: the first whose `(x, Q²)` support contains
@@ -238,16 +244,16 @@ impl LogBicubic {
     /// the lower band exactly as the walk does, because the seam *is* that
     /// band's upper edge.
     #[inline]
-    fn select_band(&self, x: f64, q2: f64) -> Option<&LogBicubicSubgrid> {
+    fn select_band(&self, x: f64, q2: f64) -> Option<usize> {
         if !self.bands_searchable {
             return self
-                .subgrids
+                .bands
                 .iter()
-                .find(|sg| x >= sg.x_min && x <= sg.x_max && q2 >= sg.q2_min && q2 <= sg.q2_max);
+                .position(|b| x >= b.x_min && x <= b.x_max && q2 >= b.q2_min && q2 <= b.q2_max);
         }
-        let i = self.subgrids.partition_point(|sg| sg.q2_max < q2);
-        let sg = self.subgrids.get(i)?;
-        (x >= sg.x_min && x <= sg.x_max && q2 >= sg.q2_min).then_some(sg)
+        let i = self.bands.partition_point(|b| b.q2_max < q2);
+        let b = self.bands.get(i)?;
+        (x >= b.x_min && x <= b.x_max && q2 >= b.q2_min).then_some(i)
     }
 
     /// The union extent of every band, for an out-of-range report.
@@ -261,11 +267,11 @@ impl LogBicubic {
             q2_min: f64::INFINITY,
             q2_max: f64::NEG_INFINITY,
         };
-        for sg in &self.subgrids {
-            e.x_min = e.x_min.min(sg.x_min);
-            e.x_max = e.x_max.max(sg.x_max);
-            e.q2_min = e.q2_min.min(sg.q2_min);
-            e.q2_max = e.q2_max.max(sg.q2_max);
+        for b in &self.bands {
+            e.x_min = e.x_min.min(b.x_min);
+            e.x_max = e.x_max.max(b.x_max);
+            e.q2_min = e.q2_min.min(b.q2_min);
+            e.q2_max = e.q2_max.max(b.q2_max);
         }
         e
     }
@@ -294,26 +300,27 @@ fn edges_of(subgrids: &[SubGrid]) -> GridEdges {
 
 impl Bicubic2D for LogBicubic {
     fn xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> Result<f64, OutOfRange> {
-        let Some(sg) = self.select_band(x, q2) else {
+        let Some(i) = self.select_band(x, q2) else {
             return Err(self.out_of_range(x, q2));
         };
+        let band = &self.bands[i];
         // Flavor absent from the band: LHAPDF returns exactly zero.
         let Some(slot) = flavor_slot(pdg) else {
             return Ok(0.0);
         };
-        let ifl = sg.flavor_of_slot[slot];
+        let ifl = band.flavor_of_slot[slot];
         if ifl == ABSENT {
             return Ok(0.0);
         }
-        Ok(sg.eval_one(ifl, x, q2))
+        Ok(band.eval_one(&self.grids[i].xf, ifl, x, q2))
     }
 
     fn xfx_all(&self, x: f64, q2: f64, out: &mut FlavorRow) -> Result<(), OutOfRange> {
-        let Some(sg) = self.select_band(x, q2) else {
+        let Some(i) = self.select_band(x, q2) else {
             return Err(self.out_of_range(x, q2));
         };
         *out = [0.0; FLAVOR_SLOTS];
-        sg.eval_all(x, q2, out);
+        self.bands[i].eval_all(&self.grids[i].xf, x, q2, out);
         Ok(())
     }
 
@@ -347,49 +354,52 @@ fn index_below(value: f64, knots: &[f64]) -> usize {
     i.saturating_sub(1)
 }
 
-/// Where one point sits in one band: the interval indices and the two interval
-/// fractions, computed once and shared by every flavor.
+/// Where one point sits in one band: the interval indices, the two interval
+/// fractions and the x-direction stencil, computed once and shared by every
+/// flavor.
 struct Cell<'a> {
     ix: usize,
     iq: usize,
     tlogx: f64,
     tlogq: f64,
     q: &'a QCell,
+    x: XCell,
 }
 
-impl LogBicubicSubgrid {
+/// The x-direction counterpart of [`QCell`] for one x interval `ix`: the knots
+/// and spacings LHAPDF's `_ddx` differences against at the interval's two ends.
+///
+/// `_ddx` (log-space) at knot `i` is the one-sided difference toward the
+/// interior at the first and last x knot, and the mean of the two one-sided
+/// differences in between. The difference across the interval itself enters
+/// both end slopes; the outer ones are clamped onto the interval's own knots at
+/// a grid edge (so they are finite and unused), and `lower`/`upper` select the
+/// one-sided form there.
+#[derive(Clone, Copy)]
+struct XCell {
+    /// `logxs[ix+1] - logxs[ix]`.
+    dlogx: f64,
+    /// `logxs[ix] - logxs[ix-1]`, or `dlogx` at the first interval.
+    dlogx_lo: f64,
+    /// `logxs[ix+2] - logxs[ix+1]`, or `dlogx` at the last interval.
+    dlogx_hi: f64,
+    /// `ix - 1`, clamped to `ix` at the first interval.
+    ix_lo: usize,
+    /// `ix + 2`, clamped to `ix + 1` at the last interval.
+    ix_hi: usize,
+    /// `ix` is the first x knot.
+    lower: bool,
+    /// `ix + 1` is the last x knot.
+    upper: bool,
+}
+
+impl Band {
     fn build(sg: &SubGrid) -> Self {
         let nx = sg.nx();
         let nq = sg.nq();
         let nf = sg.nf();
         let logxs: Vec<f64> = sg.x.iter().map(|&v| v.ln()).collect();
         let logq2s: Vec<f64> = sg.q2.iter().map(|&v| v.ln()).collect();
-
-        // x-direction cubic coefficients, computed in log-x space exactly as
-        // LHAPDF's GridPDF::_computePolynomialCoefficients (logspace=true).
-        let mut coeffs = vec![0.0; (nx - 1) * nq * nf * 4];
-        for ix in 0..nx - 1 {
-            let dlogx = logxs[ix + 1] - logxs[ix];
-            for iq in 0..nq {
-                for ifl in 0..nf {
-                    let vl = sg.xf_at(ix, iq, ifl);
-                    let vh = sg.xf_at(ix + 1, iq, ifl);
-                    let vdl = ddx_logx(sg, &logxs, ix, iq, ifl) * dlogx;
-                    let vdh = ddx_logx(sg, &logxs, ix + 1, iq, ifl) * dlogx;
-
-                    let a = vdh + vdl - 2.0 * vh + 2.0 * vl;
-                    let b = 3.0 * vh - 3.0 * vl - 2.0 * vdl - vdh;
-                    let c = vdl;
-                    let d = vl;
-
-                    let base = ((ix * nq + iq) * nf + ifl) * 4;
-                    coeffs[base] = a;
-                    coeffs[base + 1] = b;
-                    coeffs[base + 2] = c;
-                    coeffs[base + 3] = d;
-                }
-            }
-        }
 
         let mut flavor_of_slot = [ABSENT; FLAVOR_SLOTS];
         let mut slot_of_flavor = vec![0usize; nf];
@@ -432,7 +442,7 @@ impl LogBicubicSubgrid {
             })
             .collect();
 
-        LogBicubicSubgrid {
+        Band {
             slot_of_flavor,
             flavor_of_slot,
             logxs,
@@ -443,8 +453,6 @@ impl LogBicubicSubgrid {
             q2_max: sg.q2[nq - 1],
             nq,
             nf,
-            coeffs,
-            xf: sg.xf.clone(),
             qcells,
             degenerate: nq == 2,
         }
@@ -461,32 +469,81 @@ impl LogBicubicSubgrid {
         let ix = index_below(logx, &self.logxs);
         let iq = index_below(logq2, &self.logq2s);
         let q = &self.qcells[iq];
+        let nx = self.logxs.len();
+        let dlogx = self.logxs[ix + 1] - self.logxs[ix];
+        let lower = ix == 0;
+        let upper = ix + 2 == nx;
+        let x = XCell {
+            dlogx,
+            dlogx_lo: if lower {
+                dlogx
+            } else {
+                self.logxs[ix] - self.logxs[ix - 1]
+            },
+            dlogx_hi: if upper {
+                dlogx
+            } else {
+                self.logxs[ix + 2] - self.logxs[ix + 1]
+            },
+            ix_lo: if lower { ix } else { ix - 1 },
+            ix_hi: if upper { ix + 1 } else { ix + 2 },
+            lower,
+            upper,
+        };
         let cell = Cell {
             ix,
             iq,
-            tlogx: (logx - self.logxs[ix]) / (self.logxs[ix + 1] - self.logxs[ix]),
+            tlogx: (logx - self.logxs[ix]) / dlogx,
             tlogq: (logq2 - self.logq2s[iq]) / q.dlogq,
             q,
+            x,
         };
         (cell, logx, logq2)
     }
 
-    /// The four x-cubic coefficients `[a, b, c, d]` for interval `ix`, Q²-knot
-    /// `iq`, flavor `ifl`.
+    /// The x-direction cubic of flavor `ifl` on Q² knot `iq`, over the located
+    /// x interval, at the located fraction.
+    ///
+    /// The coefficients are LHAPDF's `GridPDF::_computePolynomialCoefficients`
+    /// (log-space): `_ddx` slopes at the interval's two ends scaled by its
+    /// width, then `[a, b, c, d]` of `a·t³ + b·t² + c·t + d`, in its operation
+    /// order. Every operation is IEEE-exact given its operands, so a
+    /// coefficient built here is the one a precomputed table would hold, bit for
+    /// bit, and the cubic is that table's Horner chain.
     #[inline]
-    fn coeff(&self, ix: usize, iq: usize, ifl: usize) -> &[f64] {
-        let base = ((ix * self.nq + iq) * self.nf + ifl) * 4;
-        &self.coeffs[base..base + 4]
+    fn x_cubic(&self, xf: &[f64], cell: &Cell<'_>, iq: usize, ifl: usize) -> f64 {
+        let xc = &cell.x;
+        let at = |ix: usize| xf[(ix * self.nq + iq) * self.nf + ifl];
+        let (v_lo, vl, vh, v_hi) = (at(xc.ix_lo), at(cell.ix), at(cell.ix + 1), at(xc.ix_hi));
+        let across = (vh - vl) / xc.dlogx;
+        let ddx_l = if xc.lower {
+            across
+        } else {
+            ((vl - v_lo) / xc.dlogx_lo + across) / 2.0
+        };
+        let ddx_h = if xc.upper {
+            across
+        } else {
+            (across + (v_hi - vh) / xc.dlogx_hi) / 2.0
+        };
+        let vdl = ddx_l * xc.dlogx;
+        let vdh = ddx_h * xc.dlogx;
+
+        let a = vdh + vdl - 2.0 * vh + 2.0 * vl;
+        let b = 3.0 * vh - 3.0 * vl - 2.0 * vdl - vdh;
+        let c = vdl;
+        let d = vl;
+        cubic_x(cell.tlogx, &[a, b, c, d])
     }
 
     /// One flavor's `x·f` in an already-located cell.
     #[inline]
-    fn eval_at(&self, cell: &Cell<'_>, ifl: usize) -> f64 {
+    fn eval_at(&self, xf: &[f64], cell: &Cell<'_>, ifl: usize) -> f64 {
         let q = cell.q;
-        let vl = cubic_x(cell.tlogx, self.coeff(cell.ix, cell.iq, ifl));
-        let vh = cubic_x(cell.tlogx, self.coeff(cell.ix, cell.iq + 1, ifl));
-        let vll = cubic_x(cell.tlogx, self.coeff(cell.ix, q.iq_lo, ifl));
-        let vhh = cubic_x(cell.tlogx, self.coeff(cell.ix, q.iq_hi, ifl));
+        let vl = self.x_cubic(xf, cell, cell.iq, ifl);
+        let vh = self.x_cubic(xf, cell, cell.iq + 1, ifl);
+        let vll = self.x_cubic(xf, cell, q.iq_lo, ifl);
+        let vhh = self.x_cubic(xf, cell, q.iq_hi, ifl);
         let d = vh - vl;
         let vdl = (d + (vl - vll) * q.dlogq * q.inv_dlogq_lo) * q.half_lo;
         let vdh = (d + (vhh - vh) * q.dlogq * q.inv_dlogq_hi) * q.half_hi;
@@ -494,25 +551,25 @@ impl LogBicubicSubgrid {
     }
 
     /// Evaluate `x·f` at `(x, Q²)` for one flavor position.
-    fn eval_one(&self, ifl: usize, x: f64, q2: f64) -> f64 {
+    fn eval_one(&self, xf: &[f64], ifl: usize, x: f64, q2: f64) -> f64 {
         let (cell, logx, logq2) = self.locate(x, q2);
         if self.degenerate {
-            return self.bilinear(&cell, logx, logq2, ifl);
+            return self.bilinear(xf, &cell, logx, logq2, ifl);
         }
-        self.eval_at(&cell, ifl)
+        self.eval_at(xf, &cell, ifl)
     }
 
     /// Evaluate `x·f` at `(x, Q²)` for every flavor this band carries, writing
     /// each into its slot of `out`.
-    fn eval_all(&self, x: f64, q2: f64, out: &mut FlavorRow) {
+    fn eval_all(&self, xf: &[f64], x: f64, q2: f64, out: &mut FlavorRow) {
         let (cell, logx, logq2) = self.locate(x, q2);
         if self.degenerate {
             for (ifl, &slot) in self.slot_of_flavor.iter().enumerate() {
-                out[slot] = self.bilinear(&cell, logx, logq2, ifl);
+                out[slot] = self.bilinear(xf, &cell, logx, logq2, ifl);
             }
         } else {
             for (ifl, &slot) in self.slot_of_flavor.iter().enumerate() {
-                out[slot] = self.eval_at(&cell, ifl);
+                out[slot] = self.eval_at(xf, &cell, ifl);
             }
         }
     }
@@ -520,55 +577,31 @@ impl LogBicubicSubgrid {
     /// LHAPDF's degenerate case: a band whose only two Q² knots are both grid
     /// edges has no finite difference to take, and falls back to bilinear on the
     /// raw values.
-    fn bilinear(&self, cell: &Cell<'_>, logx: f64, logq2: f64, ifl: usize) -> f64 {
+    fn bilinear(&self, xf: &[f64], cell: &Cell<'_>, logx: f64, logq2: f64, ifl: usize) -> f64 {
         let (ix, iq) = (cell.ix, cell.iq);
+        let at = |ix: usize, iq: usize| xf[(ix * self.nq + iq) * self.nf + ifl];
         let f_ql = interp_linear(
             logx,
             self.logxs[ix],
             self.logxs[ix + 1],
-            self.xf_raw(ix, iq, ifl),
-            self.xf_raw(ix + 1, iq, ifl),
+            at(ix, iq),
+            at(ix + 1, iq),
         );
         let f_qh = interp_linear(
             logx,
             self.logxs[ix],
             self.logxs[ix + 1],
-            self.xf_raw(ix, iq + 1, ifl),
-            self.xf_raw(ix + 1, iq + 1, ifl),
+            at(ix, iq + 1),
+            at(ix + 1, iq + 1),
         );
         interp_linear(logq2, self.logq2s[iq], self.logq2s[iq + 1], f_ql, f_qh)
     }
-
-    /// Raw `x·f` at grid indices `(ix, iq)`, flavor `ifl`.
-    #[inline]
-    fn xf_raw(&self, ix: usize, iq: usize, ifl: usize) -> f64 {
-        self.xf[(ix * self.nq + iq) * self.nf + ifl]
-    }
 }
 
-/// Central/one-sided finite-difference slope of `x·f` in log-x at knot `ix`,
-/// mirroring LHAPDF's `_ddx` (logspace).
-fn ddx_logx(sg: &SubGrid, logxs: &[f64], ix: usize, iq: usize, ifl: usize) -> f64 {
-    let nx = logxs.len();
-    if ix == 0 {
-        let del2 = logxs[1] - logxs[0];
-        (sg.xf_at(1, iq, ifl) - sg.xf_at(0, iq, ifl)) / del2
-    } else if ix == nx - 1 {
-        let del1 = logxs[nx - 1] - logxs[nx - 2];
-        (sg.xf_at(nx - 1, iq, ifl) - sg.xf_at(nx - 2, iq, ifl)) / del1
-    } else {
-        let del1 = logxs[ix] - logxs[ix - 1];
-        let del2 = logxs[ix + 1] - logxs[ix];
-        let lddx = (sg.xf_at(ix, iq, ifl) - sg.xf_at(ix - 1, iq, ifl)) / del1;
-        let rddx = (sg.xf_at(ix + 1, iq, ifl) - sg.xf_at(ix, iq, ifl)) / del2;
-        (lddx + rddx) / 2.0
-    }
-}
-
-/// Cubic from stored coefficients `[a, b, c, d]`: `a·t³ + b·t² + c·t + d`,
-/// in Horner form over [`Real::mul_add_fast`] (fused where the target has FMA). The stored monomial coefficients
-/// *are* the Horner coefficients, so this is an evaluation-order change and not
-/// a different polynomial.
+/// Cubic from coefficients `[a, b, c, d]`: `a·t³ + b·t² + c·t + d`, in Horner
+/// form over [`Real::mul_add_fast`] (fused where the target has FMA). The
+/// monomial coefficients *are* the Horner coefficients, so this is an
+/// evaluation-order change and not a different polynomial.
 #[inline]
 fn cubic_x(t: f64, coeffs: &[f64]) -> f64 {
     coeffs[0]
@@ -665,7 +698,7 @@ mod tests {
         let flavors = vec![1, 2, 21];
         // x·f = a + b·ln x + c·ln Q², with a per-flavor offset.
         let val = |lx: f64, lq: f64, fl: i32| 3.0 + 0.5 * lx - 0.25 * lq + fl as f64;
-        let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &flavors, val)]);
+        let interp = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &flavors, val)]);
 
         for &(xv, q2v) in &[(3.3e-4, 55.0), (0.11, 9.9e3), (7e-5, 2.0), (0.9, 8e5)] {
             for &fl in &[1, 2, 21] {
@@ -691,7 +724,7 @@ mod tests {
         // Constant-but-distinct value per band, so the selected band is legible.
         let lo = subgrid_from_fn(&x, &q2_lo, &flavors, |_, _, _| 1.0);
         let hi = subgrid_from_fn(&x, &q2_hi, &flavors, |_, _, _| 2.0);
-        let interp = LogBicubic::build(&[lo, hi]);
+        let interp = LogBicubic::build(vec![lo, hi]);
 
         // Interior of the lower band.
         assert!((interp.xfx_q2(1, 0.01, 10.0).unwrap() - 1.0).abs() < 1e-12);
@@ -717,12 +750,12 @@ mod tests {
                 subgrid_from_fn(&x, &q2, &[1, 21], move |_, _, _| i as f64)
             })
             .collect();
-        let interp = LogBicubic::build(&bands);
+        let interp = LogBicubic::build(bands);
         assert!(interp.bands_searchable, "the fixture is an ordered member");
 
         let walk = |q2: f64| {
-            interp.subgrids.iter().position(|sg| {
-                0.01 >= sg.x_min && 0.01 <= sg.x_max && q2 >= sg.q2_min && q2 <= sg.q2_max
+            interp.bands.iter().position(|b| {
+                0.01 >= b.x_min && 0.01 <= b.x_max && q2 >= b.q2_min && q2 <= b.q2_max
             })
         };
         for &q2 in &[
@@ -741,13 +774,7 @@ mod tests {
             1e6 + 1.0,
             1e9,
         ] {
-            let searched = interp.select_band(0.01, q2).map(|sg| {
-                interp
-                    .subgrids
-                    .iter()
-                    .position(|s| std::ptr::eq(s, sg))
-                    .unwrap()
-            });
+            let searched = interp.select_band(0.01, q2);
             assert_eq!(searched, walk(q2), "band selection differs at Q²={q2}");
         }
     }
@@ -759,7 +786,7 @@ mod tests {
         let q2 = geomspace(1.0, 1e6, 6);
         let flavors = vec![1, 21];
         let val = |lx: f64, lq: f64, fl: i32| 1.0 + 0.3 * lx - 0.1 * lq + 0.01 * fl as f64;
-        let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &flavors, val)]);
+        let interp = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &flavors, val)]);
 
         let g21 = interp.xfx_q2(21, 0.01, 100.0).unwrap();
         let g0 = interp.xfx_q2(0, 0.01, 100.0).unwrap();
@@ -781,7 +808,7 @@ mod tests {
         // One ordinary band and one degenerate (two-Q²-knot) band, so the
         // bilinear fallback is covered as well as the Hermite.
         for q2 in [geomspace(1.0, 1e6, 9), geomspace(1.0, 1e6, 2)] {
-            let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &flavors, val)]);
+            let interp = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &flavors, val)]);
             let mut row = [0.0; FLAVOR_SLOTS];
             for &(xv, q2v) in &[(3.3e-4, 55.0), (0.11, 9.9e3), (7e-5, 1.0), (0.99, 9e5)] {
                 interp.xfx_all(xv, q2v, &mut row).unwrap();
@@ -807,7 +834,7 @@ mod tests {
     fn out_of_support_is_out_of_range_error() {
         let x = geomspace(1e-4, 1.0, 6);
         let q2 = geomspace(1.0, 1e6, 6);
-        let interp = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], |_, _, _| 1.0)]);
+        let interp = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &[1], |_, _, _| 1.0)]);
         assert!(interp.xfx_q2(1, 1e-6, 100.0).is_err(), "x below XMin");
         assert!(interp.xfx_q2(1, 0.01, 1e8).is_err(), "Q² above QMax");
         let mut row = [0.0; FLAVOR_SLOTS];
