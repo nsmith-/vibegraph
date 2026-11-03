@@ -6,6 +6,7 @@
 
 * [G-F1: find a set on LHAPDF_DATA_PATH with no home directory](G-F1.md) - pdf_tiers needs the cache root only when the cache or download tier is reached; a CLI test with HOME and VIBEGRAPH_HOME unset pins it.
 * [G-F2: generate on p p > t t~ j with a quark-only jet](G-F2.md) - Reproduce generate's refusal on the quark-jet ttx card, fix the member-resonance lookup in mixed-flavour groups, pin it with a test that fails before the fix, and check the events against integrate's per-subprocess split.
+* [G-HY1: hygiene review of #87](G-HY1.md) - Review the lazy cache root, the mixed-flavour line mapping and the new CLI and banked tests for maintainability, test non-vacuity, visibility and reusable abstractions; findings before edits; fix with mutation evidence.
 * [G-V1: the ttx MLM row's own events against MadEvent's](G-V1.md) - Generate the pp_to_ttx_0j1j_mlm row's own process, now possible, and gate its record against MadEvent's banked run_01 as population fractions; the first test that generates that row.
 
 ## Session Report
