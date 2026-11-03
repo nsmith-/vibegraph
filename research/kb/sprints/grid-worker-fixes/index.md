@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Grid-worker fixes: PDF lookup without a home directory, and quark-jet ttx at generate](sprint.md) - A PDF set on LHAPDF_DATA_PATH is found with no HOME, and generate writes events for p p > t t~ j with a quark-only jet.
+
+## Directories
+
+* [sessions](sessions/index.md)
