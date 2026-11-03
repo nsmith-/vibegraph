@@ -17,10 +17,9 @@ In the CMS-gridpack re-run `main-6cb9756-200` (#71), both
 `H2ToH1H3To2Mu` gridpacks (MH2-500 and MH2-250) report σ = 0 ± 0 exactly, and
 the campaign counts them as `ok`: the CLI exited 0. MadGraph's σ is non-zero.
 
-The zero itself may be legitimate for what was run. The campaign has no param
-card option, so BSM gridpacks run on their models' default parameters
-([cli-has-no-param-card-option](cli-has-no-param-card-option.md)), where a
-coupling of the process may be zero. A run in which no point has weight is
+The zero itself may be legitimate for what was run. That campaign predates
+`integrate --param-card` (#82), so BSM gridpacks ran on their models' default
+parameters, where a coupling of the process may be zero. A run in which no point has weight is
 still never a usable result:
 - unweighting has no maximum weight;
 - a zero σ hides cuts that reject everything, a restriction that zeroes the
