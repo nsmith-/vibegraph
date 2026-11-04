@@ -302,7 +302,7 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         .collect();
     check_merged(&model.params, card)?;
 
-    let evaluated = EvaluatedModel::from_model_card(model, card);
+    let evaluated = EvaluatedModel::from_model_card(model, card)?;
     let ignored = dependents
         .into_iter()
         .filter_map(|(block, pdg, param, value)| {
@@ -354,7 +354,7 @@ pub fn bind_recorded(
         }
         card.insert(&p.block, p.code.clone(), p.value);
     }
-    Ok(EvaluatedModel::from_model_card(model, &card))
+    EvaluatedModel::from_model_card(model, &card)
 }
 
 #[cfg(test)]
@@ -583,12 +583,12 @@ mod tests {
     #[test]
     fn splitting_a_merged_pair_is_refused() {
         let src = r"
-a = Parameter(name = 'a', nature = 'external', type = 'real', value = 0.3, lhablock = 'NP', lhacode = [ 1 ])
-b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.4, lhablock = 'NP', lhacode = [ 2 ])
-c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.5, lhablock = 'NP', lhacode = [ 3 ])
-d = Parameter(name = 'd', nature = 'external', type = 'real', value = 0.6, lhablock = 'OTHER', lhacode = [ 1 ])
-w = Parameter(name = 'w', nature = 'external', type = 'real', value = 0.7, lhablock = 'DECAY', lhacode = [ 5 ])
-v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, lhablock = 'DECAY', lhacode = [ 6 ])
+a = Parameter(name = 'a', nature = 'external', type = 'real', value = 0.3, texname = 'a', lhablock = 'NP', lhacode = [ 1 ])
+b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.4, texname = 'b', lhablock = 'NP', lhacode = [ 2 ])
+c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.5, texname = 'c', lhablock = 'NP', lhacode = [ 3 ])
+d = Parameter(name = 'd', nature = 'external', type = 'real', value = 0.6, texname = 'd', lhablock = 'OTHER', lhacode = [ 1 ])
+w = Parameter(name = 'w', nature = 'external', type = 'real', value = 0.7, texname = 'w', lhablock = 'DECAY', lhacode = [ 5 ])
+v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, texname = 'v', lhablock = 'DECAY', lhacode = [ 6 ])
 ";
         let mut params = parse_parameters(src).unwrap();
         params.apply_restrict(&card(
@@ -708,9 +708,9 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, lhabl
     #[test]
     fn only_a_restricted_value_of_exactly_one_is_fixed() {
         let src = r"
-a = Parameter(name = 'a', nature = 'external', type = 'real', value = 1.0, lhablock = 'NP', lhacode = [ 1 ])
-b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.3, lhablock = 'NP', lhacode = [ 2 ])
-c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, lhablock = 'NP', lhacode = [ 3 ])
+a = Parameter(name = 'a', nature = 'external', type = 'real', value = 1.0, texname = 'a', lhablock = 'NP', lhacode = [ 1 ])
+b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.3, texname = 'b', lhablock = 'NP', lhacode = [ 2 ])
+c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, texname = 'c', lhablock = 'NP', lhacode = [ 3 ])
 ";
         let unrestricted = parse_parameters(src).unwrap();
         assert!(unrestricted.ones.is_empty());

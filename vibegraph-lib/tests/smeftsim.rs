@@ -449,7 +449,7 @@ fn both_restrict_cards_prune_to_a_workable_model() {
 fn mw_scheme_derived_parameters() {
     for card in ["restrict_SMlimit_massless.dat", "restrict_massless.dat"] {
         let model = load(card);
-        let ev = EvaluatedModel::from_model_card(model, &ParamCard::default());
+        let ev = EvaluatedModel::from_model_card(model, &ParamCard::default()).unwrap();
         let at = |name: &str| ev.param_values[name].re;
         assert!(
             (at("ee") - 0.30825).abs() < 5e-6,

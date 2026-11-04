@@ -101,7 +101,7 @@ fn test_eval_m2_ee_mumu_vs_hardcoded() {
     let card = format!("Block MASS\n 11 {}\n 13 {}\n", MDL_ME, MDL_MMU)
         .parse::<ParamCard>()
         .unwrap();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let evaluator =
         AmplitudeEvaluator::compile(set, &model).expect("failed to compile amplitude evaluator");

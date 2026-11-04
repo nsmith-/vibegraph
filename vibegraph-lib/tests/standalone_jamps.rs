@@ -492,7 +492,7 @@ fn measure_with(
         .join("\n")
         .parse()
         .unwrap();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
     let set = generate_with(process, model.as_ref()).remove(0);
     let evaluator = AmplitudeEvaluator::compile(&set, model.as_ref()).unwrap();
     let n_flows = table["n_flows"].as_u64().unwrap() as usize;

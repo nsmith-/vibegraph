@@ -57,12 +57,15 @@ generated cards at ≤ 1e-12 and fails when the fix is reverted. [^n35-close]
 A consequence for the SM: card-less defaults take `restrict_default.dat`'s values
 (`Gf` 1.16639e-5, `WZ` 2.441404, `WT` 1.4915, `WW` 2.0476), as MadGraph's do. [^n35-c]
 
-**Known divergence.** MadGraph's `RestrictModel.fix_parameter_values` takes both
-zero-valued and one-valued parameters [^mg-fix-params]: a parameter a restrict card sets
-to exactly `1` is fixed too. The loader locks only zeros. No restrict card in the
-repository sets a non-`QNUMBERS` parameter to 1, so the gap is latent; it is the
-[unit-values backlog item](../backlog/feature/restrict-card-unit-values-not-fixed.md),
-which also asks whether MadGraph merges identical values there.
+**Ones are fixed as well.** MadGraph's `RestrictModel.fix_parameter_values` takes
+both zero-valued and one-valued parameters [^mg-fix-params], so a parameter a restrict
+card sets to exactly `1` is fixed too. The loader records those externals in
+`ParameterSet::ones` (`apply_restrict`), and `bind_card` refuses a card that moves
+one (`CardError::MovesFixedOne`), as MadGraph's `param_card_rule.dat` check refuses
+it. A one prunes nothing, unlike a zero, so it is held at binding and not locked
+in evaluation. MadGraph's merge of identical values (`detect_identical_parameters`)
+is `ParameterSet::merged`, held the same way (below). Every toy-UFO restrict card
+leaves the width `WO8` at one, and `bind.rs` pins both rules.
 
 ## Pruning, in MadGraph's order
 
@@ -91,13 +94,34 @@ significant digits, are equal or opposite (`detect_identical_couplings`, L2525;
 name, with a sign where they are opposite. That rewrites names, not values; the loader
 keeps such couplings separate.
 
-**What counts as zero differs.** The loader drops a coupling whose value at the card
-has `|g| < 1e-20` (`is_zero_coupling`, `ufo/mod.rs`). MadGraph drops `|g| < 1e-13`,
-unless some coupling falls in `[1e-13, 1e-10)`, in which case it reruns with exact
-zero only (`detect_identical_couplings`, L2552–L2558). A coupling between the two
-thresholds survives here and is pruned by MadGraph. The banked interaction counts
-agree on every (model, card) pair, which rules out a whole vertex lost to the gap but
-not a single coupling inside a surviving one.
+**What counts as zero is MadGraph's rule**, kept as a MadGraph-compatibility
+choice (`ZeroRule`, `ufo/mod.rs`). Over every coupling of the model, on a vertex or
+not, evaluated at the card: a coupling with `|g| < 1e-13` is zero, unless some
+coupling lies in `[1e-13, 1e-10)`, in which case only an exact zero is
+(`detect_identical_couplings`, L2549–L2558, whose `strict_zero` rerun this is). The
+thresholds are absolute: a model whose couplings are all naturally tiny is pruned to
+nothing, and one coupling at `1e-12` saves another at `1e-14`. A rule judging each
+coupling against its own scale would be cleaner; it is what a mode without
+MadGraph's compatibility choices would use. `tests/ufo_input_refusals.rs` pins both
+branches and both edges of the window. Both branches are live on banked models: every
+SMEFTsim card has couplings in the window (`GC_309`–`GC_311`, 3–4e-11, on all of
+them), so SMEFTsim is always restricted under the strict rule, and `MSSM_SLHA2` has two
+rounding residues (`GC_857`, `GC_888`, below 1e-15) that the threshold rule prunes. No
+SM, `loop_sm` or toy card has a coupling in `(0, 1e-10)`.
+
+MadGraph's coupling merge (`limit_to_6_digit`, rounding to about ten significant
+digits) changes no vertex set: it renames a coupling inside a vertex that survives,
+and `optimise_interaction` then combines the Lorentz structures that share one
+coupling. Neither removes nor adds an interaction.
+
+**A restrict card's `DECAY … Auto` row is refused** (`UfoError::RestrictAutoWidth`).
+MadGraph keeps such a width free through the restriction and writes it to the
+process card as `Auto`, for MadWidth to compute at launch (`modify_autowidth`,
+`restrict_model`). The loader computes no width and would leave the `parameters.py`
+default in its place. `integrate --param-card` refuses the row the same way
+(`CardError::AutoWidth`), a reweight card's `set … Auto` is not a number to its
+parser, and `EvaluatedModel::from_model_card` refuses a card carrying one with the same
+`CardError::AutoWidth`, so no path reads a width from an `Auto` row. No banked restrict card has one.
 
 ## Where it applies, and what is identified
 

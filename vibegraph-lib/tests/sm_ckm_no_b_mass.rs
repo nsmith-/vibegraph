@@ -80,7 +80,7 @@ fn card(variant: SMRestrict) -> ParamCard {
 /// name, evaluated on `model` at `card`.
 fn couplings(model: &Arc<UFOModel>, card: &str) -> BTreeMap<String, Complex64> {
     let card: ParamCard = card.parse().unwrap();
-    let evaluated = EvaluatedModel::from_model_card(Arc::clone(model), &card);
+    let evaluated = EvaluatedModel::from_model_card(Arc::clone(model), &card).unwrap();
     model
         .couplings
         .keys()
@@ -225,7 +225,7 @@ fn tau_width_survives_and_b_mass_locks() {
     assert_eq!(evaluated.mass(b), 0.0);
 
     let card: ParamCard = "Block MASS\n 5 4.7\nDECAY 15 1.0e-3\n".parse().unwrap();
-    let carded = EvaluatedModel::from_model_card(ours, &card);
+    let carded = EvaluatedModel::from_model_card(ours, &card).unwrap();
     assert_eq!(carded.width(tau), 1.0e-3, "WTau is a default, not a lock");
     assert_eq!(carded.mass(b), 0.0, "MB is locked at zero");
 }
@@ -317,7 +317,7 @@ fn madgraph_default_couplings_hold_outside_the_b_and_ckm_sectors() {
         }
         tables += 1;
         let card = common::banked_param_card(&json);
-        let evaluated = EvaluatedModel::from_model_card(Arc::clone(&model), &card);
+        let evaluated = EvaluatedModel::from_model_card(Arc::clone(&model), &card).unwrap();
         for (name, z) in json["python"].as_object().unwrap() {
             let id = model.coupling_id(name).expect("MadGraph coupling in model");
             if excluded.contains(name) {
