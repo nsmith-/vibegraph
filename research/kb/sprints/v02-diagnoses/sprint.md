@@ -33,6 +33,11 @@ policy), and CI is green.
   refusal (decision G2); the diagnosis here still says why one point passed
   and why μF read 0.
 
+- **G8. A whole-state narrow s-channel resonance gets a Breit–Wigner τ map**
+  (user, 2026-11-04), fixed here (G-V4), not refused.
+- **G9. MadEvent's small-width convention is a registered deviation** (user,
+  2026-11-04), and a site of the MadGraph-compatibility flag.
+
 ## Sessions
 
 | Session | Agent type | Depends on | Gate | Closes |
@@ -40,7 +45,8 @@ policy), and CI is green.
 | G-V1 | validation-dev (Opus) | CERN host relay (card 048 per-event record) | hermetic, lints; a test pinning any defect found | vector-triplet-chain-one-nonzero-point |
 | G-V2 | validation-dev (Opus) | – | the slice against the non-adaptive estimate, ≥5 seeds per arm; banked σ gates unchanged | vegas-under-covers-heavily-cut-slice |
 | G-V3 | validation-dev (Opus) | M3 soak relay | sanitizer and audit runs recorded | malloc-abort-under-proton-sample-load, validate-hadronic-sigabrt-unexplained |
-| G-HY2 | hygiene-dev (Sonnet) | G-V1–V3 | hermetic, lints | – |
+| G-V4 | feature-dev (Opus) | G-V1 | the σ gates; ≥5 seeds against MadEvent on `p p > h z` | – (decisions G8, G9; G-V1 Found 1) |
+| G-HY2 | hygiene-dev (Sonnet) | G-V1–V4 | hermetic, lints | – |
 
 **Hosts.** Card 048's gridpack lives on CVMFS, reachable only from the CERN
 host; the macOS soak (`MallocNanoZone=0` against the default) runs on the

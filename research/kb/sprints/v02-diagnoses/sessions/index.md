@@ -7,6 +7,7 @@
 * [G-V1: why card 048 integrates to one nonzero point with μF = 0](G-V1.md) - Diagnose CMS card 048 (XtoYYprimeTo4Q, p p > vz, vz > h z): why one point per seed carries σ at the gridpack card, why the defaults' seeds disagree, why μF logs 0 and '0 resonant pairs'; fix or refuse each defect with a test.
 * [G-V2: why VEGAS under-covers a 3 % slice, and making the stop see it](G-V2.md) - Locate the per-channel floor or allocation that leaves the both-W |cos θ| > 0.99 slice of u u~ > w+ b w- b~ / t t~ 3 % low at the default budget, and make the convergence stop detect it, or propose a runtime warning to the user.
 * [G-V3: attribute the two macOS heap-corruption aborts](G-V3.md) - Narrow the two one-off libmalloc aborts to a cause: an unsafe audit of the dependency tree, Miri on the suspect pure-Rust paths, clang AddressSanitizer covering zstd-sys and the other C code, a soak, and an exact M3 soak request.
+* [G-V4: a Breit–Wigner τ map for a whole-state s-channel resonance; generate's panic; the small-width deviation](G-V4.md) - A hadronic process whose s-channel resonance carries the whole final state gets a Breit–Wigner τ map (p p > h z through a 1 MeV Vz, gated over ≥5 seeds against MadEvent); generate's 'no channel produced a usable weight' panic becomes a named refusal; MadEvent's small-width convention is registered as a deviation.
 
 ## Session Report
 
