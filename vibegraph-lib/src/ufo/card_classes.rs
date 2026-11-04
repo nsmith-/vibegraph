@@ -558,7 +558,10 @@ pub(crate) mod tests {
 
     /// What binding a param card gives: the refusal's text, or the moved
     /// parameters with every parameter's value, bit for bit.
-    fn bind(text: &str) -> Result<(Vec<(String, u64)>, BTreeMap<String, (u64, u64)>), String> {
+    /// The moved parameters and every parameter's value, as bits.
+    type Bound = (Vec<(String, u64)>, BTreeMap<String, (u64, u64)>);
+
+    fn bind(text: &str) -> Result<Bound, String> {
         let card: ParamCard = text.parse().map_err(|e| format!("{e}"))?;
         let bound = bind_card(param_model(), &card).map_err(|e| e.to_string())?;
         let moved = bound

@@ -295,8 +295,10 @@ fn custom_propagators_are_read_and_attached() {
         z1.numerator
     );
     assert!(
-        z1.denominator.ends_with("**2"),
-        "Z1 denominator: {}",
+        z1.denominator
+            .as_deref()
+            .is_some_and(|d| d.ends_with("**2")),
+        "Z1 denominator: {:?}",
         z1.denominator
     );
     assert_eq!(parsed.propagators["V2"].numerator, "- Metric(1, 2)");
