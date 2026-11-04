@@ -2,9 +2,8 @@ use indexmap::IndexMap;
 use std::{collections::HashSet, ops::Index};
 
 use super::ast_util::{
-    constructor_calls, extract_int, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
+    constructor_calls, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
 };
-use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -255,7 +254,8 @@ pub(crate) fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzE
         let fields = Fields::new("Lorentz structure", python_name, keywords);
         let name = fields.str("name")?;
         seen.insert(python_name, &name)?;
-        let spins = extract_spins(&fields)?;
+        // One integer spin code per leg.
+        let spins = fields.int32_list("spins")?;
         let structure = match fields.optional("structure") {
             None => "external".to_owned(),
             Some(e) => extract_str(e)
@@ -298,21 +298,6 @@ pub(crate) fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzE
     }
 
     Ok(result)
-}
-
-/// The `spins` of a Lorentz structure: a list of integer spin codes, one per leg.
-fn extract_spins(fields: &Fields<'_>) -> Result<Vec<i32>, FieldError> {
-    const EXPECTED: &str = "a list of integers";
-    let ast::Expr::List(ast::ExprList { elts, .. }) = fields.required("spins")? else {
-        return Err(fields.malformed("spins", EXPECTED));
-    };
-    elts.iter()
-        .map(|e| {
-            extract_int(e)
-                .and_then(|n| i32::try_from(n).ok())
-                .ok_or_else(|| fields.malformed("spins", EXPECTED))
-        })
-        .collect()
 }
 
 // ── Intermediate (raw) types used by the PEG grammar ─────────────────────────

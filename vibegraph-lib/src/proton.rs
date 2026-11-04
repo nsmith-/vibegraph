@@ -1789,11 +1789,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// A thread's scratch carries its count, so discarding the scratches drops
     /// the counts with them; only setup does that.
     pub fn census(&mut self) -> PointCensus {
-        self.scratch
-            .iter_mut()
-            .fold(PointCensus::default(), |acc, sc| {
-                acc.merged(sc.census.get())
-            })
+        self.scratch.iter_mut().map(|sc| sc.census.get()).sum()
     }
 
     /// Start [`census`](Self::census) over from zero.

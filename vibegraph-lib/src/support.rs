@@ -47,14 +47,15 @@ pub struct PointCensus {
     pub nonzero: u64,
 }
 
-impl PointCensus {
-    /// The two censuses' counts added.
-    pub fn merged(self, other: PointCensus) -> PointCensus {
-        PointCensus {
-            evaluated: self.evaluated + other.evaluated,
-            passed_cuts: self.passed_cuts + other.passed_cuts,
-            nonzero: self.nonzero + other.nonzero,
-        }
+/// The censuses' counts added: per-thread counts into an integrand's, or
+/// per-part counts into a sum's.
+impl std::iter::Sum for PointCensus {
+    fn sum<I: Iterator<Item = PointCensus>>(censuses: I) -> PointCensus {
+        censuses.fold(PointCensus::default(), |acc, c| PointCensus {
+            evaluated: acc.evaluated + c.evaluated,
+            passed_cuts: acc.passed_cuts + c.passed_cuts,
+            nonzero: acc.nonzero + c.nonzero,
+        })
     }
 }
 

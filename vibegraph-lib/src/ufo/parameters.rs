@@ -1,12 +1,10 @@
 use super::ast_util::{
-    conditional_definitions, constructor_calls, extract_int, parse_stmts, FieldError, Fields,
-    UniqueNames,
+    conditional_definitions, constructor_calls, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
 use num_complex::Complex64;
 use num_traits::Zero;
-use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -291,8 +289,8 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
     parse_parameters_with_variables(content).map(|(set, _)| set)
 }
 
-/// [`parse_parameters`], also returning each parameter's Python variable mapped
-/// to its UFO `name`.
+/// Parse `parameters.py` content into a [`ParameterSet`], with each
+/// parameter's Python variable mapped to its UFO `name`.
 ///
 /// The `name` is the canonical name, as in MadGraph: a value string refers to
 /// a parameter by it (`model_reader.py` evaluates each one with `param.name`
@@ -334,7 +332,7 @@ pub(crate) fn parse_parameters_with_variables(
             "external" => {
                 let default_value = fields.float("value")?;
                 let lha_block = fields.str("lhablock")?;
-                let lha_code = extract_lhacode(&fields)?;
+                let lha_code = fields.int32_list("lhacode")?;
                 externals.push(Parameter {
                     name,
                     complex: is_complex,
@@ -397,21 +395,6 @@ pub(crate) fn parse_parameters_with_variables(
         ones: BTreeSet::new(),
     };
     Ok((set, variables))
-}
-
-/// An external parameter's `lhacode = [ 3 ]`, as a list of `i32`.
-fn extract_lhacode(fields: &Fields<'_>) -> Result<Vec<i32>, FieldError> {
-    const EXPECTED: &str = "a list of integers";
-    let ast::Expr::List(ast::ExprList { elts, .. }) = fields.required("lhacode")? else {
-        return Err(fields.malformed("lhacode", EXPECTED));
-    };
-    elts.iter()
-        .map(|e| {
-            extract_int(e)
-                .and_then(|n| i32::try_from(n).ok())
-                .ok_or_else(|| fields.malformed("lhacode", EXPECTED))
-        })
-        .collect()
 }
 
 fn toposort_internals(
