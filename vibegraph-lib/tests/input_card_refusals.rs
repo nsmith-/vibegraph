@@ -147,21 +147,27 @@ fn the_fixture_loads() {
 
 /// `Propagator.__init__(self, name, numerator, denominator=None)`: `name` and
 /// `numerator` are required, and each is refused by name when absent or not a
-/// string the loader can fold.
+/// string the loader can fold, with the refusal of the one case or the other.
 #[test]
 fn every_required_propagator_field_is_refused_by_name() {
-    for (field, from, to) in [
-        ("name", "name = 'S1', ", ""),
-        ("numerator", "numerator = '1', ", ""),
-        ("numerator", "numerator = '1'", "numerator = 1"),
+    for (field, from, to, missing) in [
+        ("name", "name = 'S1', ", "", true),
+        ("numerator", "numerator = '1', ", "", true),
+        ("numerator", "numerator = '1'", "numerator = 1", false),
         (
             "denominator",
             "numerator = '1', denominator = denominator",
             "numerator = '1', denominator = 2",
+            false,
         ),
     ] {
         let message = model_refusal("propagators.py", from, to);
-        assert_mentions(&message, &["'S1'", &format!("`{field}`")]);
+        let form = if missing {
+            format!("'S1' has no `{field}`")
+        } else {
+            format!("'S1': `{field}` must be")
+        };
+        assert_mentions(&message, &[&form]);
     }
 }
 
