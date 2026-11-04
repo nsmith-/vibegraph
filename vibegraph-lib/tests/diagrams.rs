@@ -179,7 +179,9 @@ fn a_subprocess_reached_from_two_lines_is_refused() {
     for card in [
         "generate p p > e+ e-\nadd process u u~ > e+ e-\n",
         "generate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @2\n",
-        "generate e+ e- > mu+ mu-\nadd process e- e+ > mu- mu+ --no_warning=duplicate\n",
+        "generate e+ e- > mu+ mu-\nadd process e+ e- > mu- mu+ --no_warning=duplicate\n",
+        "generate p p > e+ e-\nadd process u~ u > e+ e-\n",
+        "generate u u~ > e+ e-\nadd process u~ u > e+ e-\nadd process u u~ > e+ e-\n",
     ] {
         let Err(err) = enumerate(card) else {
             panic!("{card} enumerated");
@@ -304,6 +306,39 @@ fn two_assignments_on_two_lines_are_two_subprocesses() {
     }
 }
 
+/// Two lines with different decay assignments of one content keep their own beam
+/// orderings: on `p p` lines each set stands for both orderings of a mixed initial
+/// state (its mirror) and for one of `g g`, as a single line's sets do.
+#[test]
+fn two_assignments_on_two_lines_keep_their_mirrors() {
+    use std::collections::BTreeMap;
+    let card = "generate p p > z u u~, z > c c~\nadd process p p > z c c~, z > u u~\n";
+    let sets: Vec<_> = enumerate(card)
+        .unwrap_or_else(|e| panic!("{card}: {e}"))
+        .into_iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .collect();
+    let mut by_content: BTreeMap<(Vec<String>, Vec<String>), Vec<_>> = BTreeMap::new();
+    for set in &sets {
+        let mut initial = set.particles_in.clone();
+        initial.sort();
+        let mut fin = set.particles_out.clone();
+        fin.sort();
+        by_content.entry((initial, fin)).or_default().push(set);
+        assert_eq!(
+            set.mirrored,
+            set.particles_in[0] != set.particles_in[1],
+            "{}: a p p line generates both orderings of a mixed initial state",
+            set.label()
+        );
+    }
+    assert!(!by_content.is_empty());
+    for (content, pair) in &by_content {
+        assert_eq!(pair.len(), 2, "{content:?}: one set per line");
+        assert_ne!(forced_products(pair[0])[0], forced_products(pair[1])[0]);
+    }
+}
+
 /// Two lines with the same decay assignment, or a decay-chain line and a line that is
 /// not one, would count the same diagrams twice: they stay refused, as any subprocess
 /// two lines reach.
@@ -321,6 +356,115 @@ fn one_assignment_on_two_lines_is_refused() {
             err.contains("e+ e- > ") && err.contains("two process lines"),
             "{card}: {err}"
         );
+    }
+}
+
+/// The populated sets of a card as `(incoming, mirrored)`, in enumeration order.
+fn orderings(card: &str) -> Vec<(Vec<String>, bool)> {
+    enumerate(card)
+        .unwrap_or_else(|e| panic!("{card}: {e}"))
+        .into_iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .map(|s| (s.particles_in, s.mirrored))
+        .collect()
+}
+
+fn names(legs: &[&str]) -> Vec<String> {
+    legs.iter().map(|l| (*l).to_owned()).collect()
+}
+
+/// A subprocess stands for its exchanged beam ordering only when its own
+/// process line generated that ordering too, as MadGraph's
+/// `has_mirror_process` is set: a line written in one ordering has no mirror,
+/// a multiparticle line that reaches both has one, and two lines that write the
+/// two orderings are two subprocesses without one, one per line.
+#[test]
+fn a_subprocess_has_a_mirror_only_where_its_line_generated_both_orderings() {
+    for card in [
+        "generate u u~ > e+ e-",
+        "generate u~ u > e+ e-",
+        "generate u g > u z",
+        "generate u u > u u",
+        "generate u u~ > z, z > e+ e-",
+    ] {
+        let sets = orderings(card);
+        assert_eq!(sets.len(), 1, "{card}");
+        assert!(
+            !sets[0].1,
+            "{card}: one ordering written, a mirror recorded"
+        );
+    }
+
+    for card in [
+        "generate p p > e+ e-",
+        "define q = u u~\ngenerate q q > e+ e-",
+        "generate p p > z, z > e+ e-",
+    ] {
+        let sets = orderings(card);
+        let uu = sets
+            .iter()
+            .filter(|(i, _)| {
+                let mut i = i.clone();
+                i.sort();
+                i == names(&["u", "u~"])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(uu.len(), 1, "{card}: one u u~ subprocess, {sets:?}");
+        assert!(
+            uu[0].1,
+            "{card}: both orderings generated, no mirror recorded"
+        );
+        for (incoming, mirrored) in &sets {
+            assert_eq!(
+                *mirrored,
+                incoming[0] != incoming[1],
+                "{card}: {incoming:?} — a multiparticle line generates both orderings"
+            );
+        }
+    }
+
+    // `u u` and `g g` have no exchanged ordering; `u g` has, and its line
+    // generates it.
+    let sets = orderings("define q = u g\ngenerate q q > q q");
+    assert_eq!(sets.len(), 3, "{sets:?}");
+    assert!(sets.iter().all(|(i, m)| *m == (i[0] != i[1])), "{sets:?}");
+
+    for (card, first, second) in [
+        (
+            "generate u u~ > e+ e-\nadd process u~ u > e+ e-",
+            ["u", "u~"],
+            ["u~", "u"],
+        ),
+        (
+            "generate u g > u z\nadd process g u > u z",
+            ["u", "g"],
+            ["g", "u"],
+        ),
+    ] {
+        assert_eq!(
+            orderings(card),
+            vec![(names(&first), false), (names(&second), false)],
+            "{card}"
+        );
+    }
+}
+
+/// At fixed-energy beams the two orderings of one initial state are the same
+/// collision, so two lines writing them are refused there, while the
+/// enumeration, which proton beams share, keeps both.
+#[test]
+fn two_lines_in_exchanged_orderings_are_refused_at_fixed_energy() {
+    use vibegraph::multiplicity::refuse_exchanged_beam_orderings;
+    let card = "generate e+ e- > mu+ mu-\nadd process e- e+ > mu- mu+\n";
+    let sets = enumerate(card).unwrap();
+    let err = refuse_exchanged_beam_orderings(&sets).expect_err("refused");
+    assert!(err.contains("two beam orderings"), "{err}");
+    for card in [
+        "generate e+ e- > mu+ mu-\nadd process e+ e- > ta+ ta-\n",
+        "generate u u~ > e+ e-\nadd process d d~ > e+ e-\n",
+    ] {
+        refuse_exchanged_beam_orderings(&enumerate(card).unwrap())
+            .unwrap_or_else(|e| panic!("{card}: {e}"));
     }
 }
 

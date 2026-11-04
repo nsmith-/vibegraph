@@ -267,6 +267,7 @@ impl OnShellVeto {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
+                mirrored: set.mirrored,
             };
             let part = compile_class(&subset, model, evaluated)?;
             let tags = part.color_flow_tags();
@@ -826,6 +827,7 @@ mod tests {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
+                mirrored: set.mirrored,
             };
             let reference = compile_class(&subset, model, &evaluated).unwrap();
             let (part, _) = veto.amplitude(pattern).unwrap();

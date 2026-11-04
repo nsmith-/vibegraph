@@ -497,6 +497,7 @@ fn stitch_set(
             particles_out,
             polarizations,
             diagrams,
+            mirrored: core.mirrored,
         },
     })
 }
