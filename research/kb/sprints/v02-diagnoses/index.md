@@ -5,3 +5,7 @@
 ## Sprint
 
 * [v0.2 diagnoses: one-point σ, VEGAS under-coverage, heap aborts](sprint.md) - Diagnose card 048's one-point σ, make VEGAS detect (or warn on) an under-covered cut slice, and attribute the two macOS heap-corruption aborts; part two of sprint G, one PR.
+
+## Directories
+
+* [sessions](sessions/index.md)
