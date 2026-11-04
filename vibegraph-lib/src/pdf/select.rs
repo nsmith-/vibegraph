@@ -666,7 +666,7 @@ mod tests {
             .insert(url, b"900000 VgSyntheticSet 1\n".to_vec());
         let factory = Factory::granting(server);
         let fetch = factory.callback();
-        let fetched = t.cache_pdf_dir().join(INDEX_FILENAME);
+        let fetched = t.cache_pdf_dir().unwrap().join(INDEX_FILENAME);
 
         let below = load_for_lhaid(899999, &t, &fetch).unwrap_err().to_string();
         assert_eq!(
@@ -727,7 +727,7 @@ mod tests {
         write_set(&data, SET, &info(Some("900000"), 3), 3);
         write_index(&cvmfs, "900000 VgSyntheticSet 1\n900100 VgNewer 1\n");
         write_set(&cvmfs, "VgNewer", &info(Some("900100"), 2), 2);
-        write_index(&t.cache_pdf_dir(), "not an index\n");
+        write_index(&t.cache_pdf_dir().unwrap(), "not an index\n");
         t.cvmfs = Some(cvmfs);
         let factory = Factory::refusing();
 
@@ -748,7 +748,7 @@ mod tests {
     fn the_fetched_index_is_the_last_tier() {
         let root = tempfile::tempdir().unwrap();
         let (t, data) = data_tiers(root.path());
-        write_index(&t.cache_pdf_dir(), "800000 VgStale 1\n");
+        write_index(&t.cache_pdf_dir().unwrap(), "800000 VgStale 1\n");
         write_set(&data, "VgStale", &info(Some("800000"), 2), 2);
         let set_archive = {
             let files = vec![
