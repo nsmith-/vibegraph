@@ -122,6 +122,13 @@ pub struct DiagramSet {
     /// them, or `None` for a leg summed over all its states.
     pub polarizations: Vec<Option<Vec<i32>>>,
     pub diagrams: Vec<Diagram>,
+    /// Whether the process line that produced this set also generated it with
+    /// its two incoming legs exchanged, so that the set stands for both beam
+    /// orderings (MadGraph's `has_mirror_process`). Never set when the two
+    /// incoming legs are the same state. A line written with one ordering
+    /// (`u u~ > e+ e-`) generates only that one, and its subprocess carries no
+    /// luminosity in the other.
+    pub mirrored: bool,
 }
 
 impl DiagramSet {
@@ -161,6 +168,7 @@ impl DiagramSet {
                 .iter()
                 .map(|d| chain::relabelled(d, &to, n_in, model))
                 .collect(),
+            mirrored: self.mirrored,
         })
     }
 
@@ -357,13 +365,17 @@ fn flavour_key(set: &DiagramSet) -> FlavourKey {
     (i, f)
 }
 
-/// One helicity state of a subprocess: the unordered `(particle, helicity)`
-/// content of each side.
+/// One helicity state of a subprocess: the `(particle, helicity)` of each beam
+/// in beam order, and the unordered `(particle, helicity)` content of the final
+/// state.
 type SummedState = (Vec<(String, i32)>, Vec<(String, i32)>);
 
-/// Every helicity state a subprocess sums over, each as the unordered
-/// `(particle, helicity)` content of each side: the physical states two
-/// subprocesses of the same particles would both count.
+/// Every helicity state a subprocess sums over, in every beam ordering it
+/// covers: the physical states two subprocesses of the same particles would
+/// both count. The beams are kept in order, because `u u~ > e+ e-` and
+/// `u~ u > e+ e-` are the two orderings of one initial state and add without
+/// double counting; a set that stands for both ([`DiagramSet::mirrored`])
+/// counts both.
 fn summed_states(
     set: &DiagramSet,
     model: &UFOModel,
@@ -392,8 +404,12 @@ fn summed_states(
             .map(|(n, h)| ((*n).clone(), *h))
             .collect();
         let mut fin = legs.split_off(n_in);
-        legs.sort();
         fin.sort();
+        if set.mirrored {
+            let mut exchanged = legs.clone();
+            exchanged.reverse();
+            out.insert((exchanged, fin.clone()));
+        }
         out.insert((legs, fin));
     }
     Ok(out)
@@ -411,9 +427,11 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     // the subprocess alone.
     //
     // Two lines may produce the same particles with polarizations that sum
-    // over disjoint helicity states (`e+ e- > z{0} h` and `e+ e- > z{T} h`):
-    // those add without double counting and are kept. Any state both would
-    // count is refused.
+    // over disjoint helicity states (`e+ e- > z{0} h` and `e+ e- > z{T} h`),
+    // or in the two beam orderings of one initial state (`u u~ > e+ e-` and
+    // `u~ u > e+ e-`): those add without double counting and are kept, each
+    // line's subprocess in its own ordering, as MadGraph keeps them. Any state
+    // both would count is refused.
     let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
         let process_sets = generate_from_process(process, model, ProcessRole::TopLevel)?;
@@ -774,6 +792,24 @@ fn generate_topologies(n_ext: usize, topo_model: &feyngraph::model::Model) -> Ve
         .collect()
 }
 
+/// Whether `initial` with its legs' `polarizations` (incoming first) is `set`'s
+/// initial state with the two beams exchanged, and a different state from it.
+fn is_exchanged_ordering(
+    set: &DiagramSet,
+    initial: &[String],
+    polarizations: &[Option<Vec<i32>>],
+) -> bool {
+    let [a, b] = initial else {
+        return false;
+    };
+    let [sa, sb] = set.particles_in.as_slice() else {
+        return false;
+    };
+    let (pa, pb) = (&polarizations[0], &polarizations[1]);
+    let (spa, spb) = (&set.polarizations[0], &set.polarizations[1]);
+    (a, pa) == (sb, spb) && (b, pb) == (sa, spa) && (a, pa) != (b, pb)
+}
+
 /// Inner generation loop: expand aliases, deduplicate mirror processes, and call
 /// feyngraph for each concrete subprocess.  `max_weighted` (when `Some`) adds an
 /// extra diagram filter that rejects any diagram whose WEIGHTED order exceeds the
@@ -810,8 +846,16 @@ fn generate_sets_inner(
     // silently drop subprocesses like `g d > e+ e- d` when the first
     // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
     // diagrams at the active WEIGHTED bound.
+    //
+    // A duplicate whose incoming legs are an enumerated set's exchanged is that
+    // set's mirrored beam ordering: it is not enumerated again, and the set
+    // records that its line generated both orderings. MadGraph does the same
+    // within one process definition (`generate_multi_amplitudes`, the
+    // `collect_mirror_procs` branch), and only there: a line written in one
+    // ordering generates no mirror.
     let mut seen_processes: std::collections::HashSet<SubprocessKey> =
         std::collections::HashSet::new();
+    let mut enumerated_at: HashMap<SubprocessKey, usize> = HashMap::new();
 
     // Each leg independently takes each of its particles; the Cartesian product
     // over the legs, initial side outermost, is the concrete subprocess list.
@@ -857,11 +901,14 @@ fn generate_sets_inner(
             }
         }
 
-        if !seen_processes.insert(subprocess_key(
-            &concrete.initial,
-            &concrete.final_state,
-            &polarizations,
-        )) {
+        let key = subprocess_key(&concrete.initial, &concrete.final_state, &polarizations);
+        if !seen_processes.insert(key.clone()) {
+            if let Some(&at) = enumerated_at.get(&key) {
+                let set: &mut DiagramSet = &mut sets[at];
+                if is_exchanged_ordering(set, &concrete.initial, &polarizations) {
+                    set.mirrored = true;
+                }
+            }
             duplicates += 1;
             continue;
         }
@@ -942,11 +989,13 @@ fn generate_sets_inner(
             report_vertex_assignments(&subprocess, &diagrams, model);
         }
 
+        enumerated_at.insert(key, sets.len());
         sets.push(DiagramSet {
             particles_in: concrete.initial,
             particles_out: concrete.final_state,
             polarizations,
             diagrams,
+            mirrored: false,
         });
         progress::step(progress::stage::ENUMERATE, sets.len() as u64, None);
     }
