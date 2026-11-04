@@ -63,7 +63,7 @@ paired −4.465 shift, the per-point mismatch counts, the oracle and the
 - Closed: `pp-to-jj-tie-break-no-cluster-dump`.
 - Filed:
   - [closed-form-scale-choice-1-lab-frame](../../backlog/validation/closed-form-scale-choice-1-lab-frame.md)
-  - [generate-refuses-quark-only-jet-ttx](../../backlog/feature/generate-refuses-quark-only-jet-ttx.md)
+  - `generate-refuses-quark-only-jet-ttx`, closed by [grid-worker-fixes](../grid-worker-fixes/sprint.md) G-F2
   - [integrand-path-unchecked-per-event](../../backlog/validation/integrand-path-unchecked-per-event.md)
 - Appended to `kinematic-helpers-hand-rolled` (the test-side boost
   duplicate).

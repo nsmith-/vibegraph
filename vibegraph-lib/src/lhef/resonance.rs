@@ -342,10 +342,16 @@ fn timelike_lines(
 /// the group's members, whose outgoing legs are `member` where the
 /// representative's are `representative`.
 ///
-/// A group joins subprocesses that share a matrix element, so a member's line is
-/// the representative's line or its conjugate: the same flavour where the legs
-/// below it carry the same charge, the antiparticle where they carry the opposite
-/// one. `None` where neither holds, or where a neutral line that is not its own
+/// A group joins subprocesses that share a matrix element, and those need not
+/// differ only by conjugation: a QCD matrix element is blind to quark flavour, so
+/// `g u > t t~ u` and `g d > t t~ d` share one. A line whose flavour is carried
+/// by an outgoing leg below it (the `s`-channel `u` above, continuing into the
+/// outgoing `u`) is that leg's flavour in the member too, so it takes the
+/// member's flavour on those legs ([`carried_flavour`]). Any other line, and one
+/// whose legs below name different flavours of it, is the representative's line
+/// or its conjugate: the same flavour where the legs below it carry the same
+/// charge, the antiparticle where they carry the opposite one.
+/// `None` where neither holds, or where a neutral line that is not its own
 /// antiparticle leaves the charge unable to tell them apart.
 pub fn member_line_pdg(
     line: &ResonanceLine,
@@ -353,6 +359,9 @@ pub fn member_line_pdg(
     member: &[i32],
     model: &UFOModel,
 ) -> Option<i32> {
+    if let Some(pdg) = carried_flavour(line, representative, member, model) {
+        return Some(pdg);
+    }
     let below = |legs: &[i32]| -> Vec<i32> {
         let mut v: Vec<i32> = (0..legs.len())
             .filter(|k| line.slots & (1u64 << k) != 0)
@@ -384,6 +393,37 @@ pub fn member_line_pdg(
     } else {
         None
     }
+}
+
+/// The member's flavour of a line whose own flavour, or its antiparticle's, is
+/// carried by outgoing legs below it in the representative: each such leg names
+/// the member's line as its own code in the member (conjugated where the leg is
+/// the line's antiparticle). `None` where no leg below carries the line's flavour,
+/// or where two such legs name different flavours of it, which leaves the line to
+/// the charge rule of [`member_line_pdg`].
+fn carried_flavour(
+    line: &ResonanceLine,
+    representative: &[i32],
+    member: &[i32],
+    model: &UFOModel,
+) -> Option<i32> {
+    let conjugate = conjugate_pdg(line.pdg, model)?;
+    let mut named: Option<i32> = None;
+    for k in (0..representative.len()).filter(|k| line.slots & (1u64 << k) != 0) {
+        let candidate = if representative[k] == line.pdg {
+            member[k]
+        } else if representative[k] == conjugate {
+            conjugate_pdg(member[k], model)?
+        } else {
+            continue;
+        };
+        match named {
+            None => named = Some(candidate),
+            Some(pdg) if pdg == candidate => {}
+            Some(_) => return None,
+        }
+    }
+    named
 }
 
 /// The antiparticle's PDG code, or the code itself for a self-conjugate one.
@@ -644,6 +684,50 @@ mod tests {
         // Unshifted, the same mask names other legs and matches nothing.
         assert!(table.clustered_on_shell(0, &[0b011], 2).is_empty());
         assert!(table.clustered_on_shell(0, &[], 2).is_empty());
+    }
+
+    /// A line whose flavour an outgoing leg below it carries takes that leg's
+    /// flavour in the member: a QCD group joins `g u > t t~ u` with `g d > t t~ d`
+    /// and `g d~ > t t~ d~`, whose charges below the `s`-channel quark neither
+    /// match nor oppose the representative's, and `g c > t t~ c`, whose charge
+    /// matches but whose quark is not the representative's.
+    #[test]
+    fn a_line_carried_by_a_leg_takes_the_members_flavour_of_it() {
+        let model = sm_model(SMRestrict::Default);
+        let up = ResonanceLine {
+            slots: 0b111,
+            pdg: 2,
+            color: 3,
+            mass: 0.0,
+            width: 0.0,
+            forced: false,
+        };
+        let rep = [6, -6, 2];
+        assert_eq!(member_line_pdg(&up, &rep, &rep, &model), Some(2));
+        assert_eq!(member_line_pdg(&up, &rep, &[6, -6, 1], &model), Some(1));
+        assert_eq!(member_line_pdg(&up, &rep, &[6, -6, -1], &model), Some(-1));
+        assert_eq!(member_line_pdg(&up, &rep, &[6, -6, 4], &model), Some(4));
+        let anti_up = ResonanceLine { pdg: -2, ..up };
+        assert_eq!(
+            member_line_pdg(&anti_up, &[6, -6, -2], &[6, -6, -3], &model),
+            Some(-3)
+        );
+        // A leg that is the line's antiparticle names the member's line by its
+        // conjugate.
+        assert_eq!(
+            member_line_pdg(&up, &[6, -6, -2], &[6, -6, -1], &model),
+            Some(1)
+        );
+        // Legs that name different flavours of the line (`u > u u u~` against
+        // `u > u c c~`, and against `u > c u u~`) leave it to the charge rule,
+        // whichever of them comes first.
+        for member in [[2, 4, -4], [4, 2, -2]] {
+            assert_eq!(
+                member_line_pdg(&up, &[2, 2, -2], &member, &model),
+                Some(2),
+                "{member:?}"
+            );
+        }
     }
 
     /// A member of a flavour group names the representative's line, or its
