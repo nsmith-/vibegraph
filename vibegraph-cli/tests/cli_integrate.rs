@@ -275,18 +275,35 @@ fn integrate_refuses_overwrite_without_force() {
         .pdf_data_path(pdf_dir())
         .arg("--out")
         .arg(tmp.path())
-        // Keep it cheap: a single tiny iteration is enough to write the artifact.
+        // Cheap, but enough points to carry σ: `integrate` refuses a cross
+        // section carried by too few effective points before writing anything.
         .arg("--fixed-budget")
         .arg("--neval")
-        .arg("200")
+        .arg("2000")
         .arg("--niter")
-        .arg("1");
+        .arg("2");
 
     assert!(base.status().expect("spawn").success(), "first run");
+    let artifact =
+        std::fs::read(tmp.path().join("grid.bin.zst")).expect("the first run writes its artifact");
 
-    // Second run without --force must fail (and not clobber).
-    let refuse = base.status().expect("spawn");
-    assert!(!refuse.success(), "overwrite without --force must fail");
+    // Second run without --force must fail on the overwrite check itself, and
+    // not clobber the first run's artifact.
+    let refuse = base.output().expect("spawn");
+    assert!(
+        !refuse.status.success(),
+        "overwrite without --force must fail"
+    );
+    let stderr = String::from_utf8_lossy(&refuse.stderr);
+    assert!(
+        stderr.contains("already exists (pass --force to overwrite)"),
+        "the second run must be refused for the existing artifact, got:\n{stderr}"
+    );
+    assert_eq!(
+        std::fs::read(tmp.path().join("grid.bin.zst")).expect("artifact still present"),
+        artifact,
+        "the refused run must leave the first artifact untouched"
+    );
 
     // With --force it succeeds.
     let forced = base.arg("--force").status().expect("spawn");

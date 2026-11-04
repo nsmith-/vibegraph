@@ -1,5 +1,7 @@
 pub(crate) mod ast_util;
 pub mod bind;
+#[cfg(test)]
+pub(crate) mod card_classes;
 pub(crate) mod color;
 pub(crate) mod couplings;
 pub(crate) mod expr;
@@ -21,14 +23,14 @@ use identity::model_digest;
 use indexmap::IndexMap;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
-use parameters::{parse_parameters, ParameterError, ParameterSet};
+use parameters::{parse_parameters_with_variables, ParamNature, ParameterError, ParameterSet};
 use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use propagators::{parse_propagators, Propagator, PropagatorError};
 use serde::{Deserialize, Serialize};
 use slha::ParamCard;
 use std::path::Path;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 use thiserror::Error;
@@ -36,6 +38,8 @@ use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
 use names::{DefaultNameConflict, ParticleNames, ParticleNaming};
 use topo::build_feyngraph_model;
+
+use crate::artifact::DecayTable;
 
 /// Every particle and antiparticle as (UFO name, PDG code).
 fn particle_codes(particles: &IndexMap<String, Particle>) -> impl Iterator<Item = (&str, i64)> {
@@ -81,36 +85,52 @@ fn default_sm_hierarchy() -> BTreeMap<String, u32> {
         .collect()
 }
 
+/// Why `coupling_orders.py` cannot be read.
+#[derive(Debug, Error)]
+pub enum CouplingOrderError {
+    #[error("Failed to parse coupling_orders.py: {0}")]
+    Parse(String),
+    #[error(transparent)]
+    Field(#[from] ast_util::FieldError),
+}
+
+/// A model's `name → hierarchy` and `name → expansion_order` maps.
+type CouplingOrders = (BTreeMap<String, u32>, BTreeMap<String, i64>);
+
 /// `coupling_orders.py` read as MadGraph reads it: a `name → hierarchy` map and a
 /// `name → expansion_order` map.
 ///
 /// Each line of the form `VAR = CouplingOrder(name='X', expansion_order=M, hierarchy=N)`
-/// contributes one entry to each. MadGraph sets the model's `expansion_order`
-/// only when *every* declared order carries the attribute
-/// (`models/import_ufo.py`, the `try`/`except AttributeError` around the
-/// `for order in all_orders` loop), so one order missing it leaves the whole map
-/// empty here too. Returns empty maps on parse failure (the caller falls back to
-/// defaults).
-fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, i64>) {
-    use ast_util::{constructor_calls, kwarg_int, kwarg_str, parse_stmts};
+/// contributes one entry to each. UFO's `CouplingOrder(name, expansion_order,
+/// hierarchy, perturbative_expansion = 0)` (`mg5amcnlo/models/sm/object_library.py`
+/// L236) has no default for the first three, so a missing `name` or `hierarchy`
+/// is refused, as is any of the three in a form not read here; the fourth is
+/// not stored there and not read here. A missing `expansion_order` is the one
+/// absence MadGraph's import tolerates (`models/import_ufo.py`, the
+/// `try`/`except AttributeError` around the `for order in all_orders` loop): it
+/// sets the model's `expansion_order` only when *every* order carries one, so
+/// one order without it leaves the whole map empty here too.
+fn parse_coupling_orders(src: &str) -> Result<CouplingOrders, CouplingOrderError> {
+    use ast_util::{constructor_calls, extract_int, parse_stmts, Fields, UniqueNames};
 
-    let Ok(stmts) = parse_stmts(src) else {
-        return (BTreeMap::new(), BTreeMap::new());
-    };
+    let stmts = parse_stmts(src).map_err(|e| CouplingOrderError::Parse(e.to_string()))?;
 
     let mut hierarchy = BTreeMap::new();
     let mut expansion = BTreeMap::new();
     let mut expansion_complete = true;
+    let mut seen = UniqueNames::new("coupling order");
     for (python_name, keywords) in constructor_calls(&stmts, "CouplingOrder") {
-        // Use the `name` keyword if present, otherwise fall back to the Python variable name.
-        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.to_owned());
-        hierarchy.insert(
-            name.clone(),
-            kwarg_int(keywords, "hierarchy").unwrap_or(1) as u32,
-        );
-        match kwarg_int(keywords, "expansion_order") {
-            Some(v) => {
-                expansion.insert(name, v);
+        let fields = Fields::new("coupling order", python_name, keywords);
+        let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
+        let rank = u32::try_from(fields.int("hierarchy")?)
+            .map_err(|_| fields.malformed("hierarchy", "a non-negative integer"))?;
+        hierarchy.insert(name.clone(), rank);
+        match fields.optional("expansion_order") {
+            Some(e) => {
+                let cap = extract_int(e)
+                    .ok_or_else(|| fields.malformed("expansion_order", "an integer"))?;
+                expansion.insert(name, cap);
             }
             None => expansion_complete = false,
         }
@@ -118,7 +138,7 @@ fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, 
     if !expansion_complete {
         expansion.clear();
     }
-    (hierarchy, expansion)
+    Ok((hierarchy, expansion))
 }
 
 /// The coupling-order caps a model imposes on any process, keyed by order name.
@@ -162,18 +182,73 @@ pub enum UfoError {
     Vertex(#[from] VertexError),
     #[error("FeynGraph model error: {0}")]
     FeynGraph(#[from] topo::TopoError),
+    #[error("Coupling order parse error: {0}")]
+    CouplingOrders(#[from] CouplingOrderError),
     #[error("Propagator parse error: {0}")]
     Propagators(#[from] PropagatorError),
+    #[error("particle '{particle}' has `{field} = Param.{reference}`, which parameters.py does not define")]
+    UnknownParticleParameter {
+        particle: String,
+        field: &'static str,
+        reference: String,
+    },
     #[error("particle '{particle}' names propagator '{propagator}', absent from propagators.py")]
     UnknownPropagator {
         particle: String,
         propagator: String,
     },
+    #[error(
+        "the restrict card sets the width of particle {pdg} to Auto, which MadGraph computes at \
+         launch; computing Auto widths is not supported yet, so give the width as a number"
+    )]
+    RestrictAutoWidth { pdg: i32 },
+    #[error(
+        "the restriction card gives no value for {name} (block {block}, code {code}), which \
+         MadGraph's restriction requires; the loader would keep the value parameters.py gives"
+    )]
+    RestrictMissing {
+        name: String,
+        block: String,
+        code: String,
+    },
+    #[error(
+        "the restriction card sets {name} to {value:e}, MadGraph's spelling of {meaning} for a \
+         parameter its restriction leaves free (neither fixed nor merged); the loader does not \
+         read it so, so give {name} another value"
+    )]
+    RestrictMadgraphFree {
+        name: String,
+        value: f64,
+        meaning: &'static str,
+    },
+    #[error("the restriction card sets {name} to {value}, which is not a finite number")]
+    RestrictNonFinite { name: String, value: f64 },
+    #[error(
+        "{path} sits beside the restriction card, and MadGraph's restriction takes the model's \
+         default values from it; the loader does not read it, so remove or rename it"
+    )]
+    RestrictParamSibling { path: String },
+    /// More than one problem with a restriction card; each is listed.
+    #[error("{}", several(.0))]
+    Several(Vec<UfoError>),
     #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
     UnknownSmRestrict { variant: String, known: String },
     #[error("{0}")]
     DefaultName(#[from] DefaultNameConflict),
 }
+
+fn several(errors: &[UfoError]) -> String {
+    errors
+        .iter()
+        .map(UfoError::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The values MadGraph's restriction reads as "one" and "zero" without fixing
+/// the parameter (`restrict_model`, `import_ufo.py`): such a parameter is
+/// neither fixed nor merged, and its default becomes 1 or 0 afterwards.
+const MADGRAPH_FREE_VALUES: [(f64, &str); 2] = [(9.999999e-1, "one"), (0.000001e-99, "zero")];
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
@@ -247,7 +322,7 @@ impl ParsedModel {
         refuse_conditional_definitions("couplings.py", &couplings_src, "Coupling")?;
         refuse_conditional_definitions("vertices.py", &vertices_src, "Vertex")?;
 
-        let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
+        let mut particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
             .into_iter()
             .map(|p| (p.name.clone(), p))
             .collect();
@@ -262,7 +337,26 @@ impl ParsedModel {
             .map(|c| (c.name.clone(), c))
             .collect();
 
-        let params = parse_parameters(&params_src)?;
+        let (params, variables) = parse_parameters_with_variables(&params_src)?;
+        // A particle's `mass = Param.<variable>` is resolved to the parameter's
+        // UFO name, which is what the parameter set is keyed by.
+        for particle in particles.values_mut() {
+            for (field, reference) in [
+                ("mass", &mut particle.mass_param),
+                ("width", &mut particle.width_param),
+            ] {
+                match variables.get(reference.as_str()) {
+                    Some(name) => *reference = name.clone(),
+                    None => {
+                        return Err(UfoError::UnknownParticleParameter {
+                            particle: particle.name.clone(),
+                            field,
+                            reference: reference.clone(),
+                        })
+                    }
+                }
+            }
+        }
         for coupling in couplings.values() {
             if let Some(name) = coupling.deps.iter().find(|d| !params.defines(d)) {
                 return Err(CouplingError::UnknownParameter {
@@ -278,7 +372,7 @@ impl ParsedModel {
 
         // Parse coupling_orders.py for the WEIGHTED order hierarchy and the
         // model's own per-order expansion caps. Fall back to SM defaults
-        // (QCD=1, QED=2) if the file is absent or unparseable.
+        // (QCD=1, QED=2) if the file is absent or declares no order.
         let (order_hierarchy, expansion_order) =
             match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
                 Ok(src) => {
@@ -287,7 +381,7 @@ impl ParsedModel {
                         &src,
                         "CouplingOrder",
                     )?;
-                    let (hierarchy, expansion) = parse_coupling_orders(&src);
+                    let (hierarchy, expansion) = parse_coupling_orders(&src)?;
                     if hierarchy.is_empty() {
                         (default_sm_hierarchy(), expansion)
                     } else {
@@ -345,23 +439,84 @@ impl ParsedModel {
     /// surviving coupling references (with the remaining coupling keys reindexed
     /// onto the shortened list). Colour structures are left alone, as MadGraph
     /// leaves them: an unreferenced one is never read, since every consumer
-    /// enumerates colour structures through the coupling keys.
-    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) {
+    /// enumerates colour structures through the coupling keys. Which couplings
+    /// vanish is MadGraph's rule ([`ZeroRule`]).
+    ///
+    /// The card is refused, every problem listed at once ([`UfoError::Several`]): a width
+    /// given as `Auto` ([`UfoError::RestrictAutoWidth`]: MadGraph keeps such a
+    /// width free and computes it at launch, and nothing here computes one); an
+    /// external parameter the card gives no value for
+    /// ([`UfoError::RestrictMissing`]); a value MadGraph reads as "one" or "zero"
+    /// without fixing it ([`UfoError::RestrictMadgraphFree`]); and a value that
+    /// is not finite ([`UfoError::RestrictNonFinite`]).
+    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
+        let mut problems: Vec<UfoError> = restrict_card
+            .auto_widths()
+            .iter()
+            .map(|&pdg| UfoError::RestrictAutoWidth { pdg })
+            .collect();
+        for p in &self.params.externals {
+            let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let name = p.name.clone();
+            match restrict_card.get(lha_block, lha_code) {
+                None => {
+                    let auto = lha_block.eq_ignore_ascii_case("decay")
+                        && lha_code
+                            .first()
+                            .is_some_and(|c| restrict_card.auto_widths().contains(c));
+                    if !auto {
+                        problems.push(UfoError::RestrictMissing {
+                            name,
+                            block: lha_block.clone(),
+                            code: slha::code_text(lha_code),
+                        });
+                    }
+                }
+                Some(value) if !value.is_finite() => {
+                    problems.push(UfoError::RestrictNonFinite { name, value });
+                }
+                Some(value) => {
+                    if let Some(&(_, meaning)) =
+                        MADGRAPH_FREE_VALUES.iter().find(|(v, _)| *v == value)
+                    {
+                        problems.push(UfoError::RestrictMadgraphFree {
+                            name,
+                            value,
+                            meaning,
+                        });
+                    }
+                }
+            }
+        }
+        match problems.len() {
+            0 => {}
+            1 => return Err(problems.remove(0)),
+            _ => return Err(UfoError::Several(problems)),
+        }
         self.params.apply_restrict(restrict_card);
 
         let restrict_values =
             evaluate_couplings_for_restrict(&self.params, &self.couplings, restrict_card);
+        let rule = ZeroRule::for_couplings(restrict_values.values());
 
         for vertex in self.vertices.values_mut() {
             vertex
                 .couplings
-                .retain(|_key, coup_id| !is_zero_coupling(*coup_id, &restrict_values));
+                .retain(|_key, coup_id| !is_zero_coupling(*coup_id, &restrict_values, rule));
         }
         self.vertices
             .retain(|_name, vertex| !vertex.couplings.is_empty());
         for vertex in self.vertices.values_mut() {
             prune_unreferenced_lorentz(vertex);
         }
+        Ok(())
     }
 
     /// Apply a restrict card and build the feyngraph topology model.
@@ -369,7 +524,7 @@ impl ParsedModel {
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
     pub(crate) fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
         if let Some(restrict_card) = restrict {
-            self.apply_restriction(restrict_card);
+            self.apply_restriction(restrict_card)?;
         }
 
         // Build the feyngraph model using vibegraph's parsed UFO data
@@ -457,6 +612,16 @@ impl UFOModel {
             }
         };
 
+        // MadGraph's restriction takes the defaults from `param_<x>.dat` when
+        // it sits beside `restrict_<x>.dat` (`restrict_model`, `import_ufo.py`:
+        // the card's path with every `restrict` replaced by `param`).
+        if let Some(restrict_path) = &restrict_card_path {
+            let text = restrict_path.to_string_lossy();
+            let sibling = text.replace("restrict", "param");
+            if sibling != text && Path::new(&sibling).exists() {
+                return Err(UfoError::RestrictParamSibling { path: sibling });
+            }
+        }
         let card = match restrict_card_path {
             Some(restrict_path) => {
                 Some(
@@ -473,7 +638,7 @@ impl UFOModel {
         };
 
         if let Some(card) = card.as_ref() {
-            parsed.apply_restriction(card);
+            parsed.apply_restriction(card)?;
         }
         let digest = model_digest(&parsed);
         // The restriction is already baked in, so `into_model` only builds topology.
@@ -753,6 +918,14 @@ fn resolve_vertices(
 
 /// Evaluated parameter and coupling values for a specific parameter set (e.g. from a param_card).
 ///
+/// A width is evaluated with the sign MadGraph's Fortran reads it with: an
+/// external width in block `DECAY` at code `[pdg]` is negated while the mass at
+/// `[pdg]` is negative (`write_inc_file`, `models/check_param_card.py`, which
+/// writes the run's `param_card.inc`), so a propagator's `m·Γ` keeps the sign it
+/// has at a positive mass. The rule reads the evaluated masses, so it holds for
+/// a mass from the model's default, its restriction and a param card alike.
+/// [`card_value`](Self::card_value) gives a width as the card gives it.
+///
 /// `Clone` is cheap in the model itself (an `Arc` bump) and copies the parameter and
 /// coupling value tables, so a thread that moves parameters per event owns its own
 /// copy rather than sharing one.
@@ -766,32 +939,159 @@ pub struct EvaluatedModel {
     pub param_values: HashMap<String, Complex64>,
     /// Coupling constant values indexed by [`CouplingId`], parallel to `model.couplings`.
     coupling_values: Vec<Complex64>,
+    /// What the evaluation keeps of the card besides values, boxed so the
+    /// evaluation stays small to move.
+    card: Box<CardRecord>,
+}
+
+/// The parts of a param card an [`EvaluatedModel`] keeps besides its values.
+#[derive(Clone, Default)]
+struct CardRecord {
+    /// The external widths [`EvaluatedModel::param_values`] holds negated,
+    /// because the mass at their code is negative.
+    negated_widths: HashSet<String>,
+    /// The param card's decay tables, which nothing evaluates: they are carried
+    /// to the event file's `<slha>` header.
+    decay_tables: Vec<DecayTable>,
 }
 
 impl EvaluatedModel {
     /// Construct an `EvaluatedModel` from a `UFOModel` and a parameter card
     ///
     /// Evaluates all parameter values and coupling constants according to the given parameter card.
-    pub fn from_model_card(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
-        let param_values = model.params.evaluate(param_card);
-
-        let coupling_values: Vec<Complex64> = model
-            .couplings
-            .values()
-            .map(|c| expr::eval(&c.value, &param_values))
-            .collect();
-
-        EvaluatedModel {
-            model,
-            param_values,
-            coupling_values,
+    ///
+    /// # Errors
+    ///
+    /// [`CardError::AutoWidth`](bind::CardError::AutoWidth) if the card gives a
+    /// width as `Auto`: MadGraph computes such a width at launch, nothing here
+    /// computes one, and the parameter's default is not what the card means.
+    pub fn from_model_card(
+        model: Arc<UFOModel>,
+        param_card: &ParamCard,
+    ) -> Result<Self, bind::CardError> {
+        if let Some(&pdg) = param_card.auto_widths().first() {
+            return Err(bind::CardError::AutoWidth { pdg });
         }
+        Ok(Self::evaluate_at(model, param_card))
     }
 
     /// Construct an `EvaluatedModel` from a `UFOModel` with default parameters
     pub fn from_model(model: Arc<UFOModel>) -> Self {
-        let empty_card = ParamCard::default();
-        Self::from_model_card(model, &empty_card)
+        Self::evaluate_at(model, &ParamCard::default())
+    }
+
+    /// Every parameter and coupling at `param_card`'s values, the model's
+    /// defaults where it sets none, with each width's sign following its mass;
+    /// the card's decay tables are carried. An `Auto` width is read as unset, so
+    /// the caller refuses one first.
+    fn evaluate_at(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
+        let mut evaluated = EvaluatedModel {
+            param_values: model.params.evaluate(param_card),
+            model,
+            coupling_values: Vec::new(),
+            card: Box::new(CardRecord {
+                negated_widths: HashSet::new(),
+                decay_tables: param_card.decay_tables().to_vec(),
+            }),
+        };
+        evaluated.apply_width_signs();
+        evaluated.coupling_values = evaluated
+            .model
+            .couplings
+            .values()
+            .map(|c| expr::eval(&c.value, &evaluated.param_values))
+            .collect();
+        evaluated
+    }
+
+    /// The real value of the mass a param card gives at code `[pdg]`: the
+    /// external parameter at block `MASS` code `[pdg]`, or else the mass of the
+    /// model's particle with that code, which a card MadGraph writes lists at
+    /// its computed value. Zero for a code with neither.
+    fn mass_at(&self, pdg: i32) -> f64 {
+        let params = &self.model.params;
+        let name = params
+            .externals
+            .iter()
+            .find(|p| {
+                matches!(&p.nature, ParamNature::External { lha_block, lha_code, .. }
+                    if lha_block.eq_ignore_ascii_case("mass") && lha_code.as_slice() == [pdg])
+            })
+            .map(|p| p.name.as_str())
+            .or_else(|| {
+                self.model
+                    .particles
+                    .values()
+                    .find(|p| p.pdg_code == i64::from(pdg))
+                    .map(|p| p.mass_param.as_str())
+            });
+        name.and_then(|n| self.param_values.get(n))
+            .map_or(0.0, |v| v.re)
+    }
+
+    /// Make every external width's sign follow its mass, as MadGraph's
+    /// `write_inc_file` does: an external width at block `DECAY` code `[pdg]` is
+    /// held negated while [`mass_at`](Self::mass_at)`(pdg)` is negative, and as
+    /// the card gives it otherwise. A width the restriction fixed to zero or one
+    /// is not a parameter of MadGraph's restricted model, and keeps its value.
+    /// Re-evaluates the internal parameters a flipped width reaches, and returns
+    /// every parameter it moved.
+    fn apply_width_signs(&mut self) -> HashSet<String> {
+        let model = Arc::clone(&self.model);
+        let params = &model.params;
+        let mut moved = HashSet::new();
+        for p in &params.externals {
+            let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let &[pdg] = lha_code.as_slice() else {
+                continue;
+            };
+            if !lha_block.eq_ignore_ascii_case("decay")
+                || params.zeros.contains(&p.name)
+                || params.ones.contains(&p.name)
+            {
+                continue;
+            }
+            let negative = self.mass_at(pdg) < 0.0;
+            if negative == self.card.negated_widths.contains(&p.name) {
+                continue;
+            }
+            if let Some(v) = self.param_values.get_mut(&p.name) {
+                *v = -*v;
+            }
+            if negative {
+                self.card.negated_widths.insert(p.name.clone());
+            } else {
+                self.card.negated_widths.remove(&p.name);
+            }
+            moved.extend(params.recompute(&p.name, &mut self.param_values));
+            moved.insert(p.name.clone());
+        }
+        moved
+    }
+
+    /// The real part of parameter `name` as the param card gives it: its value,
+    /// with the sign of a width negated for a negative mass restored. Zero for
+    /// a name the evaluation does not hold.
+    pub fn card_value(&self, name: &str) -> f64 {
+        let value = self.param_values.get(name).map_or(0.0, |v| v.re);
+        if self.card.negated_widths.contains(name) {
+            -value
+        } else {
+            value
+        }
+    }
+
+    /// The param card's decay tables, in card order, which the event file's
+    /// `<slha>` header carries.
+    pub fn decay_tables(&self) -> &[DecayTable] {
+        &self.card.decay_tables
     }
 
     /// The model these values were evaluated from.
@@ -867,6 +1167,10 @@ impl EvaluatedModel {
     /// Set `changed` to `new_value`, then re-evaluate the parameters
     /// transitively depending on it and every coupling that reads any of them.
     ///
+    /// `new_value` is a card value: a width whose mass is negative, or a mass
+    /// moved across zero, takes the sign MadGraph's Fortran reads the width
+    /// with, as [`from_model_card`](Self::from_model_card) gives it.
+    ///
     /// A parameter a restriction locked to zero keeps its value, and nothing
     /// moves: the restriction pruned the vertices it would revive.
     ///
@@ -886,11 +1190,13 @@ impl EvaluatedModel {
             return Ok(());
         }
         *slot = new_value;
+        self.card.negated_widths.remove(changed);
 
         // Every parameter the change reaches, however many internal parameters
         // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.
         let mut changed_params = self.model.params.recompute(changed, &mut self.param_values);
         changed_params.insert(changed.to_owned());
+        changed_params.extend(self.apply_width_signs());
 
         for (i, c) in self.model.couplings.values().enumerate() {
             if c.deps.iter().any(|d| changed_params.contains(d)) {
@@ -921,12 +1227,63 @@ fn evaluate_couplings_for_restrict(
         .collect()
 }
 
+/// Below this magnitude a coupling at the restriction's values is zero, unless
+/// [`STRICT_ZERO_BELOW`] puts the whole restriction under the strict rule.
+const ZERO_COUPLING_BELOW: f64 = 1e-13;
+
+/// A coupling in `[ZERO_COUPLING_BELOW, STRICT_ZERO_BELOW)` makes only exact zeros
+/// vanish.
+const STRICT_ZERO_BELOW: f64 = 1e-10;
+
+/// Which coupling values a restriction treats as zero: MadGraph's rule in
+/// `RestrictModel.detect_identical_couplings` (`import_ufo.py` L2549-L2558),
+/// kept as a MadGraph-compatibility choice.
+///
+/// Over every coupling of the model, on a vertex or not: `|g| <
+/// ZERO_COUPLING_BELOW` is zero ([`Threshold`](Self::Threshold)), unless some
+/// coupling lies in `[ZERO_COUPLING_BELOW, STRICT_ZERO_BELOW)`, in which case
+/// MadGraph reruns with `strict_zero` and only an exact zero is
+/// ([`Strict`](Self::Strict)). The thresholds are absolute, so the rule is not
+/// scale-invariant: one coupling at `1e-12` keeps another at `1e-14`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZeroRule {
+    Threshold,
+    Strict,
+}
+
+impl ZeroRule {
+    /// The rule MadGraph applies to a model whose couplings take `values`.
+    fn for_couplings<'a>(values: impl IntoIterator<Item = &'a Complex64>) -> Self {
+        let in_window = |v: &Complex64| {
+            let magnitude = v.norm();
+            (ZERO_COUPLING_BELOW..STRICT_ZERO_BELOW).contains(&magnitude)
+        };
+        if values.into_iter().any(in_window) {
+            ZeroRule::Strict
+        } else {
+            ZeroRule::Threshold
+        }
+    }
+
+    /// Whether `value` vanishes under the rule. A NaN never does, as in
+    /// MadGraph, whose comparisons are false for it.
+    fn is_zero(self, value: Complex64) -> bool {
+        match self {
+            ZeroRule::Threshold => value.norm() < ZERO_COUPLING_BELOW,
+            ZeroRule::Strict => value.re == 0.0 && value.im == 0.0,
+        }
+    }
+}
+
 /// Whether one coupling vanishes under the restrict parameters.
-fn is_zero_coupling(coup_id: CouplingId, restrict_values: &HashMap<CouplingId, Complex64>) -> bool {
+fn is_zero_coupling(
+    coup_id: CouplingId,
+    restrict_values: &HashMap<CouplingId, Complex64>,
+    rule: ZeroRule,
+) -> bool {
     restrict_values
         .get(&coup_id)
-        .map(|v| v.norm() < 1e-20)
-        .unwrap_or(true)
+        .is_none_or(|&v| rule.is_zero(v))
 }
 
 /// Drop the Lorentz structures no coupling of `vertex` refers to, renumbering the
@@ -1141,9 +1498,14 @@ mod tests {
             std::fs::write(dir.join(name), "\n").unwrap();
         }
         std::fs::write(
+            dir.join("parameters.py"),
+            "ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')\n",
+        )
+        .unwrap();
+        std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
-             color = 1, propagator = Prop.Z1, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
+             color = 1, mass = Param.ZERO, width = Param.ZERO, propagator = Prop.Z1, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
         )
         .unwrap();
         std::fs::write(
@@ -1162,7 +1524,7 @@ mod tests {
             "the particle must keep its propagator reference"
         );
         assert_eq!(parsed.propagators["Z1"].numerator, "- Metric(1, 2)");
-        assert_eq!(parsed.propagators["Z1"].denominator, "X");
+        assert_eq!(parsed.propagators["Z1"].denominator.as_deref(), Some("X"));
     }
 
     /// A particle naming a propagator the model never defines is a broken model,
@@ -1178,9 +1540,14 @@ mod tests {
             std::fs::write(dir.join(name), "\n").unwrap();
         }
         std::fs::write(
+            dir.join("parameters.py"),
+            "ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')\n",
+        )
+        .unwrap();
+        std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
-             color = 1, propagator = Prop.Nope, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
+             color = 1, mass = Param.ZERO, width = Param.ZERO, propagator = Prop.Nope, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
         )
         .unwrap();
 
@@ -1264,7 +1631,7 @@ mod tests {
             let card: ParamCard = format!("BLOCK {lha_block}\n {} {value:.17e}\n", code.join(" "))
                 .parse()
                 .unwrap();
-            let fresh = EvaluatedModel::from_model_card(model.clone(), &card);
+            let fresh = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
             assert_eq!(fresh.param_values[&p.name].re, value, "{}", p.name);
             let mut moved = base.clone();
             moved.recompute(&p.name, value.into()).unwrap();
