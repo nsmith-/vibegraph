@@ -32,7 +32,7 @@ use crate::select::select_index;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
-use super::error::EvalError;
+use super::error::{EvalError, SpinLine};
 use super::fold::Folded;
 use super::lower;
 use super::root_diagram::{compile_single_diagram, DiagramEval};
@@ -133,6 +133,7 @@ impl AmplitudeEvaluator {
         let _span = info_span!("compile", process = %subprocess).entered();
         let started = std::time::Instant::now();
         let ext_particle_ids = external_particle_ids(set, model)?;
+        refuse_unsupported_spins(set, model, &ext_particle_ids)?;
 
         // Pass C: factorize color into a basis of flows + the exact CF matrix. Each
         // contribution names an amplitude by `(diagram, color-index chain)`.
@@ -639,6 +640,48 @@ fn external_particle_ids(set: &DiagramSet, model: &UFOModel) -> Result<Vec<Parti
         .collect()
 }
 
+/// Whether the evaluator has an external wavefunction and a propagator for a UFO
+/// spin code (`2s+1`, negative for ghosts): spin 0, 1/2 and 1.
+fn evaluable_spin(spin: i32) -> bool {
+    matches!(spin.abs(), 1..=3)
+}
+
+/// Refuse a process any of whose lines, external or internal, carries a spin with
+/// no wavefunction or propagator here (spin 3/2, spin 2), naming the particle.
+///
+/// Every later stage — Lorentz rooting, lowering, the external-wavefunction and
+/// node-type matches, the spin average — assumes spin codes 1–3, so this runs
+/// before any of them. It looks at the process's diagrams only, so a model that
+/// declares such a particle still compiles every process the particle takes no
+/// part in.
+fn refuse_unsupported_spins(
+    set: &DiagramSet,
+    model: &UFOModel,
+    ext_particle_ids: &[ParticleId],
+) -> Result<(), EvalError> {
+    let refuse = |pid: ParticleId, line: SpinLine| {
+        let particle = model.particle(pid);
+        if evaluable_spin(particle.spin) {
+            Ok(())
+        } else {
+            Err(EvalError::UnsupportedSpin {
+                particle: particle.name.clone(),
+                spin: particle.spin,
+                line,
+            })
+        }
+    };
+    for &pid in ext_particle_ids {
+        refuse(pid, SpinLine::External)?;
+    }
+    for diagram in &set.diagrams {
+        for prop in &diagram.props {
+            refuse(prop.particle, SpinLine::Internal)?;
+        }
+    }
+    Ok(())
+}
+
 /// Root each distinct `(diagram, chain)` amplitude the colour flows reference. A chain
 /// selects one colour structure per vertex; for single-structure vertices this is the
 /// all-zero chain and matches the colour-free rooting exactly.
@@ -684,7 +727,11 @@ fn helicity_states(
             let particle = model.particle(pid);
             let states = particle
                 .helicity_states()
-                .ok_or(EvalError::UnsupportedSpin(particle.spin.abs()))?;
+                .ok_or_else(|| EvalError::UnsupportedSpin {
+                    particle: particle.name.clone(),
+                    spin: particle.spin,
+                    line: SpinLine::External,
+                })?;
             match pol {
                 None => Ok(states),
                 Some(listed) if !listed.is_empty() && listed.iter().all(|h| states.contains(h)) => {
