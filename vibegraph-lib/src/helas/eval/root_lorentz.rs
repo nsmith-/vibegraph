@@ -103,6 +103,19 @@ pub enum RootLorentzError {
     MissingAdjoint(String),
 }
 
+impl RootLorentzError {
+    /// The same error with the Lorentz structure it arose in named in front of its
+    /// message.
+    pub(crate) fn in_structure(self, name: &str, structure: &str) -> Self {
+        let at = |why: String| format!("Lorentz structure {name} ({structure}): {why}");
+        match self {
+            Self::UnsupportedVertex(why) => Self::UnsupportedVertex(at(why)),
+            Self::InvalidStructure(why) => Self::InvalidStructure(at(why)),
+            Self::MissingAdjoint(why) => Self::MissingAdjoint(at(why)),
+        }
+    }
+}
+
 /// Descriptor for one term in the vertex lorentz structure, with dispatch info and resolved rooted node.
 ///
 /// Index labels follow the convention:
@@ -553,6 +566,7 @@ impl LorentzEvalTree {
         idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
     ) -> Result<(Self, f64, i8), RootLorentzError> {
+        reject_indices_naming_no_leg(term, spins.len())?;
         let out_adjoint = idx.and_then(|i| flows.get(i).copied().flatten().map(|lf| lf.adjoint));
         // A cyclic index graph is not rootable as a tree; the tensor path cuts the
         // cycle at one fermion line instead (its gammas never become a `GammaVout`,
@@ -726,11 +740,10 @@ impl LorentzEvalTree {
                     nu: other,
                 })
             }
-            _ => {
-                todo!(
-                    "Routing for remaining ops not yet implemented in tree builder: {:?}",
-                    op
-                );
+            LorentzOp::C { .. } => {
+                return Err(RootLorentzError::UnsupportedVertex(format!(
+                    "charge conjugation {op:?} as a scalar factor is not supported"
+                )));
             }
         })
     }
@@ -1487,6 +1500,42 @@ fn cyclic_index_graph(term: &LorentzTerm) -> bool {
         }
     }
     false
+}
+
+/// Every non-negative index of `op`: the leg slots it reads, 0-based.
+fn leg_indices(op: &LorentzOp) -> Vec<isize> {
+    let all = match *op {
+        LorentzOp::Gamma { mu, i, j } => vec![mu, i, j],
+        LorentzOp::Sigma { mu, nu, i, j } => vec![mu, nu, i, j],
+        LorentzOp::Identity { i, j }
+        | LorentzOp::ProjM { i, j }
+        | LorentzOp::ProjP { i, j }
+        | LorentzOp::C { i, j }
+        | LorentzOp::Gamma5 { i, j } => vec![i, j],
+        LorentzOp::Metric { mu, nu } => vec![mu, nu],
+        LorentzOp::P { mu, leg } => vec![mu, leg],
+        LorentzOp::Epsilon { mu, nu, rho, sigma } => vec![mu, nu, rho, sigma],
+    };
+    all.into_iter().filter(|&k| k >= 0).collect()
+}
+
+/// Refuse a term whose operators carry a non-negative index at or above the
+/// vertex's leg count. UFO writes a spin-2 leg `k`'s two tensor indices as
+/// `1000+k` and `2000+k`; the tree builder reads every non-negative index as a
+/// leg slot, so such an index would otherwise become an input-leg number past the
+/// end of the vertex's inputs. The error quotes the index one-based, as the UFO
+/// structure writes it.
+fn reject_indices_naming_no_leg(term: &LorentzTerm, n_legs: usize) -> Result<(), RootLorentzError> {
+    for op in &term.ops {
+        if let Some(k) = leg_indices(op).into_iter().find(|&k| k as usize >= n_legs) {
+            return Err(RootLorentzError::InvalidStructure(format!(
+                "index {} of {op:?} names no leg of a {n_legs}-leg vertex \
+                 (spin-2 tensor indices are not supported)",
+                k + 1
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// [`cyclic_tensor_term`] over a whole structure, as the error the evaluator reports.
@@ -2327,6 +2376,125 @@ mod tests {
         assert!(
             format!("{err}").contains("outside the fermion-line set"),
             "unexpected refusal: {err}"
+        );
+    }
+
+    /// A charge-conjugation matrix the walk meets as a scalar factor (rooted at the
+    /// amplitude) is refused with an error naming the operator, as it is when a
+    /// leg-rooted walk reaches it.
+    #[test]
+    fn charge_conjugation_as_a_scalar_factor_is_refused() {
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::C { i: 1, j: 0 }],
+        };
+        let spins = vec![2, 2, 1];
+        let flows = [lf(Adjoint::Ket), lf(Adjoint::Bra), None];
+        let err = LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), None, &flows)
+            .unwrap_err();
+        let RootLorentzError::UnsupportedVertex(why) = &err else {
+            panic!("expected an unsupported-vertex refusal, got {err:?}");
+        };
+        assert!(why.contains("C {"), "{why}");
+    }
+
+    /// An index at or above the vertex's leg count (a UFO spin-2 tensor index
+    /// `1000+k`, here `1003` after the one-based shift) is refused before any walk,
+    /// at every root, so it never becomes a `Leg` node.
+    #[test]
+    fn an_index_naming_no_leg_is_refused_at_every_root() {
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Metric { mu: 0, nu: 1002 }],
+        };
+        let spins = vec![3, 3, 1];
+        for root in [None, Some(0), Some(1), Some(2)] {
+            let err = LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), root, &[])
+                .unwrap_err();
+            let RootLorentzError::InvalidStructure(why) = &err else {
+                panic!("root {root:?}: expected an invalid-structure refusal, got {err:?}");
+            };
+            assert!(
+                why.contains("1003") && why.contains("names no leg"),
+                "{why}"
+            );
+        }
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::P { mu: 0, leg: 3 }],
+        };
+        let err =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), None, &[]).unwrap_err();
+        assert!(err.to_string().contains("names no leg"), "{err}");
+    }
+
+    /// No Lorentz structure of any in-tree model carries the charge-conjugation
+    /// matrix, the only operator the scalar-root walk refuses rather than routes;
+    /// and rooting every term of every structure at the amplitude and at each
+    /// non-fermion leg returns, an error or a tree, without a panic.
+    ///
+    /// The models are the authored toy UFOs, SMEFTsim and the UFOs MadGraph ships
+    /// (`research/refs/mg5amcnlo/models`), less the one the loader refuses. Fermion legs are not rooted: without a
+    /// diagram there is no adjoint to root them with, and the C census covers the
+    /// only refusal they could add.
+    #[test]
+    fn in_tree_models_never_reach_the_charge_conjugation_refusal() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+        for parent in ["validation/ufo", "research/refs/mg5amcnlo/models"] {
+            let Ok(entries) = std::fs::read_dir(root.join(parent)) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                if entry.path().join("lorentz.py").is_file() {
+                    dirs.push(entry.path());
+                }
+            }
+        }
+        dirs.sort();
+        assert!(
+            dirs.iter().any(|d| d.ends_with("vibegraph_toy_UFO")),
+            "no in-tree model found under {}",
+            root.display()
+        );
+        let mut structures = 0usize;
+        let mut unparsed: Vec<String> = Vec::new();
+        for dir in &dirs {
+            let parsed = match crate::ufo::ParsedModel::parse(dir) {
+                Ok(parsed) => parsed,
+                Err(e) => {
+                    unparsed.push(format!(
+                        "{}: {e}",
+                        dir.file_name().unwrap().to_string_lossy()
+                    ));
+                    continue;
+                }
+            };
+            for structure in parsed.lorentz.values() {
+                structures += 1;
+                let spins = &structure.spins;
+                for term in structure.expr.iter() {
+                    assert!(
+                        !term.ops.iter().any(|op| matches!(op, LorentzOp::C { .. })),
+                        "{}: {} carries C",
+                        dir.display(),
+                        structure.name
+                    );
+                    let roots = std::iter::once(None)
+                        .chain((0..spins.len()).filter(|&l| spins[l] != 2).map(Some));
+                    for at in roots {
+                        let _ =
+                            LorentzEvalTree::build_at_leg(term, spins, &flow_of(spins), at, &[]);
+                    }
+                }
+            }
+        }
+        assert!(structures > 0);
+        // `taudecay_UFO` defines its form factors as Lorentz-level functions
+        // (`FFCT2`), which the loader refuses before any structure is rooted.
+        assert!(
+            unparsed.iter().all(|e| e.starts_with("taudecay_UFO: ")),
+            "{unparsed:#?}"
         );
     }
 }
