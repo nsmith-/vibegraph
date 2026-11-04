@@ -621,8 +621,7 @@ fn spin_state_count(spin_code: i32, massless: bool) -> usize {
         1 => 1,                          // scalar
         2 => 2,                          // fermion
         3 => usize::from(!massless) + 2, // vector: 2 (massless) or 3 (massive)
-        5 => 5,                          // spin-2
-        other => panic!("unsupported spin code {other} for the spin average"),
+        other => unreachable!("spin code {other} on a compiled process: AmplitudeEvaluator::compile refuses every spin code but 1, 2 and 3"),
     }
 }
 
