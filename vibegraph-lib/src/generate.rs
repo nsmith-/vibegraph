@@ -1565,6 +1565,56 @@ mod tests {
         assert!(check_alphas(&[-0.5, 1.5]).is_err());
     }
 
+    /// `p p > t t~ j` with a quark-only `j` groups `g u > t t~ u` with
+    /// `g d > t t~ d`, since a QCD matrix element does not see quark flavour. A
+    /// quark line of such a group continues into the outgoing quark, so in each
+    /// member it carries that member's own quark, up- or down-type; a gluon line
+    /// stays a gluon.
+    #[test]
+    fn a_quark_line_of_a_mixed_flavour_group_carries_each_members_quark() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::proton::derive_flavor_groups;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let card = parse_proc_card(
+            "define p = g u c d s u~ c~ d~ s~\n\
+             define j = u c d s u~ c~ d~ s~\n\
+             generate p p > t t~ j",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let groups = derive_flavor_groups(sets, &model, &evaluated, &RunCard::default()).unwrap();
+        let (tables, pdgs) = group_resonances(&groups, &model, &evaluated, 15.0)
+            .expect("every member names its resonance lines");
+
+        let is_quark = |pdg: i32| (1..=4).contains(&pdg.abs());
+        let (mut mixed, mut quark_lines) = (0, 0);
+        for ((group, table), members) in groups.groups().iter().zip(&tables).zip(&pdgs) {
+            let quarks: Vec<i32> = group.members().iter().map(|m| m.outgoing[2]).collect();
+            assert!(quarks.iter().all(|&q| is_quark(q)), "{quarks:?}");
+            if quarks.iter().any(|q| q.abs() % 2 == 0) && quarks.iter().any(|q| q.abs() % 2 == 1) {
+                mixed += 1;
+            }
+            for (member, configs) in group.members().iter().zip(members) {
+                for (config, member_lines) in configs.iter().enumerate() {
+                    for (line, &pdg) in table.lines(config).iter().zip(member_lines) {
+                        if is_quark(line.pdg) {
+                            quark_lines += 1;
+                            assert_eq!(pdg, member.outgoing[2], "{member:?} config {config}");
+                        } else {
+                            assert_eq!((line.pdg, pdg), (21, 21), "{member:?} config {config}");
+                        }
+                    }
+                }
+            }
+        }
+        assert!(mixed > 0, "no group joins up- and down-type quarks");
+        assert!(quark_lines > 0, "no quark line reached");
+    }
+
     /// [`EventSource::restart`] promises the identical sequence follows, and a
     /// two-pass strategy would be silently wrong if it did not. Nothing here
     /// consumes it yet, so this is where the promise is kept honest: the sequence
