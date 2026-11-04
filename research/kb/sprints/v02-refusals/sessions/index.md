@@ -7,6 +7,7 @@
 * [G-F1: refuse spin 2 and the Lorentz/spin-code panics](G-F1.md) - A spin-2 particle, internal or external, and a Lorentz index naming no leg are refused with named errors; build_child's todo! and the three spin-code panic! arms return typed errors or are pinned unreachable.
 * [G-F2: refuse defaulted UFO fields; MadGraph's restriction zero rule](G-F2.md) - Each required UFO field missing or malformed is refused with the field named, DECAY Auto gets a stated policy, and restriction pruning applies MadGraph's 1e-13 rule with the strict-zero rerun.
 * [G-F3: classify every construct of the param, restrict and reweight cards](G-F3.md) - A classification table per input card (consumed, benign with an argument, or refused when it could bite), asserted by a test as the run card's FIELD_CLASSES is; plus the UFO propagators.py required fields.
+* [G-F4: refuse σ = 0 and a σ carried by too few nonzero points](G-F4.md) - integrate exits non-zero with no artifact when every point has zero weight, or when fewer nonzero points than a measured threshold carry σ, naming the cut-pass count and whether |M|² vanished; generate refuses a σ = 0 artifact.
 
 ## Session Report
 
