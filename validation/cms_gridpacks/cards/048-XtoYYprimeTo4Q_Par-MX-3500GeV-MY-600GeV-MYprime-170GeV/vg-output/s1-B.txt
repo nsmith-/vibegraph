@@ -1,0 +1,38 @@
+ INFO proc_card: generate p p > vz, vz > h z @1
+ INFO ufo_load: model Vector_Triplet_free_Width_UFO-default (aedd72ca731ac044455232c9685ba429d47c13618f2332a34b07088e7024850d)
+ INFO PDF set NNPDF31_nnlo_as_0118_nf_4_mc_hessian (101 members)
+ INFO PDF member 0 of NNPDF31_nnlo_as_0118_nf_4_mc_hessian loaded
+ INFO enumerate: 1 diagrams for u u~ > Vz
+ INFO enumerate: 1 diagrams for c c~ > Vz
+ INFO enumerate: 1 diagrams for d d~ > Vz
+ INFO enumerate: 1 diagrams for s s~ > Vz
+ INFO enumerate: 1 diagrams for Vz > h Z
+ INFO enumerate: 1 diagrams for u u~ > h Z (u u~ > Vz with Vz > h Z [vz > h z])
+ INFO enumerate: 1 diagrams for c c~ > h Z (c c~ > Vz with Vz > h Z [vz > h z])
+ INFO enumerate: 1 diagrams for d d~ > h Z (d d~ > Vz with Vz > h Z [vz > h z])
+ INFO enumerate: 1 diagrams for s s~ > h Z (s s~ > Vz with Vz > h Z [vz > h z])
+ INFO enumerate: enumerated 4 diagrams in 4 subprocesses (0.002 s)
+ INFO compile: 1 colour flows, CF matrix 1×1 process=u u~ > h Z
+ INFO compile: compiled evaluator: 19 ops process=u u~ > h Z
+ INFO compile: 1 colour flows, CF matrix 1×1 process=c c~ > h Z
+ INFO compile: compiled evaluator: 19 ops process=c c~ > h Z
+ INFO compile: 1 colour flows, CF matrix 1×1 process=d d~ > h Z
+ INFO compile: compiled evaluator: 19 ops process=d d~ > h Z
+ INFO compile: 1 colour flows, CF matrix 1×1 process=s s~ > h Z
+ INFO compile: compiled evaluator: 19 ops process=s s~ > h Z
+ INFO phase-space maps: split-angle soft-all (auto), tau log (auto), rung-order derived (auto), pair-order symmetric (auto) (0 soft-emission splits, chains of up to 0 rungs, 0 resonant pairs)
+ INFO phase space: 1 channels, 0 peripheral, 1 all-timelike
+ INFO 2 (group, diagram) channels share 1 distinct phase-space maps
+ INFO alpha_survey: surveying 1 channels over 6 × 10000 points
+ INFO vegas: 1 channels over 4 coordinates, 10000 points per iteration, allocated by α
+ INFO vegas: iteration 1 (warm-up): 10000 points at 75 ns/eval
+ INFO vegas: iteration 2 (warm-up): 10000 points at 71 ns/eval
+ INFO vegas: iteration 3: 2.931919e-5 ± 2.931919e-5 (χ²/dof 0.000), 10000 points at 77 ns/eval
+ INFO process:  p p > vz, vz > h z
+ INFO model:    Vector_Triplet_free_Width_UFO-default (aedd72ca731ac044455232c9685ba429d47c13618f2332a34b07088e7024850d)
+ INFO params:   MVz = 3500, MH = 170, MZ = 600, WH = 0.001, WZ = 0.001, WVc = 0.001, WVz = 0.001
+ INFO PDF set:  NNPDF31_nnlo_as_0118_nf_4_mc_hessian (member 0, lhaid 325500)
+ INFO √s:       13600 GeV,  μF = 0 GeV
+ INFO VEGAS:    30000 evals over 3 iters, seed 1 (χ²/dof = 0.000)
+σ = 11416.288547 ± 11416.288547 pb
+wrote /home/ncsmith/vibegraph/validation/cms_gridpacks/work/sprintg-048-s1-B/048-XtoYYprimeTo4Q_Par-MX-3500GeV-MY-600GeV-MYprime-170GeV/attempt2/out/grid.bin.zst

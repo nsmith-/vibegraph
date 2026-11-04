@@ -1,0 +1,3 @@
+ INFO proc_card: generate p p > vz, vz > h z @1
+ INFO ufo_load: model Vector_Triplet_free_Width_UFO-default (aedd72ca731ac044455232c9685ba429d47c13618f2332a34b07088e7024850d)
+ERROR run card activates cut 'etaonium' (= -1, MG default 0.6) which is not implemented; implement it or restore the default before integrating
