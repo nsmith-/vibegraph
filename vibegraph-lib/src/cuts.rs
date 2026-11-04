@@ -369,6 +369,9 @@ pub struct Cuts {
     mmnl: Option<MmnlCut>,
     ht: Option<HtCut>,
     shat_min_hint: f64,
+    /// An upper bound on ŝ (GeV²) the decay-chain windows imply, infinite where
+    /// they imply none ([`Cuts::shat_max`]).
+    shat_max_hint: f64,
     /// The decay-chain windows, one list per set of lines some diagram forces; a
     /// point passes when every window of one list holds. Empty without a decay
     /// chain.
@@ -649,6 +652,7 @@ impl Cuts {
         let shat_min_hint = shat_min_hint(rc, legs, &infos, &single)
             .max(ht_shat_floor(ht.as_ref()))
             .max(forced_shat_floor(legs, forced, bwcutoff));
+        let shat_max_hint = forced_shat_ceiling(finals.len(), forced, bwcutoff);
 
         tracing::debug!(
             single_leg = single.len(),
@@ -678,6 +682,7 @@ impl Cuts {
             mmnl: mmnl_cut,
             ht,
             shat_min_hint,
+            shat_max_hint,
             windows,
             bwcutoff,
         })
@@ -700,6 +705,15 @@ impl Cuts {
     /// true ŝ of a surviving point.
     pub fn shat_min(&self) -> f64 {
         self.shat_min_hint
+    }
+
+    /// A conservative upper bound on ŝ (GeV²) implied by the decay-chain windows,
+    /// for the upper end of a hadronic `τ` map: a forced line carrying the whole
+    /// final state holds `√ŝ` inside its window, so no surviving point lies above
+    /// it. Infinite where no window bounds the whole final state. Never below the
+    /// true ŝ of a surviving point.
+    pub fn shat_max(&self) -> f64 {
+        self.shat_max_hint
     }
 
     /// A regulator scale (GeV²) for the spacelike propagator pole of a peripheral
@@ -906,6 +920,7 @@ impl Cuts {
             ht,
             // A sampling aid derived from the thresholds above; it rejects nothing.
             shat_min_hint: _,
+            shat_max_hint: _,
             windows,
             // The width of the decay-chain windows, which `windows` already covers.
             bwcutoff: _,
@@ -1132,6 +1147,34 @@ fn forced_shat_floor(legs: &[ExternalLeg], forced: &ForcedResonances, bwcutoff: 
             sum * sum
         })
         .fold(f64::INFINITY, f64::min)
+}
+
+/// An upper bound on ŝ from the decay-chain windows: a set whose forced lines
+/// include one carrying all `n_final` final-state legs holds `√ŝ` below that
+/// line's `M + bwcutoff·Γ`; a set without one leaves ŝ unbounded. A point passes
+/// on some set, so the bound is the greatest over the sets. Infinite without
+/// forced lines.
+fn forced_shat_ceiling(n_final: usize, forced: &ForcedResonances, bwcutoff: f64) -> f64 {
+    if forced.is_empty() || n_final == 0 || n_final > 64 {
+        return f64::INFINITY;
+    }
+    let all = if n_final == 64 {
+        u64::MAX
+    } else {
+        (1u64 << n_final) - 1
+    };
+    forced
+        .patterns()
+        .iter()
+        .map(|lines| {
+            lines
+                .iter()
+                .filter(|l| l.slots == all)
+                .filter_map(|l| l.mass_window(bwcutoff))
+                .map(|(_, hi)| hi * hi)
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0f64, f64::max)
 }
 
 /// Upper bounds on one object's (or the missing system's) transverse momentum:
@@ -2733,6 +2776,36 @@ mod tests {
         let unforced = Cuts::compile(&rc, &four_lepton_legs()).unwrap();
         assert_eq!(unforced.shat_min(), 0.0);
         assert!(!unforced.has_windows() && cuts.has_windows());
+    }
+
+    /// A forced line carrying the whole final state holds `√ŝ` below
+    /// `M + bwcutoff·Γ`, with `Γ` floored at `M·small_width_treatment`; a line
+    /// carrying only part of it, a set without such a line, and a process without
+    /// forced lines leave ŝ unbounded.
+    #[test]
+    fn a_whole_state_forced_line_bounds_shat_from_above() {
+        let rc = card("0 = ptl\n0 = drll\n");
+        let whole = forced(vec![vec![z_line(0b0011), z_line(0b1111)]]);
+        let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &whole).unwrap();
+        let ceiling = MZ + 15.0 * WZ;
+        assert!((cuts.shat_max() - ceiling * ceiling).abs() < 1e-9 * ceiling * ceiling);
+        assert!(cuts.shat_min() < cuts.shat_max());
+
+        let narrow = forced(vec![vec![ForcedLine {
+            slots: 0b1111,
+            mass: 3500.0,
+            width: 1e-3,
+        }]]);
+        let narrow = Cuts::compile_with(&rc, &four_lepton_legs(), &narrow).unwrap();
+        let ceiling = 3500.0 + 15.0 * 3500.0 * SMALL_WIDTH_TREATMENT;
+        assert!((narrow.shat_max() - ceiling * ceiling).abs() < 1e-9 * ceiling * ceiling);
+
+        let partial = forced(vec![vec![z_line(0b0011), z_line(0b1100)]]);
+        let either = forced(vec![vec![z_line(0b1111)], vec![z_line(0b0011)]]);
+        for lines in [partial, either, ForcedResonances::none()] {
+            let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &lines).unwrap();
+            assert_eq!(cuts.shat_max(), f64::INFINITY, "{lines:?}");
+        }
     }
 
     /// The forced lines read off stitched diagrams: one set on a chain without

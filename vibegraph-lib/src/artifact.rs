@@ -55,11 +55,18 @@ use crate::vegas::{GridRule, VegasGrid};
 /// gets (its topology, poles, floors, transfer bounds) refuses the artifacts
 /// trained on the old maps without a version bump. A change to how a map
 /// with an unchanged key draws or weighs a point is invisible to it and still
-/// needs one. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 17;
+/// needs one.
+///
+/// `18` bounds a hadronic run's `τ` draw from above where a decay chain forces
+/// a line carrying the whole final state (`p p > z, z > e+ e-`): both `τ` maps
+/// span that line's `bwcutoff` window rather than reaching `τ = 1`. A
+/// version-17 grid of such a process was adapted to the unbounded draw and
+/// has the same keys, dimensions and channel maps, so it would replay against
+/// a `τ` map it was not trained on. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 18;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 17;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 18;
 
 const ZSTD_LEVEL: i32 = 19;
 
