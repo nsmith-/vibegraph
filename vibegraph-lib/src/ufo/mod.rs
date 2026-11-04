@@ -442,9 +442,13 @@ impl ParsedModel {
     /// enumerates colour structures through the coupling keys. Which couplings
     /// vanish is MadGraph's rule ([`ZeroRule`]).
     ///
-    /// A card giving a width as `Auto` is refused
-    /// ([`UfoError::RestrictAutoWidth`]): MadGraph keeps such a width free and
-    /// computes it at launch, and nothing here computes one.
+    /// The card is refused, every problem listed at once ([`UfoError::Several`]): a width
+    /// given as `Auto` ([`UfoError::RestrictAutoWidth`]: MadGraph keeps such a
+    /// width free and computes it at launch, and nothing here computes one); an
+    /// external parameter the card gives no value for
+    /// ([`UfoError::RestrictMissing`]); a value MadGraph reads as "one" or "zero"
+    /// without fixing it ([`UfoError::RestrictMadgraphFree`]); and a value that
+    /// is not finite ([`UfoError::RestrictNonFinite`]).
     pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
         let mut problems: Vec<UfoError> = restrict_card
             .auto_widths()

@@ -303,16 +303,9 @@ fn bound_externals<'a>(
     })
 }
 
-/// Refuse a card whose values break a relation the restriction merged
-/// ([`ParameterSet::merged`]): every member must stay its factor times the
-/// group's first.
-#[cfg(test)]
-fn check_merged(params: &ParameterSet, card: &ParamCard) -> Result<(), CardError> {
-    refuse_all(merge_splits(params, card))
-}
-
-/// Each member of a merged group that `card` moves off its factor times the
-/// group's first.
+/// A [`CardError::SplitsMerged`] for each member of a group the restriction
+/// merged ([`ParameterSet::merged`]) that `card` moves off its factor times the
+/// group's first: a card may move a merged group only as a whole.
 fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
     let bound: Vec<Bound<'_>> = bound_externals(params, card).collect();
     let find = |name: &str| {
@@ -348,7 +341,10 @@ fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
 ///
 /// [`CardError`] for the entry refused, or [`CardError::Several`] listing every
 /// one: `Auto` widths and decay tables in card order, then entries in block
-/// then code order, then merged groups split.
+/// then code order, then merged groups split. A card whose entries all bind is
+/// then evaluated, and [`CardError::NegativeMass`] refuses each negative mass
+/// off a Majorana fermion, listed together; so a card with both kinds of
+/// problem reports its entries' first.
 pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, CardError> {
     let mut errors: Vec<CardError> = Vec::new();
     for &pdg in card.auto_widths() {
@@ -726,7 +722,7 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, texna
                 ("c".to_string(), -1.0)
             ]]
         );
-        let check = |text: &str| check_merged(&params, &card(text));
+        let check = |text: &str| refuse_all(merge_splits(&params, &card(text)));
 
         let err = check("Block NP\n 2 0.5\n").err().unwrap();
         assert!(
