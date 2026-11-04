@@ -1372,6 +1372,10 @@ pub struct ProtonIntegrand<'a> {
     beams: ProtonBeams,
     /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
+    /// Upper support of the `τ` map: one, or below it where the decay-chain
+    /// windows bound `ŝ` ([`Cuts::shat_max`]).
+    tau_max: f64,
+    /// `ln(τ_max/τ_min)`, the logarithmic map's `(dτ/du)/τ`.
     ln_inv_tau_min: f64,
     /// The maps this integrand was built under, every choice settled.
     maps: MapChoices,
@@ -1698,6 +1702,10 @@ impl<'a> ProtonIntegrand<'a> {
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
         let tau_min = cuts.shat_min() / s_had;
+        // A window that bounds ŝ from above narrows the draw to it; at `τ_max = 1`
+        // both maps reduce to their unbounded forms bit for bit (`1^u = 1`,
+        // `1/1 = 1`).
+        let tau_max = (cuts.shat_max() / s_had).min(1.0).max(tau_min);
         Ok(ProtonIntegrand {
             subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
@@ -1711,7 +1719,8 @@ impl<'a> ProtonIntegrand<'a> {
             s_had,
             beams,
             tau_min,
-            ln_inv_tau_min: (1.0 / tau_min).ln(),
+            tau_max,
+            ln_inv_tau_min: (tau_max / tau_min).ln(),
             maps,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
@@ -1967,6 +1976,12 @@ impl<'a> ProtonIntegrand<'a> {
         self.tau_min
     }
 
+    /// Upper support of the τ maps: one, or `ŝ_max/s` where a decay-chain window
+    /// on the whole final state bounds `ŝ` ([`Cuts::shat_max`]).
+    pub fn tau_max(&self) -> f64 {
+        self.tau_max
+    }
+
     /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
     /// the process's own cuts.
     #[cfg(test)]
@@ -2114,9 +2129,13 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
     ///
-    /// `τ` is drawn over `[τ_min, 1]` by the banked [`TauMap`]: the logarithmic
-    /// `τ = τ_min^(1−u)` with `dτ/du = τ ln(1/τ_min)`, or the inverse-square
-    /// `τ = 1/(1/τ_min − u(1/τ_min − 1))` with `dτ/du = τ²(1/τ_min − 1)`. Either
+    /// `τ` is drawn over `[τ_min, τ_max]` by the banked [`TauMap`]: the logarithmic
+    /// `τ = τ_min^(1−u) τ_max^u` with `dτ/du = τ ln(τ_max/τ_min)`, or the
+    /// inverse-square `τ = 1/(1/τ_min − u(1/τ_min − 1/τ_max))` with
+    /// `dτ/du = τ²(1/τ_min − 1/τ_max)`. `τ_max` is one unless a decay chain forces
+    /// a line carrying the whole final state, whose window then bounds `ŝ` from
+    /// above as it does from below: without the bound a narrow resonance's window
+    /// is a sliver of the draw that few or no points reach. Either
     /// measure carries one power of `τ` that the `1/(x₁x₂)` of the luminosity
     /// cancels (the type's doc), so what enters the Jacobian is `(dτ/du)/τ`.
     fn map_point(&self, u: &[f64]) -> OuterPoint {
@@ -2126,9 +2145,12 @@ impl<'a> ProtonIntegrand<'a> {
     /// [`map_point`](Self::map_point) under a named `τ` map rather than the run's.
     fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
         let (tau, dtau_du_over_tau) = match tau_map {
-            TauMap::Log => (self.tau_min.powf(1.0 - u[0]), self.ln_inv_tau_min),
+            TauMap::Log => (
+                self.tau_min.powf(1.0 - u[0]) * self.tau_max.powf(u[0]),
+                self.ln_inv_tau_min,
+            ),
             TauMap::InverseSquare => {
-                let k = 1.0 / self.tau_min - 1.0;
+                let k = 1.0 / self.tau_min - 1.0 / self.tau_max;
                 let tau = 1.0 / (1.0 / self.tau_min - u[0] * k);
                 (tau, tau * k)
             }
@@ -3445,6 +3467,66 @@ mod tests {
             let mean = sum / n as f64;
             let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
             eprintln!("{map:?}: {mean:.6} ± {err:.1e} against {exact:.6}");
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{map:?}: {mean} ± {err} against the exact {exact}"
+            );
+        }
+    }
+
+    /// A decay chain that forces a line carrying the whole final state confines
+    /// both `τ` maps to that line's window, `√ŝ ∈ (M − 15Γ, M + 15Γ)` at the
+    /// default `bwcutoff`, and each still integrates `∫ τ^p dτ/τ` over the
+    /// narrowed range. Unbounded, the draw would reach `√s`, and a point above the
+    /// window would carry no weight.
+    #[test]
+    fn a_whole_state_window_bounds_both_tau_maps() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(
+            enumerate("p p > z, z > e+ e-", &m),
+            &m,
+            &evaluated,
+            &RunCard::default(),
+        )
+        .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let z = m.particle_id("Z").expect("Z");
+        let (mz, wz) = (evaluated.mass(z), evaluated.width(z));
+        let s_had = SQRT_S_HAD * SQRT_S_HAD;
+        let (lo, hi) = (mz - 15.0 * wz, mz + 15.0 * wz);
+        let (tau_min, tau_max) = (integ.tau_min(), integ.tau_max());
+        assert!(
+            (tau_min * s_had / (lo * lo) - 1.0).abs() < 1e-12,
+            "{tau_min}"
+        );
+        assert!(
+            (tau_max * s_had / (hi * hi) - 1.0).abs() < 1e-12,
+            "{tau_max}"
+        );
+        let p = -0.5f64;
+        let exact = (tau_max.powf(p) - tau_min.powf(p)) / p;
+        for map in [TauMap::Log, TauMap::InverseSquare] {
+            for edge in [0.0, 1.0] {
+                let pt = integ.map_point_with(map, &[edge, 0.5]);
+                let bound = if edge == 0.0 { lo } else { hi };
+                assert!((pt.sqrt_shat / bound - 1.0).abs() < 1e-12, "{map:?} {edge}");
+            }
+            let mut stream = SubStream::from_stream(0x7A0_3333, 5);
+            let n = 200_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let pt = integ.map_point_with(map, &stream.uniforms::<f64>(2));
+                assert!(pt.sqrt_shat >= lo * (1.0 - 1e-12) && pt.sqrt_shat <= hi * (1.0 + 1e-12));
+                let tau = pt.x1 * pt.x2;
+                let v = pt.jac / (-tau.ln()) * tau.powf(p);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
             assert!(
                 (mean - exact).abs() < 5.0 * err,
                 "{map:?}: {mean} ± {err} against the exact {exact}"
