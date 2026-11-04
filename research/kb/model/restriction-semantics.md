@@ -123,6 +123,12 @@ default in its place. `integrate --param-card` refuses the row the same way
 parser, and `EvaluatedModel::from_model_card` refuses a card carrying one with the same
 `CardError::AutoWidth`, so no path reads a width from an `Auto` row. No banked restrict card has one.
 
+**A restrict card must set every external parameter**, as MadGraph's
+`model_reader` requires (`UfoError::RestrictMissing`); MadGraph's unfixed one and
+zero (`9.999999e-1`, `0.000001e-99`), a non-finite value and a `param_<x>.dat`
+beside `restrict_<x>.dat` are refused too. Every construct of the card is
+classified in [restrict-card classification](restrict-card-classification.md).
+
 ## Where it applies, and what is identified
 
 - `ParsedModel::parse` builds the pre-restriction model; the interned SM blob stores

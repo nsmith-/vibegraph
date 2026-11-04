@@ -177,11 +177,6 @@ pub(crate) fn get_kwarg<'a>(kws: &'a [ast::Keyword], name: &str) -> Option<&'a a
         .map(|kw| &kw.value)
 }
 
-/// Get a keyword argument as a string.
-pub(crate) fn kwarg_str(kws: &[ast::Keyword], name: &str) -> Option<String> {
-    extract_str(get_kwarg(kws, name)?).map(|s| s.to_owned())
-}
-
 /// Get a keyword argument as a boolean (`True`/`False` literals).
 pub(crate) fn kwarg_bool(kws: &[ast::Keyword], name: &str) -> Option<bool> {
     match get_kwarg(kws, name)? {

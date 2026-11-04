@@ -477,7 +477,10 @@ fn restrict_card(dir: &Path, text: &str) -> std::path::PathBuf {
 #[test]
 fn a_restrict_card_auto_width_is_refused_naming_the_particle() {
     let dir = model_with(&[]);
-    let card = restrict_card(dir.path(), "Block NEWCOUP\n 1 1.0\nDECAY 9000001 Auto\n");
+    let card = restrict_card(
+        dir.path(),
+        "Block MASS\n 9000001 10.0\nBlock NEWCOUP\n 1 1.0\n 2 1.0\n 3 1.0\nDECAY 9000001 Auto\n",
+    );
     let message = match UFOModel::load(dir.path(), Some(&card)) {
         Ok(_) => panic!("a restrict card with DECAY 9000001 Auto loads"),
         Err(e) => e.to_string(),
@@ -511,7 +514,10 @@ fn survivors(c1: &str, c2: &str, c3: &str) -> (bool, bool) {
     let dir = model_with(&[]);
     let card = restrict_card(
         dir.path(),
-        &format!("Block NEWCOUP\n 1 {c1}\n 2 {c2}\n 3 {c3}\n"),
+        &format!(
+            "Block MASS\n 9000001 10.0\nDECAY 9000001 1.0\nBlock NEWCOUP\n 1 {c1}\n 2 {c2}\n \
+             3 {c3}\n"
+        ),
     );
     let model = UFOModel::load(dir.path(), Some(&card)).unwrap();
     (
