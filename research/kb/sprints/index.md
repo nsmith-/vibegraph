@@ -29,6 +29,7 @@
 * [flavour-mixed-masses](flavour-mixed-masses/index.md)
 * [floor-bound-neyman](floor-bound-neyman/index.md)
 * [fnv-refusal](fnv-refusal/index.md)
+* [grid-worker-fixes](grid-worker-fixes/index.md)
 * [gridpack-generate](gridpack-generate/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)
 * [ht-cuts](ht-cuts/index.md)

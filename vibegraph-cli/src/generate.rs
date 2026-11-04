@@ -419,7 +419,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let reweight = reweight_launches(args, &parsed, &model)?;
 
     let pdf = if reads_parton_densities(&artifact, &parsed) {
-        let tiers = assets::pdf_tiers().map_err(err)?;
+        let tiers = assets::pdf_tiers();
         load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
             .map_err(|e| err(e.to_string()))?
     } else {
@@ -427,7 +427,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     };
     let systematics = match (&pdf, &settings.systematics.request) {
         (Some(central), Some(request)) if settings.systematics.enabled => {
-            let tiers = assets::pdf_tiers().map_err(err)?;
+            let tiers = assets::pdf_tiers();
             Some(
                 resolve_systematics(request, central, &tiers, &assets::pdf_fetch(network))
                     .map_err(|e| err(format!("systematics request refused at generate: {e}")))?,

@@ -72,6 +72,10 @@ impl AssetKind {
     }
 }
 
+/// Environment override for the asset cache root, otherwise `~/.vibegraph`
+/// ([`default_cache_root`]).
+pub const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
+
 /// LHAPDF's older name for its data path, read when `LHAPDF_DATA_PATH` is
 /// unset.
 pub const LHAPATH_VAR: &str = "LHAPATH";

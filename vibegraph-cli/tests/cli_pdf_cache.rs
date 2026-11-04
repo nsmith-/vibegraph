@@ -18,7 +18,7 @@ mod common;
 use std::path::Path;
 use std::process::Command;
 
-use common::{integrate_from_bare_cwd, validation_dir};
+use common::{integrate_from_bare_cwd, validation_dir, PdfDataPath};
 
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::ufo::identity::digest_bytes;
@@ -436,4 +436,87 @@ fn pinned_checksums_match_the_upstream_archives() {
             pin.name
         );
     }
+}
+
+/// A user id with no entry in the user database, so that no home directory can
+/// be derived from it either.
+#[cfg(unix)]
+const UNLISTED_UID: u32 = 4_242_424;
+
+/// `integrate` on the Drell-Yan cards with neither `$HOME` nor
+/// `$VIBEGRAPH_HOME` in the environment and run as a user the system does not
+/// list, so the cache root is unresolvable. `None` where the process may not
+/// change user (only a privileged test run can), so the caller can skip.
+#[cfg(unix)]
+fn integrate_without_home(cwd: &Path, data: &Path) -> Option<(bool, String)> {
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::process::CommandExt;
+
+    let out = tempfile::tempdir().unwrap();
+    for dir in [cwd, data, out.path()] {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+    }
+    let mut cmd = common::vibegraph(cwd, cwd);
+    cmd.env_remove("HOME")
+        .env_remove("VIBEGRAPH_HOME")
+        .env("VIBEGRAPH_NO_NETWORK", "1")
+        .pdf_data_path(data)
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(validation_dir().join("dy13_default_run_card.dat"))
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
+        .uid(UNLISTED_UID)
+        .gid(UNLISTED_UID);
+    match cmd.output() {
+        Ok(output) => Some((output.status.success(), common::stderr_of(&output))),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipped: this process may not change user ({e})");
+            None
+        }
+        Err(e) => panic!("spawn vibegraph: {e}"),
+    }
+}
+
+#[cfg(not(unix))]
+fn integrate_without_home(_cwd: &Path, _data: &Path) -> Option<(bool, String)> {
+    None
+}
+
+/// The set is found on `$LHAPDF_DATA_PATH` without the cache root being
+/// computed: with no home directory the run reaches loading the set (a
+/// placeholder, so loading fails, naming the directory it came from) instead of
+/// refusing for want of a home directory.
+#[test]
+fn a_set_on_the_data_path_is_found_without_a_home_directory() {
+    let cwd = tempfile::tempdir().unwrap();
+    let base = tempfile::tempdir().unwrap();
+    let want = placeholder_set(base.path());
+    let Some((ok, stderr)) = integrate_without_home(cwd.path(), base.path()) else {
+        return;
+    };
+    assert!(!ok, "a placeholder set loaded:\n{stderr}");
+    assert!(stderr.contains(&loaded_from(&want)), "{stderr}");
+    assert!(!stderr.contains("home directory"), "{stderr}");
+}
+
+/// With the set absent from the data path and no home directory, the refusal is
+/// the cache tier's: it says the set was not found on the data path and that the
+/// cache and download tiers need a home directory.
+#[test]
+fn an_absent_set_without_a_home_directory_is_refused_at_the_cache_tier() {
+    let cwd = tempfile::tempdir().unwrap();
+    let base = tempfile::tempdir().unwrap();
+    let Some((ok, stderr)) = integrate_without_home(cwd.path(), base.path()) else {
+        return;
+    };
+    assert!(!ok, "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "PDF set {DEFAULT_PDF_SET} was not found on $LHAPDF_DATA_PATH"
+        )) && stderr.contains("cache and download tiers need a home directory"),
+        "{stderr}"
+    );
 }

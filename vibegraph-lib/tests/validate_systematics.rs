@@ -155,7 +155,7 @@ fn tiers() -> (Tiers, tempfile::TempDir) {
             lhapdf_data_path: vec![root().join("validation/pdf")],
             data_path_tier: Tier::LhapdfDataPath,
             cvmfs: None,
-            cache_root: cache.path().to_path_buf(),
+            cache_root: Some(cache.path().to_path_buf()),
         },
         cache,
     )
@@ -943,7 +943,7 @@ fn tiers_at(path: &Path) -> (Tiers, tempfile::TempDir) {
             lhapdf_data_path: vec![path.to_path_buf()],
             data_path_tier: Tier::LhapdfDataPath,
             cvmfs: None,
-            cache_root: cache.path().to_path_buf(),
+            cache_root: Some(cache.path().to_path_buf()),
         },
         cache,
     )
