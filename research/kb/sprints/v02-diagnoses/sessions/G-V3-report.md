@@ -15,7 +15,7 @@ Two sibling sessions shared the host, so load averages ran at 12–16. The
 source tree is `acec723`. The scratch is in the session scratchpad, and every
 file there is prefixed `G-V3-`.
 
-**Checkpoint.** At this commit two runs are still going: the ASan validate_hadronic run and the Linux soak.
+**Status at hand-back.** Every run is final except the Linux soak, which is still running detached (driver PID 18175). To stop it: `touch <scratchpad>/G-V3-soak/STOP`.
 
 ## Verdict
 
@@ -207,7 +207,7 @@ real runs, including `log_path`.
 - it gave `σ = 416.012730 ± 0.404316 pb`, identical in every printed digit to
   the uninstrumented run, so the instrumented process followed the same path.
 
-**ASan, validate_hadronic:** *running at this checkpoint.*.
+**ASan, validate_hadronic:** `test result: ok. 20 passed; 0 failed; 26 ignored`, exit 0, real 182m3s, no `G-V3-asan-report.*` file. (The panic line in the log is the `#[should_panic]` test `lepton_part_refuses_an_unknown_directory_name`.)
 
 **TSan, `sigma_llj_dynamical_scale_vs_mg`.** This test runs the `pp_to_llj_dyn`
 card, whose dynamical scale goes through the kT clustering under rayon.
@@ -296,7 +296,7 @@ LD_PRELOAD=libc_malloc_debug.so.0 MALLOC_CHECK_=3 MALLOC_PERTURB_=1+(37i mod 254
 It writes one row per run to `results.tsv` and keeps the full log of every run
 that fails.
 
-*Running at this checkpoint:* 3 runs finished, all `ok` (`test result: ok. 20 passed; 0 failed; 26 ignored`), at about 40–47 min a run under this host load.
+**At hand-back, still running:** 5 runs finished, 5 of them `ok` (`test result: ok. 20 passed; 0 failed; 26 ignored`), at 2406–3389 s a run under load 6–16. The target of 70 runs was not reached: at this rate it needs about 2 more days.
 
 **How to read a count of N clean runs:**
 - The 95 % upper limit on the per-run abort rate is 3/N.
