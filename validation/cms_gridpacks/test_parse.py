@@ -2,6 +2,7 @@
 
 import os
 import sys
+import math
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -70,6 +71,13 @@ VG_SIG_FIGS = """\
  INFO √s:       13600 GeV,  μF dynamical, choice -1
  INFO VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = n/a)
 σ = 1.952e-3 ± 2.0e-4 pb
+"""
+# The same run with σ under the SI-prefixed barn unit its magnitude picks.
+VG_SI_PREFIX = """\
+ INFO 4 outgoing legs (@0; masses 0, 0, 1, 1 GeV): σ = 543 ± 39 ab over 5 channels
+ INFO 5 outgoing legs (@1 @2; masses 0, 0, 0, 1, 1 GeV): σ = 1.41 ± 0.19 fb over 48 channels
+ INFO VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = n/a)
+σ = 1.95 ± 0.20 fb
 """
 VG_TRACE = """\
 2026-10-19T19:32:42.985233Z TRACE ufo_load: vibegraph::progress: stage="ufo_load" done=0 total=1
@@ -191,6 +199,26 @@ class VgOutput(unittest.TestCase):
         self.assertEqual(sorted((m["tag"], m["n_out"], m["sigma_pb"], m["err_pb"], m["n_channels"])
                                 for m in r["multiplicities"]),
                          [(0, 4, 5.43e-4, 3.9e-5, 5), (1, 5, 1.41e-3, 1.9e-4, 48)])
+
+    def test_si_prefixed_units(self):
+        r = P.parse_vg_output(VG_SI_PREFIX, "", 0, False)
+        close = lambda a, b: math.isclose(a, b, rel_tol=1e-12)
+        self.assertTrue(close(r["sigma_pb"], 1.95e-3) and close(r["err_pb"], 2.0e-4), r)
+        parts = sorted((m["tag"], m["sigma_pb"], m["err_pb"]) for m in r["multiplicities"])
+        self.assertEqual([t for t, _, _ in parts], [0, 1])
+        for (_, s, e), (s0, e0) in zip(parts, [(5.43e-4, 3.9e-5), (1.41e-3, 1.9e-4)]):
+            self.assertTrue(close(s, s0) and close(e, e0), parts)
+        for unit, pb in [("zb", 1e-9), ("ab", 1e-6), ("fb", 1e-3), ("pb", 1.0), ("nb", 1e3),
+                         ("\u00b5b", 1e6), ("mb", 1e9), ("b", 1e12)]:
+            r = P.parse_vg_output("σ = 8.6812 ± 0.0023 %s\n" % unit, "", 0, False)
+            self.assertTrue(close(r["sigma_pb"], 8.6812 * pb) and close(r["err_pb"], 0.0023 * pb),
+                            (unit, r["sigma_pb"], r["err_pb"]))
+
+    def test_an_unknown_unit_is_not_read_as_pb(self):
+        text = (" INFO 4 outgoing legs (@0): σ = 5.43 ± 0.39 Xb over 5 channels\n"
+                "σ = 5.43 ± 0.39 Xb\n")
+        r = P.parse_vg_output(text, "", 0, False)
+        self.assertEqual((r["sigma_pb"], r["err_pb"], r["multiplicities"]), (None, None, []))
 
     def test_refused(self):
         r = P.parse_vg_output(VG_REFUSED, "", 1, False)
