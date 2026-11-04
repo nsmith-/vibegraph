@@ -35,8 +35,8 @@
 //!   time, not of the point.
 //! - **The x-direction stencil is resolved per point.** Its one-sided ends
 //!   ([`XCell`]) are a property of the x interval, chosen once per point, and
-//!   the x-direction cubic is a Horner chain of fused multiply-adds. The Q²-direction Hermite deliberately is not: see
-//!   [`cubic_hermite`].
+//!   the x-direction cubic is a Horner chain of fused multiply-adds. The
+//!   Q²-direction Hermite deliberately is not: see [`cubic_hermite`].
 //!
 //! A batch-of-points variant is a mechanical extension of this shape: hold the
 //! per-point indices in lanes, gather the knots around each point, and run the

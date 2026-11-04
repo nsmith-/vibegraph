@@ -2,7 +2,7 @@
 //!
 //! A member is stored as its knots — the `x·f` grid, its x and Q² axes and a
 //! few per-band constants — and the interpolation polynomials are built from
-//! them on use. One `f64` per knot is the floor; a member that again carries a
+//! them on use. One `f64` per knot is the floor; a member that carries a
 //! derived table per knot (precomputed polynomial coefficients, a second copy of
 //! the grid) costs several times that, and the CMS systematics request loads 880
 //! members at once. This binary installs a counting allocator, so every byte a

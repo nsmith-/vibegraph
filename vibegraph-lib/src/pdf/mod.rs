@@ -214,9 +214,9 @@ pub struct PdfMember {
 }
 
 impl PdfMember {
-    /// Build a member directly from parsed subgrids. Mainly useful for tests with in-memory grids. Carries no
-    /// positivity clamp (`ForcePositive: 0`); use
-    /// [`PdfMember::with_force_positive`] to set one.
+    /// Build a member directly from parsed subgrids. Mainly useful for tests
+    /// with in-memory grids. Carries no positivity clamp (`ForcePositive: 0`);
+    /// use [`PdfMember::with_force_positive`] to set one.
     pub fn from_subgrids(subgrids: Vec<SubGrid>) -> Self {
         PdfMember {
             interp: LogBicubic::build(subgrids),

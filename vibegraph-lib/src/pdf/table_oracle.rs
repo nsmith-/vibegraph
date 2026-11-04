@@ -3,12 +3,13 @@
 //! [`LogBicubic`], which stores only the knots and builds each coefficient at
 //! the point.
 //!
-//! The oracle is the table form this crate shipped before members were stored
-//! as knots: `[a, b, c, d]` per `(x interval, Q² knot, flavor)`, built once per
-//! member from LHAPDF's `_ddx` slopes in `GridPDF::_computePolynomialCoefficients`
-//! order, then the same Horner chain, Q² Hermite and bilinear fallback. Both
-//! forms are meant to perform the same IEEE operations on the same operands, so
-//! the comparison is on `to_bits`, every value, with no tolerance.
+//! The oracle is the precomputed-table form of the interpolator: `[a, b, c, d]`
+//! per `(x interval, Q² knot, flavor)`, built once per member from LHAPDF's
+//! `_ddx` slopes in `GridPDF::_computePolynomialCoefficients` order, then the
+//! same Horner chain, Q² Hermite and bilinear fallback. The production form
+//! builds each coefficient from the knots at the point. Both are meant to
+//! perform the same IEEE operations on the same operands, so the comparison is
+//! on `to_bits`, every value, with no tolerance.
 //!
 //! Each member is read at every knot of every band; at 40 x values on every
 //! band's lower and upper Q² edge (every seam) and one ulp either side; at
@@ -468,6 +469,11 @@ const PDGS: [i32; 16] = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 21, 22, 7]
 /// Readings per point: the all-flavor row and each code in [`PDGS`].
 const VALUES_PER_POINT: usize = FLAVOR_SLOTS + PDGS.len();
 
+/// The members of CMS's `runcmsgrid.sh` systematics request (43 sets). A tree
+/// holding fewer is a partial fetch, and the comparison over it would pass
+/// without having seen the sets it is named for.
+const CMS_MEMBERS: usize = 880;
+
 const RANDOM_POINTS: usize = 3000;
 const SEAM_XS: usize = 40;
 const CONTINUATION_DRAWS: usize = 200;
@@ -670,9 +676,10 @@ fn members_on_disk(tree: &Path) -> Vec<(PathBuf, String, u32)> {
         }
         let prefix = format!("{name}_");
         let mut ids: Vec<u32> = std::fs::read_dir(&dir)
-            .unwrap()
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
             .filter_map(|e| {
-                let file = e.ok()?.file_name().to_string_lossy().into_owned();
+                let entry = e.unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+                let file = entry.file_name().to_string_lossy().into_owned();
                 let digits = file.strip_prefix(&prefix)?.strip_suffix(".dat")?;
                 if digits.len() != 4 {
                     return None;
@@ -751,7 +758,11 @@ fn every_member_reads_as_its_coefficient_tables_did() {
     let tree = PathBuf::from(std::env::var("SYSTEMATICS_CMS_PDFS").expect("SYSTEMATICS_CMS_PDFS"));
     let mut list = members_on_disk(&tree);
     let from_tree = list.len();
-    assert!(from_tree > 0, "no member on disk under {}", tree.display());
+    assert!(
+        from_tree >= CMS_MEMBERS,
+        "{from_tree} members on disk under {}, fewer than CMS's {CMS_MEMBERS}",
+        tree.display()
+    );
     let nnpdf23 = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf");
     if nnpdf23.join("NNPDF23_lo_as_0130_qed").is_dir() {
         list.extend(
@@ -767,11 +778,12 @@ fn every_member_reads_as_its_coefficient_tables_did() {
     );
 
     let mut per_set: BTreeMap<String, Tally> = BTreeMap::new();
-    for (name, member) in synthetic_members() {
+    let synthetic = synthetic_members();
+    for (name, member) in &synthetic {
         per_set
             .entry(name.clone())
             .or_default()
-            .add(&compare(&name, 0, &member));
+            .add(&compare(name, 0, member));
     }
     let loaded: Vec<(String, Tally)> = list
         .par_iter()
@@ -816,7 +828,7 @@ fn every_member_reads_as_its_coefficient_tables_did() {
     let points: u64 = total.points.iter().sum();
     assert_eq!(
         total.members as usize,
-        list.len() + 3,
+        list.len() + synthetic.len(),
         "every member compared"
     );
     assert_eq!(
