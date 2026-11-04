@@ -518,15 +518,34 @@ fallback for a zero density is unreachable at LO (quirk C).
 
 ### 4.4 Memory and wall time
 
-Measured with this crate's loader (release build, one core, local disk):
-`NNPDF23_lo_as_0130_qed` 101 members in 0.82 s, 3.46 MB resident each;
-`NNPDF31_lo_as_0130` 101 in 1.04 s, 3.99 MB each. Evaluating two densities
-and one αs costs 0.56–0.59 µs per member per event. For the 880-member CMS
-list that extrapolates to **about 3.1–3.5 GB resident** and 7–9 s of loading
-(about 2–3 s on four cores), and about **0.55 ms per event** for the PDF
-weights. LHAPDF keeps roughly the raw knots (0.5–1 MB per member), so this
-loader's precomputed bicubic coefficients cost 3–6 times MadGraph's memory. A
-CMS production slot is 2 GB per core; see open choice O2.
+A loaded member is its parsed knots and little else: the interpolator owns the
+member's subgrids and keeps per band only the log-knot axes, the flavor maps and
+the Q² stencil constants. The x-direction cubic's four coefficients are built at
+the point from the four `x·f` values around it, in the operations and order of
+LHAPDF's `_computePolynomialCoefficients`, so every reading is bit-identical to
+the precomputed-table form this loader used to hold (four coefficients per knot
+beside two copies of the grid, about 48 bytes per knot). Measured in the
+[cms-pdf-memory sprint](../sprints/cms-pdf-memory/sprint.md):
+
+- **Per member**: 0.69 MB over CMS's 880-member list (607 MB retained heap
+  against 597 MB of knots as `f64`), down from 4.06 MB; a default test
+  (`pdf_member_bytes`) holds a loaded member to at most 10 bytes per knot
+  (8.1–8.2 measured).
+- **The 880-member CMS request** (`generate` on `pp_to_ll` at lhaid 325300,
+  10 000 events, 926 weights): peak resident **0.685 GiB at `-j 1` and
+  0.688–0.701 GiB at `-j 4`**, five runs each, against 3.59 GiB before; under a
+  2 GB CMS slot with 1.3 GB to spare. Wall time 23–25 s at `-j 1`, no slower than
+  before end to end, because the PDF readings are about 3 s of it.
+- **Per reading**: about 320 ns for an all-flavor row, 1.8× the table form's
+  175 ns, the arithmetic moved from load to use.
+- **Exactness**: every reading of the 880 members, NNPDF23 and three in-memory
+  bilinear members (414 M values) bit-identical to the table form
+  (`pdf::table_oracle`, long tier, `pixi run validate-cms-pdfs`), and the
+  CMS-arguments weights gate exact on all four `run_01_cms` runs.
+
+The earlier extrapolation from NNPDF23 and NNPDF31 (3.1–3.5 GB, measured 3.76 GB
+in sprint E) described the table layout. LHAPDF keeps the knots too, so the two
+now cost the same order of memory per member.
 
 ## 5. Q3's consequence
 
