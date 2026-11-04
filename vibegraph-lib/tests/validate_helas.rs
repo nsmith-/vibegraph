@@ -37,7 +37,7 @@ fn compute_m2_ee_mumu_dynamic(sqrt_s: f64, cos_theta: f64) -> f64 {
     )
     .parse::<ParamCard>()
     .unwrap();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let me = evaluated.mass(model.particle_id("e-").unwrap());
     let mmu = evaluated.mass(model.particle_id("mu-").unwrap());

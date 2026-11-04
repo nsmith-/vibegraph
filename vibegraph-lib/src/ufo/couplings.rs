@@ -1,5 +1,5 @@
 use super::ast_util::{
-    constructor_calls, extract_int, extract_str, parse_stmts, FieldError, Fields,
+    constructor_calls, extract_int, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::expr::{collect_deps, parse_expr, Expr};
 use indexmap::IndexMap;
@@ -85,9 +85,12 @@ pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError>
 
     // `Coupling.require_args` in UFO's object library
     // (`mg5amcnlo/models/sm/object_library.py` L187): `name`, `value`, `order`.
+    // A repeated name is refused ([`UniqueNames`]).
+    let mut seen = UniqueNames::new("coupling");
     for (python_name, keywords) in constructor_calls(&stmts, "Coupling") {
         let fields = Fields::new("coupling", python_name, keywords);
         let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
         let expr_str = fields.str("value")?;
         let orders = extract_orders(&fields)?;
         let python_name = python_name.to_owned();

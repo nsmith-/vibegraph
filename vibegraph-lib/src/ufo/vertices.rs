@@ -1,5 +1,6 @@
 use super::ast_util::{
     constructor_calls, extract_attr, extract_int, extract_str, parse_stmts, FieldError, Fields,
+    UniqueNames,
 };
 use super::color::ColorExpr;
 use super::couplings::CouplingId;
@@ -8,7 +9,7 @@ use super::particles::{Particle, ParticleId};
 use indexmap::IndexMap;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -61,22 +62,16 @@ pub(crate) struct RawVertex {
 pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
     let stmts = parse_stmts(src).map_err(|e| VertexError::Parse(e.to_string()))?;
     let mut result = Vec::new();
-    let mut names: HashSet<String> = HashSet::new();
+    let mut seen = UniqueNames::new("vertex");
 
     // `Vertex.require_args` in UFO's object library
     // (`mg5amcnlo/models/sm/object_library.py` L170) lists all five fields. The
-    // loader keys vertices by `name`, so a repeated one is refused rather than
-    // left to replace the first.
+    // loader keys vertices by `name`, so a repeated one is refused
+    // ([`UniqueNames`]).
     for (python_name, keywords) in constructor_calls(&stmts, "Vertex") {
         let fields = Fields::new("vertex", python_name, keywords);
         let name = fields.str("name")?;
-        if !names.insert(name.clone()) {
-            return Err(FieldError::Duplicate {
-                object: "vertex",
-                name,
-            }
-            .into());
-        }
+        seen.insert(python_name, &name)?;
         let particles = extract_name_list(&fields, "particles", "P", &name)?;
         let color = extract_str_list(&fields, "color")?;
         let lorentz = extract_name_list(&fields, "lorentz", "L", &name)?;

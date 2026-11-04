@@ -66,7 +66,7 @@ fn test_load_taudecay() {
         .expect("failed to load taudecay param_card.dat");
 
     let model = UFOModel::load(&path, None).expect("failed to load taudecay UFO");
-    let ev = EvaluatedModel::from_model_card(model.clone(), &card);
+    let ev = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));
     assert!((mta - 1.776820).abs() < 1e-4, "taudecay MTA = {mta}");

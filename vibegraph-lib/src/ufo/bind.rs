@@ -302,7 +302,7 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         .collect();
     check_merged(&model.params, card)?;
 
-    let evaluated = EvaluatedModel::from_model_card(model, card);
+    let evaluated = EvaluatedModel::from_model_card(model, card)?;
     let ignored = dependents
         .into_iter()
         .filter_map(|(block, pdg, param, value)| {
@@ -354,7 +354,7 @@ pub fn bind_recorded(
         }
         card.insert(&p.block, p.code.clone(), p.value);
     }
-    Ok(EvaluatedModel::from_model_card(model, &card))
+    EvaluatedModel::from_model_card(model, &card)
 }
 
 #[cfg(test)]

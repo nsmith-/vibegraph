@@ -52,14 +52,27 @@ shorthand; attribute assignments such as `loop_sm`'s `.counterterm = …` are sk
 `object_library.py` is a positional constructor parameter without a default, so a
 model missing one does not import in MadGraph either. The loader refuses such a
 field, missing or in a form it does not read, naming the object and the field
-(`FieldError`, `ufo/ast_util.rs`): every `Particle`, `Parameter`, `Coupling` and
-`Vertex` field there, a parameter `nature` other than `external`/`internal` or a
-`type` other than `real`/`complex`, and an external's `lhablock`/`lhacode`, which
-`Parameter.__init__` requires. Two parameters or two vertices with one name are
-refused too, as MadGraph refuses the parameters (`load_model`, "define multiple
-time"). The defaults kept are MadGraph's own: `goldstoneboson = False` and the
-optional `GhostNumber`, `line` and `propagator`. `Lorentz` fields are not yet held
-to the same rule.
+(`FieldError`, `ufo/ast_util.rs`). That covers every `Particle`, `Parameter`,
+`Coupling`, `Vertex` and `Lorentz` field there, `CouplingOrder`'s `name` and
+`hierarchy`, a parameter `nature` other than `external`/`internal` or a `type`
+other than `real`/`complex`, and an external's `lhablock`/`lhacode`, which
+`Parameter.__init__` requires. A name or Python variable defined twice in one
+file is refused (`UniqueNames`), as MadGraph refuses a repeated parameter
+(`load_model`, "define multiple time"); `.anti()` of a self-conjugate particle
+repeats its name and is refused with it. The defaults kept are MadGraph's own:
+`goldstoneboson = False`, `Lorentz` `structure = 'external'` (then refused as
+`LorentzError::ExternalStructure`, since such a routine lives outside the
+model), the optional `GhostNumber`, `line` and `propagator`, and a missing
+`expansion_order`, which MadGraph's import tolerates by leaving the model
+uncapped when any order lacks one.
+
+**A parameter is known by its UFO `name`**, not its Python variable, as in
+MadGraph: a value string names it so (`model_reader.py` binds `param.name`), and
+a particle's `mass = Param.<variable>` is the object, which UFO writes as its
+`name`. `parse_parameters_with_variables` returns the variable → name map, and
+`ParsedModel::parse` resolves each particle's mass and width through it,
+refusing a reference to no parameter (`UfoError::UnknownParticleParameter`).
+Every banked model gives each parameter its variable as its name.
 
 **Strings: PEG grammars.** Only the quoted expression strings are parsed with `peg`:
 

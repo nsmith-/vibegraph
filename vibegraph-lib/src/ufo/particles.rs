@@ -1,5 +1,6 @@
 use super::ast_util::{
     call_func_name, extract_attr, kwarg_bool, named_assignments, parse_stmts, FieldError, Fields,
+    UniqueNames,
 };
 use indexmap::IndexMap;
 use rustpython_parser::ast;
@@ -171,6 +172,10 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
     let mut particles: Vec<Particle> = Vec::new();
     // Index base python_name → position in particles, for resolving .anti() calls.
     let mut by_python_name: HashMap<String, usize> = HashMap::new();
+    // A repeated name or variable, an antiparticle's included, is refused
+    // ([`UniqueNames`]): `.anti()` of a self-conjugate particle repeats its name,
+    // which UFO's `Particle.anti` refuses too ("has no anti particle").
+    let mut seen = UniqueNames::new("particle");
 
     for (python_name, value) in named_assignments(&stmts) {
         let python_name = python_name.to_owned();
@@ -204,6 +209,7 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
                 let line_style = extract_param_ref(keywords, "line");
                 let propagator = extract_param_ref(keywords, "propagator");
 
+                seen.insert(&python_name, &name)?;
                 by_python_name.insert(python_name.clone(), particles.len());
                 particles.push(Particle {
                     python_name,
@@ -246,6 +252,7 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
                 match base_name.and_then(|n| by_python_name.get(n)) {
                     Some(base) => {
                         let anti = particles[*base].make_anti(python_name.clone());
+                        seen.insert(&python_name, &anti.name)?;
                         by_python_name.insert(python_name, particles.len());
                         particles.push(anti);
                     }

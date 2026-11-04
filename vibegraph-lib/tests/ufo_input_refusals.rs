@@ -12,6 +12,7 @@
 
 use std::path::Path;
 
+use vibegraph::ufo::bind::CardError;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, ParsedModel, UFOModel};
 
@@ -67,12 +68,20 @@ V_2 = Vertex(name = 'V_2', particles = [ P.S, P.S, P.S, P.S ], color = [ '1' ],
              lorentz = [ L.SSSS1 ], couplings = {(0,0):C.GC_2})
 ";
 
-const FILES: [(&str, &str); 5] = [
+const COUPLING_ORDERS: &str = "\
+from object_library import all_orders, CouplingOrder
+
+QED = CouplingOrder(name = 'QED', expansion_order = 99, hierarchy = 2)
+NP = CouplingOrder(name = 'NP', expansion_order = 2, hierarchy = 1)
+";
+
+const FILES: [(&str, &str); 6] = [
     ("particles.py", PARTICLES),
     ("parameters.py", PARAMETERS),
     ("couplings.py", COUPLINGS),
     ("lorentz.py", LORENTZ),
     ("vertices.py", VERTICES),
+    ("coupling_orders.py", COUPLING_ORDERS),
 ];
 
 /// The fixture written to a fresh directory with `from` replaced by `to` in
@@ -309,6 +318,151 @@ fn an_unnamed_or_duplicate_vertex_is_refused() {
     );
 }
 
+#[test]
+fn every_required_lorentz_field_is_refused_by_name() {
+    for (field, from, to) in [
+        ("name", "name = 'SSS1', ", ""),
+        ("spins", "spins = [ 1, 1, 1 ], ", ""),
+        ("spins", "spins = [ 1, 1, 1 ]", "spins = [ 1, 'one', 1 ]"),
+        ("spins", "spins = [ 1, 1, 1 ]", "spins = 1"),
+        (
+            "structure",
+            "structure = '1')\nSSSS1",
+            "structure = 1)\nSSSS1",
+        ),
+    ] {
+        assert_names(&refusal("lorentz.py", from, to), "SSS1", field);
+    }
+}
+
+/// UFO's `Lorentz` defaults `structure` to `'external'`, a routine written
+/// outside the model; the loader cannot read one, so the default and the
+/// explicit value are refused alike, naming the structure.
+#[test]
+fn an_external_lorentz_structure_is_refused_by_name() {
+    for to in [
+        ", spins = [ 1, 1, 1 ])\nSSSS1",
+        ", spins = [ 1, 1, 1 ], structure = 'external')\nSSSS1",
+    ] {
+        let message = refusal(
+            "lorentz.py",
+            ", spins = [ 1, 1, 1 ], structure = '1')\nSSSS1",
+            to,
+        );
+        assert!(
+            message.contains("'SSS1'") && message.contains("'external'"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn every_required_coupling_order_field_is_refused_by_name() {
+    for (field, from, to) in [
+        ("name", "name = 'QED', ", ""),
+        ("hierarchy", ", hierarchy = 2", ""),
+        ("hierarchy", "hierarchy = 2", "hierarchy = -2"),
+        ("hierarchy", "hierarchy = 2", "hierarchy = 'two'"),
+        (
+            "expansion_order",
+            "expansion_order = 99",
+            "expansion_order = 'all'",
+        ),
+    ] {
+        assert_names(&refusal("coupling_orders.py", from, to), "QED", field);
+    }
+}
+
+/// A missing `expansion_order` is the absence MadGraph's import tolerates: it
+/// sets the model's caps only when every order has one.
+#[test]
+fn an_order_without_an_expansion_order_leaves_the_model_uncapped() {
+    let dir = model_with(&[]);
+    let model = UFOModel::load(dir.path(), None).unwrap();
+    assert_eq!(model.expansion_order.get("NP"), Some(&2));
+    let dir = model_with(&[("coupling_orders.py", "expansion_order = 99, ", "")]);
+    let model = UFOModel::load(dir.path(), None).unwrap();
+    assert!(
+        model.expansion_order.is_empty(),
+        "{:?}",
+        model.expansion_order
+    );
+    assert_eq!(model.order_hierarchy.get("NP"), Some(&1));
+}
+
+/// Each collection is keyed by name, so a repeat would replace the first
+/// definition; it is refused naming the repeated name.
+#[test]
+fn duplicate_particle_coupling_lorentz_and_order_names_are_refused() {
+    let second_particle = "charge = 0, GhostNumber = 0)\n\
+         T = Particle(pdg_code = 9000002, name = 'S', antiname = 'S', spin = 1, color = 1, \
+         mass = Param.MS, width = Param.WS, texname = 'T', antitexname = 'T', charge = 0)";
+    for (file, from, to, object) in [
+        (
+            "particles.py",
+            "charge = 0, GhostNumber = 0)",
+            second_particle,
+            "S",
+        ),
+        // `.anti()` of a self-conjugate particle repeats its name.
+        (
+            "particles.py",
+            "charge = 0, GhostNumber = 0)",
+            "charge = 0, GhostNumber = 0)\nSbar = S.anti()",
+            "S",
+        ),
+        ("couplings.py", "name = 'GC_2'", "name = 'GC_1'", "GC_1"),
+        ("lorentz.py", "name = 'SSSS1'", "name = 'SSS1'", "SSS1"),
+        ("coupling_orders.py", "name = 'NP'", "name = 'QED'", "QED"),
+    ] {
+        let message = refusal(file, from, to);
+        assert!(
+            message.contains(&format!("'{object}'")) && message.contains("twice"),
+            "{file}: {message}"
+        );
+    }
+}
+
+/// A parameter is known by its UFO `name`, as in MadGraph: a value string
+/// refers to it by that name, and a particle's `Param.<variable>` reference
+/// resolves to it.
+#[test]
+fn a_parameter_is_known_by_its_ufo_name_not_its_variable() {
+    let dir = model_with(&[
+        ("parameters.py", "MS = Parameter(name = 'MS'", "MS_var = Parameter(name = 'MS'"),
+        (
+            "parameters.py",
+            "ZERO = Parameter(",
+            "MS2 = Parameter(name = 'MS2', nature = 'internal', type = 'real', value = 'MS**2', texname = 'M')\n\
+             ZERO = Parameter(",
+        ),
+        ("particles.py", "mass = Param.MS", "mass = Param.MS_var"),
+    ]);
+    let model = UFOModel::load(dir.path(), None).unwrap();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    assert_eq!(evaluated.mass(model.particle_id("S").unwrap()), 10.0);
+    assert_eq!(evaluated.param_values["MS"].re, 10.0);
+    let ms2 = evaluated.param_values["MS2"].re;
+    assert!((ms2 - 100.0).abs() < 1e-12, "{ms2}");
+    assert!(!evaluated.param_values.contains_key("MS_var"));
+}
+
+/// A particle's mass or width naming no parameter is refused, naming the
+/// particle and the field, where it would otherwise evaluate as zero.
+#[test]
+fn a_particle_parameter_reference_to_nothing_is_refused() {
+    for (field, from, to) in [
+        ("mass", "mass = Param.MS", "mass = Param.NOPE"),
+        ("width", "width = Param.WS", "width = Param.NOPE"),
+    ] {
+        let message = refusal("particles.py", from, to);
+        assert!(
+            message.contains("'S'") && message.contains(&format!("`{field} = Param.NOPE`")),
+            "{message}"
+        );
+    }
+}
+
 fn restrict_card(dir: &Path, text: &str) -> std::path::PathBuf {
     let card = dir.join("restrict_test.dat");
     std::fs::write(&card, text).unwrap();
@@ -334,16 +488,21 @@ fn a_restrict_card_auto_width_is_refused_naming_the_particle() {
     );
 }
 
-/// `EvaluatedModel::from_model_card` cannot read a width from an `Auto` row;
-/// a card bound for a run is refused before it gets there (`ufo::bind`), and a
-/// direct call is a caller's error.
+/// `EvaluatedModel::from_model_card` cannot read a width from an `Auto` row,
+/// so it refuses the card with the error `integrate --param-card` gives, naming
+/// the particle, rather than evaluating the width at its default.
 #[test]
-#[should_panic(expected = "Auto")]
-fn evaluating_a_model_at_a_card_with_an_auto_width_panics() {
+fn evaluating_a_model_at_a_card_with_an_auto_width_is_refused() {
     let dir = model_with(&[]);
     let model = UFOModel::load(dir.path(), None).unwrap();
     let card: ParamCard = "DECAY 9000001 Auto\n".parse().unwrap();
-    let _ = EvaluatedModel::from_model_card(model, &card);
+    assert_eq!(
+        EvaluatedModel::from_model_card(model.clone(), &card).err(),
+        Some(CardError::AutoWidth { pdg: 9000001 })
+    );
+    let numeric: ParamCard = "DECAY 9000001 2.5\n".parse().unwrap();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &numeric).unwrap();
+    assert_eq!(evaluated.width(model.particle_id("S").unwrap()), 2.5);
 }
 
 /// Which of the fixture's two vertices survive a restriction setting

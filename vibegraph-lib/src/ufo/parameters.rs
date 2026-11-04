@@ -1,5 +1,6 @@
 use super::ast_util::{
     conditional_definitions, constructor_calls, extract_int, parse_stmts, FieldError, Fields,
+    UniqueNames,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
@@ -285,7 +286,22 @@ impl ParameterSet {
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`].
+#[cfg(test)]
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
+    parse_parameters_with_variables(content).map(|(set, _)| set)
+}
+
+/// [`parse_parameters`], also returning each parameter's Python variable mapped
+/// to its UFO `name`.
+///
+/// The `name` is the canonical name, as in MadGraph: a value string refers to
+/// a parameter by it (`model_reader.py` evaluates each one with `param.name`
+/// bound), and a `Param.<variable>` reference in another file is the object,
+/// which UFO's `UFOBaseClass.__str__` writes as its `name`. The map is how such
+/// a reference is resolved.
+pub(crate) fn parse_parameters_with_variables(
+    content: &str,
+) -> Result<(ParameterSet, HashMap<String, String>), ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
     if let Some(names) = conditional_definitions(&stmts, "Parameter") {
@@ -300,20 +316,13 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
     // but `lhablock` and `lhacode`, which its constructor requires of an external
     // parameter (L161). MadGraph refuses a name defined twice (`import_ufo.py`,
     // `UFOMG5Converter.load_model`, "define multiple time").
-    let mut seen_names: HashSet<String> = HashSet::new();
-    let mut seen_variables: HashSet<&str> = HashSet::new();
+    let mut seen = UniqueNames::new("parameter");
+    let mut variables: HashMap<String, String> = HashMap::new();
     for (python_name, keywords) in constructor_calls(&stmts, "Parameter") {
         let fields = Fields::new("parameter", python_name, keywords);
-        // The Python variable name is the canonical name.
-        let name = python_name.to_owned();
-        let ufo_name = fields.str("name")?;
-        if !seen_names.insert(ufo_name.clone()) || !seen_variables.insert(python_name) {
-            return Err(FieldError::Duplicate {
-                object: "parameter",
-                name: ufo_name,
-            }
-            .into());
-        }
+        let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
+        variables.insert(python_name.to_owned(), name.clone());
         let is_complex = match fields.str("type")?.as_str() {
             "real" => false,
             "complex" => true,
@@ -379,14 +388,15 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
         }
     }
 
-    Ok(ParameterSet {
+    let set = ParameterSet {
         externals,
         internals,
         rdeps,
         zeros: BTreeSet::new(),
         merged: Vec::new(),
         ones: BTreeSet::new(),
-    })
+    };
+    Ok((set, variables))
 }
 
 /// An external parameter's `lhacode = [ 3 ]`, as a list of `i32`.

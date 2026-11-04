@@ -3526,7 +3526,7 @@ mod tests {
             .expect("param_card.dat")
             .parse::<ParamCard>()
             .unwrap();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
         let opts = ParsingOptions::default();
         let pc = parse_proc_card(&format!("generate {process_str}"), &opts).unwrap();
@@ -3823,7 +3823,8 @@ mod tests {
             &"Block MASS\n 11 0.0\n 13 0.0\n 15 0.0\n"
                 .parse::<ParamCard>()
                 .unwrap(),
-        );
+        )
+        .unwrap();
         let opts = ParsingOptions::default();
         let card = parse_proc_card(proc, &opts).unwrap();
         let sets = generate_from_proc_card(&card, &model).unwrap();
@@ -4004,7 +4005,7 @@ mod tests {
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
             .expect("validation/madgraph/param_card_masslesstau.dat is missing or unparseable");
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
         let gc50 = model.coupling_id("GC_50").unwrap();
         let gc59 = model.coupling_id("GC_59").unwrap();
@@ -4163,7 +4164,7 @@ mod tests {
             .ok()
             .and_then(|s| s.parse::<ParamCard>().ok())
             .expect("validation/madgraph/param_card_masslesstau.dat is missing or unparseable");
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
         let gc3 = model.coupling_id("GC_3").unwrap();
         let gc50 = model.coupling_id("GC_50").unwrap();
@@ -5222,7 +5223,7 @@ mod tests {
         .expect("the vendored param card")
         .parse()
         .expect("parse the vendored param card");
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
         let opts = ParsingOptions::default();
         let pc = parse_proc_card("generate ta+ ta- > t t~ a NP<=1", &opts).unwrap();

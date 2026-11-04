@@ -867,7 +867,8 @@ mod tests {
         use crate::ufo::slha::ParamCard;
         use crate::ufo::sm::{sm_model, SMRestrict};
         let card: ParamCard = "Block MASS\n 23 91.18765432\n".parse().unwrap();
-        let evaluated = EvaluatedModel::from_model_card(sm_model(SMRestrict::Default), &card);
+        let evaluated =
+            EvaluatedModel::from_model_card(sm_model(SMRestrict::Default), &card).unwrap();
         let block = slha_block(&evaluated);
         assert!(block.contains("\n   23 9.118765432e+01 # MZ \n"), "{block}");
         let mw = c_exponential(evaluated.param_values["MW"].re, 6, false, 0);

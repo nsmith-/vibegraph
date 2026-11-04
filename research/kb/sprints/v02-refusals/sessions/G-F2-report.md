@@ -196,3 +196,118 @@ where `smeftsim.rs` banks one.
 7. **The zero rule is scale-dependent** (MadGraph-compatibility site). It
    should be added to `madgraph-compat-sites-unconditional` (decision G3);
    that file is for the manager to edit.
+
+## Follow-up
+
+The manager asked for four changes after the first hand-off. They are made on the
+same branch, after merging `sprintg-refusals` (G-F1) in as `f18d651`, which
+conflicted only in the generated sessions index.
+
+1. **No new panic: `EvaluatedModel::from_model_card` now returns
+   `Result<Self, CardError>`** and refuses an `Auto` width with the
+   `CardError::AutoWidth { pdg }` that `integrate --param-card` already gives.
+   I chose to make it fallible rather than add a fallible twin, because that is
+   the smaller *correct* change. The only callers outside `#[cfg(test)]` are
+   `bind_card`/`bind_recorded`, which already return `CardError` and now use
+   `?`, and `from_model`, which reads an empty card. `from_model` now calls a
+   private, infallible `evaluate_at`, so it carries no `expect`. A twin would
+   have left the public infallible constructor reachable from any card. Every
+   other caller (`helas/eval/*`, `onshell`, `reweight/engine`, `lhef/write`,
+   `hadronic/tail_probe`, 26 integration-test files) is test code reading
+   MadGraph-written cards, and gets `.unwrap()`. No `panic!` on card input
+   remains on this path.
+2. **Required fields of the remaining UFO objects.**
+   - `Lorentz`: `name` and `spins` (a list of integers) are required. `structure`
+     defaults to `'external'` as UFO's constructor does (`object_library.py`
+     L204). That default, and an explicit `'external'`, are refused as
+     `LorentzError::ExternalStructure`, because such a routine is code outside
+     the model. No banked model has one.
+   - `coupling_orders.py`: `name` and `hierarchy` (a non-negative integer) are
+     required. A file that does not parse is refused; it used to fall back to
+     the SM hierarchy silently. `perturbative_expansion` defaults to 0 in
+     `CouplingOrder.__init__` (L236), but the class never stores it and nothing
+     here reads it, so there is no default to match.
+     **`expansion_order` stays optional**, deviating from the letter of
+     `CouplingOrder`, whose positional `expansion_order` is also required.
+     MadGraph's import (`import_ufo.py`, the `try`/`except AttributeError` around
+     `for order in all_orders`) explicitly tolerates an order without one and
+     leaves the model uncapped. The loader already matched that, and
+     `an_order_without_an_expansion_order_leaves_the_model_uncapped` pins it. A
+     present but malformed `expansion_order` is refused.
+   - Duplicate names: one `UniqueNames` (`ast_util.rs`) refuses a repeated UFO
+     `name` *or* Python variable in particles (antiparticles included, so
+     `.anti()` of a self-conjugate particle is refused, as UFO's `Particle.anti`
+     refuses it), couplings, Lorentz structures, coupling orders, parameters and
+     vertices.
+3. **Parameter `name` vs variable: matched to MadGraph, `name` is canonical.**
+   `model_reader.py` evaluates every value string with `param.name` bound
+   (L203, L213). A `Param.<variable>` reference in `particles.py` is the
+   object, and `UFOBaseClass.__str__` (L38) writes it as its `name`. So MadGraph
+   accepts a mismatched model, and expressions name the UFO `name`. The loader
+   keyed parameters by variable, so an expression naming the UFO name was
+   refused as an unknown parameter.
+   Now `parse_parameters_with_variables` keys the set by `name` and returns the
+   variable → name map. `ParsedModel::parse` resolves each particle's mass and
+   width through that map. A reference to no parameter is refused as
+   `UfoError::UnknownParticleParameter`; it used to evaluate as a mass or width
+   of zero (`unwrap_or(0.0)` in `EvaluatedModel::mass`). On every banked model
+   each parameter's `name` equals its variable, so nothing banked moves. The
+   tests are `a_parameter_is_known_by_its_ufo_name_not_its_variable` and
+   `a_particle_parameter_reference_to_nothing_is_refused`.
+4. **`model/restriction-semantics.md` "Known divergence"** is replaced by what
+   the code does: ones are recorded in `ParameterSet::ones` and held at binding
+   (`CardError::MovesFixedOne`), and identical values in `ParameterSet::merged`.
+   Every toy-UFO restrict card leaves `WO8` at one, and `bind.rs` pins both
+   rules. The Auto sentence there now says `from_model_card` refuses rather than
+   panics. `model/ufo-parsing.md` gains the new coverage and the canonical-name
+   rule.
+
+### Mutation evidence
+
+The new tests run against the pre-follow-up source, `f18d651` (`git stash push --
+vibegraph-lib/src`). The Auto test was dropped from the copy because it cannot
+compile against the old signature. The copy shadows `assert!`/`assert_eq!` with
+recording macros, so every row of every table is recorded:
+
+| | pre-follow-up (`f18d651`) | post |
+|---|---|---|
+| new refusal rows: Lorentz 5, external structure 2, coupling order 5, duplicates 5, dangling `Param` 2 | 19 / 19 not refused | 19 / 19 refused, naming object and field |
+| how they were not refused | 11 load; 4 duplicates fail later on an unrelated "nonexistent particle/coupling/Lorentz" lookup (the overwrite's symptom); 4 fail on a structure-grammar or spin error that names neither the field nor, for spins, the structure | — |
+| `a_parameter_is_known_by_its_ufo_name_not_its_variable` | panics: `Parameters(UnknownParameter { name: "MS", user: "MS2" })` | passes |
+| `an_order_without_an_expansion_order_leaves_the_model_uncapped` (control) | passes | passes |
+| all checks in the copy | 137 pass, 19 fail; 18 tests pass, 1 fails | 160 / 160 pass; 19 / 19 tests pass |
+
+The Auto refusal was tested by source mutation, deleting the `auto_widths()` check
+from `from_model_card`:
+
+```
+$ cargo test -p vibegraph-lib --test ufo_input_refusals evaluating_a_model
+assertion `left == right` failed
+  left: None
+ right: Some(AutoWidth { pdg: 9000001 })
+test result: FAILED. 0 passed; 1 failed
+```
+
+The original file was restored afterwards (`AutoWidth { pdg }` occurs twice in
+`mod.rs`: the restrict refusal and `from_model_card`).
+
+**What these tests cannot detect.** They are the same message-reading oracles as
+before. The canonical-name test pins one crossing, an expression naming the UFO
+name and a particle naming the variable. It does not pin a model where one
+parameter's variable equals another's name.
+
+### Gates (follow-up)
+
+| Command | Tail |
+|---|---|
+| `cargo fmt --all --check` | exit 0 |
+| `cargo clippy --workspace --all-targets --jobs 2 -- -D warnings` | first run exit 101 (`type_complexity` on `parse_coupling_orders`); after the `CouplingOrders` alias: exit 0, `Finished` |
+| `cargo clippy --workspace --all-targets --features vibegraph/extended-validation --jobs 2 -- -D warnings` | after the alias: exit 0, `Finished` |
+| `cargo test --workspace --jobs 2` | on the final tree: exit 0; 51 result lines summed: 1831 passed, 0 failed (an earlier run, with the scratch census target present, also summed 1831 passed) |
+| `--features extended-validation --test sm_interned_blob` | `ok. 2 passed; 0 failed` |
+| `--test coupling_oracle` | `ok. 50 passed; 0 failed` |
+| `--test smeftsim` | `ok. 13 passed; 0 failed` |
+| `--features extended-validation --test ufo` | `ok. 4 passed; 0 failed; 1 ignored` |
+| `--profile release-debug --test validate_madgraph_diagrams` | `ok. 63 passed; 0 failed` |
+| vertex-set census, all 56 pairs (before the alias, which is type-only) | diff against the pre-change census: only the MSSM_SLHA2 hunks above (3 vertices × 5 configurations, and the 5 counts); diff against the first commit's census: empty |
+| `python3 scripts/kb.py lint` | `0 errors, 5 warnings` (pre-existing) |

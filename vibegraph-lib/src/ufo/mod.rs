@@ -21,7 +21,7 @@ use identity::model_digest;
 use indexmap::IndexMap;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
-use parameters::{parse_parameters, ParameterError, ParameterSet};
+use parameters::{parse_parameters_with_variables, ParameterError, ParameterSet};
 use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use propagators::{parse_propagators, Propagator, PropagatorError};
 use serde::{Deserialize, Serialize};
@@ -81,36 +81,52 @@ fn default_sm_hierarchy() -> BTreeMap<String, u32> {
         .collect()
 }
 
+/// Why `coupling_orders.py` cannot be read.
+#[derive(Debug, Error)]
+pub enum CouplingOrderError {
+    #[error("Failed to parse coupling_orders.py: {0}")]
+    Parse(String),
+    #[error(transparent)]
+    Field(#[from] ast_util::FieldError),
+}
+
+/// A model's `name → hierarchy` and `name → expansion_order` maps.
+type CouplingOrders = (BTreeMap<String, u32>, BTreeMap<String, i64>);
+
 /// `coupling_orders.py` read as MadGraph reads it: a `name → hierarchy` map and a
 /// `name → expansion_order` map.
 ///
 /// Each line of the form `VAR = CouplingOrder(name='X', expansion_order=M, hierarchy=N)`
-/// contributes one entry to each. MadGraph sets the model's `expansion_order`
-/// only when *every* declared order carries the attribute
-/// (`models/import_ufo.py`, the `try`/`except AttributeError` around the
-/// `for order in all_orders` loop), so one order missing it leaves the whole map
-/// empty here too. Returns empty maps on parse failure (the caller falls back to
-/// defaults).
-fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, i64>) {
-    use ast_util::{constructor_calls, kwarg_int, kwarg_str, parse_stmts};
+/// contributes one entry to each. UFO's `CouplingOrder(name, expansion_order,
+/// hierarchy, perturbative_expansion = 0)` (`mg5amcnlo/models/sm/object_library.py`
+/// L236) has no default for the first three, so a missing `name` or `hierarchy`
+/// is refused, as is any of the three in a form not read here; the fourth is
+/// not stored there and not read here. A missing `expansion_order` is the one
+/// absence MadGraph's import tolerates (`models/import_ufo.py`, the
+/// `try`/`except AttributeError` around the `for order in all_orders` loop): it
+/// sets the model's `expansion_order` only when *every* order carries one, so
+/// one order without it leaves the whole map empty here too.
+fn parse_coupling_orders(src: &str) -> Result<CouplingOrders, CouplingOrderError> {
+    use ast_util::{constructor_calls, extract_int, parse_stmts, Fields, UniqueNames};
 
-    let Ok(stmts) = parse_stmts(src) else {
-        return (BTreeMap::new(), BTreeMap::new());
-    };
+    let stmts = parse_stmts(src).map_err(|e| CouplingOrderError::Parse(e.to_string()))?;
 
     let mut hierarchy = BTreeMap::new();
     let mut expansion = BTreeMap::new();
     let mut expansion_complete = true;
+    let mut seen = UniqueNames::new("coupling order");
     for (python_name, keywords) in constructor_calls(&stmts, "CouplingOrder") {
-        // Use the `name` keyword if present, otherwise fall back to the Python variable name.
-        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.to_owned());
-        hierarchy.insert(
-            name.clone(),
-            kwarg_int(keywords, "hierarchy").unwrap_or(1) as u32,
-        );
-        match kwarg_int(keywords, "expansion_order") {
-            Some(v) => {
-                expansion.insert(name, v);
+        let fields = Fields::new("coupling order", python_name, keywords);
+        let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
+        let rank = u32::try_from(fields.int("hierarchy")?)
+            .map_err(|_| fields.malformed("hierarchy", "a non-negative integer"))?;
+        hierarchy.insert(name.clone(), rank);
+        match fields.optional("expansion_order") {
+            Some(e) => {
+                let cap = extract_int(e)
+                    .ok_or_else(|| fields.malformed("expansion_order", "an integer"))?;
+                expansion.insert(name, cap);
             }
             None => expansion_complete = false,
         }
@@ -118,7 +134,7 @@ fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, 
     if !expansion_complete {
         expansion.clear();
     }
-    (hierarchy, expansion)
+    Ok((hierarchy, expansion))
 }
 
 /// The coupling-order caps a model imposes on any process, keyed by order name.
@@ -162,8 +178,16 @@ pub enum UfoError {
     Vertex(#[from] VertexError),
     #[error("FeynGraph model error: {0}")]
     FeynGraph(#[from] topo::TopoError),
+    #[error("Coupling order parse error: {0}")]
+    CouplingOrders(#[from] CouplingOrderError),
     #[error("Propagator parse error: {0}")]
     Propagators(#[from] PropagatorError),
+    #[error("particle '{particle}' has `{field} = Param.{reference}`, which parameters.py does not define")]
+    UnknownParticleParameter {
+        particle: String,
+        field: &'static str,
+        reference: String,
+    },
     #[error("particle '{particle}' names propagator '{propagator}', absent from propagators.py")]
     UnknownPropagator {
         particle: String,
@@ -252,7 +276,7 @@ impl ParsedModel {
         refuse_conditional_definitions("couplings.py", &couplings_src, "Coupling")?;
         refuse_conditional_definitions("vertices.py", &vertices_src, "Vertex")?;
 
-        let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
+        let mut particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
             .into_iter()
             .map(|p| (p.name.clone(), p))
             .collect();
@@ -267,7 +291,26 @@ impl ParsedModel {
             .map(|c| (c.name.clone(), c))
             .collect();
 
-        let params = parse_parameters(&params_src)?;
+        let (params, variables) = parse_parameters_with_variables(&params_src)?;
+        // A particle's `mass = Param.<variable>` is resolved to the parameter's
+        // UFO name, which is what the parameter set is keyed by.
+        for particle in particles.values_mut() {
+            for (field, reference) in [
+                ("mass", &mut particle.mass_param),
+                ("width", &mut particle.width_param),
+            ] {
+                match variables.get(reference.as_str()) {
+                    Some(name) => *reference = name.clone(),
+                    None => {
+                        return Err(UfoError::UnknownParticleParameter {
+                            particle: particle.name.clone(),
+                            field,
+                            reference: reference.clone(),
+                        })
+                    }
+                }
+            }
+        }
         for coupling in couplings.values() {
             if let Some(name) = coupling.deps.iter().find(|d| !params.defines(d)) {
                 return Err(CouplingError::UnknownParameter {
@@ -283,7 +326,7 @@ impl ParsedModel {
 
         // Parse coupling_orders.py for the WEIGHTED order hierarchy and the
         // model's own per-order expansion caps. Fall back to SM defaults
-        // (QCD=1, QED=2) if the file is absent or unparseable.
+        // (QCD=1, QED=2) if the file is absent or declares no order.
         let (order_hierarchy, expansion_order) =
             match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
                 Ok(src) => {
@@ -292,7 +335,7 @@ impl ParsedModel {
                         &src,
                         "CouplingOrder",
                     )?;
-                    let (hierarchy, expansion) = parse_coupling_orders(&src);
+                    let (hierarchy, expansion) = parse_coupling_orders(&src)?;
                     if hierarchy.is_empty() {
                         (default_sm_hierarchy(), expansion)
                     } else {
@@ -788,14 +831,30 @@ impl EvaluatedModel {
     ///
     /// Evaluates all parameter values and coupling constants according to the given parameter card.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// If `param_card` gives a width as `Auto`, which no evaluation can read: a
-    /// card bound for a run goes through [`bind::bind_card`], which refuses it.
-    pub fn from_model_card(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
-        if let Some(pdg) = param_card.auto_widths().first() {
-            panic!("the card sets the width of particle {pdg} to Auto, which is not computed");
+    /// [`CardError::AutoWidth`](bind::CardError::AutoWidth) if the card gives a
+    /// width as `Auto`: MadGraph computes such a width at launch, nothing here
+    /// computes one, and the parameter's default is not what the card means.
+    pub fn from_model_card(
+        model: Arc<UFOModel>,
+        param_card: &ParamCard,
+    ) -> Result<Self, bind::CardError> {
+        if let Some(&pdg) = param_card.auto_widths().first() {
+            return Err(bind::CardError::AutoWidth { pdg });
         }
+        Ok(Self::evaluate_at(model, param_card))
+    }
+
+    /// Construct an `EvaluatedModel` from a `UFOModel` with default parameters
+    pub fn from_model(model: Arc<UFOModel>) -> Self {
+        Self::evaluate_at(model, &ParamCard::default())
+    }
+
+    /// Every parameter and coupling at `param_card`'s values, the model's
+    /// defaults where it sets none. An `Auto` width is read as unset, so the
+    /// caller refuses one first.
+    fn evaluate_at(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
         let param_values = model.params.evaluate(param_card);
 
         let coupling_values: Vec<Complex64> = model
@@ -809,12 +868,6 @@ impl EvaluatedModel {
             param_values,
             coupling_values,
         }
-    }
-
-    /// Construct an `EvaluatedModel` from a `UFOModel` with default parameters
-    pub fn from_model(model: Arc<UFOModel>) -> Self {
-        let empty_card = ParamCard::default();
-        Self::from_model_card(model, &empty_card)
     }
 
     /// The model these values were evaluated from.
@@ -1215,6 +1268,11 @@ mod tests {
             std::fs::write(dir.join(name), "\n").unwrap();
         }
         std::fs::write(
+            dir.join("parameters.py"),
+            "ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')\n",
+        )
+        .unwrap();
+        std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
              color = 1, mass = Param.ZERO, width = Param.ZERO, propagator = Prop.Z1, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
@@ -1251,6 +1309,11 @@ mod tests {
         for name in REQUIRED_SOURCE_FILES.iter() {
             std::fs::write(dir.join(name), "\n").unwrap();
         }
+        std::fs::write(
+            dir.join("parameters.py"),
+            "ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')\n",
+        )
+        .unwrap();
         std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
@@ -1338,7 +1401,7 @@ mod tests {
             let card: ParamCard = format!("BLOCK {lha_block}\n {} {value:.17e}\n", code.join(" "))
                 .parse()
                 .unwrap();
-            let fresh = EvaluatedModel::from_model_card(model.clone(), &card);
+            let fresh = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
             assert_eq!(fresh.param_values[&p.name].re, value, "{}", p.name);
             let mut moved = base.clone();
             moved.recompute(&p.name, value.into()).unwrap();

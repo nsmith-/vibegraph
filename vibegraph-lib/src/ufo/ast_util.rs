@@ -1,5 +1,6 @@
 use rustpython_parser::ast;
 use rustpython_parser::{parse, Mode, ParseError};
+use std::collections::HashSet;
 use thiserror::Error;
 
 /// Parse Python source into a list of top-level statements.
@@ -181,11 +182,6 @@ pub(crate) fn kwarg_str(kws: &[ast::Keyword], name: &str) -> Option<String> {
     extract_str(get_kwarg(kws, name)?).map(|s| s.to_owned())
 }
 
-/// Get a keyword argument as an integer.
-pub(crate) fn kwarg_int(kws: &[ast::Keyword], name: &str) -> Option<i64> {
-    extract_int(get_kwarg(kws, name)?)
-}
-
 /// Get a keyword argument as a boolean (`True`/`False` literals).
 pub(crate) fn kwarg_bool(kws: &[ast::Keyword], name: &str) -> Option<bool> {
     match get_kwarg(kws, name)? {
@@ -316,5 +312,41 @@ impl<'a> Fields<'a> {
             Some((m, attr)) if m == module => Ok(attr.to_owned()),
             _ => Err(self.malformed(field, expected)),
         }
+    }
+}
+
+/// The names a UFO file has defined so far for one kind of object, refusing a
+/// repeat of either the UFO `name` or the Python variable. The loader keys
+/// each collection by one of the two, so a repeat would leave one definition
+/// silently replacing the other.
+pub(crate) struct UniqueNames {
+    object: &'static str,
+    names: HashSet<String>,
+    variables: HashSet<String>,
+}
+
+impl UniqueNames {
+    pub(crate) fn new(object: &'static str) -> Self {
+        UniqueNames {
+            object,
+            names: HashSet::new(),
+            variables: HashSet::new(),
+        }
+    }
+
+    /// Record the object `name` assigned to `variable`, refusing either seen
+    /// before.
+    pub(crate) fn insert(&mut self, variable: &str, name: &str) -> Result<(), FieldError> {
+        let repeated = if !self.names.insert(name.to_owned()) {
+            name
+        } else if !self.variables.insert(variable.to_owned()) {
+            variable
+        } else {
+            return Ok(());
+        };
+        Err(FieldError::Duplicate {
+            object: self.object,
+            name: repeated.to_owned(),
+        })
     }
 }

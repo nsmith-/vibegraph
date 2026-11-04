@@ -57,12 +57,15 @@ generated cards at ≤ 1e-12 and fails when the fix is reverted. [^n35-close]
 A consequence for the SM: card-less defaults take `restrict_default.dat`'s values
 (`Gf` 1.16639e-5, `WZ` 2.441404, `WT` 1.4915, `WW` 2.0476), as MadGraph's do. [^n35-c]
 
-**Known divergence.** MadGraph's `RestrictModel.fix_parameter_values` takes both
-zero-valued and one-valued parameters [^mg-fix-params]: a parameter a restrict card sets
-to exactly `1` is fixed too. The loader locks only zeros. No restrict card in the
-repository sets a non-`QNUMBERS` parameter to 1, so the gap is latent; it is the
-[unit-values backlog item](../backlog/feature/restrict-card-unit-values-not-fixed.md),
-which also asks whether MadGraph merges identical values there.
+**Ones are fixed as well.** MadGraph's `RestrictModel.fix_parameter_values` takes
+both zero-valued and one-valued parameters [^mg-fix-params], so a parameter a restrict
+card sets to exactly `1` is fixed too. The loader records those externals in
+`ParameterSet::ones` (`apply_restrict`), and `bind_card` refuses a card that moves
+one (`CardError::MovesFixedOne`), as MadGraph's `param_card_rule.dat` check refuses
+it. A one prunes nothing, unlike a zero, so it is held at binding and not locked
+in evaluation. MadGraph's merge of identical values (`detect_identical_parameters`)
+is `ParameterSet::merged`, held the same way (below). Every toy-UFO restrict card
+leaves the width `WO8` at one, and `bind.rs` pins both rules.
 
 ## Pruning, in MadGraph's order
 
@@ -117,8 +120,8 @@ process card as `Auto`, for MadWidth to compute at launch (`modify_autowidth`,
 `restrict_model`). The loader computes no width and would leave the `parameters.py`
 default in its place. `integrate --param-card` refuses the row the same way
 (`CardError::AutoWidth`), a reweight card's `set … Auto` is not a number to its
-parser, and `EvaluatedModel::from_model_card` panics on a card carrying one, so no
-path reads a width from an `Auto` row. No banked restrict card has one.
+parser, and `EvaluatedModel::from_model_card` refuses a card carrying one with the same
+`CardError::AutoWidth`, so no path reads a width from an `Auto` row. No banked restrict card has one.
 
 ## Where it applies, and what is identified
 
