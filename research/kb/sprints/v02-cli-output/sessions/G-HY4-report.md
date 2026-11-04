@@ -34,7 +34,7 @@ Backlog check (path tails `/si.rs`, `cli/src/integrate.rs`,
 (`multiplicity-sum-construction-copied`, `cli-tests-define-pdf-dir-per-file`,
 `integrate-cannot-select-a-sampler` and three performance items) have no site
 this change makes wrong. `flat-weights-print-rounding-noise` loses one
-symptom: its `± 1.5e-154` now prints as zeros at the value's 15th digit (see
+symptom: its `± 1.5e-154` would now print as zeros at the value's 15th digit (see
 Found).
 
 ## The format and its edge cases
@@ -201,9 +201,11 @@ digits an `f64` round-trips.
    cross section, the defect G-HY3 fixed in `integrate`. Close: the same
    formatter (with the `XERRUP` as its error).
 3. **`flat-weights-print-rounding-noise` symptom moved.** Its `± 1.5e-154`
-   (f64::MIN_POSITIVE through `combine_kept`) now prints as zeros at the
-   value's 15th digit, so the result line no longer shows it; the cause and
-   the overweight symptom stand. The item's text should say so.
+   (f64::MIN_POSITIVE through `combine_kept`) would now print as zeros at the
+   value's 15th digit (the cap case, `a_value_keeps_no_more_digits_than_an_f64_holds`;
+   inferred from the format, not reproduced on that artifact), so the result
+   line no longer shows it; the cause and the overweight symptom stand. The
+   item's text should say so.
 4. **Γ's unit is a choice to confirm.** The width line moved from GeV to an
    SI-prefixed electronvolt unit (above); a reader that parses `Γ = … GeV`
    outside this repository would break. Nothing in the repository does
