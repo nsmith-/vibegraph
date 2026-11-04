@@ -239,6 +239,41 @@ pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
     Ok(())
 }
 
+/// Refuse, on fixed-energy beams, two subprocesses that are one initial state in
+/// its two beam orderings (`e+ e- > mu+ mu-` with `add process e- e+ > mu- mu+`).
+///
+/// At proton beams the two orderings are two physical initial states, each with
+/// its own luminosity, and the enumeration keeps both. Fixed-energy beams carry
+/// one particle each, and both subprocesses would integrate the same collision,
+/// counting it twice.
+pub fn refuse_exchanged_beam_orderings(sets: &[DiagramSet]) -> Result<(), String> {
+    let populated: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+    for (i, a) in populated.iter().enumerate() {
+        let [a1, a2] = a.particles_in.as_slice() else {
+            continue;
+        };
+        let mut a_out = a.particles_out.clone();
+        a_out.sort();
+        for b in &populated[i + 1..] {
+            let [b1, b2] = b.particles_in.as_slice() else {
+                continue;
+            };
+            let mut b_out = b.particles_out.clone();
+            b_out.sort();
+            if a1 != a2 && (a1, a2) == (b2, b1) && a_out == b_out {
+                return Err(format!(
+                    "'{}' and '{}' are one initial state in its two beam orderings; at fixed-energy \
+                     beams both would integrate the same collision, so the card is refused rather \
+                     than counting it twice",
+                    a.label(),
+                    b.label()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The shape the map rule settles its choices on for a card of several
 /// multiplicities: every part's shape, summed as if one channel set.
 ///
