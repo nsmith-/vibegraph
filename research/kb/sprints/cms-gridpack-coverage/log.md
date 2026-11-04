@@ -50,3 +50,5 @@
   - Taken from the report: `u u~ > e+ e-` 778.48 against MadGraph's 778.11 (it was 1556.77); both/single ratio 1.99975 ± 0.00079 against 2.00010 ± 0.00087; `p p > e+ e-` unchanged on all seeds; `validate.sh` exit 0.
   - The item stays open for the massive rows after #95.
   - Found, to file: MadGraph's mirror key ignores polarization; H-M1's σ cards need their symmetric forms after this fix.
+* The CERN host posted the survey cards on branch `sprinth-gridpack-cards` (08797dc8): 11 decay-chain cards for #93, and 2 massive-parton cards for #95 (ZprimeToTauTau_M130, b at 4.7 with every quark massive; LL_HAHM_MZd_14, c at 1.42). They were extracted into the scratchpad. Card 024 actually ran `p p > w+ j j $ t t~ h, w+ > j j` on sm-ckm_no_b_mass.
+* Dispatched: H-M2 (validation-dev) validates #95 on the two cards, including whether LL_HAHM's `etaonium = -1` / `ptonium = 0` are inert in MadGraph; H-D3 (validation-dev) runs the MadGraph census on the 11 decay-chain cards and adds census rows.
