@@ -37,24 +37,28 @@ BASE="https://lhapdfsets.web.cern.ch/current"
 mkdir -p "$DEST"
 
 # One line per set: name, members in the list, archive SHA-256, .info SHA-256.
-mapfile -t SETS < <(python3 -I -c '
+# Read loops rather than `mapfile` and associative arrays: macOS ships bash 3.2.
+SETS=()
+while IFS= read -r line; do
+  SETS+=("$line")
+done < <(python3 -I -c '
 import json, sys
 for name, s in sorted(json.load(open(sys.argv[1])).items()):
     print(name, s["members_in_list"], s["archive_sha256"], s["info_sha256"])
 ' "$LIST")
 [ "${#SETS[@]}" -gt 0 ] || vg_die "$LIST lists no set"
 
-pending=()
+n_pending=0
 for line in "${SETS[@]}"; do
   read -r name _ <<<"$line"
-  [ -f "$DEST/$name/.done" ] || pending+=("$line")
+  [ -f "$DEST/$name/.done" ] || n_pending=$((n_pending + 1))
 done
-if [ "${#pending[@]}" -eq 0 ] && [ -f "$DEST/pdfsets.index" ]; then
+if [ "$n_pending" -eq 0 ] && [ -f "$DEST/pdfsets.index" ]; then
   vg_say "⊘ all ${#SETS[@]} sets of $LIST already in $DEST"
   exit 0
 fi
 
-vg_consent "${#pending[@]} of the ${#SETS[@]} CMS PDF sets into $DEST" "$BASE" ||
+vg_consent "$n_pending of the ${#SETS[@]} CMS PDF sets into $DEST" "$BASE" ||
   vg_die "the CMS PDF sets were not acquired"
 export VIBEGRAPH_FETCH_CONSENT=1
 
@@ -63,8 +67,9 @@ if [ ! -f "$DEST/pdfsets.index" ]; then
     vg_die "pdfsets.index was not acquired"
 fi
 
-for line in "${pending[@]}"; do
+for line in "${SETS[@]}"; do
   read -r name n_members archive_sha info_sha <<<"$line"
+  [ -f "$DEST/$name/.done" ] && continue
   tarball="$DEST/$name.tar.gz"
   if [ -f "$tarball" ] && ! vg_verify_sha "$tarball" "$archive_sha" 2>/dev/null; then
     rm -f "$tarball"
@@ -79,21 +84,18 @@ for line in "${pending[@]}"; do
   fi
 
   # The archive's own spelling of each wanted path (some carry a leading ./).
-  wanted=("$name/$name.info")
-  for ((i = 0; i < n_members; i++)); do
-    wanted+=("$(printf '%s/%s_%04d.dat' "$name" "$name" "$i")")
-  done
-  mapfile -t listing < <(tar tzf "$tarball")
-  declare -A spelled=()
-  for entry in "${listing[@]}"; do
-    spelled["${entry#./}"]="$entry"
-  done
+  listing="$(tar tzf "$tarball")"
   entries=()
-  for w in "${wanted[@]}"; do
-    [ -n "${spelled[$w]:-}" ] || vg_die "$name.tar.gz holds no $w"
-    entries+=("${spelled[$w]}")
+  for ((i = -1; i < n_members; i++)); do
+    if [ "$i" -lt 0 ]; then
+      want="$name/$name.info"
+    else
+      want="$(printf '%s/%s_%04d.dat' "$name" "$name" "$i")"
+    fi
+    entry="$(printf '%s\n' "$listing" | grep -Fx -e "$want" -e "./$want" | head -n 1 || true)"
+    [ -n "$entry" ] || vg_die "$name.tar.gz holds no $want"
+    entries+=("$entry")
   done
-  unset spelled
 
   tar xzf "$tarball" -C "$DEST" "${entries[@]}"
   vg_verify_sha "$DEST/$name/$name.info" "$info_sha" ||
