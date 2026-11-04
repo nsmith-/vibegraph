@@ -179,7 +179,9 @@ fn a_subprocess_reached_from_two_lines_is_refused() {
     for card in [
         "generate p p > e+ e-\nadd process u u~ > e+ e-\n",
         "generate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @2\n",
-        "generate e+ e- > mu+ mu-\nadd process e- e+ > mu- mu+ --no_warning=duplicate\n",
+        "generate e+ e- > mu+ mu-\nadd process e+ e- > mu- mu+ --no_warning=duplicate\n",
+        "generate p p > e+ e-\nadd process u~ u > e+ e-\n",
+        "generate u u~ > e+ e-\nadd process u~ u > e+ e-\nadd process u u~ > e+ e-\n",
     ] {
         let Err(err) = enumerate(card) else {
             panic!("{card} enumerated");
@@ -192,6 +194,115 @@ fn a_subprocess_reached_from_two_lines_is_refused() {
         8,
         "disjoint lines enumerate side by side"
     );
+}
+
+/// The populated sets of a card as `(incoming, mirrored)`, in enumeration order.
+fn orderings(card: &str) -> Vec<(Vec<String>, bool)> {
+    enumerate(card)
+        .unwrap_or_else(|e| panic!("{card}: {e}"))
+        .into_iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .map(|s| (s.particles_in, s.mirrored))
+        .collect()
+}
+
+fn names(legs: &[&str]) -> Vec<String> {
+    legs.iter().map(|l| (*l).to_owned()).collect()
+}
+
+/// A subprocess stands for its exchanged beam ordering only when its own
+/// process line generated that ordering too, as MadGraph's
+/// `has_mirror_process` is set: a line written in one ordering has no mirror,
+/// a multiparticle line that reaches both has one, and two lines that write the
+/// two orderings are two subprocesses without one, one per line.
+#[test]
+fn a_subprocess_has_a_mirror_only_where_its_line_generated_both_orderings() {
+    for card in [
+        "generate u u~ > e+ e-",
+        "generate u~ u > e+ e-",
+        "generate u g > u z",
+        "generate u u > u u",
+        "generate u u~ > z, z > e+ e-",
+    ] {
+        let sets = orderings(card);
+        assert_eq!(sets.len(), 1, "{card}");
+        assert!(
+            !sets[0].1,
+            "{card}: one ordering written, a mirror recorded"
+        );
+    }
+
+    for card in [
+        "generate p p > e+ e-",
+        "define q = u u~\ngenerate q q > e+ e-",
+        "generate p p > z, z > e+ e-",
+    ] {
+        let sets = orderings(card);
+        let uu = sets
+            .iter()
+            .filter(|(i, _)| {
+                let mut i = i.clone();
+                i.sort();
+                i == names(&["u", "u~"])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(uu.len(), 1, "{card}: one u u~ subprocess, {sets:?}");
+        assert!(
+            uu[0].1,
+            "{card}: both orderings generated, no mirror recorded"
+        );
+        for (incoming, mirrored) in &sets {
+            assert_eq!(
+                *mirrored,
+                incoming[0] != incoming[1],
+                "{card}: {incoming:?} — a multiparticle line generates both orderings"
+            );
+        }
+    }
+
+    // `u u` and `g g` have no exchanged ordering; `u g` has, and its line
+    // generates it.
+    let sets = orderings("define q = u g\ngenerate q q > q q");
+    assert_eq!(sets.len(), 3, "{sets:?}");
+    assert!(sets.iter().all(|(i, m)| *m == (i[0] != i[1])), "{sets:?}");
+
+    for (card, first, second) in [
+        (
+            "generate u u~ > e+ e-\nadd process u~ u > e+ e-",
+            ["u", "u~"],
+            ["u~", "u"],
+        ),
+        (
+            "generate u g > u z\nadd process g u > u z",
+            ["u", "g"],
+            ["g", "u"],
+        ),
+    ] {
+        assert_eq!(
+            orderings(card),
+            vec![(names(&first), false), (names(&second), false)],
+            "{card}"
+        );
+    }
+}
+
+/// At fixed-energy beams the two orderings of one initial state are the same
+/// collision, so two lines writing them are refused there, while the
+/// enumeration, which proton beams share, keeps both.
+#[test]
+fn two_lines_in_exchanged_orderings_are_refused_at_fixed_energy() {
+    use vibegraph::multiplicity::refuse_exchanged_beam_orderings;
+    let card = "generate e+ e- > mu+ mu-\nadd process e- e+ > mu- mu+\n";
+    let sets = enumerate(card).unwrap();
+    let err = refuse_exchanged_beam_orderings(&sets).expect_err("refused");
+    assert!(err.contains("two beam orderings"), "{err}");
+    for card in [
+        "generate e+ e- > mu+ mu-\nadd process e+ e- > ta+ ta-\n",
+        "generate u u~ > e+ e-\nadd process d d~ > e+ e-\n",
+    ] {
+        refuse_exchanged_beam_orderings(&enumerate(card).unwrap())
+            .unwrap_or_else(|e| panic!("{card}: {e}"));
+    }
 }
 
 /// An integer leg is a PDG code: `21` is a gluon, not two particles named `1`.
