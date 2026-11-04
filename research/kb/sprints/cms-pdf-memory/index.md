@@ -6,6 +6,10 @@
 
 * [CMS's 880-member systematics request under 2 GB](sprint.md) - generate with CMS's runcmsgrid.sh systematics request (43 sets, 880 members) fits a 2 GB CMS production slot, measured, with the CMS-arguments weights gate still exact.
 
+## Sprint Record
+
+* [CMS's 880-member systematics request under 2 GB](closeout.md) - One item closed in PR #86: each PDF member is held as its knots with the x cubic built on use, bit-identical to the old tables; CMS's 880-member request peaks at 0.70 GiB instead of 3.6 GB, its weights still exact, no slower end to end.
+
 ## Directories
 
 * [decisions](decisions/index.md)

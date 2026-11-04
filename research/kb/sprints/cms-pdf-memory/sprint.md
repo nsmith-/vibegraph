@@ -3,7 +3,7 @@ type: Sprint
 title: "CMS's 880-member systematics request under 2 GB"
 description: "generate with CMS's runcmsgrid.sh systematics request (43 sets, 880 members) fits a 2 GB CMS production slot, measured, with the CMS-arguments weights gate still exact."
 status: draft
-active: true
+active: false
 tags: [systematics, pdf, memory, cms, lhapdf, sprint-f]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-03}
 ---

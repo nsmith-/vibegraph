@@ -6,6 +6,10 @@
 
 * [Grid-worker fixes: PDF lookup without a home directory, and quark-jet ttx at generate](sprint.md) - A PDF set on LHAPDF_DATA_PATH is found with no HOME, and generate writes events for p p > t t~ j with a quark-only jet.
 
+## Sprint Record
+
+* [Grid-worker fixes: PDF lookup without a home directory, and quark-jet ttx at generate](closeout.md) - Two items closed in PR #87: the cache root is required only at the cache tier; mixed-flavour groups take a quark line's member flavour from the leg that carries it, so the ttx MLM row's own process generates and is gated against MadEvent.
+
 ## Directories
 
 * [sessions](sessions/index.md)
