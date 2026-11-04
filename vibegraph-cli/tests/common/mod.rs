@@ -152,7 +152,7 @@ pub fn result_line(stdout: &str) -> ResultLine<'_> {
 pub fn part_line(stderr: &str, n_out: usize) -> ResultLine<'_> {
     let line = stderr
         .lines()
-        .find(|l| l.contains(&format!(" {n_out} outgoing legs (")))
+        .find(|l| l.contains(&format!(" {n_out} outgoing legs (@")))
         .unwrap_or_else(|| panic!("no {n_out}-leg part line in:\n{stderr}"));
     let start = line
         .find("σ = ")

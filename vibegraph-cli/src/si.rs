@@ -253,6 +253,8 @@ mod tests {
         assert_eq!(pb(3.0e-5, 4.4e-4), "30 \u{b1} 440 ab");
         assert_eq!(pb(3.4e-5, 4.37e-4), "34 \u{b1} 440 ab");
         assert_eq!(pb(3.4e-6, 4.37e-4), "3 \u{b1} 440 ab");
+        // An error a prefix above the value still prints under the value's.
+        assert_eq!(pb(3.0e-6, 4.4e-3), "3 \u{b1} 4400 ab");
         assert_eq!(pb(3.0e-5, 4.4e-5), "30 \u{b1} 44 ab");
         assert_eq!(pb(3.0e-5, 4.4e-6), "30.0 \u{b1} 4.4 ab");
     }
