@@ -5,7 +5,7 @@ description: "Tools that consume integrate parse its human-formatted summary lin
 area: feature
 state: open
 priority: medium
-closes_when: "integrate takes an option that writes line-delimited JSON (one object per progress event, a final result or a typed refusal with its error kind), an `inspect` subcommand prints a saved artifact's recorded results in text or JSON, both schemas carry a version field and are pinned by CLI tests, and the gridpack survey reads them instead of the summary lines."
+closes_when: "integrate takes an option that writes line-delimited JSON (one object per progress event, a final result or a typed refusal with its error kind), an `inspect` subcommand prints a saved artifact's recorded results in text or JSON, both schemas carry a version field and are pinned by CLI tests, `--output-format ldjson` together with `--tui` is a usage error, and the gridpack survey reads them instead of the summary lines."
 blocked_by: []
 opened: 2026-11-04
 tags: [cli, output, artifact, cms-survey]
@@ -34,6 +34,12 @@ The fix has two parts, and the user asked for both:
   
   Refusals write no artifact, so the stream is the only place a tool can read
   one.
+
+  The stream is for a program reading from a pipe, so it goes to stdout and
+  the logs stay on stderr. It is declared `conflicts_with = "tui"` in clap,
+  so `--tui` with it is a usage error. It also implies `--no-tui`, so a
+  terminal on both streams does not draw the pane over the stream either
+  (`LogArgs::wants_tui`, `vibegraph-cli/src/logging.rs`).
 - **`vibegraph inspect <grid.bin.zst>`.** Prints the results the artifact
   records, as text or JSON. The artifact already stores `sigma_pb`,
   `sigma_err_pb` and `chi2_per_dof`, for the run and for each channel, along
