@@ -46,6 +46,8 @@ card at once rather than the first.
 | Run-card matching block | `runcard::matching::resolve` | `ickkw` outside {0, 1} (`UnsupportedIckkw`); matched top jets, `maxjetflavor = 6` (`MatchedTopJets`); a resolved `ptj` below `xqcut` (`XqcutAboveJetThreshold`). |
 | Scale and matching settings | `coupling::scales` | `ickkw` outside {0, 1} (`UnsupportedMatching`); matching or `xqcut` on fixed beams, which includes every 1→n decay (`FixedBeamMatching`). |
 | UFO model | Diagram conversion | A custom `propagators.py` form (`ConvertError::CustomPropagator`). |
+| Integration result | `support::check_support`, called by `integrate` after the integration and before σ is printed or the artifact written | No point of nonzero weight: `CutsRejectAll` when none passed the cuts (the run card's, or a decay chain's `bwcutoff` window), `MatrixElementZero` when some did. An effective sample size `(Σw)²/Σw²` of the kept points below `MIN_EFFECTIVE_POINTS` (20): `TooFewEffective`, with the nonzero and cut-pass counts. |
+| Integrate artifact | `generate`'s artifact read | An artifact recording `σ = 0`. |
 
 `SupportedCard` is a **narrower type**: it has no field for a refused feature,
 so code downstream cannot read a `$` on a decay or a squared-order constraint,

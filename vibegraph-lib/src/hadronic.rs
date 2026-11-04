@@ -63,6 +63,7 @@ use crate::phasespace::{
 use crate::progress;
 use crate::runcard::{RunCard, RunCardError};
 use crate::select::select_index;
+use crate::support::{CensusCell, PointCensus};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{GridRule, IterationCombination, VegasGrid, VegasResult};
@@ -1746,6 +1747,9 @@ struct FixedBeamScratch<'a> {
     amp2_buf: RefCell<Vec<f64>>,
     /// This thread's copies of [`FixedBeamIntegrand::vetoes`], per subprocess.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
+    /// This thread's count of the points it evaluated
+    /// ([`FixedBeamIntegrand::census`]).
+    census: CensusCell,
 }
 
 /// The phase-space map a [`FixedBeamIntegrand`] draws through.
@@ -2130,7 +2134,30 @@ impl<'a> FixedBeamIntegrand<'a> {
             last_coupling: Cell::new((f64::NAN, f64::NAN)),
             amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
             vetoed: bind_vetoes(&self.vetoes),
+            census: CensusCell::default(),
         })
+    }
+
+    /// The points [`value`](Self::value) and
+    /// [`value_in_channel`](Self::value_in_channel) evaluated since the integrand
+    /// was built or the census last cleared: how many, how many passed the cuts,
+    /// and how many of those had weight.
+    ///
+    /// A thread's scratch carries its count, so discarding the scratches drops
+    /// the counts with them; only setup does that.
+    pub fn census(&mut self) -> PointCensus {
+        self.scratch
+            .iter_mut()
+            .fold(PointCensus::default(), |acc, sc| {
+                acc.merged(sc.census.get())
+            })
+    }
+
+    /// Start [`census`](Self::census) over from zero.
+    pub fn clear_census(&mut self) {
+        for sc in self.scratch.iter_mut() {
+            sc.census.clear();
+        }
     }
 
     /// Discard every thread's evaluation context, so the next point forks a fresh
@@ -2453,17 +2480,21 @@ impl<'a> FixedBeamIntegrand<'a> {
         let (map_u, scale_u) = u.split_at(map_ndim);
         let (channel, point) = self.sampler.draw_from(map_u);
         let ext = self.externals(&point.momenta);
+        let sc = self.scratch();
         if !self.passes_cuts(&ext) {
+            sc.census.rejected();
             return 0.0;
         }
-        let sc = self.scratch();
         let scale_channel = self.evaluation_channel(sc, &ext, channel, scale_u);
         let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
-        if m2 == 0.0 {
-            return 0.0;
-        }
-        let weight = self.sampler.mixture_weight(&point.momenta, point.weight);
-        self.prefactor() * weight * m2
+        let value = if m2 == 0.0 {
+            0.0
+        } else {
+            let weight = self.sampler.mixture_weight(&point.momenta, point.weight);
+            self.prefactor() * weight * m2
+        };
+        sc.census.passed(value);
+        value
     }
 
     /// The constants in front of `weight · Σ_sub S_sub |M_sub|²`: the Møller flux
@@ -2747,19 +2778,23 @@ impl<'a> FixedBeamIntegrand<'a> {
         let (grid_u, scale_u) = self.split_point(u);
         let point = self.sampler.draw_in_channel(channel, grid_u);
         let ext = self.externals(&point.momenta);
+        let sc = self.scratch();
         if !self.passes_cuts(&ext) {
+            sc.census.rejected();
             return 0.0;
         }
-        let sc = self.scratch();
         let scale_channel = self.evaluation_channel(sc, &ext, channel, scale_u);
         let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
-        if m2 == 0.0 {
-            return 0.0;
-        }
-        let weight = self
-            .sampler
-            .channel_weight(channel, &point.momenta, point.weight);
-        self.prefactor() * weight * m2
+        let value = if m2 == 0.0 {
+            0.0
+        } else {
+            let weight = self
+                .sampler
+                .channel_weight(channel, &point.momenta, point.weight);
+            self.prefactor() * weight * m2
+        };
+        sc.census.passed(value);
+        value
     }
 
     /// Which of the process's channels names the integration configuration this
