@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [G-HY3: integrate summary lines that mislead (σ digits, χ²/dof over one iteration, μF for a dynamical scale)](G-HY3.md) - integrate prints σ with significant figures, χ²/dof as n/a below two entering iterations, and the scale choice instead of μF = 0 GeV; the artifact records 'undefined' and 'no constant scale' distinctly from 0; the survey parser reads the new lines.
+
+## Session Report
+
+* [G-HY3 report: integrate prints σ to its error's digits, χ²/dof as n/a over one iteration, and names a non-constant μF](G-HY3-report.md) - σ and Γ print value ± error with the error to two significant figures and the value to the same place; VegasResult::chi2_per_dof is Option<f64> and prints n/a below two entering iterations; μF is read from the fixed flags, named per beam or by its dynamical choice, and recorded as None (artifact format 19, 18 refused). The survey parser reads the new lines and, fixed on the way, the per-part lines it had not matched since parts carry masses. 13 of 13 mutations killed; every gate green.

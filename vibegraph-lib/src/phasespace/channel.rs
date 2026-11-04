@@ -1797,7 +1797,9 @@ mod tests {
         let res = grid.adapt(integrand, 40_000, 6, &mut rng);
         eprintln!(
             "VEGAS∘α-adapt σ = {:.6e} ± {:.2e} (χ²/dof {:.2}); combiner MC {mean_mc:.6e} ± {err_mc:.2e}",
-            res.integral, res.std_dev, res.chi2_per_dof
+            res.integral,
+            res.std_dev,
+            crate::vegas::Chi2PerDof(res.chi2_per_dof)
         );
         let err = (err_mc * err_mc + res.std_dev * res.std_dev).sqrt();
         assert!(

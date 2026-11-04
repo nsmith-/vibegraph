@@ -36,6 +36,7 @@ use vibegraph::artifact::{
     PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
+use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
@@ -44,7 +45,6 @@ use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
-    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
@@ -66,7 +66,7 @@ use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
-use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
+use vibegraph::vegas::{BinWeight, Chi2PerDof, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -602,14 +602,90 @@ pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError>
     }
 }
 
-/// The factorization scale the run artifact records: the run card's constant when
-/// it fixes one on both beams, and `0` when the scale is chosen per event and no
-/// single number describes the run.
-fn recorded_mu_f(report: &RunningCouplingReport) -> f64 {
-    match report.constant_scales {
-        Some(scales) if scales.mu_f[0] == scales.mu_f[1] => scales.mu_f[0],
-        _ => 0.0,
+/// The factorization scale a run read its parton densities at, as the summary
+/// names it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FactorizationScale {
+    /// The beams read no parton densities: fixed-energy beams, or a decay.
+    NoDensities,
+    /// The run card's constant, the same on both beams.
+    Constant(f64),
+    /// A constant on each beam, the two different.
+    PerBeam([f64; 2]),
+    /// Read off each event, on one beam or both, under the run card's
+    /// `dynamical_scale_choice`.
+    PerEvent { choice: i64 },
+}
+
+impl FactorizationScale {
+    /// The scale a run card's prescription reads the densities at. A beam's
+    /// fixed scale holds on every event whatever the renormalisation scale or
+    /// the clustering does, so the constant cases are read from the fixed
+    /// flags alone.
+    fn of(card: &RunCard) -> Result<Self, CliError> {
+        let choice = ScaleChoice::from_run_card_for(card, ClosedForms::Honour)
+            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+        Ok(match choice.fixed_factorisation_scales() {
+            [Some(a), Some(b)] if a == b => FactorizationScale::Constant(a),
+            [Some(a), Some(b)] => FactorizationScale::PerBeam([a, b]),
+            _ => FactorizationScale::PerEvent {
+                choice: choice.choice().as_i64(),
+            },
+        })
     }
+
+    /// What the artifact records: the constant where one describes the whole
+    /// run, and `None` where none does.
+    fn recorded(self) -> Option<f64> {
+        match self {
+            FactorizationScale::Constant(mu) => Some(mu),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for FactorizationScale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FactorizationScale::NoDensities => f.write_str("no parton densities"),
+            FactorizationScale::Constant(mu) => write!(f, "μF = {mu} GeV"),
+            FactorizationScale::PerBeam([a, b]) => write!(f, "μF = {a} GeV, {b} GeV by beam"),
+            FactorizationScale::PerEvent { choice } => {
+                write!(f, "μF dynamical, choice {choice}")
+            }
+        }
+    }
+}
+
+/// `value ± error` in scientific notation: the error to two significant
+/// figures, and the value to the same decimal place, so the line carries the
+/// digits the error supports and no more however many decades the value spans.
+/// An error that bounds no digit (zero, as a constant integrand's can be, or
+/// not finite) leaves the value at its shortest exact form.
+fn value_and_error(value: f64, error: f64) -> String {
+    let exponent = |text: &str| -> i32 {
+        text.rsplit_once('e')
+            .and_then(|(_, e)| e.parse().ok())
+            .expect("a number formatted with {:e} carries its exponent")
+    };
+    if !(error > 0.0 && error.is_finite() && value.is_finite()) {
+        return format!("{value:e} ± {error:e}");
+    }
+    let error_text = format!("{error:.1e}");
+    if value == 0.0 {
+        return format!("0e0 ± {error_text}");
+    }
+    let last_place = exponent(&error_text) - 1;
+    let decade = exponent(&format!("{value:e}"));
+    // f64 holds 17 significant digits; past them a printed digit is noise.
+    let decimals = |decade: i32| (decade - last_place).clamp(1, 16) as usize;
+    let mut value_text = format!("{value:.prec$e}", prec = decimals(decade));
+    // Rounding can carry the value into the next decade, which moves its last
+    // printed digit one place up; one more decimal puts it back.
+    if exponent(&value_text) > decade {
+        value_text = format!("{value:.prec$e}", prec = decimals(decade + 1));
+    }
+    format!("{value_text} ± {error_text}")
 }
 
 /// The metadata printed and banked for a completed run, independent of beam mode.
@@ -619,7 +695,7 @@ struct RunOutput {
     observable: Observable,
     /// The parton densities the run read.
     pdf: PdfInput,
-    mu_f: f64,
+    mu_f: FactorizationScale,
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
     channels: Vec<ChannelGrid>,
@@ -783,7 +859,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             {
                 info!("PDF set:  {set} (member {member}, lhaid {lhaid})");
             }
-            info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+            info!("√s:       {} GeV,  {}", output.sqrt_s, output.mu_f);
         }
         Observable::PartialWidth => {
             info!(
@@ -794,7 +870,10 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
-        conv.points, conv.iterations, seed, output.result.chi2_per_dof
+        conv.points,
+        conv.iterations,
+        seed,
+        Chi2PerDof(output.result.chi2_per_dof)
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
@@ -844,16 +923,13 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         );
     }
     // The command's result, and the reason `stdout` carries nothing else: a
-    // caller pipes this to read the cross section, at any verbosity.
-    // A partial width spans many decades — `h > e+ e- mu+ mu-` is `2e-7` GeV —
-    // so it is printed to six significant figures rather than six decimals.
+    // caller pipes this to read the cross section, at any verbosity. A cross
+    // section or a partial width spans many decades — `h > e+ e- mu+ mu-` is
+    // `2e-7` GeV — so its digits are set by its error, not by a decimal count.
+    let measured = value_and_error(sigma_pb, sigma_err_pb);
     match observable {
-        Observable::CrossSection => {
-            tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"))
-        }
-        Observable::PartialWidth => {
-            tui::result_line(format_args!("Γ = {sigma_pb:.6e} ± {sigma_err_pb:.6e} GeV"))
-        }
+        Observable::CrossSection => tui::result_line(format_args!("σ = {measured} pb")),
+        Observable::PartialWidth => tui::result_line(format_args!("Γ = {measured} GeV")),
     }
 
     let artifact = IntegrateArtifact {
@@ -866,7 +942,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             params: moved,
             decays: evaluated.decay_tables().to_vec(),
         },
-        mu_f: output.mu_f,
+        mu_f: output.mu_f.recorded(),
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
         niter: output.convergence.iterations,
@@ -1037,7 +1113,6 @@ fn integrate_hadronic(
     let maps = multiplicity_maps(&groups, evaluated, sqrt_s_had, args.maps.options());
 
     let mut parts = Vec::with_capacity(groups.len());
-    let mut scale_report = None;
     for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
         let mut integ = ProtonIntegrand::new_with_maps(
             part_groups,
@@ -1053,7 +1128,7 @@ fn integrate_hadronic(
         // Both scales and the strong coupling come from the run card; the coupling
         // is the PDF member's own tabulation, which is what the densities were
         // fitted with.
-        let report = integ
+        integ
             .use_run_card_scales(
                 model,
                 evaluated,
@@ -1061,10 +1136,8 @@ fn integrate_hadronic(
                 Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
             )
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-        scale_report.get_or_insert(report);
         parts.push(integ);
     }
-    let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
     integ.set_grid_rule(args.grid.rule()?);
     integ.set_alpha_floor(args.alpha_floor.0);
@@ -1092,7 +1165,7 @@ fn integrate_hadronic(
         process,
         observable: Observable::CrossSection,
         pdf: pdf_input,
-        mu_f: recorded_mu_f(&scale_report),
+        mu_f: FactorizationScale::of(rc)?,
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
@@ -1124,12 +1197,11 @@ fn report_multiplicities(
             .map(|m| format!("{m}"))
             .collect();
         info!(
-            "{} outgoing legs ({}; masses {} GeV): σ = {:.6} ± {:.6} pb over {} channels",
+            "{} outgoing legs ({}; masses {} GeV): σ = {} pb over {} channels",
             integ.final_state_count(k),
             ids.join(" "),
             masses.join(", "),
-            part.integral * unit,
-            part.std_dev * unit,
+            value_and_error(part.integral * unit, part.std_dev * unit),
             integ.offsets()[k + 1] - integ.offsets()[k],
         );
     }
@@ -1215,7 +1287,7 @@ fn integrate_fixed_energy(
         observable: initial.observable(),
         pdf: PdfInput::None,
         // No parton distributions, so no factorisation scale enters the integral.
-        mu_f: 0.0,
+        mu_f: FactorizationScale::NoDensities,
         sqrt_s,
         channels: per_channel
             .iter()
@@ -1245,6 +1317,76 @@ mod tests {
     use super::*;
     use clap::Args;
     use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
+
+    /// A value's last printed digit sits where its error's second significant
+    /// figure does, across the decades a cross section or a width spans, and an
+    /// error that bounds nothing leaves the value exact.
+    #[test]
+    fn a_value_keeps_the_digits_its_error_supports() {
+        for (value, error, printed) in [
+            (8.681_234_567e-6, 2.345e-9, "8.6812e-6 ± 2.3e-9"),
+            (934.4237, 0.8712, "9.3442e2 ± 8.7e-1"),
+            (1.952_37e-3, 1.96e-4, "1.95e-3 ± 2.0e-4"),
+            // The error's rounding carries it into the next decade.
+            (4.0e-7, 9.96e-9, "4.00e-7 ± 1.0e-8"),
+            // The value's rounding carries it into the next decade.
+            (9.999_996e-6, 2.3e-9, "1.00000e-5 ± 2.3e-9"),
+            // An error larger than the value still leaves two figures.
+            (3.0e-5, 4.4e-4, "3.0e-5 ± 4.4e-4"),
+            (-1.234_56e-2, 1.1e-4, "-1.235e-2 ± 1.1e-4"),
+            (0.0, 1.1e-4, "0e0 ± 1.1e-4"),
+            (0.125, 0.0, "1.25e-1 ± 0e0"),
+        ] {
+            assert_eq!(value_and_error(value, error), printed, "{value} ± {error}");
+        }
+    }
+
+    fn scale_of(card: &str) -> FactorizationScale {
+        FactorizationScale::of(&RunCard::parse(card).expect("the card parses"))
+            .expect("the prescription compiles")
+    }
+
+    /// The factorization scale is read from the fixed flags alone: a fixed μF
+    /// is the run's constant whatever μR does, and a per-event or per-beam one
+    /// is recorded as no constant at all.
+    #[test]
+    fn the_factorization_scale_is_named_by_its_fixed_flags() {
+        let fixed = "True = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+                     91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n";
+        assert_eq!(scale_of(fixed), FactorizationScale::Constant(91.188));
+        assert_eq!(scale_of(fixed).recorded(), Some(91.188));
+        assert_eq!(scale_of(fixed).to_string(), "μF = 91.188 GeV");
+
+        let running_ren = fixed.replace("True = fixed_ren_scale", "False = fixed_ren_scale");
+        assert_eq!(scale_of(&running_ren), FactorizationScale::Constant(91.188));
+
+        let per_beam = fixed.replace("91.188 = dsqrt_q2fact2", "50 = dsqrt_q2fact2");
+        assert_eq!(
+            scale_of(&per_beam),
+            FactorizationScale::PerBeam([91.188, 50.0])
+        );
+        assert_eq!(scale_of(&per_beam).recorded(), None);
+        assert_eq!(
+            scale_of(&per_beam).to_string(),
+            "μF = 91.188 GeV, 50 GeV by beam"
+        );
+
+        let dynamical = "False = fixed_ren_scale\nFalse = fixed_fac_scale\n\
+                         -1 = dynamical_scale_choice\n";
+        assert_eq!(
+            scale_of(dynamical),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+        assert_eq!(scale_of(dynamical).recorded(), None);
+        assert_eq!(scale_of(dynamical).to_string(), "μF dynamical, choice -1");
+        let one_beam = format!("{dynamical}True = fixed_fac_scale1\n30 = dsqrt_q2fact1\n");
+        assert_eq!(
+            scale_of(&one_beam),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+
+        assert_eq!(FactorizationScale::NoDensities.recorded(), None);
+    }
 
     /// `--seed`'s help spells the default seed out, since a doc comment cannot
     /// name a constant; this keeps the two equal.

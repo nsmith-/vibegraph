@@ -518,8 +518,15 @@ def runcmsgrid_systematics(text):
 # --- vibegraph output ------------------------------------------------------
 
 VG_SIGMA = re.compile(r"^σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+)", re.M)
-VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)\): σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
-VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan)\)")
+# A part's line names its process numbers and, in output from builds that split
+# a part by outgoing masses, those masses: `(@0)` or `(@0 @1; masses 0, 172.5
+# GeV)`. A part is recorded under its first process number, which no other part
+# shares.
+VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)(?: @\d+)*(?:; masses [^)]*)?\): "
+                     r"σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
+# χ²/dof reads `n/a` where fewer than two iterations entered the result, which
+# `_f` records as NULL.
+VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan|n/a)\)")
 VG_CHANNELS = re.compile(r"channels:\s+(\d+) grids")
 VG_MODEL = re.compile(r"model:?\s+(\S+) \(([0-9a-f]{64})\)")
 VG_ENUMERATED = re.compile(r"enumerated (\d+) diagrams in (\d+) subprocess")

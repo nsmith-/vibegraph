@@ -3337,7 +3337,7 @@ fn probe_the_no_scale_production_sigma_against_flat_rambo() {
                 let (s, e) = (r.integral * GEV2_TO_PB, r.std_dev * GEV2_TO_PB);
                 eprintln!(
                     "    {label} seed {seed}: σ = {s:.5e} ± {e:.2e} pb, iteration χ²/dof {:.2}",
-                    r.chi2_per_dof
+                    vibegraph::vegas::Chi2PerDof(r.chi2_per_dof)
                 );
                 runs.push((s, e));
             }

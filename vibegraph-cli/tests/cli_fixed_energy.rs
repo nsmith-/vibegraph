@@ -348,3 +348,125 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
         widest(&unbounded)
     );
 }
+
+/// `e+ e- > mu+ mu-` at √ŝ = 100 TeV on `--fixed-budget --niter <niter>`: the
+/// artifact, the result line on stdout and the run summary on stderr.
+fn run_small_sigma(niter: &str) -> (IntegrateArtifact, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_path = tmp.path().join("proc_card.dat");
+    let run_path = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    std::fs::write(&run_path, fixed_beams(5.0e4, 5.0e4)).unwrap();
+    let out = tmp.path().join("out");
+    let output = common::vibegraph(tmp.path(), tmp.path())
+        .arg("integrate")
+        .arg(&proc_path)
+        .arg("--run-card")
+        .arg(&run_path)
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "4000", "--niter", niter])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&output);
+    assert!(output.status.success(), "integrate failed:\n{stderr}");
+    let artifact =
+        IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
+    (artifact, common::stdout_of(&output), stderr)
+}
+
+/// The base-10 exponent of a printed number's last digit: `8.6812e-6` ends at
+/// `1e-10`, `0.000009` at `1e-6`.
+fn last_place(text: &str) -> i32 {
+    let (mantissa, exponent) = text.split_once('e').unwrap_or((text, "0"));
+    let decimals = mantissa.split_once('.').map_or(0, |(_, d)| d.len()) as i32;
+    exponent.parse::<i32>().expect("an exponent") - decimals
+}
+
+/// A cross section of order `1e-5` pb is printed with the digits its error
+/// supports: the error to two significant figures, and σ to the place of the
+/// error's second, so σ reads back to within a twentieth of its error and
+/// carries no digit below that place.
+#[test]
+fn a_small_cross_section_prints_the_digits_its_error_supports() {
+    let (artifact, stdout, _) = run_small_sigma("4");
+    let (sigma, err) = (artifact.sigma_pb, artifact.sigma_err_pb);
+    assert!(
+        (1.0e-6..1.0e-4).contains(&sigma) && err > 0.0,
+        "σ = {sigma} ± {err} pb is not the small cross section this test is for"
+    );
+    let line = stdout
+        .lines()
+        .find(|l| l.starts_with("σ = "))
+        .unwrap_or_else(|| panic!("no result line in:\n{stdout}"));
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    assert_eq!(
+        (fields.len(), fields[3], fields[5]),
+        (6, "±", "pb"),
+        "{line}"
+    );
+    let (sigma_text, err_text) = (fields[2], fields[4]);
+    let printed_sigma: f64 = sigma_text.parse().expect("σ parses");
+    let printed_err: f64 = err_text.parse().expect("the error parses");
+
+    let mantissa = err_text.split_once('e').map_or(err_text, |(m, _)| m);
+    assert_eq!(
+        mantissa.chars().filter(char::is_ascii_digit).count(),
+        2,
+        "{line}: the error carries two significant figures"
+    );
+    assert!(
+        (printed_err / err - 1.0).abs() <= 0.05,
+        "{line}: the error reads {printed_err} for {err}"
+    );
+    assert_eq!(
+        last_place(sigma_text),
+        last_place(err_text),
+        "{line}: σ's last digit is not at the error's second significant figure"
+    );
+    assert!(
+        (printed_sigma - sigma).abs() <= 0.05 * err,
+        "{line}: σ reads {printed_sigma} for {sigma} ± {err}"
+    );
+}
+
+/// A `--fixed-budget --niter 3` run keeps one iteration past the two warm-up
+/// ones, and a χ² over one value has no degree of freedom: the summary prints
+/// `n/a` and the artifact records no χ²/dof, for the run or any channel. A
+/// fourth iteration makes it a number again, printed as the artifact records
+/// it. A fixed-energy run reads no parton densities, which the summary says
+/// and the artifact records as no factorization scale.
+#[test]
+fn a_chi2_over_one_iteration_is_reported_undefined() {
+    let vegas_line = |log: &str| -> String {
+        log.lines()
+            .find(|l| l.contains("VEGAS:"))
+            .unwrap_or_else(|| panic!("no VEGAS summary in:\n{log}"))
+            .to_string()
+    };
+    let (one, _, log) = run_small_sigma("3");
+    let line = vegas_line(&log);
+    assert!(
+        line.contains(" over 3 iters,") && line.trim_end().ends_with("(χ²/dof = n/a)"),
+        "{line}"
+    );
+    assert_eq!(one.chi2_per_dof, None);
+    for (j, c) in one.channels.iter().enumerate() {
+        assert_eq!(c.chi2_per_dof, None, "channel {j}");
+    }
+    assert!(log.contains("GeV,  no parton densities"), "{log}");
+    assert!(!log.contains("μF"), "{log}");
+    assert_eq!(one.mu_f, None);
+
+    let (two, _, log) = run_small_sigma("4");
+    let chi2 = two
+        .chi2_per_dof
+        .expect("two kept iterations define a χ²/dof");
+    let line = vegas_line(&log);
+    assert!(
+        line.contains(" over 4 iters,")
+            && line.trim_end().ends_with(&format!("(χ²/dof = {chi2:.3})")),
+        "{line}"
+    );
+    assert!(two.channels.iter().all(|c| c.chi2_per_dof.is_some()));
+}
