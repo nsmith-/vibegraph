@@ -947,7 +947,7 @@ fn integrate_proton(
     network: NetworkPolicy,
     systematics: Option<&VariationRequest>,
 ) -> Result<RunOutput, CliError> {
-    let tiers = assets::pdf_tiers().map_err(err)?;
+    let tiers = assets::pdf_tiers();
     let fetch = assets::pdf_fetch(network);
     let loaded = load_for_run_card(rc, &tiers, &fetch)
         .map_err(|e| err(e.to_string()))?
