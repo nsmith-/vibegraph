@@ -26,3 +26,11 @@
   - Taken from the report: the census matches MadGraph's 6/6/30 two-assignment contents; σ is +0.30% against local MadEvent at 5 seeds, the same as the +0.32% nn23lo1/LHAPDF calibration offset; the workspace tests pass (1807).
   - The item stays open until the literal cards 024, 029 and 068 are measured (CERN-host extraction), and until D4, because every such hadronic card stops at `GroupCutsDiffer`.
   - Found, to file: cross-line duplicates are refused where MadGraph sums them; decay-chain strings drop `/ X` in messages; local MadEvent rows carry a +0.32% PDF offset (nn23lo1).
+* H-C1 done (cbfc8df, 604959c on `sprinth-cuts`). It deletes `xpt-nonpositive-refused` and `pt-min-pdg-refused`.
+  - Taken from the report:
+    - `validate.sh` exit 0 (213 ✅ / 5 ⚠️, measured cells = declared); workspace 1814 passed;
+    - 8 of 8 mutations caught;
+    - per-event Z pT ≥ 100 on vibegraph and MadGraph events;
+    - σ of `p p > z j` at `{23: 100}`: vibegraph 604.136 ± 0.112 (20 seeds) against local MadGraph 603.55 ± 0.354 (`hard_survey = 2`, 5 seeds), +0.10%; the cut/no-cut ratio agrees to 0.07%.
+  - Two MadGraph defects: the light-code guard at `banner.py:4722` never fires; `setcuts.f:681–683` indexes legs with the list index, in hash-seed-dependent order. The cards both reach are refused, and the manager catalogued both (f111d23).
+  - Found, to file: `mxx_only_part_antipart` is wrongly `IgnoredBenign`; upstream report drafts for the two defects.
