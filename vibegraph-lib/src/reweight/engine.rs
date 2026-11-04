@@ -1040,7 +1040,7 @@ mod tests {
                 .map_or(at.param_values[&p.name].re, |(_, v)| *v);
             card.insert(lha_block, lha_code.clone(), value);
         }
-        EvaluatedModel::from_model_card(model, &card)
+        EvaluatedModel::from_model_card(model, &card).unwrap()
     }
 
     /// The oracle every path answers to: the unpruned amplitude bound directly at

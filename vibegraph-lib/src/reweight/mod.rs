@@ -46,6 +46,8 @@
 //! the tests hold them to it.
 
 pub mod card;
+#[cfg(test)]
+mod classes;
 pub mod engine;
 pub(crate) mod poly;
 
@@ -85,6 +87,23 @@ pub enum ReweightError {
          the vertices it feeds; generate with a restriction that keeps it non-zero"
     )]
     Locked { line: usize, name: String },
+    #[error(
+        "line {line}: `{name}` is fixed to one by the model's restriction, as MadGraph's \
+         restriction fixes it and removes it from the model it reweights in; generate with a \
+         restriction that keeps it free"
+    )]
+    FixedOne { line: usize, name: String },
+    #[error(
+        "launch `{launch}` moves {group} apart, which the model's restriction merged as \
+         MadGraph's does (each a fixed multiple of `{first}`, by MadGraph's factors {factors}); \
+         move them together, or generate with a restriction that keeps them apart"
+    )]
+    SplitsMerged {
+        launch: String,
+        group: String,
+        first: String,
+        factors: String,
+    },
     #[error(
         "line {line}: `{name}` moves the strong coupling, which each event takes from the \
          run's scale choice; that is a scale variation, not a parameter reweight"
@@ -206,11 +225,18 @@ pub fn resolve(card: &ReweightCard, model: &UFOModel) -> Result<Vec<Launch>, Rew
         let mut values: Vec<(String, f64)> = Vec::new();
         for change in &spec.changes {
             let name = check_movable(model, external_name(model, change)?, change.line())?;
+            if model.params.ones.contains(&name) && change.value() != 1.0 {
+                return Err(ReweightError::FixedOne {
+                    line: change.line(),
+                    name,
+                });
+            }
             match values.iter_mut().find(|(n, _)| *n == name) {
                 Some(entry) => entry.1 = change.value(),
                 None => values.push((name, change.value())),
             }
         }
+        check_merged(model, &id, &values)?;
         let info = spec.info.clone().unwrap_or_else(|| {
             if spec.changes.is_empty() {
                 return "no change".to_string();
@@ -224,6 +250,42 @@ pub fn resolve(card: &ReweightCard, model: &UFOModel) -> Result<Vec<Launch>, Rew
         launches.push(Launch { id, info, values });
     }
     Ok(launches)
+}
+
+/// Refuse a hypothesis that moves a member of a group the restriction merged
+/// ([`ParameterSet::merged`](crate::ufo::parameters::ParameterSet)) without
+/// moving every member to its factor times the group's first. The run's own
+/// point keeps the relation (`bind_card` holds a card to it), so a group no
+/// hypothesis touches keeps it too.
+fn check_merged(
+    model: &UFOModel,
+    launch: &str,
+    values: &[(String, f64)],
+) -> Result<(), ReweightError> {
+    let value = |name: &str| values.iter().find(|(n, _)| n == name).map(|(_, v)| *v);
+    for group in &model.params.merged {
+        if group.iter().all(|(name, _)| value(name).is_none()) {
+            continue;
+        }
+        let first = value(&group[0].0);
+        let kept = group
+            .iter()
+            .all(|(name, factor)| match (value(name), first) {
+                (Some(v), Some(f)) => v == factor * f,
+                _ => false,
+            });
+        if !kept {
+            let names: Vec<String> = group.iter().map(|(n, _)| format!("`{n}`")).collect();
+            let factors: Vec<String> = group.iter().map(|(_, f)| f.to_string()).collect();
+            return Err(ReweightError::SplitsMerged {
+                launch: launch.to_string(),
+                group: names.join(" and "),
+                first: group[0].0.clone(),
+                factors: factors.join(", "),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// The external parameter a change addresses.
