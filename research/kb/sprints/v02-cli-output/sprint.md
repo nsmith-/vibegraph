@@ -3,7 +3,7 @@ type: Sprint
 title: "v0.2 CLI output that misleads"
 description: "The integrate summary prints σ with significant figures, χ²/dof as n/a over fewer than two iterations, and the scale choice instead of μF = 0 GeV; optional part three of sprint G, one PR."
 status: draft
-active: true
+active: false
 tags: [cli, output, artifact, sprint-g, v0.2]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-03}
 ---
