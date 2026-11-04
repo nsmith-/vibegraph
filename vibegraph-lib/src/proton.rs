@@ -5134,7 +5134,8 @@ mod tests {
         let card: crate::ufo::slha::ParamCard = "BLOCK MASS\n  5 0.0\nBLOCK YUKAWA\n  5 0.0\n"
             .parse()
             .expect("param card");
-        let evaluated = EvaluatedModel::from_model_card(m.clone(), &card);
+        let evaluated =
+            EvaluatedModel::from_model_card(m.clone(), &card).expect("a card without Auto widths");
         let mut run_card = RunCard::default();
         run_card.maxjetflavor = 5;
 
