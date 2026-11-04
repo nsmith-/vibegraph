@@ -181,15 +181,11 @@ fn reference() -> &'static Reference {
     })
 }
 
-/// `(value, error)` read off a command's result line, `Γ = <v> ± <e> GeV`.
+/// `(value, error)` read off a command's width line, in GeV.
 fn parse_width(stdout: &str) -> (f64, f64) {
-    let line = stdout
-        .lines()
-        .find(|l| l.starts_with("Γ = "))
-        .unwrap_or_else(|| panic!("no width line in:\n{stdout}"));
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    assert_eq!(fields[fields.len() - 1], "GeV", "{line}");
-    (fields[2].parse().unwrap(), fields[4].parse().unwrap())
+    let result = common::result_line(stdout);
+    assert_eq!(result.symbol, "Γ", "{}", result.line);
+    (result.value, result.error)
 }
 
 fn proc_card(dir: &Path, process: &str) -> PathBuf {

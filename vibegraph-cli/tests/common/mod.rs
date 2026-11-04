@@ -113,3 +113,104 @@ pub fn integrate_from_bare_cwd(
         .output()
         .expect("spawn vibegraph")
 }
+
+/// A measurement as `integrate` prints it, `σ = <v> ± <e> <prefix>b` or
+/// `Γ = <v> ± <e> <prefix>eV`, read back.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct ResultLine<'a> {
+    /// The whole line the measurement was read from.
+    pub line: &'a str,
+    /// `σ` or `Γ`.
+    pub symbol: &'a str,
+    /// The two numbers as printed, in the printed unit.
+    pub value_text: &'a str,
+    pub error_text: &'a str,
+    /// The printed unit, prefix included (`ab`, `eV`).
+    pub unit: &'a str,
+    /// The value and its error in the unit the artifact records: pb for a cross
+    /// section, GeV for a width.
+    pub value: f64,
+    pub error: f64,
+}
+
+/// The first result line of `stdout`. Panics, naming the line, on any other
+/// shape or on a unit that is not an SI-prefixed barn (σ) or electronvolt (Γ).
+#[allow(dead_code)]
+pub fn result_line(stdout: &str) -> ResultLine<'_> {
+    let line = stdout
+        .lines()
+        .find(|l| l.starts_with("σ = ") || l.starts_with("Γ = "))
+        .unwrap_or_else(|| panic!("no result line in:\n{stdout}"));
+    measurement(line, line)
+}
+
+/// The cross section a mixed-multiplicity run's summary gives the part with
+/// `n_out` outgoing legs, `N outgoing legs (…): σ = <v> ± <e> <prefix>b over M
+/// channels`, read back as [`result_line`] reads the total.
+#[allow(dead_code)]
+pub fn part_line(stderr: &str, n_out: usize) -> ResultLine<'_> {
+    let line = stderr
+        .lines()
+        .find(|l| l.contains(&format!(" {n_out} outgoing legs (")))
+        .unwrap_or_else(|| panic!("no {n_out}-leg part line in:\n{stderr}"));
+    let start = line
+        .find("σ = ")
+        .unwrap_or_else(|| panic!("{line:?} has no σ"));
+    let end = line
+        .rfind(" over ")
+        .unwrap_or_else(|| panic!("{line:?} has no channel count"));
+    measurement(line, &line[start..end])
+}
+
+/// `text`, `<symbol> = <value> ± <error> <unit>`, read off `line`.
+fn measurement<'a>(line: &'a str, text: &'a str) -> ResultLine<'a> {
+    let fields: Vec<&str> = text.split_whitespace().collect();
+    let [symbol, "=", value_text, "±", error_text, unit] = fields[..] else {
+        panic!("{line:?} is not `<symbol> = <value> ± <error> <unit>`");
+    };
+    // The exponent of the unit artifacts record (pb = 1e-12 b, GeV = 1e9 eV).
+    let (base, recorded_exp) = match symbol {
+        "σ" => ("b", -12),
+        _ => ("eV", 9),
+    };
+    let prefix = unit
+        .strip_suffix(base)
+        .unwrap_or_else(|| panic!("{line:?}: {symbol} is not in a unit of {base}"));
+    let prefix_exp = match prefix {
+        "z" => -21,
+        "a" => -18,
+        "f" => -15,
+        "p" => -12,
+        "n" => -9,
+        "\u{b5}" => -6,
+        "m" => -3,
+        "" => 0,
+        "k" => 3,
+        "M" => 6,
+        "G" => 9,
+        "T" => 12,
+        other => panic!("{line:?}: unknown SI prefix {other:?}"),
+    };
+    // One multiplication or division by an exact power of ten.
+    let shift = prefix_exp - recorded_exp;
+    let in_recorded = |text: &str| -> f64 {
+        let x: f64 = text
+            .parse()
+            .unwrap_or_else(|_| panic!("{line:?}: {text:?} is not a number"));
+        if shift >= 0 {
+            x * 10f64.powi(shift)
+        } else {
+            x / 10f64.powi(-shift)
+        }
+    };
+    ResultLine {
+        line,
+        symbol,
+        value_text,
+        error_text,
+        unit,
+        value: in_recorded(value_text),
+        error: in_recorded(error_text),
+    }
+}
