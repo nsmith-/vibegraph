@@ -215,7 +215,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
     assert_eq!(run_card.beam_mode(), BeamMode::FixedEnergy);
 
     let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.dir));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.dir)).unwrap();
 
     let sets = common::generate(row.process);
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");

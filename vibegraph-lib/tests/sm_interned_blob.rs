@@ -54,8 +54,8 @@ fn interned_default_matches_submodule() {
 
     // Same evaluated physics on the empty param card.
     let card = "".parse::<ParamCard>().unwrap();
-    let ev_i = EvaluatedModel::from_model_card(interned.clone(), &card);
-    let ev_f = EvaluatedModel::from_model_card(fresh.clone(), &card);
+    let ev_i = EvaluatedModel::from_model_card(interned.clone(), &card).unwrap();
+    let ev_f = EvaluatedModel::from_model_card(fresh.clone(), &card).unwrap();
     for name in ["MZ", "MW", "MT", "aS", "G", "ee"] {
         let vi = ev_i.param_values.get(name).map(|c| c.re);
         let vf = ev_f.param_values.get(name).map(|c| c.re);

@@ -117,6 +117,7 @@ impl VertexTerm {
             .iter()
             .map(|term| {
                 super::root_lorentz::root_term(term, &lorentz.spins, flow, result_leg_idx, flows)
+                    .map_err(|e| e.in_structure(&lorentz.name, &lorentz.structure))
             })
             .collect::<Result<Vec<_>, _>>()?;
 

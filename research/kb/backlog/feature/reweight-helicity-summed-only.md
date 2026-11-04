@@ -26,3 +26,9 @@ Needs: the selected helicity carried to the reweighter (it is written, not
 kept per event); a refusal or fallback for events whose recorded helicity has
 `|M_card(λ)|² = 0`; on the polynomial path, the Gram contraction restricted to
 one helicity combination.
+
+A reweight card without `change helicity False` asks MadGraph for the
+per-helicity ratio, while `generate` writes the helicity-summed one. Sprint G
+left such cards accepted and recorded the divergence in the
+[reweight-card classification](../../events/reweight-card-classification.md);
+whether to refuse them until this item closes is this item's call.

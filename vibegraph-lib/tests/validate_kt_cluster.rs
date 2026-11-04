@@ -1492,7 +1492,8 @@ fn derived_channel_forests_match_the_generated_ones() {
                 .join("Cards/param_card.dat"),
         )
         .expect("param card");
-        let evaluated = vibegraph::ufo::EvaluatedModel::from_model_card(model.clone(), &card);
+        let evaluated =
+            vibegraph::ufo::EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
         let sets = common::generate_with(process, model.as_ref());
         let set = sets

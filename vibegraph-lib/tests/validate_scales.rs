@@ -1515,7 +1515,7 @@ impl Channels {
 fn channels_for(name: &str, run: &Path) -> Channels {
     let model = common::model_for_row(name).unwrap_or_else(|e| panic!("{name}: {e}"));
     let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &params);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &params).unwrap();
     let card = run_card(run);
     let proc = vibegraph::diagrams::parse_proc_card_file(
         &run.join("Cards/proc_card_mg5.dat"),

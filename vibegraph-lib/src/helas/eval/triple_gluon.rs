@@ -231,7 +231,8 @@ impl MadGraphRow {
         let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
         let jamp = jamp.unwrap_or_else(|| vec![complexes(&table["jamp_coefficients"])]);
         let model = sm_model(SMRestrict::Default);
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(&table));
+        let evaluated =
+            EvaluatedModel::from_model_card(model.clone(), &param_card(&table)).unwrap();
 
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();

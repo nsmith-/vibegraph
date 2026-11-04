@@ -880,7 +880,7 @@ mod tests {
                 python_name: "V1".to_owned(),
                 name: "V1".to_owned(),
                 numerator: "- Metric(1, 2)".to_owned(),
-                denominator: "P('mu', id) * P('mu', id)".to_owned(),
+                denominator: Some("P('mu', id) * P('mu', id)".to_owned()),
             },
         );
         parsed

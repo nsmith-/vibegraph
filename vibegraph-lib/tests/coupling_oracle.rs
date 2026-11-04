@@ -300,7 +300,7 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         .param_card
         .parse::<ParamCard>()
         .map_err(|e| format!("[{name}] banked param card: {e:?}"))?;
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     // ── this crate against MadGraph's Python ──────────────────────────────────
 

@@ -1131,7 +1131,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .param_card
         .parse::<ParamCard>()
         .map_err(|e| format!("[{name}] banked param card: {e:?}"))?;
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let sets = common::generate_with(&table.process, model.as_ref());
     let set = sets

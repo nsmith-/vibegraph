@@ -1004,6 +1004,10 @@ pub(crate) struct BlockIteration {
     /// An integrand whose support had interior zeros would be undercounted by
     /// them, a set a continuous draw hits with probability zero.
     pub(crate) accepted: usize,
+    /// `Σwᵢ²` over the block's points, unscaled: with
+    /// [`integral`](Self::integral) and the point count it is what an
+    /// effective sample size `(Σw)²/Σw²` is formed from.
+    pub(crate) sum_sq: f64,
     /// `hist[dim][bin]` as the grid's [`GridRule`] accumulates it, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
@@ -1144,6 +1148,7 @@ where
             integral: mean,
             variance,
             accepted,
+            sum_sq: sum2,
             hist: hist.finish(),
         });
     }

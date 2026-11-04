@@ -148,7 +148,7 @@ fn flat_mc_partonic_sigma() {
     let card = card_text
         .parse::<ParamCard>()
         .unwrap_or_else(|e| panic!("{}: {e:?}", card_path.display()));
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).expect("compile");
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);

@@ -16,11 +16,15 @@
 //! address names is resolved against a model later ([`super::resolve`]); this layer
 //! only reads the card.
 //!
-//! Everything else MadGraph's reweight module understands — `change model`,
-//! `change process`, `change helicity`, a param-card path in place of `set` lines,
-//! `scan:` values — is refused with the line it appeared on rather than skipped:
-//! a skipped directive would write weights for a hypothesis other than the one the
-//! card describes.
+//! Of MadGraph's `change` options, the ones that select what this reweighting
+//! already does (`change helicity False`, `change output default`) or that only
+//! direct MadGraph's own working files (`change rwgt_dir`, `change multicore`)
+//! are accepted and read no further. Everything else MadGraph's reweight module
+//! understands — the other `change` options, a param-card path in place of
+//! `set` lines, `scan:` values, a command after `done` — is refused with the
+//! line it appeared on rather than skipped: a skipped directive would write
+//! weights for a hypothesis other than the one the card describes. Every line
+//! refused is reported at once.
 
 use std::fmt;
 use std::str::FromStr;
@@ -113,6 +117,84 @@ pub enum CardError {
     SetBeforeLaunch { line: usize },
     #[error("the card has no `launch` block")]
     Empty,
+    #[error(
+        "line {line}: a command after `{end}` on line {end_line}; MadGraph reads a reweight card \
+         to its end and would run it, so remove `{end}` or the lines after it"
+    )]
+    AfterEnd {
+        line: usize,
+        end: String,
+        end_line: usize,
+    },
+    /// More than one line of the card is refused; each is listed.
+    #[error("{}", several(.0))]
+    Several(Vec<CardError>),
+}
+
+fn several(errors: &[CardError]) -> String {
+    errors
+        .iter()
+        .map(CardError::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// What a `change` line asks for, by MadGraph's option name
+/// (`ReweightInterface.do_change`, `madgraph/interface/reweight_interface.py`).
+fn change(args: &[&str]) -> Result<(), ChangeRefusal> {
+    use ChangeRefusal::{Malformed, Unsupported};
+    let Some(option) = args.first().map(|o| o.to_ascii_lowercase()) else {
+        return Err(Malformed("`change` needs an option and a value".into()));
+    };
+    let value = args.get(1).map(|v| v.to_ascii_lowercase());
+    let Some(value) = value else {
+        return Err(Malformed(format!("`change {option}` needs a value")));
+    };
+    match option.as_str() {
+        "helicity" => match value.as_str() {
+            "false" | "f" | "0" | ".false." | "off" | "no" | "n" => Ok(()),
+            "true" | "t" | "1" | ".true." | "on" | "yes" | "y" => Err(Unsupported(
+                "the ratio in each event's own helicity, MadGraph's default; only the \
+                 helicity-summed ratio (`change helicity False`) is written",
+            )),
+            _ => Err(Malformed(format!("`{value}` is not a boolean"))),
+        },
+        "output" if value == "default" => Ok(()),
+        "output" => Err(Unsupported(
+            "one event file per hypothesis; only weights added to the events are written",
+        )),
+        // MadGraph's own working directory and parallelism: neither reaches a weight.
+        "rwgt_dir" | "multicore" => Ok(()),
+        "model" | "process" => Err(Unsupported(
+            "reweighting evaluates the generated process in the generated model; a \
+             different model or process is not available",
+        )),
+        "mode" => Err(Unsupported("only the leading-order ratio is computed")),
+        "systematics" => Err(Unsupported(
+            "systematics on each hypothesis need MadGraph's per-hypothesis output",
+        )),
+        "keep_ordering" | "use_eventid" | "allow_missing_finalstate" => Err(Unsupported(
+            "each event is evaluated in the subprocess it was generated in",
+        )),
+        "boost" => Err(Unsupported("the events are evaluated as written")),
+        "tree_path" | "virtual_path" => Err(Unsupported(
+            "the matrix element is this crate's, not a library's",
+        )),
+        "soft_threshold" => Err(Unsupported("no soft threshold is applied")),
+        "identical_particle_in_prod_and_decay" => Err(Unsupported(
+            "decayed events with identical particles are not matched specially",
+        )),
+        "include_sudakov" => Err(Unsupported("no Sudakov factor is applied")),
+        _ => Err(Unsupported(
+            "MadGraph does not know this option and discards the line",
+        )),
+    }
+}
+
+/// Why a `change` line is refused.
+enum ChangeRefusal {
+    Unsupported(&'static str),
+    Malformed(String),
 }
 
 impl FromStr for ReweightCard {
@@ -120,13 +202,24 @@ impl FromStr for ReweightCard {
 
     fn from_str(text: &str) -> Result<Self, CardError> {
         let mut launches: Vec<LaunchSpec> = Vec::new();
+        let mut errors: Vec<CardError> = Vec::new();
+        // `done`, `exit` or `quit` and its line, once seen.
+        let mut ended: Option<(String, usize)> = None;
         for (index, raw) in text.lines().enumerate() {
             let line = index + 1;
             let content = raw.split('#').next().unwrap_or("").trim();
-            if content.is_empty() {
+            let tokens: Vec<&str> = content.split_whitespace().collect();
+            let Some(&command) = tokens.first() else {
+                continue;
+            };
+            if let Some((end, end_line)) = &ended {
+                errors.push(CardError::AfterEnd {
+                    line,
+                    end: end.clone(),
+                    end_line: *end_line,
+                });
                 continue;
             }
-            let tokens: Vec<&str> = content.split_whitespace().collect();
             let malformed = |reason: String| CardError::Malformed {
                 line,
                 text: content.to_string(),
@@ -137,41 +230,47 @@ impl FromStr for ReweightCard {
                 text: content.to_string(),
                 reason,
             };
-            match tokens[0].to_ascii_lowercase().as_str() {
-                "launch" => launches.push(parse_launch(&tokens[1..], line).map_err(malformed)?),
+            match command.to_ascii_lowercase().as_str() {
+                "launch" => match parse_launch(&tokens[1..], line) {
+                    Ok(launch) => launches.push(launch),
+                    Err(reason) => errors.push(malformed(reason)),
+                },
                 "set" => {
-                    let launch = launches
-                        .last_mut()
-                        .ok_or(CardError::SetBeforeLaunch { line })?;
+                    let Some(launch) = launches.last_mut() else {
+                        errors.push(CardError::SetBeforeLaunch { line });
+                        continue;
+                    };
                     if tokens[1..].iter().any(|t| is_scan_value(t)) {
-                        return Err(unsupported(
+                        errors.push(unsupported(
                             "scan values; write one `launch` block per value",
                         ));
+                        continue;
                     }
-                    launch
-                        .changes
-                        .push(parse_set(&tokens[1..], line).map_err(malformed)?);
+                    match parse_set(&tokens[1..], line) {
+                        Ok(change) => launch.changes.push(change),
+                        Err(reason) => errors.push(malformed(reason)),
+                    }
                 }
-                "change" => {
-                    return Err(unsupported(
-                        "reweighting evaluates the generated process in the generated model; \
-                         a different model, process, helicity treatment or mode is not \
-                         available",
-                    ))
-                }
-                "done" | "exit" | "quit" => break,
-                _ if tokens[0].contains('/') || tokens[0].ends_with(".dat") => {
-                    return Err(unsupported(
+                "change" => match change(&tokens[1..]) {
+                    Ok(()) => {}
+                    Err(ChangeRefusal::Unsupported(reason)) => errors.push(unsupported(reason)),
+                    Err(ChangeRefusal::Malformed(reason)) => errors.push(malformed(reason)),
+                },
+                end @ ("done" | "exit" | "quit") => ended = Some((end.to_string(), line)),
+                _ if command.contains('/') || command.ends_with(".dat") => {
+                    errors.push(unsupported(
                         "a param card in place of `set` lines; give the changes as `set` lines",
                     ))
                 }
-                _ => return Err(malformed("unknown directive".to_string())),
+                _ => errors.push(malformed("unknown directive".to_string())),
             }
         }
-        if launches.is_empty() {
-            return Err(CardError::Empty);
+        match errors.len() {
+            0 if launches.is_empty() => Err(CardError::Empty),
+            0 => Ok(ReweightCard { launches }),
+            1 => Err(errors.remove(0)),
+            _ => Err(CardError::Several(errors)),
         }
-        Ok(ReweightCard { launches })
     }
 }
 
@@ -285,7 +384,7 @@ launch --rwgt_name=heavy
 launch --rwgt_info=two words --rwgt_name='light'
   set ymt 1.5e2
 done
-set ignored 1
+# nothing after the end
 "
         .parse()
         .unwrap();
@@ -337,6 +436,10 @@ set ignored 1
         for (text, line) in [
             ("change model sm-full\nlaunch\n", 1),
             ("launch\n change process p p > e+ e-\n", 2),
+            ("change helicity True\nlaunch\n", 1),
+            ("change output 2.0\nlaunch\n", 1),
+            ("change mode LO\nlaunch\n", 1),
+            ("change nosuch 1\nlaunch\n", 1),
             ("launch\n set ymt scan:[1,2]\n", 2),
             ("launch\n set mass 6 SCAN1:[170, 175]\n", 2),
             ("launch\n ./param_card.dat\n", 2),

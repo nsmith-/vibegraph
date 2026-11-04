@@ -42,6 +42,7 @@ use crate::proton::{
     derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonEvent, ProtonIntegrand,
 };
 use crate::runcard::RunCard;
+use crate::support::PointCensus;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{GridRule, IterationCombination, VegasResult};
@@ -590,6 +591,18 @@ impl<'a> MultiplicitySum<'a> {
             .zip(&self.budget_shares)
             .flat_map(|(p, &w)| p.channel_alphas().into_iter().map(move |a| a * w))
             .collect()
+    }
+
+    /// Every part's [`ProtonIntegrand::census`], added.
+    pub fn census(&mut self) -> PointCensus {
+        self.parts.iter_mut().map(|p| p.census()).sum()
+    }
+
+    /// Start every part's census over from zero.
+    pub fn clear_census(&mut self) {
+        for p in &mut self.parts {
+            p.clear_census();
+        }
     }
 
     /// Integrate every channel of every part under `budget`, one grid per

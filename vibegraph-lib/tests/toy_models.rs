@@ -650,3 +650,141 @@ fn mixed_sign_vertex_is_refused_at_compile() {
         "'{process}' was refused for another reason: {err}"
     );
 }
+
+/// A spin-2 `gt` (1 TeV) added to a copy of the toy model, coupling to the lepton
+/// pair and to the vector pair through the symmetric tensor structures UFO writes
+/// for a graviton: a spin-2 leg `k` carries the two Lorentz indices `1000+k` and
+/// `2000+k`.
+fn spin_two_toy_model() -> Arc<UFOModel> {
+    let particle = "\
+gt = Particle(pdg_code=9000039, name='gt', antiname='gt', spin=5, color=1,
+              mass=Param.MGT, width=Param.ZERO, texname='G', antitexname='G',
+              charge=0, GhostNumber=0, LeptonNumber=0)
+";
+    let parameter = "\
+MGT = Parameter(name='MGT', nature='external', type='real', value=1000.0,
+                texname='M_G', lhablock='MASS', lhacode=[9000039])
+";
+    let couplings = "\
+GC_GL = Coupling(name='GC_GL', value='complex(0,1)*gl', order={'NP': 1})
+GC_GV = Coupling(name='GC_GV', value='complex(0,1)*gq', order={'NP': 1})
+";
+    let lorentz = "\
+FFT1 = Lorentz(name='FFT1', spins=[2, 2, 5],
+               structure='P(2003,1)*Gamma(1003,2,1) + P(1003,1)*Gamma(2003,2,1)')
+VVT1 = Lorentz(name='VVT1', spins=[3, 3, 5],
+               structure='Metric(1,1003)*Metric(2003,2) + Metric(1,2003)*Metric(1003,2)')
+";
+    let vertices = "\
+V_ltltgt = Vertex(name='V_ltltgt', particles=[P.lt__tilde__, P.lt, P.gt], color=['1'],
+                  lorentz=[L.FFT1], couplings={(0, 0): C.GC_GL})
+V_vtvtgt = Vertex(name='V_vtvtgt', particles=[P.vt, P.vt, P.gt], color=['1'],
+                  lorentz=[L.VVT1], couplings={(0, 0): C.GC_GV})
+";
+    let card_mass = (
+        "restrict_all.dat",
+        "    9000025 2.000000e+02 # MST",
+        "    9000025 2.000000e+02 # MST\n    9000039 1.000000e+03 # MGT",
+    );
+    try_edited_toy_model(
+        &[card_mass],
+        &[
+            ("particles.py", particle),
+            ("parameters.py", parameter),
+            ("couplings.py", couplings),
+            ("lorentz.py", lorentz),
+            ("vertices.py", vertices),
+        ],
+    )
+    .unwrap_or_else(|e| panic!("load the spin-2 toy model: {e}"))
+}
+
+/// The compile error for `process` on `model`, panicking if it compiles.
+fn compile_refusal(model: &UFOModel, process: &str) -> String {
+    let sets = common::generate_with(process, model);
+    assert!(
+        sets.iter().any(|s| !s.diagrams.is_empty()),
+        "'{process}' enumerated no diagram"
+    );
+    for set in &sets {
+        if let Err(e) = AmplitudeEvaluator::compile(set, model) {
+            return e.to_string();
+        }
+    }
+    panic!("'{process}' compiled");
+}
+
+/// A spin-2 propagator is refused at compile, naming the particle, rather than
+/// lowered with its tensor indices read as leg numbers.
+///
+/// `lt~ lt > vt vt` at `NP<=2` carries the s-channel `gt` beside the lepton
+/// t-channel, so the refusal is of the whole process, not of its graviton
+/// diagrams alone. Blind to whether a spin-2 diagram would have evaluated
+/// correctly: it pins only that none is evaluated.
+#[test]
+fn internal_spin_two_is_refused_at_compile() {
+    let model = spin_two_toy_model();
+    let err = compile_refusal(&model, "lt~ lt > vt vt NP<=2");
+    assert!(
+        err.contains("'gt'") && err.contains("spin code 5") && err.contains("propagator"),
+        "{err}"
+    );
+}
+
+/// An external spin-2 leg is refused at compile, naming the particle.
+#[test]
+fn external_spin_two_is_refused_at_compile() {
+    let model = spin_two_toy_model();
+    let err = compile_refusal(&model, "lt~ lt > gt NP<=1");
+    assert!(
+        err.contains("'gt'") && err.contains("spin code 5") && err.contains("external"),
+        "{err}"
+    );
+}
+
+/// A process the graviton takes no part in compiles and evaluates on the model
+/// that carries it, to the same |M|² as on the toy model without it: the
+/// refusal is of spin-2 lines, not of a model that declares one.
+#[test]
+fn a_spin_two_model_still_runs_processes_without_it() {
+    let process = "lt~ lt > qt qt~ NP<=1";
+    let plain = UFOModel::load(
+        &toy_ufo_dir(),
+        Some(&toy_ufo_dir().join("restrict_all.dat")),
+    )
+    .expect("load the toy model");
+    let with_gt = spin_two_toy_model();
+    let mut rng = ChaCha8Rng::seed_from_u64(11);
+    let momenta = toy_point(1000.0, [10.0, 10.0], &[50.0, 50.0], &mut rng);
+    let m2 = |model: &Arc<UFOModel>| {
+        let set = common::generate_with(process, model.as_ref()).remove(0);
+        let ev = AmplitudeEvaluator::compile(&set, model.as_ref()).expect("compile");
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let amp = ScaleAwareAmplitude::<f64>::new(&ev, &evaluated);
+        let mut scratch = amp.scratch_space();
+        amp.eval_m2(&momenta, &mut scratch)
+    };
+    let (a, b) = (m2(&plain), m2(&with_gt));
+    assert!(a > 0.0 && a.is_finite(), "{a}");
+    assert_eq!(a, b);
+}
+
+/// A Lorentz index that names no leg of its vertex is refused at compile, naming
+/// the structure, rather than lowered as an input-leg number.
+///
+/// `Gamma(1003,2,1)` is a spin-2 tensor index on the vector slot of the toy's
+/// three-leg `FFV1`; no particle of the vertex is spin 2, so the spin refusal does
+/// not fire first.
+#[test]
+fn a_lorentz_index_naming_no_leg_is_refused_at_compile() {
+    let model = edited_toy_model(&[(
+        "lorentz.py",
+        "structure='Gamma(3,2,1)'",
+        "structure='Gamma(1003,2,1)'",
+    )]);
+    let err = compile_refusal(&model, "lt~ lt > vt vt NP=0");
+    assert!(
+        err.contains("FFV1") && err.contains("1003") && err.contains("names no leg"),
+        "{err}"
+    );
+}

@@ -169,7 +169,7 @@ fn rel(a: f64, b: f64) -> f64 {
 fn frame_deviations(key: &str) -> (f64, f64, f64) {
     let t = table(key);
     let model = sm_model(SMRestrict::Default);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &t.card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &t.card).unwrap();
     let pol = evaluator(&t.process, &model);
     assert!(
         pol.is_polarized(),
@@ -255,7 +255,7 @@ fn a_polarized_massless_leg_does_not_depend_on_the_frame() {
 fn the_polarized_terms_add_up_to_the_unpolarized_amplitude() {
     let t = table("ee_to_wp0wm");
     let model = sm_model(SMRestrict::Default);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &t.card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &t.card).unwrap();
     let terms =
         ["e+ e- > w+{0} w-", "e+ e- > w+{T} w-", "e+ e- > w+ w-"].map(|p| evaluator(p, &model));
     let bound: Vec<_> = terms

@@ -468,7 +468,7 @@ fn generate_and_check(row: &Row) {
     let alpha_qed = 1.0 / params.get("sminputs", &[1]).expect("aEWM1 in SMINPUTS");
 
     let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &params);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &params).unwrap();
     let sets = common::generate(row.process);
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
     let bounds: Vec<_> = evals

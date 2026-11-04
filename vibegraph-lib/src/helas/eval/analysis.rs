@@ -248,7 +248,7 @@ fn external_out_type(spin: i32, charge: Charge, incoming: bool) -> NodeType {
             }
         }
         3 => NodeType::Vector,
-        other => panic!("unsupported external spin code: {other}"),
+        other => unreachable!("external spin code {other}: AmplitudeEvaluator::compile refuses every spin code but 1, 2 and 3"),
     }
 }
 

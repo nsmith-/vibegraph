@@ -336,6 +336,17 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
 
     let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact)
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
+    // `integrate` refuses to bank a cross section of zero, but an artifact from a
+    // build without that refusal can hold one, and a zero σ has no maximum
+    // weight to unweight against.
+    if artifact.sigma_pb == 0.0 {
+        return Err(err(format!(
+            "{} records σ = 0: no point of that integration carried weight, so there is \
+             nothing to sample; re-integrate, and check the cuts and the parameters if it \
+             is refused",
+            args.artifact.display()
+        )));
+    }
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
         err(format!(
             "cannot parse the proc card recorded in {}: {e}; re-integrate",
@@ -410,7 +421,12 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     // The parameter point the grid was trained at: the restricted defaults with
     // the recorded moves applied. The digest check above has pinned the
     // defaults, so this is the point the integration evaluated.
-    let evaluated = bind_recorded(model.clone(), &artifact.inputs.params).map_err(|e| {
+    let evaluated = bind_recorded(
+        model.clone(),
+        &artifact.inputs.params,
+        &artifact.inputs.decays,
+    )
+    .map_err(|e| {
         err(format!(
             "cannot bind the parameters recorded in {}: {e}; re-integrate",
             args.artifact.display()

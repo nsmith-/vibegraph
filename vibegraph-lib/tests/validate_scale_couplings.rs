@@ -158,7 +158,7 @@ fn scaling_path_reproduces_the_reference_path() {
         }
         covered += 1;
         let table = read_table(&path, 2);
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &table.card);
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &table.card).unwrap();
         let alpha_s_ref = evaluated
             .alpha_s()
             .unwrap_or_else(|| panic!("{name}: the model carries no aS"));

@@ -46,9 +46,17 @@ pub enum EvalError {
     /// An external particle name is absent from the UFO model.
     #[error("particle not found in model: {0}")]
     ParticleNotFound(String),
-    /// An external leg carries a spin code with no defined helicity states.
-    #[error("unsupported external spin code: {0}")]
-    UnsupportedSpin(i32),
+    /// A line of the process carries a particle whose spin has no wavefunction
+    /// (external) or propagator (internal) here: spin 3/2 or spin 2.
+    #[error(
+        "particle '{particle}' has spin code {spin}, which has no {line} here \
+         (spin 3/2 and spin 2 are not supported)"
+    )]
+    UnsupportedSpin {
+        particle: String,
+        spin: i32,
+        line: SpinLine,
+    },
     /// A polarized leg lists no helicity, or one that is not a state of its
     /// particle.
     #[error("external leg {leg} ({particle}) is polarized to {listed:?}, which are not its helicity states")]
@@ -66,4 +74,23 @@ pub enum EvalError {
     /// Colorizing the subprocess (color basis + CF matrix) failed.
     #[error(transparent)]
     Color(#[from] crate::helas::color::ColorAlgebraError),
+}
+
+/// Which kind of line an [`EvalError::UnsupportedSpin`] particle sits on, named by
+/// the object the evaluator would need for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpinLine {
+    /// An external leg, which needs a wavefunction.
+    External,
+    /// An internal line, which needs a propagator.
+    Internal,
+}
+
+impl std::fmt::Display for SpinLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::External => "external wavefunction",
+            Self::Internal => "propagator",
+        })
+    }
 }

@@ -47,13 +47,15 @@ mark where each applies. What is still open is listed at the end of
 `inputs: RunInputs`:
 
 ```rust
-pub struct RunInputs { pub pdf: PdfInput, pub params: Vec<MovedParam> }
+pub struct RunInputs { pub pdf: PdfInput, pub params: Vec<MovedParam>, pub decays: Vec<DecayTable> }
 pub enum PdfInput {
     None,                                   // fixed-energy beams or a decay
     Lhapdf { lhaid: i64, set: String, member: u32, files: Vec<FileDigest> },
 }
 pub struct FileDigest { pub name: String, pub sha256: String }
 pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>, pub value: f64 }
+pub struct DecayTable { pub pdg: i32, pub channels: Vec<DecayChannel> }
+pub struct DecayChannel { pub branching_ratio: f64, pub daughters: Vec<i32> }
 ```
 
 - **`lhaid`** is the id actually loaded, `SetIndex + member`, equal to the
@@ -81,6 +83,13 @@ pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>,
   external as integrate had. No card, an empty card and a card restating the
   defaults all record `[]` and give byte-identical artifacts. The defaults are
   pinned by `model.digest`, which hashes the restricted model.
+- **`decays`**: the card's decay tables (the branching-ratio rows below a
+  `DECAY` line), in card order, each channel's daughters as the card lists
+  them. Nothing in the integration reads them: `generate` writes them below
+  their particles' `DECAY` lines in the `<slha>` header, in MadWidth's layout,
+  so a shower reading SLHA decays from the event file sees the card's tables,
+  as it does in a MadGraph file (whose header is the card verbatim). Added at
+  artifact version 18, which refuses version 17.
 
 ## 2. Version
 
