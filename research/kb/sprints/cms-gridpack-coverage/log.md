@@ -16,3 +16,9 @@
   - H-G1's scope was extended: compare CF under the fingerprint π, so the QCD pairs form one group; the split stays for genuinely incompatible pairs.
   - Found, to file: diagrams whose couplings the param card sets to exactly zero are kept (the Singlet cause; pruning departs from MadGraph); the item's MadGraph claim and its line numbers are stale.
 * The vibegraph manager queued two high-priority items, approved by the user, to start after the colour-split PR. They are on branch `claude/fervent-mayer-2hv310` (b1ba8ab) until its kb PR merges: `absent-run-card-maxjetflavor-ignores-beam-flavours` (first: a silent difference from MadGraph) and `five-flavour-ppjjj-refused-cut-indicator-differs`. Both were added to the plan as items 7 and 8.
+* H-D1 checked (f7ed6b0 on `sprinth-decay-duplicate`; report copied here). The manager spot-checked the census line (`30 30 True`, 226 subprocesses, 30 covered twice).
+  - MadGraph adds the two assignments incoherently.
+  - vibegraph's incoherent σ matches MadEvent (1.0σ gg, 0.12σ e+e−, 5 seeds).
+  - Interference ≤ 1e-3.
+  - Found: every hadronic decay chain with jets in the decay stops at `GroupCutsDiffer`; card 024's refusal is not reproduced with its stated form.
+* The user answered D3 (item 5 matches MadGraph) and D4 (per-group cut indicators come into scope) ([D3](decisions/D3-decay-duplicates-match-madgraph.md)).
