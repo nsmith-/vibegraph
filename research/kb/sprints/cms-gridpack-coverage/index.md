@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Sprint H: CMS gridpack coverage](sprint.md) - Lift the cheapest refusals of the 200-gridpack CMS survey (#71, campaign main-23d3a76-200-pc): colour-basis splits, near-degenerate groups, xpt* ≤ 0, pt_min_pdg, decay-chain duplicate subprocesses and massive incoming partons, each validated against MadGraph.
+
+## Directories
+
+* [decisions](decisions/index.md)
