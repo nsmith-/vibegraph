@@ -12,6 +12,7 @@
 * [amplitude-signs](amplitude-signs/index.md)
 * [banked-open-ends](banked-open-ends/index.md)
 * [ckm-no-b-mass](ckm-no-b-mass/index.md)
+* [cms-gridpack-coverage](cms-gridpack-coverage/index.md)
 * [color-flow](color-flow/index.md)
 * [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md)
 * [cut-refusal](cut-refusal/index.md)
