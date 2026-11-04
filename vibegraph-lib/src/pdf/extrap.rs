@@ -299,7 +299,7 @@ mod tests {
         let x = geomspace(X_KNOTS.0, X_KNOTS.1, 8);
         let q2 = geomspace(Q2_KNOTS.0, Q2_KNOTS.1, 8);
         (
-            LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], val)]),
+            LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &[1], val)]),
             val,
         )
     }
@@ -310,7 +310,7 @@ mod tests {
         let val = move |lx: f64, lq: f64| scale * (0.5 * lx - 0.25 * lq).exp();
         let x = geomspace(X_KNOTS.0, X_KNOTS.1, 8);
         let q2 = geomspace(Q2_KNOTS.0, Q2_KNOTS.1, 8);
-        LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], val)])
+        LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &[1], val)])
     }
 
     /// Above the Q² ceiling the continuation is a straight line through the top
@@ -446,7 +446,9 @@ mod tests {
         const Q2_FLOOR: f64 = 1.0;
         let x = geomspace(X_KNOTS.0, X_KNOTS.1, 8);
         let q2 = geomspace(Q2_FLOOR, 10.0, 12);
-        let steep = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], |_, lq| (-8.0 * lq).exp())]);
+        let steep = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &[1], |_, lq| {
+            (-8.0 * lq).exp()
+        })]);
 
         let at_floor: f64 = steep.xfx_q2(1, X, Q2_FLOOR).unwrap();
         let at_step: f64 = steep.xfx_q2(1, X, ANOM_STEP_POINT * Q2_FLOOR).unwrap();
@@ -479,7 +481,7 @@ mod tests {
 
         // The same shape scaled below the value floor takes exponent 1 at once,
         // which changes the reading's shape and not merely its size.
-        let tiny = LogBicubic::build(&[subgrid_from_fn(&x, &q2, &[1], |_, lq| {
+        let tiny = LogBicubic::build(vec![subgrid_from_fn(&x, &q2, &[1], |_, lq| {
             1e-9 * (-8.0 * lq).exp()
         })]);
         let tiny_at_floor: f64 = tiny.xfx_q2(1, X, Q2_FLOOR).unwrap();

@@ -93,7 +93,8 @@ Run the hermetic suite for everything. On top of it:
 | phase space, channel maps, VEGAS, multichannel budgets | `pixi run -e madgraph validate-sigma`, `validate-hadronic` |
 | unweighting, event selection | `pixi run -e madgraph validate-unweighting`, `validate-generate-proton` |
 | the LHEF writer/reader, colour selection in output | `pixi run -e madgraph validate-lhef`, plus `pixi run -e pythia validate-pythia` |
-| PDF grids, interpolation, the subgrid walk | `pixi run -e madgraph validate-pdf-grid` |
+| PDF grids, interpolation, the subgrid walk | `pixi run -e madgraph validate-pdf-grid`; for the interpolator's arithmetic or storage, also the long-tier `pixi run validate-cms-pdfs` (every reading of CMS's 880 members and NNPDF23 bit-identical to the coefficient-table oracle) |
+| systematics weights (`systematics/`, `generate --systematics`) | the banked `validate_systematics`; for anything a large `--pdf` list reaches (member loading, the writer over many sets), also `pixi run validate-cms-pdfs` |
 | the UFO loader, the SM model source, the submodule pin | `pixi run check-sm-blob-fresh` |
 | run-card parsing or defaults | `pixi run -e madgraph dump-runcard-defaults`, then the hermetic `scales_run_cards` test |
 | reweighting (`reweight/`, `generate --reweight-card`), and `EvaluatedModel::recompute` | `pixi run validate-reweight` (the hermetic MadGraph-reweight comparison, informational, and the banked `cli_reweight_proton` audit); after an amplitude, model or reweight-card change, `pixi run -e madgraph generate-reweight-oracle`, whose printed full-file comparison against MadGraph's reweight module is the end-to-end check |
@@ -155,6 +156,7 @@ pixi run ladder-2to6              # budget ladders, five seeds a rung
 pixi run ladder-bb
 pixi run ladder-recarded
 pixi run -e madgraph validate-kt-cluster
+pixi run validate-cms-pdfs        # fetches CMS's 880 PDF members first
 pixi run validate-deep            # prints what the long tier consists of
 ```
 
