@@ -467,6 +467,7 @@ fn momentum_slashed_chain_is_rooting_invariant() {
                     particles_out: set.particles_out.clone(),
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![d.clone()],
+                    mirrored: set.mirrored,
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -612,6 +613,7 @@ fn four_fermion_currents_are_rooting_invariant() {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
+                mirrored: set.mirrored,
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -744,6 +746,7 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
+                mirrored: set.mirrored,
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -866,6 +869,7 @@ fn literal_sigma_currents_are_rooting_invariant() {
                     particles_out: set.particles_out.clone(),
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![(*diagram).clone()],
+                    mirrored: set.mirrored,
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
