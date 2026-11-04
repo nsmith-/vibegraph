@@ -200,13 +200,19 @@ pub struct Subprocess {
     /// corresponds to flow `f` of the representative's. Kept for the tests and for
     /// failure messages; production reads [`Self::flows`], which has it applied.
     pub(crate) flow_permutation: Vec<usize>,
+    /// Whether the card generated this subprocess in both beam orderings
+    /// ([`DiagramSet::mirrored`]), so that the exchanged ordering carries
+    /// luminosity. Only ever set for two different beam partons.
+    pub(crate) mirrored: bool,
 }
 
 impl Subprocess {
-    /// Whether the two beams carry different partons, and so whether the mirrored
-    /// ordering is a second physical initial state rather than the same one.
+    /// Whether the exchanged beam ordering is part of this subprocess: the card
+    /// generated it in both orderings, which requires the two beams to carry
+    /// different partons. A card line written in one ordering (`u u~ > e+ e-`)
+    /// has none, as in MadGraph, whose `MIRRORPROCS` flag is set by the same rule.
     pub fn has_mirror(&self) -> bool {
-        self.incoming[0] != self.incoming[1]
+        self.mirrored
     }
 
     /// This subprocess's identical-particle symmetry factor `1/Π_s n_s!`, from its
@@ -262,8 +268,8 @@ pub struct FlavorGroup {
 }
 
 /// One member's luminosity addressing: the [`crate::pdf::flavor_slot`] of each
-/// beam parton, resolved once at setup, and whether the two differ — a member
-/// whose beams carry the same parton has no mirrored ordering.
+/// beam parton, resolved once at setup, and whether the member has a mirrored
+/// ordering ([`Subprocess::has_mirror`]).
 #[derive(Debug, Clone, Copy)]
 struct BeamSlots {
     slots: [usize; 2],
@@ -368,9 +374,10 @@ impl FlavorGroup {
         self.evaluator.n_in()
     }
 
-    /// Whether any member has distinct beam partons, i.e. whether the mirrored
-    /// ordering carries luminosity at all. A group of identical-parton initial
-    /// states (`g g`) has one ordering and no mirror term to evaluate.
+    /// Whether any member has a mirrored ordering ([`Subprocess::has_mirror`]),
+    /// i.e. whether the mirrored ordering carries luminosity at all. A group of
+    /// identical-parton initial states (`g g`), or of subprocesses the card wrote
+    /// in one beam ordering only, has no mirror term to evaluate.
     pub fn has_mirror(&self) -> bool {
         self.members.iter().any(Subprocess::has_mirror)
     }
@@ -395,15 +402,16 @@ impl FlavorGroup {
     ///
     /// ```text
     /// direct = Σ_members xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (a ≠ b only)
+    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (mirrored members only)
     /// ```
     ///
     /// `direct` weights `|M(q)|²` and `mirror` weights `|M(R q)|²`
     /// ([`mirror_into`](Self::mirror_into)). `mu_f` is per beam in beam order,
     /// since MadGraph's `q2fact(1)` and `q2fact(2)` need not coincide.
     ///
-    /// A member whose beams carry the same parton has a single ordering, so it
-    /// contributes to `direct` only — counting it twice would double that
+    /// A member without a mirrored ordering ([`Subprocess::has_mirror`]) — its
+    /// beams carry the same parton, or the card generated it in one ordering —
+    /// contributes to `direct` only: counting it twice would double that
     /// subprocess's cross section.
     ///
     /// This reads the densities itself. Every group of a process evaluates them
@@ -904,7 +912,13 @@ pub fn derive_flavor_groups(
                     .color_flow_tags()
                     .reindexed(flow_permutation)
                     .expect("flow_permutation is a permutation of this basis");
+                debug_assert!(
+                    !sets[i].as_ref().expect("member unclaimed").mirrored
+                        || legs[0].pdg != legs[1].pdg,
+                    "a mirrored subprocess has two different beam partons"
+                );
                 Subprocess {
+                    mirrored: sets[i].as_ref().expect("member unclaimed").mirrored,
                     process: processes[i],
                     incoming: [legs[0].pdg, legs[1].pdg],
                     outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
@@ -932,7 +946,7 @@ pub fn derive_flavor_groups(
                 };
                 BeamSlots {
                     slots: [slot(a), slot(b)],
-                    mirrored: a != b,
+                    mirrored: m.has_mirror(),
                 }
             })
             .collect();
@@ -3729,6 +3743,70 @@ mod tests {
         assert_eq!(averages, expected);
     }
 
+    /// The mirrored ordering carries luminosity exactly where the card generated
+    /// it: nowhere on a line written in one beam ordering, on every unequal pair
+    /// of a multiparticle line, and nowhere on two lines writing the two
+    /// orderings, each of which carries its own direct term instead.
+    #[test]
+    fn mirror_luminosity_follows_the_orderings_the_card_generated() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut f1 = [0.0; FLAVOR_SLOTS];
+        let mut f2 = [0.0; FLAVOR_SLOTS];
+        for k in 0..FLAVOR_SLOTS {
+            f1[k] = 1.0 + k as f64;
+            f2[k] = 1.0 / (2.0 + k as f64);
+        }
+        let terms = |card: &str| -> Vec<([i32; 2], bool, [f64; 2])> {
+            let groups = derive(card, &m, &evaluated);
+            groups
+                .groups()
+                .iter()
+                .flat_map(|g| {
+                    (0..g.members().len()).map(move |i| {
+                        let s = &g.members()[i];
+                        (
+                            s.incoming,
+                            s.has_mirror(),
+                            g.member_luminosity_rows(i, &f1, &f2),
+                        )
+                    })
+                })
+                .collect()
+        };
+        let lumi = |a: i32, b: i32| f1[flavor_slot(a).unwrap()] * f2[flavor_slot(b).unwrap()];
+
+        for (card, [a, b]) in [("u u~ > e+ e-", [2, -2]), ("u g > u z", [2, 21])] {
+            let t = terms(card);
+            assert_eq!(t.len(), 1, "{card}");
+            assert_eq!(t[0], ([a, b], false, [lumi(a, b), 0.0]), "{card}");
+            assert!(
+                !derive(card, &m, &evaluated).groups()[0].has_mirror(),
+                "{card}"
+            );
+        }
+
+        for (card, firsts) in [
+            ("u u~ > e+ e-\nadd process u~ u > e+ e-", [[2, -2], [-2, 2]]),
+            ("u g > u z\nadd process g u > u z", [[2, 21], [21, 2]]),
+        ] {
+            let mut t = terms(card);
+            t.sort_by_key(|(i, ..)| firsts.iter().position(|f| f == i));
+            let expect: Vec<_> = firsts
+                .iter()
+                .map(|&[a, b]| ([a, b], false, [lumi(a, b), 0.0]))
+                .collect();
+            assert_eq!(t, expect, "{card}");
+        }
+
+        let t = terms("p p > e+ e-");
+        assert_eq!(t.len(), 4, "u u~, c c~, d d~, s s~, each once");
+        for ([a, b], mirrored, l) in t {
+            assert!(mirrored, "{a} {b}");
+            assert_eq!(l, [lumi(a, b), lumi(b, a)], "{a} {b}");
+        }
+    }
+
     /// The partition predicts, rather than merely records: members agree at points
     /// it was not fitted on, and distinct groups disagree by a wide margin there.
     #[test]
@@ -3755,6 +3833,7 @@ mod tests {
             let flows = evaluator.color_flow_tags().clone();
             let flow_permutation = (0..evaluator.n_flows()).collect();
             let subprocess = Subprocess {
+                mirrored: set.mirrored,
                 process: 1,
                 incoming: [legs[0].pdg, legs[1].pdg],
                 outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
@@ -4858,8 +4937,9 @@ mod tests {
     /// mass, which is MadGraph's default `me_frame`.
     ///
     /// The oracle assembles the integrand from the polarized matrix element at
-    /// the centre-of-mass point, with the mirrored ordering from an explicitly
-    /// enumerated `u~ u > z{0} g`, and the integrand must reproduce it. The same
+    /// the centre-of-mass point, on a card that generates both beam orderings,
+    /// with the mirrored ordering from an explicitly enumerated `u~ u > z{0} g`,
+    /// and the integrand must reproduce it. The same
     /// assembly at the laboratory-frame point must not: a longitudinal Z's
     /// helicity is not boost invariant, so an integrand that handed its matrix
     /// element the laboratory momenta would sit a finite fraction away. That
@@ -4869,12 +4949,19 @@ mod tests {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let card = llj_card();
-        let process = "u u~ > z{0} g QCD=1 QED=1";
-        let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
-            .expect("flavour groups");
+        // A line that generates both beam orderings, so the group carries the
+        // mirror term the oracle assembles.
+        let both = parse_proc_card(
+            "define q = u u~\ngenerate q q > z{0} g QCD=1 QED=1",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets = generate_from_proc_card(&both, &m).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &card).expect("flavour groups");
         assert_eq!(groups.groups().len(), 1);
         let g = &groups.groups()[0];
         assert!(g.evaluator().is_polarized());
+        assert!(g.has_mirror(), "the card generates both orderings");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
         let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
