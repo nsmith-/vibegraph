@@ -24,3 +24,4 @@
   - Correction to the brief: the lab-against-CM clustering difference was already fixed by #23.
   - Found, filed by the manager: `llj-fraction-test-ignored-though-banked`, and `ttx-mlm-sample-untested-in-distributions` (needs-user: a `hard_survey = 2` banking).
   - G-HY1 dispatched.
+* 2026-11-04: G-HY1 checked (eb03896). The manager re-ran fmt and the five unit tests for carried flavour, mixed-flavour groups and no cache root: they pass. The session returned its report as a message, and the manager transcribed it to `G-HY1-report.md`. Found: `no-home-cli-tests-skip-on-ci` filed.
