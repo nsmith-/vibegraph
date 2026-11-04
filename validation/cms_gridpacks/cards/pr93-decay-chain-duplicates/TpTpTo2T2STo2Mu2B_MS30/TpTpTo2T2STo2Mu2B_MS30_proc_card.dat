@@ -1,0 +1,5 @@
+import model eVLQS012_v8_4FNS_UFO
+generate p p > tp tp~ ,( tp > s0 t, (s0 > mu+ mu- ) ), ( tp~ > s0 t~, (s0 > b b~) )
+add process p p > tp tp~ , ( tp > s0 t, (s0 > b b~) ), ( tp~ > s0 t~ , (s0 > mu+ mu- ) )
+
+output TpTpTo2T2STo2Mu2B_MS30  -nojpeg

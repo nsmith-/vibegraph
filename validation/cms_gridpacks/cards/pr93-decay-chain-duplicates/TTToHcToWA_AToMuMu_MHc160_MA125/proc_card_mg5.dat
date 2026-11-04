@@ -1,0 +1,58 @@
+#************************************************************
+#*                     MadGraph5_aMC@NLO                    *
+#*                                                          *
+#*                *                       *                 *
+#*                  *        * *        *                   *
+#*                    * * * * 5 * * * *                     *
+#*                  *        * *        *                   *
+#*                *                       *                 *
+#*                                                          *
+#*                                                          *
+#*         VERSION 2.9.18                2023-12-08         *
+#*                                                          *
+#*    The MadGraph5_aMC@NLO Development Team - Find us at   *
+#*    https://server06.fynu.ucl.ac.be/projects/madgraph     *
+#*                                                          *
+#************************************************************
+#*                                                          *
+#*               Command File for MadGraph5_aMC@NLO         *
+#*                                                          *
+#*     run as ./bin/mg5_aMC  filename                       *
+#*                                                          *
+#************************************************************
+set group_subprocesses Auto
+set ignore_six_quark_processes False
+set low_mem_multicore_nlo_generation False
+set complex_mass_scheme False
+set gauge unitary
+set loop_optimized_output True
+set loop_color_flows False
+set max_npoint_for_channel 0
+set default_unset_couplings 99
+set max_t_for_channel 99
+set zerowidth_tchannel True
+import model 2HDM_UFO-type1_5FS
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+define l+ = e+ mu+
+define l- = e- mu-
+define p = 21 2 4 1 3 -2 -4 -1 -3 5 -5 # pass to 5 flavors
+define p = g u d c s b u~ d~ c~ s~ b~
+define j = p
+define l+ = e+ mu+ ta+
+define l- = e- mu- ta-
+define vl = ve vm vt
+define vl~ = ve~ vm~ vt~
+generate p p > t t~, (t > b h+, (h+ > h3 l+ vl, (h3 > mu+ mu-))), (t~ \
+> b~ w-, (w- > j j )) @0
+add process p p > t t~, (t > b h+, (h+ > h3 j j, (h3 > mu+ mu-))), (t~\
+ > b~ w-, (w- > l- vl~)) @1
+add process p p > t t~, (t > b h+, (h+ > h3 l+ vl, (h3 > mu+ mu-))), (\
+t~ > b~ w-, (w- > l- vl~)) @2
+add process p p > t t~, (t > b w+, (w+ > j j )), (t~ > b~ h-, (h- > h3\
+ l- vl~, (h3 > mu+ mu-))) @3
+add process p p > t t~, (t > b w+, (w+ > l+ vl)), (t~ > b~ h-, (h- > h\
+3 j j, (h3  > mu+ mu-))) @4
+add process p p > t t~, (t > b w+, (w+ > l+ vl)), (t~ > b~ h-, (h- > h\
+3 l- vl~, (h3 > mu+ mu-))) @5
+output TTToHcToWA_AToMuMu_MHc160_MA125 -nojpeg

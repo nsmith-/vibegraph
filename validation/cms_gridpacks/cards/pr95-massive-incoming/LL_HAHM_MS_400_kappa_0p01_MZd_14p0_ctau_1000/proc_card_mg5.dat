@@ -1,0 +1,49 @@
+#************************************************************
+#*                     MadGraph5_aMC@NLO                    *
+#*                                                          *
+#*                *                       *                 *
+#*                  *        * *        *                   *
+#*                    * * * * 5 * * * *                     *
+#*                  *        * *        *                   *
+#*                *                       *                 *
+#*                                                          *
+#*                                                          *
+#*         VERSION 2.9.18                2023-12-08         *
+#*                                                          *
+#*    The MadGraph5_aMC@NLO Development Team - Find us at   *
+#*    https://server06.fynu.ucl.ac.be/projects/madgraph     *
+#*                                                          *
+#************************************************************
+#*                                                          *
+#*               Command File for MadGraph5_aMC@NLO         *
+#*                                                          *
+#*     run as ./bin/mg5_aMC  filename                       *
+#*                                                          *
+#************************************************************
+set low_mem_multicore_nlo_generation False
+set loop_optimized_output True
+set max_npoint_for_channel 0
+set default_unset_couplings 99
+set max_t_for_channel 99
+set zerowidth_tchannel True
+set auto_update 0
+set group_subprocesses Auto
+set ignore_six_quark_processes False
+set loop_color_flows False
+set gauge unitary
+set complex_mass_scheme False
+set auto_convert_model T
+import model sm
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+define l+ = e+ mu+
+define l- = e- mu-
+define vl = ve vm vt
+define vl~ = ve~ vm~ vt~
+import model /afs/cern.ch/work/f/fernance/private/Run3-Analyses/SnT-Sc\
+outing/hZdZd-Extension/genproductions/bin/MadGraph5_aMCatNLO/LL_HAHM_M\
+S_400_kappa_0p01_MZd_14p0_ctau_1000/LL_HAHM_MS_400_kappa_0p01_MZd_14p0\
+_ctau_1000_gridpack/work/MG5_aMC_v2_9_18/models/HAHM_MG5model_v3/HAHM_\
+variablesw_v3_UFO
+generate p p > h > zp zp
+output LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000 -nojpeg

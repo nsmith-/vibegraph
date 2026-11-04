@@ -1,0 +1,1 @@
+ERROR failed to enumerate process: subprocess 'g g > b u d~ b~ mu+ mu- e- ve~' is produced by two process lines ('p p > t t~, (t > b h+, (h+ > h3 j j, h3 > mu+ mu-)), (t~ > b~ w-, w- > l- vl~)' and 'p p > t t~, (t > b w+, w+ > j j), (t~ > b~ h-, (h- > h3 l- vl~, h3 > mu+ mu-))'); both would be added to the cross section, so the card is refused rather than counting it twice

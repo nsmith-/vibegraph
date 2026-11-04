@@ -1,0 +1,5 @@
+set run_card nevents 10000
+set run_card ebeam1 6800
+set run_card ebeam2 6800
+set param_card mass 17 250
+set param_card mass 25 95

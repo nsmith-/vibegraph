@@ -1,0 +1,22 @@
+{
+ "label": "Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8",
+ "gridpack_id": 65,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/CommonBkg/RunIII2024Summer24/MadGraph5_aMCatNLO/Z/Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8_slc7_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "sm-ckm_no_b_mass",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 155.5,
+ "mg_reference_err_pb": 0.147,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8_customizecards.dat",
+  "InputCards/Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8_proc_card.dat",
+  "InputCards/Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "mgbasedir/models/sm/restrict_ckm_no_b_mass.dat"
+ ],
+ "notes": []
+}

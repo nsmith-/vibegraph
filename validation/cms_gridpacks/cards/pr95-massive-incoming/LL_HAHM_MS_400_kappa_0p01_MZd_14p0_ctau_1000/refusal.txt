@@ -1,0 +1,1 @@
+ERROR failed to decompose into flavour groups: subprocess c c~ > Zp Zp has an incoming leg of mass 1.42 GeV; a parton distribution supplies massless partons and the probe puts the beams on the light cone

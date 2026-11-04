@@ -1,0 +1,14 @@
+#Set dark-photon mass
+set param_card hidden 1 14.0
+#Set dark-higgs mass
+set param_card hidden 2 400
+#Set mixing parameter epsilon
+set param_card hidden 3 2.793e-08
+#Set mixing parameter kappa
+set param_card hidden 4 0.01
+#recompute  widths of higgs
+set param_card DECAY  25 AUTO
+#recompute width of dark-higgs
+set param_card DECAY  35 AUTO 
+#recompute width of dark-photon
+set param_card DECAY 1023 AUTO 

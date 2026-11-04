@@ -1,0 +1,29 @@
+{
+ "label": "LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000",
+ "gridpack_id": 82,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/HAHM_DisplacedDimuon/20250112_fernance_DimuonScouting/LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "HAHM_MG5model_v3/HAHM_variablesw_v3_UFO",
+ "final_attempt": 4,
+ "patches": [
+  "model:gp_5d56d68c",
+  "runpatch:ptonium=1",
+  "runpatch:etaonium=0.6"
+ ],
+ "mg_reference_sigma_pb": 0.01106,
+ "mg_reference_err_pb": 5.66e-05,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000_customizecards.dat",
+  "InputCards/LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000_extramodels.dat",
+  "InputCards/LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000_proc_card.dat",
+  "InputCards/LL_HAHM_MS_400_kappa_0p01_MZd_14p0_ctau_1000_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": [
+  "proc_card_mg5.dat imports the model by an AFS path split over two lines; the model name is the one in the InputCards proc card"
+ ]
+}

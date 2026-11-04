@@ -1,0 +1,1 @@
+ERROR failed to enumerate process: subprocess 'u u~ > H e- Z e+' is produced by two process lines ('p p > L L, L > boson lepton' and 'p p > L L, L > boson lepton'); both would be added to the cross section, so the card is refused rather than counting it twice

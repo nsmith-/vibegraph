@@ -1,0 +1,1 @@
+ERROR failed to decompose into flavour groups: subprocess s b~ > ta+ ta- has an incoming leg of mass 0.101 GeV; a parton distribution supplies massless partons and the probe puts the beams on the light cone

@@ -1,0 +1,23 @@
+{
+ "label": "VLLD_ele_M600",
+ "gridpack_id": 141,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/VLL_Singlet_Doublet/VLLD/VLLD_ele_M600_el8_amd64_gcc12_CMSSW_13_0_13_tarball.tar.xz",
+ "model": "VLL",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 0.1305,
+ "mg_reference_err_pb": 0.0003932,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/VLLD_ele_M600_customizecards.dat",
+  "InputCards/VLLD_ele_M600_extramodels.dat",
+  "InputCards/VLLD_ele_M600_proc_card.dat",
+  "InputCards/VLLD_ele_M600_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

@@ -1,0 +1,24 @@
+{
+ "label": "TTToHcToWA_AToMuMu_MHc160_MA125",
+ "gridpack_id": 122,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/TTToHcToWA/TTToHcToWA_AToMuMu_MHc160_MA125_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "2HDM_UFO-type1_5FS",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 0.0005297,
+ "mg_reference_err_pb": 1.182e-06,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/TTToHcToWA_AToMuMu_MHc160_MA125_customizecards.dat",
+  "InputCards/TTToHcToWA_AToMuMu_MHc160_MA125_extramodels.dat",
+  "InputCards/TTToHcToWA_AToMuMu_MHc160_MA125_proc_card.dat",
+  "InputCards/TTToHcToWA_AToMuMu_MHc160_MA125_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "mgbasedir/models/2HDM_UFO/restrict_type1_5FS.dat",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

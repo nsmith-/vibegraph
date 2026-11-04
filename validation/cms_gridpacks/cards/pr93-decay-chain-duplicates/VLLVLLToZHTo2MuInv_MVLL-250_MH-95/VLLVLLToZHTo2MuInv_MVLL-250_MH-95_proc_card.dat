@@ -1,0 +1,5 @@
+import model VLL
+generate p p > lp lp~, (lp > z e-), (lp~ > h e+, (h > mu+ mu-))
+add process p p > lp lp~, (lp > h e-, (h > mu+ mu-)), (lp~ > z e+)
+
+output VLLVLLToZHTo2MuInv_MVLL-250_MH-95  -nojpeg

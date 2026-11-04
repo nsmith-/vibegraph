@@ -1,0 +1,23 @@
+{
+ "label": "VLLVLLToZHTo2MuInv_MVLL-500_MH-80",
+ "gridpack_id": 139,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/VLLVLLToZHTo2Mu/VLLVLLToZHTo2MuInv_MVLL-500_MH-80_slc7_amd64_gcc700_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "VLL",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 1.46e-07,
+ "mg_reference_err_pb": 4.941e-10,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/VLLVLLToZHTo2MuInv_MVLL-500_MH-80_customizecards.dat",
+  "InputCards/VLLVLLToZHTo2MuInv_MVLL-500_MH-80_extramodels.dat",
+  "InputCards/VLLVLLToZHTo2MuInv_MVLL-500_MH-80_proc_card.dat",
+  "InputCards/VLLVLLToZHTo2MuInv_MVLL-500_MH-80_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

@@ -1,0 +1,24 @@
+{
+ "label": "TpTpTo2T2STo2Mu2B_MS30",
+ "gridpack_id": 108,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/REANA/TpTpTo2T2STo2Mu2B_MS30_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "eVLQS012_v8_4FNS_UFO",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": null,
+ "mg_reference_err_pb": null,
+ "mg_reference_step": null,
+ "files": [
+  "InputCards/TpTpTo2T2STo2Mu2B_MS30_customizecards.dat",
+  "InputCards/TpTpTo2T2STo2Mu2B_MS30_extramodels.dat",
+  "InputCards/TpTpTo2T2STo2Mu2B_MS30_proc_card.dat",
+  "InputCards/TpTpTo2T2STo2Mu2B_MS30_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "gridpack_generation_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

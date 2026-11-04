@@ -1,0 +1,12 @@
+import model VLL
+define L = lp lp~
+define N = vlp vlp~
+define boson = w+ w- z h
+define lepton   = e+ e- #Taken from YAML
+define neutrino = ve ve~  #Taken from YAML
+
+generate p p > L L, (L > boson lepton)    #Pair production
+add process p p > N N, (N > boson lepton) #Pair production 
+add process p p > L N, (L > boson lepton), (N > boson lepton) #Associated production
+
+output VLLD_ele_M600 -nojpeg

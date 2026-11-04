@@ -1,0 +1,25 @@
+{
+ "label": "ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1",
+ "gridpack_id": 68,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/BFFZprimeToTauTau/ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "zprime_UFO",
+ "final_attempt": 2,
+ "patches": [
+  "model:gp_f649c998"
+ ],
+ "mg_reference_sigma_pb": 13.06,
+ "mg_reference_err_pb": 0.02758,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1_customizecards.dat",
+  "InputCards/ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1_extramodels.dat",
+  "InputCards/ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1_proc_card.dat",
+  "InputCards/ZprimeToTauTau_M130_xqcut20_b0p02_Mu0p0_Tau0p17_bs1_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}
