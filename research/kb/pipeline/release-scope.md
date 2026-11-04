@@ -49,6 +49,8 @@ card at once rather than the first.
 | Param card | `ufo::slha::ParamCard` and `ufo::bind::bind_card` | Every construct MadGraph's SLHA reader accepts is classified ([param-card classification](../model/param-card-classification.md)); a refused one is named, every problem at once (`SlhaError::Several`, `CardError::Several`). |
 | Restrict card | `ParsedModel::apply_restriction`, `UFOModel::load` | The same reader, classified for the restriction ([restrict-card classification](../model/restrict-card-classification.md)); `UfoError::Several` lists every problem. |
 | Reweight card | `reweight::card` and `reweight::resolve` | Every command and `change` option of MadGraph's reweight module is classified ([reweight-card classification](../events/reweight-card-classification.md)); the parser reports every refused line at once. |
+| Integration result | `support::check_support`, called by `integrate` after the integration and before σ is printed or the artifact written | No point of nonzero weight: `CutsRejectAll` when none passed the cuts (the run card's, or a decay chain's `bwcutoff` window), `MatrixElementZero` when some did. An effective sample size `(Σw)²/Σw²` of the kept points below `MIN_EFFECTIVE_POINTS` (20): `TooFewEffective`, with the nonzero and cut-pass counts. |
+| Integrate artifact | `generate`'s artifact read | An artifact recording `σ = 0`. |
 
 `SupportedCard` is a **narrower type**: it has no field for a refused feature,
 so code downstream cannot read a `$` on a decay or a squared-order constraint,

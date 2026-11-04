@@ -126,6 +126,7 @@ use crate::phasespace::{
 use crate::progress;
 use crate::runcard::RunCard;
 use crate::select::select_index;
+use crate::support::{CensusCell, PointCensus};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{IterationCombination, VegasResult};
@@ -1459,6 +1460,9 @@ struct ProtonScratch<'a> {
     group_histories: RefCell<Vec<[Option<RewgtHistory>; 2]>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
+    /// This thread's count of the points it evaluated
+    /// ([`ProtonIntegrand::census`]).
+    census: CensusCell,
     /// The configuration MadEvent cuts a point's mirrored term on, and which of
     /// `[direct, mirrored]` passed the cuts, under
     /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
@@ -1768,12 +1772,35 @@ impl<'a> ProtonIntegrand<'a> {
                 group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
+                census: CensusCell::default(),
                 #[cfg(any(test, feature = "extended-validation"))]
                 madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 #[cfg(any(test, feature = "extended-validation"))]
                 ordering_passes: Cell::new([true, true]),
             }
         })
+    }
+
+    /// The points evaluated since the integrand was built or the census last
+    /// cleared, every route a point takes to the cuts and the matrix element
+    /// counted: how many, how many passed the cuts, and how many of those had
+    /// weight.
+    ///
+    /// A thread's scratch carries its count, so discarding the scratches drops
+    /// the counts with them; only setup does that.
+    pub fn census(&mut self) -> PointCensus {
+        self.scratch
+            .iter_mut()
+            .fold(PointCensus::default(), |acc, sc| {
+                acc.merged(sc.census.get())
+            })
+    }
+
+    /// Start [`census`](Self::census) over from zero.
+    pub fn clear_census(&mut self) {
+        for sc in self.scratch.iter_mut() {
+            sc.census.clear();
+        }
     }
 
     /// Evaluate each flavour group's matrix element as MadEvent does under a
@@ -2188,6 +2215,7 @@ impl<'a> ProtonIntegrand<'a> {
         #[cfg(any(test, feature = "extended-validation"))]
         let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
         if !passes {
+            sc.census.rejected();
             return 0.0;
         }
         let acc = if self.scales.draws_configuration() {
@@ -2195,11 +2223,14 @@ impl<'a> ProtonIntegrand<'a> {
         } else {
             self.shared_scale_sum(sc, m, &cm, self.sampled_channel(channel))
         };
-        if acc == 0.0 {
-            return 0.0;
-        }
-        let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
-        m.jac * flux * self.lips_2pi * acc
+        let value = if acc == 0.0 {
+            0.0
+        } else {
+            let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
+            m.jac * flux * self.lips_2pi * acc
+        };
+        sc.census.passed(value);
+        value
     }
 
     /// Cut the mirrored beam ordering where MadEvent 3.7.1 cuts it, so a cross
@@ -5475,6 +5506,64 @@ mod tests {
             "factorisation floor: {dropped} of {carried} weight-carrying points give exactly 0.0 \
              once mu_F is scaled below the floor"
         );
+    }
+
+    /// The census counts every evaluated point, the points the cuts let through
+    /// and, of those, the points with weight, and tells a zero the cuts set from
+    /// a zero set after them: a factorisation scale scaled below the floor zeroes
+    /// points that passed the cuts, so it moves the nonzero count and leaves the
+    /// cut count where it was.
+    #[test]
+    fn the_census_separates_cut_rejections_from_zero_weights() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &llj_card())
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let build = |scalefact: &str| {
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
+                .expect("a partly sub-threshold card still compiles");
+            integ
+        };
+        let mut control = build("1.0");
+        let mut vetoed = build("1e-3");
+
+        let points = 400_u64;
+        let mut stream = SubStream::from_stream(0x00C2_A112, 3);
+        let (mut control_nonzero, mut vetoed_nonzero) = (0_u64, 0_u64);
+        for i in 0..points as usize {
+            let channel = i % control.channel_count();
+            let u = stream.uniforms::<f64>(control.point_ndim());
+            control_nonzero += u64::from(control.value_in_channel(channel, &u) != 0.0);
+            vetoed_nonzero += u64::from(vetoed.value_in_channel(channel, &u) != 0.0);
+        }
+        let c = control.census();
+        let v = vetoed.census();
+        eprintln!("census at scalefact 1: {c:?}; at 1e-3: {v:?}");
+        assert_eq!(c.evaluated, points);
+        assert_eq!(v.evaluated, points);
+        assert_eq!(c.nonzero, control_nonzero);
+        assert_eq!(v.nonzero, vetoed_nonzero);
+        assert!(
+            c.passed_cuts < points,
+            "the card's cuts rejected nothing, so the cut count is untested"
+        );
+        assert_eq!(
+            c.passed_cuts, v.passed_cuts,
+            "the scale floor acts after the cuts and cannot move their count"
+        );
+        assert!(
+            v.nonzero < v.passed_cuts,
+            "no point that passed the cuts was zeroed by the floor"
+        );
+
+        control.clear_census();
+        assert_eq!(control.census(), PointCensus::default());
     }
 
     /// The veto reaches generation, not only the integral. `event_in_channel`

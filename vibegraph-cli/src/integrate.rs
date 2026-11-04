@@ -60,6 +60,7 @@ use vibegraph::phasespace::maps::{
 use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::support::{check_support, PointCensus};
 use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::slha::ParamCard;
@@ -632,6 +633,8 @@ struct RunOutput {
     alpha_floor: Option<f64>,
     result: VegasResult,
     convergence: ConvergenceReport,
+    /// The integrand's own count over the integration's points.
+    census: PointCensus,
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
@@ -742,6 +745,19 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
              was written",
         ));
     }
+    let conv = &output.convergence;
+    info!(
+        "support:  {} of {} kept points carry weight (effective sample size {:.0}); {} of {} \
+         integration points passed the cuts",
+        conv.nonzero_points,
+        conv.kept_points,
+        conv.effective_points,
+        output.census.passed_cuts,
+        output.census.evaluated,
+    );
+    // A cross section no point carries, or only a handful do, is not a result:
+    // refused before it is printed or banked, so nothing downstream reads it.
+    check_support(conv, output.census).map_err(|e| err(format!("{e}; no artifact was written")))?;
 
     let observable = output.observable;
     let sigma_pb = output.result.integral * observable.per_natural_unit();
@@ -776,7 +792,6 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             );
         }
     }
-    let conv = &output.convergence;
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
         conv.points, conv.iterations, seed, output.result.chi2_per_dof
@@ -1059,8 +1074,10 @@ fn integrate_hadronic(
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
+    integ.clear_census();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+    let census = integ.census();
     if groups.len() > 1 {
         report_multiplicities(&integ, &groups, &per_channel, convergence.iterations);
     }
@@ -1084,6 +1101,7 @@ fn integrate_hadronic(
         alpha_floor: integ.alpha_floor(),
         result,
         convergence,
+        census,
     })
 }
 
@@ -1188,8 +1206,10 @@ fn integrate_fixed_energy(
     // isotropically and has no chain: the legacy choices describe it exactly.
     let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
+    integ.clear_census();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+    let census = integ.census();
     Ok(RunOutput {
         process,
         observable: initial.observable(),
@@ -1216,6 +1236,7 @@ fn integrate_fixed_energy(
         alpha_floor: integ.maps().and(integ.alpha_floor()),
         result,
         convergence,
+        census,
     })
 }
 
