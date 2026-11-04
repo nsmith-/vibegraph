@@ -1,6 +1,6 @@
 use super::ast_util::{
-    call_func_name, extract_attr, kwarg_bool, kwarg_float, kwarg_int, kwarg_str, named_assignments,
-    parse_stmts,
+    call_func_name, extract_attr, kwarg_bool, named_assignments, parse_stmts, FieldError, Fields,
+    UniqueNames,
 };
 use indexmap::IndexMap;
 use rustpython_parser::ast;
@@ -12,7 +12,12 @@ use thiserror::Error;
 pub enum ParticleError {
     #[error("Failed to parse particles.py: {0}")]
     Parse(String),
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
+
+/// What a particle's `mass` and `width` must be.
+const PARAM_REFERENCE: &str = "a `Param.<name>` reference";
 
 /// Strongly typed index for [`Particle`] lookup
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -101,8 +106,11 @@ pub struct Particle {
 
 impl Particle {
     /// The helicity states an on-shell external leg of this particle sums
-    /// over, as MadGraph's `NHEL` values, or `None` for a spin with no
-    /// wavefunction routine here. The UFO spin code is `2s+1`, negative for
+    /// over, as MadGraph's `NHEL` values, or `None` for spin 3/2. Spin 2 lists
+    /// MadGraph's five states although no wavefunction routine for it exists
+    /// here; `AmplitudeEvaluator::compile` refuses a spin-2 line, and these
+    /// states serve only the enumeration-level bookkeeping (polarization
+    /// parsing, the duplicate-subprocess check). The UFO spin code is `2s+1`, negative for
     /// ghosts. A massless vector has no longitudinal mode (`vxxxxx`'s massless
     /// branch defines only ±1). The values are MadGraph's
     /// `Particle.get_helicity_states` (`base_objects.py:469`) as a set; the
@@ -164,6 +172,10 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
     let mut particles: Vec<Particle> = Vec::new();
     // Index base python_name → position in particles, for resolving .anti() calls.
     let mut by_python_name: HashMap<String, usize> = HashMap::new();
+    // A repeated name or variable, an antiparticle's included, is refused
+    // ([`UniqueNames`]): `.anti()` of a self-conjugate particle repeats its name,
+    // which UFO's `Particle.anti` refuses too ("has no anti particle").
+    let mut seen = UniqueNames::new("particle");
 
     for (python_name, value) in named_assignments(&stmts) {
         let python_name = python_name.to_owned();
@@ -172,27 +184,32 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
             ast::Expr::Call(ast::ExprCall { func, keywords, .. })
                 if call_func_name(func) == Some("Particle") =>
             {
-                let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-                let antiname = kwarg_str(keywords, "antiname").unwrap_or_else(|| name.clone());
-                let pdg_code = kwarg_int(keywords, "pdg_code").unwrap_or(0);
-                let spin = kwarg_int(keywords, "spin").unwrap_or(1) as i32;
-                let color = kwarg_int(keywords, "color").unwrap_or(1) as i32;
-                let charge = kwarg_float(keywords, "charge").unwrap_or(0.0);
-                let texname = kwarg_str(keywords, "texname").unwrap_or_default();
-                let antitexname = kwarg_str(keywords, "antitexname").unwrap_or_default();
-                let ghost_number = kwarg_int(keywords, "GhostNumber").unwrap_or(0) as i32;
+                // Every field of `Particle.require_args` in UFO's object library
+                // (`mg5amcnlo/models/sm/object_library.py` L69) is required. The
+                // defaults kept are its own (L74, `goldstoneboson = False`) and
+                // those of fields it does not list (`GhostNumber`, `line`,
+                // `propagator`).
+                let fields = Fields::new("particle", &python_name, keywords);
+                let name = fields.str("name")?;
+                let antiname = fields.str("antiname")?;
+                let pdg_code = fields.int("pdg_code")?;
+                let spin = fields.int32("spin")?;
+                let color = fields.int32("color")?;
+                let charge = fields.float("charge")?;
+                let texname = fields.str("texname")?;
+                let antitexname = fields.str("antitexname")?;
+                let mass_param = fields.reference("mass", "Param", PARAM_REFERENCE)?;
+                let width_param = fields.reference("width", "Param", PARAM_REFERENCE)?;
+                let ghost_number = fields.opt_int32("GhostNumber")?.unwrap_or(0);
                 // Older UFO models (sm) spell it `goldstoneboson`, newer ones `goldstone`.
                 let is_goldstone = kwarg_bool(keywords, "goldstoneboson")
                     .or_else(|| kwarg_bool(keywords, "goldstone"))
                     .unwrap_or(false);
-                let mass_param =
-                    extract_param_ref(keywords, "mass").unwrap_or_else(|| "ZERO".to_owned());
-                let width_param =
-                    extract_param_ref(keywords, "width").unwrap_or_else(|| "ZERO".to_owned());
                 let is_self_conjugate = name == antiname;
                 let line_style = extract_param_ref(keywords, "line");
                 let propagator = extract_param_ref(keywords, "propagator");
 
+                seen.insert(&python_name, &name)?;
                 by_python_name.insert(python_name.clone(), particles.len());
                 particles.push(Particle {
                     python_name,
@@ -235,6 +252,7 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
                 match base_name.and_then(|n| by_python_name.get(n)) {
                     Some(base) => {
                         let anti = particles[*base].make_anti(python_name.clone());
+                        seen.insert(&python_name, &anti.name)?;
                         by_python_name.insert(python_name, particles.len());
                         particles.push(anti);
                     }

@@ -1243,7 +1243,7 @@ fn pointwise_integrand_oracle() {
         .ok()
         .and_then(|s| s.parse::<ParamCard>().ok())
         .expect("parse committed param card");
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let rc = RunCard::parse_file(&validation_dir().join("dy13_default_run_card.dat")).unwrap();
     let groups = groups_for(DY_PROCESS, &model, &evaluated, &rc);

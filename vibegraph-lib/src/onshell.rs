@@ -742,7 +742,7 @@ mod tests {
     fn a_wide_resonance_is_still_zeroed() {
         let model = sm_model(SMRestrict::Default);
         let card: ParamCard = "DECAY 23 12.0\n".parse().unwrap();
-        let wide = EvaluatedModel::from_model_card(Arc::clone(&model), &card);
+        let wide = EvaluatedModel::from_model_card(Arc::clone(&model), &card).unwrap();
         let veto = veto("e+ e- > mu+ mu-", &["z"], &wide, WINDOW).unwrap();
         assert_eq!(veto.pattern(&two_to_two(91.188 + 150.0, 0.2)), 1);
         assert_eq!(veto.pattern(&two_to_two(91.188 + 190.0, 0.2)), 0);

@@ -336,7 +336,7 @@ fn probe_2to6_tail_points() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| "".parse().unwrap());
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param).unwrap();
     let proc_card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
         .expect("process parses");
     let sets = generate_from_proc_card(&proc_card, &model).expect("diagrams generate");
