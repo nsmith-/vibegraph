@@ -33,6 +33,11 @@ name: acceptance
 # `#[ignore]`d test nobody runs on a timer. A scheduled run has no tag, so it
 # tests the latest release, which skips prereleases and so is the newest `v*`
 # binary, never a `refdata-*` bundle.
+#
+# The script is checked out at the tag of the binary it tests, not at the
+# triggering commit: it drives the binary's CLI, which changes between
+# releases, so a script from `main` can call a released binary with arguments
+# that binary does not accept.
 
 on:
   release:
@@ -60,15 +65,28 @@ jobs:
     # downloads to re-test the same code.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
-      - name: acceptance
+      # The release's own tag, the dispatch input, or else the latest release
+      # (which excludes prereleases); one tag names both the binary and the
+      # script revision.
+      - name: resolve tag
+        id: tag
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          args=(--repo "${{ github.repository }}")
-          if [ -n "${TAG}" ]; then
-            args+=(--tag "${TAG}")
+          if [ -z "${TAG}" ]; then
+            TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)
           fi
-          bash scripts/acceptance.sh "${args[@]}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: acceptance
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          bash scripts/acceptance.sh --repo "${{ github.repository }}" --tag "${TAG}"
