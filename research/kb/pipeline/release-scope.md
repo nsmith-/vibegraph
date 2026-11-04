@@ -121,6 +121,14 @@ without that overlap gate σ.[^n38-dec] The MadGraph-only study behind that
 figure lived outside the repository and is not recoverable. Note 38 §5 is the
 record of its numbers.
 
+The second is **MadEvent's small-width treatment**. Below `Γ = M·1e-6`
+MadEvent evaluates the propagator at the floored width and corrects the
+Breit–Wigner map's Jacobian by `fk_W/Γ`, so its σ is the narrow-width σ at the
+true width and its lineshape the floored one's. vibegraph keeps the model's
+width throughout ([the small-width treatment](../process/madevent-small-width-treatment.md)).
+A decay chain's σ then differs by the window's share of each line, 1.4% on
+CMS card 048, and a process without a window by under 1e-3.
+
 ## Where the scope came from
 
 The fixed-order SM scope (2026-08-02) was widened to MadGraph LO process

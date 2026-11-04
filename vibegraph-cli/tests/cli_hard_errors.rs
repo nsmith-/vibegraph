@@ -603,3 +603,56 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
         );
     }
 }
+
+/// An artifact whose integration saw no point inside its cuts replays to a weight
+/// scan that finds no weight, and `generate` refuses it with a named error and
+/// exit status 1 rather than panicking. The run card's `ptl` exceeds the beam
+/// energy, so every muon pair is cut and the integration banks σ = 0.
+#[test]
+fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        format!("{}  50.0 = ptl\n", fixed_beams(45.6, 45.6)),
+    )
+    .unwrap();
+
+    let integrated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrated.status.success(),
+        "integrate: {}",
+        stderr_of(&integrated)
+    );
+
+    let generated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("generate")
+        .arg(out.path().join("grid.bin.zst"))
+        .args(["--seed", "7", "--nevents", "10"])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = stderr_of(&generated);
+    assert_eq!(generated.status.code(), Some(1), "got:\n{stderr}");
+    assert!(
+        stderr.contains("the weight scan found no usable weight")
+            && stderr.contains("nothing can be generated")
+            && !stderr.contains("panicked"),
+        "got:\n{stderr}"
+    );
+}
