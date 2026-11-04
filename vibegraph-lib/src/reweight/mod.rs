@@ -252,7 +252,6 @@ pub fn resolve(card: &ReweightCard, model: &UFOModel) -> Result<Vec<Launch>, Rew
     Ok(launches)
 }
 
-/// The external parameter a change addresses.
 /// Refuse a hypothesis that moves a member of a group the restriction merged
 /// ([`ParameterSet::merged`](crate::ufo::parameters::ParameterSet)) without
 /// moving every member to its factor times the group's first. The run's own
@@ -289,6 +288,7 @@ fn check_merged(
     Ok(())
 }
 
+/// The external parameter a change addresses.
 fn external_name(model: &UFOModel, change: &Change) -> Result<String, ReweightError> {
     let params = &model.params;
     match change {

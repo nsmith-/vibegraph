@@ -284,6 +284,22 @@ impl<'a> Fields<'a> {
         extract_float(self.required(field)?).ok_or_else(|| self.malformed(field, "a number"))
     }
 
+    /// A required list of integer literals that each fit an `i32`
+    /// (`lhacode = [ 3 ]`, `spins = [ 2, 2, 3 ]`).
+    pub(crate) fn int32_list(&self, field: &'static str) -> Result<Vec<i32>, FieldError> {
+        const EXPECTED: &str = "a list of integers";
+        let ast::Expr::List(ast::ExprList { elts, .. }) = self.required(field)? else {
+            return Err(self.malformed(field, EXPECTED));
+        };
+        elts.iter()
+            .map(|e| {
+                extract_int(e)
+                    .and_then(|n| i32::try_from(n).ok())
+                    .ok_or_else(|| self.malformed(field, EXPECTED))
+            })
+            .collect()
+    }
+
     /// An optional integer literal: `None` when absent, refused when present in
     /// another form.
     pub(crate) fn opt_int32(&self, field: &'static str) -> Result<Option<i32>, FieldError> {

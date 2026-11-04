@@ -595,9 +595,7 @@ impl<'a> MultiplicitySum<'a> {
 
     /// Every part's [`ProtonIntegrand::census`], added.
     pub fn census(&mut self) -> PointCensus {
-        self.parts
-            .iter_mut()
-            .fold(PointCensus::default(), |acc, p| acc.merged(p.census()))
+        self.parts.iter_mut().map(|p| p.census()).sum()
     }
 
     /// Start every part's census over from zero.

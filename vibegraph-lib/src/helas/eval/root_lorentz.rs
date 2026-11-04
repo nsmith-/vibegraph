@@ -2428,45 +2428,39 @@ mod tests {
         assert!(err.to_string().contains("names no leg"), "{err}");
     }
 
-    /// No Lorentz structure of any in-tree model carries the charge-conjugation
-    /// matrix, the only operator the scalar-root walk refuses rather than routes;
-    /// and rooting every term of every structure at the amplitude and at each
-    /// non-fermion leg returns, an error or a tree, without a panic.
+    /// Check every model under `parent` (a directory relative to the workspace
+    /// root): no Lorentz structure carries the charge-conjugation matrix, the
+    /// only operator the scalar-root walk refuses rather than routes, and rooting
+    /// every term of every structure at the amplitude and at each non-fermion leg
+    /// returns, an error or a tree, without a panic. Fermion legs are not rooted:
+    /// without a diagram there is no adjoint to root them with, and the C census
+    /// covers the only refusal they could add.
     ///
-    /// The models are the authored toy UFOs, SMEFTsim and the UFOs MadGraph ships
-    /// (`research/refs/mg5amcnlo/models`), less the one the loader refuses. Fermion legs are not rooted: without a
-    /// diagram there is no adjoint to root them with, and the C census covers the
-    /// only refusal they could add.
-    #[test]
-    fn in_tree_models_never_reach_the_charge_conjugation_refusal() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut dirs: Vec<std::path::PathBuf> = Vec::new();
-        for parent in ["validation/ufo", "research/refs/mg5amcnlo/models"] {
-            let Ok(entries) = std::fs::read_dir(root.join(parent)) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                if entry.path().join("lorentz.py").is_file() {
-                    dirs.push(entry.path());
-                }
-            }
-        }
+    /// Returns the models checked and the ones the loader refused (`name: error`).
+    /// Panics if `parent` cannot be listed.
+    fn check_c_free_models_under(parent: &str) -> (Vec<String>, Vec<String>) {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(parent);
+        let entries =
+            std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("list {}: {e}", dir.display()));
+        let mut dirs: Vec<std::path::PathBuf> = entries
+            .map(|entry| {
+                entry
+                    .unwrap_or_else(|e| panic!("list {}: {e}", dir.display()))
+                    .path()
+            })
+            .filter(|path| path.join("lorentz.py").is_file())
+            .collect();
         dirs.sort();
-        assert!(
-            dirs.iter().any(|d| d.ends_with("vibegraph_toy_UFO")),
-            "no in-tree model found under {}",
-            root.display()
-        );
+        let name = |d: &std::path::Path| d.file_name().unwrap().to_string_lossy().into_owned();
         let mut structures = 0usize;
         let mut unparsed: Vec<String> = Vec::new();
         for dir in &dirs {
             let parsed = match crate::ufo::ParsedModel::parse(dir) {
                 Ok(parsed) => parsed,
                 Err(e) => {
-                    unparsed.push(format!(
-                        "{}: {e}",
-                        dir.file_name().unwrap().to_string_lossy()
-                    ));
+                    unparsed.push(format!("{}: {e}", name(dir)));
                     continue;
                 }
             };
@@ -2489,9 +2483,37 @@ mod tests {
                 }
             }
         }
-        assert!(structures > 0);
-        // `taudecay_UFO` defines its form factors as Lorentz-level functions
-        // (`FFCT2`), which the loader refuses before any structure is rooted.
+        assert!(
+            structures > 0,
+            "no Lorentz structure under {}",
+            dir.display()
+        );
+        (dirs.iter().map(|d| name(d)).collect(), unparsed)
+    }
+
+    /// The authored models (`validation/ufo`: the toy UFOs and SMEFTsim), which
+    /// the repository carries, never reach the charge-conjugation refusal
+    /// ([`check_c_free_models_under`]), and every one of them loads.
+    #[test]
+    fn authored_models_never_reach_the_charge_conjugation_refusal() {
+        let (checked, unparsed) = check_c_free_models_under("validation/ufo");
+        assert!(
+            checked.iter().any(|m| m == "vibegraph_toy_UFO"),
+            "{checked:?}"
+        );
+        assert!(unparsed.is_empty(), "{unparsed:#?}");
+    }
+
+    /// The UFOs MadGraph ships (`research/refs/mg5amcnlo/models`, the submodule)
+    /// never reach the charge-conjugation refusal ([`check_c_free_models_under`]),
+    /// less the one the loader refuses: `taudecay_UFO` defines its form factors
+    /// as Lorentz-level functions (`FFCT2`), refused before any structure is
+    /// rooted. Fails without the submodule.
+    #[test]
+    #[cfg(feature = "extended-validation")]
+    fn shipped_models_never_reach_the_charge_conjugation_refusal() {
+        let (checked, unparsed) = check_c_free_models_under("research/refs/mg5amcnlo/models");
+        assert!(checked.iter().any(|m| m == "sm"), "{checked:?}");
         assert!(
             unparsed.iter().all(|e| e.starts_with("taudecay_UFO: ")),
             "{unparsed:#?}"

@@ -8,7 +8,8 @@
 //! (`mg5amcnlo/models/sm/object_library.py`): a field in a class's
 //! `require_args` is a positional parameter without a default there, so a model
 //! missing one does not import in MadGraph either. Each refusal names the
-//! object and the field, which is what the assertions read.
+//! object and the field, and says whether the field is missing or malformed;
+//! the assertions read all three.
 
 use std::path::Path;
 
@@ -110,12 +111,39 @@ fn refusal(file: &str, from: &str, to: &str) -> String {
     }
 }
 
-/// Asserts the refusal names the object (as `'<name>'`) and the field (as
-/// `` `<field>` ``).
-fn assert_names(message: &str, object: &str, field: &str) {
+/// Which field refusal an edit must give.
+#[derive(Clone, Copy, Debug)]
+enum Form {
+    /// The field is absent: "particle 'S' has no `spin`, ...".
+    Missing,
+    /// The field is present in a form the loader does not read: "particle 'S':
+    /// `spin` must be ...".
+    Malformed,
+}
+
+impl Form {
+    /// The refusal an edit replacing a field's text with `to` must give:
+    /// `Malformed` when `to` still assigns `field`, `Missing` when it drops it.
+    fn of(field: &str, to: &str) -> Form {
+        if to.contains(&format!("{field} =")) {
+            Form::Malformed
+        } else {
+            Form::Missing
+        }
+    }
+}
+
+/// Asserts the refusal is the `form` one for the object (as `'<name>'`) and the
+/// field (as `` `<field>` ``). The two forms name the same object and field, so
+/// matching those alone would accept either.
+fn assert_names(message: &str, object: &str, field: &str, form: Form) {
+    let wanted = match form {
+        Form::Missing => format!("'{object}' has no `{field}`"),
+        Form::Malformed => format!("'{object}': `{field}` must be"),
+    };
     assert!(
-        message.contains(&format!("'{object}'")) && message.contains(&format!("`{field}`")),
-        "expected '{object}' and `{field}` in: {message}"
+        message.contains(&wanted),
+        "expected {form:?} `{wanted}` in: {message}"
     );
 }
 
@@ -145,12 +173,18 @@ fn every_required_particle_field_is_refused_by_name_when_missing() {
         } else {
             ""
         };
-        assert_names(&refusal("particles.py", text, to), "S", field);
+        assert_names(
+            &refusal("particles.py", text, to),
+            "S",
+            field,
+            Form::Missing,
+        );
     }
     assert_names(
         &refusal("particles.py", "name = 'S', antiname", "antiname"),
         "S",
         "name",
+        Form::Missing,
     );
 }
 
@@ -166,7 +200,12 @@ fn a_malformed_particle_field_is_refused_by_name() {
         ("name", "name = 'S', antiname", "name = S, antiname"),
         ("GhostNumber", "GhostNumber = 0", "GhostNumber = 'none'"),
     ] {
-        assert_names(&refusal("particles.py", from, to), "S", field);
+        assert_names(
+            &refusal("particles.py", from, to),
+            "S",
+            field,
+            Form::Malformed,
+        );
     }
 }
 
@@ -192,13 +231,19 @@ fn every_required_parameter_field_is_refused_by_name_when_missing() {
             "lhablock" => "lhacode = [ 1 ]",
             _ => "",
         };
-        assert_names(&refusal("parameters.py", from, to), "c1", field);
+        assert_names(
+            &refusal("parameters.py", from, to),
+            "c1",
+            field,
+            Form::Missing,
+        );
     }
     // An internal parameter's `value` is its expression: no default either.
     assert_names(
         &refusal("parameters.py", "value = '0.0', ", ""),
         "ZERO",
         "value",
+        Form::Missing,
     );
 }
 
@@ -235,7 +280,12 @@ fn a_malformed_parameter_field_is_refused_by_name() {
             "lhablock = NEWCOUP, lhacode = [ 1 ]",
         ),
     ] {
-        assert_names(&refusal("parameters.py", from, to), object, field);
+        assert_names(
+            &refusal("parameters.py", from, to),
+            object,
+            field,
+            Form::Malformed,
+        );
     }
 }
 
@@ -265,7 +315,12 @@ fn every_required_coupling_field_is_refused_by_name() {
         ("order", "order = {'QED':1}", "order = {'QED':'one'}"),
         ("order", "order = {'QED':1}", "order = ['QED']"),
     ] {
-        assert_names(&refusal("couplings.py", from, to), "GC_1", field);
+        assert_names(
+            &refusal("couplings.py", from, to),
+            "GC_1",
+            field,
+            Form::of(field, to),
+        );
     }
 }
 
@@ -301,7 +356,12 @@ fn every_required_vertex_field_is_refused_by_name() {
             "couplings = {(0,0):'GC_1'}",
         ),
     ] {
-        assert_names(&refusal("vertices.py", from, to), "V_1", field);
+        assert_names(
+            &refusal("vertices.py", from, to),
+            "V_1",
+            field,
+            Form::of(field, to),
+        );
     }
 }
 
@@ -310,7 +370,12 @@ fn every_required_vertex_field_is_refused_by_name() {
 /// the other.
 #[test]
 fn an_unnamed_or_duplicate_vertex_is_refused() {
-    assert_names(&refusal("vertices.py", "name = 'V_1', ", ""), "V_1", "name");
+    assert_names(
+        &refusal("vertices.py", "name = 'V_1', ", ""),
+        "V_1",
+        "name",
+        Form::Missing,
+    );
     let message = refusal("vertices.py", "name = 'V_2'", "name = 'V_1'");
     assert!(
         message.contains("'V_1'") && message.contains("twice"),
@@ -331,7 +396,12 @@ fn every_required_lorentz_field_is_refused_by_name() {
             "structure = 1)\nSSSS1",
         ),
     ] {
-        assert_names(&refusal("lorentz.py", from, to), "SSS1", field);
+        assert_names(
+            &refusal("lorentz.py", from, to),
+            "SSS1",
+            field,
+            Form::of(field, to),
+        );
     }
 }
 
@@ -369,7 +439,12 @@ fn every_required_coupling_order_field_is_refused_by_name() {
             "expansion_order = 'all'",
         ),
     ] {
-        assert_names(&refusal("coupling_orders.py", from, to), "QED", field);
+        assert_names(
+            &refusal("coupling_orders.py", from, to),
+            "QED",
+            field,
+            Form::of(field, to),
+        );
     }
 }
 

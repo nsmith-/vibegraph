@@ -416,7 +416,7 @@ impl ParamCard {
     /// The decay tables the card gives below its `DECAY` lines, in card order.
     /// Nothing in an evaluation reads a branching ratio; the tables are carried
     /// to the event file's `<slha>` header.
-    pub fn decay_tables(&self) -> &[DecayTable] {
+    pub(crate) fn decay_tables(&self) -> &[DecayTable] {
         &self.decay_tables
     }
 
