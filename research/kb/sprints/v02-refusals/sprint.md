@@ -65,6 +65,12 @@ reads, so they go last and alone.
   2026-11-04): MadGraph's `write_inc_file` rule is ported into the model
   evaluation and pinned against MadGraph on MSSM_SLHA2 (`Mneu3 < 0` in its
   default restriction); the param-card refusal of negative masses is lifted.
+  **Amended (user, 2026-11-04):** no supported model has a negative mass
+  (MSSM's `Mneu3` is a Majorana neutralino, and Majorana fermions are
+  refused), and the sites downstream of the width (phase-space Breit–Wigner
+  map, on-shell checks, cuts, LHEF resonances) are not compared with
+  MadGraph. So the ported rule stays, pinned, and a negative mass on any
+  non-Majorana particle is refused at binding.
 
 ## Sessions
 
