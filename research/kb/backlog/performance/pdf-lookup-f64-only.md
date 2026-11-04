@@ -13,14 +13,14 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 ---
 Every hadronic point calls the PDF twice per flavour, and the call is scalar:
 `PdfMember::xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> f64` (`pdf/mod.rs:203`) over the
-`Bicubic2D` trait (`pdf/interp.rs:96-99`). The grid's knots and coefficients
-stay `f64` storage; what has to become lane-wise is the lookup and the
+`Bicubic2D` trait (`pdf/interp.rs:99`). The grid's knots stay `f64` storage
+(the x cubic is built from them on each reading); what has to become lane-wise is the lookup and the
 arithmetic on top of it:
 
-- **Bin search.** Subgrid choice (`interp.rs:248`) and the knot index
-  (`interp.rs:343`, `locate` at `:456`) are `partition_point` calls; the αs
+- **Bin search.** Subgrid choice (`select_band`, `interp.rs:247`) and the knot index
+  (`interp.rs:350`, `locate` at `:464`) are `partition_point` calls; the αs
   table does the same (`pdf/alphas.rs:172`). Lanes need a per-lane index and a
-  gather of the cell's coefficients.
+  gather of the cell's knots.
 - **Branches.** In-grid, below-x and above-Q² extrapolation (`pdf/extrap.rs`)
   and the `Result<_, OutOfRange>` error path diverge per lane; they need masks
   and a select, or a per-lane error mask.
