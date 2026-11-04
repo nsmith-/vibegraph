@@ -22,3 +22,7 @@
   - Interference ≤ 1e-3.
   - Found: every hadronic decay chain with jets in the decay stops at `GroupCutsDiffer`; card 024's refusal is not reproduced with its stated form.
 * The user answered D3 (item 5 matches MadGraph) and D4 (per-group cut indicators come into scope) ([D3](decisions/D3-decay-duplicates-match-madgraph.md)).
+* H-D2 checked (506e455 on `sprinth-decay-duplicate`, draft PR #93). The manager re-ran `a_subprocess_from_two_decay_assignments_is_two_subprocesses` and `two_assignments_on_two_lines_are_refused`: both pass.
+  - Taken from the report: the census matches MadGraph's 6/6/30 two-assignment contents; σ is +0.30% against local MadEvent at 5 seeds, the same as the +0.32% nn23lo1/LHAPDF calibration offset; the workspace tests pass (1807).
+  - The item stays open until the literal cards 024, 029 and 068 are measured (CERN-host extraction), and until D4, because every such hadronic card stops at `GroupCutsDiffer`.
+  - Found, to file: cross-line duplicates are refused where MadGraph sums them; decay-chain strings drop `/ X` in messages; local MadEvent rows carry a +0.32% PDF offset (nn23lo1).
