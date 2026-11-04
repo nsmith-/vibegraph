@@ -14,16 +14,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Gauge, Widget};
 use vibegraph::progress::stage;
 
-use crate::si::fmt_si;
+use crate::si::{fmt_si, PICOBARN};
 use crate::tui::elapsed_text;
 use crate::tui::state::UiState;
 
 /// Rows the footer occupies: one rule and five of content.
 pub(crate) const HEIGHT: u16 = 6;
-
-/// One picobarn in barns. [`UiState`] carries the cross section in the unit the
-/// result line and the artifact use; `fmt_si` picks a prefix for a base unit.
-const PB_IN_BARN: f64 = 1.0e-12;
 
 /// Width the measurement column is given when the terminal can spare it.
 const MEASUREMENT_WIDTH: u16 = 26;
@@ -100,7 +96,8 @@ fn attention() -> Style {
 }
 
 /// A cross section and its uncertainty, in the prefix the value's own magnitude
-/// picks.
+/// picks. [`UiState`] carries them in picobarns, the unit the artifact records;
+/// `fmt_si` takes them in barns.
 ///
 /// The significant figures are chosen from how far the uncertainty sits below
 /// the value, because both are rendered at the value's width: a result quoted to
@@ -113,12 +110,7 @@ pub(crate) fn cross_section(sigma_pb: f64, err_pb: f64) -> String {
     } else {
         4
     };
-    fmt_si(
-        sigma_pb * PB_IN_BARN,
-        Some(err_pb * PB_IN_BARN),
-        "b",
-        digits,
-    )
+    fmt_si(sigma_pb * PICOBARN, Some(err_pb * PICOBARN), "b", digits)
 }
 
 /// The status pane. Construct it around the state to draw and render it into a

@@ -74,6 +74,7 @@ use crate::assets;
 use crate::error::{err, CliError};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
+use crate::si::{fmt_si_measured, GEV, PICOBARN};
 use crate::tui;
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
@@ -657,35 +658,16 @@ impl std::fmt::Display for FactorizationScale {
     }
 }
 
-/// `value ± error` in scientific notation: the error to two significant
-/// figures, and the value to the same decimal place, so the line carries the
-/// digits the error supports and no more however many decades the value spans.
-/// An error that bounds no digit (zero, as a constant integrand's can be, or
-/// not finite) leaves the value at its shortest exact form.
-fn value_and_error(value: f64, error: f64) -> String {
-    let exponent = |text: &str| -> i32 {
-        text.rsplit_once('e')
-            .and_then(|(_, e)| e.parse().ok())
-            .expect("a number formatted with {:e} carries its exponent")
+/// `value ± error` of `observable` in its reported unit (pb, or GeV for a
+/// width), printed by [`fmt_si_measured`] under one SI-prefixed barn or
+/// electronvolt unit: a 9e-6 pb cross section is `8.6812 ± 0.0023 ab`, a
+/// 2e-7 GeV width `200.1 ± 1.2 eV`.
+fn measurement(observable: Observable, value: f64, error: f64) -> String {
+    let (base, unit) = match observable {
+        Observable::CrossSection => (PICOBARN, "b"),
+        Observable::PartialWidth => (GEV, "eV"),
     };
-    if !(error > 0.0 && error.is_finite() && value.is_finite()) {
-        return format!("{value:e} ± {error:e}");
-    }
-    let error_text = format!("{error:.1e}");
-    if value == 0.0 {
-        return format!("0e0 ± {error_text}");
-    }
-    let last_place = exponent(&error_text) - 1;
-    let decade = exponent(&format!("{value:e}"));
-    // f64 holds 17 significant digits; past them a printed digit is noise.
-    let decimals = |decade: i32| (decade - last_place).clamp(1, 16) as usize;
-    let mut value_text = format!("{value:.prec$e}", prec = decimals(decade));
-    // Rounding can carry the value into the next decade, which moves its last
-    // printed digit one place up; one more decimal puts it back.
-    if exponent(&value_text) > decade {
-        value_text = format!("{value:.prec$e}", prec = decimals(decade + 1));
-    }
-    format!("{value_text} ± {error_text}")
+    fmt_si_measured(value * base, error * base, unit)
 }
 
 /// The metadata printed and banked for a completed run, independent of beam mode.
@@ -926,11 +908,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     // caller pipes this to read the cross section, at any verbosity. A cross
     // section or a partial width spans many decades — `h > e+ e- mu+ mu-` is
     // `2e-7` GeV — so its digits are set by its error, not by a decimal count.
-    let measured = value_and_error(sigma_pb, sigma_err_pb);
-    match observable {
-        Observable::CrossSection => tui::result_line(format_args!("σ = {measured} pb")),
-        Observable::PartialWidth => tui::result_line(format_args!("Γ = {measured} GeV")),
-    }
+    tui::result_line(format_args!(
+        "{} = {}",
+        observable.symbol(),
+        measurement(observable, sigma_pb, sigma_err_pb)
+    ));
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
@@ -1185,7 +1167,8 @@ fn report_multiplicities(
     per_channel: &[ChannelIntegration],
     niter: usize,
 ) {
-    let unit = Observable::CrossSection.per_natural_unit();
+    let observable = Observable::CrossSection;
+    let unit = observable.per_natural_unit();
     for (k, part) in integ.part_results(per_channel, niter).iter().enumerate() {
         let ids: Vec<String> = part_process_ids(&groups[k])
             .iter()
@@ -1197,11 +1180,11 @@ fn report_multiplicities(
             .map(|m| format!("{m}"))
             .collect();
         info!(
-            "{} outgoing legs ({}; masses {} GeV): σ = {} pb over {} channels",
+            "{} outgoing legs ({}; masses {} GeV): σ = {} over {} channels",
             integ.final_state_count(k),
             ids.join(" "),
             masses.join(", "),
-            value_and_error(part.integral * unit, part.std_dev * unit),
+            measurement(observable, part.integral * unit, part.std_dev * unit),
             integ.offsets()[k + 1] - integ.offsets()[k],
         );
     }
@@ -1318,26 +1301,37 @@ mod tests {
     use clap::Args;
     use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
 
-    /// A value's last printed digit sits where its error's second significant
-    /// figure does, across the decades a cross section or a width spans, and an
-    /// error that bounds nothing leaves the value exact.
+    /// A cross section in pb is printed under a barn prefix and a width in GeV
+    /// under an electronvolt one, each aligned to its error.
     #[test]
-    fn a_value_keeps_the_digits_its_error_supports() {
-        for (value, error, printed) in [
-            (8.681_234_567e-6, 2.345e-9, "8.6812e-6 ± 2.3e-9"),
-            (934.4237, 0.8712, "9.3442e2 ± 8.7e-1"),
-            (1.952_37e-3, 1.96e-4, "1.95e-3 ± 2.0e-4"),
-            // The error's rounding carries it into the next decade.
-            (4.0e-7, 9.96e-9, "4.00e-7 ± 1.0e-8"),
-            // The value's rounding carries it into the next decade.
-            (9.999_996e-6, 2.3e-9, "1.00000e-5 ± 2.3e-9"),
-            // An error larger than the value still leaves two figures.
-            (3.0e-5, 4.4e-4, "3.0e-5 ± 4.4e-4"),
-            (-1.234_56e-2, 1.1e-4, "-1.235e-2 ± 1.1e-4"),
-            (0.0, 1.1e-4, "0e0 ± 1.1e-4"),
-            (0.125, 0.0, "1.25e-1 ± 0e0"),
+    fn a_measurement_is_printed_in_its_observables_prefixed_unit() {
+        for (observable, value, error, printed) in [
+            (
+                Observable::CrossSection,
+                8.681_234_567e-6,
+                2.345e-9,
+                "8.6812 ± 0.0023 ab",
+            ),
+            (Observable::CrossSection, 802.94, 3.11, "802.9 ± 3.1 pb"),
+            (
+                Observable::PartialWidth,
+                2.001_23e-7,
+                1.234e-9,
+                "200.1 ± 1.2 eV",
+            ),
+            (
+                Observable::PartialWidth,
+                2.495_23,
+                0.001_23,
+                "2.4952 ± 0.0012 GeV",
+            ),
         ] {
-            assert_eq!(value_and_error(value, error), printed, "{value} ± {error}");
+            assert_eq!(
+                measurement(observable, value, error),
+                printed,
+                "{value} ± {error} {}",
+                observable.unit()
+            );
         }
     }
 

@@ -10,14 +10,17 @@ sources:
   - {id: sprint, resource: "sprint.md", title: "Sprint overview"}
   - {id: log, resource: "log.md", title: "Sprint log"}
   - {id: report, resource: "sessions/G-HY3-report.md", title: "G-HY3 report"}
+  - {id: report-hy4, resource: "sessions/G-HY4-report.md", title: "G-HY4 report"}
   - {id: pr, resource: "https://github.com/nsmith-/vibegraph/pull/90", title: "nsmith-/vibegraph#90"}
 ---
 One session, [G-HY3](sessions/G-HY3-report.md), on #90, stacked on #88.
 
 ## What landed
 
-- σ and its error print to the error's second significant figure
-  (`value_and_error`): a 9e-6 pb σ reads `8.6812e-6 ± 2.3e-9`.
+- σ and its error print to the error's second significant figure, both under
+  the one SI-prefixed barn unit σ's magnitude picks (`fmt_si_measured` in
+  `si.rs`, after the user's review; [G-HY4](sessions/G-HY4-report.md)): a
+  9e-6 pb σ reads `8.6812 ± 0.0023 ab`, a width `200.1 ± 1.2 eV`.
 - `VegasResult::chi2_per_dof` is `Option<f64>`; fewer than two entering
   iterations print `n/a` and record `None`.
 - `FactorizationScale` names a constant, a per-beam or a dynamical scale (with

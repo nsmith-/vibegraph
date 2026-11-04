@@ -375,18 +375,15 @@ fn run_small_sigma(niter: &str) -> (IntegrateArtifact, String, String) {
     (artifact, common::stdout_of(&output), stderr)
 }
 
-/// The base-10 exponent of a printed number's last digit: `8.6812e-6` ends at
-/// `1e-10`, `0.000009` at `1e-6`.
-fn last_place(text: &str) -> i32 {
-    let (mantissa, exponent) = text.split_once('e').unwrap_or((text, "0"));
-    let decimals = mantissa.split_once('.').map_or(0, |(_, d)| d.len()) as i32;
-    exponent.parse::<i32>().expect("an exponent") - decimals
+/// The digits after a printed number's decimal point.
+fn decimals(text: &str) -> usize {
+    text.split_once('.').map_or(0, |(_, d)| d.len())
 }
 
-/// A cross section of order `1e-5` pb is printed with the digits its error
-/// supports: the error to two significant figures, and σ to the place of the
-/// error's second, so σ reads back to within a twentieth of its error and
-/// carries no digit below that place.
+/// A cross section of order `1e-5` pb is printed in attobarns with the digits
+/// its error supports: the error to two significant figures, and σ to the same
+/// decimal place, so σ reads back to within a twentieth of its error and the
+/// two carry the same number of decimals.
 #[test]
 fn a_small_cross_section_prints_the_digits_its_error_supports() {
     let (artifact, stdout, _) = run_small_sigma("4");
@@ -395,38 +392,38 @@ fn a_small_cross_section_prints_the_digits_its_error_supports() {
         (1.0e-6..1.0e-4).contains(&sigma) && err > 0.0,
         "σ = {sigma} ± {err} pb is not the small cross section this test is for"
     );
-    let line = stdout
-        .lines()
-        .find(|l| l.starts_with("σ = "))
-        .unwrap_or_else(|| panic!("no result line in:\n{stdout}"));
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    assert_eq!(
-        (fields.len(), fields[3], fields[5]),
-        (6, "±", "pb"),
-        "{line}"
+    let printed = common::result_line(&stdout);
+    let line = printed.line;
+    assert_eq!((printed.symbol, printed.unit), ("σ", "ab"), "{line}");
+    let mantissa: f64 = printed.value_text.parse().expect("σ parses");
+    assert!(
+        (1.0..1000.0).contains(&mantissa),
+        "{line}: σ's mantissa is outside [1, 1000)"
     );
-    let (sigma_text, err_text) = (fields[2], fields[4]);
-    let printed_sigma: f64 = sigma_text.parse().expect("σ parses");
-    let printed_err: f64 = err_text.parse().expect("the error parses");
-
-    let mantissa = err_text.split_once('e').map_or(err_text, |(m, _)| m);
+    let figures = printed
+        .error_text
+        .trim_start_matches(['0', '.'])
+        .chars()
+        .filter(char::is_ascii_digit)
+        .count();
     assert_eq!(
-        mantissa.chars().filter(char::is_ascii_digit).count(),
-        2,
+        figures, 2,
         "{line}: the error carries two significant figures"
     );
-    assert!(
-        (printed_err / err - 1.0).abs() <= 0.05,
-        "{line}: the error reads {printed_err} for {err}"
-    );
     assert_eq!(
-        last_place(sigma_text),
-        last_place(err_text),
-        "{line}: σ's last digit is not at the error's second significant figure"
+        decimals(printed.value_text),
+        decimals(printed.error_text),
+        "{line}: σ is not printed to the error's decimal place"
     );
     assert!(
-        (printed_sigma - sigma).abs() <= 0.05 * err,
-        "{line}: σ reads {printed_sigma} for {sigma} ± {err}"
+        (printed.error / err - 1.0).abs() <= 0.05,
+        "{line}: the error reads {} pb for {err} pb",
+        printed.error
+    );
+    assert!(
+        (printed.value - sigma).abs() <= 0.05 * err,
+        "{line}: σ reads {} pb for {sigma} ± {err} pb",
+        printed.value
     );
 }
 
