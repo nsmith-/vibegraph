@@ -6,3 +6,7 @@
 
 * [G-V1: why card 048 integrates to one nonzero point with μF = 0](G-V1.md) - Diagnose CMS card 048 (XtoYYprimeTo4Q, p p > vz, vz > h z): why one point per seed carries σ at the gridpack card, why the defaults' seeds disagree, why μF logs 0 and '0 resonant pairs'; fix or refuse each defect with a test.
 * [G-V2: why VEGAS under-covers a 3 % slice, and making the stop see it](G-V2.md) - Locate the per-channel floor or allocation that leaves the both-W |cos θ| > 0.99 slice of u u~ > w+ b w- b~ / t t~ 3 % low at the default budget, and make the convergence stop detect it, or propose a runtime warning to the user.
+
+## Session Report
+
+* [G-V2 report: the 3 % slice deficit is gone on main, and a point-level tail index is the indicator that sees it](G-V2-report.md) - On main the both-W |cos θ| > 0.99 slice integrates correctly at the default budget (30 seeds, -0.07 % and +0.07 %, chi2/dof about 1, against a 1e6 reference and a frozen-grid estimator). The deficit reproduces on the V2-era tree (-2.4 %, 10 seeds); its cause was a heavy weight tail from timelike-only channels that the unbounded grid adaptation starved, with the convergence stop stopping on the iterations that missed the tail. The bin-width bound and the peripheral spine removed it. An iteration-scatter indicator is blind to exactly the low runs; a per-channel Hill tail index below 2 flags 16 of 17 at-risk runs and 0 of 330 correct ones. No production code: a runtime-warning proposal (decision G5).
