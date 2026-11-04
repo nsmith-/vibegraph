@@ -1,5 +1,6 @@
 use rustpython_parser::ast;
 use rustpython_parser::{parse, Mode, ParseError};
+use thiserror::Error;
 
 /// Parse Python source into a list of top-level statements.
 pub(crate) fn parse_stmts(src: &str) -> Result<Vec<ast::Stmt>, ParseError> {
@@ -185,11 +186,6 @@ pub(crate) fn kwarg_int(kws: &[ast::Keyword], name: &str) -> Option<i64> {
     extract_int(get_kwarg(kws, name)?)
 }
 
-/// Get a keyword argument as a float (accepts int literals too).
-pub(crate) fn kwarg_float(kws: &[ast::Keyword], name: &str) -> Option<f64> {
-    extract_float(get_kwarg(kws, name)?)
-}
-
 /// Get a keyword argument as a boolean (`True`/`False` literals).
 pub(crate) fn kwarg_bool(kws: &[ast::Keyword], name: &str) -> Option<bool> {
     match get_kwarg(kws, name)? {
@@ -207,5 +203,118 @@ pub(crate) fn call_func_name(expr: &ast::Expr) -> Option<&str> {
         ast::Expr::Name(ast::ExprName { id, .. }) => Some(id.as_str()),
         ast::Expr::Attribute(ast::ExprAttribute { attr, .. }) => Some(attr.as_str()),
         _ => None,
+    }
+}
+
+/// A field of a UFO object that is absent or not in the form the loader reads.
+///
+/// The required fields are those of each class's `require_args` in UFO's
+/// `object_library.py` (`mg5amcnlo/models/sm/object_library.py`): positional
+/// constructor parameters without a default, so a model missing one does not
+/// import in MadGraph either.
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum FieldError {
+    #[error("{object} '{name}' has no `{field}`, which UFO's object_library requires")]
+    Missing {
+        object: &'static str,
+        name: String,
+        field: &'static str,
+    },
+    #[error("{object} '{name}': `{field}` must be {expected}")]
+    Malformed {
+        object: &'static str,
+        name: String,
+        field: &'static str,
+        expected: &'static str,
+    },
+    #[error("{object} '{name}' is defined twice")]
+    Duplicate { object: &'static str, name: String },
+}
+
+/// The keyword arguments of one UFO constructor call, read field by field with
+/// errors naming the object (`object` its class, `name` its Python variable).
+pub(crate) struct Fields<'a> {
+    object: &'static str,
+    name: &'a str,
+    keywords: &'a [ast::Keyword],
+}
+
+impl<'a> Fields<'a> {
+    pub(crate) fn new(object: &'static str, name: &'a str, keywords: &'a [ast::Keyword]) -> Self {
+        Fields {
+            object,
+            name,
+            keywords,
+        }
+    }
+
+    pub(crate) fn malformed(&self, field: &'static str, expected: &'static str) -> FieldError {
+        FieldError::Malformed {
+            object: self.object,
+            name: self.name.to_owned(),
+            field,
+            expected,
+        }
+    }
+
+    /// The expression given for `field`, if any.
+    pub(crate) fn optional(&self, field: &str) -> Option<&'a ast::Expr> {
+        get_kwarg(self.keywords, field)
+    }
+
+    /// The expression given for `field`, refused when absent.
+    pub(crate) fn required(&self, field: &'static str) -> Result<&'a ast::Expr, FieldError> {
+        self.optional(field).ok_or_else(|| FieldError::Missing {
+            object: self.object,
+            name: self.name.to_owned(),
+            field,
+        })
+    }
+
+    /// A required string literal.
+    pub(crate) fn str(&self, field: &'static str) -> Result<String, FieldError> {
+        extract_str(self.required(field)?)
+            .map(str::to_owned)
+            .ok_or_else(|| self.malformed(field, "a string"))
+    }
+
+    /// A required integer literal.
+    pub(crate) fn int(&self, field: &'static str) -> Result<i64, FieldError> {
+        extract_int(self.required(field)?).ok_or_else(|| self.malformed(field, "an integer"))
+    }
+
+    /// A required integer literal that fits an `i32`.
+    pub(crate) fn int32(&self, field: &'static str) -> Result<i32, FieldError> {
+        i32::try_from(self.int(field)?).map_err(|_| self.malformed(field, "an integer"))
+    }
+
+    /// A required number ([`extract_float`]).
+    pub(crate) fn float(&self, field: &'static str) -> Result<f64, FieldError> {
+        extract_float(self.required(field)?).ok_or_else(|| self.malformed(field, "a number"))
+    }
+
+    /// An optional integer literal: `None` when absent, refused when present in
+    /// another form.
+    pub(crate) fn opt_int32(&self, field: &'static str) -> Result<Option<i32>, FieldError> {
+        self.optional(field)
+            .map(|e| {
+                extract_int(e)
+                    .and_then(|n| i32::try_from(n).ok())
+                    .ok_or_else(|| self.malformed(field, "an integer"))
+            })
+            .transpose()
+    }
+
+    /// A required `module.name` reference into `module`, returning `name`.
+    pub(crate) fn reference(
+        &self,
+        field: &'static str,
+        module: &str,
+        expected: &'static str,
+    ) -> Result<String, FieldError> {
+        match extract_attr(self.required(field)?) {
+            Some((m, attr)) if m == module => Ok(attr.to_owned()),
+            _ => Err(self.malformed(field, expected)),
+        }
     }
 }

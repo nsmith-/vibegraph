@@ -1,5 +1,5 @@
 use super::ast_util::{
-    constructor_calls, extract_attr, extract_int, extract_str, kwarg_str, parse_stmts,
+    constructor_calls, extract_attr, extract_int, extract_str, parse_stmts, FieldError, Fields,
 };
 use super::color::ColorExpr;
 use super::couplings::CouplingId;
@@ -8,13 +8,15 @@ use super::particles::{Particle, ParticleId};
 use indexmap::IndexMap;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashSet};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum VertexError {
     #[error("Failed to parse vertices.py: {0}")]
     Parse(String),
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
 
 /// Opaque index into `UFOModel::vertices`.
@@ -59,13 +61,26 @@ pub(crate) struct RawVertex {
 pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
     let stmts = parse_stmts(src).map_err(|e| VertexError::Parse(e.to_string()))?;
     let mut result = Vec::new();
+    let mut names: HashSet<String> = HashSet::new();
 
-    for (_, keywords) in constructor_calls(&stmts, "Vertex") {
-        let name = kwarg_str(keywords, "name").unwrap_or_default();
-        let particles = extract_name_list(keywords, "particles", "P", &name)?;
-        let color = extract_str_list(keywords, "color");
-        let lorentz = extract_name_list(keywords, "lorentz", "L", &name)?;
-        let couplings = extract_couplings_dict(keywords);
+    // `Vertex.require_args` in UFO's object library
+    // (`mg5amcnlo/models/sm/object_library.py` L170) lists all five fields. The
+    // loader keys vertices by `name`, so a repeated one is refused rather than
+    // left to replace the first.
+    for (python_name, keywords) in constructor_calls(&stmts, "Vertex") {
+        let fields = Fields::new("vertex", python_name, keywords);
+        let name = fields.str("name")?;
+        if !names.insert(name.clone()) {
+            return Err(FieldError::Duplicate {
+                object: "vertex",
+                name,
+            }
+            .into());
+        }
+        let particles = extract_name_list(&fields, "particles", "P", &name)?;
+        let color = extract_str_list(&fields, "color")?;
+        let lorentz = extract_name_list(&fields, "lorentz", "L", &name)?;
+        let couplings = extract_couplings_dict(&fields)?;
 
         // Validation: check all coupling indices are in range of lorentz/color lists
         for (&(color_idx, lor_idx), coup_name) in &couplings {
@@ -92,7 +107,7 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
             particles,
             color,
             lorentz,
-            couplings: couplings.into_iter().collect(),
+            couplings,
         });
     }
 
@@ -103,17 +118,13 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
 /// `particles`, `L.FFV1` under `lorentz`), returning just the `Name` part. An
 /// entry that is not an attribute of `prefix` is an error naming `vertex`.
 fn extract_name_list(
-    keywords: &[ast::Keyword],
-    kw: &str,
+    fields: &Fields<'_>,
+    kw: &'static str,
     prefix: &str,
     vertex: &str,
 ) -> Result<Vec<String>, VertexError> {
-    use super::ast_util::get_kwarg;
-    let Some(val) = get_kwarg(keywords, kw) else {
-        return Ok(vec![]);
-    };
-    let ast::Expr::List(ast::ExprList { elts, .. }) = val else {
-        return Ok(vec![]);
+    let ast::Expr::List(ast::ExprList { elts, .. }) = fields.required(kw)? else {
+        return Err(fields.malformed(kw, "a list").into());
     };
     elts.iter()
         .map(|e| match extract_attr(e) {
@@ -126,43 +137,43 @@ fn extract_name_list(
 }
 
 /// Extract a list of string literals.
-fn extract_str_list(keywords: &[ast::Keyword], kw: &str) -> Vec<String> {
-    use super::ast_util::get_kwarg;
-    let Some(val) = get_kwarg(keywords, kw) else {
-        return vec![];
-    };
-    let ast::Expr::List(ast::ExprList { elts, .. }) = val else {
-        return vec![];
+fn extract_str_list(fields: &Fields<'_>, kw: &'static str) -> Result<Vec<String>, FieldError> {
+    const EXPECTED: &str = "a list of strings";
+    let ast::Expr::List(ast::ExprList { elts, .. }) = fields.required(kw)? else {
+        return Err(fields.malformed(kw, EXPECTED));
     };
     elts.iter()
-        .filter_map(|e| extract_str(e).map(|s| s.to_owned()))
+        .map(|e| {
+            extract_str(e)
+                .map(str::to_owned)
+                .ok_or_else(|| fields.malformed(kw, EXPECTED))
+        })
         .collect()
 }
 
 /// Extract `couplings = {(0,0): C.GC_3, ...}` into a map.
-fn extract_couplings_dict(keywords: &[ast::Keyword]) -> HashMap<(usize, usize), String> {
-    use super::ast_util::get_kwarg;
-    let Some(val) = get_kwarg(keywords, "couplings") else {
-        return HashMap::new();
+fn extract_couplings_dict(
+    fields: &Fields<'_>,
+) -> Result<BTreeMap<(usize, usize), String>, FieldError> {
+    const EXPECTED: &str = "a dict of `(colour, lorentz)` index pairs to `C.<name>` references";
+    let malformed = || fields.malformed("couplings", EXPECTED);
+    let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("couplings")? else {
+        return Err(malformed());
     };
-    let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = val else {
-        return HashMap::new();
-    };
-
+    let index = |e: &ast::Expr| extract_int(e).and_then(|n| usize::try_from(n).ok());
     keys.iter()
         .zip(values.iter())
-        .filter_map(|(k, v)| {
-            let key_expr = k.as_ref()?;
-            let ast::Expr::Tuple(ast::ExprTuple { elts, .. }) = key_expr else {
-                return None;
+        .map(|(k, v)| {
+            let Some(ast::Expr::Tuple(ast::ExprTuple { elts, .. })) = k.as_ref() else {
+                return Err(malformed());
             };
-            if elts.len() != 2 {
-                return None;
+            let [i, j] = elts.as_slice() else {
+                return Err(malformed());
+            };
+            match (index(i), index(j), extract_attr(v)) {
+                (Some(i), Some(j), Some(("C", coupling))) => Ok(((i, j), coupling.to_owned())),
+                _ => Err(malformed()),
             }
-            let i = extract_int(&elts[0])? as usize;
-            let j = extract_int(&elts[1])? as usize;
-            let coup_name = extract_attr(v).map(|(_, attr)| attr.to_owned())?;
-            Some(((i, j), coup_name))
         })
         .collect()
 }

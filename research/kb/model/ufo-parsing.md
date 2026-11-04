@@ -48,6 +48,19 @@ escaped quotes, multi-line calls and attribute assignments without grammar maint
 `particles.py` handles both `Particle(...)` constructors and the `u__tilde__ = u.anti()`
 shorthand; attribute assignments such as `loop_sm`'s `.counterterm = …` are skipped.
 
+**Required fields have no defaults.** A field in a class's `require_args` in UFO's
+`object_library.py` is a positional constructor parameter without a default, so a
+model missing one does not import in MadGraph either. The loader refuses such a
+field, missing or in a form it does not read, naming the object and the field
+(`FieldError`, `ufo/ast_util.rs`): every `Particle`, `Parameter`, `Coupling` and
+`Vertex` field there, a parameter `nature` other than `external`/`internal` or a
+`type` other than `real`/`complex`, and an external's `lhablock`/`lhacode`, which
+`Parameter.__init__` requires. Two parameters or two vertices with one name are
+refused too, as MadGraph refuses the parameters (`load_model`, "define multiple
+time"). The defaults kept are MadGraph's own: `goldstoneboson = False` and the
+optional `GhostNumber`, `line` and `propagator`. `Lorentz` fields are not yet held
+to the same rule.
+
 **Strings: PEG grammars.** Only the quoted expression strings are parsed with `peg`:
 
 - `ufo/expr.rs`: parameter and coupling `value` strings;

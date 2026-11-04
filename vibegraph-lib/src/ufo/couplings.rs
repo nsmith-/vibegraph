@@ -1,4 +1,6 @@
-use super::ast_util::{constructor_calls, extract_int, extract_str, kwarg_str, parse_stmts};
+use super::ast_util::{
+    constructor_calls, extract_int, extract_str, parse_stmts, FieldError, Fields,
+};
 use super::expr::{collect_deps, parse_expr, Expr};
 use indexmap::IndexMap;
 use num_complex::Complex64;
@@ -18,6 +20,8 @@ pub enum CouplingError {
         "coupling '{coupling}' references parameter '{name}', which parameters.py does not define"
     )]
     UnknownParameter { name: String, coupling: String },
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
 
 /// Strongly typed index for [`Coupling`] lookup
@@ -79,17 +83,20 @@ pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError>
     let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 
+    // `Coupling.require_args` in UFO's object library
+    // (`mg5amcnlo/models/sm/object_library.py` L187): `name`, `value`, `order`.
     for (python_name, keywords) in constructor_calls(&stmts, "Coupling") {
+        let fields = Fields::new("coupling", python_name, keywords);
+        let name = fields.str("name")?;
+        let expr_str = fields.str("value")?;
+        let orders = extract_orders(&fields)?;
         let python_name = python_name.to_owned();
-        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-        let expr_str = kwarg_str(keywords, "value").unwrap_or_else(|| "0.0".to_owned());
         let expr = parse_expr(&expr_str).map_err(|e| CouplingError::ExprParse {
             name: name.clone(),
             cause: e.to_string(),
         })?;
         let mut deps = Vec::new();
         collect_deps(&expr, &mut deps);
-        let orders = extract_orders(keywords);
 
         result.push(Coupling {
             python_name,
@@ -103,22 +110,21 @@ pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError>
     Ok(result)
 }
 
-/// Extract the `order = {'QCD': 1, ...}` dict from keyword arguments.
-fn extract_orders(keywords: &[ast::Keyword]) -> BTreeMap<String, usize> {
-    use super::ast_util::get_kwarg;
-    let Some(val) = get_kwarg(keywords, "order") else {
-        return BTreeMap::new();
+/// The `order = {'QCD': 1, ...}` dict of a coupling.
+fn extract_orders(fields: &Fields<'_>) -> Result<BTreeMap<String, usize>, FieldError> {
+    const EXPECTED: &str = "a dict of order names to non-negative integers";
+    let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("order")? else {
+        return Err(fields.malformed("order", EXPECTED));
     };
-    let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = val else {
-        return BTreeMap::new();
-    };
-
     keys.iter()
         .zip(values.iter())
-        .filter_map(|(k, v)| {
-            let key = k.as_ref().and_then(|e| extract_str(e))?.to_owned();
-            let val = extract_int(v).map(|n| n as usize)?;
-            Some((key, val))
+        .map(|(k, v)| {
+            let key = k.as_ref().and_then(|e| extract_str(e));
+            let val = extract_int(v).and_then(|n| usize::try_from(n).ok());
+            match (key, val) {
+                (Some(key), Some(val)) => Ok((key.to_owned(), val)),
+                _ => Err(fields.malformed("order", EXPECTED)),
+            }
         })
         .collect()
 }

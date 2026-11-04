@@ -169,6 +169,11 @@ pub enum UfoError {
         particle: String,
         propagator: String,
     },
+    #[error(
+        "the restrict card sets the width of particle {pdg} to Auto, which MadGraph computes at \
+         launch; computing Auto widths is not supported yet, so give the width as a number"
+    )]
+    RestrictAutoWidth { pdg: i32 },
     #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
     UnknownSmRestrict { variant: String, known: String },
     #[error("{0}")]
@@ -345,23 +350,33 @@ impl ParsedModel {
     /// surviving coupling references (with the remaining coupling keys reindexed
     /// onto the shortened list). Colour structures are left alone, as MadGraph
     /// leaves them: an unreferenced one is never read, since every consumer
-    /// enumerates colour structures through the coupling keys.
-    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) {
+    /// enumerates colour structures through the coupling keys. Which couplings
+    /// vanish is MadGraph's rule ([`ZeroRule`]).
+    ///
+    /// A card giving a width as `Auto` is refused
+    /// ([`UfoError::RestrictAutoWidth`]): MadGraph keeps such a width free and
+    /// computes it at launch, and nothing here computes one.
+    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
+        if let Some(&pdg) = restrict_card.auto_widths().first() {
+            return Err(UfoError::RestrictAutoWidth { pdg });
+        }
         self.params.apply_restrict(restrict_card);
 
         let restrict_values =
             evaluate_couplings_for_restrict(&self.params, &self.couplings, restrict_card);
+        let rule = ZeroRule::for_couplings(restrict_values.values());
 
         for vertex in self.vertices.values_mut() {
             vertex
                 .couplings
-                .retain(|_key, coup_id| !is_zero_coupling(*coup_id, &restrict_values));
+                .retain(|_key, coup_id| !is_zero_coupling(*coup_id, &restrict_values, rule));
         }
         self.vertices
             .retain(|_name, vertex| !vertex.couplings.is_empty());
         for vertex in self.vertices.values_mut() {
             prune_unreferenced_lorentz(vertex);
         }
+        Ok(())
     }
 
     /// Apply a restrict card and build the feyngraph topology model.
@@ -369,7 +384,7 @@ impl ParsedModel {
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
     pub(crate) fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
         if let Some(restrict_card) = restrict {
-            self.apply_restriction(restrict_card);
+            self.apply_restriction(restrict_card)?;
         }
 
         // Build the feyngraph model using vibegraph's parsed UFO data
@@ -473,7 +488,7 @@ impl UFOModel {
         };
 
         if let Some(card) = card.as_ref() {
-            parsed.apply_restriction(card);
+            parsed.apply_restriction(card)?;
         }
         let digest = model_digest(&parsed);
         // The restriction is already baked in, so `into_model` only builds topology.
@@ -772,7 +787,15 @@ impl EvaluatedModel {
     /// Construct an `EvaluatedModel` from a `UFOModel` and a parameter card
     ///
     /// Evaluates all parameter values and coupling constants according to the given parameter card.
+    ///
+    /// # Panics
+    ///
+    /// If `param_card` gives a width as `Auto`, which no evaluation can read: a
+    /// card bound for a run goes through [`bind::bind_card`], which refuses it.
     pub fn from_model_card(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
+        if let Some(pdg) = param_card.auto_widths().first() {
+            panic!("the card sets the width of particle {pdg} to Auto, which is not computed");
+        }
         let param_values = model.params.evaluate(param_card);
 
         let coupling_values: Vec<Complex64> = model
@@ -921,12 +944,63 @@ fn evaluate_couplings_for_restrict(
         .collect()
 }
 
+/// Below this magnitude a coupling at the restriction's values is zero, unless
+/// [`STRICT_ZERO_BELOW`] puts the whole restriction under the strict rule.
+const ZERO_COUPLING_BELOW: f64 = 1e-13;
+
+/// A coupling in `[ZERO_COUPLING_BELOW, STRICT_ZERO_BELOW)` makes only exact zeros
+/// vanish.
+const STRICT_ZERO_BELOW: f64 = 1e-10;
+
+/// Which coupling values a restriction treats as zero: MadGraph's rule in
+/// `RestrictModel.detect_identical_couplings` (`import_ufo.py` L2549-L2558),
+/// kept as a MadGraph-compatibility choice.
+///
+/// Over every coupling of the model, on a vertex or not: `|g| <
+/// ZERO_COUPLING_BELOW` is zero ([`Threshold`](Self::Threshold)), unless some
+/// coupling lies in `[ZERO_COUPLING_BELOW, STRICT_ZERO_BELOW)`, in which case
+/// MadGraph reruns with `strict_zero` and only an exact zero is
+/// ([`Strict`](Self::Strict)). The thresholds are absolute, so the rule is not
+/// scale-invariant: one coupling at `1e-12` keeps another at `1e-14`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZeroRule {
+    Threshold,
+    Strict,
+}
+
+impl ZeroRule {
+    /// The rule MadGraph applies to a model whose couplings take `values`.
+    fn for_couplings<'a>(values: impl IntoIterator<Item = &'a Complex64>) -> Self {
+        let in_window = |v: &Complex64| {
+            let magnitude = v.norm();
+            (ZERO_COUPLING_BELOW..STRICT_ZERO_BELOW).contains(&magnitude)
+        };
+        if values.into_iter().any(in_window) {
+            ZeroRule::Strict
+        } else {
+            ZeroRule::Threshold
+        }
+    }
+
+    /// Whether `value` vanishes under the rule. A NaN never does, as in
+    /// MadGraph, whose comparisons are false for it.
+    fn is_zero(self, value: Complex64) -> bool {
+        match self {
+            ZeroRule::Threshold => value.norm() < ZERO_COUPLING_BELOW,
+            ZeroRule::Strict => value.re == 0.0 && value.im == 0.0,
+        }
+    }
+}
+
 /// Whether one coupling vanishes under the restrict parameters.
-fn is_zero_coupling(coup_id: CouplingId, restrict_values: &HashMap<CouplingId, Complex64>) -> bool {
+fn is_zero_coupling(
+    coup_id: CouplingId,
+    restrict_values: &HashMap<CouplingId, Complex64>,
+    rule: ZeroRule,
+) -> bool {
     restrict_values
         .get(&coup_id)
-        .map(|v| v.norm() < 1e-20)
-        .unwrap_or(true)
+        .is_none_or(|&v| rule.is_zero(v))
 }
 
 /// Drop the Lorentz structures no coupling of `vertex` refers to, renumbering the
@@ -1143,7 +1217,7 @@ mod tests {
         std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
-             color = 1, propagator = Prop.Z1, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
+             color = 1, mass = Param.ZERO, width = Param.ZERO, propagator = Prop.Z1, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
         )
         .unwrap();
         std::fs::write(
@@ -1180,7 +1254,7 @@ mod tests {
         std::fs::write(
             dir.join("particles.py"),
             "Z1 = Particle(pdg_code = 9000005, name = 'Z1', antiname = 'Z1', spin = 3,\n\
-             color = 1, propagator = Prop.Nope, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
+             color = 1, mass = Param.ZERO, width = Param.ZERO, propagator = Prop.Nope, texname = 'Z1', antitexname = 'Z1', charge = 0)\n",
         )
         .unwrap();
 
