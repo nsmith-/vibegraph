@@ -9,6 +9,7 @@
 * [G-F3: classify every construct of the param, restrict and reweight cards](G-F3.md) - A classification table per input card (consumed, benign with an argument, or refused when it could bite), asserted by a test as the run card's FIELD_CLASSES is; plus the UFO propagators.py required fields.
 * [G-F4: refuse σ = 0 and a σ carried by too few nonzero points](G-F4.md) - integrate exits non-zero with no artifact when every point has zero weight, or when fewer nonzero points than a measured threshold carry σ, naming the cut-pass count and whether |M|² vanished; generate refuses a σ = 0 artifact.
 * [G-F5: carry a param card's decay tables; MadGraph's negative-mass width sign](G-F5.md) - A param card's DECAY branching-ratio tables reach the LHEF <slha> header (recorded in the artifact so generate can write them), and a negative mass flips its width's sign as MadGraph's write_inc_file does, pinned per helicity against MadGraph on MSSM_SLHA2.
+* [G-HY1: hygiene review of the v0.2 refusals PR (#88)](G-HY1.md) - Review #88's change (G-F1–F5) for maintainability, test non-vacuity, visibility and reusable abstractions; write findings before editing; fix with mutation evidence.
 
 ## Session Report
 
