@@ -58,6 +58,14 @@ reads, so they go last and alone.
 - **G4. All three input cards get a classification table**, the param card
   first, then restrict and reweight.
 
+- **G6. A param card's decay tables are carried** (user, 2026-11-04), not
+  refused: the branching ratios go into the `<slha>` header as MadGraph writes
+  them, so MadWidth-written gridpack cards bind and the shower sees their BRs.
+- **G7. A negative mass flips its width's sign, as in MadGraph** (user,
+  2026-11-04): MadGraph's `write_inc_file` rule is ported into the model
+  evaluation and pinned against MadGraph on MSSM_SLHA2 (`Mneu3 < 0` in its
+  default restriction); the param-card refusal of negative masses is lifted.
+
 ## Sessions
 
 | Session | Agent type | Depends on | Gate | Closes |
@@ -66,7 +74,8 @@ reads, so they go last and alone.
 | G-F2 | feature-dev (Opus) | – | hermetic, lints, restriction/model gates | ufo-required-fields, restriction-threshold |
 | G-F3 | feature-dev (Opus) | G-F2 | hermetic, lints, param-card and reweight gates | input-cards-lack-field-classification |
 | G-F4 | feature-dev (Opus) | CERN re-run of the H2ToH1H3 pair | hermetic, lints, CLI tests, banked σ gates unchanged | zero-cross-section-reported-as-ok |
-| G-HY1 | hygiene-dev (Opus) | G-F1–F4 | hermetic, lints | – |
+| G-F5 | feature-dev (Opus) | G-F3 | hermetic, lints, LHEF and amplitude gates; MSSM per-helicity check | – (decisions G6, G7) |
+| G-HY1 | hygiene-dev (Opus) | G-F1–F5 | hermetic, lints | – |
 
 G-F1 and G-F2 touch disjoint files (`helas/eval`, `ufo/lorentz.rs` and
 `ufo/particles.rs`'s helicity list against the `ufo` loaders' field parsing and
