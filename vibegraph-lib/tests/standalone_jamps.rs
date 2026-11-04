@@ -145,6 +145,7 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("wpwm_to_wpwmz_cw", mg_graphs::WPWM_TO_WPWMZ_CW_GRAPHS),
     ("wpwm_to_wpwma_cw", WPWM_TO_WPWMA_CW_GRAPHS),
     ("ee_to_wpwmwpwm_cw", EE_TO_WPWMWPWM_CW_GRAPHS),
+    ("ee_to_mumu_negmz", &[0, 1]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -1061,6 +1062,16 @@ fn gux_to_ttxux() {
 #[test]
 fn uux_to_ttxg() {
     check("uux_to_ttxg");
+}
+
+/// A negative Z mass, evaluated at the parameters MadEvent's Fortran reads:
+/// MadGraph's `write_inc_file` negates the Z width beside it, so the s-channel
+/// propagator's `m·Γ` stays positive. Just below the pole the width carries most
+/// of the propagator's phase, so a width taken with the card's sign turns the Z
+/// diagram against the photon's.
+#[test]
+fn ee_to_mumu_negmz() {
+    check("ee_to_mumu_negmz");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact

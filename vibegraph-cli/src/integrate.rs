@@ -849,6 +849,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         inputs: RunInputs {
             pdf: output.pdf,
             params: moved,
+            decays: evaluated.decay_tables().to_vec(),
         },
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,

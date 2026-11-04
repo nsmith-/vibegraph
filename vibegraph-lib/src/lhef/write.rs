@@ -354,7 +354,13 @@ fn slha_number(value: f64) -> String {
 ///   width is another particle's parameter, each with `%e` and the particle's
 ///   name lower-cased, as MadGraph's model names it. A computed entry's
 ///   comment names the parameter, where MadGraph prints its expression.
+/// * Below a particle's `DECAY` line, the decay table the param card gave it
+///   ([`EvaluatedModel::decay_tables`]), in MadWidth's layout
+///   (`update_width_in_param_card`, `madevent_interface.py`).
 /// * A `QNUMBERS` block for every physical particle outside MadGraph's SM list.
+///
+/// Every value is the card's: a width the evaluation negated for a negative
+/// mass is written with the sign the card gave it.
 pub(crate) fn slha_block(evaluated: &EvaluatedModel) -> String {
     let model = evaluated.model();
     let particles = slha_particles(model);
@@ -377,12 +383,11 @@ pub(crate) fn slha_block(evaluated: &EvaluatedModel) -> String {
             todo.retain(|b| b != block);
             body.push_str(&slha_heading(block));
         }
-        body.push_str(&slha_external_line(
-            block,
-            code,
-            name,
-            slha_value(evaluated, name),
-        ));
+        let value = slha_value(evaluated, name);
+        body.push_str(&slha_external_line(block, code, name, value));
+        if let ("DECAY", &[pdg]) = (block.as_str(), *code) {
+            body.push_str(&slha_decay_rows(evaluated, pdg, value));
+        }
     }
     if let Some(previous) = current {
         body.push_str(&dependents(previous));
@@ -399,10 +404,38 @@ pub(crate) fn slha_block(evaluated: &EvaluatedModel) -> String {
     )
 }
 
-/// The real part of `name`'s value in `evaluated`; zero for `ZERO` and any
-/// name the evaluation does not hold.
+/// The real part of `name`'s value as the card gives it
+/// ([`EvaluatedModel::card_value`]); zero for `ZERO` and any name the
+/// evaluation does not hold.
 fn slha_value(evaluated: &EvaluatedModel, name: &str) -> f64 {
-    evaluated.param_values.get(name).map_or(0.0, |v| v.re)
+    evaluated.card_value(name)
+}
+
+/// The rows of the decay table the card gave particle `pdg`, whose width is
+/// `width`, in the layout MadWidth writes below a `DECAY` line: a column
+/// heading, then per channel the branching ratio, the number of daughters, the
+/// daughters as the card listed them, and the partial width as a comment.
+/// Nothing for a particle without a table.
+fn slha_decay_rows(evaluated: &EvaluatedModel, pdg: i32, width: f64) -> String {
+    let Some(table) = evaluated.decay_tables().iter().find(|t| t.pdg == pdg) else {
+        return String::new();
+    };
+    let mut text = String::from("#  BR             NDA  ID1    ID2   ...\n");
+    for channel in &table.channels {
+        let daughters = channel
+            .daughters
+            .iter()
+            .map(i32::to_string)
+            .collect::<Vec<_>>()
+            .join("  ");
+        text.push_str(&format!(
+            "   {}   {}    {daughters} # {}\n",
+            slha_number(channel.branching_ratio),
+            channel.daughters.len(),
+            channel.branching_ratio * width,
+        ));
+    }
+    text
 }
 
 /// The code of `name` when it is a free external parameter: an external the
@@ -522,12 +555,18 @@ fn slha_dependent_lines(
         } else {
             param
         };
+        let value = slha_value(evaluated, param);
         text.push_str(&format!(
             "{prefix} {} {} # {} : {what} \n",
             p.pdg_code,
-            c_exponential(slha_value(evaluated, param), 6, false, 0),
+            c_exponential(value, 6, false, 0),
             p.name.to_lowercase()
         ));
+        if width {
+            if let Ok(pdg) = i32::try_from(p.pdg_code) {
+                text.push_str(&slha_decay_rows(evaluated, pdg, value));
+            }
+        }
     }
     if text.is_empty() {
         return text;
@@ -892,6 +931,55 @@ mod tests {
                  3 3  # colour rep (1: singlet, 3: triplet, 8: octet)\n        \
                  4 1  # Particle/Antiparticle distinction (0=own anti)\n"
             ),
+            "{block}"
+        );
+    }
+
+    /// A param card's decay tables sit below their particles' `DECAY` lines in
+    /// MadWidth's layout, a free width's and a computed one's alike, with the
+    /// daughters as the card lists them and the partial width as the comment;
+    /// the lines around them are those of the card without tables.
+    #[test]
+    fn the_slha_block_writes_decay_tables_below_their_decay_lines() {
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let bind = |text: &str| {
+            let card: ParamCard = text.parse().unwrap();
+            slha_block(
+                &EvaluatedModel::from_model_card(sm_model(SMRestrict::Default), &card).unwrap(),
+            )
+        };
+        let plain = bind("DECAY 6 1.5\n");
+        let block =
+            bind("DECAY 6 1.5\n 1.0 2 5 24 # t > b w+\nDECAY 15 0.0\n 1.78e-1 3 16 11 -12\n");
+        let top = "#  BR             NDA  ID1    ID2   ...\n   1.000000e+00   2    5  24 # 1.5\n";
+        let tau =
+            "#  BR             NDA  ID1    ID2   ...\n   1.780000e-01   3    16  11  -12 # 0\n";
+        assert!(
+            block.contains(&format!("DECAY   6 1.500000e+00 # WT \n{top}")),
+            "{block}"
+        );
+        assert!(
+            block.contains(&format!("DECAY  15 0.000000e+00 # ta- : 0.0 \n{tau}")),
+            "{block}"
+        );
+        assert_eq!(block.replace(top, "").replace(tau, ""), plain);
+    }
+
+    /// A negative mass's width is written as the card gives it, though the
+    /// evaluation holds it negated.
+    #[test]
+    fn the_slha_block_writes_a_negated_width_as_the_card_gives_it() {
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let card: ParamCard = "Block MASS\n 6 -1.75e2\n".parse().unwrap();
+        let evaluated =
+            EvaluatedModel::from_model_card(sm_model(SMRestrict::Default), &card).unwrap();
+        assert!(evaluated.param_values["WT"].re < 0.0);
+        let block = slha_block(&evaluated);
+        assert!(block.contains("\n    6 -1.750000e+02 # MT \n"), "{block}");
+        assert!(
+            block.contains("\nDECAY   6 1.491500e+00 # WT \n"),
             "{block}"
         );
     }

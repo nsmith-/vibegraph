@@ -70,14 +70,15 @@ the default to 1 or 0 while keeping the parameter out of `ones`, `zeros` and
 path by `param` and, when that file exists, takes the model's defaults from it.
 SMEFTsim ships `param_card_massless.dat`, which that rule never names.
 
-## Known divergence
+## A negative default mass
 
-A negative mass is read as MadGraph's restriction reads it, but MadGraph's
-Fortran negates the particle's width beside a negative card mass, and the
-evaluation here does not. `MSSM_SLHA2`'s `restrict_default` sets
-`Mneu3 = -363.756` with a width of 1.916. The param card refuses a negative
-mass; the restriction's default is not refused, because that would refuse
-`MSSM_SLHA2`'s shipped cards.
+A negative mass is read as MadGraph's restriction reads it, and the
+evaluation negates the width at the same code as MadGraph's Fortran does
+([param-card classification](param-card-classification.md)), whether the mass
+is a restriction default or a param card's. `MSSM_SLHA2`'s `restrict_default`
+sets `Mneu3 = -363.756` with a width of 1.916, evaluated as -1.916 (a
+neutralino is a Majorana fermion, which diagram generation refuses, so no
+MSSM amplitude reads it yet).
 
 ## Tests and their blind spots
 

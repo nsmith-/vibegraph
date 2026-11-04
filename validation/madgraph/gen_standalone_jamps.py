@@ -97,6 +97,16 @@ class Row:
     # helicity. A table with hundreds of graphs and helicities is a few MB a point.
     amp_points: int | None = None
     amp_helicity_stride: int = 1
+    # `(block, code, value)` entries set in the param card both sides evaluate.
+    card_edits: tuple = ()
+    # Evaluate at the parameters MadEvent's Fortran reads rather than the ones
+    # standalone output reads: MadGraph's own `write_inc_file` writes
+    # `Source/param_card.inc` from the card, and the model's `param_read.inc`
+    # includes it, as `output madevent` writes it (`export_v4.py`,
+    # `create_param_read`). The two differ for a negative mass: `write_inc_file`
+    # negates the width at the mass's code, standalone output only a Majorana
+    # fermion's.
+    madevent_params: bool = False
 
     def ufo_paths(self) -> dict:
         """The committed model directory and restrict card, repository-relative,
@@ -334,6 +344,13 @@ ROWS = {
         Row("tata_to_ttxa_tensor4f", "ta+ ta- > t t~ a NP<=1 SMHLOOP=0", (-15, 15),
             (6, -6, 22), 1000.0, 3, 5102, model=SMEFT, restrict="vg_cleQt3",
             model_row="tata_to_ttx_tensor4f", bank_amps=True),
+        # A negative Z mass, at the parameters MadEvent's Fortran reads: MadGraph's
+        # `write_inc_file` negates WZ beside it, so the s-channel Z keeps a
+        # positive M*Gamma. Just below the pole the width carries most of the Z
+        # propagator's phase, so a wrong width sign turns the Z diagram against
+        # the photon's.
+        Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
+            card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
     ]
 }
 
@@ -538,11 +555,65 @@ def main():
         bank(ROWS[args.key], args)
 
 
+def edit_card(card: str, edits: tuple) -> str:
+    """A copy of `card` beside it with each `(block, code, value)` of `edits` set
+    on its existing line, the comment kept; returns the copy's path."""
+    with open(card) as f:
+        lines = f.read().splitlines()
+    block = None
+    todo = {(b.lower(), code): value for b, code, value in edits}
+    for i, line in enumerate(lines):
+        fields = line.split("#")[0].split()
+        if not fields:
+            continue
+        if fields[0].lower() == "block":
+            block = fields[1].lower()
+            continue
+        if fields[0].lower() == "decay":
+            block = None
+            key = ("decay", int(fields[1]))
+            if key in todo:
+                lines[i] = re.sub(r"^(DECAY\s+\S+\s+)\S+", rf"\g<1>{todo.pop(key):e}", line)
+            continue
+        if block is not None and len(fields) == 2 and (block, int(fields[0])) in todo:
+            value = todo.pop((block, int(fields[0])))
+            lines[i] = re.sub(r"^(\s*\S+\s+)\S+", rf"\g<1>{value:e}", line)
+    assert not todo, f"no card line for {sorted(todo)}"
+    out = card.replace(".dat", "_edited.dat")
+    with open(out, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return out
+
+
+def madevent_parameters(pdir: str, card: str) -> None:
+    """Make the standalone model read MadEvent's parameters: MadGraph's own
+    `write_inc_file` writes `Source/param_card.inc` from `card`, and
+    `param_read.inc` becomes the one line `output madevent` writes there."""
+    root = os.path.abspath(os.path.join(pdir, "..", ".."))
+    mg5 = os.environ.get("VG_MG5_ROOT", os.path.join(HERE, "..", "..", "research", "refs",
+                                                     "mg5amcnlo"))
+    sys.path.insert(0, os.path.abspath(mg5))
+    from models import check_param_card  # noqa: E402  (the pinned MadGraph's own)
+
+    check_param_card.ParamCard(card).write_inc_file(
+        os.path.join(root, "Source", "param_card.inc"),
+        os.path.join(root, "Cards", "ident_card.dat"),
+        os.path.join(root, "Cards", "param_card_default.dat"),
+    )
+    with open(os.path.join(root, "Source", "MODEL", "param_read.inc"), "w") as f:
+        f.write("      include '../param_card.inc'\n")
+    # `output standalone` has already compiled the model, and the makefile does
+    # not track the include, so the objects that read it are rebuilt.
+    for stale in [os.path.join(root, "Source", "MODEL", "rw_para.o"),
+                  os.path.join(root, "lib", "libmodel.a")]:
+        if os.path.exists(stale):
+            os.remove(stale)
+
+
 def bank(row: Row, args) -> None:
     """Generate (or reuse) one row's standalone directory and write its table."""
     pdir = run_madgraph(row, os.path.abspath(args.work))
     ngraphs, ncolor, hels = read_matrix(pdir)
-    exe = build_driver(pdir, ngraphs, ncolor)
     card = os.path.abspath(os.path.join(pdir, "..", "..", "Cards", "param_card.dat"))
     if row.zero_widths:
         # MadEvent zeroes t-channel widths and this crate does too; standalone
@@ -553,6 +624,11 @@ def bank(row: Row, args) -> None:
         card = card.replace("param_card.dat", "param_card_zero_widths.dat")
         with open(card, "w") as f:
             f.write(text)
+    if row.card_edits:
+        card = edit_card(card, row.card_edits)
+    if row.madevent_params:
+        madevent_parameters(pdir, card)
+    exe = build_driver(pdir, ngraphs, ncolor)
     pts = points(row, read_masses(card))
     per_point = evaluate(exe, card, pts, hels)
 

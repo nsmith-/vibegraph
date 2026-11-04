@@ -200,12 +200,46 @@ fn param_refusal(text: &str) -> String {
 }
 
 /// MadGraph writes a card's branching ratios into the event file's `<slha>`
-/// header, where a shower reads them for the states it decays; the header
-/// written here comes from the model and carries none.
+/// header, where a shower reads them for the states it decays, and checks
+/// neither their sum nor their daughters (`check_param_card.py` reads a row as
+/// a number and a list of codes). A table is carried as written: one that sums
+/// to 0.7 and names a daughter the model lacks binds, and the width beside it
+/// binds as it did without a table.
 #[test]
-fn a_decay_table_is_refused_naming_the_particle() {
-    let message = param_refusal("DECAY 6 1.5\n 1.0 2 5 24 # t > b w+\n");
-    assert_mentions(&message, &["branching", "6"]);
+fn a_decay_table_is_carried_as_written() {
+    let model = sm_model(SMRestrict::Default);
+    let card: ParamCard = "DECAY 6 1.5\n 0.6 2 5 24 # t > b w+\n 0.1 2 9999999 24\n"
+        .parse()
+        .unwrap();
+    let bound = bind_card(model.clone(), &card).unwrap();
+    let plain = bind_card(model, &"DECAY 6 1.5\n".parse().unwrap()).unwrap();
+    assert_eq!(bound.moved, plain.moved);
+    assert_eq!(bound.evaluated.param_values["WT"].re, 1.5);
+}
+
+/// A row whose `NDA` disagrees with its daughters: MadGraph counts the
+/// daughters, a shower reading the header reads `NDA`.
+#[test]
+fn a_decay_row_whose_nda_disagrees_is_refused() {
+    let message = param_refusal("DECAY 6 1.5\n 1.0 3 5 24\n");
+    assert_mentions(&message, &["NDA = 3", "line 2"]);
+}
+
+/// A channel given two branching ratios: MadGraph keeps the first silently,
+/// a shower reading the header reads both.
+#[test]
+fn a_decay_channel_given_two_branching_ratios_is_refused() {
+    let message = param_refusal("DECAY 6 1.5\n 0.9 2 5 24\n 0.8 2 24 5\n");
+    assert_mentions(&message, &["line 3", "on line 2"]);
+}
+
+/// A table below a `DECAY` line for an antiparticle's code: the header lists
+/// each particle once, under its positive PDG code, so the rows would have no
+/// line to sit under.
+#[test]
+fn a_decay_table_under_a_negative_code_is_refused() {
+    let message = param_refusal("DECAY -24 2.085\n 1.0 2 11 -12\n");
+    assert_mentions(&message, &["-24", "positive PDG code"]);
 }
 
 /// MadGraph reads `DECAY 6 1.5 0.3` as a width of `"1.5 0.3"`, a string.
@@ -238,12 +272,22 @@ fn a_scan_value_is_refused() {
 }
 
 /// MadGraph negates the width of a particle whose card mass is negative
-/// (`check_param_card.py`'s `write_inc_file`); the propagators here use the
-/// width as given.
+/// (`check_param_card.py`'s `write_inc_file`), and so does the evaluation here:
+/// the top's width is evaluated negative, and the record of what the card moved
+/// keeps the mass as the card gives it and the width untouched.
 #[test]
-fn a_negative_mass_is_refused() {
-    let message = param_refusal("Block MASS\n 6 -1.75e2\n");
-    assert_mentions(&message, &["negative", "MT"]);
+fn a_negative_mass_negates_its_width() {
+    let card: ParamCard = "Block MASS\n 6 -1.75e2\n".parse().unwrap();
+    let bound = bind_card(sm_model(SMRestrict::Default), &card).unwrap();
+    let wt = bound.evaluated.param_values["WT"].re;
+    assert_eq!(wt, -1.4915, "WT = {wt}");
+    assert_eq!(bound.evaluated.param_values["MT"].re, -175.0);
+    let moved: Vec<(&str, f64)> = bound
+        .moved
+        .iter()
+        .map(|m| (m.name.as_str(), m.value))
+        .collect();
+    assert_eq!(moved, [("MT", -175.0)]);
 }
 
 /// Every problem in the card is reported at once, the reader's and the

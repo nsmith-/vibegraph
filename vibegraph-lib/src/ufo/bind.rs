@@ -24,12 +24,14 @@
 //!   computed value is reported in [`BoundCard::ignored`].
 //! * Any other entry the model has no parameter for is refused, except the
 //!   `QNUMBERS` blocks that declare a new state's quantum numbers.
-//! * A decay table is refused: MadGraph writes the card, branching ratios
-//!   included, into the event file's `<slha>` header for a shower to decay
-//!   from, and the header written here comes from the model.
-//! * A negative mass is refused: MadGraph negates the particle's width with it
-//!   (`write_inc_file`, `models/check_param_card.py`), so the propagator's
-//!   `M·Γ` keeps its sign, and the propagators here take the width as given.
+//! * A decay table is carried, as written, to the event file's `<slha>`
+//!   header ([`EvaluatedModel::decay_tables`]), where MadGraph puts the card
+//!   for a shower to decay from. MadGraph checks neither a table's sum nor its
+//!   daughters, and neither does this. A table below a `DECAY` line the header
+//!   does not write (an antiparticle's code) is refused.
+//! * A negative mass is evaluated as MadGraph's Fortran reads it: the width at
+//!   the same code is negated ([`EvaluatedModel`]); [`BoundCard::moved`]
+//!   records the card's values.
 //!
 //! Every entry refused is reported at once ([`CardError::Several`]).
 
@@ -40,7 +42,7 @@ use thiserror::Error;
 use super::parameters::{ParamNature, ParameterSet};
 use super::slha::{code_text, ParamCard};
 use super::{EvaluatedModel, UFOModel};
-use crate::artifact::MovedParam;
+use crate::artifact::{DecayTable, MovedParam};
 
 /// How far a card's entry for a computed mass or width may sit from the value
 /// the model computes, relative, before it is reported. MadGraph writes those
@@ -118,17 +120,11 @@ pub enum CardError {
         code: String,
     },
     #[error(
-        "the card gives particle {pdg} a decay table, whose branching ratios MadGraph writes \
-         into the event file's <slha> header for a shower to decay it with; the header written \
-         here comes from the model and has none, so remove the table (its DECAY width stays)"
+        "the card gives a decay table below DECAY {pdg}, which is not the code of a physical \
+         particle of the model; the event file's <slha> header lists each particle's decays \
+         once, under its positive PDG code, so give the table there"
     )]
-    DecayTable { pdg: i32 },
-    #[error(
-        "the card sets the mass {name} (code {pdg}) to {value:e}, a negative mass, whose width \
-         MadGraph negates with it; the propagators here take the width as given, so give the \
-         mass as positive"
-    )]
-    NegativeMass { name: String, pdg: i32, value: f64 },
+    DecayTableParticle { pdg: i32 },
     /// More than one entry of the card is refused; each is listed.
     #[error("{}", several(.0))]
     Several(Vec<CardError>),
@@ -190,6 +186,23 @@ fn external_at<'m>(model: &'m UFOModel, block: &str, code: &[i32]) -> Option<(&'
         }
         _ => None,
     })
+}
+
+/// The decay tables of `tables` whose particle the `<slha>` header writes no
+/// `DECAY` line for: a code that is not positive, or not a physical particle of
+/// `model`.
+fn unwritable_tables(model: &UFOModel, tables: &[DecayTable]) -> Vec<CardError> {
+    tables
+        .iter()
+        .filter(|t| {
+            t.pdg <= 0
+                || !model
+                    .particles
+                    .values()
+                    .any(|p| p.pdg_code == i64::from(t.pdg) && !p.is_unphysical())
+        })
+        .map(|t| CardError::DecayTableParticle { pdg: t.pdg })
+        .collect()
 }
 
 /// The parameter that sets `pdg`'s mass (`block = "mass"`) or width
@@ -292,9 +305,7 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
     for &pdg in card.auto_widths() {
         errors.push(CardError::AutoWidth { pdg });
     }
-    for &pdg in card.decay_tables() {
-        errors.push(CardError::DecayTable { pdg });
-    }
+    errors.extend(unwritable_tables(&model, card.decay_tables()));
 
     let mut dependents: Vec<(&'static str, i32, String, f64)> = Vec::new();
     for (block, code, value) in card.entries() {
@@ -321,14 +332,6 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
                     code: code_text(code),
                     value,
                 });
-            } else if let ("mass", &[pdg]) = (block, code) {
-                if value < 0.0 {
-                    errors.push(CardError::NegativeMass {
-                        name: name.to_string(),
-                        pdg,
-                        value,
-                    });
-                }
             }
             continue;
         }
@@ -386,17 +389,22 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
 }
 
 /// Bind `model` at the parameters an integration recorded: each one's value,
-/// every other external at its restricted default. Gives the same value for
-/// every parameter and coupling as the [`bind_card`] that recorded them.
+/// every other external at its restricted default, and the recorded decay
+/// tables carried. Gives the same value for every parameter and coupling, and
+/// the same tables, as the [`bind_card`] that recorded them.
 ///
 /// # Errors
 ///
 /// [`CardError::NotRecordable`] for a recorded parameter that is not a free
-/// external of `model` at the recorded block and code.
+/// external of `model` at the recorded block and code, and
+/// [`CardError::DecayTableParticle`] for a table whose particle the header
+/// writes no line for.
 pub fn bind_recorded(
     model: Arc<UFOModel>,
     params: &[MovedParam],
+    decays: &[DecayTable],
 ) -> Result<EvaluatedModel, CardError> {
+    refuse_all(unwritable_tables(&model, decays))?;
     let mut card = ParamCard::default();
     for p in params {
         let free = matches!(
@@ -413,6 +421,9 @@ pub fn bind_recorded(
             });
         }
         card.insert(&p.block, p.code.clone(), p.value);
+    }
+    for table in decays {
+        card.push_decay_table(table.clone());
     }
     EvaluatedModel::from_model_card(model, &card)
 }
@@ -514,7 +525,7 @@ mod tests {
                 value: 92.5,
             }]
         );
-        let rebound = bind_recorded(sm(), &bound.moved).unwrap();
+        let rebound = bind_recorded(sm(), &bound.moved, &[]).unwrap();
         assert_same_point(&bound.evaluated, &rebound);
         let defaults = EvaluatedModel::from_model(sm());
         assert_ne!(
@@ -757,7 +768,7 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, texna
             value: 2.0,
         };
         assert!(matches!(
-            bind_recorded(toy, &[record]),
+            bind_recorded(toy, &[record], &[]),
             Err(CardError::NotRecordable { .. })
         ));
     }
@@ -820,11 +831,69 @@ c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, texna
             }];
             assert!(
                 matches!(
-                    bind_recorded(sm(), &moved),
+                    bind_recorded(sm(), &moved, &[]),
                     Err(CardError::NotRecordable { .. })
                 ),
                 "{name}"
             );
         }
+    }
+
+    /// A card's decay tables are carried on the evaluation and recorded tables
+    /// rebind to the same tables and the same point; the width beside a table
+    /// binds as it does without one.
+    #[test]
+    fn decay_tables_are_carried_and_rebind() {
+        let bound =
+            bind("DECAY 6 1.5\n 0.6 2 5 24\n 0.4 2 24 3\nDECAY 15 0.0\n 1.0 2 16 -24\n").unwrap();
+        let tables = bound.evaluated.decay_tables().to_vec();
+        assert_eq!(
+            tables.iter().map(|t| t.pdg).collect::<Vec<_>>(),
+            [6, 15],
+            "{tables:?}"
+        );
+        let plain = bind("DECAY 6 1.5\n").unwrap();
+        assert_eq!(bound.moved, plain.moved);
+        assert_same_point(&bound.evaluated, &plain.evaluated);
+        let rebound = bind_recorded(sm(), &bound.moved, &tables).unwrap();
+        assert_eq!(rebound.decay_tables(), tables.as_slice());
+        assert_same_point(&bound.evaluated, &rebound);
+    }
+
+    /// A recorded table whose particle the header has no line for is refused
+    /// as a card's is.
+    #[test]
+    fn a_recorded_table_on_a_negative_code_is_refused() {
+        let table = DecayTable {
+            pdg: -24,
+            channels: Vec::new(),
+        };
+        assert_eq!(
+            bind_recorded(sm(), &[], &[table]).err(),
+            Some(CardError::DecayTableParticle { pdg: -24 })
+        );
+    }
+
+    /// A negative mass negates the width at its code and nothing else; the
+    /// move is recorded at the card's mass, and rebinding the record gives the
+    /// same point, the negated width included.
+    #[test]
+    fn a_negative_mass_negates_its_width_and_rebinds() {
+        let bound = bind("Block MASS\n 23 -9.1188e1\n").unwrap();
+        let defaults = EvaluatedModel::from_model(sm());
+        let wz = defaults.param_values["WZ"].re;
+        assert!(wz > 0.0);
+        assert_eq!(bound.evaluated.param_values["WZ"].re, -wz);
+        assert_eq!(bound.evaluated.card_value("WZ"), wz);
+        for name in ["WW", "WT", "WH"] {
+            assert_eq!(
+                bound.evaluated.param_values[name], defaults.param_values[name],
+                "{name}"
+            );
+        }
+        let moved: Vec<&str> = bound.moved.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(moved, ["MZ"]);
+        let rebound = bind_recorded(sm(), &bound.moved, &[]).unwrap();
+        assert_same_point(&bound.evaluated, &rebound);
     }
 }
