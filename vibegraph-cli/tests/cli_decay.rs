@@ -144,10 +144,12 @@ fn exact_widths() -> std::collections::BTreeMap<String, f64> {
 }
 
 /// Relative agreement of a constant-integrand row with its exact width, at the
-/// resolution of the result line: seven significant figures are printed, so a
-/// width reads back to `5e-7`, and the `1e-4` noise of a refined grid is two
-/// orders above it. The width itself is held to `1e-10` where it is not rounded
-/// for printing (`vibegraph-lib/tests/decay_widths.rs`).
+/// resolution of the result line: the width is printed to the place of its
+/// error's second significant figure, and a constant integrand's error is its
+/// own rounding (below `1e-7` of the width, as the line-reading test pins), so
+/// a width reads back far inside `1e-6`, and the `1e-4` noise of a refined grid
+/// is two orders above it. The width itself is held to `1e-10` where it is not
+/// rounded for printing (`vibegraph-lib/tests/decay_widths.rs`).
 const PRINTED_WIDTH_REL: f64 = 1e-6;
 
 /// Whether a decay process has exactly two daughters.

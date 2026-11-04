@@ -187,9 +187,9 @@ impl<'a> Footer<'a> {
             None => text.push_str(&format!("   {}", count(self.state.done))),
         }
         let mut spans = vec![Span::raw(text)];
-        if self.state.chi2 > 0.0 {
+        if let Some(chi2) = self.state.chi2 {
             spans.push(Span::styled(
-                format!("   \u{3c7}\u{b2}/dof {:.2}", self.state.chi2),
+                format!("   \u{3c7}\u{b2}/dof {chi2:.2}"),
                 muted(),
             ));
         }
@@ -487,7 +487,7 @@ mod tests {
             total: Some(12),
             sigma_pb: Some(802.94),
             err_pb: 3.11,
-            chi2: 1.02,
+            chi2: Some(1.02),
             ns_per_eval: Some(212.0),
             model: Some(ModelBrief {
                 label: "sm-default".to_string(),
@@ -572,7 +572,7 @@ mod tests {
     fn an_unmeasured_cross_section_is_shown_as_absent() {
         let mut state = integrating();
         state.sigma_pb = None;
-        state.chi2 = 0.0;
+        state.chi2 = None;
         let rows = rows(&state, 80);
         assert!(rows[2].contains("\u{3c3} = \u{2014}"), "{rows:?}");
         assert!(!rows[2].contains("pb"), "{rows:?}");
