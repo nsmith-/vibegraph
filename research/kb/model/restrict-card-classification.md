@@ -30,7 +30,7 @@ reported at once (`UfoError::Several`).
 | entry at exactly one | fixed to one | consumed (`ones`) |
 | equal values up to sign in one block | merged | consumed (`merged`) |
 | `DECAY <pdg> <width>` | the width's default; never merged | consumed |
-| negative mass | read as the default | consumed |
+| negative mass | read as the default | consumed; binding refuses it off a Majorana fermion |
 | `BLOCK <name> Q= <scale>` | not read by the restriction | benign |
 | `QNUMBERS` block | not a parameter | benign |
 | entry or block the model lacks | never read; an unknown block warns | benign |
@@ -72,13 +72,14 @@ SMEFTsim ships `param_card_massless.dat`, which that rule never names.
 
 ## A negative default mass
 
-A negative mass is read as MadGraph's restriction reads it, and the
-evaluation negates the width at the same code as MadGraph's Fortran does
-([param-card classification](param-card-classification.md)), whether the mass
-is a restriction default or a param card's. `MSSM_SLHA2`'s `restrict_default`
-sets `Mneu3 = -363.756` with a width of 1.916, evaluated as -1.916 (a
-neutralino is a Majorana fermion, which diagram generation refuses, so no
-MSSM amplitude reads it yet).
+A negative mass is read as MadGraph's restriction reads it. Binding then
+refuses it unless the particle is a Majorana fermion
+([param-card classification](param-card-classification.md)): the code
+downstream of the amplitudes is not validated for a negative mass.
+`MSSM_SLHA2`'s `restrict_default` sets `Mneu3 = -363.756`, a neutralino's, so
+it binds and its width of 1.916 is evaluated as -1.916, as MadGraph's Fortran
+reads it; diagram generation refuses Majorana fermions, so no MSSM amplitude
+reads it yet.
 
 ## Tests and their blind spots
 

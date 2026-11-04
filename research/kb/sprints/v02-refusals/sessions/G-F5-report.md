@@ -1,13 +1,27 @@
 ---
 type: Session Report
 title: "G-F5 report: param-card decay tables carried; a negative mass negates its width"
-description: "Decay tables recorded in the artifact (v18) and written into the <slha> header in MadWidth's layout; EvaluatedModel ports write_inc_file's negative-mass width rule, pinned per helicity against MadGraph on an SM negative-MZ row because Majorana fermions (the MSSM case) are refused."
+description: "Decay tables recorded in the artifact (v18) and written into the <slha> header in MadWidth's layout; EvaluatedModel ports write_inc_file's negative-mass width rule, pinned per helicity against MadGraph on an SM negative-MZ row, and binding refuses a negative mass off a Majorana fermion (G7 amended)."
 status: draft
 tags: [param-card, decay-table, negative-mass, slha, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 ---
 Branch `sprintg-refusals-f5`, worktree `/home/user/wt/G1-F5`, base b5fe264.
-Implementation commit `4adc70b`; this report and a kb index refresh on top.
+Commits: `4adc70b` (implementation), `9b92783` (this report, kb index), and
+the addendum commit (negative-mass refusal, `CardRecord` boxing) on top.
+
+## Decision note: G7 amended (user, 2026-11-04)
+
+G7 ported MadGraph's negative-mass width rule so negative masses could run.
+No supported model can use it: every negative mass in a shipped MadGraph
+model is `MSSM_SLHA2`'s `Mneu3`, a Majorana fermion's, and diagram generation
+refuses Majorana fermions. A negative mass on any other particle could reach
+the Breit-Wigner phase-space map, the on-shell checks, the cuts and the LHEF
+resonance record, none validated for one (Found 1). So binding now refuses a
+negative mass on any particle that is not a Majorana fermion
+(`CardError::NegativeMass`), from the model's default, a restriction or the
+param card. The width rule, the `ee_to_mumu_negmz` pin (evaluated below the
+refusal) and the Majorana path (MSSM binds, `Wneu3` negated) stay.
 
 ## Brief correction (load-bearing)
 
@@ -39,10 +53,17 @@ executed by MadGraph's code, then MadGraph's Fortran amplitudes.
    daughters as MadGraph's `load_decay`. Refused at their line: NDA != daughter
    count, no daughter, non-finite BR, non-integer code, same channel with a
    different BR. Same-BR repeat kept once.
-2. `ufo/bind.rs`: `DecayTable` and `NegativeMass` refusals removed; new
+2. `ufo/bind.rs`: the `DecayTable` refusal removed; new
    `DecayTableParticle` (table under a code the header writes no DECAY line
    for, e.g. `DECAY -24`). `bind_recorded(model, params, decays)`.
-3. `ufo/mod.rs` `EvaluatedModel`: carries `decay_tables`; `apply_width_signs`
+   `NegativeMass` now refuses a negative evaluated mass on any physical
+   particle that is not a Majorana fermion, in `bind_card` and
+   `bind_recorded`; `integrate` without a card binds the defaults through
+   `bind_card` so a negative default is refused too. Its message names the
+   unvalidated downstream sites.
+3. `ufo/mod.rs` `EvaluatedModel`: carries `decay_tables` (with the negated
+   set, in one boxed `CardRecord`: unboxed they grew `ScaleAwareAmplitude`
+   past clippy's `large_enum_variant` threshold in `hadronic.rs`); `apply_width_signs`
    negates each external DECAY [pdg] width (not in zeros/ones) while the mass
    at [pdg] is negative (external MASS [pdg], else the particle's mass), and
    re-evaluates dependents; `recompute` re-applies it; `card_value()` gives the
@@ -58,7 +79,8 @@ executed by MadGraph's code, then MadGraph's Fortran amplitudes.
 
 ### Lines touched in `lhef/` and `generate`
 - `vibegraph-cli/src/generate.rs` L413: `bind_recorded(..., &artifact.inputs.params, &artifact.inputs.decays)`.
-- `vibegraph-cli/src/integrate.rs` (artifact build): `decays: evaluated.decay_tables().to_vec()`.
+- `vibegraph-cli/src/integrate.rs`: artifact build `decays: evaluated.decay_tables().to_vec()`;
+  `bind_param_card` without a card binds the defaults through `bind_card`.
 - `vibegraph-lib/src/lhef/write.rs`: `slha_block` doc (L357-L363), the external-line loop (L386-L390), `slha_value` -> `card_value` and new `slha_decay_rows` (L407-L438), `slha_dependent_lines` (L558-L569), two tests (L938-L986).
 - `vibegraph-lib/src/generate.rs`: untouched.
 
@@ -93,6 +115,14 @@ daughters keep the card's order, other card lines (comments) are not carried.
 - `a_decay_table_under_a_negative_code_is_refused`: needle `positive PDG code` absent
 - `a_negative_mass_negates_its_width`: `Err(NegativeMass { name: "MT", .. })`
 `ee_to_mumu_negmz` fails pre-change as in the table above.
+
+The negative-mass refusal, on the source of HEAD `9b92783` (src stashed,
+`cargo test -p vibegraph-lib --test input_card_refusals`):
+`FAILED. 23 passed; 2 failed`:
+- `a_negative_mass_off_a_majorana_fermion_is_refused`: `"Block MASS\n 6 -1.75e2\n" binds`
+- `a_negative_default_or_restricted_mass_is_refused_at_binding`: `a negative restricted mass binds`
+- control `a_majorana_negative_mass_binds_and_negates_its_width`: ok (it
+  binds before and after).
 
 ## Gates
 

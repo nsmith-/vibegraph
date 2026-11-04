@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "Every param-card construct is classified: consumed, benign or refused"
-description: "PARAM_CARD (ufo/card_classes.rs) lists each construct MadGraph's SLHA reader accepts in a run's param card with its class and an example the test binds; decay tables are carried to the <slha> header, a negative mass negates its width as in MadGraph's Fortran, scan values and extra DECAY fields are refused, XSECTION is skipped as MadGraph skips it."
+description: "PARAM_CARD (ufo/card_classes.rs) lists each construct MadGraph's SLHA reader accepts in a run's param card with its class and an example the test binds; decay tables are carried to the <slha> header, a negative mass is refused unless the particle is a Majorana fermion (whose width is negated as in MadGraph's Fortran), scan values and extra DECAY fields are refused, XSECTION is skipped as MadGraph skips it."
 status: draft
 tags: [param-card, classification, hard-errors, madgraph-parity, slha]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
@@ -59,7 +59,8 @@ fixes).
 | decay row whose `NDA` is not its daughter count | `NDA` dropped (L115-L117) | refused: a shower reads `NDA` |
 | decay row with no daughter, or a field not a number | a channel of none, or an exception | refused |
 | decay table below a negative code | kept under the antiparticle's code | refused (`DecayTableParticle`): the header has no line for it |
-| negative mass | the width at the same code is negated with it (`write_inc_file` L692-L695) | consumed: the evaluation negates the width the same way |
+| negative mass on a particle that is not a Majorana fermion | the width at the same code is negated with it (`write_inc_file` L692-L695) | refused (`NegativeMass`), from a default, a restriction or a card: the code downstream of the amplitudes is not validated for it |
+| negative mass on a Majorana fermion | the same | binds; the evaluation negates the width the same way (no amplitude reads it: Majorana fermions are refused at diagram generation) |
 | value at a parameter the restriction fixed to zero | pruned | refused (`RevivesZeroed`) |
 | value off one at a parameter fixed to one | `param_card_rule` | refused (`MovesFixedOne`) |
 | one member of a merged group moved alone | the others follow the first | refused (`SplitsMerged`) |
@@ -96,21 +97,32 @@ written for every table (MadGraph writes it only where the card does), and
 lines of the card that are not a parameter, a table row or a heading are not
 carried.
 
-**A negative mass negates its width.** MadGraph's `write_inc_file`
+**A negative mass is refused off a Majorana fermion** (user decision,
+2026-11-04, amending G7). MadGraph's `write_inc_file`
 (`check_param_card.py` L692-L695) writes every external width at
 `DECAY [pdg]` negated into the Fortran when the card's mass at `[pdg]` is
 negative, which keeps a propagator's `M·Γ` positive. `EvaluatedModel` applies
-the same rule to every evaluation, so it holds for a mass from the model's
-default, a restriction card and a param card alike (MadGraph's Fortran reads
-the one card all three end up in). The header writes the card's width.
+the same rule to every evaluation, and binding (`bind_card`, `bind_recorded`,
+and `integrate` without a card, which binds the defaults) refuses a negative
+mass on any particle that is not a Majorana fermion
+(`CardError::NegativeMass`), whether the model's default, a restriction card
+or the param card gives it. The reason is what sits downstream of the
+amplitudes: the Breit-Wigner phase-space map (`bw_scale` reads `M·Γ`), the
+on-shell checks, the cuts and the LHEF resonance record (which treats a
+width at or below zero as none) were never compared with MadGraph for a
+negative mass. Every negative mass in a shipped MadGraph model is a Majorana
+fermion's, and diagram generation refuses Majorana fermions, so after the
+refusal no negative mass reaches those sites. The header writes the card's width.
 
-The pin is the `ee_to_mumu_negmz` row of `standalone_jamps`: `e+ e- > mu+ mu-`
+The rule stays pinned below the refusal. The pin is the `ee_to_mumu_negmz` row of `standalone_jamps`: `e+ e- > mu+ mu-`
 at 90 GeV with `MZ = -91.188`, MadGraph's amplitudes evaluated at the
 parameters MadEvent's Fortran reads (the generator runs MadGraph's own
 `write_inc_file` and points the standalone model's `param_read.inc` at its
 output, as `output madevent` does). Per diagram and per helicity it agrees to
 1.2e-13 of the largest graph (flows 1.1e-13, |M|² 1.4e-13); on the code before the rule the photon/Z relative phase was wrong
-(worst graph 1.45e-1, |M|² 8.2e-3).
+(worst graph 1.45e-1, |M|² 8.2e-3). The row binds its card with
+`EvaluatedModel::from_model_card`, below `bind_card`'s refusal, as every
+`standalone_jamps` row does.
 
 MadGraph's standalone Fortran applies a different rule, `width =
 sign(width, mass)` for Majorana fermions only (`export_v4.py` L9793-L9800),
@@ -118,8 +130,8 @@ and its Python model evaluation `-abs(width)` for the same set
 (`model_reader.py` L241-L248). They agree with `write_inc_file` for a positive
 width on a Majorana fermion, which is every negative mass in a shipped
 MadGraph model (`MSSM_SLHA2`'s `Mneu3 = -363.756`, in all four of its
-restrictions). They disagree for a negative mass on any other particle, where
-vibegraph follows MadEvent, the program that generates events. The MSSM case
+restrictions). They disagree for a negative mass on any other particle, which
+binding refuses. The MSSM case
 itself cannot be evaluated here: diagram generation refuses a Majorana
 fermion on any line (`ConvertError::MajoranaFermion`).
 
@@ -132,7 +144,7 @@ its default, silently.
 | test | fails on | cannot detect |
 |---|---|---|
 | `every_param_card_construct_behaves_as_classified` (`card_classes.rs`) | a row whose example does not behave as its class says: a benign row that moves the bound point, a consumed one that does not, a refused one accepted or refused for another reason | a construct missing from the table, and a wrong class with a matching example; the MadGraph column is read by a human |
-| `input_card_refusals.rs` | each refusal (extra `DECAY` field, scan, `NDA`, a channel given twice, a table under a negative code, every problem at once), a carried decay table, a negated width, and the `XSECTION` skip; each failed on the code before it | refusals that are too broad |
+| `input_card_refusals.rs` | each refusal (extra `DECAY` field, scan, `NDA`, a channel given twice, a table under a negative code, a negative mass from a card, a restriction or a default, every problem at once), a carried decay table, a Majorana negative mass that binds with its width negated (`MSSM_SLHA2`), and the `XSECTION` skip; each refusal failed on the code before it | refusals that are too broad |
 | `standalone_jamps::ee_to_mumu_negmz` | a width evaluated with the wrong sign beside a negative mass, per diagram and per helicity against MadEvent's parameters | a rule that differs only for a width the restriction fixed, a negative card width, or a mass that is not external (only `MZ` is moved) |
 | `slha_block` tests (`lhef/write.rs`), `decay_tables_are_recorded_and_written_into_the_header` (`cli_param_card.rs`) | a table missing from the header, under the wrong line, or moving the run | a layout a particular shower parses differently from MadWidth's |
 

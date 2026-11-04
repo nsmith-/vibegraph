@@ -29,9 +29,13 @@
 //!   for a shower to decay from. MadGraph checks neither a table's sum nor its
 //!   daughters, and neither does this. A table below a `DECAY` line the header
 //!   does not write (an antiparticle's code) is refused.
-//! * A negative mass is evaluated as MadGraph's Fortran reads it: the width at
-//!   the same code is negated ([`EvaluatedModel`]); [`BoundCard::moved`]
-//!   records the card's values.
+//! * A negative mass is refused on any particle but a Majorana fermion,
+//!   whichever of the model's default, its restriction or the card gives it
+//!   ([`CardError::NegativeMass`]): the phase-space, on-shell, cut and
+//!   event-record code downstream of the amplitudes is not validated for one.
+//!   A Majorana fermion's negative mass binds, and the evaluation negates the
+//!   width at its code as MadGraph's Fortran does ([`EvaluatedModel`]); diagram
+//!   generation refuses Majorana fermions, so no amplitude reads it yet.
 //!
 //! Every entry refused is reported at once ([`CardError::Several`]).
 
@@ -125,6 +129,19 @@ pub enum CardError {
          once, under its positive PDG code, so give the table there"
     )]
     DecayTableParticle { pdg: i32 },
+    #[error(
+        "the mass of particle {particle} (PDG {pdg}) is {param} = {value:e}, negative (from \
+         the model's default, its restriction or the param card); a negative mass is accepted \
+         only on a Majorana fermion, because the Breit-Wigner phase-space map, the on-shell \
+         checks, the cuts and the LHEF resonance record are not validated for a negative mass, \
+         so give the mass as positive"
+    )]
+    NegativeMass {
+        particle: String,
+        pdg: i64,
+        param: String,
+        value: f64,
+    },
     /// More than one entry of the card is refused; each is listed.
     #[error("{}", several(.0))]
     Several(Vec<CardError>),
@@ -203,6 +220,38 @@ fn unwritable_tables(model: &UFOModel, tables: &[DecayTable]) -> Vec<CardError> 
         })
         .map(|t| CardError::DecayTableParticle { pdg: t.pdg })
         .collect()
+}
+
+/// A [`CardError::NegativeMass`] for each physical particle of `evaluated`'s
+/// model, other than a Majorana fermion, whose mass evaluates negative; one per
+/// mass parameter, by PDG code.
+fn negative_masses(evaluated: &EvaluatedModel) -> Vec<CardError> {
+    let model = evaluated.model();
+    let mut particles: Vec<_> = model
+        .particles
+        .values()
+        .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
+        .filter(|p| !(p.spin.abs() == 2 && p.is_self_conjugate))
+        .collect();
+    particles.sort_by_key(|p| p.pdg_code);
+    let mut seen: Vec<&str> = Vec::new();
+    let mut errors = Vec::new();
+    for p in particles {
+        let value = evaluated
+            .param_values
+            .get(&p.mass_param)
+            .map_or(0.0, |v| v.re);
+        if value < 0.0 && !seen.contains(&p.mass_param.as_str()) {
+            seen.push(&p.mass_param);
+            errors.push(CardError::NegativeMass {
+                particle: p.name.clone(),
+                pdg: p.pdg_code,
+                param: p.mass_param.clone(),
+                value,
+            });
+        }
+    }
+    errors
 }
 
 /// The parameter that sets `pdg`'s mass (`block = "mass"`) or width
@@ -366,6 +415,7 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         .collect();
 
     let evaluated = EvaluatedModel::from_model_card(model, card)?;
+    refuse_all(negative_masses(&evaluated))?;
     let ignored = dependents
         .into_iter()
         .filter_map(|(block, pdg, param, value)| {
@@ -398,7 +448,8 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
 /// [`CardError::NotRecordable`] for a recorded parameter that is not a free
 /// external of `model` at the recorded block and code, and
 /// [`CardError::DecayTableParticle`] for a table whose particle the header
-/// writes no line for.
+/// writes no line for, and [`CardError::NegativeMass`] as [`bind_card`]
+/// refuses it.
 pub fn bind_recorded(
     model: Arc<UFOModel>,
     params: &[MovedParam],
@@ -425,7 +476,9 @@ pub fn bind_recorded(
     for table in decays {
         card.push_decay_table(table.clone());
     }
-    EvaluatedModel::from_model_card(model, &card)
+    let evaluated = EvaluatedModel::from_model_card(model, &card)?;
+    refuse_all(negative_masses(&evaluated))?;
+    Ok(evaluated)
 }
 
 #[cfg(test)]
@@ -874,26 +927,46 @@ c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, texna
         );
     }
 
-    /// A negative mass negates the width at its code and nothing else; the
-    /// move is recorded at the card's mass, and rebinding the record gives the
-    /// same point, the negated width included.
+    /// A negative mass on a particle that is not a Majorana fermion is refused,
+    /// naming the particle and the unvalidated sites, from a card and from a
+    /// recorded point alike.
     #[test]
-    fn a_negative_mass_negates_its_width_and_rebinds() {
-        let bound = bind("Block MASS\n 23 -9.1188e1\n").unwrap();
+    fn a_negative_mass_off_a_majorana_fermion_is_refused() {
+        let err = bind("Block MASS\n 23 -9.1188e1\n").err().unwrap();
+        assert!(
+            matches!(&err, CardError::NegativeMass { particle, pdg: 23, param, .. }
+                if particle == "Z" && param == "MZ"),
+            "{err:?}"
+        );
+        assert!(err.to_string().contains("not validated"), "{err}");
+        let moved = MovedParam {
+            name: "MZ".to_string(),
+            block: "MASS".to_string(),
+            code: vec![23],
+            value: -91.188,
+        };
+        assert!(matches!(
+            bind_recorded(sm(), &[moved], &[]),
+            Err(CardError::NegativeMass { pdg: 23, .. })
+        ));
+    }
+
+    /// Below the binding, the evaluation negates the width at a negative mass's
+    /// code and nothing else, and keeps the card's value for the header.
+    #[test]
+    fn the_evaluation_negates_the_width_beside_a_negative_mass() {
+        let evaluated =
+            EvaluatedModel::from_model_card(sm(), &card("Block MASS\n 23 -9.1188e1\n")).unwrap();
         let defaults = EvaluatedModel::from_model(sm());
         let wz = defaults.param_values["WZ"].re;
         assert!(wz > 0.0);
-        assert_eq!(bound.evaluated.param_values["WZ"].re, -wz);
-        assert_eq!(bound.evaluated.card_value("WZ"), wz);
+        assert_eq!(evaluated.param_values["WZ"].re, -wz);
+        assert_eq!(evaluated.card_value("WZ"), wz);
         for name in ["WW", "WT", "WH"] {
             assert_eq!(
-                bound.evaluated.param_values[name], defaults.param_values[name],
+                evaluated.param_values[name], defaults.param_values[name],
                 "{name}"
             );
         }
-        let moved: Vec<&str> = bound.moved.iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(moved, ["MZ"]);
-        let rebound = bind_recorded(sm(), &bound.moved, &[]).unwrap();
-        assert_same_point(&bound.evaluated, &rebound);
     }
 }

@@ -935,7 +935,15 @@ pub struct EvaluatedModel {
     pub param_values: HashMap<String, Complex64>,
     /// Coupling constant values indexed by [`CouplingId`], parallel to `model.couplings`.
     coupling_values: Vec<Complex64>,
-    /// The external widths [`param_values`](Self::param_values) holds negated,
+    /// What the evaluation keeps of the card besides values, boxed so the
+    /// evaluation stays small to move.
+    card: Box<CardRecord>,
+}
+
+/// The parts of a param card an [`EvaluatedModel`] keeps besides its values.
+#[derive(Clone, Default)]
+struct CardRecord {
+    /// The external widths [`EvaluatedModel::param_values`] holds negated,
     /// because the mass at their code is negative.
     negated_widths: HashSet<String>,
     /// The param card's decay tables, which nothing evaluates: they are carried
@@ -977,8 +985,10 @@ impl EvaluatedModel {
             param_values: model.params.evaluate(param_card),
             model,
             coupling_values: Vec::new(),
-            negated_widths: HashSet::new(),
-            decay_tables: param_card.decay_tables().to_vec(),
+            card: Box::new(CardRecord {
+                negated_widths: HashSet::new(),
+                decay_tables: param_card.decay_tables().to_vec(),
+            }),
         };
         evaluated.apply_width_signs();
         evaluated.coupling_values = evaluated
@@ -1045,16 +1055,16 @@ impl EvaluatedModel {
                 continue;
             }
             let negative = self.mass_at(pdg) < 0.0;
-            if negative == self.negated_widths.contains(&p.name) {
+            if negative == self.card.negated_widths.contains(&p.name) {
                 continue;
             }
             if let Some(v) = self.param_values.get_mut(&p.name) {
                 *v = -*v;
             }
             if negative {
-                self.negated_widths.insert(p.name.clone());
+                self.card.negated_widths.insert(p.name.clone());
             } else {
-                self.negated_widths.remove(&p.name);
+                self.card.negated_widths.remove(&p.name);
             }
             moved.extend(params.recompute(&p.name, &mut self.param_values));
             moved.insert(p.name.clone());
@@ -1067,7 +1077,7 @@ impl EvaluatedModel {
     /// a name the evaluation does not hold.
     pub fn card_value(&self, name: &str) -> f64 {
         let value = self.param_values.get(name).map_or(0.0, |v| v.re);
-        if self.negated_widths.contains(name) {
+        if self.card.negated_widths.contains(name) {
             -value
         } else {
             value
@@ -1077,7 +1087,7 @@ impl EvaluatedModel {
     /// The param card's decay tables, in card order, which the event file's
     /// `<slha>` header carries.
     pub fn decay_tables(&self) -> &[DecayTable] {
-        &self.decay_tables
+        &self.card.decay_tables
     }
 
     /// The model these values were evaluated from.
@@ -1176,7 +1186,7 @@ impl EvaluatedModel {
             return Ok(());
         }
         *slot = new_value;
-        self.negated_widths.remove(changed);
+        self.card.negated_widths.remove(changed);
 
         // Every parameter the change reaches, however many internal parameters
         // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.

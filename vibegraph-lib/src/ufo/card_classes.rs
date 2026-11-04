@@ -302,16 +302,17 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         expect: Same(Text("Block MASS\n 23 9.2e1\n")),
     },
     Construct {
-        name: "a negative mass",
+        name: "a negative mass on a particle that is not a Majorana fermion",
         madgraph: "the width at the same code is negated with it in the Fortran \
-                   (write_inc_file, L692-L695); the negated width is pinned by \
-                   bind.rs's a_negative_mass_negates_its_width_and_rebinds",
-        class: Consumed(
-            "EvaluatedModel's width sign: the external width at the same code is \
-             evaluated negated, as MadGraph's Fortran reads it",
+                   (write_inc_file, L692-L695). A Majorana fermion's negative mass binds \
+                   and its width is negated the same way (EvaluatedModel); diagram \
+                   generation refuses Majorana fermions",
+        class: Refused(
+            "the Breit-Wigner map, on-shell checks, cuts and LHEF resonance record are not \
+             validated for a negative mass",
         ),
         example: Text("Block MASS\n 23 -9.2e1\n"),
-        expect: Differs(Text("Block MASS\n 23 9.2e1\n")),
+        expect: Error("not validated"),
     },
     Construct {
         name: "a value for a parameter the restriction fixed to zero",
@@ -392,8 +393,10 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
         madgraph: "read as the restricted default like any value; the Fortran negates \
                    the width at the same code (write_inc_file, L692-L695)",
         class: Consumed(
-            "ParameterSet::apply_restrict, as the restricted default; the restriction \
-             reads it as MadGraph's does, and the evaluation negates the width beside it",
+            "ParameterSet::apply_restrict, as the restricted default, as MadGraph's \
+             restriction reads it; binding then refuses it unless the particle is a \
+             Majorana fermion (input_card_refusals.rs, \
+             a_negative_default_or_restricted_mass_is_refused_at_binding)",
         ),
         example: Edits(&[("   25 1.250000e+02 # MH", "   25 -1.250000e+02 # MH")]),
         expect: Differs(Edits(&[])),

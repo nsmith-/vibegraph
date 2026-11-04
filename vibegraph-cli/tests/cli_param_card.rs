@@ -243,6 +243,9 @@ fn generate_evaluates_at_the_recorded_point() {
     assert!((mw - 80.419).abs() > 0.5, "{mw_line}");
 }
 
+/// A decay channel as `(branching ratio, daughters)`.
+type Channel = (f64, Vec<i32>);
+
 /// A card's decay tables move nothing in the run, which is the default run's
 /// σ bit for bit, and are recorded in the artifact; `generate` writes them below
 /// their particles' `DECAY` lines in the `<slha>` header, a free width's and a
@@ -263,7 +266,7 @@ fn decay_tables_are_recorded_and_written_into_the_header() {
         "{:?}",
         artifact.inputs.params
     );
-    let tables: Vec<(i32, Vec<(f64, Vec<i32>)>)> = artifact
+    let tables: Vec<(i32, Vec<Channel>)> = artifact
         .inputs
         .decays
         .iter()

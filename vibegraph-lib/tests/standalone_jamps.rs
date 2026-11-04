@@ -1069,6 +1069,13 @@ fn uux_to_ttxg() {
 /// propagator's `m·Γ` stays positive. Just below the pole the width carries most
 /// of the propagator's phase, so a width taken with the card's sign turns the Z
 /// diagram against the photon's.
+///
+/// Binding refuses a negative mass on any particle but a Majorana fermion
+/// (`ufo::bind::bind_card`), because the code downstream of the amplitudes is not
+/// validated for one. This row evaluates below that refusal, as every row here
+/// does: it reads the table's card with `EvaluatedModel::from_model_card`, which
+/// applies the width rule, so the rule stays pinned against MadGraph for the
+/// Majorana fermions the refusal lets through.
 #[test]
 fn ee_to_mumu_negmz() {
     check("ee_to_mumu_negmz");

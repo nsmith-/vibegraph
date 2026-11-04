@@ -271,23 +271,17 @@ fn a_scan_value_is_refused() {
     assert_mentions(&message, &["scan", "line 2"]);
 }
 
-/// MadGraph negates the width of a particle whose card mass is negative
-/// (`check_param_card.py`'s `write_inc_file`), and so does the evaluation here:
-/// the top's width is evaluated negative, and the record of what the card moved
-/// keeps the mass as the card gives it and the width untouched.
+/// A negative mass on a particle that is not a Majorana fermion: MadGraph's
+/// Fortran negates the width beside it (`write_inc_file`), and the evaluation
+/// here does too, but the phase-space, on-shell, cut and event-record code
+/// downstream is not validated for a negative mass, so binding refuses it.
 #[test]
-fn a_negative_mass_negates_its_width() {
-    let card: ParamCard = "Block MASS\n 6 -1.75e2\n".parse().unwrap();
-    let bound = bind_card(sm_model(SMRestrict::Default), &card).unwrap();
-    let wt = bound.evaluated.param_values["WT"].re;
-    assert_eq!(wt, -1.4915, "WT = {wt}");
-    assert_eq!(bound.evaluated.param_values["MT"].re, -175.0);
-    let moved: Vec<(&str, f64)> = bound
-        .moved
-        .iter()
-        .map(|m| (m.name.as_str(), m.value))
-        .collect();
-    assert_eq!(moved, [("MT", -175.0)]);
+fn a_negative_mass_off_a_majorana_fermion_is_refused() {
+    let message = param_refusal("Block MASS\n 6 -1.75e2\n");
+    assert_mentions(
+        &message,
+        &["particle t ", "MT", "negative", "not validated"],
+    );
 }
 
 /// Every problem in the card is reported at once, the reader's and the
@@ -378,6 +372,53 @@ fn a_restrict_card_decay_table_is_accepted() {
         &format!("{RESTRICT} 1.0 2 9000001 9000001\n"),
     );
     UFOModel::load(dir.path(), Some(&card)).unwrap();
+}
+
+/// A negative mass from a restriction card, and from the model's own
+/// default, binds to the same refusal as a param card's: binding checks every
+/// evaluated mass, whatever gave it.
+#[test]
+fn a_negative_default_or_restricted_mass_is_refused_at_binding() {
+    let dir = model_with(&[]);
+    let card = restrict_file(
+        dir.path(),
+        "restrict_test.dat",
+        &RESTRICT.replacen(
+            " 9000001 1.000000e+01 # MS",
+            " 9000001 -1.000000e+01 # MS",
+            1,
+        ),
+    );
+    let model = UFOModel::load(dir.path(), Some(&card)).unwrap();
+    let message = bind_card(model, &ParamCard::default())
+        .err()
+        .expect("a negative restricted mass binds")
+        .to_string();
+    assert_mentions(&message, &["particle S ", "MS", "not validated"]);
+
+    let dir = model_with(&[("parameters.py", "value = 10.0", "value = -10.0")]);
+    let model = UFOModel::load(dir.path(), None).unwrap();
+    let message = bind_card(model, &ParamCard::default())
+        .err()
+        .expect("a negative default mass binds")
+        .to_string();
+    assert_mentions(&message, &["particle S ", "MS", "not validated"]);
+}
+
+/// A Majorana fermion's negative mass binds, and its width is negated as
+/// MadGraph's Fortran negates it: `MSSM_SLHA2`'s default restriction sets
+/// `Mneu3 = -363.756`. Diagram generation refuses Majorana fermions, so no
+/// amplitude reads it yet.
+#[test]
+fn a_majorana_negative_mass_binds_and_negates_its_width() {
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/refs/mg5amcnlo/models/MSSM_SLHA2");
+    let model = UFOModel::load(&dir, None).unwrap();
+    let bound = bind_card(model, &ParamCard::default()).unwrap();
+    assert!(bound.evaluated.param_values["Mneu3"].re < 0.0);
+    let wneu3 = bound.evaluated.param_values["Wneu3"].re;
+    assert!(wneu3 < 0.0, "Wneu3 = {wneu3}");
+    assert_eq!(bound.evaluated.card_value("Wneu3"), -wneu3);
 }
 
 // ---- reweight card ----
