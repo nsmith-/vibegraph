@@ -6,6 +6,10 @@
 
 * [v0.2 refusals: panics and silent wrong answers](sprint.md) - Every model or card surface that panics, defaults silently or reports σ = 0 as a success is refused with a named error or fixed; part one of sprint G, one PR.
 
+## Sprint Record
+
+* [v0.2 refusals: panics and silent wrong answers](closeout.md) - Sprint G part one (#88): spin 2, Lorentz and spin-code panics, defaulted UFO fields, MadGraph's restriction zero rule, all three input cards classified, decay tables carried, negative masses refused off Majorana fermions, and σ = 0 or too few effective points refused; six items closed, eleven filed.
+
 ## Directories
 
 * [sessions](sessions/index.md)

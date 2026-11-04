@@ -3,7 +3,7 @@ type: Sprint
 title: "v0.2 refusals: panics and silent wrong answers"
 description: "Every model or card surface that panics, defaults silently or reports σ = 0 as a success is refused with a named error or fixed; part one of sprint G, one PR."
 status: draft
-active: true
+active: false
 tags: [refusal, panic, ufo, param-card, restrict-card, reweight, sigma, sprint-g, v0.2]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-03}
 ---
