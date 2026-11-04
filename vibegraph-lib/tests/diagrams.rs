@@ -194,6 +194,97 @@ fn a_subprocess_reached_from_two_lines_is_refused() {
     );
 }
 
+/// The particles a stitched set's forced lines decay into, per diagram: the names on the
+/// final-state side of each forced propagator, sorted.
+fn forced_products(set: &vibegraph::diagrams::DiagramSet) -> Vec<Vec<Vec<String>>> {
+    use vibegraph::diagrams::diagram::{OnShell, PropIdx};
+    set.diagrams
+        .iter()
+        .map(|d| {
+            let mut lines: Vec<Vec<String>> = (0..d.props.len())
+                .filter(|&p| d.props[p].onshell == OnShell::Forced)
+                .map(|p| {
+                    let mut names: Vec<String> = d
+                        .final_state_side(PropIdx(p))
+                        .expect("a forced line is an s-channel")
+                        .iter()
+                        .map(|leg| set.particles_out[leg.0 - d.n_in].clone())
+                        .collect();
+                    names.sort();
+                    names
+                })
+                .collect();
+            lines.sort();
+            lines
+        })
+        .collect()
+}
+
+/// One subprocess reached by two decay assignments of one line is two subprocesses, as
+/// MadGraph's two combined matrix elements are (`g g > z j j, z > j j`: six such
+/// contents, each 8 + 8 diagrams in MadGraph). Each keeps its own assignment's forced
+/// line: Z → uū on the cc̄ core and Z → cc̄ on the uū core.
+#[test]
+fn a_subprocess_from_two_decay_assignments_is_two_subprocesses() {
+    use std::collections::BTreeMap;
+    let sets = enumerate("generate g g > z j j, z > j j").unwrap();
+    let sets: Vec<_> = sets
+        .into_iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .collect();
+    // Four cores (g g > z q q~) times four decays (z > q q~).
+    assert_eq!(sets.len(), 16);
+    let mut by_content: BTreeMap<Vec<String>, Vec<&vibegraph::diagrams::DiagramSet>> =
+        BTreeMap::new();
+    for set in &sets {
+        let mut content = set.particles_out.clone();
+        content.sort();
+        by_content.entry(content).or_default().push(set);
+    }
+    let shared: Vec<_> = by_content.iter().filter(|(_, v)| v.len() > 1).collect();
+    assert_eq!(shared.len(), 6, "u c, u d, u s, c d, c s, d s");
+    for (content, pair) in shared {
+        assert_eq!(pair.len(), 2, "{content:?}");
+        let [a, b] = [pair[0], pair[1]];
+        assert_eq!(a.diagrams.len(), 8, "{}", a.label());
+        assert_eq!(b.diagrams.len(), 8, "{}", b.label());
+        // The Z's products lead each final state, so the two orders differ.
+        assert_ne!(a.particles_out, b.particles_out);
+        let (fa, fb) = (forced_products(a), forced_products(b));
+        assert!(fa.iter().all(|lines| lines.len() == 1 && *lines == fa[0]));
+        assert!(fb.iter().all(|lines| lines.len() == 1 && *lines == fb[0]));
+        let leading = |names: &[String]| {
+            let mut pair = names[..2].to_vec();
+            pair.sort();
+            pair
+        };
+        assert_eq!(fa[0][0], leading(&a.particles_out));
+        assert_eq!(fb[0][0], leading(&b.particles_out));
+        assert_ne!(fa[0], fb[0], "{content:?}: both sets decay the same pair");
+    }
+    let identical = by_content.values().filter(|v| v.len() == 1).count();
+    assert_eq!(identical, 4, "g g > q q~ q q~, one assignment each");
+}
+
+/// The same two assignments written as two lines of one process number (MadGraph: one
+/// matrix element with two PDF terms, summed) stay refused: the check across lines does
+/// not tell two assignments from one subprocess written twice.
+#[test]
+fn two_assignments_on_two_lines_are_refused() {
+    let card = "generate e+ e- > z u u~, z > c c~ @1\nadd process e+ e- > z c c~, z > u u~ @1\n";
+    let Err(err) = enumerate(card) else {
+        panic!("{card} enumerated");
+    };
+    assert!(
+        err.contains("e+ e- > u u~ c c~") && err.contains("two process lines"),
+        "{err}"
+    );
+    assert!(
+        err.contains("'e+ e- > z u u~, z > c c~") && err.contains("'e+ e- > z c c~, z > u u~"),
+        "the refusal names both lines: {err}"
+    );
+}
+
 /// An integer leg is a PDG code: `21` is a gluon, not two particles named `1`.
 #[test]
 fn pdg_code_legs_enumerate_as_their_particles() {

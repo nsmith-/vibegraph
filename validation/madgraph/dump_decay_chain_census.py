@@ -162,6 +162,11 @@ CORPUS = [
     ("pp_ttx_qed4", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=4"),
     ("pp_ttx_qcd0", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QCD=0"),
     ("ee_zz_qed3", "generate e+ e- > z z, z > e+ e-, z > mu+ mu- @1 QED=3"),
+    # One subprocess reached by two decay assignments (`g g > u u~ c c~`: Z > u u~ on
+    # the c c~ core, Z > c c~ on the u u~ core): two matrix elements, summed.
+    ("gg_zjj_jj", "generate g g > z j j, z > j j"),
+    ("ee_zjj_noz_jj", "generate e+ e- > z j j / z, z > j j"),
+    ("pp_zjj_jj", "generate p p > z j j, z > j j"),
     # A decay whose particle the core does not have: MadGraph drops it with a warning.
     ("ee_ttx_unused_w", "generate e+ e- > t t~, t > w+ b, w+ > e+ ve"),
     # A decay with more than one initial particle.

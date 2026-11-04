@@ -13,6 +13,8 @@
 //!   does not permute identical particles between decays (it divides by
 //!   `identical_decay_chain_factor` instead), so those diagrams are the ones it has; the
 //!   rest are the permutations, whose count is reported;
+//! - per card, how many subprocesses two decay assignments reach (`g g > u u~ c c~` from
+//!   `g g > z j j, z > j j`): each is two entries on both sides, one per assignment;
 //! - where MadGraph refuses, stitching refuses too; where MadGraph drops a decay with a
 //!   warning (its particle is in no core subprocess), stitching refuses by design.
 //!
@@ -150,6 +152,18 @@ fn stitch(card: &str, model: &UFOModel) -> Outcome {
     }
 }
 
+/// How many particle contents (sorted initial, sorted final) more than one of `keys`
+/// has.
+fn shared_contents<'a>(keys: impl Iterator<Item = &'a Key>) -> usize {
+    let mut counts: BTreeMap<Key, usize> = BTreeMap::new();
+    for (initial, final_state) in keys {
+        let mut sorted = final_state.clone();
+        sorted.sort_unstable();
+        *counts.entry((initial.clone(), sorted)).or_default() += 1;
+    }
+    counts.values().filter(|&&n| n > 1).count()
+}
+
 /// The identical-particle factor of a final state.
 fn identical_factor(ids: &[i64]) -> u64 {
     let mut counts: BTreeMap<i64, u64> = BTreeMap::new();
@@ -167,7 +181,7 @@ fn decay_chain_census_matches_madgraph() {
     let cases = doc["cases"].as_array().expect("cases");
     assert!(!cases.is_empty(), "the census banks no cards");
     let mut failures = Vec::new();
-    let (mut matched, mut refused, mut subprocesses) = (0, 0, 0);
+    let (mut matched, mut refused, mut subprocesses, mut shared) = (0, 0, 0, 0);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let card = case["card"].as_str().unwrap();
@@ -225,16 +239,31 @@ fn decay_chain_census_matches_madgraph() {
                         identical_factor(&key.1)
                     ));
                 }
+                // A subprocess two decay assignments reach is two entries on each side,
+                // their final states in different orders (each decay's products at its
+                // particle's position).
+                let (here, there) = (shared_contents(ours.keys()), shared_contents(theirs.keys()));
+                if here != there {
+                    ok = false;
+                    failures.push(format!(
+                        "{name}: {here} subprocesses reached by two decay assignments here, \
+                         {there} in MadGraph"
+                    ));
+                }
                 if ok {
                     matched += 1;
                 }
-                eprintln!("{name}: {}", report.join("; "));
+                shared += there;
+                eprintln!(
+                    "{name}: {there} subprocesses from two decay assignments; {}",
+                    report.join("; ")
+                );
             }
         }
     }
     eprintln!(
-        "{} cards: {matched} stitched and matched ({subprocesses} subprocesses), {refused} \
-         refused as MadGraph refuses or drops",
+        "{} cards: {matched} stitched and matched ({subprocesses} subprocesses, {shared} of \
+         them reached by two decay assignments), {refused} refused as MadGraph refuses or drops",
         cases.len()
     );
     assert!(
