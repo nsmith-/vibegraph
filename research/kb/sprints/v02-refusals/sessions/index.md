@@ -6,3 +6,7 @@
 
 * [G-F1: refuse spin 2 and the Lorentz/spin-code panics](G-F1.md) - A spin-2 particle, internal or external, and a Lorentz index naming no leg are refused with named errors; build_child's todo! and the three spin-code panic! arms return typed errors or are pinned unreachable.
 * [G-F2: refuse defaulted UFO fields; MadGraph's restriction zero rule](G-F2.md) - Each required UFO field missing or malformed is refused with the field named, DECAY Auto gets a stated policy, and restriction pruning applies MadGraph's 1e-13 rule with the strict-zero rerun.
+
+## Session Report
+
+* [G-F1 report: spin 2 and Lorentz indices naming no leg are refused at compile](G-F1-report.md) - AmplitudeEvaluator::compile refuses any external or internal line of spin code outside 1-3, naming the particle; Lorentz rooting refuses an index at or above the vertex's leg count, naming the structure; build_child's todo! (reached only by C as a scalar factor) returns UnsupportedVertex; the three spin-code panic! arms are unreachable! behind the compile refusal. Five new tests, each shown panicking on the pre-change code; workspace tests, clippy (both feature sets), fmt and kb lint pass.
