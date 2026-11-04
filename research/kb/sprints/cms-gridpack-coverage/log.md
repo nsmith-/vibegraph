@@ -15,3 +15,4 @@
   - MadGraph keeps conjugate pairs as separate matrix elements in one P-dir and maps no flows.
   - H-G1's scope was extended: compare CF under the fingerprint π, so the QCD pairs form one group; the split stays for genuinely incompatible pairs.
   - Found, to file: diagrams whose couplings the param card sets to exactly zero are kept (the Singlet cause; pruning departs from MadGraph); the item's MadGraph claim and its line numbers are stale.
+* The vibegraph manager queued two high-priority items, approved by the user, to start after the colour-split PR. They are on branch `claude/fervent-mayer-2hv310` (b1ba8ab) until its kb PR merges: `absent-run-card-maxjetflavor-ignores-beam-flavours` (first: a silent difference from MadGraph) and `five-flavour-ppjjj-refused-cut-indicator-differs`. Both were added to the plan as items 7 and 8.

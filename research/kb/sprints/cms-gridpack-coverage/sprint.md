@@ -30,6 +30,8 @@ orders, per-group cut indicators.
 | 4 | `pt-min-pdg-refused` (new) | 2 | `sprinth-cuts` | Per-event pT of the listed PDG in written events; a local MadGraph σ on an SM proxy (`p p > z j` at `{23: 100}`), banked on the M3 only if it becomes a manifest row. |
 | 5 | `decay-chain-duplicate-subprocess-vs-madgraph` | 11 | `sprinth-decay-duplicate` | First MadGraph's own behaviour (`combine_decay_chain_processes`, measured by a local `output` and `launch`); then the diagram census against MadGraph's matrix elements and a σ row on a small `Zto2Q`-like card. |
 | 6 | `massive-incoming-partons-refused` | 14 | `sprinth-massive-incoming` | Per-helicity amplitudes at massive incoming momenta against MadGraph standalone, and local MadGraph σ on a b-mass and a c-mass case from the survey. |
+| 7 | `absent-run-card-maxjetflavor-ignores-beam-flavours` (high; filed by the vibegraph manager) | – | `sprinth-maxjetflavor`, after the colour-split PR | A test pins 5 for `p p > j j` under sm-no_b_mass and 4 under sm with no run card; an explicit value still wins; checked against `banner.py` `create_default_for_process`. |
+| 8 | `five-flavour-ppjjj-refused-cut-indicator-differs` (high; filed by the vibegraph manager) | – | with item 2's grouping work, after the colour-split PR | `p p > j j j` under sm-no_b_mass at maxjetflavor 4 integrates; σ against local MadGraph by the multi-seed criterion. |
 
 ## Sessions
 
