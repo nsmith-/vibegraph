@@ -27,6 +27,8 @@ pub(crate) mod extrap;
 pub mod grid;
 pub(crate) mod interp;
 pub mod select;
+#[cfg(all(test, feature = "extended-validation"))]
+mod table_oracle;
 
 use std::path::{Path, PathBuf};
 
@@ -196,12 +198,11 @@ impl PdfSet {
     }
 }
 
-/// One PDF member's parsed subgrids (in file order), its precomputed log-bicubic
-/// interpolator, and the continuation that reads points past the grid.
+/// One PDF member: its log-bicubic interpolator, which holds the parsed
+/// subgrids (in file order) it reads, and the continuation that reads points
+/// past the grid.
 #[derive(Debug)]
 pub struct PdfMember {
-    /// Read-only: `interp` is precomputed from these.
-    subgrids: Vec<SubGrid>,
     interp: LogBicubic,
     extrap: Continuation,
     force_positive: i32,
@@ -213,15 +214,12 @@ pub struct PdfMember {
 }
 
 impl PdfMember {
-    /// Build a member directly from parsed subgrids (precomputing the
-    /// interpolator). Mainly useful for tests with in-memory grids. Carries no
-    /// positivity clamp (`ForcePositive: 0`); use
-    /// [`PdfMember::with_force_positive`] to set one.
+    /// Build a member directly from parsed subgrids. Mainly useful for tests
+    /// with in-memory grids. Carries no positivity clamp (`ForcePositive: 0`);
+    /// use [`PdfMember::with_force_positive`] to set one.
     pub fn from_subgrids(subgrids: Vec<SubGrid>) -> Self {
-        let interp = LogBicubic::build(&subgrids);
         PdfMember {
-            subgrids,
-            interp,
+            interp: LogBicubic::build(subgrids),
             extrap: Continuation,
             force_positive: 0,
             file: None,
@@ -249,7 +247,7 @@ impl PdfMember {
 
     /// The parsed subgrids, in file order.
     pub fn subgrids(&self) -> &[SubGrid] {
-        &self.subgrids
+        self.interp.subgrids()
     }
 
     /// Set the `ForcePositive` level (`0`, `1` or `2`) applied to every value
