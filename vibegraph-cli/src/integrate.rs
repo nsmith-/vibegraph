@@ -174,13 +174,17 @@ pub(crate) enum SplitAngleArg {
 /// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is MadEvent's rule.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum TauMapArg {
-    /// `inverse-square`, or `log` where a resonance spans the whole final state.
+    /// `inverse-square`, `log` where a resonance spans the whole final state, and
+    /// `breit-wigner` where that resonance is too narrow for the log map.
     Auto,
     /// Density `∝ 1/τ` above the cut-implied `τ_min`.
     Log,
     /// Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance
     /// spanning the whole final state.
     InverseSquare,
+    /// The channel average of MadEvent's per-channel maps: a Breit–Wigner at each
+    /// channel's whole-state pole, the log map on channels without one.
+    BreitWigner,
 }
 
 /// The order a peripheral chain draws its rungs in ([`RungOrder`]); `auto` is
@@ -228,7 +232,10 @@ pub(crate) struct MapArgs {
     /// spans the whole final state, and `log` where one does. `inverse-square`
     /// measures better where it applies (0.77× the evaluations on `p p > j j`,
     /// 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the
-    /// resonance's peak sits in the `τ` draw.
+    /// resonance's peak sits in the `τ` draw. Where that peak is narrower than
+    /// one draw in a thousand of the log map, `auto` is `breit-wigner`: each
+    /// channel with a whole-state pole in range draws `τ` on that pole's
+    /// Breit–Wigner, as MadEvent does, and the others on the log map.
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
     pub(crate) tau: TauMapArg,
 
@@ -264,6 +271,7 @@ impl MapArgs {
                 TauMapArg::Auto => None,
                 TauMapArg::Log => Some(TauMap::Log),
                 TauMapArg::InverseSquare => Some(TauMap::InverseSquare),
+                TauMapArg::BreitWigner => Some(TauMap::BreitWigner),
             },
             rung_order: match self.rung_order {
                 RungOrderArg::Auto => None,

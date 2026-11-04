@@ -241,6 +241,8 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
             max_rungs: acc.max_rungs.max(s.max_rungs),
             resonant_pair_splits: acc.resonant_pair_splits + s.resonant_pair_splits,
             whole_state_resonance: acc.whole_state_resonance || s.whole_state_resonance,
+            narrow_whole_state_resonance: acc.narrow_whole_state_resonance
+                || s.narrow_whole_state_resonance,
         })
 }
 
