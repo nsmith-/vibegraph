@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [G-HY3: integrate summary lines that mislead (σ digits, χ²/dof over one iteration, μF for a dynamical scale)](G-HY3.md) - integrate prints σ with significant figures, χ²/dof as n/a below two entering iterations, and the scale choice instead of μF = 0 GeV; the artifact records 'undefined' and 'no constant scale' distinctly from 0; the survey parser reads the new lines.
+* [G-HY4: σ and its error decimal-aligned in one SI-prefixed barn unit](G-HY4.md) - The user's review change to #90: integrate prints σ and its error in one SI-prefixed barn unit chosen from σ, both to the error's decimal place (8.6812 ± 0.0023 ab), reusing si.rs; the survey parser reads the unit.
 
 ## Session Report
 
