@@ -266,23 +266,62 @@ fn a_subprocess_from_two_decay_assignments_is_two_subprocesses() {
     assert_eq!(identical, 4, "g g > q q~ q q~, one assignment each");
 }
 
-/// The same two assignments written as two lines of one process number (MadGraph: one
-/// matrix element with two PDF terms, summed) stay refused: the check across lines does
-/// not tell two assignments from one subprocess written twice.
+/// The same two assignments written as two lines are two subprocesses too: MadGraph
+/// sums them, as one matrix element with two PDF terms when their process numbers agree
+/// (`@1` on both lines) and as two matrix elements otherwise. Each keeps its own forced
+/// line. So do two lines whose resonances differ (`g g > w+ d u~, w+ > u d~` and
+/// `g g > w- u d~, w- > d u~` reach `g g > u d~ d u~` through a W+ and through a W-).
 #[test]
-fn two_assignments_on_two_lines_are_refused() {
-    let card = "generate e+ e- > z u u~, z > c c~ @1\nadd process e+ e- > z c c~, z > u u~ @1\n";
-    let Err(err) = enumerate(card) else {
-        panic!("{card} enumerated");
-    };
-    assert!(
-        err.contains("e+ e- > u u~ c c~") && err.contains("two process lines"),
-        "{err}"
-    );
-    assert!(
-        err.contains("'e+ e- > z u u~, z > c c~") && err.contains("'e+ e- > z c c~, z > u u~"),
-        "the refusal names both lines: {err}"
-    );
+fn two_assignments_on_two_lines_are_two_subprocesses() {
+    for (card, content, decays) in [
+        (
+            "generate e+ e- > z u u~, z > c c~ @1\nadd process e+ e- > z c c~, z > u u~ @1\n",
+            ["c", "c~", "u", "u~"],
+            [["c", "c~"], ["u", "u~"]],
+        ),
+        (
+            "generate g g > w+ d u~, w+ > u d~\nadd process g g > w- u d~, w- > d u~\n",
+            ["d", "d~", "u", "u~"],
+            [["d~", "u"], ["d", "u~"]],
+        ),
+    ] {
+        let sets: Vec<_> = enumerate(card)
+            .unwrap_or_else(|e| panic!("{card}: {e}"))
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        assert_eq!(sets.len(), 2, "{card}");
+        for (set, decay) in sets.iter().zip(decays) {
+            let mut names = set.particles_out.clone();
+            names.sort();
+            assert_eq!(names, content, "{card}: {}", set.label());
+            let lines = forced_products(set);
+            assert!(!lines.is_empty(), "{card}: {}", set.label());
+            for forced in lines {
+                assert_eq!(forced, [decay], "{card}: {}", set.label());
+            }
+        }
+    }
+}
+
+/// Two lines with the same decay assignment, or a decay-chain line and a line that is
+/// not one, would count the same diagrams twice: they stay refused, as any subprocess
+/// two lines reach.
+#[test]
+fn one_assignment_on_two_lines_is_refused() {
+    for card in [
+        "generate e+ e- > z u u~, z > c c~ @1\nadd process e+ e- > z u u~, z > c c~ @2\n",
+        "generate e+ e- > z u u~, z > c c~\nadd process e+ e- > u u~ c c~\n",
+        "generate e+ e- > u u~ c c~\nadd process e+ e- > z c c~, z > u u~\n",
+    ] {
+        let Err(err) = enumerate(card) else {
+            panic!("{card} enumerated");
+        };
+        assert!(
+            err.contains("e+ e- > ") && err.contains("two process lines"),
+            "{card}: {err}"
+        );
+    }
 }
 
 /// An integer leg is a PDG code: `21` is a gluon, not two particles named `1`.

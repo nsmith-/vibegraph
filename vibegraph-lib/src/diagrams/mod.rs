@@ -357,6 +357,47 @@ fn flavour_key(set: &DiagramSet) -> FlavourKey {
     (i, f)
 }
 
+/// One decay assignment as a diagram carries it: per forced line, the line's
+/// particle and the particles of the final-state legs it decays to, each sorted,
+/// so that it does not depend on the order of the set's outgoing legs.
+type Assignment = Vec<(usize, Vec<usize>)>;
+
+/// The decay assignments of `set`'s diagrams, or `None` when a diagram has no
+/// forced line (a line that is not a decay chain).
+fn assignments(set: &DiagramSet) -> Option<std::collections::HashSet<Assignment>> {
+    use diagram::{OnShell, PropIdx};
+    set.diagrams
+        .iter()
+        .map(|d| {
+            let mut forced: Assignment = (0..d.props.len())
+                .filter(|&p| d.props[p].onshell == OnShell::Forced)
+                .map(|p| {
+                    let mut products: Vec<usize> = d
+                        .final_state_side(PropIdx(p))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|leg| d.legs[leg.0].particle.index())
+                        .collect();
+                    products.sort_unstable();
+                    (d.props[p].particle.index(), products)
+                })
+                .collect();
+            forced.sort_unstable();
+            (!forced.is_empty()).then_some(forced)
+        })
+        .collect()
+}
+
+/// Whether two sets of one subprocess are decay chains whose diagrams share no
+/// decay assignment: each set forces its own resonances onto its own legs, as two
+/// assignments of one line do.
+fn distinct_assignments(a: &DiagramSet, b: &DiagramSet) -> bool {
+    match (assignments(a), assignments(b)) {
+        (Some(a), Some(b)) => a.is_disjoint(&b),
+        _ => false,
+    }
+}
+
 /// One helicity state of a subprocess: the unordered `(particle, helicity)`
 /// content of each side.
 type SummedState = (Vec<(String, i32)>, Vec<(String, i32)>);
@@ -412,8 +453,15 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     //
     // Two lines may produce the same particles with polarizations that sum
     // over disjoint helicity states (`e+ e- > z{0} h` and `e+ e- > z{T} h`):
-    // those add without double counting and are kept. Any state both would
-    // count is refused.
+    // those add without double counting and are kept.
+    //
+    // Two decay-chain lines may also reach one subprocess through different
+    // decay assignments (`p p > w+ j j, w+ > j j` and `p p > w- j j, w- > j j`
+    // both reach `g g > u d~ d u~`, once through W+ > u d~ and once through
+    // W- > d u~). Those are the two subprocesses one line gives for the same
+    // case, summed incoherently as MadGraph sums them, and are kept. Two lines
+    // with the same assignment, or a line without one, would count the same
+    // diagrams twice and are refused.
     let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
         let process_sets = generate_from_process(process, model, ProcessRole::TopLevel)?;
@@ -428,6 +476,9 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
             }
             let earlier = owner.entry(flavour_key(set)).or_default();
             for &(first, at) in earlier.iter().filter(|(line, _)| *line != index) {
+                if distinct_assignments(set, &sets[at]) {
+                    continue;
+                }
                 let states = summed_states(set, model)?;
                 if !summed_states(&sets[at], model)?.is_disjoint(&states) {
                     return Err(DiagramError::DuplicateSubprocess {
