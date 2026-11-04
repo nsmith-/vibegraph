@@ -32,6 +32,7 @@ orders, per-group cut indicators.
 | 6 | `massive-incoming-partons-refused` | 14 | `sprinth-massive-incoming` | Per-helicity amplitudes at massive incoming momenta against MadGraph standalone, and local MadGraph σ on a b-mass and a c-mass case from the survey. |
 | 7 | `absent-run-card-maxjetflavor-ignores-beam-flavours` (high; filed by the vibegraph manager) | – | `sprinth-maxjetflavor`, after the colour-split PR | A test pins 5 for `p p > j j` under sm-no_b_mass and 4 under sm with no run card; an explicit value still wins; checked against `banner.py` `create_default_for_process`. |
 | 8 | `five-flavour-ppjjj-refused-cut-indicator-differs` (high; filed by the vibegraph manager) | – | with item 2's grouping work, after the colour-split PR | `p p > j j j` under sm-no_b_mass at maxjetflavor 4 integrates; σ against local MadGraph by the multi-seed criterion. |
+| 9 | `explicit-initial-state-ordering-counted-twice` (high; found by H-M1) | – | `sprinth-mirror` | Local MadGraph σ on explicit single-ordering and both-ordering cards, massless and massive, ≥5 seeds per side. |
 
 ## Sessions
 

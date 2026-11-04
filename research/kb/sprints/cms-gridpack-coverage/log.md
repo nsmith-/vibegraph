@@ -34,3 +34,11 @@
     - σ of `p p > z j` at `{23: 100}`: vibegraph 604.136 ± 0.112 (20 seeds) against local MadGraph 603.55 ± 0.354 (`hard_survey = 2`, 5 seeds), +0.10%; the cut/no-cut ratio agrees to 0.07%.
   - Two MadGraph defects: the light-code guard at `banner.py:4722` never fires; `setcuts.f:681–683` indexes legs with the list index, in hash-seed-dependent order. The cards both reach are refused, and the manager catalogued both (f111d23).
   - Found, to file: `mxx_only_part_antipart` is wrongly `IgnoredBenign`; upstream report drafts for the two defects.
+* H-M1 done (2886fb5, 8db1578 on `sprinth-massive-incoming`). The manager re-ran its 12 massive-parton lib tests, including `massive_incoming_helicity_amplitudes_match_madgraph_standalone`: all pass.
+  - Taken from the report:
+    - σ against local MadGraph at 5 seeds: b at 4.7 +1.1e-3, c at 1.55 −2.3e-4;
+    - the mass effect σ(4.7)/σ(0) = 1.05268 ± 0.00069 against 1.05255 ± 0.00143;
+    - massless runs bit for bit;
+    - `validate.sh` exit 0.
+  - The item stays open until a survey card's σ is measured.
+  - Found 1: a silent ×2 on main for explicit single-ordering cards (`has_mirror`). The user chose to fix it in sprint H, so it was filed as `explicit-initial-state-ordering-counted-twice` (high).
