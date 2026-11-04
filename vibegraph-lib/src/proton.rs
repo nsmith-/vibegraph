@@ -19,11 +19,14 @@
 //! (up-type vs down-type), the generation copies (`u`/`c`, `d`/`s`), the lepton
 //! flavours (`e`/`mu`) and the separation of `q g` from `q̄ g` all fall out of
 //! the measurement. A subprocess joins a group only if it also shares the
-//! group's colour bookkeeping — an equal flow count and colour-factor matrix
-//! and a pairing of its flows with the representative's, so an event's colour
-//! flow can be read off the representative. One that matches a group's `|M|²`
-//! but not its colour basis (a charge-conjugate pair can, `u d > d g u` with
-//! `u~ d~ > d~ g u~`) starts a group of its own. Grouping is refused unless the
+//! group's colour bookkeeping — a pairing of its flows with the representative's,
+//! under which the two colour-factor matrices agree entry by entry — so an
+//! event's colour flow can be read off the representative. A charge-conjugate
+//! pair such as `u d > d g u` with `u~ d~ > d~ g u~` sorts the same flows into
+//! different orders and shares a group through that pairing. One that matches a
+//! group's `|M|²` but whose flows cannot be paired (a member carrying extra
+//! diagrams whose couplings vanish at the evaluated card, say) starts a group of
+//! its own. Grouping is refused unless the
 //! members also share the *outgoing pole masses* (so one phase-space map serves
 //! the group; a card whose subprocesses differ in them is split into one
 //! decomposition per set of masses before it gets here, by
@@ -851,8 +854,10 @@ pub fn derive_flavor_groups(
             }
             let rel = worst_rel(&traces[ha], &traces[hb]);
             // Two groups with one matrix element exist only when their colour
-            // bases could not be paired. A colour-compatible pair this close
-            // would have been one group, so it falls through to the refusal.
+            // bases could not be paired, and each is evaluated with its own
+            // compiled amplitude, so their sum does not rest on the two traces
+            // being equal. A colour-compatible pair this close would have been
+            // one group, so it falls through to the refusal.
             if rel < GROUP_REL_TOL && colour_pairing(&compiled[ha].0, &compiled[hb].0).is_err() {
                 continue;
             }
@@ -1011,10 +1016,19 @@ fn content_ordered(
 ///
 /// An event's flow is drawn in the representative's indexing, off the
 /// representative's `JAMP2`, and each member's own table is reindexed into it. That
-/// needs a bijection between the two bases, which needs them to have the same number
-/// of flows and the same colour-factor matrix. `|M|²` on its own implies neither: it
-/// is a sum over the basis and would not move if two members' bases differed by a
-/// relabelling.
+/// needs a bijection between the two bases under which they are the same colour
+/// algebra: flow `f` of the representative and flow `π(f)` of the member built from
+/// the same contributions, and `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly.
+/// `|M|²` on its own implies neither: it is a sum over the basis and would not move
+/// if two members' bases differed by a relabelling.
+///
+/// `π` comes from the fingerprints alone, and the colour-factor matrix only confirms
+/// it. A permutation found by matching the matrices would not be unique: the CF
+/// matrix of `u u > g g u u` has sixteen automorphisms, and all but one of them would
+/// pass this check while labelling the member's events with the wrong flows. The
+/// matrices are compared under `π` and never in their own orders, because two bases
+/// holding the same flows sort them differently: a charge-conjugate pair's matrices
+/// disagree entry by entry until they are reindexed.
 fn colour_pairing(
     representative: &AmplitudeEvaluator,
     member: &AmplitudeEvaluator,
@@ -1026,10 +1040,22 @@ fn colour_pairing(
             member.n_flows()
         ));
     }
-    if member.cf_matrix() != representative.cf_matrix() {
-        return Err("the colour-factor matrices differ".to_string());
+    let pi = flow_permutation(representative, member)?;
+    let n = pi.len();
+    let (ours, theirs) = (representative.cf_matrix(), member.cf_matrix());
+    for i in 0..n {
+        for j in 0..n {
+            if ours[i * n + j] != theirs[pi[i] * n + pi[j]] {
+                return Err(format!(
+                    "the colour-factor matrices differ under the flow pairing, at flows {} \
+                     and {} of the representative",
+                    i + 1,
+                    j + 1
+                ));
+            }
+        }
     }
-    flow_permutation(representative, member)
+    Ok(pi)
 }
 
 /// Pair up two subprocesses' colour flows: `π[f]` is the flow of `member`'s basis
@@ -4963,36 +4989,138 @@ mod tests {
         ));
     }
 
-    /// A charge-conjugate pair with one `|M|²` and colour bases that do not pair
-    /// up is two groups, not a refusal.
+    /// A charge-conjugate pair with one `|M|²` shares one group, its member's flows
+    /// reindexed by the fingerprint pairing.
     ///
-    /// `u d > d g u` and `u~ d~ > d~ g u~` agree on every probe point, carry the
-    /// same flows (the fingerprint pairing exists) but in an order under which
-    /// their colour-factor matrices differ entry by entry. The premise is
-    /// asserted first, so the test cannot pass on a pair the partition would
-    /// have merged anyway. Then the decomposition keeps both subprocesses, each
-    /// as the representative of a group of one with its own basis, and the two
-    /// groups' `|M|²` still agree at points the partition was not fitted on, so
-    /// the sum over groups counts each subprocess once.
+    /// Each subprocess of the pair sorts the same flows into a different order, so
+    /// their colour-factor matrices differ entry by entry in their own orders (the
+    /// premise, asserted first) and agree only under `π`. The decomposition must
+    /// hold both in one group, and the member's reindexed table must be the
+    /// representative's table with both slots of every leg exchanged, flow by
+    /// flow: the full-conjugation rule, derived without the fingerprints. The
+    /// member's `JAMP2`, read at points the partition was not fitted on, must be
+    /// the representative's under `π`. On the twelve-flow pair `π` is also pinned
+    /// to its value; that is the one assertion an automorphism of the CF matrix
+    /// cannot satisfy in its place, though the conjugation check fails first.
     ///
-    /// What it cannot see: whether a colour-compatible pair this close is
-    /// refused by the separation check, since the partition never produces one.
+    /// What it cannot see: a pairing error inside a degenerate `JAMP2` block that
+    /// the conjugation rule also misses, which full conjugates cannot have; and the
+    /// crossing class, which no slot operation relates (the `p p > j j` tests).
     #[test]
-    fn a_conjugate_pair_with_unpaired_colour_bases_is_grouped_apart() {
-        const CONJ: &str = "u d > d g u\nadd process u~ d~ > d~ g u~";
+    fn a_conjugate_pair_shares_one_group_under_the_flow_permutation() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
+        for (card, n_out, pinned) in [
+            ("u d > d g u\nadd process u~ d~ > d~ g u~", 3, None),
+            (
+                "u u > g g u u\nadd process u~ u~ > g g u~ u~",
+                4,
+                Some([7, 3, 5, 1, 8, 10, 9, 11, 6, 2, 4, 0]),
+            ),
+        ] {
+            let sets = enumerate(card, &m);
+            assert_eq!(sets.len(), 2, "{card}");
+            let a = compile_class(&sets[0], &m, &evaluated).expect("compile");
+            let b = compile_class(&sets[1], &m, &evaluated).expect("compile");
+            assert_eq!(a.n_flows(), b.n_flows(), "{card}");
+            assert_ne!(
+                a.cf_matrix(),
+                b.cf_matrix(),
+                "{card}: the orders must differ"
+            );
 
-        let sets = enumerate(CONJ, &m);
+            let groups = derive_flavor_groups(sets, &m, &evaluated, &RunCard::default())
+                .expect("a conjugate pair is one group");
+            assert_eq!(groups.groups().len(), 1, "{card}");
+            assert_eq!(groups.subprocess_count(), 2, "{card}");
+            let group = &groups.groups()[0];
+            let rep = group.evaluator();
+            let n = rep.n_flows();
+            let [head, member] = group.members() else {
+                panic!("{card}: two members");
+            };
+            assert_eq!(head.flow_permutation, (0..n).collect::<Vec<_>>());
+            assert!(member.incoming.iter().all(|&p| p < 0), "{card}");
+            let pi = &member.flow_permutation;
+
+            let conjugate = rep.color_flow_tags().conjugated();
+            for f in 0..n {
+                assert_eq!(
+                    connectivity(member.flows.flow(f)),
+                    connectivity(conjugate.flow(f)),
+                    "{card}: flow {f} of the member is not the conjugate of the representative's"
+                );
+            }
+
+            let own = compile_class(group.member_diagram_set(1), &m, &evaluated).expect("compile");
+            for i in 0..n {
+                for j in 0..n {
+                    assert_eq!(
+                        rep.cf_matrix()[i * n + j],
+                        own.cf_matrix()[pi[i] * n + pi[j]]
+                    );
+                }
+            }
+            let ra = BoundAmplitude::<f64>::bind(rep, &evaluated);
+            let rb = BoundAmplitude::<f64>::bind(&own, &evaluated);
+            let (mut sa, mut sb) = (ra.scratch_space(), rb.scratch_space());
+            let mut worst = 0.0f64;
+            for k in fresh_points(&vec![0.0; n_out]) {
+                let (mut ja, mut jb) = (vec![0.0; n], vec![0.0; n]);
+                ra.eval_jamp2(&k, &mut sa, &mut ja);
+                rb.eval_jamp2(&k, &mut sb, &mut jb);
+                let scale = ja.iter().sum::<f64>().max(f64::MIN_POSITIVE);
+                for f in 0..n {
+                    worst = worst.max((ja[f] - jb[pi[f]]).abs() / scale);
+                }
+            }
+            assert!(
+                worst < 1e-12,
+                "{card}: JAMP2 under pi differs by {worst:.2e}"
+            );
+            if let Some(pinned) = pinned {
+                assert_eq!(pi[..], pinned[..], "{card}");
+            }
+        }
+    }
+
+    /// A subprocess whose `|M|²` matches a group's but whose flows cannot be paired
+    /// with the representative's is a group of its own, not a refusal.
+    ///
+    /// At the default restriction the b Yukawa is a live parameter, so
+    /// `b b > b b QED=2` compiles Higgs exchanges that `d d > d d QED=2` lacks. With
+    /// the card setting the b mass and Yukawa to zero, the two `|M|²` agree on every
+    /// probe point, and the bases have the same flows, CF matrix and line routing,
+    /// but the b flows carry the extra (zero-valued) diagrams, so no fingerprint
+    /// pairing exists. The premise is asserted first. Each group is its own
+    /// representative under the identity, and the two traces agree at points the
+    /// partition was not fitted on: the separation floor must not refuse a pair
+    /// that close when the partition split it for colour.
+    ///
+    /// What it cannot see: whether such a pair would be better served by pruning
+    /// the zero-valued diagrams and grouping it, which is a question about the
+    /// card, not the colour bookkeeping.
+    #[test]
+    fn a_pair_whose_flows_cannot_be_paired_is_grouped_apart() {
+        const PAIR: &str = "d d > d d QED=2\nadd process b b > b b QED=2";
+        let m = model();
+        let card: crate::ufo::slha::ParamCard = "BLOCK MASS\n  5 0.0\nBLOCK YUKAWA\n  5 0.0\n"
+            .parse()
+            .expect("param card");
+        let evaluated = EvaluatedModel::from_model_card(m.clone(), &card);
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+
+        let sets = enumerate(PAIR, &m);
         assert_eq!(sets.len(), 2);
         let a = compile_class(&sets[0], &m, &evaluated).expect("compile");
         let b = compile_class(&sets[1], &m, &evaluated).expect("compile");
         assert_eq!(a.n_flows(), b.n_flows());
-        assert_ne!(a.cf_matrix(), b.cf_matrix());
-        assert!(flow_permutation(&a, &b).is_ok());
-        assert!(colour_pairing(&a, &b).is_err());
-        let points = probe_momenta(&[0.0; 3], s_channel_resonance(&m, &evaluated), PROBE_SEED);
-        let trace = |e: &AmplitudeEvaluator| -> Vec<f64> {
+        assert_eq!(a.cf_matrix(), b.cf_matrix());
+        assert!(a.n_diagrams() < b.n_diagrams());
+        assert!(flow_permutation(&a, &b).is_err());
+        let points = probe_momenta(&[0.0; 2], s_channel_resonance(&m, &evaluated), PROBE_SEED);
+        let trace = |e: &AmplitudeEvaluator, points: &[Vec<V>]| -> Vec<f64> {
             let bound = BoundAmplitude::<f64>::bind(e, &evaluated);
             let mut scratch = bound.scratch_space();
             points
@@ -5000,9 +5128,9 @@ mod tests {
                 .map(|k| bound.eval_m2(k, &mut scratch))
                 .collect()
         };
-        assert!(worst_rel(&trace(&a), &trace(&b)) < GROUP_REL_TOL);
+        assert!(worst_rel(&trace(&a, &points), &trace(&b, &points)) < GROUP_REL_TOL);
 
-        let groups = derive_flavor_groups(sets, &m, &evaluated, &RunCard::default())
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card)
             .expect("a colour split is not a refusal");
         assert_eq!(groups.groups().len(), 2);
         assert_eq!(groups.subprocess_count(), 2);
@@ -5016,20 +5144,18 @@ mod tests {
             labels.push(group.diagram_set().label());
         }
         labels.sort();
-        assert_eq!(labels, ["u d > d g u", "u~ d~ > d~ g u~"]);
+        assert_eq!(labels, ["b b > b b", "d d > d d"]);
 
-        let amps = bind_all(&groups, &evaluated);
-        let traces: Vec<Vec<f64>> = amps
-            .iter()
-            .map(|bound| {
-                let mut scratch = bound.scratch_space();
-                fresh_points(&[0.0; 3])
-                    .iter()
-                    .map(|k| bound.eval_m2(k, &mut scratch))
-                    .collect()
-            })
-            .collect();
-        assert!(worst_rel(&traces[0], &traces[1]) < GROUP_REL_TOL);
+        let fresh = fresh_points(&[0.0; 2]);
+        let [ga, gb] = groups.groups() else {
+            unreachable!()
+        };
+        assert!(
+            worst_rel(
+                &trace(ga.evaluator(), &fresh),
+                &trace(gb.evaluator(), &fresh)
+            ) < GROUP_REL_TOL
+        );
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,
