@@ -27,9 +27,9 @@ orders, per-group cut indicators.
 | 1 | `crossing-pair-colour-basis-differs-refused`, plus the "colour flows cannot be paired up" refusal | 15 + 4 | `colour-split-groups` (written on the CERN host) | A test that fails before the change; mutation evidence; per-subprocess event colour labels on one HT-binned γ/QCD card; the banked colour gates unchanged. |
 | 2 | `ckm-flavour-groups-near-degenerate-refused` | 5 | `sprinth-near-degenerate` | Needs the user's decision first. A test on the γ+jets pair that shows the 8e-7 split vanishes with the CKM phase or the W width at zero (CP violation), and one on the 1.5e-10 VBS_WPMZTo4Q pair. |
 | 3 | `xpt-nonpositive-refused` (new) | 2 | `sprinth-cuts` | A refusal test: xpt* ≤ 0 compiles to the default cuts; a positive value is still refused. |
-| 4 | `pt-min-pdg-refused` (new) | 2 | `sprinth-cuts` | Per-event pT of the listed PDG in written events; a σ row banked on the M3 (an SM proxy such as `p p > z j` at `{23: 100}`). |
-| 5 | `decay-chain-duplicate-subprocess-vs-madgraph` | 11 | `sprinth-decay-duplicate` | First MadGraph's own behaviour (`combine_decay_chain_processes`, measured by `output` on the M3); then the diagram census against MadGraph's matrix elements and a σ row on a small `Zto2Q`-like card. |
-| 6 | `massive-incoming-partons-refused` | 14 | `sprinth-massive-incoming` | Per-helicity amplitudes at massive incoming momenta against MadGraph standalone, and a σ row banked on the M3 for a b-mass and a c-mass case from the survey. |
+| 4 | `pt-min-pdg-refused` (new) | 2 | `sprinth-cuts` | Per-event pT of the listed PDG in written events; a local MadGraph σ on an SM proxy (`p p > z j` at `{23: 100}`), banked on the M3 only if it becomes a manifest row. |
+| 5 | `decay-chain-duplicate-subprocess-vs-madgraph` | 11 | `sprinth-decay-duplicate` | First MadGraph's own behaviour (`combine_decay_chain_processes`, measured by a local `output` and `launch`); then the diagram census against MadGraph's matrix elements and a σ row on a small `Zto2Q`-like card. |
+| 6 | `massive-incoming-partons-refused` | 14 | `sprinth-massive-incoming` | Per-helicity amplitudes at massive incoming momenta against MadGraph standalone, and local MadGraph σ on a b-mass and a c-mass case from the survey. |
 
 ## Sessions
 
@@ -39,7 +39,7 @@ orders, per-group cut indicators.
 | H-G1 | manager, then hygiene-dev | Review of `colour-split-groups` when it is pushed. |
 | H-C1 | feature-dev | Items 3 and 4. |
 | H-N1 | validation-dev | Item 2, after the decision. |
-| H-D1 | validation-dev | Item 5: MadGraph's behaviour from source plus an M3 `output` request; then the implementation, per the decision. |
+| H-D1 | validation-dev | Item 5: MadGraph's behaviour from source plus local MadGraph `output` and `launch`; then the implementation, per the decision. |
 | H-M1 | feature-dev | Item 6: MadGraph's prescription (`mom2cx` at `genps.f:411`, flux `1/(2√λ(ŝ, m1², m2²))` at `genps.f:427`), ported. |
 | H-X | CERN host | Close-out rerun of the affected gridpacks. |
 
@@ -52,7 +52,7 @@ orders, per-group cut indicators.
   merges two combinations only when their `IdentifyMETag`s are equal.
   Combinations with different diagram sets, as in `Zto2Q`, become separate
   matrix elements, which suggests MadGraph sums them incoherently. **Inferred
-  from source**; the M3 `output` measures it.
+  from source**; a local `output` measures it.
 - In the code, the decay-chain refusal is `chain.rs:210`, which reuses the
   "produced by two process lines" message with the same line twice.
 - `setcuts.f:678–687` indexes `idup` with the `pdg_cut` loop index; H-C1
