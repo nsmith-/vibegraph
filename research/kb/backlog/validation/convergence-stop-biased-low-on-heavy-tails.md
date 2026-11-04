@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: The convergence stop is biased low when a channel's weights have no finite variance
-description: "In a heavy-tail regime (Hill tail index < 2) the stop ends on iterations that missed the tail, so early-stopped runs read low; the scale factor, built from iteration scatter, cannot see it. Latent on main."
+description: "With a Hill tail index below 2 the stop ends on iterations that missed the tail, so early-stopped runs read low; the scale factor, built from iteration scatter, cannot see it. Latent on main."
 area: validation
 state: open
 priority: low
