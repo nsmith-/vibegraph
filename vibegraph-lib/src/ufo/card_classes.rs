@@ -43,7 +43,8 @@ pub(crate) enum Expect {
     Same(Card),
     /// Accepted, and the result differs from the baseline's (`Consumed`).
     Differs(Card),
-    /// Refused, with this text in the error (`Refused`).
+    /// Refused, with this text in the error (`Refused`): text of the row's own
+    /// refusal, which the example card does not contain.
     Error(&'static str),
     /// Not a card text: the named test pins the behaviour.
     PinnedBy(&'static str),
@@ -209,14 +210,14 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         madgraph: "a parameter scan, one run per value (ParamCardIterator, L931)",
         class: Refused("one run here is one point"),
         example: Text("Block MASS\n 23 scan:[91, 92]\n"),
-        expect: Error("scan"),
+        expect: Error("runs once per value"),
     },
     Construct {
         name: "`DECAY <pdg> Auto`",
         madgraph: "MadWidth computes the width at launch",
         class: Refused("no width is computed here"),
         example: Text("DECAY 23 Auto\n"),
-        expect: Error("Auto"),
+        expect: Error("computes at launch"),
     },
     Construct {
         name: "a `DECAY` line with fields after the width",
@@ -513,7 +514,7 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
         madgraph: "kept free and written as Auto for MadWidth (modify_autowidth, L2386)",
         class: Refused("no width is computed here"),
         example: Edits(&[("DECAY   6 1.491500E+00", "DECAY   6 Auto")]),
-        expect: Error("Auto"),
+        expect: Error("computes at launch"),
     },
     Construct {
         name: "a `DECAY` line with fields after the width",
@@ -535,7 +536,7 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
         madgraph: "a string to the restriction",
         class: Refused("no value can be read from it"),
         example: Edits(&[("   25 1.250000e+02 # MH", "   25 scan:[120, 130] # MH")]),
-        expect: Error("scan"),
+        expect: Error("runs once per value"),
     },
     Construct {
         name: "a `param_<x>.dat` beside `restrict_<x>.dat`",
@@ -691,10 +692,22 @@ pub(crate) mod tests {
                         assert_ne!(got, want, "{}: moved nothing", row.name);
                     }
                 }
-                Error(needle) => match example() {
-                    Ok(_) => panic!("{}: accepted", row.name),
-                    Err(e) => assert!(e.contains(needle), "{}: `{needle}` not in: {e}", row.name),
-                },
+                Error(needle) => {
+                    // A refusal that quotes the card line contains every word of
+                    // the example, so a needle taken from the example matches
+                    // whichever refusal fires, not only the row's own.
+                    assert!(
+                        !text(&row.example, base).contains(needle),
+                        "{}: the needle `{needle}` is in the example itself",
+                        row.name
+                    );
+                    match example() {
+                        Ok(_) => panic!("{}: accepted", row.name),
+                        Err(e) => {
+                            assert!(e.contains(needle), "{}: `{needle}` not in: {e}", row.name)
+                        }
+                    }
+                }
                 PinnedBy(test) => assert!(!test.is_empty(), "{}", row.name),
             }
         }
