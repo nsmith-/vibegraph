@@ -57,8 +57,10 @@ name in `runcard/classes.rs` is `Consumed` (with its consumer named), `IgnoredBe
 argument that it cannot reach σ, the record or the cuts) or `IgnoredPhysics` (refused
 whenever it could bite). A parameter MadGraph acts on that this crate silently dropped
 would be a wrong answer, so it is refused at parse time instead. The param,
-reweight and restrict cards have no such classification yet
-([input-cards-lack-field-classification](../backlog/feature/input-cards-lack-field-classification.md)).
+restrict and reweight cards have the same classification
+([param card](../model/param-card-classification.md),
+[restrict card](../model/restrict-card-classification.md),
+[reweight card](../events/reweight-card-classification.md)).
 
 ## The current refusals
 

@@ -6,7 +6,9 @@
 //! (see [`crate::diagrams`]), so the strings exist to identify and report the
 //! form, not to compute with it.
 
-use super::ast_util::{call_func_name, kwarg_str, named_assignments, parse_stmts};
+use super::ast_util::{
+    call_func_name, named_assignments, parse_stmts, FieldError, Fields, UniqueNames,
+};
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,8 +18,8 @@ use thiserror::Error;
 pub enum PropagatorError {
     #[error("Failed to parse propagators.py: {0}")]
     Parse(String),
-    #[error("propagator '{name}': {field} is not a string expression this loader can read")]
-    UnreadableForm { name: String, field: &'static str },
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
 
 /// One `Propagator(...)` entry from `propagators.py`.
@@ -29,8 +31,10 @@ pub struct Propagator {
     pub(crate) name: String,
     /// Verbatim `numerator` string, with module-level string variables substituted.
     pub numerator: String,
-    /// Verbatim `denominator` string, same treatment.
-    pub denominator: String,
+    /// Verbatim `denominator` string, same treatment; `None` when the model
+    /// gives none, which UFO's constructor allows (`denominator=None`) and
+    /// MadGraph's ALOHA reads as the standard denominator.
+    pub denominator: Option<String>,
 }
 
 /// Parse `propagators.py` into its [`Propagator`] entries.
@@ -38,30 +42,36 @@ pub struct Propagator {
 /// The shipped files build the forms by concatenating module-level string
 /// variables (`denominatorSq = denominator + "**2"`), so string assignments are
 /// tracked and `+` over strings is folded as the file goes.
+///
+/// `name` and `numerator` are required, as UFO's `Propagator.__init__(self,
+/// name, numerator, denominator=None)` requires them; `denominator` is
+/// optional for the same reason. A form given as anything but a string, a
+/// string variable or a `+` chain of those is refused, as is a repeated name.
 pub(crate) fn parse_propagators(src: &str) -> Result<Vec<Propagator>, PropagatorError> {
     let stmts = parse_stmts(src).map_err(|e| PropagatorError::Parse(e.to_string()))?;
     let mut strings: HashMap<String, String> = HashMap::new();
+    let mut seen = UniqueNames::new("propagator");
     let mut result = Vec::new();
 
     for (python_name, value) in named_assignments(&stmts) {
-        let python_name = python_name.to_owned();
         match value {
             ast::Expr::Call(ast::ExprCall { func, keywords, .. })
                 if call_func_name(func) == Some("Propagator") =>
             {
-                let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-                let field = |kw: &'static str| -> Result<String, PropagatorError> {
-                    super::ast_util::get_kwarg(keywords, kw)
-                        .and_then(|e| fold_string(e, &strings))
-                        .ok_or(PropagatorError::UnreadableForm {
-                            name: name.clone(),
-                            field: kw,
-                        })
+                let fields = Fields::new("propagator", python_name, keywords);
+                let name = fields.str("name")?;
+                seen.insert(python_name, &name)?;
+                const FORM: &str = "a string, a string variable or a `+` chain of those";
+                let form = |expr: &ast::Expr, field: &'static str| {
+                    fold_string(expr, &strings).ok_or_else(|| fields.malformed(field, FORM))
                 };
-                let numerator = field("numerator")?;
-                let denominator = field("denominator")?;
+                let numerator = form(fields.required("numerator")?, "numerator")?;
+                let denominator = fields
+                    .optional("denominator")
+                    .map(|e| form(e, "denominator"))
+                    .transpose()?;
                 result.push(Propagator {
-                    python_name,
+                    python_name: python_name.to_owned(),
                     name,
                     numerator,
                     denominator,
@@ -69,7 +79,7 @@ pub(crate) fn parse_propagators(src: &str) -> Result<Vec<Propagator>, Propagator
             }
             other => {
                 if let Some(s) = fold_string(other, &strings) {
-                    strings.insert(python_name, s);
+                    strings.insert(python_name.to_owned(), s);
                 }
             }
         }
@@ -132,7 +142,7 @@ Z1 =  Propagator(name = "Z1",
         assert_eq!(v2.python_name, "V2");
         assert_eq!(v2.name, "V2");
         assert_eq!(v2.numerator, "- Metric(1, 2)");
-        assert_eq!(v2.denominator, "P('mu', id) * P('mu', id)");
+        assert_eq!(v2.denominator.as_deref(), Some("P('mu', id) * P('mu', id)"));
 
         let z1 = &props[1];
         assert_eq!(z1.name, "Z1");
@@ -141,8 +151,8 @@ Z1 =  Propagator(name = "Z1",
             "-(- Metric(1, 2))* complex(0,1) * Mass(id) * dWZ"
         );
         assert_eq!(
-            z1.denominator,
-            "(P('mu', id) * P('mu', id) - Mass(id) * Mass(id))**2"
+            z1.denominator.as_deref(),
+            Some("(P('mu', id) * P('mu', id) - Mass(id) * Mass(id))**2")
         );
     }
 

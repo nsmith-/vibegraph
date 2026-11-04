@@ -1,8 +1,9 @@
 use indexmap::IndexMap;
 use std::{collections::HashSet, ops::Index};
 
-use super::ast_util::{constructor_calls, get_kwarg, kwarg_str, parse_stmts};
-use rustpython_parser::ast;
+use super::ast_util::{
+    constructor_calls, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -20,6 +21,13 @@ pub enum LorentzError {
     SpinMap { structure: String, cause: String },
     #[error("Invalid Lorentz index '{0}'")]
     InvalidIndex(i32),
+    #[error(
+        "Lorentz structure '{name}' has structure 'external', a routine supplied outside the \
+         UFO model, which the loader cannot read"
+    )]
+    ExternalStructure { name: String },
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
 
 /// A single Lorentz tensor operator.
@@ -237,11 +245,27 @@ pub(crate) fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzE
     let stmts = parse_stmts(src).map_err(|e| LorentzError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 
+    // `Lorentz.require_args` in UFO's object library
+    // (`mg5amcnlo/models/sm/object_library.py` L202) lists `name`, `spins` and
+    // `structure`, but the constructor defaults `structure` to `'external'`
+    // (L204): a routine written by hand outside the model, which is refused.
+    let mut seen = UniqueNames::new("Lorentz structure");
     for (python_name, keywords) in constructor_calls(&stmts, "Lorentz") {
+        let fields = Fields::new("Lorentz structure", python_name, keywords);
+        let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
+        // One integer spin code per leg.
+        let spins = fields.int32_list("spins")?;
+        let structure = match fields.optional("structure") {
+            None => "external".to_owned(),
+            Some(e) => extract_str(e)
+                .ok_or_else(|| fields.malformed("structure", "a string"))?
+                .to_owned(),
+        };
+        if structure == "external" {
+            return Err(LorentzError::ExternalStructure { name });
+        }
         let python_name = python_name.to_owned();
-        let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
-        let spins = extract_spins(keywords)?;
-        let structure = kwarg_str(keywords, "structure").unwrap_or_default();
 
         let raw =
             lorentz_structure::structure(&structure).map_err(|e| LorentzError::StructureParse {
@@ -274,26 +298,6 @@ pub(crate) fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzE
     }
 
     Ok(result)
-}
-
-/// Parse the `spins` keyword argument from a Lorentz structure definition
-fn extract_spins(keywords: &[ast::Keyword]) -> Result<Vec<i32>, LorentzError> {
-    use super::ast_util::extract_int;
-    let mut spins = Vec::new();
-    let Some(val) = get_kwarg(keywords, "spins") else {
-        return Ok(spins);
-    };
-    let ast::Expr::List(ast::ExprList { elts, .. }) = val else {
-        return Ok(spins);
-    };
-    for elt in elts {
-        let s = extract_int(elt).ok_or_else(|| LorentzError::StructureParse {
-            name: "spins".into(),
-            cause: format!("expected integer spin, got {elt:?}"),
-        })? as i32;
-        spins.push(s);
-    }
-    Ok(spins)
 }
 
 // ── Intermediate (raw) types used by the PEG grammar ─────────────────────────
