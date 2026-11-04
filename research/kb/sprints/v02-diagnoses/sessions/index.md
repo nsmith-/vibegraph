@@ -4,4 +4,5 @@
 
 ## Session Brief
 
+* [G-V1: why card 048 integrates to one nonzero point with μF = 0](G-V1.md) - Diagnose CMS card 048 (XtoYYprimeTo4Q, p p > vz, vz > h z): why one point per seed carries σ at the gridpack card, why the defaults' seeds disagree, why μF logs 0 and '0 resonant pairs'; fix or refuse each defect with a test.
 * [G-V2: why VEGAS under-covers a 3 % slice, and making the stop see it](G-V2.md) - Locate the per-channel floor or allocation that leaves the both-W |cos θ| > 0.99 slice of u u~ > w+ b w- b~ / t t~ 3 % low at the default budget, and make the convergence stop detect it, or propose a runtime warning to the user.
