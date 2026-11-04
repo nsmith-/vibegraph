@@ -5,3 +5,7 @@
 ## Sprint
 
 * [v0.2 CLI output that misleads](sprint.md) - The integrate summary prints σ with significant figures, χ²/dof as n/a over fewer than two iterations, and the scale choice instead of μF = 0 GeV; optional part three of sprint G, one PR.
+
+## Directories
+
+* [sessions](sessions/index.md)

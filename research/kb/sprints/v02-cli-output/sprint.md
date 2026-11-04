@@ -17,12 +17,13 @@ each claimed item's `closes_when` holds, pinned by CLI tests, and CI is green.
 
 - `iteration-chi2-printed-as-zero-with-one-result`
 - `dynamical-scale-summary-prints-mu-f-zero`
-- `sigma-printed-to-fixed-decimals`, claimed once PR #85 (which files it) merges
+- `sigma-printed-to-fixed-decimals` (filed by #85, merged)
 
 These change the summary line and may change the artifact's format (an
 undefined χ²/dof and an absent constant μF recorded distinctly from 0), so
-the PR checks the artifact's version rules and goes last, after v02-refusals,
-whose zero-σ refusal edits the same end of `integrate`. The CMS survey
+the PR checks the artifact's version rules and goes last. It is stacked on
+v02-refusals (#88): its base branch is `sprintg-refusals`, whose zero-σ
+refusal and artifact format 18 it builds on. The CMS survey
 database (#71) parses the summary line; its parser is updated in the same
 change.
 
@@ -30,4 +31,4 @@ change.
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| G-HY3 | hygiene-dev (Sonnet) | v02-refusals' G-F4 merged into main; #85 merged | hermetic, lints, CLI tests, `validation/cms_gridpacks` parser tests | all three |
+| G-HY3 | hygiene-dev (Opus) | stacked on `sprintg-refusals` (#88), which has G-F4 and G-F5 | hermetic, lints, CLI tests, `validation/cms_gridpacks` parser tests | all three |
