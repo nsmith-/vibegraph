@@ -10,5 +10,6 @@
 
 ## Session Report
 
+* [M-HY1 report: hygiene review of #86](M-HY1-report.md) - fetch_cms.sh made bash 3.2 compatible; the table oracle refuses a partial tree and does not skip unreadable entries; history-framed comments rewritten; the bytes guard fails on any single kept table; the oracle catches every non-equivalent mutant tried.
 * [M-P1 report: CMS's 880 members in 0.69 GB, bit-identical](M-P1-report.md) - The 3.59 GB peak was 83% removable derived tables (coefficients 66%, a second copy of the grid 17%); a member is now its knots with the x cubic built on use, 404M interpolated values bit-identical to the old layout on 984 members, generate's LHE byte-identical, peak RSS 0.685 GB at -j 1 and 0.689 GB at -j 4, no slower end to end; a counting-allocator test pins bytes per knot.
 * [M-V1 report: the table oracle in the tree, the 880 members fetched, the item's clauses met](M-V1-report.md) - An ignored lib test carries the precomputed-table interpolator and finds 0 of 414M readings different over 984 members, catches a one-ulp mutation (1.68M) and a wrong-band seam read (1.88M), and fails on an empty tree; a fetch script rebuilds the 880-member tree byte-identical to the reference copy; peak RSS 0.685 GiB at -j 1 and 0.688–0.701 GiB at -j 4 by wait4 and VmHWM; the CMS-arguments gate exact on 4 × 9.26M weights.

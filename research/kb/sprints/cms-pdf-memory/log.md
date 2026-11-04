@@ -21,3 +21,4 @@
   - Every clause of `closes_when` holds, so the item's file is deleted here.
   - Found, filed by the manager: `pdf-grid-oracle-blind-to-the-seam-rule`, `fetch-downloads-do-not-retry`, `pdf-reading-builds-cubic-per-flavour`. `resolve_mom` is already filed.
   - M-HY1 dispatched.
+* 2026-11-04: M-HY1 checked (5d3f68f, 4158f98; fmt re-run clean by the manager). The session returned its report as a message, and the manager transcribed it to `M-HY1-report.md`. Found: `geomspace-copied-five-times` filed; `pdf-lookup-f64-only` updated for the new layout.
