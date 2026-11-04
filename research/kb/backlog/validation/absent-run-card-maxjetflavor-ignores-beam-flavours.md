@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: With no run card, maxjetflavor stays 4 in the five-flavour scheme where MadGraph sets 5
-description: "MadGraph's default run card sets maxjetflavor (and asrwgtflavor) to the heaviest quark in the beams; vibegraph's absent-run-card default keeps 4, so a 5F process gets b cuts instead of jet cuts on its b quarks."
+description: "MadGraph's default run card sets maxjetflavor to the heaviest beam quark; vibegraph's absent-run-card default keeps 4, so a 5F process gets b cuts instead of jet cuts on its b quarks."
 area: validation
 state: open
 priority: high
