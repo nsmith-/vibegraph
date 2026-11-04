@@ -6,3 +6,7 @@
 
 * [G-V1: why card 048 integrates to one nonzero point with μF = 0](G-V1.md) - Diagnose CMS card 048 (XtoYYprimeTo4Q, p p > vz, vz > h z): why one point per seed carries σ at the gridpack card, why the defaults' seeds disagree, why μF logs 0 and '0 resonant pairs'; fix or refuse each defect with a test.
 * [G-V2: why VEGAS under-covers a 3 % slice, and making the stop see it](G-V2.md) - Locate the per-channel floor or allocation that leaves the both-W |cos θ| > 0.99 slice of u u~ > w+ b w- b~ / t t~ 3 % low at the default budget, and make the convergence stop detect it, or propose a runtime warning to the user.
+
+## Session Report
+
+* [G-V1 report: card 048's one nonzero point is a τ draw the whole-state decay window did not bound; μF = 0 is only the print](G-V1-report.md) - CMS card 048 (p p > vz, vz > h z at MVz = 3500, WVz = 1 MeV) integrated to one nonzero point per seed because the hadronic τ draw ran from the forced window's lower edge to τ = 1, so the ±52.5 MeV window was 2.2e-5 of the unit interval. Bounding τ from above by the window (artifact format 18) gives 184092 ± 63 pb at the gridpack's PDF against MadGraph's survey 1.811e5 ± 779, and 185426 ± 62 pb against a fresh MadEvent 1.828e5 ± 123 at nn23lo1; the residual 1.5% is MadGraph's small-width treatment, predicted at 1.0155 and measured at 1.0144 ± 0.0008. The per-event scale is √ŝ on both sides; μF = 0 is the summary line only.
