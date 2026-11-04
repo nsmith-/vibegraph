@@ -126,6 +126,7 @@ use crate::phasespace::{
 use crate::progress;
 use crate::runcard::RunCard;
 use crate::select::select_index;
+use crate::support::{CensusCell, PointCensus};
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{IterationCombination, VegasResult};
@@ -190,13 +191,19 @@ pub struct Subprocess {
     /// corresponds to flow `f` of the representative's. Kept for the tests and for
     /// failure messages; production reads [`Self::flows`], which has it applied.
     pub(crate) flow_permutation: Vec<usize>,
+    /// Whether the card generated this subprocess in both beam orderings
+    /// ([`DiagramSet::mirrored`]), so that the exchanged ordering carries
+    /// luminosity. Only ever set for two different beam partons.
+    pub(crate) mirrored: bool,
 }
 
 impl Subprocess {
-    /// Whether the two beams carry different partons, and so whether the mirrored
-    /// ordering is a second physical initial state rather than the same one.
+    /// Whether the exchanged beam ordering is part of this subprocess: the card
+    /// generated it in both orderings, which requires the two beams to carry
+    /// different partons. A card line written in one ordering (`u u~ > e+ e-`)
+    /// has none, as in MadGraph, whose `MIRRORPROCS` flag is set by the same rule.
     pub fn has_mirror(&self) -> bool {
-        self.incoming[0] != self.incoming[1]
+        self.mirrored
     }
 
     /// This subprocess's identical-particle symmetry factor `1/Π_s n_s!`, from its
@@ -252,8 +259,8 @@ pub struct FlavorGroup {
 }
 
 /// One member's luminosity addressing: the [`crate::pdf::flavor_slot`] of each
-/// beam parton, resolved once at setup, and whether the two differ — a member
-/// whose beams carry the same parton has no mirrored ordering.
+/// beam parton, resolved once at setup, and whether the member has a mirrored
+/// ordering ([`Subprocess::has_mirror`]).
 #[derive(Debug, Clone, Copy)]
 struct BeamSlots {
     slots: [usize; 2],
@@ -358,9 +365,10 @@ impl FlavorGroup {
         self.evaluator.n_in()
     }
 
-    /// Whether any member has distinct beam partons, i.e. whether the mirrored
-    /// ordering carries luminosity at all. A group of identical-parton initial
-    /// states (`g g`) has one ordering and no mirror term to evaluate.
+    /// Whether any member has a mirrored ordering ([`Subprocess::has_mirror`]),
+    /// i.e. whether the mirrored ordering carries luminosity at all. A group of
+    /// identical-parton initial states (`g g`), or of subprocesses the card wrote
+    /// in one beam ordering only, has no mirror term to evaluate.
     pub fn has_mirror(&self) -> bool {
         self.members.iter().any(Subprocess::has_mirror)
     }
@@ -385,15 +393,16 @@ impl FlavorGroup {
     ///
     /// ```text
     /// direct = Σ_members xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (a ≠ b only)
+    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (mirrored members only)
     /// ```
     ///
     /// `direct` weights `|M(q)|²` and `mirror` weights `|M(R q)|²`
     /// ([`mirror_into`](Self::mirror_into)). `mu_f` is per beam in beam order,
     /// since MadGraph's `q2fact(1)` and `q2fact(2)` need not coincide.
     ///
-    /// A member whose beams carry the same parton has a single ordering, so it
-    /// contributes to `direct` only — counting it twice would double that
+    /// A member without a mirrored ordering ([`Subprocess::has_mirror`]) — its
+    /// beams carry the same parton, or the card generated it in one ordering —
+    /// contributes to `direct` only: counting it twice would double that
     /// subprocess's cross section.
     ///
     /// This reads the densities itself. Every group of a process evaluates them
@@ -904,7 +913,13 @@ pub fn derive_flavor_groups(
                 let flows = own
                     .reindexed(&flow_permutation)
                     .expect("flow_permutation is a permutation of this basis");
+                debug_assert!(
+                    !sets[i].as_ref().expect("member unclaimed").mirrored
+                        || legs[0].pdg != legs[1].pdg,
+                    "a mirrored subprocess has two different beam partons"
+                );
                 Ok(Subprocess {
+                    mirrored: sets[i].as_ref().expect("member unclaimed").mirrored,
                     process: processes[i],
                     incoming: [legs[0].pdg, legs[1].pdg],
                     outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
@@ -932,7 +947,7 @@ pub fn derive_flavor_groups(
                 };
                 BeamSlots {
                     slots: [slot(a), slot(b)],
-                    mirrored: a != b,
+                    mirrored: m.has_mirror(),
                 }
             })
             .collect();
@@ -1459,6 +1474,9 @@ struct ProtonScratch<'a> {
     group_histories: RefCell<Vec<[Option<RewgtHistory>; 2]>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
+    /// This thread's count of the points it evaluated
+    /// ([`ProtonIntegrand::census`]).
+    census: CensusCell,
     /// The configuration MadEvent cuts a point's mirrored term on, and which of
     /// `[direct, mirrored]` passed the cuts, under
     /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
@@ -1768,12 +1786,31 @@ impl<'a> ProtonIntegrand<'a> {
                 group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
+                census: CensusCell::default(),
                 #[cfg(any(test, feature = "extended-validation"))]
                 madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 #[cfg(any(test, feature = "extended-validation"))]
                 ordering_passes: Cell::new([true, true]),
             }
         })
+    }
+
+    /// The points evaluated since the integrand was built or the census last
+    /// cleared, every route a point takes to the cuts and the matrix element
+    /// counted: how many, how many passed the cuts, and how many of those had
+    /// weight.
+    ///
+    /// A thread's scratch carries its count, so discarding the scratches drops
+    /// the counts with them; only setup does that.
+    pub fn census(&mut self) -> PointCensus {
+        self.scratch.iter_mut().map(|sc| sc.census.get()).sum()
+    }
+
+    /// Start [`census`](Self::census) over from zero.
+    pub fn clear_census(&mut self) {
+        for sc in self.scratch.iter_mut() {
+            sc.census.clear();
+        }
     }
 
     /// Evaluate each flavour group's matrix element as MadEvent does under a
@@ -2188,6 +2225,7 @@ impl<'a> ProtonIntegrand<'a> {
         #[cfg(any(test, feature = "extended-validation"))]
         let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
         if !passes {
+            sc.census.rejected();
             return 0.0;
         }
         let acc = if self.scales.draws_configuration() {
@@ -2195,11 +2233,14 @@ impl<'a> ProtonIntegrand<'a> {
         } else {
             self.shared_scale_sum(sc, m, &cm, self.sampled_channel(channel))
         };
-        if acc == 0.0 {
-            return 0.0;
-        }
-        let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
-        m.jac * flux * self.lips_2pi * acc
+        let value = if acc == 0.0 {
+            0.0
+        } else {
+            let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
+            m.jac * flux * self.lips_2pi * acc
+        };
+        sc.census.passed(value);
+        value
     }
 
     /// Cut the mirrored beam ordering where MadEvent 3.7.1 cuts it, so a cross
@@ -3654,6 +3695,70 @@ mod tests {
         assert_eq!(averages, expected);
     }
 
+    /// The mirrored ordering carries luminosity exactly where the card generated
+    /// it: nowhere on a line written in one beam ordering, on every unequal pair
+    /// of a multiparticle line, and nowhere on two lines writing the two
+    /// orderings, each of which carries its own direct term instead.
+    #[test]
+    fn mirror_luminosity_follows_the_orderings_the_card_generated() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut f1 = [0.0; FLAVOR_SLOTS];
+        let mut f2 = [0.0; FLAVOR_SLOTS];
+        for k in 0..FLAVOR_SLOTS {
+            f1[k] = 1.0 + k as f64;
+            f2[k] = 1.0 / (2.0 + k as f64);
+        }
+        let terms = |card: &str| -> Vec<([i32; 2], bool, [f64; 2])> {
+            let groups = derive(card, &m, &evaluated);
+            groups
+                .groups()
+                .iter()
+                .flat_map(|g| {
+                    (0..g.members().len()).map(move |i| {
+                        let s = &g.members()[i];
+                        (
+                            s.incoming,
+                            s.has_mirror(),
+                            g.member_luminosity_rows(i, &f1, &f2),
+                        )
+                    })
+                })
+                .collect()
+        };
+        let lumi = |a: i32, b: i32| f1[flavor_slot(a).unwrap()] * f2[flavor_slot(b).unwrap()];
+
+        for (card, [a, b]) in [("u u~ > e+ e-", [2, -2]), ("u g > u z", [2, 21])] {
+            let t = terms(card);
+            assert_eq!(t.len(), 1, "{card}");
+            assert_eq!(t[0], ([a, b], false, [lumi(a, b), 0.0]), "{card}");
+            assert!(
+                !derive(card, &m, &evaluated).groups()[0].has_mirror(),
+                "{card}"
+            );
+        }
+
+        for (card, firsts) in [
+            ("u u~ > e+ e-\nadd process u~ u > e+ e-", [[2, -2], [-2, 2]]),
+            ("u g > u z\nadd process g u > u z", [[2, 21], [21, 2]]),
+        ] {
+            let mut t = terms(card);
+            t.sort_by_key(|(i, ..)| firsts.iter().position(|f| f == i));
+            let expect: Vec<_> = firsts
+                .iter()
+                .map(|&[a, b]| ([a, b], false, [lumi(a, b), 0.0]))
+                .collect();
+            assert_eq!(t, expect, "{card}");
+        }
+
+        let t = terms("p p > e+ e-");
+        assert_eq!(t.len(), 4, "u u~, c c~, d d~, s s~, each once");
+        for ([a, b], mirrored, l) in t {
+            assert!(mirrored, "{a} {b}");
+            assert_eq!(l, [lumi(a, b), lumi(b, a)], "{a} {b}");
+        }
+    }
+
     /// The partition predicts, rather than merely records: members agree at points
     /// it was not fitted on, and distinct groups disagree by a wide margin there.
     #[test]
@@ -3680,6 +3785,7 @@ mod tests {
             let flows = evaluator.color_flow_tags().clone();
             let flow_permutation = (0..evaluator.n_flows()).collect();
             let subprocess = Subprocess {
+                mirrored: set.mirrored,
                 process: 1,
                 incoming: [legs[0].pdg, legs[1].pdg],
                 outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
@@ -4783,8 +4889,9 @@ mod tests {
     /// mass, which is MadGraph's default `me_frame`.
     ///
     /// The oracle assembles the integrand from the polarized matrix element at
-    /// the centre-of-mass point, with the mirrored ordering from an explicitly
-    /// enumerated `u~ u > z{0} g`, and the integrand must reproduce it. The same
+    /// the centre-of-mass point, on a card that generates both beam orderings,
+    /// with the mirrored ordering from an explicitly enumerated `u~ u > z{0} g`,
+    /// and the integrand must reproduce it. The same
     /// assembly at the laboratory-frame point must not: a longitudinal Z's
     /// helicity is not boost invariant, so an integrand that handed its matrix
     /// element the laboratory momenta would sit a finite fraction away. That
@@ -4794,12 +4901,19 @@ mod tests {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let card = llj_card();
-        let process = "u u~ > z{0} g QCD=1 QED=1";
-        let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
-            .expect("flavour groups");
+        // A line that generates both beam orderings, so the group carries the
+        // mirror term the oracle assembles.
+        let both = parse_proc_card(
+            "define q = u u~\ngenerate q q > z{0} g QCD=1 QED=1",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets = generate_from_proc_card(&both, &m).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &card).expect("flavour groups");
         assert_eq!(groups.groups().len(), 1);
         let g = &groups.groups()[0];
         assert!(g.evaluator().is_polarized());
+        assert!(g.has_mirror(), "the card generates both orderings");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
         let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
@@ -5475,6 +5589,64 @@ mod tests {
             "factorisation floor: {dropped} of {carried} weight-carrying points give exactly 0.0 \
              once mu_F is scaled below the floor"
         );
+    }
+
+    /// The census counts every evaluated point, the points the cuts let through
+    /// and, of those, the points with weight, and tells a zero the cuts set from
+    /// a zero set after them: a factorisation scale scaled below the floor zeroes
+    /// points that passed the cuts, so it moves the nonzero count and leaves the
+    /// cut count where it was.
+    #[test]
+    fn the_census_separates_cut_rejections_from_zero_weights() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &llj_card())
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let build = |scalefact: &str| {
+            let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+                .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &scaled_llj_card(scalefact), Some(&info))
+                .expect("a partly sub-threshold card still compiles");
+            integ
+        };
+        let mut control = build("1.0");
+        let mut vetoed = build("1e-3");
+
+        let points = 400_u64;
+        let mut stream = SubStream::from_stream(0x00C2_A112, 3);
+        let (mut control_nonzero, mut vetoed_nonzero) = (0_u64, 0_u64);
+        for i in 0..points as usize {
+            let channel = i % control.channel_count();
+            let u = stream.uniforms::<f64>(control.point_ndim());
+            control_nonzero += u64::from(control.value_in_channel(channel, &u) != 0.0);
+            vetoed_nonzero += u64::from(vetoed.value_in_channel(channel, &u) != 0.0);
+        }
+        let c = control.census();
+        let v = vetoed.census();
+        eprintln!("census at scalefact 1: {c:?}; at 1e-3: {v:?}");
+        assert_eq!(c.evaluated, points);
+        assert_eq!(v.evaluated, points);
+        assert_eq!(c.nonzero, control_nonzero);
+        assert_eq!(v.nonzero, vetoed_nonzero);
+        assert!(
+            c.passed_cuts < points,
+            "the card's cuts rejected nothing, so the cut count is untested"
+        );
+        assert_eq!(
+            c.passed_cuts, v.passed_cuts,
+            "the scale floor acts after the cuts and cannot move their count"
+        );
+        assert!(
+            v.nonzero < v.passed_cuts,
+            "no point that passed the cuts was zeroed by the floor"
+        );
+
+        control.clear_census();
+        assert_eq!(control.census(), PointCensus::default());
     }
 
     /// The veto reaches generation, not only the integral. `event_in_channel`

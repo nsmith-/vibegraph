@@ -243,6 +243,70 @@ fn generate_evaluates_at_the_recorded_point() {
     assert!((mw - 80.419).abs() > 0.5, "{mw_line}");
 }
 
+/// A decay channel as `(branching ratio, daughters)`.
+type Channel = (f64, Vec<i32>);
+
+/// A card's decay tables move nothing in the run, which is the default run's
+/// σ bit for bit, and are recorded in the artifact; `generate` writes them below
+/// their particles' `DECAY` lines in the `<slha>` header, a free width's and a
+/// computed one's, with the daughters as the card lists them.
+#[test]
+fn decay_tables_are_recorded_and_written_into_the_header() {
+    let run = integrate(
+        "decays",
+        Some(
+            "DECAY 23 2.441404e+00\n 3.37e-2 2 11 -11\n 3.37e-2 2 -13 13\n\
+             DECAY 15 0.0\n 1.0 2 16 -24\n",
+        ),
+    );
+    succeeded(&run);
+    let artifact = run.read();
+    assert!(
+        artifact.inputs.params.is_empty(),
+        "{:?}",
+        artifact.inputs.params
+    );
+    let tables: Vec<(i32, Vec<Channel>)> = artifact
+        .inputs
+        .decays
+        .iter()
+        .map(|t| {
+            let channels = t
+                .channels
+                .iter()
+                .map(|c| (c.branching_ratio, c.daughters.clone()))
+                .collect();
+            (t.pdg, channels)
+        })
+        .collect();
+    assert_eq!(
+        tables,
+        [
+            (23, vec![(3.37e-2, vec![11, -11]), (3.37e-2, vec![-13, 13])]),
+            (15, vec![(1.0, vec![16, -24])]),
+        ]
+    );
+    let default = default_run().read();
+    assert_eq!(artifact.sigma_pb.to_bits(), default.sigma_pb.to_bits());
+
+    let text = generate(&run.artifact, "decays.lhe", &[]);
+    let slha = &text[text.find("<slha>").unwrap()..text.find("</slha>").unwrap()];
+    let heading = "#  BR             NDA  ID1    ID2   ...\n";
+    assert!(
+        slha.contains(&format!(
+            "DECAY  23 2.441404e+00 # WZ \n{heading}   3.370000e-02   2    11  -11 # 0.0822753148\n   \
+             3.370000e-02   2    -13  13 # 0.0822753148\n"
+        )),
+        "{slha}"
+    );
+    assert!(
+        slha.contains(&format!(
+            "DECAY  15 0.000000e+00 # ta- : 0.0 \n{heading}   1.000000e+00   2    16  -24 # 0\n"
+        )),
+        "{slha}"
+    );
+}
+
 /// A reweight card's hypotheses are taken against the recorded point: a
 /// hypothesis at the recorded MZ weighs every event as it is, one at the
 /// restriction's default does not.
