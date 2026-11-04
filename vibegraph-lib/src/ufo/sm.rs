@@ -129,7 +129,9 @@ pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
             .parse()
             .expect("parse interned SM restrict card");
         let mut parsed = sm_parsed().clone();
-        parsed.apply_restriction(&card);
+        parsed
+            .apply_restriction(&card)
+            .expect("apply interned SM restrict card");
         model_digest(&parsed)
     })
 }

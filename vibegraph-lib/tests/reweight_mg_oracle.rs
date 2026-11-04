@@ -283,7 +283,8 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
         // MadGraph writes its param card at seven significant digits and computes at
         // what it wrote; both sides start from that card.
         let base =
-            EvaluatedModel::from_model_card(model.clone(), &madgraph_card(&row["param_card"]));
+            EvaluatedModel::from_model_card(model.clone(), &madgraph_card(&row["param_card"]))
+                .unwrap();
         let (gap, which) = provenance(&model, &EvaluatedModel::from_model(model.clone()), &base);
         let bound = bound_entries(&model, &base, &row["param_card"]);
         assert!(bound >= 10, "{key}: only {bound} card entries bound");
