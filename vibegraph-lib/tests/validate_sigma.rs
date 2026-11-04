@@ -1084,7 +1084,7 @@ fn with_integrand_parts<R>(
     );
 
     let model = row_model(dir);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
 
     let sets = common::generate_with(process, model.as_ref());
     let evals =
@@ -2853,7 +2853,7 @@ fn probe_scale_cost() {
         let card_path = output_dir().join(dir).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("run card parses");
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -2962,7 +2962,7 @@ fn probe_scale_draw_cost() {
         let off = RunCard::parse(&patched).expect("patched run card parses");
 
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -3065,7 +3065,7 @@ fn probe_event_readout_cost() {
             .expect("run card readable");
         let live = RunCard::parse(&text).expect("banked run card parses");
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -4363,7 +4363,7 @@ fn probe_channel_map_degeneracy() {
         let entry = &banked[dir];
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(&entry.process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
@@ -5015,7 +5015,7 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
         let model = row_model(dir);
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
@@ -5320,7 +5320,7 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     let model = row_model(dir);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
 
     let sets = common::generate_with(process, model.as_ref());
     let diagrams: Vec<_> = sets

@@ -55,11 +55,17 @@ use crate::vegas::{GridRule, VegasGrid};
 /// gets (its topology, poles, floors, transfer bounds) refuses the artifacts
 /// trained on the old maps without a version bump. A change to how a map
 /// with an unchanged key draws or weighs a point is invisible to it and still
-/// needs one. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 17;
+/// needs one.
+///
+/// `18` records the param card's decay tables ([`RunInputs::decays`]), which a
+/// generation writes into the event file's `<slha>` header. A version-17 file
+/// has no such field, so it cannot decode into this shape, and an integration
+/// that version-17 builds ran refused a card with a table, so nothing is lost by
+/// refusing the file. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 18;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 17;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 18;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -129,26 +135,48 @@ pub struct MovedParam {
     pub value: f64,
 }
 
-/// What an integration read besides its cards: the parton densities and the
-/// model parameters that differ from the model's defaults.
+/// One decay channel of a param card's decay table: the branching ratio and the
+/// daughters' PDG codes as the card lists them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DecayChannel {
+    pub branching_ratio: f64,
+    pub daughters: Vec<i32>,
+}
+
+/// The decay table a param card gives particle `pdg` below its `DECAY` line,
+/// its channels in card order. Nothing in an integration reads it: it is carried
+/// to the event file's `<slha>` header, where a shower reads the decays of the
+/// states it treats.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DecayTable {
+    pub pdg: i32,
+    pub channels: Vec<DecayChannel>,
+}
+
+/// What an integration read besides its cards: the parton densities, the model
+/// parameters that differ from the model's defaults, and the param card's decay
+/// tables.
 ///
-/// `params` is the only record of the parameter card an integration bound
-/// (`ufo::bind::bind_card`): every external parameter whose value differs from
-/// the restricted model's default, in the model's external order. A run with no
-/// card, an empty card or a card restating the defaults records none.
-/// `ufo::bind::bind_recorded` rebinds the model from it.
+/// `params` and `decays` are the only record of the parameter card an
+/// integration bound (`ufo::bind::bind_card`): every external parameter whose
+/// value differs from the restricted model's default, in the model's external
+/// order, and every decay table in card order. A run with no card, an empty card
+/// or a card restating the defaults records no parameter.
+/// `ufo::bind::bind_recorded` rebinds the model from them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunInputs {
     pub pdf: PdfInput,
     pub params: Vec<MovedParam>,
+    pub decays: Vec<DecayTable>,
 }
 
 impl RunInputs {
-    /// The inputs of a run that read `pdf` and moved no parameter.
+    /// The inputs of a run that read `pdf` and no param card.
     pub fn with_pdf(pdf: PdfInput) -> Self {
         RunInputs {
             pdf,
             params: Vec::new(),
+            decays: Vec::new(),
         }
     }
 }
@@ -853,20 +881,21 @@ mod tests {
     /// keys; version 15 does not record the pair order its grids were trained
     /// under; version 14 records the systematics fields' values but not whether
     /// the card wrote `systematics_arguments`, which decides MadGraph's request;
-    /// version 13 records no checksum of its PDF files.
+    /// version 13 records no checksum of its PDF files. A version newer than
+    /// this build's is refused the same way.
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14, 15, 16] {
+        for version in [13, 14, 15, 16, 17, FORMAT_VERSION + 1] {
             let path = stamped(&sample_artifact(), &dir, version);
-            let err = IntegrateArtifact::read_from_path(&path).expect_err("an older file");
+            let err = IntegrateArtifact::read_from_path(&path).expect_err("another version");
             assert!(
                 matches!(
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 17,
-                        expected: 17
+                        oldest: 18,
+                        expected: 18
                     } if found == version
                 ),
                 "{err}"
@@ -908,8 +937,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 16,
-                    oldest: 17,
-                    expected: 17
+                    oldest: 18,
+                    expected: 18
                 }
             ),
             "{err}"
@@ -917,6 +946,81 @@ mod tests {
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-17 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 17's real shape: this build's with the
+    /// decay tables' (empty) length taken out of the run inputs, so every later
+    /// field sits eight bytes early.
+    #[test]
+    fn a_version_17_artifact_is_refused() {
+        let dir = scratch_dir("v17");
+        let artifact = sample_artifact();
+        assert!(artifact.inputs.decays.is_empty());
+        let mut raw = bincode::serialize(&artifact).unwrap();
+        let inputs = bincode::serialize(&artifact.inputs).unwrap();
+        let at = raw
+            .windows(inputs.len())
+            .position(|w| w == inputs.as_slice())
+            .expect("the run inputs are encoded in place");
+        let decays_len = at + inputs.len() - 8;
+        assert_eq!(raw[decays_len..decays_len + 8], [0u8; 8]);
+        raw.drain(decays_len..decays_len + 8);
+        raw[..4].copy_from_slice(&17u32.to_le_bytes());
+        let path = dir.join("v17.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-17 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 17,
+                    oldest: 18,
+                    expected: 18
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Decay tables round-trip in card order, each channel's branching ratio
+    /// bit for bit.
+    #[test]
+    fn decay_tables_round_trip() {
+        let dir = scratch_dir("decays");
+        let mut artifact = sample_artifact();
+        artifact.inputs.decays = vec![
+            DecayTable {
+                pdg: 6,
+                channels: vec![DecayChannel {
+                    branching_ratio: 1.0 - f64::EPSILON,
+                    daughters: vec![5, 24],
+                }],
+            },
+            DecayTable {
+                pdg: 25,
+                channels: vec![
+                    DecayChannel {
+                        branching_ratio: 0.577,
+                        daughters: vec![-5, 5],
+                    },
+                    DecayChannel {
+                        branching_ratio: 0.215,
+                        daughters: vec![12, -24, 11],
+                    },
+                ],
+            },
+        ];
+        let path = dir.join("decays.bin.zst");
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.inputs, artifact.inputs);
         std::fs::remove_dir_all(&dir).ok();
     }
 

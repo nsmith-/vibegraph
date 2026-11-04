@@ -19,6 +19,7 @@ pub mod reweight;
 pub mod runcard;
 pub mod select;
 pub mod stats;
+pub mod support;
 pub mod systematics;
 #[cfg(test)]
 mod test_capture;
