@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [G-F1 report: spin 2 and Lorentz indices naming no leg are refused at compile](G-F1-report.md) - AmplitudeEvaluator::compile refuses any external or internal line of spin code outside 1-3, naming the particle; Lorentz rooting refuses an index at or above the vertex's leg count, naming the structure; build_child's todo! (reached only by C as a scalar factor) returns UnsupportedVertex; the three spin-code panic! arms are unreachable! behind the compile refusal. Five new tests, each shown panicking on the pre-change code; workspace tests, clippy (both feature sets), fmt and kb lint pass.
 * [G-F2 report: required UFO fields, DECAY Auto, MadGraph's zero rule](G-F2-report.md) - 51 field refusals and the restrict-card Auto refusal, each shown not refused on the pre-change code; MadGraph's 1e-13 rule with the strict rerun, which prunes three MSSM_SLHA2 vertices on rounding-residue couplings and leaves every other banked (model, card) vertex set unchanged.

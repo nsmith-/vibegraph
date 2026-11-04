@@ -105,8 +105,11 @@ pub struct Particle {
 
 impl Particle {
     /// The helicity states an on-shell external leg of this particle sums
-    /// over, as MadGraph's `NHEL` values, or `None` for a spin with no
-    /// wavefunction routine here. The UFO spin code is `2s+1`, negative for
+    /// over, as MadGraph's `NHEL` values, or `None` for spin 3/2. Spin 2 lists
+    /// MadGraph's five states although no wavefunction routine for it exists
+    /// here; `AmplitudeEvaluator::compile` refuses a spin-2 line, and these
+    /// states serve only the enumeration-level bookkeeping (polarization
+    /// parsing, the duplicate-subprocess check). The UFO spin code is `2s+1`, negative for
     /// ghosts. A massless vector has no longitudinal mode (`vxxxxx`'s massless
     /// branch defines only ±1). The values are MadGraph's
     /// `Particle.get_helicity_states` (`base_objects.py:469`) as a set; the

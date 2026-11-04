@@ -1945,7 +1945,7 @@ fn build_external_core<F: Real>(
             let wf = VectorWf::vxxxxx(momentum, mass, helicity, if is_incoming { -1 } else { 1 });
             WaveformSlot::Vector(wf)
         }
-        other => panic!("unsupported external spin code: {other}"),
+        other => unreachable!("external spin code {other}: AmplitudeEvaluator::compile refuses every spin code but 1, 2 and 3"),
     }
 }
 
