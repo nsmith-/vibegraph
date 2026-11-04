@@ -24,6 +24,14 @@
 //!   computed value is reported in [`BoundCard::ignored`].
 //! * Any other entry the model has no parameter for is refused, except the
 //!   `QNUMBERS` blocks that declare a new state's quantum numbers.
+//! * A decay table is refused: MadGraph writes the card, branching ratios
+//!   included, into the event file's `<slha>` header for a shower to decay
+//!   from, and the header written here comes from the model.
+//! * A negative mass is refused: MadGraph negates the particle's width with it
+//!   (`write_inc_file`, `models/check_param_card.py`), so the propagator's
+//!   `M·Γ` keeps its sign, and the propagators here take the width as given.
+//!
+//! Every entry refused is reported at once ([`CardError::Several`]).
 
 use std::sync::Arc;
 
@@ -109,6 +117,38 @@ pub enum CardError {
         block: String,
         code: String,
     },
+    #[error(
+        "the card gives particle {pdg} a decay table, whose branching ratios MadGraph writes \
+         into the event file's <slha> header for a shower to decay it with; the header written \
+         here comes from the model and has none, so remove the table (its DECAY width stays)"
+    )]
+    DecayTable { pdg: i32 },
+    #[error(
+        "the card sets the mass {name} (code {pdg}) to {value:e}, a negative mass, whose width \
+         MadGraph negates with it; the propagators here take the width as given, so give the \
+         mass as positive"
+    )]
+    NegativeMass { name: String, pdg: i32, value: f64 },
+    /// More than one entry of the card is refused; each is listed.
+    #[error("{}", several(.0))]
+    Several(Vec<CardError>),
+}
+
+fn several(errors: &[CardError]) -> String {
+    errors
+        .iter()
+        .map(CardError::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// `Ok` when nothing was refused, the one refusal, or [`CardError::Several`].
+fn refuse_all(mut errors: Vec<CardError>) -> Result<(), CardError> {
+    match errors.len() {
+        0 => Ok(()),
+        1 => Err(errors.remove(0)),
+        _ => Err(CardError::Several(errors)),
+    }
 }
 
 /// A card entry for a mass or width the model computes, which the binding
@@ -204,7 +244,14 @@ fn bound_externals<'a>(
 /// Refuse a card whose values break a relation the restriction merged
 /// ([`ParameterSet::merged`]): every member must stay its factor times the
 /// group's first.
+#[cfg(test)]
 fn check_merged(params: &ParameterSet, card: &ParamCard) -> Result<(), CardError> {
+    refuse_all(merge_splits(params, card))
+}
+
+/// Each member of a merged group that `card` moves off its factor times the
+/// group's first.
+fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
     let bound: Vec<Bound<'_>> = bound_externals(params, card).collect();
     let find = |name: &str| {
         bound
@@ -212,12 +259,13 @@ fn check_merged(params: &ParameterSet, card: &ParamCard) -> Result<(), CardError
             .find(|b| b.name == name)
             .expect("a merged parameter is an external of the model")
     };
+    let mut errors = Vec::new();
     for group in &params.merged {
         let first = find(&group[0].0);
         for (member, factor) in &group[1..] {
             let member = find(member);
             if member.value != factor * first.value {
-                return Err(CardError::SplitsMerged {
+                errors.push(CardError::SplitsMerged {
                     block: first.block.to_string(),
                     first: first.name.to_string(),
                     first_value: first.value,
@@ -228,7 +276,7 @@ fn check_merged(params: &ParameterSet, card: &ParamCard) -> Result<(), CardError
             }
         }
     }
-    Ok(())
+    errors
 }
 
 /// Bind `model` to `card`, refusing what the model cannot honour (see the
@@ -236,38 +284,51 @@ fn check_merged(params: &ParameterSet, card: &ParamCard) -> Result<(), CardError
 ///
 /// # Errors
 ///
-/// [`CardError`] for the first entry refused, entries taken in block then code
-/// order, after any `Auto` width.
+/// [`CardError`] for the entry refused, or [`CardError::Several`] listing every
+/// one: `Auto` widths and decay tables in card order, then entries in block
+/// then code order, then merged groups split.
 pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, CardError> {
-    if let Some(&pdg) = card.auto_widths().first() {
-        return Err(CardError::AutoWidth { pdg });
+    let mut errors: Vec<CardError> = Vec::new();
+    for &pdg in card.auto_widths() {
+        errors.push(CardError::AutoWidth { pdg });
+    }
+    for &pdg in card.decay_tables() {
+        errors.push(CardError::DecayTable { pdg });
     }
 
     let mut dependents: Vec<(&'static str, i32, String, f64)> = Vec::new();
     for (block, code, value) in card.entries() {
         if !value.is_finite() {
-            return Err(CardError::NonFinite {
+            errors.push(CardError::NonFinite {
                 block: block.to_string(),
                 code: code_text(code),
                 value,
             });
+            continue;
         }
         if let Some((name, _)) = external_at(&model, block, code) {
             if model.params.zeros.contains(name) && value != 0.0 {
-                return Err(CardError::RevivesZeroed {
+                errors.push(CardError::RevivesZeroed {
                     name: name.to_string(),
                     block: block.to_string(),
                     code: code_text(code),
                     value,
                 });
-            }
-            if model.params.ones.contains(name) && value != 1.0 {
-                return Err(CardError::MovesFixedOne {
+            } else if model.params.ones.contains(name) && value != 1.0 {
+                errors.push(CardError::MovesFixedOne {
                     name: name.to_string(),
                     block: block.to_string(),
                     code: code_text(code),
                     value,
                 });
+            } else if let ("mass", &[pdg]) = (block, code) {
+                if value < 0.0 {
+                    errors.push(CardError::NegativeMass {
+                        name: name.to_string(),
+                        pdg,
+                        value,
+                    });
+                }
             }
             continue;
         }
@@ -281,15 +342,15 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         };
         match dependent {
             Some((block, pdg, param)) => dependents.push((block, pdg, param.to_string(), value)),
-            None => {
-                return Err(CardError::Unknown {
-                    block: block.to_string(),
-                    code: code_text(code),
-                    value,
-                })
-            }
+            None => errors.push(CardError::Unknown {
+                block: block.to_string(),
+                code: code_text(code),
+                value,
+            }),
         }
     }
+    errors.extend(merge_splits(&model.params, card));
+    refuse_all(errors)?;
 
     let moved = bound_externals(&model.params, card)
         .filter(|b| b.value != b.default)
@@ -300,7 +361,6 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
             value: b.value,
         })
         .collect();
-    check_merged(&model.params, card)?;
 
     let evaluated = EvaluatedModel::from_model_card(model, card)?;
     let ignored = dependents

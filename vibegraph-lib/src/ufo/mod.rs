@@ -1,5 +1,7 @@
 pub(crate) mod ast_util;
 pub mod bind;
+#[cfg(test)]
+pub(crate) mod card_classes;
 pub(crate) mod color;
 pub(crate) mod couplings;
 pub(crate) mod expr;
@@ -21,7 +23,7 @@ use identity::model_digest;
 use indexmap::IndexMap;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
-use parameters::{parse_parameters_with_variables, ParameterError, ParameterSet};
+use parameters::{parse_parameters_with_variables, ParamNature, ParameterError, ParameterSet};
 use particles::{parse_particles, Particle, ParticleError, ParticleId};
 use propagators::{parse_propagators, Propagator, PropagatorError};
 use serde::{Deserialize, Serialize};
@@ -198,11 +200,53 @@ pub enum UfoError {
          launch; computing Auto widths is not supported yet, so give the width as a number"
     )]
     RestrictAutoWidth { pdg: i32 },
+    #[error(
+        "the restriction card gives no value for {name} (block {block}, code {code}), which \
+         MadGraph's restriction requires; the loader would keep the value parameters.py gives"
+    )]
+    RestrictMissing {
+        name: String,
+        block: String,
+        code: String,
+    },
+    #[error(
+        "the restriction card sets {name} to {value:e}, MadGraph's spelling of {meaning} for a \
+         parameter its restriction leaves free (neither fixed nor merged); the loader does not \
+         read it so, so give {name} another value"
+    )]
+    RestrictMadgraphFree {
+        name: String,
+        value: f64,
+        meaning: &'static str,
+    },
+    #[error("the restriction card sets {name} to {value}, which is not a finite number")]
+    RestrictNonFinite { name: String, value: f64 },
+    #[error(
+        "{path} sits beside the restriction card, and MadGraph's restriction takes the model's \
+         default values from it; the loader does not read it, so remove or rename it"
+    )]
+    RestrictParamSibling { path: String },
+    /// More than one problem with a restriction card; each is listed.
+    #[error("{}", several(.0))]
+    Several(Vec<UfoError>),
     #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
     UnknownSmRestrict { variant: String, known: String },
     #[error("{0}")]
     DefaultName(#[from] DefaultNameConflict),
 }
+
+fn several(errors: &[UfoError]) -> String {
+    errors
+        .iter()
+        .map(UfoError::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The values MadGraph's restriction reads as "one" and "zero" without fixing
+/// the parameter (`restrict_model`, `import_ufo.py`): such a parameter is
+/// neither fixed nor merged, and its default becomes 1 or 0 afterwards.
+const MADGRAPH_FREE_VALUES: [(f64, &str); 2] = [(9.999999e-1, "one"), (0.000001e-99, "zero")];
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
@@ -400,8 +444,55 @@ impl ParsedModel {
     /// ([`UfoError::RestrictAutoWidth`]): MadGraph keeps such a width free and
     /// computes it at launch, and nothing here computes one.
     pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
-        if let Some(&pdg) = restrict_card.auto_widths().first() {
-            return Err(UfoError::RestrictAutoWidth { pdg });
+        let mut problems: Vec<UfoError> = restrict_card
+            .auto_widths()
+            .iter()
+            .map(|&pdg| UfoError::RestrictAutoWidth { pdg })
+            .collect();
+        for p in &self.params.externals {
+            let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let name = p.name.clone();
+            match restrict_card.get(lha_block, lha_code) {
+                None => {
+                    let auto = lha_block.eq_ignore_ascii_case("decay")
+                        && lha_code
+                            .first()
+                            .is_some_and(|c| restrict_card.auto_widths().contains(c));
+                    if !auto {
+                        problems.push(UfoError::RestrictMissing {
+                            name,
+                            block: lha_block.clone(),
+                            code: slha::code_text(lha_code),
+                        });
+                    }
+                }
+                Some(value) if !value.is_finite() => {
+                    problems.push(UfoError::RestrictNonFinite { name, value });
+                }
+                Some(value) => {
+                    if let Some(&(_, meaning)) =
+                        MADGRAPH_FREE_VALUES.iter().find(|(v, _)| *v == value)
+                    {
+                        problems.push(UfoError::RestrictMadgraphFree {
+                            name,
+                            value,
+                            meaning,
+                        });
+                    }
+                }
+            }
+        }
+        match problems.len() {
+            0 => {}
+            1 => return Err(problems.remove(0)),
+            _ => return Err(UfoError::Several(problems)),
         }
         self.params.apply_restrict(restrict_card);
 
@@ -515,6 +606,16 @@ impl UFOModel {
             }
         };
 
+        // MadGraph's restriction takes the defaults from `param_<x>.dat` when
+        // it sits beside `restrict_<x>.dat` (`restrict_model`, `import_ufo.py`:
+        // the card's path with every `restrict` replaced by `param`).
+        if let Some(restrict_path) = &restrict_card_path {
+            let text = restrict_path.to_string_lossy();
+            let sibling = text.replace("restrict", "param");
+            if sibling != text && Path::new(&sibling).exists() {
+                return Err(UfoError::RestrictParamSibling { path: sibling });
+            }
+        }
         let card = match restrict_card_path {
             Some(restrict_path) => {
                 Some(
@@ -1294,7 +1395,7 @@ mod tests {
             "the particle must keep its propagator reference"
         );
         assert_eq!(parsed.propagators["Z1"].numerator, "- Metric(1, 2)");
-        assert_eq!(parsed.propagators["Z1"].denominator, "X");
+        assert_eq!(parsed.propagators["Z1"].denominator.as_deref(), Some("X"));
     }
 
     /// A particle naming a propagator the model never defines is a broken model,

@@ -23,6 +23,17 @@ pub enum SlhaError {
     Io(#[from] std::io::Error),
     #[error("Parse error on line {line}: {msg}")]
     Parse { line: usize, msg: String },
+    /// More than one line of the card is refused; each is listed.
+    #[error("{}", several(.0))]
+    Several(Vec<SlhaError>),
+}
+
+fn several(errors: &[SlhaError]) -> String {
+    errors
+        .iter()
+        .map(SlhaError::to_string)
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Parsed SLHA parameter card.
@@ -33,6 +44,21 @@ pub struct ParamCard {
     /// PDG codes whose `DECAY` line gives the width as `Auto` (MadWidth's
     /// placeholder, computed by MadGraph at launch), in the order they appear.
     auto_widths: Vec<i32>,
+    /// PDG codes whose `DECAY` line is followed by a decay table (branching-ratio
+    /// rows), in the order they appear.
+    decay_tables: Vec<i32>,
+}
+
+/// What the lines below the last header belong to.
+enum Section {
+    /// Nothing yet: MadGraph's reader skips such a line, and so does this one.
+    None,
+    Block(String),
+    /// Below `DECAY <pdg>`: a line is a row of the particle's decay table.
+    Decay(i32),
+    /// Below `XSECTION`: SLHA cross-section rows, which MadGraph keeps unparsed
+    /// up to the next `BLOCK` or `DECAY`.
+    CrossSections,
 }
 
 impl ParamCard {
@@ -46,12 +72,20 @@ impl ParamCard {
 impl FromStr for ParamCard {
     type Err = SlhaError;
 
-    /// Parse SLHA content from a string.
+    /// Parse SLHA content from a string, reporting every line refused.
+    ///
+    /// The constructs follow MadGraph's reader (`ParamCard.read`,
+    /// `models/check_param_card.py`): lines are matched without case, a decay
+    /// table's rows are recorded by particle ([`ParamCard::decay_tables`]) and
+    /// an `XSECTION` block's rows are skipped up to the next header. A value
+    /// MadGraph would keep as a string (a `scan:` value, a `DECAY` width
+    /// followed by more fields) is refused.
     fn from_str(content: &str) -> Result<Self, SlhaError> {
         let mut card = ParamCard::default();
-        let mut current_block: Option<String> = None;
+        let mut section = Section::None;
         let mut seen: HashMap<(String, Vec<i32>), (CardValue, usize)> = HashMap::new();
         let mut headers: HashMap<String, usize> = HashMap::new();
+        let mut errors: Vec<SlhaError> = Vec::new();
 
         for (lineno, raw) in content.lines().enumerate() {
             let lineno = lineno + 1;
@@ -61,21 +95,21 @@ impl FromStr for ParamCard {
             if line.is_empty() {
                 continue;
             }
-
             let lower = line.to_lowercase();
+            let parse_error = |msg: String| SlhaError::Parse { line: lineno, msg };
 
-            if lower.starts_with("block") {
-                // `BLOCK SMINPUTS`. A `QNUMBERS` block is one per new state,
-                // named by its PDG code (`BLOCK QNUMBERS 9000005`), and is
-                // kept as `qnumbers <pdg>`, as MadGraph's reader keeps it.
-                let mut words = lower.strip_prefix("block").unwrap().split_whitespace();
-                let mut block_name = words
-                    .next()
-                    .ok_or_else(|| SlhaError::Parse {
-                        line: lineno,
-                        msg: "BLOCK header missing name".into(),
-                    })?
-                    .to_owned();
+            if let Some(header) = lower.strip_prefix("block") {
+                // `BLOCK SMINPUTS`, `BLOCK MSOFT Q= 4.6e+02`. A `QNUMBERS` block
+                // is one per new state, named by its PDG code (`BLOCK QNUMBERS
+                // 9000005`), and is kept as `qnumbers <pdg>`, as MadGraph's
+                // reader keeps it. A block's scale is not read.
+                section = Section::None;
+                let mut words = header.split_whitespace();
+                let Some(name) = words.next() else {
+                    errors.push(parse_error("BLOCK header missing name".into()));
+                    continue;
+                };
+                let mut block_name = name.to_owned();
                 if block_name == "qnumbers" {
                     if let Some(pdg) = words.next() {
                         block_name = format!("qnumbers {pdg}");
@@ -85,71 +119,79 @@ impl FromStr for ParamCard {
                 // same name, dropping the earlier entries; this one would
                 // merge them. Neither is what a card means, so it is refused.
                 if let Some(first_line) = headers.insert(block_name.clone(), lineno) {
-                    return Err(SlhaError::Parse {
-                        line: lineno,
-                        msg: format!(
-                            "block {block_name} is opened again (first on line {first_line})"
-                        ),
-                    });
+                    errors.push(parse_error(format!(
+                        "block {block_name} is opened again (first on line {first_line})"
+                    )));
+                    continue;
                 }
                 card.blocks.entry(block_name.clone()).or_default();
-                current_block = Some(block_name);
+                section = Section::Block(block_name);
             } else if lower.starts_with("decay") {
                 // `DECAY <pdg> <total_width>` — store the total width under a
                 // synthetic block "decay" keyed by [pdg], so external width
-                // parameters (lhablock = DECAY, e.g. WZ) resolve. Any
-                // branching-ratio rows that follow are ignored.
+                // parameters (lhablock = DECAY, e.g. WZ) resolve.
+                section = Section::None;
                 let tokens: Vec<&str> = line.split_whitespace().collect();
-                let parse_error = |msg: String| SlhaError::Parse { line: lineno, msg };
                 if tokens.len() < 3 {
-                    return Err(parse_error(format!(
+                    errors.push(parse_error(format!(
                         "a DECAY line needs a PDG code and a width, got '{line}'"
                     )));
+                    continue;
                 }
-                let code = tokens[1].parse::<i32>().map_err(|_| {
-                    parse_error(format!(
+                let Ok(code) = tokens[1].parse::<i32>() else {
+                    errors.push(parse_error(format!(
                         "expected an integer PDG code after DECAY, got '{}'",
                         tokens[1]
-                    ))
-                })?;
+                    )));
+                    continue;
+                };
+                section = Section::Decay(code);
+                if tokens.len() > 3 {
+                    errors.push(parse_error(format!(
+                        "the DECAY line of {code} has fields after the width ('{}'), \
+                         which MadGraph reads as a width that is not a number",
+                        tokens[3..].join(" ")
+                    )));
+                    continue;
+                }
                 let width = if tokens[2].eq_ignore_ascii_case("auto") {
                     CardValue::Auto
+                } else if let Ok(width) = tokens[2].parse::<f64>() {
+                    CardValue::Value(width)
                 } else {
-                    CardValue::Value(tokens[2].parse::<f64>().map_err(|_| {
-                        parse_error(format!(
-                            "expected a number or Auto as the width of {code}, got '{}'",
-                            tokens[2]
-                        ))
-                    })?)
+                    errors.push(parse_error(format!(
+                        "expected a number or Auto as the width of {code}, got '{}'",
+                        tokens[2]
+                    )));
+                    continue;
                 };
-                card.record("decay", vec![code], width, lineno, &mut seen)?;
-                current_block = None;
-            } else if let Some(ref block) = current_block {
-                // Data entry: integer codes followed by a float, e.g.
-                // `   3   0.118`, `   1   2   0.5`; a lone value (SLHA's
-                // `Block ALPHA`) has the empty code, as MadGraph reads it.
-                let tokens: Vec<&str> = line.split_whitespace().collect();
-                let value: f64 =
-                    tokens[tokens.len() - 1]
-                        .parse()
-                        .map_err(|_| SlhaError::Parse {
-                            line: lineno,
-                            msg: format!("expected float, got '{}'", tokens[tokens.len() - 1]),
-                        })?;
-                let key = tokens[..tokens.len() - 1]
-                    .iter()
-                    .map(|tok| {
-                        tok.parse::<i32>().map_err(|_| SlhaError::Parse {
-                            line: lineno,
-                            msg: format!("block {block}: expected an integer code, got '{tok}'"),
-                        })
-                    })
-                    .collect::<Result<Vec<i32>, _>>()?;
-                card.record(block, key, CardValue::Value(value), lineno, &mut seen)?;
+                if let Err(e) = card.record("decay", vec![code], width, lineno, &mut seen) {
+                    errors.push(e);
+                }
+            } else if lower.starts_with("xsection") {
+                section = Section::CrossSections;
+            } else {
+                match &section {
+                    Section::None | Section::CrossSections => {}
+                    Section::Decay(pdg) => {
+                        if !card.decay_tables.contains(pdg) {
+                            card.decay_tables.push(*pdg);
+                        }
+                    }
+                    Section::Block(block) => {
+                        if let Err(e) = card.read_entry(block, line, lineno, &mut seen) {
+                            errors.push(e);
+                        }
+                    }
+                }
             }
         }
 
-        Ok(card)
+        match errors.len() {
+            0 => Ok(card),
+            1 => Err(errors.remove(0)),
+            _ => Err(SlhaError::Several(errors)),
+        }
     }
 }
 
@@ -162,6 +204,44 @@ enum CardValue {
 }
 
 impl ParamCard {
+    /// Read one data line of `block`: integer codes followed by a float, e.g.
+    /// `   3   0.118`, `   1   2   0.5`; a lone value (SLHA's `Block ALPHA`)
+    /// has the empty code, as MadGraph reads it.
+    fn read_entry(
+        &mut self,
+        block: &str,
+        line: &str,
+        lineno: usize,
+        seen: &mut HashMap<(String, Vec<i32>), (CardValue, usize)>,
+    ) -> Result<(), SlhaError> {
+        let parse_error = |msg: String| SlhaError::Parse { line: lineno, msg };
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        // MadGraph's scan marker (`Parameter.load_str`), one run per value.
+        if tokens.iter().any(|t| t.to_lowercase().starts_with("scan")) {
+            return Err(parse_error(format!(
+                "block {block}: '{line}' is a scan value, which MadGraph runs once per \
+                 value; give one card per value"
+            )));
+        }
+        let Some((last, codes)) = tokens.split_last() else {
+            return Ok(());
+        };
+        let value: f64 = last
+            .parse()
+            .map_err(|_| parse_error(format!("expected float, got '{last}'")))?;
+        let key = codes
+            .iter()
+            .map(|tok| {
+                tok.parse::<i32>().map_err(|_| {
+                    parse_error(format!(
+                        "block {block}: expected an integer code, got '{tok}'"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<i32>, _>>()?;
+        self.record(block, key, CardValue::Value(value), lineno, seen)
+    }
+
     /// Store one parsed entry, refusing a `(block, code)` an earlier line set to
     /// another value. A repeat of the same value is accepted, as MadGraph's
     /// `check_param_card.Block.append` accepts it; a different one is the error
@@ -243,6 +323,12 @@ impl ParamCard {
     /// (`DECAY <pdg> Auto`), in card order.
     pub(crate) fn auto_widths(&self) -> &[i32] {
         &self.auto_widths
+    }
+
+    /// The PDG codes whose `DECAY` line the card follows with a decay table, in
+    /// card order. Nothing here reads a branching ratio.
+    pub(crate) fn decay_tables(&self) -> &[i32] {
+        &self.decay_tables
     }
 }
 
@@ -384,9 +470,11 @@ DECAY 6 1.49
         let card = SAMPLE.parse::<ParamCard>().unwrap();
         // `DECAY 6 1.49` → total width under block "decay", key [6].
         assert_eq!(card.get("DECAY", &[6]), Some(1.49));
-        // The branching-ratio row `1.0  2  5 24` must NOT be parsed as an entry.
+        // The branching-ratio row `1.0  2  5 24` is not an entry; it is recorded
+        // as the top's decay table.
         assert_eq!(card.get("decay", &[5, 24]), None);
         assert_eq!(card.get("decay", &[2, 5, 24]), None);
+        assert_eq!(card.decay_tables(), &[6]);
     }
 
     /// `DECAY <pdg> Auto`, in any case, is recorded as an automatic width and

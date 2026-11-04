@@ -53,8 +53,8 @@ shorthand; attribute assignments such as `loop_sm`'s `.counterterm = …` are sk
 model missing one does not import in MadGraph either. The loader refuses such a
 field, missing or in a form it does not read, naming the object and the field
 (`FieldError`, `ufo/ast_util.rs`). That covers every `Particle`, `Parameter`,
-`Coupling`, `Vertex` and `Lorentz` field there, `CouplingOrder`'s `name` and
-`hierarchy`, a parameter `nature` other than `external`/`internal` or a `type`
+`Coupling`, `Vertex` and `Lorentz` field there, `Propagator`'s `name` and
+`numerator`, `CouplingOrder`'s `name` and `hierarchy`, a parameter `nature` other than `external`/`internal` or a `type`
 other than `real`/`complex`, and an external's `lhablock`/`lhacode`, which
 `Parameter.__init__` requires. A name or Python variable defined twice in one
 file is refused (`UniqueNames`), as MadGraph refuses a repeated parameter
@@ -62,7 +62,9 @@ file is refused (`UniqueNames`), as MadGraph refuses a repeated parameter
 repeats its name and is refused with it. The defaults kept are MadGraph's own:
 `goldstoneboson = False`, `Lorentz` `structure = 'external'` (then refused as
 `LorentzError::ExternalStructure`, since such a routine lives outside the
-model), the optional `GhostNumber`, `line` and `propagator`, and a missing
+model), the optional `GhostNumber`, `line` and `propagator`, a missing
+`Propagator` `denominator` (UFO's constructor defaults it to `None`, which ALOHA
+reads as the standard denominator), and a missing
 `expansion_order`, which MadGraph's import tolerates by leaving the model
 uncapped when any order lacks one.
 
@@ -154,7 +156,9 @@ that parser. How diagrams are then enumerated is in
 each `Propagator(...)` keeps its
 `name`, `numerator` and `denominator` as verbatim strings, with the module-level string
 variables the shipped files concatenate (`denominatorSq = denominator + "**2"`) folded
-in. `Particle::propagator` records which form a particle uses. Nothing evaluates the
+in. `name` and `numerator` are required; `denominator` may be absent (`None`, the
+standard form); a form that is not a string, a string variable or a `+` chain of those,
+and a repeated name, are refused naming the propagator and the field. `Particle::propagator` records which form a particle uses. Nothing evaluates the
 forms. Loading such a model succeeds; the hard error is raised only when a particle with
 a custom propagator **propagates in a selected diagram** (`ConvertError::CustomPropagator`,
 `diagrams/diagram.rs`). [^n35-l1] SMEFTsim's four auxiliary fields are the case in reach
