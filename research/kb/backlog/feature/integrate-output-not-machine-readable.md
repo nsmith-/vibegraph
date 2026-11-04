@@ -5,7 +5,7 @@ description: "Tools that consume integrate parse its human-formatted summary lin
 area: feature
 state: open
 priority: medium
-closes_when: "The CLI has three output modes chosen once per run (plain lines, the TUI, and ldjson under `--output-format ldjson`), each formatting log events, progress events and the result or refusal; ldjson with `--tui` is a usage error; an `inspect` subcommand prints a saved artifact's recorded results as text or ldjson; the ldjson schema carries a version and is pinned by CLI tests; and the gridpack survey reads ldjson instead of the summary lines."
+closes_when: "The CLI has three output modes chosen once per run (plain lines, the TUI, and ldjson under the `--output-ldjson` flag), each formatting log events and the result or refusal, with progress events shown by the TUI and ldjson but not by plain; ldjson with `--tui` is a usage error; an `inspect` subcommand prints a saved artifact's recorded results as text, or as ldjson under `--output-ldjson`; the ldjson schema carries a version and is pinned by CLI tests; and the gridpack survey reads ldjson instead of the summary lines."
 blocked_by: []
 opened: 2026-11-04
 tags: [cli, output, artifact, cms-survey]

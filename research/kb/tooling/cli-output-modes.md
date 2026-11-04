@@ -1,7 +1,7 @@
 ---
 type: Design
 title: CLI output modes
-description: "Proposed: one output mode per run (plain, rich TUI, or ldjson) formats log events, progress events and the result together; ldjson conflicts with --tui; an inspect subcommand reads a saved artifact's results."
+description: "Proposed: one output mode per run (plain, rich TUI, or ldjson via --output-ldjson) formats logs, progress and the result together; plain shows no progress; ldjson conflicts with --tui; an inspect subcommand reads a saved artifact's results."
 status: draft
 tags: [cli, logging, tui, tracing, progress, json]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
@@ -36,9 +36,9 @@ three paths.
 
 | mode | when | logs | progress | result or refusal |
 |---|---|---|---|---|
-| plain | not a terminal (background, piped), or `--no-tui` | text lines | text status lines | text lines |
+| plain | not a terminal (background, piped), or `--no-tui` | text lines | not shown | text lines |
 | rich | a terminal on both streams, or `--tui` | the TUI scrollback | the TUI pane | held until the pane comes down |
-| ldjson | `--output-format ldjson` | one object per event | one object per event | a final object |
+| ldjson | `--output-ldjson` | one object per event | one object per event | a final object |
 
 ### ldjson
 
@@ -62,13 +62,18 @@ three paths.
 
 ### plain
 
-Progress is now shown here too. It needs a rate limit (per stage, or every
-N seconds) so a background log does not fill with VEGAS iterations; that
-choice is open.
+Progress is not shown, as today: a background log carries only the log lines
+and the result.
+
+### The flag
+
+ldjson is the only machine-readable format, so it is a plain switch,
+`--output-ldjson`, rather than an `--output-format` value. If a second format
+ever appears, the flag can become an alias of the new option.
 
 ## `vibegraph inspect <grid.bin.zst>`
 
-Prints the results a saved artifact records, in the plain or ldjson form of
-the final result object. The artifact already stores `sigma_pb`,
+Prints the results a saved artifact records, as text, or under `--output-ldjson`
+as the ldjson final result object. The artifact already stores `sigma_pb`,
 `sigma_err_pb` and `chi2_per_dof`, for the run and for each channel, along
 with the run card, maps and format version, so nothing needs re-running.
