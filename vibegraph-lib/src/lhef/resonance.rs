@@ -347,9 +347,10 @@ fn timelike_lines(
 /// `g u > t t~ u` and `g d > t t~ d` share one. A line whose flavour is carried
 /// by an outgoing leg below it (the `s`-channel `u` above, continuing into the
 /// outgoing `u`) is that leg's flavour in the member too, so it takes the
-/// member's flavour on those legs ([`carried_flavour`]). Any other line is the
-/// representative's line or its conjugate: the same flavour where the legs below
-/// it carry the same charge, the antiparticle where they carry the opposite one.
+/// member's flavour on those legs ([`carried_flavour`]). Any other line, and one
+/// whose legs below name different flavours of it, is the representative's line
+/// or its conjugate: the same flavour where the legs below it carry the same
+/// charge, the antiparticle where they carry the opposite one.
 /// `None` where neither holds, or where a neutral line that is not its own
 /// antiparticle leaves the charge unable to tell them apart.
 pub fn member_line_pdg(
@@ -711,12 +712,22 @@ mod tests {
             member_line_pdg(&anti_up, &[6, -6, -2], &[6, -6, -3], &model),
             Some(-3)
         );
-        // Legs that name different flavours of the line (`u > u u u~` against
-        // `u > u c c~`) leave it to the charge rule.
+        // A leg that is the line's antiparticle names the member's line by its
+        // conjugate.
         assert_eq!(
-            member_line_pdg(&up, &[2, 2, -2], &[2, 4, -4], &model),
-            Some(2)
+            member_line_pdg(&up, &[6, -6, -2], &[6, -6, -1], &model),
+            Some(1)
         );
+        // Legs that name different flavours of the line (`u > u u u~` against
+        // `u > u c c~`, and against `u > c u u~`) leave it to the charge rule,
+        // whichever of them comes first.
+        for member in [[2, 4, -4], [4, 2, -2]] {
+            assert_eq!(
+                member_line_pdg(&up, &[2, 2, -2], &member, &model),
+                Some(2),
+                "{member:?}"
+            );
+        }
     }
 
     /// A member of a flavour group names the representative's line, or its

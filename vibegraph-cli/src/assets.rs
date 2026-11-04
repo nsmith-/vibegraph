@@ -24,14 +24,11 @@ use std::sync::Once;
 use vibegraph::cache::lhapdf::{DownloadRequest, Tiers};
 use vibegraph::cache::resolve::{locate, Located, Source};
 use vibegraph::cache::store::Fetch;
-use vibegraph::cache::{AssetKind, LHAPATH_VAR, RETIRED_PDF_DIR_VAR};
+use vibegraph::cache::{AssetKind, CACHE_ROOT_VAR, LHAPATH_VAR, RETIRED_PDF_DIR_VAR};
 use vibegraph::diagrams::ModelImport;
 
 use crate::fetch::HttpFetch;
 use crate::network::{self, Consent, Download, NetworkPolicy};
-
-/// Environment override for the asset cache root, otherwise `~/.vibegraph`.
-pub(crate) const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
 
 /// The last resort for a UFO model is `<cwd>/<name>/`, so a checkout with a model
 /// unpacked beside it needs no flag.
@@ -69,9 +66,9 @@ fn no_home(flag: &str) -> String {
 
 /// The tiers a PDF set and LHAPDF's index are looked for through, from this
 /// process's environment.
-pub(crate) fn pdf_tiers() -> Result<Tiers, String> {
+pub(crate) fn pdf_tiers() -> Tiers {
     warn_on_retired_pdf_dir();
-    Ok(Tiers::from_env(cache_root()))
+    Tiers::from_env(cache_root())
 }
 
 /// The fetch factory a PDF lookup asks before any download: it puts the

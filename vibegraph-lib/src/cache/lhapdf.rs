@@ -170,9 +170,10 @@ pub enum LookupError {
     /// write.
     #[error(
         "{what} was not found on ${} or the CVMFS LHAPDF directory, and the cache and download \
-         tiers need a home directory, which cannot be located; set $VIBEGRAPH_HOME to a \
-         writable directory, or put the PDF set's directory on ${}",
+         tiers need a home directory, which cannot be located; set ${} to a writable \
+         directory, or put the PDF set's directory on ${}",
         AssetKind::Pdf.env_var(),
+        super::CACHE_ROOT_VAR,
         AssetKind::Pdf.env_var()
     )]
     NoCacheRoot { what: String },
@@ -710,7 +711,8 @@ pub(crate) mod tests {
         let message = err.to_string();
         assert!(
             message.contains("PDF set Absent was not found on $LHAPDF_DATA_PATH")
-                && message.contains("cache and download tiers need a home directory"),
+                && message.contains("cache and download tiers need a home directory")
+                && message.contains("set $VIBEGRAPH_HOME to a writable directory"),
             "{message}"
         );
         let err = fetch_index(&t, &fetch).unwrap_err();
