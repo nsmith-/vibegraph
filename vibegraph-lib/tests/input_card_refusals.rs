@@ -200,12 +200,46 @@ fn param_refusal(text: &str) -> String {
 }
 
 /// MadGraph writes a card's branching ratios into the event file's `<slha>`
-/// header, where a shower reads them for the states it decays; the header
-/// written here comes from the model and carries none.
+/// header, where a shower reads them for the states it decays, and checks
+/// neither their sum nor their daughters (`check_param_card.py` reads a row as
+/// a number and a list of codes). A table is carried as written: one that sums
+/// to 0.7 and names a daughter the model lacks binds, and the width beside it
+/// binds as it did without a table.
 #[test]
-fn a_decay_table_is_refused_naming_the_particle() {
-    let message = param_refusal("DECAY 6 1.5\n 1.0 2 5 24 # t > b w+\n");
-    assert_mentions(&message, &["branching", "6"]);
+fn a_decay_table_is_carried_as_written() {
+    let model = sm_model(SMRestrict::Default);
+    let card: ParamCard = "DECAY 6 1.5\n 0.6 2 5 24 # t > b w+\n 0.1 2 9999999 24\n"
+        .parse()
+        .unwrap();
+    let bound = bind_card(model.clone(), &card).unwrap();
+    let plain = bind_card(model, &"DECAY 6 1.5\n".parse().unwrap()).unwrap();
+    assert_eq!(bound.moved, plain.moved);
+    assert_eq!(bound.evaluated.param_values["WT"].re, 1.5);
+}
+
+/// A row whose `NDA` disagrees with its daughters: MadGraph counts the
+/// daughters, a shower reading the header reads `NDA`.
+#[test]
+fn a_decay_row_whose_nda_disagrees_is_refused() {
+    let message = param_refusal("DECAY 6 1.5\n 1.0 3 5 24\n");
+    assert_mentions(&message, &["NDA = 3", "line 2"]);
+}
+
+/// A channel given two branching ratios: MadGraph keeps the first silently,
+/// a shower reading the header reads both.
+#[test]
+fn a_decay_channel_given_two_branching_ratios_is_refused() {
+    let message = param_refusal("DECAY 6 1.5\n 0.9 2 5 24\n 0.8 2 24 5\n");
+    assert_mentions(&message, &["line 3", "on line 2"]);
+}
+
+/// A table below a `DECAY` line for an antiparticle's code: the header lists
+/// each particle once, under its positive PDG code, so the rows would have no
+/// line to sit under.
+#[test]
+fn a_decay_table_under_a_negative_code_is_refused() {
+    let message = param_refusal("DECAY -24 2.085\n 1.0 2 11 -12\n");
+    assert_mentions(&message, &["-24", "positive PDG code"]);
 }
 
 /// MadGraph reads `DECAY 6 1.5 0.3` as a width of `"1.5 0.3"`, a string.
@@ -237,13 +271,17 @@ fn a_scan_value_is_refused() {
     assert_mentions(&message, &["scan", "line 2"]);
 }
 
-/// MadGraph negates the width of a particle whose card mass is negative
-/// (`check_param_card.py`'s `write_inc_file`); the propagators here use the
-/// width as given.
+/// A negative mass on a particle that is not a Majorana fermion: MadGraph's
+/// Fortran negates the width beside it (`write_inc_file`), and the evaluation
+/// here does too, but the phase-space, on-shell, cut and event-record code
+/// downstream is not validated for a negative mass, so binding refuses it.
 #[test]
-fn a_negative_mass_is_refused() {
+fn a_negative_mass_off_a_majorana_fermion_is_refused() {
     let message = param_refusal("Block MASS\n 6 -1.75e2\n");
-    assert_mentions(&message, &["negative", "MT"]);
+    assert_mentions(
+        &message,
+        &["particle t ", "MT", "negative", "not validated"],
+    );
 }
 
 /// Every problem in the card is reported at once, the reader's and the
@@ -334,6 +372,53 @@ fn a_restrict_card_decay_table_is_accepted() {
         &format!("{RESTRICT} 1.0 2 9000001 9000001\n"),
     );
     UFOModel::load(dir.path(), Some(&card)).unwrap();
+}
+
+/// A negative mass from a restriction card, and from the model's own
+/// default, binds to the same refusal as a param card's: binding checks every
+/// evaluated mass, whatever gave it.
+#[test]
+fn a_negative_default_or_restricted_mass_is_refused_at_binding() {
+    let dir = model_with(&[]);
+    let card = restrict_file(
+        dir.path(),
+        "restrict_test.dat",
+        &RESTRICT.replacen(
+            " 9000001 1.000000e+01 # MS",
+            " 9000001 -1.000000e+01 # MS",
+            1,
+        ),
+    );
+    let model = UFOModel::load(dir.path(), Some(&card)).unwrap();
+    let message = bind_card(model, &ParamCard::default())
+        .err()
+        .expect("a negative restricted mass binds")
+        .to_string();
+    assert_mentions(&message, &["particle S ", "MS", "not validated"]);
+
+    let dir = model_with(&[("parameters.py", "value = 10.0", "value = -10.0")]);
+    let model = UFOModel::load(dir.path(), None).unwrap();
+    let message = bind_card(model, &ParamCard::default())
+        .err()
+        .expect("a negative default mass binds")
+        .to_string();
+    assert_mentions(&message, &["particle S ", "MS", "not validated"]);
+}
+
+/// A Majorana fermion's negative mass binds, and its width is negated as
+/// MadGraph's Fortran negates it: `MSSM_SLHA2`'s default restriction sets
+/// `Mneu3 = -363.756`. Diagram generation refuses Majorana fermions, so no
+/// amplitude reads it yet.
+#[test]
+fn a_majorana_negative_mass_binds_and_negates_its_width() {
+    let dir =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/refs/mg5amcnlo/models/MSSM_SLHA2");
+    let model = UFOModel::load(&dir, None).unwrap();
+    let bound = bind_card(model, &ParamCard::default()).unwrap();
+    assert!(bound.evaluated.param_values["Mneu3"].re < 0.0);
+    let wneu3 = bound.evaluated.param_values["Wneu3"].re;
+    assert!(wneu3 < 0.0, "Wneu3 = {wneu3}");
+    assert_eq!(bound.evaluated.card_value("Wneu3"), -wneu3);
 }
 
 // ---- reweight card ----

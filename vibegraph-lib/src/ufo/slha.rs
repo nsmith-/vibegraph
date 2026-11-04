@@ -17,6 +17,8 @@ use std::path::Path;
 use std::str::FromStr;
 use thiserror::Error;
 
+use crate::artifact::{DecayChannel, DecayTable};
+
 #[derive(Debug, Error)]
 pub enum SlhaError {
     #[error("IO error reading param_card: {0}")]
@@ -44,9 +46,9 @@ pub struct ParamCard {
     /// PDG codes whose `DECAY` line gives the width as `Auto` (MadWidth's
     /// placeholder, computed by MadGraph at launch), in the order they appear.
     auto_widths: Vec<i32>,
-    /// PDG codes whose `DECAY` line is followed by a decay table (branching-ratio
-    /// rows), in the order they appear.
-    decay_tables: Vec<i32>,
+    /// The decay tables (branching-ratio rows below a `DECAY` line), in the
+    /// order their `DECAY` lines appear.
+    decay_tables: Vec<DecayTable>,
 }
 
 /// What the lines below the last header belong to.
@@ -76,7 +78,7 @@ impl FromStr for ParamCard {
     ///
     /// The constructs follow MadGraph's reader (`ParamCard.read`,
     /// `models/check_param_card.py`): lines are matched without case, a decay
-    /// table's rows are recorded by particle ([`ParamCard::decay_tables`]) and
+    /// table's rows are read by particle ([`ParamCard::decay_tables`]) and
     /// an `XSECTION` block's rows are skipped up to the next header. A value
     /// MadGraph would keep as a string (a `scan:` value, a `DECAY` width
     /// followed by more fields) is refused.
@@ -86,6 +88,9 @@ impl FromStr for ParamCard {
         let mut seen: HashMap<(String, Vec<i32>), (CardValue, usize)> = HashMap::new();
         let mut headers: HashMap<String, usize> = HashMap::new();
         let mut errors: Vec<SlhaError> = Vec::new();
+        // Each decay channel read so far, by `(parent, sorted daughters)`, with
+        // its branching ratio and line.
+        let mut channels: HashMap<(i32, Vec<i32>), (f64, usize)> = HashMap::new();
 
         for (lineno, raw) in content.lines().enumerate() {
             let lineno = lineno + 1;
@@ -174,8 +179,8 @@ impl FromStr for ParamCard {
                 match &section {
                     Section::None | Section::CrossSections => {}
                     Section::Decay(pdg) => {
-                        if !card.decay_tables.contains(pdg) {
-                            card.decay_tables.push(*pdg);
+                        if let Err(e) = card.read_channel(*pdg, line, lineno, &mut channels) {
+                            errors.push(e);
                         }
                     }
                     Section::Block(block) => {
@@ -240,6 +245,89 @@ impl ParamCard {
             })
             .collect::<Result<Vec<i32>, _>>()?;
         self.record(block, key, CardValue::Value(value), lineno, seen)
+    }
+
+    /// Read one row of `pdg`'s decay table, `<BR> <NDA> <ID1> … <IDn>`. The
+    /// daughters are kept as the row lists them; a channel is identified by its
+    /// daughters sorted, as MadGraph's `Parameter.load_decay` stores it, so a
+    /// repeat in another order is the same channel.
+    ///
+    /// Refused: a branching ratio that is not a finite number, a code that is
+    /// not an integer, no daughter, an `NDA` other than the number of daughters
+    /// (MadGraph counts the daughters and drops `NDA`; a shower reading the card
+    /// reads `NDA`), and a channel an earlier row of the table gave another
+    /// branching ratio (MadGraph keeps the first silently; a shower reads both).
+    /// A repeat at the same branching ratio is kept once.
+    fn read_channel(
+        &mut self,
+        pdg: i32,
+        line: &str,
+        lineno: usize,
+        channels: &mut HashMap<(i32, Vec<i32>), (f64, usize)>,
+    ) -> Result<(), SlhaError> {
+        let parse_error = |msg: String| SlhaError::Parse { line: lineno, msg };
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let Some((br, rest)) = tokens.split_first() else {
+            return Ok(());
+        };
+        let branching_ratio = br
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite())
+            .ok_or_else(|| {
+                parse_error(format!(
+                    "decay table of {pdg}: expected a finite branching ratio, got '{br}'"
+                ))
+            })?;
+        let codes = rest
+            .iter()
+            .map(|tok| {
+                tok.parse::<i32>().map_err(|_| {
+                    parse_error(format!(
+                        "decay table of {pdg}: expected an integer code, got '{tok}'"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<i32>, _>>()?;
+        let Some((&nda, daughters)) = codes.split_first().filter(|(_, d)| !d.is_empty()) else {
+            return Err(parse_error(format!(
+                "decay table of {pdg}: '{line}' names no daughter; a row is \
+                 `<BR> <NDA> <ID1> ... <IDn>`"
+            )));
+        };
+        if usize::try_from(nda).ok() != Some(daughters.len()) {
+            return Err(parse_error(format!(
+                "decay table of {pdg}: '{line}' gives NDA = {nda} for {} daughters; MadGraph \
+                 counts the daughters, a shower reads NDA",
+                daughters.len()
+            )));
+        }
+        let mut sorted = daughters.to_vec();
+        sorted.sort_unstable();
+        match channels.get(&(pdg, sorted.clone())) {
+            Some(&(first, _)) if first == branching_ratio => return Ok(()),
+            Some(&(first, first_line)) => {
+                return Err(parse_error(format!(
+                    "decay table of {pdg}: the channel to {} has branching ratio {branching_ratio} \
+                     here and {first} on line {first_line}",
+                    code_text(daughters)
+                )));
+            }
+            None => {}
+        }
+        channels.insert((pdg, sorted), (branching_ratio, lineno));
+        let channel = DecayChannel {
+            branching_ratio,
+            daughters: daughters.to_vec(),
+        };
+        match self.decay_tables.iter_mut().find(|t| t.pdg == pdg) {
+            Some(table) => table.channels.push(channel),
+            None => self.decay_tables.push(DecayTable {
+                pdg,
+                channels: vec![channel],
+            }),
+        }
+        Ok(())
     }
 
     /// Store one parsed entry, refusing a `(block, code)` an earlier line set to
@@ -325,10 +413,16 @@ impl ParamCard {
         &self.auto_widths
     }
 
-    /// The PDG codes whose `DECAY` line the card follows with a decay table, in
-    /// card order. Nothing here reads a branching ratio.
-    pub(crate) fn decay_tables(&self) -> &[i32] {
+    /// The decay tables the card gives below its `DECAY` lines, in card order.
+    /// Nothing in an evaluation reads a branching ratio; the tables are carried
+    /// to the event file's `<slha>` header.
+    pub fn decay_tables(&self) -> &[DecayTable] {
         &self.decay_tables
+    }
+
+    /// Add `table` to the card's decay tables.
+    pub(crate) fn push_decay_table(&mut self, table: DecayTable) {
+        self.decay_tables.push(table);
     }
 }
 
@@ -474,7 +568,74 @@ DECAY 6 1.49
         // as the top's decay table.
         assert_eq!(card.get("decay", &[5, 24]), None);
         assert_eq!(card.get("decay", &[2, 5, 24]), None);
-        assert_eq!(card.decay_tables(), &[6]);
+        assert_eq!(
+            card.decay_tables(),
+            &[DecayTable {
+                pdg: 6,
+                channels: vec![DecayChannel {
+                    branching_ratio: 1.0,
+                    daughters: vec![5, 24],
+                }],
+            }]
+        );
+    }
+
+    /// A table's rows are read per particle with the daughters as the row lists
+    /// them; a channel repeated at the same branching ratio, in any order, is
+    /// read once, and a table ends at the next header.
+    #[test]
+    fn decay_tables_are_read_per_particle() {
+        let card = "DECAY 25 4.07e-3\n# BR NDA ID1 ID2\n 5.8e-1 2 5 -5 # b b~\n \
+                    2.1e-1 3 12 -24 11\n 5.8e-1 2 -5 5\nBlock MASS\n 25 125\n\
+                    DECAY 23 2.4952\nDECAY 24 2.085\n 0.5 2 -11 12\n"
+            .parse::<ParamCard>()
+            .unwrap();
+        let channel = |branching_ratio, daughters: &[i32]| DecayChannel {
+            branching_ratio,
+            daughters: daughters.to_vec(),
+        };
+        assert_eq!(
+            card.decay_tables(),
+            &[
+                DecayTable {
+                    pdg: 25,
+                    channels: vec![channel(0.58, &[5, -5]), channel(0.21, &[12, -24, 11])],
+                },
+                DecayTable {
+                    pdg: 24,
+                    channels: vec![channel(0.5, &[-11, 12])],
+                },
+            ]
+        );
+        assert_eq!(card.get("MASS", &[25]), Some(125.0));
+        assert_eq!(card.get("DECAY", &[23]), Some(2.4952));
+    }
+
+    /// A row a shower and MadGraph would read differently, or cannot read, is an
+    /// error at its own line.
+    #[test]
+    fn decay_table_rows_that_cannot_be_carried_are_errors_at_their_line() {
+        for (text, want_line, want) in [
+            ("DECAY 6 1.5\n 1.0 3 5 24\n", 2, "NDA = 3 for 2 daughters"),
+            ("DECAY 6 1.5\n 1.0 2\n", 2, "no daughter"),
+            ("DECAY 6 1.5\n 1.0\n", 2, "no daughter"),
+            ("DECAY 6 1.5\n one 2 5 24\n", 2, "finite branching ratio"),
+            ("DECAY 6 1.5\n nan 2 5 24\n", 2, "finite branching ratio"),
+            ("DECAY 6 1.5\n 1.0 2 b 24\n", 2, "integer code, got 'b'"),
+            (
+                "DECAY 6 1.5\n 0.9 2 5 24\n 0.8 2 24 5\n",
+                3,
+                "0.9 on line 2",
+            ),
+        ] {
+            match text.parse::<ParamCard>() {
+                Err(SlhaError::Parse { line, msg }) => {
+                    assert_eq!(line, want_line, "{text:?}: {msg}");
+                    assert!(msg.contains(want), "{text:?}: {msg}");
+                }
+                other => panic!("{text:?} parsed: {other:?}"),
+            }
+        }
     }
 
     /// `DECAY <pdg> Auto`, in any case, is recorded as an automatic width and

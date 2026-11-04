@@ -410,7 +410,12 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     // The parameter point the grid was trained at: the restricted defaults with
     // the recorded moves applied. The digest check above has pinned the
     // defaults, so this is the point the integration evaluated.
-    let evaluated = bind_recorded(model.clone(), &artifact.inputs.params).map_err(|e| {
+    let evaluated = bind_recorded(
+        model.clone(),
+        &artifact.inputs.params,
+        &artifact.inputs.decays,
+    )
+    .map_err(|e| {
         err(format!(
             "cannot bind the parameters recorded in {}: {e}; re-integrate",
             args.artifact.display()

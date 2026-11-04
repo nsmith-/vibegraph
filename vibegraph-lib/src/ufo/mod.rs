@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use slha::ParamCard;
 use std::path::Path;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 use thiserror::Error;
@@ -38,6 +38,8 @@ use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
 use names::{DefaultNameConflict, ParticleNames, ParticleNaming};
 use topo::build_feyngraph_model;
+
+use crate::artifact::DecayTable;
 
 /// Every particle and antiparticle as (UFO name, PDG code).
 fn particle_codes(particles: &IndexMap<String, Particle>) -> impl Iterator<Item = (&str, i64)> {
@@ -912,6 +914,14 @@ fn resolve_vertices(
 
 /// Evaluated parameter and coupling values for a specific parameter set (e.g. from a param_card).
 ///
+/// A width is evaluated with the sign MadGraph's Fortran reads it with: an
+/// external width in block `DECAY` at code `[pdg]` is negated while the mass at
+/// `[pdg]` is negative (`write_inc_file`, `models/check_param_card.py`, which
+/// writes the run's `param_card.inc`), so a propagator's `m·Γ` keeps the sign it
+/// has at a positive mass. The rule reads the evaluated masses, so it holds for
+/// a mass from the model's default, its restriction and a param card alike.
+/// [`card_value`](Self::card_value) gives a width as the card gives it.
+///
 /// `Clone` is cheap in the model itself (an `Arc` bump) and copies the parameter and
 /// coupling value tables, so a thread that moves parameters per event owns its own
 /// copy rather than sharing one.
@@ -925,6 +935,20 @@ pub struct EvaluatedModel {
     pub param_values: HashMap<String, Complex64>,
     /// Coupling constant values indexed by [`CouplingId`], parallel to `model.couplings`.
     coupling_values: Vec<Complex64>,
+    /// What the evaluation keeps of the card besides values, boxed so the
+    /// evaluation stays small to move.
+    card: Box<CardRecord>,
+}
+
+/// The parts of a param card an [`EvaluatedModel`] keeps besides its values.
+#[derive(Clone, Default)]
+struct CardRecord {
+    /// The external widths [`EvaluatedModel::param_values`] holds negated,
+    /// because the mass at their code is negative.
+    negated_widths: HashSet<String>,
+    /// The param card's decay tables, which nothing evaluates: they are carried
+    /// to the event file's `<slha>` header.
+    decay_tables: Vec<DecayTable>,
 }
 
 impl EvaluatedModel {
@@ -953,22 +977,117 @@ impl EvaluatedModel {
     }
 
     /// Every parameter and coupling at `param_card`'s values, the model's
-    /// defaults where it sets none. An `Auto` width is read as unset, so the
-    /// caller refuses one first.
+    /// defaults where it sets none, with each width's sign following its mass;
+    /// the card's decay tables are carried. An `Auto` width is read as unset, so
+    /// the caller refuses one first.
     fn evaluate_at(model: Arc<UFOModel>, param_card: &ParamCard) -> Self {
-        let param_values = model.params.evaluate(param_card);
-
-        let coupling_values: Vec<Complex64> = model
+        let mut evaluated = EvaluatedModel {
+            param_values: model.params.evaluate(param_card),
+            model,
+            coupling_values: Vec::new(),
+            card: Box::new(CardRecord {
+                negated_widths: HashSet::new(),
+                decay_tables: param_card.decay_tables().to_vec(),
+            }),
+        };
+        evaluated.apply_width_signs();
+        evaluated.coupling_values = evaluated
+            .model
             .couplings
             .values()
-            .map(|c| expr::eval(&c.value, &param_values))
+            .map(|c| expr::eval(&c.value, &evaluated.param_values))
             .collect();
+        evaluated
+    }
 
-        EvaluatedModel {
-            model,
-            param_values,
-            coupling_values,
+    /// The real value of the mass a param card gives at code `[pdg]`: the
+    /// external parameter at block `MASS` code `[pdg]`, or else the mass of the
+    /// model's particle with that code, which a card MadGraph writes lists at
+    /// its computed value. Zero for a code with neither.
+    fn mass_at(&self, pdg: i32) -> f64 {
+        let params = &self.model.params;
+        let name = params
+            .externals
+            .iter()
+            .find(|p| {
+                matches!(&p.nature, ParamNature::External { lha_block, lha_code, .. }
+                    if lha_block.eq_ignore_ascii_case("mass") && lha_code.as_slice() == [pdg])
+            })
+            .map(|p| p.name.as_str())
+            .or_else(|| {
+                self.model
+                    .particles
+                    .values()
+                    .find(|p| p.pdg_code == i64::from(pdg))
+                    .map(|p| p.mass_param.as_str())
+            });
+        name.and_then(|n| self.param_values.get(n))
+            .map_or(0.0, |v| v.re)
+    }
+
+    /// Make every external width's sign follow its mass, as MadGraph's
+    /// `write_inc_file` does: an external width at block `DECAY` code `[pdg]` is
+    /// held negated while [`mass_at`](Self::mass_at)`(pdg)` is negative, and as
+    /// the card gives it otherwise. A width the restriction fixed to zero or one
+    /// is not a parameter of MadGraph's restricted model, and keeps its value.
+    /// Re-evaluates the internal parameters a flipped width reaches, and returns
+    /// every parameter it moved.
+    fn apply_width_signs(&mut self) -> HashSet<String> {
+        let model = Arc::clone(&self.model);
+        let params = &model.params;
+        let mut moved = HashSet::new();
+        for p in &params.externals {
+            let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let &[pdg] = lha_code.as_slice() else {
+                continue;
+            };
+            if !lha_block.eq_ignore_ascii_case("decay")
+                || params.zeros.contains(&p.name)
+                || params.ones.contains(&p.name)
+            {
+                continue;
+            }
+            let negative = self.mass_at(pdg) < 0.0;
+            if negative == self.card.negated_widths.contains(&p.name) {
+                continue;
+            }
+            if let Some(v) = self.param_values.get_mut(&p.name) {
+                *v = -*v;
+            }
+            if negative {
+                self.card.negated_widths.insert(p.name.clone());
+            } else {
+                self.card.negated_widths.remove(&p.name);
+            }
+            moved.extend(params.recompute(&p.name, &mut self.param_values));
+            moved.insert(p.name.clone());
         }
+        moved
+    }
+
+    /// The real part of parameter `name` as the param card gives it: its value,
+    /// with the sign of a width negated for a negative mass restored. Zero for
+    /// a name the evaluation does not hold.
+    pub fn card_value(&self, name: &str) -> f64 {
+        let value = self.param_values.get(name).map_or(0.0, |v| v.re);
+        if self.card.negated_widths.contains(name) {
+            -value
+        } else {
+            value
+        }
+    }
+
+    /// The param card's decay tables, in card order, which the event file's
+    /// `<slha>` header carries.
+    pub fn decay_tables(&self) -> &[DecayTable] {
+        &self.card.decay_tables
     }
 
     /// The model these values were evaluated from.
@@ -1044,6 +1163,10 @@ impl EvaluatedModel {
     /// Set `changed` to `new_value`, then re-evaluate the parameters
     /// transitively depending on it and every coupling that reads any of them.
     ///
+    /// `new_value` is a card value: a width whose mass is negative, or a mass
+    /// moved across zero, takes the sign MadGraph's Fortran reads the width
+    /// with, as [`from_model_card`](Self::from_model_card) gives it.
+    ///
     /// A parameter a restriction locked to zero keeps its value, and nothing
     /// moves: the restriction pruned the vertices it would revive.
     ///
@@ -1063,11 +1186,13 @@ impl EvaluatedModel {
             return Ok(());
         }
         *slot = new_value;
+        self.card.negated_widths.remove(changed);
 
         // Every parameter the change reaches, however many internal parameters
         // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.
         let mut changed_params = self.model.params.recompute(changed, &mut self.param_values);
         changed_params.insert(changed.to_owned());
+        changed_params.extend(self.apply_width_signs());
 
         for (i, c) in self.model.couplings.values().enumerate() {
             if c.deps.iter().any(|d| changed_params.contains(d)) {

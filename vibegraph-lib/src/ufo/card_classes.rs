@@ -228,15 +228,65 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
     },
     Construct {
         name: "a decay table (branching-ratio rows after `DECAY`)",
-        madgraph: "kept as decay_table_<pdg> (L385-L393) and written with the card into \
-                   the event file's <slha> header, where a shower reads the decays of the \
-                   states it treats",
-        class: Refused(
-            "the <slha> header here is written from the model and has no branching \
-             ratios, so a shower would decay those states otherwise",
+        madgraph: "kept as decay_table_<pdg> (L383-L395) and written with the card into \
+                   the event file's <slha> header (banner.py add, L457), where a shower \
+                   reads the decays of the states it treats",
+        class: Consumed(
+            "EvaluatedModel::decay_tables, recorded in the artifact and written below the \
+             particle's DECAY line of the <slha> header (lhef::write::slha_block)",
         ),
         example: Text("DECAY 23 2.5\n 1.0 2 11 -11\n"),
-        expect: Error("branching"),
+        expect: Differs(Text("DECAY 23 2.5\n")),
+    },
+    Construct {
+        name: "a decay table that does not sum to one or names a particle the model lacks",
+        madgraph: "read as a number and a list of codes (Parameter.load_decay, L100-L120); \
+                   nothing checks the sum or the codes, and the header carries the rows as \
+                   written",
+        class: Consumed("carried as written, as any decay table"),
+        example: Text("DECAY 23 2.5\n 0.7 2 11 -11\n 0.1 2 9999999 -11\n"),
+        expect: Differs(Text("DECAY 23 2.5\n")),
+    },
+    Construct {
+        name: "a decay channel repeated at the same branching ratio",
+        madgraph: "the repeat is dropped (Block.append, L240-L244; the daughters are \
+                   sorted, L116, so their order does not matter)",
+        class: IgnoredBenign("the channel is carried once, as MadGraph keeps it"),
+        example: Text("DECAY 23 2.5\n 1.0 2 11 -11\n 1.0 2 -11 11\n"),
+        expect: Same(Text("DECAY 23 2.5\n 1.0 2 11 -11\n")),
+    },
+    Construct {
+        name: "a decay channel given two branching ratios",
+        madgraph: "the first is kept: the InvalidParamCard of Block.append is caught \
+                   (L391-L395)",
+        class: Refused("the header MadGraph writes carries both rows, and a shower reads both"),
+        example: Text("DECAY 23 2.5\n 0.9 2 11 -11\n 0.8 2 -11 11\n"),
+        expect: Error("on line 2"),
+    },
+    Construct {
+        name: "a decay-table row whose NDA is not its number of daughters",
+        madgraph: "NDA is dropped and the daughters counted (Parameter.load_decay, L115-L117)",
+        class: Refused("a shower reading the header reads NDA"),
+        example: Text("DECAY 23 2.5\n 1.0 3 11 -11\n"),
+        expect: Error("NDA = 3"),
+    },
+    Construct {
+        name: "a decay-table row with no daughter or a field that is not a number",
+        madgraph: "a row with no daughter is a channel of none; a field that is not a \
+                   number raises (int or float in Parameter.load_decay, L115-L119)",
+        class: Refused("no shower decays a particle into nothing"),
+        example: Text("DECAY 23 2.5\n 1.0 0\n"),
+        expect: Error("no daughter"),
+    },
+    Construct {
+        name: "a decay table below the DECAY line of a negative code",
+        madgraph: "kept as decay_table_<code> under the antiparticle's code",
+        class: Refused(
+            "the header lists each particle's DECAY line once, under its positive code, \
+             so the rows have no line to sit under",
+        ),
+        example: Text("DECAY -24 2.085\n 1.0 2 11 -12\n"),
+        expect: Error("positive PDG code"),
     },
     Construct {
         name: "an `XSECTION` block",
@@ -252,12 +302,17 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         expect: Same(Text("Block MASS\n 23 9.2e1\n")),
     },
     Construct {
-        name: "a negative mass",
-        madgraph: "the particle's width is negated with it in the Fortran \
-                   (write_inc_file, L692-L694)",
-        class: Refused("the propagators here take the width as given"),
+        name: "a negative mass on a particle that is not a Majorana fermion",
+        madgraph: "the width at the same code is negated with it in the Fortran \
+                   (write_inc_file, L692-L695). A Majorana fermion's negative mass binds \
+                   and its width is negated the same way (EvaluatedModel); diagram \
+                   generation refuses Majorana fermions",
+        class: Refused(
+            "the Breit-Wigner map, on-shell checks, cuts and LHEF resonance record are not \
+             validated for a negative mass",
+        ),
         example: Text("Block MASS\n 23 -9.2e1\n"),
-        expect: Error("negative"),
+        expect: Error("not validated"),
     },
     Construct {
         name: "a value for a parameter the restriction fixed to zero",
@@ -335,10 +390,13 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
     },
     Construct {
         name: "a negative mass",
-        madgraph: "read as the restricted default like any value",
+        madgraph: "read as the restricted default like any value; the Fortran negates \
+                   the width at the same code (write_inc_file, L692-L695)",
         class: Consumed(
-            "ParameterSet::apply_restrict, as the restricted default; the restriction \
-             reads it as MadGraph's does",
+            "ParameterSet::apply_restrict, as the restricted default, as MadGraph's \
+             restriction reads it; binding then refuses it unless the particle is a \
+             Majorana fermion (input_card_refusals.rs, \
+             a_negative_default_or_restricted_mass_is_refused_at_binding)",
         ),
         example: Edits(&[("   25 1.250000e+02 # MH", "   25 -1.250000e+02 # MH")]),
         expect: Differs(Edits(&[])),
@@ -557,9 +615,9 @@ pub(crate) mod tests {
     }
 
     /// What binding a param card gives: the refusal's text, or the moved
-    /// parameters with every parameter's value, bit for bit.
-    /// The moved parameters and every parameter's value, as bits.
-    type Bound = (Vec<(String, u64)>, BTreeMap<String, (u64, u64)>);
+    /// parameters, every parameter's value as bits, and the decay tables the
+    /// evaluation carries to the header.
+    type Bound = (Vec<(String, u64)>, BTreeMap<String, (u64, u64)>, String);
 
     fn bind(text: &str) -> Result<Bound, String> {
         let card: ParamCard = text.parse().map_err(|e| format!("{e}"))?;
@@ -575,7 +633,11 @@ pub(crate) mod tests {
             .iter()
             .map(|(k, v)| (k.clone(), (v.re.to_bits(), v.im.to_bits())))
             .collect();
-        Ok((moved, values))
+        Ok((
+            moved,
+            values,
+            format!("{:?}", bound.evaluated.decay_tables()),
+        ))
     }
 
     /// Restricting the SM: the refusal's text, or what the restriction decides

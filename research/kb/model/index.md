@@ -13,7 +13,7 @@
 
 ## Design
 
-* [Every param-card construct is classified: consumed, benign or refused](param-card-classification.md) - PARAM_CARD (ufo/card_classes.rs) lists each construct MadGraph's SLHA reader accepts in a run's param card with its class and an example the test binds; decay tables, negative masses, scan values and extra DECAY fields are refused, XSECTION is skipped as MadGraph skips it.
+* [Every param-card construct is classified: consumed, benign or refused](param-card-classification.md) - PARAM_CARD (ufo/card_classes.rs) lists each construct MadGraph's SLHA reader accepts in a run's param card with its class and an example the test binds; decay tables are carried to the <slha> header, a negative mass is refused unless the particle is a Majorana fermion (whose width is negated as in MadGraph's Fortran), scan values and extra DECAY fields are refused, XSECTION is skipped as MadGraph skips it.
 * [Every restrict-card construct is classified: consumed, benign or refused](restrict-card-classification.md) - RESTRICT_CARD (ufo/card_classes.rs) lists each construct MadGraph's restriction reads, with its class and an edit of the SM's restrict_default the test restricts; a missing parameter, MadGraph's unfixed one and zero, a non-finite value and a param_<x>.dat beside the card are refused.
 * [UFO parsing: Python AST for files, PEG for expression strings](ufo-parsing.md) - UFO files are parsed with rustpython-parser into our own UFOModel; PEG grammars read only expression strings; feyngraph gets topology only; propagators.py is parsed and attached per particle.
 

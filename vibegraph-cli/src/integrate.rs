@@ -849,6 +849,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         inputs: RunInputs {
             pdf: output.pdf,
             params: moved,
+            decays: evaluated.decay_tables().to_vec(),
         },
         mu_f: output.mu_f,
         sqrt_s_had: output.sqrt_s,
@@ -882,13 +883,17 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 }
 
 /// The model evaluated at `--param-card`, and the parameters the card moved off
-/// the restricted defaults; the defaults, and none moved, without a card.
+/// the restricted defaults; the defaults, and none moved, without a card. The
+/// defaults are bound like a card, so what binding refuses of them (a negative
+/// mass) is refused without a card too.
 fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
 ) -> Result<(EvaluatedModel, Vec<MovedParam>), CliError> {
     let Some(path) = path else {
-        return Ok((EvaluatedModel::from_model(model.clone()), Vec::new()));
+        let bound = bind_card(model.clone(), &ParamCard::default())
+            .map_err(|e| err(format!("the model's default parameters: {e}")))?;
+        return Ok((bound.evaluated, bound.moved));
     };
     let card = ParamCard::from_file(path).map_err(|e| {
         err(format!(
