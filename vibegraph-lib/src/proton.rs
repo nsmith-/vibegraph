@@ -3753,7 +3753,9 @@ mod tests {
         // carries the Lorentzian at a near-constant weight and the log half almost
         // none of it, so its error is the binomial `1/√n` of that split; without
         // the pole component it would be an order of magnitude larger.
-        let targets: [(&str, f64, &dyn Fn(f64) -> f64, f64); 2] = [
+        /// A name, the exact integral, the integrand and the relative error bound.
+        type Target<'f> = (&'f str, f64, &'f dyn Fn(f64) -> f64, f64);
+        let targets: [Target; 2] = [
             ("tau^-1/2", power, &|tau: f64| tau.powf(p), 5e-3),
             (
                 "Z Lorentzian",
