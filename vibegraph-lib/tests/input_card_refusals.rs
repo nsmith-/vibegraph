@@ -405,22 +405,6 @@ fn a_negative_default_or_restricted_mass_is_refused_at_binding() {
     assert_mentions(&message, &["particle S ", "MS", "not validated"]);
 }
 
-/// A Majorana fermion's negative mass binds, and its width is negated as
-/// MadGraph's Fortran negates it: `MSSM_SLHA2`'s default restriction sets
-/// `Mneu3 = -363.756`. Diagram generation refuses Majorana fermions, so no
-/// amplitude reads it yet.
-#[test]
-fn a_majorana_negative_mass_binds_and_negates_its_width() {
-    let dir =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/refs/mg5amcnlo/models/MSSM_SLHA2");
-    let model = UFOModel::load(&dir, None).unwrap();
-    let bound = bind_card(model, &ParamCard::default()).unwrap();
-    assert!(bound.evaluated.param_values["Mneu3"].re < 0.0);
-    let wneu3 = bound.evaluated.param_values["Wneu3"].re;
-    assert!(wneu3 < 0.0, "Wneu3 = {wneu3}");
-    assert_eq!(bound.evaluated.card_value("Wneu3"), -wneu3);
-}
-
 // ---- reweight card ----
 
 /// Resolve `text` on the fixture under `RESTRICT`.

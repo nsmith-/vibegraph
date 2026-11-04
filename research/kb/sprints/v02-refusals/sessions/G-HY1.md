@@ -34,6 +34,15 @@ Points of particular attention, from the reports:
 - **`unreachable!` invariants** (G-F1) and the remaining `unwrap()`s that
   G-F2's fallible `from_model_card` pushed into test code.
 - **Visibility**: new `pub` items that need not be.
+- **Layer by registration, not at runtime** (manager finding). G-F1's
+  `in_tree_models_never_reach_the_charge_conjugation_refusal`
+  (`helas/eval/root_lorentz.rs`) reads `research/refs/mg5amcnlo/models` and
+  `continue`s when it is absent, so the hermetic layer silently covers less
+  than its doc claims. Split it: the authored `validation/ufo` models stay
+  hermetic; the submodule's models move to an `extended-validation` target that
+  fails when they are missing. Sweep the PR's diff for any other test that
+  reads the submodule or fetched data from the hermetic layer (the manager
+  already moved G-F5's MSSM_SLHA2 test into `tests/ufo.rs`).
 
 Physics findings go to the manager as Found, not fixed here.
 
