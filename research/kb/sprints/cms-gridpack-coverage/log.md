@@ -72,3 +72,10 @@
   - ZprimeToTauTau: MadGraph 5 seeds at 10.6159; vibegraph 2 of 5 seeds; the @0 parts within +0.3%.
   - The five massive single-ordering rows for #96's item all pass, at +7e-4 to +1.1e-3 coherently (Found 2, b-initiated). H-Q1 was told, for context.
   - Correction: H-R1's massless rows were against nn23lo1 MadGraph, so they are being rerun on LHAPDF.
+* H-Q1 done (04908a9c on `sprinth-qcd-sigma`; report copied here; no code change). Verdict: no vibegraph bug.
+  - Per point, |M|² (≤9.3e-16 against standalone), the PDF product, αs, cuts (MadEvent's own `PASSCUTS` passes all vibegraph events), the symmetry factor and the mirror all agree with MadEvent's own routines. vibegraph's PDF reader agrees with LHAPDF 6.5.4 to 2.9e-16.
+  - Uncut `u u~ > e+ e-` against a quadrature on MadEvent's PDG2PDF and SMATRIX1: vibegraph +2.8e-5 ± 8.9e-5. So H-M2's ~0.1% term is not in vibegraph's normalisation; the cut rows are untested (H-Q1 Found 3).
+  - On a boost-invariant `etaj = -1` τ-fold oracle, vibegraph reads −0.088% ± 0.037% and MadEvent at `hard_survey = 2` −0.44%, its deficit at large √ŝ.
+  - H-G1's +1.5% is ≈1.2% MadEvent's default survey (`madevent-default-survey-bias`) + 0.2% its iteration combination + the large-√ŝ under-sampling.
+  - The manager deleted `light-quark-qcd-sigma-high-vs-madgraph` as MadGraph's side and catalogued the under-sampling in `madgraph-defects.md`.
+  - Found, to file: vibegraph's overflowed iteration χ²/dof (~1e289) near threshold at fixed √ŝ = 60.5 GeV; fixed-beam 3-jet seeds scatter at χ²/dof 2.79; H-M2's cut rows need the quadrature with `PASSCUTS`.
