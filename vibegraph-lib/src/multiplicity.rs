@@ -24,10 +24,15 @@
 //! draw, and weighs the point by the density of every channel, so its groups must
 //! share their outgoing masses. A multiplicity whose subprocesses differ in them
 //! is therefore split further, one part per set of outgoing masses
-//! ([`split_by_outgoing_masses`]). MadGraph separates them the same way: its
+//! ([`split_by_external_masses`]). MadGraph separates them the same way: its
 //! subprocess-group class (`group_subprocs.py`, `find_process_classes`) carries
 //! every leg's mass, so such subprocesses never share a `P` directory, and each
 //! directory is integrated over its own channels.
+//!
+//! The incoming masses split a multiplicity the same way. A massive parton in
+//! the proton (`b` at `MB`, `c` at `MC`) sits on its mass shell in the partonic
+//! frame and changes the flux and the threshold, all of which a
+//! [`ProtonIntegrand`] shares across its groups.
 
 use crate::artifact::{ChannelKey, ChannelSampler};
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
@@ -90,14 +95,19 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
     parts.into_iter().map(|(_, part)| part).collect()
 }
 
-/// Split one multiplicity's subprocesses by their outgoing pole masses: one part
-/// per multiset of masses, in the order the enumeration first reaches each, every
-/// part keeping the enumeration's own order.
+/// Split one multiplicity's subprocesses by their external pole masses: one part
+/// per pair of incoming masses and multiset of outgoing ones, in the order the
+/// enumeration first reaches each, every part keeping the enumeration's own
+/// order.
 ///
-/// The key is the multiset rather than the masses in leg order, because two lines
-/// listing the same final state in different orders (`p p > w+ j` and
+/// The outgoing key is the multiset rather than the masses in leg order, because
+/// two lines listing the same final state in different orders (`p p > w+ j` and
 /// `add process p p > j w-`) are one phase space once their legs are paired by
-/// content, which [`derive_flavor_groups`] does.
+/// content, which [`derive_flavor_groups`] does. The incoming key is the pair in
+/// beam order, since the partonic-frame beams, the flux and the threshold are
+/// functions of it: a massive `b` or `c` in the proton puts `b b~ > l+ l-` in a
+/// part of its own, apart from `u u~ > l+ l-`, as MadGraph puts it in a `P`
+/// directory of its own.
 ///
 /// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
 /// compares them: two subprocesses share a part only when every outgoing mass is
@@ -106,17 +116,20 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// does not know keys as NaN, apart from every mass the model has, for the
 /// decomposition to refuse by name, and an empty part comes back whole, as one
 /// part, for the same reason.
-pub(crate) fn split_by_outgoing_masses(
+pub(crate) fn split_by_external_masses(
     part: Vec<DiagramSet>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Vec<DiagramSet>> {
+    let mass = |name: &String| {
+        model
+            .particle_id(name)
+            .map_or(f64::NAN, |id| evaluated.mass(id))
+    };
     let key = |set: &DiagramSet| {
-        mass_multiset(set.particles_out.iter().map(|name| {
-            model
-                .particle_id(name)
-                .map_or(f64::NAN, |id| evaluated.mass(id))
-        }))
+        let mut k: Vec<u64> = set.particles_in.iter().map(|n| mass(n).to_bits()).collect();
+        k.extend(mass_multiset(set.particles_out.iter().map(mass)));
+        k
     };
     if part.is_empty() {
         return vec![part];
@@ -134,7 +147,7 @@ pub(crate) fn split_by_outgoing_masses(
 
 /// A proton-beam card's flavour decomposition, one per phase space: per
 /// final-state multiplicity in increasing order ([`split_by_multiplicity`]), and
-/// within one, per set of outgoing masses ([`split_by_outgoing_masses`]), each
+/// within one, per set of outgoing masses ([`split_by_external_masses`]), each
 /// with its groups' on-shell vetoes.
 pub struct MultiplicityGroups {
     pub groups: Vec<FlavorGroups>,
@@ -158,10 +171,10 @@ pub fn multiplicity_groups(
         vetoes: Vec::new(),
     };
     for multiplicity in split_by_multiplicity(sets, rc) {
-        let parts = split_by_outgoing_masses(multiplicity, model, evaluated);
+        let parts = split_by_external_masses(multiplicity, model, evaluated);
         if parts.len() > 1 {
             tracing::info!(
-                "the {}-leg final states have {} different sets of outgoing masses; each is \
+                "the {}-leg final states have {} different sets of external masses; each is \
                  integrated over channels of its own and the cross sections are summed",
                 parts[0][0].particles_out.len(),
                 parts.len()
@@ -308,7 +321,7 @@ impl<'a> MultiplicitySum<'a> {
     /// # Panics
     ///
     /// If there is no part, if the parts are out of multiplicity order, if two
-    /// parts share both a multiplicity and a set of outgoing masses, or if the
+    /// parts share a multiplicity and every external mass, or if the
     /// parts were built under different maps — the artifact banks one set of
     /// choices, and a replay rebuilds every part under it.
     pub fn new(parts: Vec<ProtonIntegrand<'a>>) -> Self {
@@ -316,7 +329,7 @@ impl<'a> MultiplicitySum<'a> {
         for (i, a) in parts.iter().enumerate() {
             for b in &parts[i + 1..] {
                 assert!(
-                    sorted_final_masses(a) != sorted_final_masses(b),
+                    external_mass_key(a) != external_mass_key(b),
                     "the parts are one per phase space"
                 );
             }
@@ -721,13 +734,17 @@ fn final_state_count(part: &ProtonIntegrand<'_>) -> usize {
     part.groups().groups()[0].final_masses().len()
 }
 
-/// A part's outgoing pole masses as a multiset, the key it was split off by.
-fn sorted_final_masses(part: &ProtonIntegrand<'_>) -> Vec<u64> {
-    mass_multiset(part.groups().groups()[0].final_masses())
+/// A part's incoming pole masses in beam order and its outgoing ones as a
+/// multiset, the key it was split off by.
+fn external_mass_key(part: &ProtonIntegrand<'_>) -> Vec<u64> {
+    let groups = part.groups();
+    let mut key: Vec<u64> = groups.initial_masses().map(f64::to_bits).to_vec();
+    key.extend(mass_multiset(groups.groups()[0].final_masses()));
+    key
 }
 
 /// Outgoing masses as a multiset, compared exactly: each mass's bit pattern,
-/// sorted ([`split_by_outgoing_masses`]).
+/// sorted ([`split_by_external_masses`]).
 fn mass_multiset(masses: impl IntoIterator<Item = f64>) -> Vec<u64> {
     let mut bits: Vec<u64> = masses.into_iter().map(f64::to_bits).collect();
     bits.sort_unstable();
@@ -1112,6 +1129,42 @@ mod tests {
             matches!(refused, Err(ProtonError::UnequalFinalMasses { .. })),
             "an unsplit mixed-mass multiplicity must be refused"
         );
+    }
+
+    /// A five-flavour proton with the default Standard Model's `MB = 4.7`: the
+    /// `b b~` initial states sit on their own mass shell, so they come back as a
+    /// decomposition of their own, apart from the massless quarks, as MadGraph
+    /// gives them a `P` directory of their own.
+    #[test]
+    fn massive_incoming_partons_split_into_a_decomposition_of_their_own() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let mb = evaluated.mass(model.particle_id("b").expect("b"));
+        assert!(mb > 4.0, "the default Standard Model's b is massive: {mb}");
+        let parsed = parse_proc_card(
+            "define p = g u c d s b u~ c~ d~ s~ b~\ngenerate p p > mu+ mu-\n",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let MultiplicityGroups { groups, .. } = multiplicity_groups(
+            &parsed,
+            &model,
+            &evaluated,
+            &card(),
+            EnumerationPool::Serial,
+        )
+        .expect("a five-flavour card with a massive b decomposes");
+        let masses: Vec<[f64; 2]> = groups.iter().map(FlavorGroups::initial_masses).collect();
+        assert_eq!(
+            masses,
+            [[0.0, 0.0], [mb, mb]],
+            "one part per pair of incoming masses"
+        );
+        for g in groups[1].groups() {
+            for m in g.members() {
+                assert_eq!(m.incoming.map(i32::abs), [5, 5], "{:?}", m.incoming);
+            }
+        }
     }
 
     /// Two parts of one phase space (one multiplicity, one set of outgoing masses)
