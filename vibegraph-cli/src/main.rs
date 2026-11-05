@@ -28,8 +28,9 @@ use output::Mode;
 /// The proc-card argument as `integrate` reads it, with the card's text: the
 /// card in the file at `path`, or, when `path` is `-`, the card on stdin — so a
 /// one-process card can be piped straight in (`echo "generate p p > e+ e-" |
-/// vibegraph integrate -`) rather than written to a file first. A failure names
-/// the card it could not read or parse.
+/// vibegraph integrate -`) rather than written to a file first. Each process
+/// the card holds is logged at `info`; a failure names the card it could not
+/// read or parse.
 pub(crate) fn read_proc_card_text(
     path: &Path,
     opts: &ParsingOptions,
@@ -53,6 +54,10 @@ pub(crate) fn read_proc_card_text(
             format!("cannot parse the proc card {origin}: {e}"),
         )
     })?;
+    let _span = tracing::info_span!("proc_card").entered();
+    for process in &parsed.processes {
+        tracing::info!("generate {process} @{}", process.id);
+    }
     Ok((parsed, card))
 }
 

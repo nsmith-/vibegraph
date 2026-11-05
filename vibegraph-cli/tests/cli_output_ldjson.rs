@@ -49,6 +49,14 @@ fn of_kind<'a>(objects: &'a [Value], kind: &str) -> Vec<&'a Value> {
     objects.iter().filter(|o| o["kind"] == kind).collect()
 }
 
+/// How many `log` objects carry exactly `message`.
+fn logged(objects: &[Value], message: &str) -> usize {
+    of_kind(objects, "log")
+        .iter()
+        .filter(|l| l["fields"]["message"] == message)
+        .count()
+}
+
 /// The one final object of a run's stream, which must be its last line.
 fn final_object<'a>(objects: &'a [Value], kind: &str) -> &'a Value {
     let finals: Vec<&Value> = objects
@@ -257,8 +265,14 @@ fn inspect_emits_the_object_integrate_emitted() {
         "{}",
         common::stderr_of(&inspected)
     );
-    let objects = objects(&inspected);
-    assert_eq!(final_object(&objects, "result"), &emitted);
+    let streamed = objects(&inspected);
+    assert_eq!(final_object(&streamed, "result"), &emitted);
+
+    // The card `integrate` read is announced once; the copy `inspect` parses
+    // back out of the artifact is not a card read, and is not announced.
+    let announced = format!("generate {PROCESS} @1");
+    assert_eq!(logged(&objects(&run.output), &announced), 1);
+    assert_eq!(logged(&streamed, &announced), 0, "{streamed:?}");
 }
 
 /// Without the flag, `inspect` prints the recorded results as text: the result
@@ -323,6 +337,7 @@ fn the_generate_result_carries_the_sample_and_its_pull() {
     );
     let objects = objects(&generated);
     assert!(!of_kind(&objects, "log").is_empty());
+    assert_eq!(logged(&objects, &format!("generate {PROCESS} @1")), 0);
     assert!(!of_kind(&objects, "progress").is_empty());
     let result = final_object(&objects, "result");
     assert!(events.exists());
