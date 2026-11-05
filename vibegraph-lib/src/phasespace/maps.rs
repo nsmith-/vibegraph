@@ -42,10 +42,12 @@ pub enum SplitAngle {
     SoftAll,
 }
 
-/// How a hadronic run draws `τ = ŝ/s` above the cut-implied `τ_min`.
+/// How a hadronic run draws `τ = ŝ/s` over `[τ_min, τ_max]`: from the
+/// cut-implied floor up to one, or to the ceiling a decay-chain window on the
+/// whole final state sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TauMap {
-    /// `τ = τ_min^(1−u)`, density `∝ 1/τ`: the rule's choice where a resonance
+    /// `τ = τ_min^(1−u) τ_max^u`, density `∝ 1/τ`: the rule's choice where a resonance
     /// spans the whole final state, and the map of every artifact written before
     /// the choices were banked.
     Log,
@@ -152,14 +154,28 @@ pub(crate) const NARROW_TAU_SHARE: f64 = 1e-3;
 /// [`NARROW_TAU_SHARE`]. A range with no positive floor has no log map and
 /// nothing is narrow in it.
 pub(crate) fn narrow_in_tau(mass: f64, width: f64, s: f64, tau_min: f64, tau_max: f64) -> bool {
-    if !(tau_min > 0.0 && tau_max > tau_min) {
-        return false;
-    }
+    tau_min > 0.0
+        && tau_max > tau_min
+        && pole_in_tau(mass, s, tau_min, tau_max)
+        && 2.0 * width / mass / (tau_max / tau_min).ln() < NARROW_TAU_SHARE
+}
+
+/// Whether a pole of `mass` lies strictly inside the `τ` range at hadronic
+/// invariant `s`: `τ_min < M²/s < τ_max`.
+pub(crate) fn pole_in_tau(mass: f64, s: f64, tau_min: f64, tau_max: f64) -> bool {
     let pole = mass * mass / s;
-    if !(pole > tau_min && pole < tau_max) {
-        return false;
-    }
-    2.0 * width / mass / (tau_max / tau_min).ln() < NARROW_TAU_SHARE
+    pole > tau_min && pole < tau_max
+}
+
+/// The `[τ_min, τ_max]` a hadronic run's `τ` map draws over at hadronic
+/// invariant `s`: from the cut-implied `ŝ_min/s` up to one, or to `ŝ_max/s`
+/// where a decay-chain window on the whole final state bounds `ŝ`
+/// ([`Cuts::shat_max`]), and never below the floor. At `τ_max = 1` the bounded
+/// logarithmic and inverse-square maps are their unbounded forms bit for bit
+/// (`1^u = 1`, `1/1 = 1`).
+pub(crate) fn tau_range(cuts: &Cuts, s: f64) -> (f64, f64) {
+    let tau_min = cuts.shat_min() / s;
+    (tau_min, (cuts.shat_max() / s).min(1.0).max(tau_min))
 }
 
 impl ProcessShape {
@@ -173,8 +189,7 @@ impl ProcessShape {
     ) -> Self {
         let floor = cuts.spacelike_floor();
         let s = sqrt_s * sqrt_s;
-        let tau_min = cuts.shat_min() / s;
-        let tau_max = (cuts.shat_max() / s).min(1.0);
+        let (tau_min, tau_max) = tau_range(cuts, s);
         let mut shape = ProcessShape::default();
         for d in diagrams {
             let channel = DiagramChannel::<f64>::from_diagram_regulated(d, model, sqrt_s, floor);
@@ -306,20 +321,21 @@ impl MapOptions {
     /// * `tau`: MadEvent's rule, [`TauMap::InverseSquare`] unless a finite-width
     ///   resonance spans the whole final state
     ///   ([`ProcessShape::whole_state_resonance`]), where its peak sits in the `τ`
-    ///   draw and [`TauMap::Log`] keeps it, and [`TauMap::BreitWigner`] where
-    ///   such a peak is too narrow for the log map to find
-    ///   ([`ProcessShape::narrow_whole_state_resonance`], [`NARROW_TAU_SHARE`]):
-    ///   `p p > h z` through a 1 MeV `Vz` at 3.5 TeV, at 100k × 8, scatters by
-    ///   17% over five seeds under the log map; under the Breit–Wigner mixture
-    ///   25 seeds read 185698 ± 23 pb at seed `χ²/dof` 0.78, 3.2e-4 below
-    ///   MadEvent 3.7.1, inside the bound its small-width treatment sets. `p p > j j` 0.77 ± 0.03,
+    ///   draw and [`TauMap::Log`] keeps it. `p p > j j` 0.77 ± 0.03,
     ///   `p p > b b~` 0.65 ± 0.05 in error² × evaluations (it stops on the
     ///   iteration floor); Drell–Yan reads 1.06 ± 0.05 the other way, which the
     ///   resonance exception keeps; `p p > l+ l- j` is neutral, 1.03 ± 0.05. The
     ///   rule reads the whole process, not each channel as MadEvent does: one
     ///   diagram with a whole-state resonance keeps every channel on the log map,
     ///   so `p p > b b~ QCD=2`, whose electroweak diagrams carry `Z` and `h`
-    ///   propagators spanning the pair, stays on it.
+    ///   propagators spanning the pair, stays on it. Where such a peak is too
+    ///   narrow for the log map to find
+    ///   ([`ProcessShape::narrow_whole_state_resonance`], [`NARROW_TAU_SHARE`]),
+    ///   the rule takes [`TauMap::BreitWigner`]: `p p > h z` through a 1 MeV
+    ///   `Vz` at 3.5 TeV, at 100k × 8, scatters by 17% over five seeds under the
+    ///   log map; under the Breit–Wigner mixture 25 seeds read 185698 ± 23 pb at
+    ///   seed `χ²/dof` 0.78, 3.2e-4 below MadEvent 3.7.1, inside the bound its
+    ///   small-width treatment sets.
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
     /// * `pair_order`: [`PairOrder::Symmetric`]. The ordered draw leaves half of

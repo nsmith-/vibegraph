@@ -935,7 +935,7 @@ impl Cuts {
     /// final state holds `√ŝ` inside its window, so no surviving point lies above
     /// it. Infinite where no window bounds the whole final state. Never below the
     /// true ŝ of a surviving point.
-    pub fn shat_max(&self) -> f64 {
+    pub(crate) fn shat_max(&self) -> f64 {
         self.shat_max_hint
     }
 
