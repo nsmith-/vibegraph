@@ -98,3 +98,10 @@
   - H-K1 (per-group cut indicators, D4, with item 8) is held. Sprint G's open #89 rewrites `ProtonIntegrand` (+520 lines in proton.rs), right where `GroupCutsDiffer` is raised, so H-K1 starts after #89 merges.
   - The merged worktrees were removed to free disk.
 * The manager confirmed H-D3 Found 7 with local MadGraph: the TTToHcToWA as-run `proc_card_mg5.dat` fails in MadGraph 3.7.1 too (`No particle t~> in model` at @1; @2–@5 not executed), because its own history writer wraps lines mid-token. Catalogued in `madgraph-defects.md` (record-only, no weight). `proc-card-grammar.md`'s duplicates paragraph now describes main's cross-line rule (#93 Found 1).
+* H-N1 done (bcf2c9f1).
+  - `GROUP_REL_TOL` is now 1e-9: the worst rounding pair is 1.477e-10, the closest physical pair 1.18e-7. `DegenerateGroups` is removed.
+  - The 9.08e-7 γ+jets split is not CP violation: CP holds at reflected momenta to 3e-16, the split is the ε-tensor part with the W width's absorptive phase, and it vanishes at Γ_W = 0, not at η = 0. D1's outcome stands; its premise is corrected.
+  - The manager updated `flavour-groups.md` steps 4–5 (12fb74a7), merged main with #89 (736d77b4), and re-gated: 1965 passed. PR #103 is ready.
+  - The item stays open: 3.88e-8 is unattributed, and the CERN rerun will record it.
+  - σ of `p p > a j j` against MadGraph at `hard_survey = 2`: +0.18%.
+* #89 merged (d56871e9). H-K1 (feature-dev) dispatched for D4 and item 8 on `sprinth-group-cuts` from d56871e9.
