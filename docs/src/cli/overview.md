@@ -56,7 +56,10 @@ that turns on fixed-energy partonic beams:
 
 With no run card at all, a process runs at MadGraph's defaults: 13 TeV
 protons, the default jet and lepton cuts, and the default kT-clustered
-dynamical scale. One default departs from MadGraph's card: the parton
+dynamical scale. As in the card MadGraph's `output` writes for the process,
+`maxjetflavor` is 5 when some subprocess has an incoming b (a five-flavour
+model such as `sm-no_b_mass`), so its b quarks take the jet cuts; it stays 4
+otherwise. One default departs from MadGraph's card: the parton
 densities. MadGraph's template says `pdlabel = nn23lo1`, its own built-in
 parameterisation; vibegraph reads densities only from LHAPDF6 grids, so its
 default is `pdlabel = lhapdf` at `lhaid = 247000`, `NNPDF23_lo_as_0130_qed`,
@@ -185,7 +188,11 @@ the whole amplitude, so it cannot bound an interference term.
 ## Watching a run
 
 Standard output carries the result and nothing else, at every verbosity:
-the `σ = … pb` line, the path written, the `check-events` report.
+the `σ` line, the path written, the `check-events` report. The cross section
+and its error are printed under the one SI-prefixed barn unit σ's magnitude
+picks, the error to two significant figures and σ to the same decimal place:
+`σ = 8.6812 ± 0.0023 ab`, `σ = 1.23457 ± 0.00012 pb`. The per-multiplicity
+lines of a mixed-multiplicity card follow the same rule.
 Everything the run has to say about itself goes to standard error, at a
 level chosen by `-v`/`-q`/`--log-level`, with `--log-file` recording
 everything at `trace` regardless, and `RUST_LOG` as the per-module override.

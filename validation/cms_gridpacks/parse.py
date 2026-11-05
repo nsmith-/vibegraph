@@ -518,14 +518,26 @@ def runcmsgrid_systematics(text):
 # --- vibegraph output ------------------------------------------------------
 
 VG_SIGMA = re.compile(r"^σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+)", re.M)
-VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)\): σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
-VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan)\)")
+# A part's line names its process numbers and, in output from builds that split
+# a part by outgoing masses, those masses: `(@0)` or `(@0 @1; masses 0, 172.5
+# GeV)`. A part is recorded under its first process number, which no other part
+# shares.
+VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)(?: @\d+)*(?:; masses [^)]*)?\): "
+                     r"σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
+# χ²/dof reads `n/a` where fewer than two iterations entered the result, which
+# `_f` records as NULL.
+VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan|n/a)\)")
 VG_CHANNELS = re.compile(r"channels:\s+(\d+) grids")
 VG_MODEL = re.compile(r"model:?\s+(\S+) \(([0-9a-f]{64})\)")
 VG_ENUMERATED = re.compile(r"enumerated (\d+) diagrams in (\d+) subprocess")
 VG_TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z\s+[A-Z]+\s+(\S+)")
 VG_STAGES = ("proc_card", "ufo_load", "enumerate", "compile", "alpha_survey", "vegas")
-UNIT_TO_PB = {"fb": 1e-3, "pb": 1.0, "nb": 1e3, "ub": 1e6, "mb": 1e9}
+# integrate prints σ under the one SI-prefixed barn unit its magnitude picks
+# (`8.6812 ± 0.0023 ab`), micro as U+00B5; older builds printed pb throughout,
+# as `0.001952` or `1.952e-3`. A unit missing here leaves σ unread rather than
+# read as pb.
+UNIT_TO_PB = {"zb": 1e-9, "ab": 1e-6, "fb": 1e-3, "pb": 1.0, "nb": 1e3,
+              "\u00b5b": 1e6, "\u03bcb": 1e6, "ub": 1e6, "mb": 1e9, "b": 1e12}
 
 # A refusal's reason is its message with the run-specific parts (paths, quoted
 # names and values, unquoted process strings, numbers) pulled out as arguments,
@@ -591,7 +603,9 @@ def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
         if f is not None:
             res["sigma_pb"], res["err_pb"] = float(m.group(1)) * f, float(m.group(2)) * f
     for m in VG_MULT.finditer(src):
-        f = UNIT_TO_PB.get(m.group(5), 1.0)
+        f = UNIT_TO_PB.get(m.group(5), None)
+        if f is None:
+            continue
         res["multiplicities"].append({"n_out": int(m.group(1)), "tag": int(m.group(2)),
                                       "sigma_pb": float(m.group(3)) * f, "err_pb": float(m.group(4)) * f,
                                       "n_channels": int(m.group(6))})
