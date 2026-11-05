@@ -178,18 +178,99 @@ pub(crate) fn tau_range(cuts: &Cuts, s: f64) -> (f64, f64) {
     (tau_min, (cuts.shat_max() / s).min(1.0).max(tau_min))
 }
 
+/// What a channel and the `τ` range read off the cuts they are built under: the
+/// bounds that hold over the accepted region, which shape where a map puts its
+/// density.
+///
+/// Below a timelike or energy floor a channel keeps a positive density rather
+/// than an exact zero ([`DiagramChannel::with_timelike_floors`]), which is
+/// consistent only where every configuration below the floor carries integrand
+/// zero. A mixture whose terms are cut by different filters therefore builds
+/// every channel under bounds that hold over the union of the filters' accepted
+/// regions ([`UnionBounds`]), not under any one filter's.
+pub(crate) trait ChannelBounds {
+    /// [`Cuts::spacelike_floor`].
+    fn spacelike_floor(&self) -> f64;
+    /// [`Cuts::timelike_floor`].
+    fn timelike_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::energy_floor`].
+    fn energy_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::bwcutoff`].
+    fn bwcutoff(&self) -> f64;
+    /// [`tau_range`] at hadronic invariant `s`.
+    fn tau_range(&self, s: f64) -> (f64, f64);
+}
+
+impl ChannelBounds for Cuts {
+    fn spacelike_floor(&self) -> f64 {
+        Cuts::spacelike_floor(self)
+    }
+    fn timelike_floor(&self, slots: u64) -> f64 {
+        Cuts::timelike_floor(self, slots)
+    }
+    fn energy_floor(&self, slots: u64) -> f64 {
+        Cuts::energy_floor(self, slots)
+    }
+    fn bwcutoff(&self) -> f64 {
+        Cuts::bwcutoff(self)
+    }
+    fn tau_range(&self, s: f64) -> (f64, f64) {
+        tau_range(self, s)
+    }
+}
+
+/// The bounds holding over the union of several filters' accepted regions: each
+/// floor the weakest of the filters' and the `τ` range the hull of theirs. Over
+/// one filter these are that filter's bounds bit for bit.
+pub(crate) struct UnionBounds<'a>(pub(crate) &'a [&'a Cuts]);
+
+impl UnionBounds<'_> {
+    fn weakest(&self, bound: impl Fn(&Cuts) -> f64) -> f64 {
+        self.0
+            .iter()
+            .map(|&c| bound(c))
+            .reduce(f64::min)
+            .expect("bounds over at least one filter")
+    }
+}
+
+impl ChannelBounds for UnionBounds<'_> {
+    fn spacelike_floor(&self) -> f64 {
+        self.weakest(Cuts::spacelike_floor)
+    }
+    fn timelike_floor(&self, slots: u64) -> f64 {
+        self.weakest(|c| c.timelike_floor(slots))
+    }
+    fn energy_floor(&self, slots: u64) -> f64 {
+        self.weakest(|c| c.energy_floor(slots))
+    }
+    /// `bwcutoff` is the run card's, the same for every filter compiled from it.
+    fn bwcutoff(&self) -> f64 {
+        let bwcutoff = self.0[0].bwcutoff();
+        debug_assert!(self.0.iter().all(|c| c.bwcutoff() == bwcutoff));
+        bwcutoff
+    }
+    fn tau_range(&self, s: f64) -> (f64, f64) {
+        self.0
+            .iter()
+            .map(|c| tau_range(c, s))
+            .reduce(|(lo, hi), (l, h)| (lo.min(l), hi.max(h)))
+            .expect("bounds over at least one filter")
+    }
+}
+
 impl ProcessShape {
     /// Read the shape off the channels `diagrams` decompose into, built as
     /// [`MapChoices::channel`] builds them but before any map option is applied.
-    pub(crate) fn of<'d>(
+    pub(crate) fn of<'d, B: ChannelBounds + ?Sized>(
         diagrams: impl IntoIterator<Item = &'d Diagram>,
         model: &EvaluatedModel,
         sqrt_s: f64,
-        cuts: &Cuts,
+        cuts: &B,
     ) -> Self {
         let floor = cuts.spacelike_floor();
         let s = sqrt_s * sqrt_s;
-        let (tau_min, tau_max) = tau_range(cuts, s);
+        let (tau_min, tau_max) = cuts.tau_range(s);
         let mut shape = ProcessShape::default();
         for d in diagrams {
             let channel = DiagramChannel::<f64>::from_diagram_regulated(d, model, sqrt_s, floor);
@@ -225,12 +306,12 @@ impl MapChoices {
     /// The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
-    pub(crate) fn channel(
+    pub(crate) fn channel<B: ChannelBounds + ?Sized>(
         &self,
         diagram: &Diagram,
         model: &EvaluatedModel,
         sqrt_s: f64,
-        cuts: &Cuts,
+        cuts: &B,
     ) -> DiagramChannel<f64> {
         let channel = DiagramChannel::<f64>::from_diagram_regulated(
             diagram,
