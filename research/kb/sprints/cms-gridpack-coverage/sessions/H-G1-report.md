@@ -1,10 +1,10 @@
 ---
 type: Session Report
 title: "H-G1 report: conjugate pairs share one flavour group under the flow permutation"
-description: "The review of colour-split-groups, then the manager's scope update: colour_pairing takes π from the fingerprints and checks the CF matrix under π, so conjugate pairs form one group and only genuinely unpaired subprocesses (d d > d d / b b > b b at a zero b Yukawa) split. Mutations, the banked layer, and local MadGraph σ and per-subprocess colour-label oracles on a 2→3 pair and an HT-binned 12-flow pair."
+description: "The review of colour-split-groups, then the manager's scope update: colour_pairing takes π from the fingerprints and checks the CF matrix under π, so conjugate pairs form one group and only genuinely unpaired subprocesses (d d > d d / b b > b b at a zero b Yukawa) split. Mutations, the banked layer, and local MadGraph σ and per-subprocess colour-label oracles on a 2→3 pair and an HT-binned 12-flow pair; re-gated after merging main, with the σ oracle rerun on LHAPDF 247000, where a 1–2% offset survives the same PDF in single-subprocess controls."
 status: draft
 tags: [cms, flavour-groups, colour, crossing, sprint-h, report]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-05}
 ---
 Session H-G1, worktree `/home/user/wt-colour`, branch `colour-split-groups`,
 on top of `729e88a` (the CERN host's commit) over `main` `58ab186`. Every cargo
@@ -12,6 +12,16 @@ command ran with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
 CARGO_PROFILE_TEST_DEBUG=0` and two jobs. Scratch work (MadGraph directories,
 event files, analysis scripts) is under `/home/user/H-G1-scratch/`; logs named
 `H-G1-*` are in the session scratchpad.
+
+**Resumed run, 2026-11-05.** A container restart killed the first run after
+`b923833`. Since then the branch took two merges of `origin/main` (`648ec71d`,
+`14e14978`, through #94, #96 and #98) and `211da308` (the colour-split test
+unwraps `from_model_card`'s new `Result`). The resumed run re-gated the merged
+tree (Gates, first table) and reran the σ oracle with LHAPDF 247000 on
+MadGraph's side as well (section (a)); everything else below is from the first
+run on `eda34d1` and is marked so. MadGraph event files and build products were
+deleted once their numbers were recorded here; the per-channel `results.dat`,
+cards, logs and tools stay under `/home/user/H-G1-scratch/`.
 
 ## What changed, and why the brief changed under me
 
@@ -51,7 +61,32 @@ either (only the `u d > d g u` order is in the test).
 
 ## Gates
 
-All on the tree committed as `eda34d1`: the runs started from that source, and
+On the merged tree `14e14978` (the resumed run; the source this commit adds
+nothing to but this report). Debug info off for the banked build through an
+untracked `.cargo/config.toml` (`[profile.release-debug] debug = 0`), deleted
+afterwards; it changes disk use only.
+
+| gate | command | result |
+|---|---|---|
+| rustfmt | `cargo fmt --all --check` | `fmt exit 0` |
+| clippy | `cargo clippy -j 2 --workspace --all-targets -- -D warnings` | `clippy exit 0`, no warning or error line (`H-G1-clippy3.log`) |
+| hermetic | `cargo test -j 2 --workspace` | `test exit 0`; 54 targets, 1904 passed, 0 failed, 25 ignored, both colour-split tests `ok` (`H-G1-test3.log`) |
+| kb lint | `python3 scripts/kb.py lint` | `0 errors, 5 warnings` after `python3 scripts/kb.py index` regenerated `sessions/index.md` for this report's new description; the 5 warnings are backlog items' `blocked_by`, not touched |
+| clippy, banked targets | inside `validate.sh` (`--features vibegraph/extended-validation,vibegraph-lib/extended-validation`) | clean: no `warning`/`error` line in the log; `validate.sh` exits non-zero on lints and exited 0 |
+| banked layer | `bash validation/validate.sh`, detached (`nohup setsid`), `CARGO_BUILD_JOBS=2` (pixi absent; inputs on disk, so `pixi run --skip-deps validate` without pixi) | `validate exit 0`; 84 targets, 2357 passed, 0 failed, 110 ignored; the collator: "77 rows × 4 categories = 308 cells: 218 measured in the layers this run drove (213 ✅, 5 ⚠️, 14 ⏳, 76 — / uncovered). The measured cells are exactly the cells the manifest declares, every gate cell passed, and every measurement agrees with the manifest about what it is" (`H-G1-validate3.log`; report copied to `/home/user/H-G1-scratch/H-G1-validation-report-merged/`) — the same cell counts as on `eda34d1` |
+
+The targets the `extended-validation` skill maps to this change, from that run:
+`validate_hadronic` 20 passed / 26 ignored, `color_cf_oracle` 112,
+`color_flow_tags_oracle` 186, `amplitude_oracle` 51, `validate_lhef` 3,
+`validate_samples` 6 / `validate_samples_proton` 12, `validate_unweighting` 1,
+`cli_generate_proton` 11, `validate_mlm_records` 1, `validate_scales` 10,
+`validate_sigma` 8, lib unit tests (release-debug, features on) 1250 passed,
+0 failed, 15 ignored; every one 0 failed. The `pp_to_jj` samples cell reads
+"worst column flavour at chi2 p 0.006", as on `eda34d1`. The oracle-layer MLM
+gates (`validate-mlm-sigma`, `validate-mlm-samples`) were not rerun on the
+merged tree; their `eda34d1` readings are below.
+
+On `eda34d1`, the first run: the runs started from that source, and
 only this report was added after. The mutation runs below predate one
 `cargo fmt` rewrap of the new tests (whitespace only).
 
@@ -194,66 +229,110 @@ No bug found in the consumers; no fix commit.
 
 MadGraph is the submodule's `3.7.1` (`python3 /home/user/vibegraph/research/refs/mg5amcnlo/bin/mg5_aMC`).
 Cards: 13 TeV, `ptj = 20`, `etaj = 5`, `drjj = 0.4`, fixed
-`μR = μF = 91.188 GeV`, `use_syst = False`. MadGraph ran `pdlabel = nn23lo1`
-(no LHAPDF here); vibegraph refuses every built-in label and ran
-`pdlabel = lhapdf`, `lhaid = 247000` on `validation/pdf/NNPDF23_lo_as_0130_qed`.
+`μR = μF = 91.188 GeV`, `use_syst = False`. Both sides now run the same PDF:
+LHAPDF 6.5.4 at `/home/user/lhapdf` (`LD_LIBRARY_PATH=/home/user/lhapdf/lib`,
+`pdlabel = lhapdf`, `lhaid = 247000`) on MadGraph's side, and
+`validation/pdf/NNPDF23_lo_as_0130_qed`, member 0, lhaid 247000 on vibegraph's.
+Both write `AQCDUP` `0.1300027` (MadGraph's banner records `247000 = lhaid`;
+the first `<event>` line of a MadGraph run and of a vibegraph run both end in
+`0.1300027E+00` / `1.30002711e-01`). vibegraph is the release-debug binary of
+the merged tree `14e14978`, which carries #94 (the `xpt*`/`pt_min_pdg` cut
+reading) and #96 (a card that names one beam ordering integrates only that
+one). The run cards are `/home/user/H-G1-scratch/H-G1-conj_run_card_vg.dat` and
+`H-G1-uugguu_run_card_5k_vg.dat` (`ihtmin = 300`), read by both sides.
 
-**The brief's "nn23lo1 matches the set" is not quite right.** The kb already
-records that `nn23lo1` is the same fit as 247000 but not the same numbers
-(`scales-pdf/pinned-pdf-set`: a 9.8% shift in a `b b̄` σ). So every σ comparison
-below carries an unmeasured PDF-implementation offset, and a single-subprocess
-control is what separates that offset from anything this change could do. αs
-does not contribute: `AQCDUP` is `0.1300000` in MadGraph's events and
-`0.13000271` in ours. I tried to build LHAPDF locally to remove the offset; the
-permission system refused building downloaded code, so I did not.
+**No ÷2 any more.** MadGraph's `mirrorprocs.inc` is `.FALSE.` for
+`generate u d > d g u` and `add process u~ d~ > d~ g u~`; since #96 vibegraph
+integrates the named ordering only, and the merged binary reads 188 125 pb
+where the pre-merge binary read 375 235 pb (= 2 × 187 617, +0.27%, 1.8 of the
+combined sems). The old Found 1 is closed by #96.
 
-**Explicit-flavour cards differ by the beam mirror.** MadGraph's
-`mirrorprocs.inc` is `.FALSE.` for both `P1_qq_qgq` (`u d > d g u`) and
-`P2_qq_qgq`: a card naming `u d` integrates `u` from beam 1 only. vibegraph adds
-the `d u` ordering (`Subprocess::has_mirror`), so on this card it reports twice
-MadGraph's σ. With symmetric beams and cuts the two orderings are equal, so the
-comparison is `σ_vg / 2` against `σ_MG`. Identical-parton initial states
-(`u u`, `u~ u~`) have no mirror on either side. See Found.
+### (a) σ, ≥5 seeds per side, same PDF
 
-### (a) σ, ≥5 seeds per side
+Seeds are independent runs: MadGraph `iseed` 31–35 and 51–55 (2→3) and
+41–45 and 61–63 (HT) in fresh `generate_events` runs of one process directory;
+vibegraph `--seed` 111–115 at `--target-rel 0.002`, 121–125 at `0.0007` (2→3),
+211–215 at `0.003` and 221–223 at `0.0015` (HT). Unweighted seed means
+(`/home/user/H-G1-scratch/tools/H-G1-seedstats.py`); the error column is the
+seed policy's max(quoted/√n, sd/√n).
 
-Seeds are independent runs (MadGraph `iseed` 11–15 and 21–25 in fresh
-`generate_events` runs of one process directory; vibegraph `--seed` 101–105 and
-201–205, each `integrate` to `--target-rel` 0.2% or 0.3%). Unweighted seed means
-(`tools/H-G1-seedstats.py`):
+| card | side | seeds | mean (pb) | sd | error | χ²/dof about the mean |
+|---|---|---|---|---|---|---|
+| `u d > d g u` + `u~ d~ > d~ g u~` | MadGraph, reported | 10 | 185 376 | 889 (0.48%) | 281 (0.15%) | 3.64 |
+| same | MadGraph, iterations re-combined with equal weights (below) | 5 (51–55) | 185 716 | 530 | 237 | — |
+| same | vibegraph, 0.2% | 5 | 188 125 | 388 (0.21%) | 173 | 1.17 |
+| same | vibegraph, 0.07% | 5 | 188 192 | 114 (0.06%) | 58 | 0.78 |
+| HT-binned `u u > g g u u` + `u~ u~ > g g u~ u~` | MadGraph, reported | 8 | 22 404.8 | 71.9 (0.32%) | 26.4 | 0.94 |
+| same | MadGraph, equal-weight | 4 (45, 61–63) | 22 647.4 | 88.4 | 44.2 | — |
+| same, head `u~ u~` | vibegraph, 0.3% | 5 | 22 863.2 | 131.9 (0.58%) | 59.0 | **4.02** |
+| same | vibegraph, 0.15% | 3 | 22 834.9 | 11.0 (0.05%) | 19.3 | 0.11 |
 
-| card | side | mean | sd | sem | χ²/dof about the mean |
-|---|---|---|---|---|---|
-| `u d > d g u` + `u~ d~ > d~ g u~` | MadGraph | 185 355 pb | 900.8 (0.49%) | 402.8 (0.22%) | 4.31 |
-| same | vibegraph | 375 235 pb (÷2 = 187 617) | 1003 (0.27%) | 448.7 | 2.02 |
-| HT-binned (`ihtmin = 300`) `u u > g g u u` + `u~ u~ > g g u~ u~` | MadGraph | 22 352.2 pb | 109.6 (0.49%) | 49.0 | 2.24 |
-| same, head `u~ u~` | vibegraph | 22 871.0 pb | 43.0 (0.19%) | 19.2 | 0.43 |
+The vibegraph budget ladders are flat: +0.04% (2→3, 5 seeds against 5) and
+−0.12% (HT, 3 against 5, inside the 0.3% rung's 0.26% error). The HT 0.3% rung
+scatters at twice its quoted error (χ²/dof 4.02, seeds 22 693–22 990), and the
+3-seed 0.15% rung sits far below 1 (0.11 on 2 dof, p ≈ 0.1); neither is
+calibrated at 3–5 seeds, so the HT vibegraph error is read from the 0.3% rung's
+spread. The `u u` alone control below shows the same 2× scatter (χ²/dof 4.84).
 
-MadGraph's own seeds scatter at 2–4× their quoted errors (χ²/dof 4.31 and
-2.24), so its quoted error understates its spread; the sems above are from the
-scatter.
-
-| comparison | ratio | pull (sems) |
+| comparison | ratio | pull |
 |---|---|---|
-| 2→3 pair, `σ_vg/2` against `σ_MG` | 1.0122 | 4.9 |
-| 2→3, process 1 (`u d`, the head) from the init block | 1.0114 | 3.5 |
-| 2→3, process 2 (`u~ d~`, the member) | 1.0192 | 1.8 |
-| 2→3, `u~ d~` share of the total | 0.1057 ± 0.0011 (vg) against 0.1050 ± 0.0004 (MG) | 0.6 |
-| HT-binned total | 1.0232 | 9.9 |
-| **control**: `u d > d g u` alone, vibegraph, 3 seeds (336 724, 336 503, 336 387 pb; ÷2 = 168 269) against MadGraph's process 1 (165 901) | 1.0143 | — |
-| **control**: `u u > g g u u` alone, vibegraph, 3 seeds (22 525, 22 480, 22 465 pb) against MadGraph's process 1 (22 028 ± 48) | 1.0210 | 9.0 |
-| grouped member `u u` (through `π`, init block, 5 seeds, mean 22 530) against the same subprocess integrated alone (22 490 ± 18) | 1.0018 | about 1 (the init-block split carries the per-event sampling error, ~0.3% a seed) |
+| 2→3, vibegraph 0.07% against MadGraph reported | 1.0152 | 9.8 |
+| 2→3, vibegraph 0.07% against MadGraph equal-weight | 1.0133 | 10.1 |
+| **control**: `u d > d g u` alone, vibegraph 3 seeds (168 054, 168 108, 168 785; mean 168 316 ± 235) against MadGraph's process 1 of the pair (5 seeds 31–35, 165 724 ± 455) | 1.0156 | 5.1 |
+| 2→3, `u~ d~` share: vibegraph events (seed 111, 20 000 events) 0.1019 ± 0.0021 against MadGraph's init block 0.1059 (19 636 / 185 359, ± 0.0011) | 0.962 | −1.7 |
+| HT, vibegraph 0.3% against MadGraph reported | 1.0205 | 7.1 |
+| HT, vibegraph 0.3% against MadGraph equal-weight | 1.0095 | 2.9 |
+| **control**: `u u > g g u u` alone, vibegraph 3 seeds (22 603, 22 680, 22 403; 22 562 ± 83) against MadGraph's process 1 (seeds 41–45, 22 078 ± 38) | 1.0219 | 5.3 |
 
-Reading: vibegraph sits 1.1–2.3% above MadGraph on every row, **including the
-single-subprocess controls that no grouping touches** (1.4% and 2.1%), and the
-member's share of the 2→3 pair agrees with MadGraph's (0.6σ). Inside vibegraph,
-the 12-flow member's σ in its head's group equals the same subprocess integrated
-alone to 0.2%. An error in how a member is summed into its head's group
-would move the share, not the single-subprocess control. So the offset is the
-`nn23lo1`-against-LHAPDF difference (or something else common to every proton
-run), not this change; it is not a pass of the σ oracle either. What it cannot
-see: anything below that 1–2% offset, i.e. a luminosity error of the member
-smaller than about 1%. The rerun that closes it is in Found.
+**MadEvent's iteration weighting, measured on these runs.** Each MadEvent
+channel's `G*/results.dat` lists its refine iterations; re-combining them with
+equal weights instead of `dsample.f`'s mean²/σ² weights (the method of
+`sprints/sigma-2to4-offset`, `tools/H-G1-iterrecomb.py` in the session
+scratchpad, results kept under `/home/user/H-G1-scratch/H-G1-recomb/`) moves
+the summed σ, paired per seed, by:
+
+- 2→3: +0.35, +0.16, +0.14, −0.02, +0.23% (seeds 51–55), +0.53% (seed 35):
+  about +0.2%;
+- HT: +1.65, +0.41, +1.14, +1.01% (seeds 45, 61–63): about +1.06%, with
+  single channels moving by up to ±20% on three iterations.
+
+So on the HT card MadEvent's reported σ is low by about 1% from its own
+combination rule, the documented MadEvent defect, here five times its fixed-beam
+size. It accounts for about half of the HT offset and little of the 2→3 one.
+
+**What is left, and what it is not.** Against MadGraph's equal-weight numbers
+vibegraph sits +1.33% (2→3, 10σ) and +0.95% (HT, 2.9σ) high on the same PDF and
+αs. It is not the PDF implementation: MadGraph's `lhapdf` reading equals its
+`nn23lo1` one on both cards (185 359 against 185 355 pb; 22 400 against
+22 352 pb). It is not grouping or the conjugate member: the single-subprocess
+controls carry it at the same size (+1.56%, +2.19%), and the member's share of
+the 2→3 pair is at −1.7σ of MadGraph's. It is not vibegraph's budget (flat
+ladders). It is not a cut region one side applies and the other does not, at
+the resolution checked: 20 000 vibegraph and 41 890 MadGraph 2→3 events all
+pass the other side's `ptj`/`etaj`/`drjj` (min pT 20.001 / 20.001, max |η|
+4.9998 / 4.9990, min ΔR 0.4002 / 0.4006), and the dσ ratio in octiles of
+log(x₁x₂), max x and the gluon's pT, and in the slices at the cut edges, is
+flat at its 2–3% resolution (`tools/H-G1-shape.py`, `H-G1-edges.py`). The
+banked rows that share this PDF and these flavours are inside 0.2%
+(`pp_to_jj` −0.05%, `pp_to_jj_ht` −0.04%, `pp_to_llj` +0.2%), so this is
+specific to these cards, not to every proton run. Its size per power of αs
+(+0.49% for αs³, +0.24% to +0.51% for αs⁴) does not explain it either:
+`AQCDUP` agrees to seven digits, and `pp_to_ttx_0j1j_mlm` (αs² and αs³) agrees
+to 0.1%. See Found 2.
+
+The σ oracle is therefore a **fail as a gate and silent on grouping**: the
+offset is present in every single-subprocess control, so no reading of it can
+be put on the conjugate member; what the member's σ is pinned by is the inside
+check below and the share row (−1.7σ on one seed's events).
+
+The nn23lo1 runs of the previous run (context only, superseded): MadGraph
+185 355 ± 403 (2→3, seeds 11–15) and 22 352.2 ± 49.0 pb (HT, seeds 21–25);
+vibegraph pre-merge 375 235 / 2 = 187 617 and 22 871.0 pb; ratios 1.0122 and
+1.0232, the same offsets as above. Inside vibegraph on the pre-merge binary,
+the grouped 12-flow member `u u` (through `π`, init block, 5 seeds, 22 530)
+equals the same subprocess integrated alone (22 490 ± 18) to 0.2%, about 1σ of
+the init-block split's per-event sampling error; that is the reading that pins
+the member's σ inside its head's group, and no change in the merges touches it.
 
 ### (b) Per-subprocess colour labels against MadGraph's own events
 
@@ -308,7 +387,7 @@ from `matrix1_orig.f` of the two P-dirs.
 What these cannot see: a pairing error that maps a flow to one with the same
 kinematic correlation in the variable chosen (the near-degenerate couples in
 the pT-ranked table, e.g. the ±z beam symmetry); helicity labels (not compared);
-anything at the level of the 1–2% σ offset.
+anything at the level of the 1–2% σ offset of (a).
 
 I also banked MadGraph standalone per-helicity, per-flow JAMPs for `u d > d g u`
 and `u~ d~ > d~ g u~` (`/home/user/H-G1-scratch/{ud_to_dgu,uxdx_to_dxgux}.json`,
@@ -349,7 +428,7 @@ checked per subprocess."
   the evidence that would close it.
 
 So the refusal-lifting part is evidenced at the level I could measure here,
-with the σ oracle limited to about 1–2% by the PDF offset. Whether the PR
+with the σ oracle blind below the 1–2% offset of (a), which is not a PDF effect. Whether the PR
 deletes the item turns on the CERN-host rerun of the survey cards.
 
 ## Facts that bear on H-G0
@@ -370,30 +449,33 @@ independent measurements:
 
 ## Found
 
-1. **A card naming an explicit unordered initial state is integrated with both
-   beam orderings; MadGraph integrates the named one.** Evidence: MadGraph's
-   `mirrorprocs.inc` is `.FALSE.` for `generate u d > d g u` and for
-   `add process u~ d~ > d~ g u~` (`/home/user/H-G1-scratch/H-G1-mg-conj/SubProcesses/P{1,2}_qq_qgq/mirrorprocs.inc`),
-   and vibegraph's σ on that card is 2.024 × MadGraph's (375 235 against 185 355
-   pb, five seeds each); `Subprocess::has_mirror` is `a != b`, so `u d` always
-   gets the `d u` term. Cards built from `p`/`j` multiparticles are unaffected
-   (MadGraph generates both orderings there). To close: decide the semantics —
-   follow MadGraph (no mirror for a literal flavour assignment, which needs the
-   enumeration to remember whether an ordering came from a multiparticle) or
-   document the difference — and pin it with a σ row on an explicit-flavour card.
-2. **The local σ oracle on these cards is limited to 1–2% by `nn23lo1`
-   against LHAPDF 247000.** Evidence: single-subprocess controls untouched by
-   grouping sit 1.43% (`u d > d g u`) and 2.10% (`u u > g g u u`, HT-binned)
-   above MadGraph, at 9σ on the latter. To close (CERN host, LHAPDF installed):
-   rerun the two MadGraph cards of this report with `pdlabel = lhapdf`,
-   `lhaid = 247000`, 5 seeds each — the run cards are
-   `/home/user/H-G1-scratch/H-G1-conj_run_card.dat` and
-   `H-G1-uugguu_run_card_5k.dat` with the two PDF lines changed, the proc cards
-   `generate u d > d g u` / `add process u~ d~ > d~ g u~` and
-   `generate u u > g g u u` / `add process u~ u~ > g g u~ u~` — and compare
-   against the vibegraph seed means above (375 235 / 2 and 22 871 pb). If the
-   offset survives the same PDF, it is a finding of its own on every proton run,
-   not on grouping.
+1. **Closed by #96: a card naming an explicit unordered initial state was
+   integrated with both beam orderings.** MadGraph's `mirrorprocs.inc` is
+   `.FALSE.` for `generate u d > d g u` and `add process u~ d~ > d~ g u~`; the
+   pre-merge binary read 375 235 pb on that card against MadGraph's 185 355, the
+   merged one reads 188 125 pb. Nothing left to file; the explicit-flavour σ row
+   of (a) is the measurement that would pin it if it is wanted as a gate.
+2. **vibegraph sits 1–2% above MadEvent on light-flavour 2→3 and HT-binned 2→4
+   cards with the same PDF and αs, and it is not the PDF.** Evidence (section
+   (a)): LHAPDF 247000 on both sides, `AQCDUP` equal to seven digits. 2→3
+   `u d > d g u` + conjugate: +1.52% against MadGraph's reported σ (10 seeds,
+   9.8σ), +1.33% against its iterations re-combined with equal weights (10σ);
+   `u d > d g u` alone +1.56% against MadGraph's process 1. HT 2→4
+   `u u > g g u u` + conjugate: +2.05% reported (7.1σ), +0.95% equal-weight
+   (2.9σ); `u u` alone +2.19%. MadGraph's `lhapdf` and `nn23lo1` readings agree
+   on both cards, so the earlier nn23lo1 attribution was wrong. Both vibegraph
+   budget ladders are flat; both sides' events pass the other's cuts; the
+   banked `pp_to_jj`, `pp_to_jj_ht`, `pp_to_llj` and `pp_to_ttx_0j1j_mlm` rows
+   agree to 0.2%, so it is not every proton run. Not grouping (the controls
+   carry it). To close: the per-point oracle first — MadGraph standalone
+   |M|² and per-flow JAMPs for `u d > d g u` at fixed points (banked in
+   scratch, `/home/user/H-G1-scratch/ud_to_dgu.json`, at the standalone
+   param card's αs) against vibegraph's evaluator at the same points and
+   couplings; if those agree, a fixed-point dσ comparison (PDF × flux × |M|²
+   × the cut indicator at a list of MadEvent points) separates the luminosity
+   and cut code from the integration. If MadEvent's equal-weight σ is still
+   low there, compare against an adaptation-free estimator as
+   `sprints/sigma-2to4-offset` did.
 3. **The CERN-host rerun that closes the backlog item.** Rerun the 19 affected
    gridpacks (15 `ColorStructureDiffers` + 4 `ColorFlowPairing`) at this branch's
    tip. Expected: the 15 QCD-conjugate ones group with fewer groups than on
@@ -426,3 +508,30 @@ independent measurements:
 7. **The brief's `nn23lo1` equivalence** ("the built-in set that matches
    NNPDF23_lo_as_0130_qed") contradicts `scales-pdf/pinned-pdf-set`. Not a code
    defect; noted so the next MadGraph-oracle brief on this host plans for it.
+8. **MadEvent's mean²/σ² iteration combination reads about 1% low on the HT
+   card.** Paired equal-weight re-combination of `G*/results.dat`: +1.65,
+   +0.41, +1.14, +1.01% (4 seeds); single channels move by up to ±20%. On the
+   2→3 card about +0.2%. The kb's account of the defect measured +0.1–0.2% at
+   fixed beams; an HT-binned hadronic card is five times that. Every σ row read
+   against a MadEvent reference on a multi-jet HT card carries it. To close: add
+   the measured size to the MadGraph-defect concept, and have MadEvent σ
+   references on such cards keep `G*/results.dat` per seed so the paired shift
+   is recorded beside the reported σ.
+9. **vibegraph's quoted σ error understates its seed scatter about 2× on the
+   HT 2→4 card.** At `--target-rel 0.003` the five seeds read χ²/dof 4.02
+   (22 693–22 990 pb against ±66 quoted), and the `u u` alone control 4.84 on
+   three seeds; at `0.0015` three seeds read 0.11. The pre-merge binary's five
+   seeds on the same card read 0.43. To close: 20 seeds at each of two rungs on
+   this card (the AGENTS.md rule for a heavy-tailed row), to tell a
+   mis-estimated error from a seed that misses a region.
+10. **Two merge commits on this branch carry no `Assisted-by` trailer.**
+   `648ec71d` and `14e14978` (merges of `origin/main`, conflict resolutions in
+   `research/kb/events/index.md`, `sessions/index.md` and
+   `vibegraph-lib/src/proton.rs`) end at git's conflict list. They go to origin
+   with this push and cannot be amended under the no-rewrite rule; the squash merge's
+   message is where the trailer goes.
+11. **`cargo build -p vibegraph` warns that `NodeAnalysis::resolve_mom` is never
+   used** (`vibegraph-lib/src/helas/eval/analysis.rs:208`; its only caller is
+   `#[cfg(test)]` code in `helas/eval/run.rs`). The workspace clippy gate is clean, presumably because
+   feature unification differs; a per-package release build is not. To close:
+   `#[cfg(test)]` it or move it next to its test.
