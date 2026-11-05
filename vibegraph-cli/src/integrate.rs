@@ -808,7 +808,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         model.vertices.len(),
         model.couplings.len(),
     );
-    tui::state::describe_process(&process);
+    tui::state::describe_process(&process, observable_of(&parsed));
 
     let (evaluated, moved) = bind_param_card(args.param_card.as_deref(), &model)?;
 
@@ -1054,8 +1054,17 @@ pub(crate) fn result_object(
     })
 }
 
-/// What a saved run's integral measures: a decay's partial width, or a cross
-/// section, as the proc card it records says.
+/// What a card's integral measures: a decay's partial width, or a cross
+/// section.
+pub(crate) fn observable_of(parsed: &SupportedCard) -> Observable {
+    if parsed.is_decay() {
+        Observable::PartialWidth
+    } else {
+        Observable::CrossSection
+    }
+}
+
+/// What a saved run's integral measures, as the proc card it records says.
 pub(crate) fn recorded_observable(artifact: &IntegrateArtifact) -> Result<Observable, CliError> {
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
         err(
@@ -1063,11 +1072,7 @@ pub(crate) fn recorded_observable(artifact: &IntegrateArtifact) -> Result<Observ
             format!("cannot parse the proc card the artifact records: {e}"),
         )
     })?;
-    Ok(if parsed.is_decay() {
-        Observable::PartialWidth
-    } else {
-        Observable::CrossSection
-    })
+    Ok(observable_of(&parsed))
 }
 
 fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
