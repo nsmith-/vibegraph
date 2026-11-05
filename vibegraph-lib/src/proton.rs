@@ -5450,7 +5450,12 @@ mod tests {
         assert_eq!(a.cf_matrix(), b.cf_matrix());
         assert!(a.n_diagrams() < b.n_diagrams());
         assert!(flow_permutation(&a, &b).is_err());
-        let points = probe_momenta(&[0.0; 2], s_channel_resonance(&m, &evaluated), PROBE_SEED);
+        let points = probe_momenta(
+            [0.0, 0.0],
+            &[0.0; 2],
+            s_channel_resonance(&m, &evaluated),
+            PROBE_SEED,
+        );
         let trace = |e: &AmplitudeEvaluator, points: &[Vec<V>]| -> Vec<f64> {
             let bound = BoundAmplitude::<f64>::bind(e, &evaluated);
             let mut scratch = bound.scratch_space();
