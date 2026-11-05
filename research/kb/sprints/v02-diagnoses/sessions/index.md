@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [G-HY2: hygiene review of the diagnoses PR (#89)](G-HY2.md) - Review G-V1's bounded tau draw and G-V4's Breit-Wigner tau map, the NoUsableWeight refusal and the small-width deviation concept, for maintainability, test non-vacuity, visibility and reusable abstractions; write findings before editing; fix with mutation evidence.
 * [G-V1: why card 048 integrates to one nonzero point with μF = 0](G-V1.md) - Diagnose CMS card 048 (XtoYYprimeTo4Q, p p > vz, vz > h z): why one point per seed carries σ at the gridpack card, why the defaults' seeds disagree, why μF logs 0 and '0 resonant pairs'; fix or refuse each defect with a test.
 * [G-V2: why VEGAS under-covers a 3 % slice, and making the stop see it](G-V2.md) - Locate the per-channel floor or allocation that leaves the both-W |cos θ| > 0.99 slice of u u~ > w+ b w- b~ / t t~ 3 % low at the default budget, and make the convergence stop detect it, or propose a runtime warning to the user.
 * [G-V3: attribute the two macOS heap-corruption aborts](G-V3.md) - Narrow the two one-off libmalloc aborts to a cause: an unsafe audit of the dependency tree, Miri on the suspect pure-Rust paths, clang AddressSanitizer covering zstd-sys and the other C code, a soak, and an exact M3 soak request.

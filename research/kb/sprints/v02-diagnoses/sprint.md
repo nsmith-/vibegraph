@@ -46,7 +46,7 @@ policy), and CI is green.
 | G-V2 | validation-dev (Opus) | – | the slice against the non-adaptive estimate, ≥5 seeds per arm; banked σ gates unchanged | vegas-under-covers-heavily-cut-slice |
 | G-V3 | validation-dev (Opus) | M3 soak relay | sanitizer and audit runs recorded | malloc-abort-under-proton-sample-load, validate-hadronic-sigabrt-unexplained |
 | G-V4 | feature-dev (Opus) | G-V1 | the σ gates; ≥5 seeds against MadEvent on `p p > h z` | – (decisions G8, G9; G-V1 Found 1) |
-| G-HY2 | hygiene-dev (Sonnet) | G-V1–V4 | hermetic, lints | – |
+| G-HY2 | hygiene-dev (Opus) | G-V1–V4 | hermetic, lints; σ gates if the τ maps change | – |
 
 **Hosts.** Card 048's gridpack lives on CVMFS, reachable only from the CERN
 host; the macOS soak (`MallocNanoZone=0` against the default) runs on the
