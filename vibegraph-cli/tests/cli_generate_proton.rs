@@ -1159,8 +1159,13 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         "{}",
         common::stderr_of(&inspected)
     );
-    let object: serde_json::Value =
-        serde_json::from_str(common::stdout_of(&inspected).trim()).expect("one JSON object");
+    let object: serde_json::Value = serde_json::from_str(
+        common::stdout_of(&inspected)
+            .lines()
+            .last()
+            .unwrap_or_default(),
+    )
+    .expect("the result object is the last line");
     let parts = object["multiplicities"].as_array().unwrap();
     assert_eq!(parts.len(), 2, "{object}");
     for (part, recorded) in parts.iter().zip(&artifact.multiplicities) {

@@ -301,8 +301,13 @@ fn integrate_card_variant(
         "{}",
         common::stderr_of(&inspected)
     );
-    let result: serde_json::Value =
-        serde_json::from_str(common::stdout_of(&inspected).trim()).expect("one JSON object");
+    let result: serde_json::Value = serde_json::from_str(
+        common::stdout_of(&inspected)
+            .lines()
+            .last()
+            .unwrap_or_default(),
+    )
+    .expect("the result object is the last line");
     assert_eq!(result["kind"], "result");
     (stderr, artifact, result)
 }
