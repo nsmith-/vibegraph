@@ -105,3 +105,9 @@
   - The item stays open: 3.88e-8 is unattributed, and the CERN rerun will record it.
   - σ of `p p > a j j` against MadGraph at `hard_survey = 2`: +0.18%.
 * #89 merged (d56871e9). H-K1 (feature-dev) dispatched for D4 and item 8 on `sprinth-group-cuts` from d56871e9.
+* The user answered the open decisions.
+  - H-K1 goes ahead now that #89 is on main.
+  - One CERN-host rerun, at the end.
+  - Zero-coupling diagrams: the user asked why pruning does not remove them. Answer: pruning runs only from the restriction card, as in MadGraph, and the Singlet gridpacks zero ymb in the param card at run time. MadGraph keeps the same 192 diagrams. Filed as `param-card-zero-couplings-keep-dead-diagrams` (performance, low).
+  - `asrwgtflavor`: H-J1's reading stands.
+  - The recurring ~0.1–0.2% offset against local MadEvent: filed for later as `sigma-reads-above-local-madevent-by-a-few-permille`.
