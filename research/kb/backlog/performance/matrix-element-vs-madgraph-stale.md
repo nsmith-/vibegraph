@@ -5,7 +5,7 @@ description: "The MATRIX1 table predates a dozen evaluator changes and compares 
 area: performance
 state: open
 priority: medium
-closes_when: "matrix-element-vs-madgraph.md carries a fresh table at one recorded commit on an x86 host in two configurations: defaults on both sides, and both sides built for x86-64-v3 (MadGraph through the run card's global_flag/aloha_flag/matrix_flag or the equivalent make_opts for the output the benchmark uses, vibegraph through -C target-cpu=x86-64-v3). An M3 run at the same commit sits beside them. Each row records the exact flags."
+closes_when: "matrix-element-vs-madgraph.md carries a fresh table at the v0.2.0 tag on an x86 host in two configurations: defaults on both sides, and both sides built for x86-64-v3 (MadGraph through the run card's global_flag/aloha_flag/matrix_flag or the equivalent make_opts for the output the benchmark uses, vibegraph through -C target-cpu=x86-64-v3). An M3 run at the same tag sits beside them. Each row records the exact flags, and README.md's matrix-element section quotes the run with its host."
 blocked_by: []
 opened: 2026-10-21
 tags: [performance, madgraph-comparison, matrix-element, benchmarks, x86-64-v3, compiler-flags, user-requested]
@@ -25,8 +25,7 @@ compiler-flag fields (`global_flag`, `aloha_flag`, `matrix_flag`). Neither
 recorded table sets them, so both compare default builds only. A user tuning
 MadGraph would set them, and our own release asset has an x86-64-v3 build.
 
-**The user's request (2026-10-21).** Run once all current sprint work has
-landed:
+**The user's request (2026-10-21).** Run at the v0.2.0 tag (user, 2026-11-05):
 - an x86 host, defaults on both sides;
 - the same host, both sides at x86-64-v3;
 - the M3 at the same commit.
@@ -37,3 +36,14 @@ landed:
 - MadGraph's default value for each field at the pinned checkout.
 - Whether to include any `-ffast-math`-style flag. If one is included, record
   it and keep it out of the like-for-like row.
+
+**One sitting for every MadGraph comparison.** This run fixes the commit and
+hosts that the end-to-end re-runs reuse:
+[integration](integration-vs-madgraph-stale.md),
+[reweighting](reweighting-vs-madgraph-stale.md) and
+[systematics](systematics-cost-vs-madgraph-unmeasured.md). It also closes
+[matrix1-ratio-unmeasured-since-constant-collection](matrix1-ratio-unmeasured-since-constant-collection.md).
+The table compares the scalar interpreter with MATRIX1, so lanes stay out of
+it. If a bare-metal Zen 4 host is available, a
+third column there would add an AMD point. The VMs have shown ±35% drift across
+separate processes.
