@@ -602,7 +602,8 @@ mod tests {
         assert!(wide.whole_state_resonance && !wide.narrow_whole_state_resonance);
         assert_eq!(MapOptions::default().resolve(&wide).tau, TauMap::Log);
         let pc: ParamCard = "DECAY 23 1e-6\n".parse().unwrap();
-        let narrow = shape_at(&EvaluatedModel::from_model_card(m.clone(), &pc));
+        let narrow =
+            shape_at(&EvaluatedModel::from_model_card(m.clone(), &pc).expect("the card binds"));
         assert!(narrow.narrow_whole_state_resonance);
         assert_eq!(
             MapOptions::default().resolve(&narrow).tau,
