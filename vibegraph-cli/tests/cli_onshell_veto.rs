@@ -134,14 +134,10 @@ fn run_card(dir: &Path, name: &str, row: &Row) -> PathBuf {
     path
 }
 
-/// `(value, error)` from a result line, `σ = <v> ± <e> pb` or `Γ = <v> ± <e> GeV`.
+/// `(value, error)` from a result line, in pb for σ and GeV for Γ.
 fn parse_result(stdout: &str) -> (f64, f64) {
-    let line = stdout
-        .lines()
-        .find(|l| l.starts_with("σ = ") || l.starts_with("Γ = "))
-        .unwrap_or_else(|| panic!("no result line in:\n{stdout}"));
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    (fields[2].parse().unwrap(), fields[4].parse().unwrap())
+    let result = common::result_line(stdout);
+    (result.value, result.error)
 }
 
 /// The fetched PDF sets, on `$LHAPDF_DATA_PATH` for every row: a proton row

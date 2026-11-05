@@ -60,6 +60,7 @@ use std::path::{Path, PathBuf};
 
 use common::validation_dir;
 use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::vegas::Chi2PerDof;
 
 #[path = "../../vibegraph-lib/tests/common/seeds.rs"]
 mod seeds;
@@ -238,7 +239,7 @@ fn ewk_epemjj_without_pt_cuts_matches_madevents_seeds() {
                 "  seed {seed}: σ = {:.7e} ± {:.2e} pb (χ²/dof {:.2}), {:.0} s",
                 artifact.sigma_pb,
                 artifact.sigma_err_pb,
-                artifact.chi2_per_dof,
+                Chi2PerDof(artifact.chi2_per_dof),
                 seed_clock.seconds()
             );
             SeedResult {

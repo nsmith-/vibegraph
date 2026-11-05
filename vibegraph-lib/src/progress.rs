@@ -89,9 +89,10 @@ pub fn step(stage: &'static str, done: u64, total: Option<u64>) {
 /// cross-section integrand in this crate is `GeV⁻²`: a consumer that displays
 /// picobarns applies [`GEV2_TO_PB`](crate::phasespace::GEV2_TO_PB) itself, exactly
 /// as the result line does. `chi2` is χ² per degree of freedom over the iterations
-/// combined so far, and is `0` until there are two of them.
+/// combined so far, and is `None`, and left out of the event, until there are two
+/// of them.
 #[inline]
-pub fn vegas_iteration(done: u64, total: Option<u64>, sigma: f64, err: f64, chi2: f64) {
+pub fn vegas_iteration(done: u64, total: Option<u64>, sigma: f64, err: f64, chi2: Option<f64>) {
     trace!(target: TARGET, stage = stage::VEGAS, done, total, sigma, err, chi2);
 }
 
@@ -148,7 +149,7 @@ mod tests {
     fn every_event_carries_stage_done_and_total() {
         let events = captured(|| {
             super::step(stage::COMPILE, 3, Some(7));
-            vegas_iteration(4, Some(12), 802.94, 3.11, 1.02);
+            vegas_iteration(4, Some(12), 802.94, 3.11, Some(1.02));
             unweighting(250, 1_000);
             eval_rate(stage::VEGAS, 4, Some(12), 212.5);
         });
@@ -178,7 +179,7 @@ mod tests {
     #[test]
     fn the_stage_specific_fields_are_named_as_documented() {
         let events = captured(|| {
-            vegas_iteration(4, Some(12), 802.94, 3.11, 1.02);
+            vegas_iteration(4, Some(12), 802.94, 3.11, Some(1.02));
             unweighting(250, 1_000);
             eval_rate(stage::VEGAS, 4, Some(12), 212.5);
         });
@@ -186,6 +187,8 @@ mod tests {
         assert_eq!(events[0].field("sigma"), Some("802.94"));
         assert_eq!(events[0].field("err"), Some("3.11"));
         assert_eq!(events[0].field("chi2"), Some("1.02"));
+        let undefined = captured(|| vegas_iteration(3, Some(12), 802.94, 3.11, None));
+        assert_eq!(undefined[0].field("chi2"), None);
 
         assert_eq!(events[1].field("stage"), Some("unweight"));
         assert_eq!(events[1].field("accepted"), Some("250"));

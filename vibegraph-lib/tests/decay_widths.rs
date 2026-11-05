@@ -61,7 +61,13 @@ impl Decay {
 
     /// `(Γ, ΔΓ, χ²/dof)` in GeV under `card`, over `niter` iterations of `neval`
     /// points after an α-adaptation survey, as the CLI integrates.
-    fn width(&self, card: &RunCard, neval: usize, niter: usize, seed: u64) -> (f64, f64, f64) {
+    fn width(
+        &self,
+        card: &RunCard,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+    ) -> (f64, f64, Option<f64>) {
         let rep = &self.evals[0];
         let legs = process_external_legs(rep, &self.model, &self.evaluated);
         let cuts = Cuts::compile(card, &legs).unwrap();
@@ -420,7 +426,7 @@ fn probe_h4l_width_ladder() {
     let decay = Decay::new("h > e+ e- mu+ mu-");
     let card = RunCard::decay_default();
     for (neval, niter, seeds) in [(120_000usize, 10usize, 10u64), (480_000, 20, 5)] {
-        let runs: Vec<(f64, f64, f64)> = (0..seeds)
+        let runs: Vec<(f64, f64, Option<f64>)> = (0..seeds)
             .map(|s| decay.width(&card, neval, niter, 0xA11CE + s))
             .collect();
         report_ladder_rung(&format!("mapped {neval}×{niter}"), &runs);
@@ -447,7 +453,7 @@ fn probe_h4l_width_ladder() {
     );
     flat.use_running_coupling(&decay.diagrams, &decay.model, &decay.evaluated, &card)
         .unwrap();
-    let runs: Vec<(f64, f64, f64)> = (0..5u64)
+    let runs: Vec<(f64, f64, Option<f64>)> = (0..5u64)
         .map(|s| {
             let (_, r) = flat.adapt_grids(1_000_000, 20, 0xF1A7 + s);
             (r.integral, r.std_dev, r.chi2_per_dof)
@@ -459,7 +465,7 @@ fn probe_h4l_width_ladder() {
 /// One rung's seeds under the seed policy ([`combine`]), with the seeds' sample
 /// standard deviation beside the mean of their quoted errors: the per-seed
 /// scatter against the per-seed claim is what this ladder reads.
-fn report_ladder_rung(label: &str, runs: &[(f64, f64, f64)]) {
+fn report_ladder_rung(label: &str, runs: &[(f64, f64, Option<f64>)]) {
     let read = combine(&runs.iter().map(|r| (r.0, r.1)).collect::<Vec<_>>());
     let n = read.n as f64;
     let spread = read.spread * n.sqrt();

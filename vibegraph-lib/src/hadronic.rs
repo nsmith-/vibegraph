@@ -1913,15 +1913,15 @@ pub(crate) fn combine_channels(per_channel: &[ChannelIntegration], niter: usize)
         .map(|c| c.result.std_dev * c.result.std_dev)
         .sum();
     let dof_each = niter.saturating_sub(1);
-    let chi2_per_dof = if dof_each > 0 && !per_channel.is_empty() {
-        per_channel
-            .iter()
-            .map(|c| c.result.chi2_per_dof)
-            .sum::<f64>()
-            / per_channel.len() as f64
-    } else {
-        0.0
-    };
+    let chi2_per_dof = (dof_each > 0 && !per_channel.is_empty())
+        .then(|| {
+            per_channel
+                .iter()
+                .map(|c| c.result.chi2_per_dof)
+                .sum::<Option<f64>>()
+        })
+        .flatten()
+        .map(|sum| sum / per_channel.len() as f64);
     VegasResult {
         integral,
         std_dev: variance.sqrt(),
