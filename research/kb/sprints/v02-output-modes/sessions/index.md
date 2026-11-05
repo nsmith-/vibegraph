@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [G-F6: output modes (plain, rich, ldjson), vibegraph inspect, and the survey on ldjson](G-F6.md) - Build the CLI output-modes design: one mode per run formatting logs, progress and the result or refusal; --output-ldjson with a versioned schema; a stable error kind; per-multiplicity totals in the artifact; vibegraph inspect; generate's final object; the survey reading ldjson.
+
+## Session Report
+
+* [G-F6 report: output modes, --output-ldjson schema 1, ten error kinds, artifact format 20, vibegraph inspect](G-F6-report.md) - One output mode per run (plain, rich, ldjson) formats logs, progress and the result or refusal. --output-ldjson streams kind-tagged objects with schema_version 1 on every line; CliError carries one of ten stable kinds; artifact format 20 records per-multiplicity totals and refuses 19; integrate, generate and inspect emit final objects (inspect's equal to integrate's on a run); check-events refuses the flag; the survey reads the stream and still parses text. Every gate green; ten of ten mutations caught; the new tests fail on the pre-change tree.
