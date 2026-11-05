@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [G-F6: output modes (plain, rich, ldjson), vibegraph inspect, and the survey on ldjson](G-F6.md) - Build the CLI output-modes design: one mode per run formatting logs, progress and the result or refusal; --output-ldjson with a versioned schema; a stable error kind; per-multiplicity totals in the artifact; vibegraph inspect; generate's final object; the survey reading ldjson.
+* [G-HY5: hygiene review of the output modes, and three small fixes](G-HY5.md) - Review G-F6's output modes, ldjson schema, error kinds, inspect and the survey change; fix the TUI labelling a decay width as pb, store the refusal's error kind in the survey database, and quiet the recorded-card reparse log.
 
 ## Session Report
 
