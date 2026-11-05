@@ -48,6 +48,10 @@ use vibegraph::hadronic::Observable;
 use crate::error::{CliError, ErrorKind};
 
 /// The ldjson schema's version, on every line.
+///
+/// Adding a field to any object keeps it, so a reader ignores fields it does
+/// not know; removing, renaming or re-meaning a field, or adding or removing an
+/// [`ErrorKind`], bumps it.
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 
 /// How one run formats its logs, progress and result.
@@ -117,9 +121,9 @@ pub(crate) fn text_line(line: std::fmt::Arguments<'_>) {
 /// The `refusal` object: why the command failed, as a stable kind and the
 /// human message.
 #[derive(Debug, Serialize, PartialEq)]
-pub(crate) struct Refusal {
-    pub(crate) error_kind: ErrorKind,
-    pub(crate) message: String,
+struct Refusal {
+    error_kind: ErrorKind,
+    message: String,
 }
 
 /// Emit `err` as the run's `refusal` object.
@@ -231,8 +235,11 @@ pub(crate) struct MultiplicityResult {
 
 /// `integrate`'s final object, and `inspect`'s for the artifact it reads.
 ///
-/// Every field is read from the artifact, so `inspect` of a run's artifact
-/// emits the object the run emitted.
+/// Every field but `observable` and `unit` is read from the artifact. Those two
+/// are the run's integrand's for `integrate`, and for `inspect` the recorded
+/// proc card's (`integrate::recorded_observable`), which name the same
+/// observable; so `inspect` of a run's artifact emits the object the run
+/// emitted.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub(crate) struct IntegrateResult {
     /// The process string the run integrated.
