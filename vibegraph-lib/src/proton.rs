@@ -30,15 +30,16 @@
 //! group carries one cut indicator, and every group its own
 //! ([`ProtonIntegrand`]). At `maxjetflavor = 4` with a massless b, `g g > g u u~`
 //! and `g g > g b b~` share a matrix element, but the b legs are cut with the
-//! b-class thresholds, so the two are two groups. Grouping is refused unless the
+//! b-class thresholds, so the two are two groups. Two subprocesses whose traces
+//! separate by more than the tolerance, however little, are two groups: a
+//! charge-conjugate pair whose `|M|²` differ through the W width, as
+//! `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7` under the CKM restriction, is
+//! a physical distinction, and a split costs one more evaluation per point where
+//! a merge of distinct functions would be an error. Grouping is refused unless the
 //! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
 //! the decomposition; a card whose subprocesses differ in them is split into one
 //! decomposition per set of masses before it gets here, by
-//! [`crate::multiplicity::split_by_external_masses`]), and unless distinct groups separate by more than
-//! [`GROUP_SEPARATION_MIN`] — a partition resting on a knife edge is a
-//! measurement that failed, not a decomposition. Groups split for colour or cuts
-//! alone are the exception to the separation floor: their `|M|²` agree by
-//! construction.
+//! [`crate::multiplicity::split_by_external_masses`]).
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
 //! global phase, and it would not move if two members' colour bases differed by a
@@ -151,23 +152,24 @@ type V = LorentzVector<f64>;
 
 /// Relative agreement at which two subprocesses' `|M|²` count as one group's.
 ///
-/// Members of a group are the *same* arithmetic on differently-labelled legs, so
-/// the observed agreement is exact (measured: bit-for-bit over every `p p → ℓℓj`
-/// group). The bound is loose against that and still eleven orders below the
-/// closest measured separation between distinct groups.
-pub(crate) const GROUP_REL_TOL: f64 = 1e-10;
-
-/// Minimum relative separation between two distinct groups at their best-separated
-/// probe point.
+/// Two subprocesses with one matrix element need not be one arithmetic: two
+/// flavour assignments related by a relabelling, or by charge conjugation,
+/// compile to programs that reach the same value through other couplings and
+/// in another order. Their traces then differ by rounding, amplified by the
+/// gauge cancellations of an electroweak amplitude. The worst such separation
+/// measured is `1.48e-10` (it is `3.9e-11` on another machine: last-ulp
+/// arithmetic), on `d c~ > w- z s d~` against `s u~ > w- z d s~`
+/// under the five-flavour CKM restriction, and it is rounding: evaluated in `f32` the same pair separates
+/// `2.3e8` times further, which a coupling difference would not. The bound sits
+/// a factor 6.8 above it. The closest separation measured that does not grow
+/// with the precision is `1.2e-7` (`u b~ > a u b~` against its conjugate with
+/// the CKM phase at zero), a factor 120 above the bound.
 ///
-/// Without it a partition could be produced by two subprocesses landing either
-/// side of [`GROUP_REL_TOL`] by rounding, which is not a physical distinction.
-/// It is a floor and not evidence of a margin: the margin is measured instead by
-/// `group_members_agree_where_the_partition_was_not_measured`, where the closest
-/// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
-/// fitted on — six orders above this floor, and asserted there to stay above
-/// `0.1`.
-pub(crate) const GROUP_SEPARATION_MIN: f64 = 1e-6;
+/// A pair separated by more than the bound is two groups, each evaluated with
+/// its own compiled amplitude, which is right whether or not the separation is
+/// physical. Rounding that crosses the bound therefore costs one evaluation per
+/// point, not a wrong cross section.
+pub(crate) const GROUP_REL_TOL: f64 = 1e-9;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
 const PROBE_POINTS_PER_ENERGY: usize = 4;
@@ -605,11 +607,6 @@ pub enum ProtonError {
     )]
     UnequalFinalMasses { a: String, b: String },
     #[error(
-        "the groups represented by {a} and {b} separate by only {rel:.3e} at their best-separated \
-         probe point; a partition that close is rounding, not a coupling distinction"
-    )]
-    DegenerateGroups { a: String, b: String, rel: f64 },
-    #[error(
         "{amps} bound amplitudes were supplied for {groups} flavour groups, in an order that must \
          match one for one"
     )]
@@ -919,35 +916,6 @@ pub fn derive_flavor_groups(
         match joined {
             Some((group, pi)) => group.push((i, pi)),
             None => partition.push(vec![(i, (0..compiled[i].0.n_flows()).collect())]),
-        }
-    }
-
-    for (a, ga) in partition.iter().enumerate() {
-        let ha = ga[0].0;
-        for gb in &partition[a + 1..] {
-            let hb = gb[0].0;
-            if compiled[ha].0.polarizations() != compiled[hb].0.polarizations() {
-                continue;
-            }
-            let rel = worst_rel(&traces[ha], &traces[hb]);
-            // Two groups with one matrix element exist only when their cut
-            // filters differ or their colour bases could not be paired, and each
-            // is evaluated with its own compiled amplitude, so their sum does not
-            // rest on the two traces being equal. A pair this close that could
-            // have been one group falls through to the refusal.
-            if rel < GROUP_REL_TOL
-                && (compiled[ha].2 != compiled[hb].2
-                    || colour_pairing(&compiled[ha].0, &compiled[hb].0).is_err())
-            {
-                continue;
-            }
-            if rel <= GROUP_SEPARATION_MIN {
-                return Err(ProtonError::DegenerateGroups {
-                    a: labels[ha].clone(),
-                    b: labels[hb].clone(),
-                    rel,
-                });
-            }
         }
     }
 
@@ -6267,8 +6235,7 @@ mod tests {
     /// but the b flows carry the extra (zero-valued) diagrams, so no fingerprint
     /// pairing exists. The premise is asserted first. Each group is its own
     /// representative under the identity, and the two traces agree at points the
-    /// partition was not fitted on: the separation floor must not refuse a pair
-    /// that close when the partition split it for colour.
+    /// partition was not fitted on.
     ///
     /// What it cannot see: whether such a pair would be better served by pruning
     /// the zero-valued diagrams and grouping it, which is a question about the
@@ -6335,6 +6302,199 @@ mod tests {
                 &trace(gb.evaluator(), &fresh)
             ) < GROUP_REL_TOL
         );
+    }
+
+    /// `|M|²` of every compiled subprocess of `sets` at `points`, evaluated in
+    /// scalar precision `F`, after the slot ordering `derive_flavor_groups` gives
+    /// them, so a trace here is the one the partition reads.
+    fn content_traces<F: crate::helas::repr::Real + num_traits::FromPrimitive>(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+        run_card: &RunCard,
+        points: &[Vec<V>],
+    ) -> Vec<Vec<f64>> {
+        let at = |x: f64| F::from_f64(x).expect("an f64 converts");
+        content_ordered(sets.to_vec(), m, evaluated, run_card)
+            .expect("content order")
+            .iter()
+            .map(|set| {
+                let evaluator = compile_class(set, m, evaluated).expect("compile");
+                let bound = BoundAmplitude::<F>::bind(&evaluator, evaluated);
+                let mut scratch = bound.scratch_space();
+                points
+                    .iter()
+                    .map(|k| {
+                        let k: Vec<LorentzVector<F>> = k
+                            .iter()
+                            .map(|p| {
+                                LorentzVector::new(at(p.e()), at(p.px()), at(p.py()), at(p.pz()))
+                            })
+                            .collect();
+                        bound
+                            .eval_m2(&k, &mut scratch)
+                            .to_f64()
+                            .expect("an F converts")
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// The probe points `derive_flavor_groups` reads for massless partons and the
+    /// final masses of `sets`' first subprocess.
+    fn partition_points(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Vec<Vec<V>> {
+        let evaluator = compile_class(&sets[0], m, evaluated).expect("compile");
+        let legs = process_external_legs(&evaluator, m, evaluated);
+        let final_masses: Vec<f64> = legs[2..].iter().map(|l| l.mass).collect();
+        probe_momenta(
+            [legs[0].mass, legs[1].mass],
+            &final_masses,
+            s_channel_resonance(m, evaluated),
+            PROBE_SEED,
+        )
+    }
+
+    /// Two subprocesses whose traces differ by rounding share one group.
+    ///
+    /// `d c~ > w- z s d~` and `s u~ > w- z d s~` under the five-flavour CKM
+    /// restriction are one matrix element computed through differently signed
+    /// couplings, and the gauge cancellations of W Z scattering amplify the
+    /// rounding of that arithmetic to around `1e-10`. The premise is asserted
+    /// first: the separation is below [`GROUP_REL_TOL`], and in `f32` it grows by
+    /// more than a factor `1e6`, which a coupling difference would not. The CMS
+    /// survey's `VBS_WPMZTo4Q` card was refused on a pair separated by this same
+    /// rounding, `1.5e-10`. Its size is last-ulp arithmetic and differs between
+    /// machines (`1.48e-10` on one, `3.9e-11` on CI), so the test does not pin it
+    /// above the old bound; the headroom assertion checks the margin instead.
+    ///
+    /// What it cannot see: a physical difference smaller than the rounding, which
+    /// the group then sums under one member's `|M|²`, an error below
+    /// [`GROUP_REL_TOL`] on that member at the probe points.
+    #[test]
+    fn a_pair_separated_by_rounding_shares_one_group() {
+        const PAIR: &str = "d c~ > w- z s d~ QCD=0\nadd process s u~ > w- z d s~ QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let sets = enumerate(PAIR, &m);
+        assert_eq!(sets.len(), 2);
+        let points = partition_points(&sets, &m, &evaluated);
+        let [a, b] = &content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points)[..] else {
+            unreachable!()
+        };
+        let [a32, b32] = &content_traces::<f32>(&sets, &m, &evaluated, &run_card, &points)[..]
+        else {
+            unreachable!()
+        };
+        let (rel, rel32) = (worst_rel(a, b), worst_rel(a32, b32));
+        eprintln!("f64 separation {rel:.3e}, f32 separation {rel32:.3e}");
+        assert!(
+            rel < GROUP_REL_TOL / 4.0,
+            "{rel:.3e} leaves under 4x headroom"
+        );
+        assert!(rel32 > 1e6 * rel, "{rel32:.3e} against {rel:.3e}");
+
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+        let [group] = groups.groups() else {
+            panic!("{} groups", groups.groups().len());
+        };
+        assert_eq!(group.members().len(), 2);
+    }
+
+    /// `(E, pₓ, p_y, p_z) ↦ (E, −pₓ, p_y, p_z)`: parity followed by the rotation by
+    /// π about the x axis, so the beams stay on the z axis.
+    fn mirror_x(points: &[Vec<V>]) -> Vec<Vec<V>> {
+        points
+            .iter()
+            .map(|k| {
+                k.iter()
+                    .map(|p| V::new(p.e(), -p.px(), p.py(), p.pz()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A charge-conjugate pair whose `|M|²` differ through the W width is two
+    /// groups, not a refusal.
+    ///
+    /// Under the five-flavour CKM restriction `u b~ > a u b~` and `u~ b > a u~ b`
+    /// separate by `9.1e-7` at the probe points; the CMS survey's γ + 2 jets EWK
+    /// cards were refused on it. The split is not CP violation. Under CP the
+    /// conjugate's `|M|²` at `p` is the subprocess's at the reflected `M p`
+    /// ([`mirror_x`]), and that agreement holds to rounding on every card here,
+    /// the CKM phase included. The two differ at the same `p` by twice the part
+    /// of `|M|²` odd under the reflection, a Levi-Civita contraction of the
+    /// momenta that needs an absorptive phase, here the W width:
+    ///
+    /// | card | at `p` | conjugate at `M p` |
+    /// |---|---|---|
+    /// | the restriction's | split, `9.1e-7` | rounding |
+    /// | CKM phase `η = 0` | split, `1.2e-7` | rounding |
+    /// | `η = 0`, `ρ` raised to keep `\|V_ub\|` | split, as the restriction's | rounding |
+    /// | W width `0` | rounding: one group | rounding |
+    ///
+    /// The phase moves the split only through `|V_ub|`, which the W exchange
+    /// carries; the W width alone removes it.
+    ///
+    /// What it cannot see: a reflection-odd part whose absorptive phase comes
+    /// from another width than the W's, which no card here switches off.
+    #[test]
+    fn a_conjugate_pair_split_by_the_w_width_is_two_groups() {
+        const PAIR: &str = "u b~ > a u b~ QCD=0\nadd process u~ b > a u~ b QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let rounding = 1e-12;
+        // `ρ² + η²` of the restriction's `ρ = 0.132`, `η = 0.341`.
+        let rho_at_eta_zero = (0.132f64.powi(2) + 0.341f64.powi(2)).sqrt();
+        let cards = [
+            String::new(),
+            "BLOCK WOLFENSTEIN\n  4 0.0\n".to_string(),
+            format!("BLOCK WOLFENSTEIN\n  3 {rho_at_eta_zero}\n  4 0.0\n"),
+            "DECAY 24 0.0\n".to_string(),
+        ];
+        let mut split = Vec::new();
+        for card in &cards {
+            let evaluated = if card.is_empty() {
+                EvaluatedModel::from_model(m.clone())
+            } else {
+                let card: crate::ufo::slha::ParamCard = card.parse().expect("param card");
+                EvaluatedModel::from_model_card(m.clone(), &card).expect("evaluated card")
+            };
+            let sets = enumerate(PAIR, &m);
+            assert_eq!(sets.len(), 2);
+            let points = partition_points(&sets, &m, &evaluated);
+            let at = content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points);
+            let reflected =
+                content_traces::<f64>(&sets, &m, &evaluated, &run_card, &mirror_x(&points));
+            let at_p = worst_rel(&at[0], &at[1]);
+            let at_mp = worst_rel(&at[0], &reflected[1]);
+            eprintln!("{card:?}: at p {at_p:.3e}, conjugate at M p {at_mp:.3e}");
+            assert!(at_mp < rounding, "{card:?}: CP fails by {at_mp:.3e}");
+
+            let groups =
+                derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+            assert_eq!(groups.subprocess_count(), 2);
+            let expected = if at_p < GROUP_REL_TOL { 1 } else { 2 };
+            assert_eq!(groups.groups().len(), expected, "{card:?}");
+            split.push(at_p);
+        }
+        let [restriction, eta_zero, vub_kept, no_width] = split[..] else {
+            unreachable!()
+        };
+        assert!(restriction > 100.0 * GROUP_REL_TOL, "{restriction:.3e}");
+        assert!(eta_zero > 100.0 * GROUP_REL_TOL && eta_zero < 0.5 * restriction);
+        assert!(
+            (vub_kept / restriction - 1.0).abs() < 1e-2,
+            "{vub_kept:.3e}"
+        );
+        assert!(no_width < rounding, "{no_width:.3e}");
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,
