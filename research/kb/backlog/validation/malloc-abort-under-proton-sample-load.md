@@ -4,7 +4,7 @@ title: Nondeterministic heap-corruption abort under the proton-sample suite
 description: A vibegraph integrate child aborted once in seven runs with libmalloc's "pointer being freed was not allocated" during VEGAS warm-up, unreproduced since.
 area: validation
 state: open
-priority: medium
+priority: low
 closes_when: The abort is reproduced and its cause fixed, or attributed outside this crate (allocator, OS or a dependency) with the evidence recorded.
 blocked_by: []
 opened: 2026-09-07
@@ -35,3 +35,21 @@ user's macOS host at
 Standing protocol until this closes: when a gate under this suite aborts this
 way, rerun it once and report both outcomes. Do not treat either run alone as
 the measurement ([note 36 §2](../../history/notes/36-banked-open-ends-plan.md)).
+
+**Deferred until it recurs (user, 2026-11-05).** Sprint G looked for it and
+found nothing:
+- **Linux** ([G-V3](../../sprints/v02-diagnoses/sessions/G-V3-report.md)):
+  no workspace `unsafe` outside `unchecked-study`; mimalloc not linked; zstd
+  runs only at start-up and after integration. ASan with `zstd-sys`
+  instrumented, valgrind on the asm decode, Miri on the scratch pattern and
+  the clustering tests, and TSan were all clean. glibc's `MALLOC_CHECK_` needs
+  `libc_malloc_debug.so` preloaded (since 2.34), so earlier Linux runs that
+  only set the variable had no heap checking.
+- **M3 soak of the exact refdata-11 binary** (`47ac21a`, sha256 `c1918131…`;
+  [#89](https://github.com/nsmith-/vibegraph/pull/89#issuecomment-6654446012)):
+  0 aborts in 200 `validate_hadronic` runs, 100 with the default nano
+  allocator and 100 with `MallocNanoZone=0`. At the prior 1-in-70 rate that
+  happens 24 % of the time per arm: neither a reproduction nor a ruling-out.
+
+**If it recurs:** post the `.ips` crash report, `git rev-parse HEAD` and the
+binary's sha256, and rerun the soak harness from the #89 comment.

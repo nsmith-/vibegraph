@@ -56,3 +56,10 @@ fix.
   strict-zero rerun when any coupling lies in [1e-13, 1e-10); off, a rule that
   does not depend on another coupling's value (exact zeros only, or a fixed
   relative threshold). Added at the user's request (sprint G, 2026-11-03).
+
+- (f) MadEvent's small-width convention: for Γ below M·1e-6 MadEvent evaluates
+  the propagator at fk_W = M·1e-6 and corrects σ through the mapped channel's
+  Jacobian (`transpole.f:44`), broadening the lineshape; vibegraph uses the
+  card's width. About 1.5 % on σ for a 1 MeV, 3.5 TeV resonance (sprint G,
+  G-V1). On, emulate it; off, the card's width. Registered as a deviation by
+  the user (2026-11-04).
