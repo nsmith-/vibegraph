@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "Couplings a param card sets to exactly zero keep their diagrams"
-description: "Pruning runs only from the restriction card, as in MadGraph; a run-time param card zeroing ymb leaves 184 dead b-Yukawa diagrams in b b > H H b b (192 against d d's 8), costing evaluation and a group split."
+description: "Pruning runs only from the restriction card, as in MadGraph; a param card zeroing ymb leaves 184 dead b-Yukawa diagrams in b b > H H b b, costing evaluation and a group split."
 area: performance
 state: open
 priority: low
