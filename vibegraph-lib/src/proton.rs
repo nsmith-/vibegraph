@@ -154,7 +154,8 @@ type V = LorentzVector<f64>;
 /// compile to programs that reach the same value through other couplings and
 /// in another order. Their traces then differ by rounding, amplified by the
 /// gauge cancellations of an electroweak amplitude. The worst such separation
-/// measured is `1.48e-10`, on `d c~ > w- z s d~` against `s u~ > w- z d s~`
+/// measured is `1.48e-10` (it is `3.9e-11` on another machine: last-ulp
+/// arithmetic), on `d c~ > w- z s d~` against `s u~ > w- z d s~`
 /// under the five-flavour CKM restriction, and it is rounding: evaluated in `f32` the same pair separates
 /// `2.3e8` times further, which a coupling difference would not. The bound sits
 /// a factor 6.8 above it. The closest separation measured that does not grow
@@ -6034,11 +6035,13 @@ mod tests {
     /// `d c~ > w- z s d~` and `s u~ > w- z d s~` under the five-flavour CKM
     /// restriction are one matrix element computed through differently signed
     /// couplings, and the gauge cancellations of W Z scattering amplify the
-    /// rounding of that arithmetic past `1e-10`. The premise is asserted first:
-    /// the separation lies between `1e-10` and [`GROUP_REL_TOL`], and in `f32` it
-    /// grows by more than a factor `1e6`, which a coupling difference would not.
-    /// The CMS survey's `VBS_WPMZTo4Q` card was refused on a pair separated by
-    /// this same rounding, `1.5e-10`.
+    /// rounding of that arithmetic to around `1e-10`. The premise is asserted
+    /// first: the separation is below [`GROUP_REL_TOL`], and in `f32` it grows by
+    /// more than a factor `1e6`, which a coupling difference would not. The CMS
+    /// survey's `VBS_WPMZTo4Q` card was refused on a pair separated by this same
+    /// rounding, `1.5e-10`. Its size is last-ulp arithmetic and differs between
+    /// machines (`1.48e-10` on one, `3.9e-11` on CI), so the test does not pin it
+    /// above the old bound; the headroom assertion checks the margin instead.
     ///
     /// What it cannot see: a physical difference smaller than the rounding, which
     /// the group then sums under one member's `|M|²`, an error below
@@ -6062,7 +6065,10 @@ mod tests {
         };
         let (rel, rel32) = (worst_rel(a, b), worst_rel(a32, b32));
         eprintln!("f64 separation {rel:.3e}, f32 separation {rel32:.3e}");
-        assert!(rel > 1e-10 && rel < GROUP_REL_TOL, "{rel:.3e}");
+        assert!(
+            rel < GROUP_REL_TOL / 4.0,
+            "{rel:.3e} leaves under 4x headroom"
+        );
         assert!(rel32 > 1e6 * rel, "{rel32:.3e} against {rel:.3e}");
 
         let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
