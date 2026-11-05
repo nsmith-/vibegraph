@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "Light-quark QCD 2→3 and 2→4 σ read 1–2% above MadGraph on the same PDF"
-description: "On explicit-flavour cards u d > d g u and u u > g g u u, vibegraph is 1.3–2.2% above local MadGraph with LHAPDF 247000 on both sides, single-subprocess controls included; the banked pp_to_jj rows agree to 0.2%."
+description: "On explicit-flavour u d > d g u and u u > g g u u, vibegraph is 1.3–2.2% above local MadGraph on LHAPDF 247000, single-subprocess controls included; banked pp_to_jj agrees to 0.2%."
 area: validation
 state: open
 priority: high
