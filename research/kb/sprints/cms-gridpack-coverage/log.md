@@ -88,3 +88,4 @@
   - It deletes `massive-incoming-partons-refused` and `explicit-initial-state-ordering-counted-twice`, and lifts `ptonium`/`etaonium` as inert.
   - H-M2's coherent +0.1% on the mirror rows (Found 2) is unresolved. H-Q1 showed vibegraph exact to +2.8e-5 ± 8.9e-5 on a different, uncut `u u~ > e+ e-` card (343 pb), so the offset is not in the PDF, |M|², flux or map; H-M2's cards (777.9 pb) carry cuts. The open check is H-Q1's quadrature with `PASSCUTS` on H-M2's cards (H-Q1 Found 3); to file.
 * #93 and #90 merged to main. origin/main was merged into `sprinth-massive-incoming` and is being re-gated.
+* #95 re-gated on main 1c4e628c (368173a: fmt, clippy clean; 1928 passed) and marked ready. H-J1 (feature-dev) dispatched for item 7, `absent-run-card-maxjetflavor-ignores-beam-flavours`, on `sprinth-maxjetflavor` from origin/main 1c4e628c. It touches the run-card default only, not grouping, so it does not wait for #100.
