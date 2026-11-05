@@ -67,3 +67,8 @@
 * #93 Found triage (the user, via the manager): this sprint handles 1 (the stale `proc-card-grammar.md:159`, on `sprinth-kb`) and 4 (the TTToHcToWA proc card, a defect candidate, in the close-out catalogue). The manager files 2 (`define` optimize_order), 3 (the b̄ core leg order) and 5 (BSM census models). Nothing goes onto #93.
 * H-G1 done (2e2dd355 on `colour-split-groups`, pushed; gates on the merged tree green, `validate.sh` exit 0). With LHAPDF 247000 on MadGraph the σ offset persists: vibegraph is +1.5% (2→3) and +2.0% (HT 2→4), and the single-subprocess controls are too, so grouping is not the cause. Filed `light-quark-qcd-sigma-high-vs-madgraph` (high) for a diagnosis session.
 * The colour-split PR is open as #100 (ready). The user chose to diagnose the QCD σ offset now: H-Q1 (validation-dev) dispatched on `sprinth-qcd-sigma` from origin/main cbfaec61, working from per-point |M|² up to dσ at fixed points.
+* H-M2 interim (uncommitted; runs still going). All against LHAPDF-247000 MadGraph:
+  - LL_HAHM: 5 seeds per side, +3.3e-4, pull +0.66 (blind to the c mass).
+  - ZprimeToTauTau: MadGraph 5 seeds at 10.6159; vibegraph 2 of 5 seeds; the @0 parts within +0.3%.
+  - The five massive single-ordering rows for #96's item all pass, at +7e-4 to +1.1e-3 coherently (Found 2, b-initiated). H-Q1 was told, for context.
+  - Correction: H-R1's massless rows were against nn23lo1 MadGraph, so they are being rerun on LHAPDF.
