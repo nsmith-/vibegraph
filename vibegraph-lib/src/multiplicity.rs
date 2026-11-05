@@ -278,9 +278,11 @@ pub fn refuse_exchanged_beam_orderings(sets: &[DiagramSet]) -> Result<(), String
 ///
 /// The choices are one per run, and an artifact banks one. The only choice the
 /// rule reads off the shape is the `τ` map, which keeps the log map wherever any
-/// part carries a resonance spanning its whole final state: a Drell–Yan part
-/// keeps the map its peak needs, and the parts above it, which would take
-/// `1/τ²` alone, take the log map with it.
+/// part carries a resonance spanning its whole final state, and takes the
+/// Breit–Wigner mixture wherever such a resonance is narrow in some part: a
+/// Drell–Yan part keeps the map its peak needs, and the parts above it, which
+/// would take `1/τ²` alone, take that map with it. Under the mixture, a part
+/// with no whole-state pole in its range draws on the log map.
 pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessShape {
     shapes
         .into_iter()
@@ -289,6 +291,8 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
             max_rungs: acc.max_rungs.max(s.max_rungs),
             resonant_pair_splits: acc.resonant_pair_splits + s.resonant_pair_splits,
             whole_state_resonance: acc.whole_state_resonance || s.whole_state_resonance,
+            narrow_whole_state_resonance: acc.narrow_whole_state_resonance
+                || s.narrow_whole_state_resonance,
         })
 }
 
@@ -791,7 +795,7 @@ mod tests {
     use crate::helas::eval::BoundAmplitude;
     use crate::pdf::grid::SubGrid;
     use crate::pdf::PdfMember;
-    use crate::phasespace::maps::MapOptions;
+    use crate::phasespace::maps::{MapOptions, TauMap};
     use crate::phasespace::rng::SubStream;
     use crate::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonError};
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -802,6 +806,23 @@ mod tests {
 
     const SQRT_S_HAD: f64 = 13000.0;
     const MU_F: f64 = 91.188;
+
+    /// A narrow whole-state resonance in any part puts the whole card on the
+    /// Breit–Wigner mixture: the union keeps that flag as it keeps the wider one.
+    #[test]
+    fn the_union_of_shapes_keeps_a_part_s_narrow_resonance() {
+        let narrow = ProcessShape {
+            whole_state_resonance: true,
+            narrow_whole_state_resonance: true,
+            ..ProcessShape::default()
+        };
+        let union = union_shape([ProcessShape::default(), narrow, ProcessShape::default()]);
+        assert!(union.whole_state_resonance && union.narrow_whole_state_resonance);
+        assert_eq!(
+            MapOptions::default().resolve(&union).tau,
+            TauMap::BreitWigner
+        );
+    }
 
     /// Drell–Yan with no jet and with one: two multiplicities whose channels are
     /// over `2 + 2` and `2 + 5` coordinates.

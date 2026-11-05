@@ -55,7 +55,7 @@ use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
 use crate::systematics::request::{DynScale, VariationRequest};
 use crate::ufo::identity::ModelIdentity;
 use crate::ufo::{EvaluatedModel, UFOModel};
-use crate::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter};
+use crate::unweight::{MaxRule, NoUsableWeight, ScanBudget, UnweightStats, Unweighter};
 
 use source::{
     ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, RecordFill,
@@ -225,6 +225,9 @@ pub enum GenerateError {
         rebuilt: f64,
         beams: [f64; 2],
     },
+    /// The weight scan of the artifact's grids found no point carrying weight.
+    #[error(transparent)]
+    NoUsableWeight(#[from] NoUsableWeight),
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -508,7 +511,7 @@ fn generate_sample(
     let observable = initial.observable();
 
     let rule = options.max_rule;
-    let scan = Unweighter::scan_with(
+    let scan = Unweighter::try_scan_with(
         &integ,
         artifact
             .channels
@@ -516,7 +519,7 @@ fn generate_sample(
             .map(|c| (&c.grid, options.scan_points.draws_for(c.neval))),
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
-    );
+    )?;
     report_scan(
         &scan,
         artifact,
@@ -996,7 +999,7 @@ fn generate_proton_sample(
         .then(|| RecordFill::new(&groups, model, pdf));
 
     let rule = options.max_rule;
-    let scan = Unweighter::scan_with(
+    let scan = Unweighter::try_scan_with(
         &integ,
         artifact
             .channels
@@ -1004,7 +1007,7 @@ fn generate_proton_sample(
             .map(|c| (&c.grid, options.scan_points.draws_for(c.neval))),
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
-    );
+    )?;
     report_scan(
         &scan,
         artifact,

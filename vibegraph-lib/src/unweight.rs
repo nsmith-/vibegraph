@@ -254,6 +254,24 @@ pub trait ChannelIntegrand {
     }
 }
 
+/// A weight scan in which no channel found a usable weight: every draw of
+/// every channel carried zero weight, or the maxima did not sum to a finite
+/// positive number. An integration that carries no weight is refused before it
+/// is banked, so this is a scan too small for the share of each channel's grid
+/// the cuts accept: one point per channel on `e+ e- > mu+ mu-` whose `ptl` leaves
+/// a narrow band of polar angle misses it on about one seed in five.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "the weight scan found no usable weight: {nonzero} of {draws} draws over {channels} \
+     channel(s) carried weight, so nothing can be generated. The scan's draws missed the \
+     region the cuts accept; scan on more points per channel"
+)]
+pub struct NoUsableWeight {
+    channels: usize,
+    draws: usize,
+    nonzero: usize,
+}
+
 /// What a frozen scan of one channel's grid found.
 #[derive(Debug, Clone)]
 pub(crate) struct ChannelScan {
@@ -545,12 +563,28 @@ impl Unweighter {
     /// two streams and of nothing another channel touches, so the result is the same
     /// whatever the thread count is — including the maxima, which depend on the
     /// weights a channel saw and not on the order they arrived in.
+    ///
+    /// # Panics
+    ///
+    /// Where no channel's scan finds a weight ([`NoUsableWeight`]).
     pub fn scan_with<'g, I: ChannelIntegrand + Sync>(
         integrand: &I,
         channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
         seed: u64,
         rule: MaxRule,
     ) -> Self {
+        Self::try_scan_with(integrand, channels, seed, rule).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// [`scan_with`](Self::scan_with), refusing a scan in which no channel found a
+    /// usable weight — every draw cut away, or no finite maximum — since nothing
+    /// can then be generated.
+    pub(crate) fn try_scan_with<'g, I: ChannelIntegrand + Sync>(
+        integrand: &I,
+        channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
+        seed: u64,
+        rule: MaxRule,
+    ) -> Result<Self, NoUsableWeight> {
         let scale_ndim = integrand.scale_draw_ndim();
         let specs: Vec<(&VegasGrid, usize)> = channels.into_iter().collect();
         for (j, (grid, _)) in specs.iter().enumerate() {
@@ -599,11 +633,14 @@ impl Unweighter {
         );
         let select_weights: Vec<f64> = built.iter().map(|c| c.w_max).collect();
         let total_w_max: f64 = select_weights.iter().sum();
-        assert!(
-            total_w_max > 0.0 && total_w_max.is_finite(),
-            "no channel produced a usable weight: nothing can be generated"
-        );
-        Unweighter {
+        if !(total_w_max > 0.0 && total_w_max.is_finite()) {
+            return Err(NoUsableWeight {
+                channels: built.len(),
+                draws: specs.iter().map(|&(_, draws)| draws).sum(),
+                nonzero: built.iter().map(|c| c.scan.nonzero).sum(),
+            });
+        }
+        Ok(Unweighter {
             channels: built,
             select_weights,
             total_w_max,
@@ -611,7 +648,7 @@ impl Unweighter {
             u,
             scale_ndim,
             scale_draw,
-        }
+        })
     }
 
     /// `Σⱼ w_maxⱼ` — the unit every accumulated weight ratio is measured in, and

@@ -339,6 +339,9 @@ fn cli_error(e: GenerateError) -> CliError {
         e @ (GenerateError::ProcessReparsed { .. }
         | GenerateError::ModelChanged { .. }
         | GenerateError::ColliderEnergyChanged { .. }) => err(ErrorKind::Artifact, e.to_string()),
+        // The artifact is sound, and the scan this run drew missed its accepted
+        // region: a run failure that a larger scan fixes.
+        e @ GenerateError::NoUsableWeight(_) => err(ErrorKind::Run, format!("{e} (--scan-points)")),
         other => err(ErrorKind::Run, other.to_string()),
     }
 }

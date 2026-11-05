@@ -4,7 +4,7 @@ title: "Heap corruption detected once in validate_hadronic (macOS libmalloc abor
 description: "validate_hadronic aborted once on the M3: libmalloc found a corrupted free list while a scratch arena grew. About 34 reruns were clean; the corrupting write is not located."
 area: validation
 state: open
-priority: medium
+priority: low
 closes_when: "The corrupting write is located and fixed or attributed outside this crate (the allocator, a C dependency or the host); or a macOS soak with and without the nano allocator puts a rate on the abort, recorded here."
 blocked_by: []
 opened: 2026-10-26
@@ -42,15 +42,10 @@ unrelated code (`kt::Clustering`), and was also never reproduced. Two
 corruptions in different safe-Rust paths point at something shared (a
 dependency, the allocator, or the host) rather than at either call site.
 
-**AddressSanitizer on Linux, clean (2026-10-27).** Nightly 1.101 with
-`-Zbuild-std`, so std, rayon and rand are instrumented, and the spawned CLI child
-is instrumented too. A heap-buffer-overflow control was caught. Runs: the lib
-unit tests, 3 × `validate_hadronic` and 2 × `validate_samples_proton` (which
-includes `pp_to_llj_dyn`), about 4.6 h in all, with no ASan report. A corruption
-on most runs is ruled out, a rare one is not.
 
-**Next.** The suspects left are the macOS nano allocator and C code not built
-with ASan (`zstd-sys`). Two steps: soak on the M3 with `MallocNanoZone=0`
-against the default, which also puts a rate on the abort; and rebuild with
-clang ASan for `zstd-sys`. Also see
-[validate-sh-keeps-no-crash-evidence](../hygiene/validate-sh-keeps-no-crash-evidence.md).
+**Deferred until it recurs (user, 2026-11-05).** Sprint G found nothing on
+Linux ([G-V3](../../sprints/v02-diagnoses/sessions/G-V3-report.md)), and an M3
+soak of the exact refdata-11 binary gave 0 aborts in 200 runs, 100 per
+allocator arm ([#89](https://github.com/nsmith-/vibegraph/pull/89#issuecomment-6654446012)).
+The details and what to post on a recurrence are in
+[malloc-abort-under-proton-sample-load](malloc-abort-under-proton-sample-load.md).

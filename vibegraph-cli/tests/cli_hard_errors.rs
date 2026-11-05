@@ -603,3 +603,91 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
         );
     }
 }
+
+/// A weight scan whose draws all miss the region the cuts accept is refused by
+/// `generate` with a named error and exit status 1, never a panic. The run
+/// card's `ptl` leaves the muons a narrow band of polar angle at 45.6 GeV
+/// beams, so the integration banks σ > 0 on about 1600 effective points, and
+/// one scan point per channel misses that band on about one generation seed in
+/// five. Every seed up to the first refusal must generate or be refused by
+/// name, and a refusal must come within forty seeds (about 1e-4 to miss at one
+/// in five). The same seed under `--output-ldjson` ends on a `refusal` of kind
+/// `run` that names the flag.
+#[test]
+fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        format!("{}  45.5 = ptl\n", fixed_beams(45.6, 45.6)),
+    )
+    .unwrap();
+
+    let integrated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrated.status.success(),
+        "integrate: {}",
+        stderr_of(&integrated)
+    );
+
+    let generate = |seed: u32, extra: &[&str]| {
+        vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(out.path().join("grid.bin.zst"))
+            .args(["--seed", &seed.to_string(), "--nevents", "10"])
+            .args(["--scan-points", "1", "--force", "--out"])
+            .arg(out.path().join("events.lhe"))
+            .args(extra)
+            .output()
+            .expect("spawn vibegraph")
+    };
+    let refused = (1..=40u32).find(|&seed| {
+        let generated = generate(seed, &["--no-tui"]);
+        let stderr = stderr_of(&generated);
+        match generated.status.code() {
+            Some(0) => false,
+            Some(1) => {
+                assert!(
+                    stderr.contains("the weight scan found no usable weight")
+                        && stderr.contains("nothing can be generated")
+                        && stderr.contains("--scan-points")
+                        && !stderr.contains("panicked"),
+                    "seed {seed}:\n{stderr}"
+                );
+                true
+            }
+            code => panic!("seed {seed}: exit {code:?}\n{stderr}"),
+        }
+    });
+    let seed = refused.expect("no seed in 40 drew a scan that missed the accepted band");
+
+    let ldjson = generate(seed, &["--output-ldjson"]);
+    assert_eq!(ldjson.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&ldjson.stdout);
+    let last = stdout.lines().last().expect("an ldjson line");
+    let refusal: serde_json::Value = serde_json::from_str(last).expect("a JSON line");
+    assert_eq!(refusal["kind"], "refusal", "{refusal}");
+    assert_eq!(refusal["error_kind"], "run", "{refusal}");
+    let message = refusal["message"].as_str().expect("a message");
+    assert!(
+        message.contains("the weight scan found no usable weight")
+            && message.contains("--scan-points"),
+        "{refusal}"
+    );
+}
