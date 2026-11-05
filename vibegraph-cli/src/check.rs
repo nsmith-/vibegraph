@@ -27,7 +27,7 @@ use vibegraph::lhef::record::{
     LheEvent, LheInit, WeightStrategy, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING,
 };
 
-use crate::error::{err, CliError};
+use crate::error::{err, CliError, ErrorKind};
 
 /// Relative tolerance for the momentum and mass-shell identities.
 ///
@@ -68,10 +68,18 @@ impl std::fmt::Display for Complaint {
 }
 
 pub(crate) fn run(args: &CheckArgs) -> Result<(), CliError> {
-    let text = std::fs::read_to_string(&args.events)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.events.display())))?;
-    let file = LheFile::parse(&text)
-        .map_err(|e| err(format!("cannot parse {}: {e}", args.events.display())))?;
+    let text = std::fs::read_to_string(&args.events).map_err(|e| {
+        err(
+            ErrorKind::Io,
+            format!("cannot read {}: {e}", args.events.display()),
+        )
+    })?;
+    let file = LheFile::parse(&text).map_err(|e| {
+        err(
+            ErrorKind::Io,
+            format!("cannot parse {}: {e}", args.events.display()),
+        )
+    })?;
 
     let complaints = complaints(&file, args.tolerance, args.min_events);
     if !complaints.is_empty() {
@@ -82,12 +90,15 @@ pub(crate) fn run(args: &CheckArgs) -> Result<(), CliError> {
         } else {
             String::new()
         };
-        return Err(err(format!(
-            "{} failed {} check(s):\n  {}{tail}",
-            args.events.display(),
-            complaints.len(),
-            shown.join("\n  ")
-        )));
+        return Err(err(
+            ErrorKind::Run,
+            format!(
+                "{} failed {} check(s):\n  {}{tail}",
+                args.events.display(),
+                complaints.len(),
+                shown.join("\n  ")
+            ),
+        ));
     }
 
     report(&file);
