@@ -34,7 +34,7 @@ use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
     check_collider_energy, check_model, check_process, generate, reads_parton_densities,
-    GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
+    sample_pull, GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
 };
 use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
@@ -49,9 +49,10 @@ use vibegraph::ufo::UFOModel;
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
 use crate::assets;
-use crate::error::{err, CliError};
-use crate::integrate::{forbidden_onshell, process_string};
+use crate::error::{err, pdf_error_kind, systematics_error_kind, CliError, ErrorKind};
+use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
+use crate::output::{self, GenerateResult};
 use crate::parallel::ParallelArgs;
 use crate::tui;
 
@@ -254,26 +255,34 @@ fn reweight_launches(
     let Some(path) = &args.reweight_card else {
         return Ok(None);
     };
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| err(format!("cannot read {}: {e}", path.display())))?;
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        err(
+            ErrorKind::Card,
+            format!("cannot read {}: {e}", path.display()),
+        )
+    })?;
     let card: ReweightCard = text
         .parse()
-        .map_err(|e| err(format!("{}: {e}", path.display())))?;
+        .map_err(|e| err(ErrorKind::Card, format!("{}: {e}", path.display())))?;
     let forbidden = forbidden_onshell(parsed, model)?;
     if !forbidden.is_empty() {
-        return Err(err(format!(
-            "{}: {}",
-            path.display(),
-            vibegraph::reweight::ReweightError::ForbiddenSChannel { ids: forbidden }
-        )));
+        return Err(err(
+            ErrorKind::Card,
+            format!(
+                "{}: {}",
+                path.display(),
+                vibegraph::reweight::ReweightError::ForbiddenSChannel { ids: forbidden }
+            ),
+        ));
     }
-    let launches = resolve(&card, model).map_err(|e| err(format!("{}: {e}", path.display())))?;
+    let launches = resolve(&card, model)
+        .map_err(|e| err(ErrorKind::Card, format!("{}: {e}", path.display())))?;
     let couplings = args
         .reweight_couplings
         .as_deref()
         .map(|names| resolve_couplings(model, names))
         .transpose()
-        .map_err(|e| err(format!("--reweight-couplings: {e}")))?;
+        .map_err(|e| err(ErrorKind::Usage, format!("--reweight-couplings: {e}")))?;
     let options = ReweightOptions {
         exact: args.reweight_exact,
         couplings,
@@ -287,6 +296,7 @@ fn reweight_launches(
 fn generation_seed(args: &GenerateArgs) -> Result<u64, CliError> {
     args.seed.ok_or_else(|| {
         err(
+            ErrorKind::Usage,
             "generate needs --seed: each generation job needs its own seed, since two jobs \
              drawing from one grid with the same seed write the same events",
         )
@@ -310,48 +320,72 @@ fn model_location(parsed: &SupportedCard, config: &GlobalConfig) -> String {
 /// names the flag.
 fn cli_error(e: GenerateError) -> CliError {
     match e {
-        GenerateError::RoundingOffAverage { norm } => err(format!(
+        GenerateError::RoundingOffAverage { norm } => err(
+            ErrorKind::Usage,
+            format!(
             "--strategy stochastic-rounding writes unit weights (IDWTUP = +3) and cannot honour \
              event_norm = {}; use --strategy buffer, or --event-norm average",
             norm.as_str()
-        )),
-        GenerateError::RoundingOnMixedMultiplicity { parts } => err(format!(
-            "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
+        ),
+        ),
+        GenerateError::RoundingOnMixedMultiplicity { parts } => err(
+            ErrorKind::Usage,
+            format!(
+                "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
              phase spaces (multiplicities or sets of outgoing masses) to each one's integrated \
              cross section; use --strategy buffer"
-        )),
-        other => err(other.to_string()),
+            ),
+        ),
+        e @ (GenerateError::ProcessReparsed { .. }
+        | GenerateError::ModelChanged { .. }
+        | GenerateError::ColliderEnergyChanged { .. }) => err(ErrorKind::Artifact, e.to_string()),
+        other => err(ErrorKind::Run, other.to_string()),
     }
 }
 
 pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     let seed = generation_seed(args)?;
-    args.parallel.install().map_err(err)?;
+    args.parallel
+        .install()
+        .map_err(|e| err(ErrorKind::Usage, e))?;
     if !args.force && args.out.exists() {
-        return Err(err(format!(
-            "{} already exists (pass --force to overwrite)",
-            args.out.display()
-        )));
+        return Err(err(
+            ErrorKind::Io,
+            format!(
+                "{} already exists (pass --force to overwrite)",
+                args.out.display()
+            ),
+        ));
     }
 
-    let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
+    let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact).map_err(|e| {
+        err(
+            ErrorKind::Artifact,
+            format!("cannot read {}: {e}", args.artifact.display()),
+        )
+    })?;
     // `integrate` refuses to bank a cross section of zero, but an artifact from a
     // build without that refusal can hold one, and a zero σ has no maximum
     // weight to unweight against.
     if artifact.sigma_pb == 0.0 {
-        return Err(err(format!(
-            "{} records σ = 0: no point of that integration carried weight, so there is \
+        return Err(err(
+            ErrorKind::Artifact,
+            format!(
+                "{} records σ = 0: no point of that integration carried weight, so there is \
              nothing to sample; re-integrate, and check the cuts and the parameters if it \
              is refused",
-            args.artifact.display()
-        )));
+                args.artifact.display()
+            ),
+        ));
     }
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
-        err(format!(
-            "cannot parse the proc card recorded in {}: {e}; re-integrate",
-            args.artifact.display()
-        ))
+        err(
+            ErrorKind::Artifact,
+            format!(
+                "cannot parse the proc card recorded in {}: {e}; re-integrate",
+                args.artifact.display()
+            ),
+        )
     })?;
     check_process(&artifact, &process_string(&parsed)?).map_err(cli_error)?;
 
@@ -360,13 +394,13 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
             parsed.model.as_ref(),
             args.ufo_dir.as_deref(),
         )
-        .map_err(err)?,
+        .map_err(|e| err(ErrorKind::Model, e))?,
         restrict_path_override: None,
         run_card_path: None,
     };
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
-        .map_err(|e| err(format!("failed to load model: {e}")))?;
+        .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
     check_model(&artifact, &model_id, &model_location(&parsed, &config)).map_err(cli_error)?;
     // The library refuses a stale collider energy too; checking it here does so
     // before the PDF set is read, which may mean a download.
@@ -379,7 +413,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         model.vertices.len(),
         model.couplings.len(),
     );
-    tui::state::describe_process(&artifact.process);
+    tui::state::describe_process(&artifact.process, observable_of(&parsed));
     tui::state::note_channels(artifact.channels.len());
 
     let mut settings = artifact.generate.clone();
@@ -392,30 +426,41 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     if let Some(text) = &args.systematics {
         if parsed.is_decay() {
             return Err(err(
+                ErrorKind::Usage,
                 "--systematics on a decay: MadGraph's systematics module refuses an explicit \
                  request on a decay, which carries no parton density to vary",
             ));
         }
         if !settings.systematics.enabled {
-            return Err(err(format!(
+            return Err(err(
+                ErrorKind::Usage,
+                format!(
                 "--systematics: the events of {} are generated without use_syst = T, so they carry \
                  no <mgrwt> record to reweight (MadGraph: \"The events have not been generated \
                  with use_syst=True\"); re-integrate with use_syst = T",
                 args.artifact.display()
-            )));
+            ),
+            ));
         }
-        let request = VariationRequest::from_command_line(text)
-            .map_err(|e| err(format!("systematics request refused at generate: {e}")))?;
+        let request = VariationRequest::from_command_line(text).map_err(|e| {
+            err(
+                ErrorKind::Usage,
+                format!("systematics request refused at generate: {e}"),
+            )
+        })?;
         settings.systematics.request = Some(request);
     }
     if settings.nevents == 0 {
-        return Err(err(match args.nevents {
-            Some(_) => "no events requested: --nevents is 0".to_string(),
-            None => format!(
-                "no events requested: --nevents is absent and {} recorded nevents = 0",
-                args.artifact.display(),
-            ),
-        }));
+        return Err(err(
+            ErrorKind::Usage,
+            match args.nevents {
+                Some(_) => "no events requested: --nevents is 0".to_string(),
+                None => format!(
+                    "no events requested: --nevents is absent and {} recorded nevents = 0",
+                    args.artifact.display(),
+                ),
+            },
+        ));
     }
 
     // The parameter point the grid was trained at: the restricted defaults with
@@ -427,17 +472,20 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         &artifact.inputs.decays,
     )
     .map_err(|e| {
-        err(format!(
-            "cannot bind the parameters recorded in {}: {e}; re-integrate",
-            args.artifact.display()
-        ))
+        err(
+            ErrorKind::Artifact,
+            format!(
+                "cannot bind the parameters recorded in {}: {e}; re-integrate",
+                args.artifact.display()
+            ),
+        )
     })?;
     let reweight = reweight_launches(args, &parsed, &model)?;
 
     let pdf = if reads_parton_densities(&artifact, &parsed) {
         let tiers = assets::pdf_tiers();
         load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
-            .map_err(|e| err(e.to_string()))?
+            .map_err(|e| err(pdf_error_kind(&e), e.to_string()))?
     } else {
         None
     };
@@ -446,7 +494,12 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
             let tiers = assets::pdf_tiers();
             Some(
                 resolve_systematics(request, central, &tiers, &assets::pdf_fetch(network))
-                    .map_err(|e| err(format!("systematics request refused at generate: {e}")))?,
+                    .map_err(|e| {
+                        err(
+                            systematics_error_kind(&e),
+                            format!("systematics request refused at generate: {e}"),
+                        )
+                    })?,
             )
         }
         _ => None,
@@ -478,10 +531,28 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         artifact_label: args.artifact.display().to_string(),
         on_scan: Some(&tui::state::note_unweighting_efficiency),
     };
-    generate(&artifact, &assets, &settings, &options).map_err(cli_error)?;
+    let summary = generate(&artifact, &assets, &settings, &options).map_err(cli_error)?;
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
-    tui::result_line(format_args!("wrote {}", args.out.display()));
+    output::text_line(format_args!("wrote {}", args.out.display()));
+    let observable = observable_of(&parsed);
+    output::result(&GenerateResult {
+        events_written: summary.written,
+        events_drawn: summary.drawn,
+        output: args.out.display().to_string(),
+        artifact: args.artifact.display().to_string(),
+        observable: observable.into(),
+        unit: observable.unit(),
+        sample_sigma: summary.sample_sigma_pb,
+        sample_sigma_err: summary.sample_sigma_err_pb,
+        integration_sigma: artifact.sigma_pb,
+        integration_sigma_err: artifact.sigma_err_pb,
+        pull: sample_pull(
+            summary.sample_sigma_pb,
+            summary.sample_sigma_err_pb,
+            &artifact,
+        ),
+    });
     Ok(())
 }
 
