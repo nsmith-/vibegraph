@@ -252,7 +252,8 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
         out_dir, trace = os.path.join(adir, "out"), os.path.join(adir, "trace.log")
         cmd = [args.binary, "integrate", pc, "--run-card", rc,
                "--neval", str(args.neval), "--niter", str(args.niter), "--fixed-budget", "--seed", str(args.seed),
-               "-j", str(args.threads), "--parallel-diagrams", "--no-tui", "--out", out_dir, "--log-file", trace]
+               "-j", str(args.threads), "--parallel-diagrams", "--output-ldjson", "--out", out_dir,
+               "--log-file", trace]
         cmd += ["--yes"] if args.allow_network else ["--no-network"]
         if ufo_dir:
             cmd += ["--ufo-dir", ufo_dir]
