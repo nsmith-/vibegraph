@@ -143,6 +143,13 @@ const B_ISOLATION: &str = "Frixione photon isolation, read by cuts.f only inside
                            block; an active ptgmin is already a hard error";
 const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_pdg is already \
                      a hard error";
+const B_ONIUM: &str = "a quarkonium cut MadGraph parses and never applies. banner.py:4318 and \
+                       :4338 register ptonium and etaonium with legacy=True, which keeps them out \
+                       of run_card.inc (include=False) and only warns when a card moves them; \
+                       Template/LO/Source/cuts.inc declares PTONIUM and ETAONIUM in a common block \
+                       that nothing assigns, and their one reader, the QUARKONIUM block of \
+                       setcuts.f:307-312, is commented out; nothing assigns is_a_onium either. \
+                       The value cannot reach a cut, the smin hint or a weight";
 const B_BIAS_PARAMETERS: &str = "the bias module's payload; a bias module is itself refused, \
                                  so nothing ever reads it";
 const B_FRAME_ID: &str = "a system parameter: MadGraph recomputes it from me_frame as the sum of \
@@ -300,7 +307,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("ptl",                     Integrate, Consumed(R_CUT_SINGLE)),
     ("misset",                  Integrate, Consumed(R_UNIMPL)),
     ("ptheavy",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptonium",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptonium",                 Integrate, IgnoredBenign(B_ONIUM)),
     ("ptjmax",                  Integrate, Consumed(R_CUT_SINGLE)),
     ("ptbmax",                  Integrate, Consumed(R_CUT_SINGLE)),
     ("ptamax",                  Integrate, Consumed(R_CUT_SINGLE)),
@@ -318,7 +325,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("etab",                    Integrate, Consumed(R_CUT_SINGLE)),
     ("etaa",                    Integrate, Consumed(R_CUT_SINGLE)),
     ("etal",                    Integrate, Consumed(R_CUT_SINGLE)),
-    ("etaonium",                Integrate, Consumed(R_UNIMPL)),
+    ("etaonium",                Integrate, IgnoredBenign(B_ONIUM)),
     ("etajmin",                 Integrate, Consumed(R_CUT_SINGLE)),
     ("etabmin",                 Integrate, Consumed(R_CUT_SINGLE)),
     ("etaamin",                 Integrate, Consumed(R_CUT_SINGLE)),
