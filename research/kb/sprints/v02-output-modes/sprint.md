@@ -3,7 +3,7 @@ type: Sprint
 title: "v0.2 output modes: plain, rich and ldjson, and vibegraph inspect"
 description: "One output mode per run formats logs, progress and the result or refusal together; --output-ldjson gives a versioned machine-readable stream; vibegraph inspect reads a saved artifact; the survey reads ldjson. Part four of sprint G."
 status: draft
-active: true
+active: false
 tags: [cli, output, ldjson, tui, tracing, artifact, cms-survey, sprint-g]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-05}
 ---
