@@ -571,15 +571,19 @@ impl<F: Real> DiagramChannel<F> {
             .fold(0u64, |m, (slot, _)| m | (1u64 << slot))
     }
 
-    /// Whether `diagram` has a finite-width timelike propagator whose final-state
-    /// side is the whole final state — an s-channel resonance every outgoing leg
-    /// comes from, whose Breit–Wigner then shapes the distribution of `ŝ` itself.
-    pub(crate) fn has_whole_state_resonance(diagram: &Diagram, model: &EvaluatedModel) -> bool {
+    /// The mass and width of `diagram`'s finite-width timelike propagator whose
+    /// final-state side is the whole final state — an s-channel resonance every
+    /// outgoing leg comes from, whose Breit–Wigner then shapes the distribution of
+    /// `ŝ` itself — the first in propagator order, or `None` where it has none.
+    pub(crate) fn whole_state_resonance(
+        diagram: &Diagram,
+        model: &EvaluatedModel,
+    ) -> Option<(f64, f64)> {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
-        diagram.props.iter().any(|prop| {
+        diagram.props.iter().find_map(|prop| {
             if prop.is_spacelike(n_in) {
-                return false;
+                return None;
             }
             let beams = prop.momentum[..n_in].iter().filter(|&&c| c != 0).count();
             let finals = prop.momentum[n_in..n_ext]
@@ -589,7 +593,8 @@ impl<F: Real> DiagramChannel<F> {
             // The side away from the beams is the stored side when the stored
             // coefficients carry no beam, and its complement when they carry both.
             let whole = (beams == 0 && finals == n_ext - n_in) || (beams == n_in && finals == 0);
-            whole && model.mass(prop.particle) > 0.0 && model.width(prop.particle) > 0.0
+            let (mass, width) = (model.mass(prop.particle), model.width(prop.particle));
+            (whole && mass > 0.0 && width > 0.0).then_some((mass, width))
         })
     }
 
@@ -5093,7 +5098,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .flat_map(|s| s.diagrams.iter())
-                .any(|d| DiagramChannel::<f64>::has_whole_state_resonance(d, &ev))
+                .any(|d| DiagramChannel::<f64>::whole_state_resonance(d, &ev).is_some())
         };
         assert!(any("u u~ > e+ e-"));
         assert!(any("e+ e- > mu+ mu-"));

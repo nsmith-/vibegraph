@@ -18,3 +18,7 @@ and `union_shape` ORs it again over multiplicities. MadEvent's rule reads each
 channel's own topology.
 
 Filed at the close-out of [map-default-guards](../../sprints/map-default-guards/sprint.md).
+
+The same OR applies to `narrow_whole_state_resonance` (sprint G, G-V4): it is
+OR'd per process and again in `union_shape`, so one narrow pole in any part of
+a sum switches the whole run's τ map (G-HY2 Found 5).

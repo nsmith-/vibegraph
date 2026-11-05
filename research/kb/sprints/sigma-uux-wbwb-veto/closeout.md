@@ -53,7 +53,7 @@ per-channel analysis is the sessions'.
 
 ## Filed
 
-- [vegas-under-covers-heavily-cut-slice](../../backlog/validation/vegas-under-covers-heavily-cut-slice.md)
+- `vegas-under-covers-heavily-cut-slice` (closed by sprint G's G-V2: the deficit does not reproduce on main; [report](../v02-diagnoses/sessions/G-V2-report.md))
   (this side, medium)
 - [vegas-printed-chi2-overflows](../../backlog/validation/vegas-printed-chi2-overflows.md)
 - [madevent-mirror-pair-consistency](../../backlog/validation/madevent-mirror-pair-consistency.md)

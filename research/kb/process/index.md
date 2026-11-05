@@ -15,6 +15,7 @@
 ## Design Decision
 
 * [Keep every pairing of identical particles across decays](identical-particles-across-decays.md) - Unlike MadGraph's single pairing with identical_decay_chain_factor, all pairings and their interference are kept; expected σ offset about +0.2%.
+* [Keep the model's own width below MadEvent's small-width floor](madevent-small-width-treatment.md) - MadEvent evaluates every propagator whose width is below M·1e-6 at the floored width and corrects its Jacobian by fk_W/Γ, so its σ is the narrow-width σ at the true width and its lineshape the floored one's; vibegraph keeps the model's width in both. A registered deviation: 1.5% on a decay chain's bwcutoff window, under 1e-3 without one.
 * [Parse everything, check once, narrow the type](supported-card-check.md) - ProcCardAst mirrors ProcessDefinition; check_supported reports every unsupported feature and returns a narrower SupportedCard; squared-order constraints are a hard refusal, never dropped.
 
 ## Physics Convention

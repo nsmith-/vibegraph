@@ -70,6 +70,7 @@
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)
 * [ux-mini-sprint](ux-mini-sprint/index.md)
 * [v02-cli-output](v02-cli-output/index.md)
+* [v02-diagnoses](v02-diagnoses/index.md)
 * [v02-output-modes](v02-output-modes/index.md)
 * [v02-refusals](v02-refusals/index.md)
 * [v3-backlog](v3-backlog/index.md)

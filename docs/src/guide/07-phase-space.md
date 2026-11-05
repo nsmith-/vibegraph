@@ -358,6 +358,11 @@ event sample is always drawn from the maps its grids were trained on.
   then sits in $\tau$, and the logarithm where one does. Here that measures
   a quarter fewer evaluations on dijets, and on Drell–Yan, where the
   logarithm is kept, $1/\tau^2$ would take slightly more.
+  A resonance too narrow for the logarithm to find — its peak under a
+  thousandth of the map's unit interval, as a 1 MeV state at 3.5 TeV is —
+  takes `breit-wigner` instead: each channel whose diagram carries such a
+  pole draws $\tau$ on that pole's Breit–Wigner, as MadEvent's channel
+  does, the others on the logarithm, and the draw is their average.
 - **The order of a ladder's rungs** (`--map-rung-order`): as the diagram's
   spacelike lines nest outward from beam 0, or reversed, which exists to be
   measured against and measures the same.
