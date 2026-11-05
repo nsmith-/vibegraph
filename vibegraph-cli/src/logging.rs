@@ -12,12 +12,14 @@
 //! `RUST_LOG` is the expert override — when it is set it replaces the level the
 //! flags ask for and can scope directives per module.
 //!
-//! Where the lines go depends on whether anything is watching. Piped, they are
-//! written to `stderr` as they arrive. On a terminal a status display takes
-//! them instead, formatted the same way but handed over as strings for it to
-//! push into the scrollback, and a second layer — filtered on the progress
+//! Where the lines go is the run's output mode ([`crate::output::Mode`]).
+//! Plain, they are written to `stderr` as they arrive. Rich, a status display
+//! takes them instead, formatted the same way but handed over as strings for it
+//! to push into the scrollback, and a second layer — filtered on the progress
 //! target alone, so it is unaffected by the visible level — keeps the display's
-//! state current.
+//! state current. Under `--output-ldjson` both layers write JSON objects to
+//! `stdout` instead, the progress layer's included, since a reader of the
+//! stream is a display too.
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -35,6 +37,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Registry;
 use vibegraph::progress;
 
+use crate::output::emit_object;
 use crate::tui::state::ProgressLayer;
 use crate::tui::Feed;
 
@@ -202,6 +205,12 @@ pub(crate) struct LogArgs {
     /// Never draw the live status pane; report in plain lines.
     #[arg(long, global = true)]
     pub(crate) no_tui: bool,
+
+    /// Report on `stdout` as line-delimited JSON: one object per log event and
+    /// progress event, then the result or refusal. The live status pane is
+    /// never drawn.
+    #[arg(long, global = true, conflicts_with = "tui")]
+    pub(crate) output_ldjson: bool,
 }
 
 impl LogArgs {
@@ -226,11 +235,95 @@ impl LogArgs {
     /// redirected `stdout` means something downstream is reading the result,
     /// which is a run nobody is watching.
     pub(crate) fn wants_tui(&self) -> bool {
-        if self.no_tui {
+        if self.no_tui || self.output_ldjson {
             return false;
         }
         self.tui || (std::io::stdout().is_terminal() && std::io::stderr().is_terminal())
     }
+}
+
+/// Turns each JSON-formatted event into one ldjson object of its kind.
+#[derive(Clone, Copy)]
+struct LdjsonChannel(&'static str);
+
+/// One event's JSON, stamped and written when the formatter is done with it.
+struct LdjsonEvent {
+    text: Vec<u8>,
+    kind: &'static str,
+}
+
+impl std::io::Write for LdjsonEvent {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.text.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for LdjsonEvent {
+    fn drop(&mut self) {
+        for line in self.text.split(|b| *b == b'\n') {
+            if line.is_empty() {
+                continue;
+            }
+            let fields = match serde_json::from_slice(line) {
+                Ok(serde_json::Value::Object(fields)) => fields,
+                // The formatter writes one object per event; anything else is
+                // kept as the event's message rather than dropped.
+                _ => {
+                    let mut message = serde_json::Map::new();
+                    message.insert(
+                        "message".to_string(),
+                        String::from_utf8_lossy(line).into_owned().into(),
+                    );
+                    let mut fields = serde_json::Map::new();
+                    fields.insert("fields".to_string(), message.into());
+                    fields
+                }
+            };
+            emit_object(self.kind, fields);
+        }
+    }
+}
+
+impl<'a> MakeWriter<'a> for LdjsonChannel {
+    type Writer = LdjsonEvent;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        LdjsonEvent {
+            text: Vec::new(),
+            kind: self.0,
+        }
+    }
+}
+
+/// A JSON-formatting layer writing ldjson objects of `kind`.
+fn ldjson_layer<F>(kind: &'static str, filter: F) -> Box<dyn Layer<Registry> + Send + Sync>
+where
+    F: Filter<Registry> + Send + Sync + 'static,
+{
+    fmt::layer()
+        .json()
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_ansi(false)
+        .with_writer(LdjsonChannel(kind))
+        .with_filter(filter)
+        .boxed()
+}
+
+/// Where the subscriber sends the run's log and progress events.
+pub(crate) enum Sink {
+    /// Text lines on `stderr`; progress is not shown.
+    Plain,
+    /// A running status pane: the lines go to its scrollback, and a layer of
+    /// its own folds progress into what it draws.
+    Rich(Feed),
+    /// `log` and `progress` objects on `stdout`.
+    Ldjson,
 }
 
 /// Hands each formatted event to the display as a string instead of writing it
@@ -365,11 +458,7 @@ where
 }
 
 /// Install the process-wide subscriber. Called once, before any command runs.
-///
-/// `display`, when present, is a running status pane: the formatted lines go to
-/// it instead of to `stderr`, and it is given a layer of its own that folds
-/// progress measurements into what it draws.
-pub(crate) fn init(args: &LogArgs, display: Option<Feed>) -> Result<LogHandle, String> {
+pub(crate) fn init(args: &LogArgs, sink: Sink) -> Result<LogHandle, String> {
     let filter = base_filter(args.level(), Scope::default());
     // The filter, not the flags, decides the format: `RUST_LOG=debug` is as much
     // a request for the detailed form as `-vv` is.
@@ -378,11 +467,11 @@ pub(crate) fn init(args: &LogArgs, display: Option<Feed>) -> Result<LogHandle, S
         .ge(&LevelFilter::DEBUG);
     let (filter, visible) = reload::Layer::new(filter);
 
-    let (line, progress) = match display {
+    let (line, progress) = match sink {
         // The display renders the text itself, and parses these codes back into
         // styles as it pushes each line into its history, so an event reads the
         // same whether or not a pane is drawing.
-        Some(feed) => (
+        Sink::Rich(feed) => (
             line_layer(LineChannel(feed.lines), true, detailed, filter),
             Some(
                 ProgressLayer::new(feed.state)
@@ -390,9 +479,16 @@ pub(crate) fn init(args: &LogArgs, display: Option<Feed>) -> Result<LogHandle, S
                     .boxed(),
             ),
         ),
+        Sink::Ldjson => (
+            ldjson_layer("log", filter),
+            Some(ldjson_layer(
+                "progress",
+                filter_fn(|meta| meta.target() == progress::TARGET),
+            )),
+        ),
         // Escape codes belong on a terminal and nowhere else: the notice stream
         // is routinely captured and compared.
-        None => (
+        Sink::Plain => (
             line_layer(
                 std::io::stderr as fn() -> std::io::Stderr,
                 std::io::stderr().is_terminal(),
@@ -440,6 +536,7 @@ mod tests {
             log_file: None,
             tui: false,
             no_tui: false,
+            output_ldjson: false,
         }
     }
 
@@ -475,6 +572,11 @@ mod tests {
         both.tui = true;
         both.no_tui = true;
         assert!(!both.wants_tui());
+
+        // A stream for a program to read keeps the pane down, terminal or not.
+        let mut ldjson = args(0, false, None);
+        ldjson.output_ldjson = true;
+        assert!(!ldjson.wants_tui());
     }
 
     /// An explicit level is the level, whatever else was passed.

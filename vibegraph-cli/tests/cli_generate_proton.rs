@@ -1130,6 +1130,54 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
             error[k]
         );
     }
+    // The artifact records each part's total, the one its line printed, and
+    // `inspect` reads it back.
+    assert_eq!(artifact.multiplicities.len(), 2);
+    for (k, part) in artifact.multiplicities.iter().enumerate() {
+        assert_eq!(part.final_state, k + 2);
+        assert_eq!(part.process_ids, [k as u32]);
+        assert!(
+            (part.sigma_pb / sigma[k] - 1.0).abs() < 1e-12
+                && (part.sigma_err_pb / error[k] - 1.0).abs() < 1e-12,
+            "{part:?} against the channels' {} ± {} pb",
+            sigma[k],
+            error[k]
+        );
+        assert!(common::part_line(&stderr, k + 2)
+            .line
+            .trim_end()
+            .ends_with(&format!(" over {} channels", part.channels)));
+    }
+    let inspected = common::vibegraph_ambient()
+        .arg("inspect")
+        .arg(&artifact_path)
+        .arg("--output-ldjson")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        inspected.status.success(),
+        "{}",
+        common::stderr_of(&inspected)
+    );
+    let object: serde_json::Value = serde_json::from_str(
+        common::stdout_of(&inspected)
+            .lines()
+            .last()
+            .unwrap_or_default(),
+    )
+    .expect("the result object is the last line");
+    let parts = object["multiplicities"].as_array().unwrap();
+    assert_eq!(parts.len(), 2, "{object}");
+    for (part, recorded) in parts.iter().zip(&artifact.multiplicities) {
+        assert_eq!(
+            part["final_state"].as_u64(),
+            Some(recorded.final_state as u64)
+        );
+        assert_eq!(part["process_ids"], serde_json::json!(recorded.process_ids));
+        assert_eq!(part["sigma"].as_f64(), Some(recorded.sigma_pb));
+        assert_eq!(part["sigma_err"].as_f64(), Some(recorded.sigma_err_pb));
+        assert_eq!(part["channels"].as_u64(), Some(recorded.channels as u64));
+    }
 
     let nevents = 4_000;
     let lhe = dir.join("events.lhe");
