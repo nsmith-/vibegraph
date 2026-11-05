@@ -13,7 +13,7 @@ use std::path::Path;
 
 /// The subcommands the chapter documents, in the script's order. `help` is
 /// clap's own and has no page.
-const COMMANDS: [&str; 3] = ["integrate", "generate", "check-events"];
+const COMMANDS: [&str; 4] = ["integrate", "generate", "check-events", "inspect"];
 
 fn help(args: &[&str]) -> String {
     let output = common::vibegraph_ambient()

@@ -16,6 +16,7 @@ Commands:
   integrate     Integrate the cross section of a process, saving the adapted VEGAS grids
   generate      Generate an unweighted event sample from a saved grid, as a Les Houches file
   check-events  Read a Les Houches file back and check that it is internally consistent
+  inspect       Print the results a saved integration artifact records
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -46,6 +47,9 @@ Options:
 
       --no-tui
           Never draw the live status pane; report in plain lines
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
   -h, --help
           Print help (see a summary with '-h')
@@ -86,9 +90,6 @@ Options:
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
-
       --neval <NEVAL>
           VEGAS evaluations per adaptation iteration.
           
@@ -96,21 +97,19 @@ Options:
           
           [default: 120000]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
   -q, --quiet
           Report only warnings and errors
-
-      --log-level <LEVEL>
-          Report at this level, instead of counting `-v`s
-          
-          [possible values: off, error, warn, info, debug, trace]
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -124,6 +123,11 @@ Options:
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
 
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
+
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
@@ -134,9 +138,6 @@ Options:
           
           [default: 6]
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
-
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
           
@@ -144,13 +145,16 @@ Options:
           
           [default: 500]
 
-      --no-tui
-          Never draw the live status pane; report in plain lines
+      --tui
+          Draw the live status pane even where one would not be drawn by default
 
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
@@ -160,6 +164,9 @@ Options:
           Possible values:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
       --alpha-floor <FLOOR>
           Raise every channel's selection weight to at least this after the α-survey, and renormalise; `off` installs the survey's weights as they came out.
@@ -286,9 +293,6 @@ Options:
           
           [default: buffer]
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
-
       --event-norm <EVENT_NORM>
           How the written weights are normalised; defaults to the `event_norm` the artifact recorded. It moves the weights and the `<init>` block, not the events drawn
 
@@ -297,37 +301,43 @@ Options:
           - sum:     The weights' sum is the cross section (`IDWTUP = -3`)
           - unity:   Every weight is one (`IDWTUP = -3`)
 
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
+      --ufo-dir <UFO_DIR>
+          Directory containing the recorded proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model. The model found must be the one the artifact was integrated against
+
   -v, --verbose...
           Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
 
   -q, --quiet
           Report only warnings and errors
 
-      --ufo-dir <UFO_DIR>
-          Directory containing the recorded proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model. The model found must be the one the artifact was integrated against
+      --scan-points <N|share>
+          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
+          
+          [default: share]
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --scan-points <N|share>
-          Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
+      --max-truncation <SHARE>
+          Share of each channel's scanned cross section its maximum may leave above itself. `0` takes the largest weight the scan saw instead; a larger share lowers the maxima, accepting more trials and giving more of the accepted events a weight above one
           
-          [default: share]
+          [default: 0.01]
 
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
-      --max-truncation <SHARE>
-          Share of each channel's scanned cross section its maximum may leave above itself. `0` takes the largest weight the scan saw instead; a larger share lowers the maxima, accepting more trials and giving more of the accepted events a weight above one
-          
-          [default: 0.01]
-
       --reweight-card <REWEIGHT_CARD>
           MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
+
+      --reweight-exact
+          Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking
 
       --tui
           Draw the live status pane even where one would not be drawn by default
@@ -335,11 +345,11 @@ Options:
       --no-tui
           Never draw the live status pane; report in plain lines
 
-      --reweight-exact
-          Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking
-
       --reweight-couplings <NAME,...>
           Track the amplitude as a polynomial jointly in these external parameters (comma-separated names), so every hypothesis costs a quadratic form rather than an amplitude evaluation: an event costs one evaluation per monomial of the amplitude — `1 + n` for `n` couplings entering at most once per diagram — whatever the number of hypotheses. The card may then move only these, and each must enter every subprocess polynomially
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
       --systematics <ARGUMENTS>
           MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
@@ -401,6 +411,56 @@ Options:
 
       --no-tui
           Never draw the live status pane; report in plain lines
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## `vibegraph inspect`
+
+```text
+Print the results a saved integration artifact records
+
+Usage: vibegraph inspect [OPTIONS] <ARTIFACT>
+
+Arguments:
+  <ARTIFACT>
+          The artifact `vibegraph integrate` wrote (`grid.bin.zst`)
+
+Options:
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
+  -q, --quiet
+          Report only warnings and errors
+
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
+
+      --log-file <PATH>
+          Also record every event, at `trace`, to this file.
+          
+          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
+
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
   -h, --help
           Print help (see a summary with '-h')

@@ -1414,6 +1414,16 @@ fn check_alphas(alphas: &[f64]) -> Result<(), GenerateError> {
     Ok(())
 }
 
+/// The pull of a sample's own cross section `sample ± sample_err` against the
+/// integration `artifact` records: their difference over the two errors in
+/// quadrature.
+pub fn sample_pull(sample: f64, sample_err: f64, artifact: &IntegrateArtifact) -> f64 {
+    (sample - artifact.sigma_pb)
+        / sample_err
+            .hypot(artifact.sigma_err_pb)
+            .max(f64::MIN_POSITIVE)
+}
+
 fn report(
     artifact: &IntegrateArtifact,
     stats: &UnweightStats,
@@ -1446,11 +1456,7 @@ fn report(
         artifact.sigma_pb,
         artifact.sigma_err_pb,
         100.0 * (sample_sigma / artifact.sigma_pb - 1.0),
-        (sample_sigma - artifact.sigma_pb)
-            / summary
-                .sample_sigma_err_pb
-                .hypot(artifact.sigma_err_pb)
-                .max(f64::MIN_POSITIVE)
+        sample_pull(sample_sigma, summary.sample_sigma_err_pb, artifact)
     );
     info!(
         "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",
@@ -1773,6 +1779,7 @@ mod tests {
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
             chi2_per_dof: Some(1.0),
+            multiplicities: Vec::new(),
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: String::new(),

@@ -1,79 +1,129 @@
 ---
 type: Design
 title: CLI output modes
-description: "Proposed: one output mode per run (plain, rich TUI, or ldjson via --output-ldjson) formats logs, progress and the result together; plain shows no progress; ldjson conflicts with --tui; an inspect subcommand reads a saved artifact's results."
+description: "Built: one output mode per run (plain, rich TUI, or ldjson via --output-ldjson) formats logs, progress and the result or refusal together; plain shows no progress; ldjson conflicts with --tui and carries a versioned schema with a stable error kind; vibegraph inspect reads a saved artifact's results."
 status: draft
 tags: [cli, logging, tui, tracing, progress, json]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-05}
 sources:
-  - {id: logging, resource: "../../../vibegraph-cli/src/logging.rs", title: "vibegraph-cli/src/logging.rs, the tracing layers and LogArgs::wants_tui"}
+  - {id: output, resource: "../../../vibegraph-cli/src/output.rs", title: "vibegraph-cli/src/output.rs, the mode, the ldjson schema and its final objects"}
+  - {id: logging, resource: "../../../vibegraph-cli/src/logging.rs", title: "vibegraph-cli/src/logging.rs, the tracing layers per mode (Sink)"}
+  - {id: error, resource: "../../../vibegraph-cli/src/error.rs", title: "vibegraph-cli/src/error.rs, CliError and ErrorKind"}
+  - {id: inspect, resource: "../../../vibegraph-cli/src/inspect.rs", title: "vibegraph-cli/src/inspect.rs, vibegraph inspect"}
   - {id: progress, resource: "../../../vibegraph-lib/src/progress.rs", title: "vibegraph-lib/src/progress.rs, the progress target and its field contract"}
-  - {id: result-line, resource: "../../../vibegraph-cli/src/tui/mod.rs", title: "vibegraph-cli/src/tui/mod.rs, result_line"}
-  - {id: artifact, resource: "../../../vibegraph-lib/src/artifact.rs", title: "vibegraph-lib/src/artifact.rs, the recorded sigma_pb/sigma_err_pb/chi2_per_dof"}
+  - {id: artifact, resource: "../../../vibegraph-lib/src/artifact.rs", title: "vibegraph-lib/src/artifact.rs, format 20 and MultiplicityTotal"}
+  - {id: tests, resource: "../../../vibegraph-cli/tests/cli_output_ldjson.rs", title: "vibegraph-cli/tests/cli_output_ldjson.rs, the schema pinned on the binary"}
 ---
-A proposal set by the user on 2026-11-04 and not yet built. It extends
-[logging and the terminal UI](logging-and-tui.md).
+The design the user set on 2026-11-04, as built. It extends
+[logging and the terminal UI](logging-and-tui.md). The user-facing
+description, with the full field list, is the "Output modes" section of
+the CLI overview (`docs/src/cli/overview.md`); the schema's reference is the
+module documentation of `vibegraph-cli/src/output.rs`.
 
-## Today
+## Three paths, one mode
 
 A run's output takes three paths:
 
 - **log lines:** `tracing` events at the visible level;
 - **progress:** `tracing` events on `vibegraph::progress` at TRACE, with a
   field contract (`stage`, `done`, `total` plus stage fields);
-- **the result:** `tui::result_line`, which goes straight to stdout.
+- **the result or refusal:** the command's final lines or object.
 
-`logging.rs` decides which layers consume these:
-
-- **piped:** formatted log lines go to stderr, and progress is not shown at all;
-- **on a terminal:** the TUI takes the formatted lines for its scrollback,
-  and a second layer filtered on the progress target updates its state.
-
-## One output mode per run
-
-The user's design: choose one output mode per run, and have it format all
-three paths.
+`main` chooses one `output::Mode` per run from the flags and the terminal,
+and `logging::init` builds the layers for it (`logging::Sink`):
 
 | mode | when | logs | progress | result or refusal |
 |---|---|---|---|---|
-| plain | not a terminal (background, piped), or `--no-tui` | text lines | not shown | text lines |
+| plain | not a terminal (background, piped), or `--no-tui` | text lines on stderr | not shown | text lines |
 | rich | a terminal on both streams, or `--tui` | the TUI scrollback | the TUI pane | held until the pane comes down |
-| ldjson | `--output-ldjson` | one object per event | one object per event | a final object |
+| ldjson | `--output-ldjson` | one `log` object per event | one `progress` object per event | one `result` or `refusal` object |
 
-### ldjson
+`check-events` and `inspect` are not watchable, so they are never rich.
 
-- **The stream.** Every line is one JSON object with a `kind` field: `log`,
-  `progress` or `result`/`refusal`. Everything goes on one stream (stdout)
-  so a reader sees events in order. The `log` objects respect the visible
-  level. The `progress` objects carry the progress target's fields
-  whatever the level, as the TUI's layer does today.
-- **The final object.** The result carries σ, its error, χ²/dof or null,
-  μF, the per-multiplicity and per-channel results, and the artifact path.
-  A refusal carries its error kind and message. Refusals write no artifact,
-  so this is the only place a tool can read one.
-- **Values.** They are in base units (pb), at full precision. SI-prefixed
-  rounding belongs only to the text modes.
-- **Versioning.** The schema carries a version, separate from the artifact
-  format, so a consumer can refuse an unknown one.
-- **`--tui`.** The flag is declared `conflicts_with = "tui"`, so combining
-  them is a usage error. ldjson also suppresses the pane on a terminal.
-- **Serialization.** Use `tracing-subscriber`'s `json` feature and
-  `serde_json`, already a dependency of the CLI, rather than hand-writing JSON.
+## ldjson
 
-### plain
+- **The flag.** `--output-ldjson` is a global switch on `LogArgs`, declared
+  `conflicts_with = "tui"`; `wants_tui` is false under it, so the pane stays
+  down on a terminal too. ldjson is the only machine-readable format, so it is
+  a switch rather than an `--output-format` value; if a second format ever
+  appears, the flag can become an alias of the new option.
+- **The stream.** Every line of stdout is one JSON object with `kind` (`log`,
+  `progress`, `result`, `refusal`) and `schema_version`. Everything is on
+  stdout so a reader sees events in order; each object is written under the
+  stdout lock in one call.
+- **Version on every line, not a header.** A consumer that filters the
+  stream (keeps only `result`), reads a truncated one, or starts mid-stream
+  still sees the version on every object it holds; a header line would make
+  each of those a special case, for a few bytes per line saved.
+- **`log` and `progress`** are `tracing-subscriber`'s JSON formatter's events
+  (`timestamp`, `level`, `target`, `fields`, and `span` inside a stage's span),
+  restamped with the two keys by the writer (`logging::LdjsonEvent`). The
+  event's fields stay nested under `fields` so no event field can collide with
+  `kind`. `log` uses the line layer's filter; `progress` is filtered on the
+  target alone and so arrives at any level, as the TUI's layer does.
+- **Units.** The final objects are in pb (GeV for a decay's width, and for
+  masses and scales) at full precision. The `progress` objects carry the field
+  contract verbatim, so the VEGAS stage's `sigma`/`err` are in the integrand's
+  natural units (GeV⁻² for a cross section, GeV for a width). Converting them
+  in the stream would need the observable, which the progress layer does not
+  know.
+- **The final objects.** `integrate` emits `output::IntegrateResult` after the
+  artifact is written; it is built from the artifact (`integrate::result_object`),
+  which is what makes `inspect --output-ldjson` of that artifact the same
+  object, a property `cli_output_ldjson` pins on a run. μF is reconstructed
+  from the recorded inputs and run card by the function the run used
+  (`FactorizationScale::recorded_in`). `generate` emits `output::GenerateResult`:
+  events written and drawn, the file, the sample's σ and the pull against the
+  integration (`vibegraph::generate::sample_pull`, the function its log line uses).
+- **The refusal** carries `error_kind` and `message`. `main` emits it in place
+  of the `error!` line the text modes print.
+- **Schema rule.** Adding a field keeps `SCHEMA_VERSION`; removing, renaming or
+  re-meaning a field, or adding or removing an error kind, bumps it.
 
-Progress is not shown, as today: a background log carries only the log lines
-and the result.
+## Error kinds (decision G10)
 
-### The flag
+`CliError` carries an `ErrorKind`, set where each error is built:
 
-ldjson is the only machine-readable format, so it is a plain switch,
-`--output-ldjson`, rather than an `--output-format` value. If a second format
-ever appears, the flag can become an alias of the new option.
+| kind | the failure |
+|---|---|
+| `usage` | the flags, or a combination of them |
+| `card` | a proc, run or param card cannot be read or parsed, or asks for something refused |
+| `model` | the model cannot be located, loaded or bound |
+| `process` | enumeration or compilation fails, or the process has a shape the integrator refuses |
+| `pdf` | the parton densities cannot be located, read or matched to the card |
+| `network` | a download the network policy refused, or one that failed |
+| `support` | the integration's result is not supported by its points (none kept, too few carrying weight) |
+| `artifact` | a saved artifact is unreadable, of another version, or disagrees with the build reading it |
+| `io` | another file or directory cannot be used |
+| `run` | the run failed after its inputs were accepted, for a reason no other kind names |
+
+A PDF failure is classified from the library's `SelectFailure` and
+`LookupError` (`error::pdf_error_kind`); a systematics resolve failure by
+`error::systematics_error_kind`, which answers `network` for a download the
+network policy declined and `pdf` otherwise. `generate`'s library catch-all
+still streams as `run` and some systematics request errors as `pdf`
+([ldjson-error-kinds-too-coarse](../backlog/feature/ldjson-error-kinds-too-coarse.md)).
+
+## Per-multiplicity totals (decision G11)
+
+Artifact format 20 records `MultiplicityTotal` per final-state phase space of
+a proton run (`IntegrateArtifact::multiplicities`), the totals `integrate`
+prints on its per-multiplicity lines; format 19 is refused by version, tested
+on 19's real field layout.
 
 ## `vibegraph inspect <grid.bin.zst>`
 
-Prints the results a saved artifact records, as text, or under `--output-ldjson`
-as the ldjson final result object. The artifact already stores `sigma_pb`,
-`sigma_err_pb` and `chi2_per_dof`, for the run and for each channel, along
-with the run card, maps and format version, so nothing needs re-running.
+Prints a saved artifact's results as text (process, model, σ, χ²/dof, the
+scale, the per-multiplicity lines when there are several, each channel, the
+path and format version), or under `--output-ldjson` the `result` object.
+
+## The survey
+
+`validation/cms_gridpacks/vgrun.py` runs `integrate --output-ldjson`, and
+`parse.parse_vg_output` reads the stream's objects when it holds any, and an
+older campaign's text output otherwise; both are tested. A refused run's `error_kind` is stored in
+`vg_run.error_kind` (database schema 3).
+
+Only the proc card `integrate` reads is announced at INFO; `generate` and
+`inspect` reparse the card an artifact records at DEBUG, so their streams do
+not read as if a card had been loaded from disk.

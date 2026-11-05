@@ -26,7 +26,11 @@ rayon = "1"
 tracing = "0.1"
 # `env-filter` is what makes `RUST_LOG` and per-module scoping work; the rest of
 # the sink machinery (`fmt`, `registry`) is on by default.
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# `json` formats the `--output-ldjson` stream's log and progress objects.
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+serde = { version = "1.0", features = ["derive"] }
+# `float_roundtrip`: a value read back is the value written, to the bit.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 ratatui = { version = "0.30.2", features = ["scrolling-regions"] }
 unicode-width = "0.2.2"
 ansi-to-tui = "8.0.1"
@@ -42,7 +46,8 @@ tempfile = "3"
 # Forges an artifact stamped with an older format version, to test its refusal.
 zstd = "0.13"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# `float_roundtrip`: a value read back is the value written, to the bit.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # The samples gate reads one flag out of validation/manifest.toml — which rows the
 # pinned reference bundle carries — through the same reader the library gates use.
 toml = "1"
