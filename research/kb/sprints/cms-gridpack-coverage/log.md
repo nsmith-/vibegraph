@@ -112,3 +112,4 @@
   - `asrwgtflavor`: H-J1's reading stands.
   - The recurring ~0.1–0.2% offset against local MadEvent: filed for later as `sigma-reads-above-local-madevent-by-a-few-permille`.
 * #103 merged (9af360ac) at the user's instruction once CI was green. The first CI run failed `a_pair_separated_by_rounding_shares_one_group`: CI rounds the pair to 3.9e-11, the host to 1.48e-10, so the test pinned last-ulp arithmetic. Fixed in ba303ca3: the test asserts the pair is rounding (f32 ×1e6) with 4× headroom. Banked passed. `ckm-flavour-groups-near-degenerate-refused` stays open for the 3.88e-8 card (CERN rerun).
+* A second container restart stopped H-K1 mid-`validate.sh`. Its code (proton.rs, maps.rs; uncommitted) and its scratch survived. The manager had spotted that its bit-for-bit events hashes were the empty-input SHA-256, because the LHE path was wrong. H-K1 was resumed from disk to fix that check, commit early, merge main (#103), gate, and finish its σ oracles.
