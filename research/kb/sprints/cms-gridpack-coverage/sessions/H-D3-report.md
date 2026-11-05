@@ -22,8 +22,18 @@ $ cd /home/user/wt-decay-duplicate && git rev-parse --show-toplevel && git branc
 sprinth-decay-duplicate
 ```
 
-Mid-session the manager asked for `origin/main` (#88, `d571a5d6`) to be merged in.
-That is merge commit `b78d280d`. Step 1 was rerun on `d571a5d6` (§1). Scratch, none
+Mid-session the manager asked twice for `origin/main` to be merged in:
+
+- #88 (`d571a5d6`), merge commit `b78d280d`. Its message is git's default and
+  carries no `Assisted-by` trailer. It cannot be amended (no amend), so it is
+  recorded here. Step 1 was rerun on `d571a5d6` (§1).
+- #96, #94 and #98 (`cbfaec61`), merge commit `1ecf7d27`, after the session's
+  commit `5f1d071f`. It conflicted in `diagrams/mod.rs` (the beam-ordering rule
+  #96 added to the cross-line check, next to this session's assignment rule) and
+  in `tests/diagrams.rs`. Both behaviours are kept, and
+  `two_assignments_on_two_lines_keep_their_mirrors` pins the two together (§3).
+  The census, the scratch harness and the CLI stops were rerun on `1ecf7d27`, and
+  their results are unchanged (§4, §5). Scratch, none
 committed, is under
 `/tmp/claude-0/-home-user-vibegraph/0bdd8e0a-85fe-5422-8ff6-63eab43fffee/scratchpad/H-D3/`
 (below: `$S`). It holds:
@@ -208,6 +218,11 @@ brief's scope** (see the summary for the manager).
 - `one_assignment_on_two_lines_is_refused`: the same chain twice, chain plus plain,
   and plain plus chain.
 - `a_subprocess_reached_from_two_lines_is_refused` is unchanged and passes.
+- `two_assignments_on_two_lines_keep_their_mirrors` was added at the second merge.
+  On `p p > z u u~, z > c c~` + `p p > z c c~, z > u u~`, every content has one
+  set per line with different forced lines. Each set is `mirrored` exactly when
+  its beams differ, which is #96's rule for a `p p` line. Before this session's
+  rule, the card is refused at enumeration.
 
 Before the fix (M0, `mod.rs` from `HEAD`, everything else as committed; `H-D3_mut0.log`):
 
@@ -251,8 +266,8 @@ with three changes:
 
 It compares the (process, decays) keys, the per-entry diagram count on
 MadGraph's decay blocks, and the number of doubly reached contents. It ran on the
-merged, fixed tree (`H-D3_vg_bsm_merged.log`, `H-D3_vg_sm_ord_merged.log`;
-verbatim):
+fixed tree after each merge: `H-D3_vg_*_merged.log` at `b78d280d` and
+`H-D3_vg_*_merged2.log` at `1ecf7d27`, identical lines. The output, verbatim:
 
 ```
 TT125: ok=true here 396 sets / 1984 diagrams, MadGraph 396 entries / 1312 diagrams (per entry); shared contents here 198 MadGraph 198
@@ -322,6 +337,10 @@ diagram count on MadGraph's blocks, which is equal wherever the keys meet.
 | VLLD_ele / VLLD_mu | 4 from two assignments; `68 diagrams in 36 subprocesses` | `subprocess u u~ > Z e- Z e+ has an incoming leg of mass 0.00255 GeV; a parton distribution supplies massless partons` (item 6, `massive-incoming-partons-refused`; the VLL model's `MU = 2.55e-3`) |
 | VLLVLL ×2 | `16 diagrams in 8 subprocesses` | the same massive-u refusal (`u u~ > Z e- mu+ mu- e+`) |
 
+Rerun on `1ecf7d27`, after the second merge, with `vibegraph-branch3`
+(`H-D3_cli_branch3.log`). Every row is the same: the same diagram and subprocess
+counts, and the same first error. Zto2Q was rerun on `@0`+`@1` only.
+
 The second card of Wto2Q and of Zto2Q (800–1500) differs only in `ihtmin` and
 `ihtmax` (§2). Their main-side run is in §1, and they were not rerun on the
 branch.
@@ -380,15 +399,34 @@ since H-D2's 27. It now says 30 and names the restriction handling.
 
 ## 7. Gates
 
-All commands ran with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
-CARGO_PROFILE_TEST_DEBUG=0` and `-j 2`, on the merged tree:
+All commands ran on the merged tip `1ecf7d27` (`git rev-parse HEAD` recorded
+in `$S/H-D3_gates3_head.txt`), with `CARGO_INCREMENTAL=0
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` and `-j 2`. A container
+restart killed the first post-merge `cargo test` mid-run (`H-D3_test2.log` ends
+inside `cli_onshell_veto`), so every gate below was rerun from scratch
+(`$S/H-D3_final_gates2.sh`).
 
 | gate | command | result |
 |---|---|---|
-| fmt | `cargo fmt --all --check` | `GATE fmt 0` |
-| clippy | `cargo clippy -j 2 --workspace --all-targets -- -D warnings` | `Finished`, `GATE clippy 0` |
-| hermetic suite | `cargo test -j 2 --workspace` | `GATE test 0`; 54 `test result` lines, 1893 passed, 0 failed, 25 ignored (`H-D3_test.log`) |
-| banked layer | `CARGO_BUILD_JOBS=2 nohup setsid bash validation/validate.sh` with an untracked `.cargo/config.toml` (`[profile.release-debug] debug = 0`), deleted afterwards | see the addendum below |
+| fmt | `cargo fmt --all --check` | exit 0, no output (`GATE fmt 0`) |
+| clippy | `cargo clippy -j 2 --workspace --all-targets -- -D warnings` | `Finished \`dev\` profile [optimized] target(s) in 54.20s`, `GATE clippy 0` (`H-D3_clippy3.log`) |
+| hermetic suite | `cargo test -j 2 --workspace` | `GATE test 0`; 54 `test result` lines summing to 1907 passed, 0 failed, 25 ignored (`H-D3_test3.log`) |
+| census gate | `cargo test -j 2 -p vibegraph-lib --test decay_chain_census -- --nocapture` | `30 cards: 27 stitched and matched (842 subprocesses, 107 of them reached by two decay assignments), 3 refused as MadGraph refuses or drops`; `test result: ok. 1 passed; 0 failed` (`H-D3_census_gate3.log`) |
+| banked layer | `CARGO_BUILD_JOBS=2 bash validation/validate.sh`, detached with `nohup setsid`, with an untracked `.cargo/config.toml` (`[profile.release-debug] debug = 0`), deleted afterwards | see the addendum below (`H-D3_validate3.log`) |
+
+The four cross-line tests in `H-D3_test3.log`:
+
+```
+test a_subprocess_reached_from_two_lines_is_refused ... ok
+test one_assignment_on_two_lines_is_refused ... ok
+test two_assignments_on_two_lines_are_two_subprocesses ... ok
+test two_assignments_on_two_lines_keep_their_mirrors ... ok
+```
+
+The census rows' lines in `H-D3_census_gate3.log` equal those of §6
+(`H-D3_census_gate.log`, pre-merge): 60, 1 and 4 subprocesses from two decay
+assignments. The scratch harness of §4 on `1ecf7d27` (`H-D3_vg_*_merged2.log`)
+differs from its `b78d280d` run only in wall times and a thread id (`diff`).
 
 ## 8. closes_when
 
@@ -446,4 +484,25 @@ CARGO_PROFILE_TEST_DEBUG=0` and `-j 2`, on the merged tree:
 
 ## Addendum: banked layer
 
-Filled in at commit time below.
+`$S/H-D3_final_gates2.sh` ran `CARGO_BUILD_JOBS=2 bash validation/validate.sh`
+on `1ecf7d27`, detached (`nohup setsid`), from 00:16:44 to 02:38:08 UTC
+(`H-D3_validate3.log`). The `release-debug` build took 76 min on two jobs,
+beside the sibling H-G1's run. The log's last lines:
+
+```
+77 rows × 4 categories = 308 cells: 218 measured in the layers this run drove (213 ✅, 5 ⚠️, 14 ⏳, 76 — / uncovered).
+
+The measured cells are exactly the cells the manifest declares, every gate cell
+passed, and every measurement agrees with the manifest about what it is.
+[report] 77 rows x 4 categories: the measured cells are the declared cells
+GATE validate 0
+```
+
+Its 84 `test result` lines sum to 2360 passed, 0 failed, 110 ignored, and no
+`test result: FAILED` line appears. The `panicked at` lines in the log are
+`should_panic` tests. The five ⚠️ cells are informational rows outside this
+session's change: `gg_to_gg` and `gg_to_gg_cg` diagrams (4/6, 21/27),
+`ee_to_wpwm_cw` and `ee_to_zh_smeft` amplitudes (1.63e-12, 6.00e-11), and
+`ee_to_mumua` samples (KS p 9.3e-4). The `decay-chain-census`, `decay-chain-sigma`
+and `decay-chain-events` rows ran. The untracked `.cargo/config.toml` was deleted
+after the run.
