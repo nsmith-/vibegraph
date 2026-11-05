@@ -604,10 +604,14 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
     }
 }
 
-/// An artifact whose integration saw no point inside its cuts replays to a weight
-/// scan that finds no weight, and `generate` refuses it with a named error and
-/// exit status 1 rather than panicking. The run card's `ptl` exceeds the beam
-/// energy, so every muon pair is cut and the integration banks σ = 0.
+/// A weight scan whose draws all miss the region the cuts accept is refused by
+/// `generate` with a named error and exit status 1, never a panic. The run
+/// card's `ptl` leaves the muons a narrow band of polar angle at 45.6 GeV
+/// beams, so the integration banks σ > 0 on about 1600 effective points, and
+/// one scan point per channel misses that band on about one generation seed in
+/// five. Every seed up to the first refusal must generate or be refused by
+/// name, and a refusal must come within forty seeds (about 1e-4 to miss at one
+/// in five).
 #[test]
 fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
     let home = tempfile::tempdir().unwrap();
@@ -619,7 +623,7 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(
         &run_card,
-        format!("{}  50.0 = ptl\n", fixed_beams(45.6, 45.6)),
+        format!("{}  45.5 = ptl\n", fixed_beams(45.6, 45.6)),
     )
     .unwrap();
 
@@ -640,19 +644,33 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
         stderr_of(&integrated)
     );
 
-    let generated = vibegraph(cwd.path(), home.path())
-        .arg("--no-network")
-        .arg("generate")
-        .arg(out.path().join("grid.bin.zst"))
-        .args(["--seed", "7", "--nevents", "10"])
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = stderr_of(&generated);
-    assert_eq!(generated.status.code(), Some(1), "got:\n{stderr}");
+    let refused = (1..=40).find(|seed| {
+        let generated = vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(out.path().join("grid.bin.zst"))
+            .args(["--seed", &seed.to_string(), "--nevents", "10"])
+            .args(["--scan-points", "1", "--force", "--no-tui", "--out"])
+            .arg(out.path().join("events.lhe"))
+            .output()
+            .expect("spawn vibegraph");
+        let stderr = stderr_of(&generated);
+        match generated.status.code() {
+            Some(0) => false,
+            Some(1) => {
+                assert!(
+                    stderr.contains("the weight scan found no usable weight")
+                        && stderr.contains("nothing can be generated")
+                        && !stderr.contains("panicked"),
+                    "seed {seed}:\n{stderr}"
+                );
+                true
+            }
+            code => panic!("seed {seed}: exit {code:?}\n{stderr}"),
+        }
+    });
     assert!(
-        stderr.contains("the weight scan found no usable weight")
-            && stderr.contains("nothing can be generated")
-            && !stderr.contains("panicked"),
-        "got:\n{stderr}"
+        refused.is_some(),
+        "no seed in 40 drew a scan that missed the accepted band"
     );
 }

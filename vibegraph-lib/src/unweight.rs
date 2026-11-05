@@ -256,19 +256,20 @@ pub trait ChannelIntegrand {
 
 /// A weight scan in which no channel found a usable weight: every draw of
 /// every channel carried zero weight, or the maxima did not sum to a finite
-/// positive number. An artifact whose integration saw almost no point inside its
-/// cuts (a cross section estimated from a handful of points, or none) replays to
-/// this.
+/// positive number. An integration that carries no weight is refused before it
+/// is banked, so this is a scan too small for the share of each channel's grid
+/// the cuts accept: one point per channel on `e+ e- > mu+ mu-` whose `ptl` leaves
+/// a narrow band of polar angle misses it on about one seed in five.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "the weight scan found no usable weight: {nonzero} of {draws} draws over {channels} \
-     channel(s) carried weight, so nothing can be generated. The artifact's grids miss the \
-     region its cuts accept; re-integrate it with a larger budget, or check its cuts"
+     channel(s) carried weight, so nothing can be generated. The scan's draws missed the \
+     region the cuts accept; scan on more points per channel"
 )]
 pub struct NoUsableWeight {
-    pub channels: usize,
-    pub draws: usize,
-    pub nonzero: usize,
+    channels: usize,
+    draws: usize,
+    nonzero: usize,
 }
 
 /// What a frozen scan of one channel's grid found.
@@ -565,8 +566,7 @@ impl Unweighter {
     ///
     /// # Panics
     ///
-    /// Where no channel's scan finds a weight ([`try_scan_with`](Self::try_scan_with)
-    /// returns that as an error).
+    /// Where no channel's scan finds a weight ([`NoUsableWeight`]).
     pub fn scan_with<'g, I: ChannelIntegrand + Sync>(
         integrand: &I,
         channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
@@ -579,7 +579,7 @@ impl Unweighter {
     /// [`scan_with`](Self::scan_with), refusing a scan in which no channel found a
     /// usable weight — every draw cut away, or no finite maximum — since nothing
     /// can then be generated.
-    pub fn try_scan_with<'g, I: ChannelIntegrand + Sync>(
+    pub(crate) fn try_scan_with<'g, I: ChannelIntegrand + Sync>(
         integrand: &I,
         channels: impl IntoIterator<Item = (&'g VegasGrid, usize)>,
         seed: u64,
