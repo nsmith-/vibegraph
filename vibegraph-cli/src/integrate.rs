@@ -39,8 +39,8 @@ use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, ParsingOptions,
-    SupportedCard,
+    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, EnumerationPool,
+    ParsingOptions, SupportedCard,
 };
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
@@ -397,7 +397,9 @@ pub(crate) struct IntegrateArgs {
     /// `generate`); `-` reads the card from stdin.
     pub(crate) proc_card: PathBuf,
 
-    /// MadGraph `run_card.dat`; absent → MadGraph LO defaults.
+    /// MadGraph `run_card.dat`; absent → the card MadGraph's `output` writes
+    /// for the process: the LO defaults, with every cut removed for a decay and
+    /// `maxjetflavor` raised to 5 when a subprocess has an incoming b.
     #[arg(long)]
     pub(crate) run_card: Option<PathBuf>,
 
@@ -570,18 +572,17 @@ impl IntegrateArgs {
 
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
-/// removed. A card that activates a cut no stage applies is refused here, ahead
+/// removed and for a scattering process takes `maxjetflavor` from the incoming
+/// partons of its subprocesses ([`GlobalConfig::load_run_card`]). A card that activates a cut no stage applies is refused here, ahead
 /// of every stage that costs anything.
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
+    model: &UFOModel,
+    pool: EnumerationPool,
 ) -> Result<RunCard, CliError> {
-    let card = if parsed.is_decay() {
-        config.load_decay_run_card()
-    } else {
-        config.load_run_card()
-    };
-    let rc = card.map_err(|e| match &config.run_card_path {
+    let loaded = config.load_run_card(parsed, model, pool);
+    let rc = loaded.map_err(|e| match &config.run_card_path {
         Some(path) => err(
             ErrorKind::Card,
             format!("cannot load the run card {}: {e}", path.display()),
@@ -793,7 +794,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
-    let card = load_run_card(&config, &parsed)?;
+    let card = load_run_card(&config, &parsed, &model, args.parallel.enumeration())?;
     let split = if parsed.is_decay() {
         card.split_decay()
     } else {

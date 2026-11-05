@@ -58,7 +58,10 @@ that turns on fixed-energy partonic beams:
 
 With no run card at all, a process runs at MadGraph's defaults: 13 TeV
 protons, the default jet and lepton cuts, and the default kT-clustered
-dynamical scale. One default departs from MadGraph's card: the parton
+dynamical scale. As in the card MadGraph's `output` writes for the process,
+`maxjetflavor` is 5 when some subprocess has an incoming b (a five-flavour
+model such as `sm-no_b_mass`), so its b quarks take the jet cuts; it stays 4
+otherwise. One default departs from MadGraph's card: the parton
 densities. MadGraph's template says `pdlabel = nn23lo1`, its own built-in
 parameterisation; vibegraph reads densities only from LHAPDF6 grids, so its
 default is `pdlabel = lhapdf` at `lhaid = 247000`, `NNPDF23_lo_as_0130_qed`,
