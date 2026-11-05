@@ -8,7 +8,7 @@ priority: medium
 closes_when: "A Measurement concept records, on one host in one sitting, the added cost per event of vibegraph's systematics weights and of MadGraph's systematics module on the same events, for a scale-only request and for CMS's runcmsgrid.sh request, at the commit of the MATRIX1 re-measurement."
 blocked_by: []
 opened: 2026-11-04
-tags: [performance, madgraph-comparison, systematics, pdf, presentation, user-requested]
+tags: [performance, madgraph-comparison, systematics, pdf, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 sources:
   - {id: syst, resource: "../../sprints/systematics/sprint.md", title: "Systematics sprint"}
@@ -18,8 +18,8 @@ The [systematics sprint](../../sprints/systematics/sprint.md) gated the
 weights per event against MadGraph's systematics output, and
 [the CMS PDF memory work](../../sprints/cms-pdf-memory/closeout.md) timed our
 side alone (CMS's 43-set, 880-member request at about 11 s wall at `-j 4`).
-MadGraph's systematics module on the same events was never timed, so the
-"many weights" claim currently rests on reweighting only
+MadGraph's systematics module on the same events was never timed; reweighting
+is the only many-weight workflow compared so far
 ([reweighting-vs-madgraph-stale](reweighting-vs-madgraph-stale.md)).
 
 Measure: generate with and without the request (same grid, seed, events) on

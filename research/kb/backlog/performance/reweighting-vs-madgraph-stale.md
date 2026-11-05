@@ -8,15 +8,14 @@ priority: medium
 closes_when: "reweighting-cost-vs-madgraph.md carries a re-run of bench-reweight at the commit and on the hosts of the MATRIX1 re-measurement (an x86 host and the M3), including an operator-basis row: n SMEFT operators at NP=1, (n+1)(n+2)/2 hypotheses (n = 8 → 45), timed on both the exact and polynomial paths, with MadGraph measured at that H, not extrapolated."
 blocked_by: []
 opened: 2026-11-04
-tags: [performance, madgraph-comparison, reweighting, re-measure, presentation, user-requested]
+tags: [performance, madgraph-comparison, reweighting, re-measure, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 sources:
   - {id: rw, resource: "../../performance/reweighting-cost-vs-madgraph.md", title: "Reweighting cost against MadGraph's reweight module"}
 ---
 [Reweighting cost against MadGraph](../../performance/reweighting-cost-vs-madgraph.md)
 was measured at `f6b1936` on one 4-vCPU VM and is labelled an order-of-magnitude
-comparison. It backs the "up to two orders of magnitude for workflows with many
-weights" claim, so it needs the same treatment as the other comparisons:
+comparison. It needs the same treatment as the other comparisons:
 
 - the commit and hosts of [the MATRIX1 re-measurement](matrix-element-vs-madgraph-stale.md);
 - an operator-basis row, the way EFT reweighting is used: n operators at

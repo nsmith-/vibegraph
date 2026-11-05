@@ -8,7 +8,7 @@ priority: medium
 closes_when: "integration-vs-madgraph.md carries fresh time-to-0.1% and throughput tables at the commit and on the hosts of the MATRIX1 re-measurement (an x86 host and the M3 at least), over the five existing time-to-accuracy rows plus at least one MLM-matched multi-jet row and one 2→4 row, each with ≥3 seeds, MadGraph's version and flags recorded, and a wall-clock column at equal core count beside the cumulated_time one."
 blocked_by: []
 opened: 2026-11-04
-tags: [performance, madgraph-comparison, integration, time-to-accuracy, throughput, re-measure, presentation, user-requested]
+tags: [performance, madgraph-comparison, integration, time-to-accuracy, throughput, re-measure, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 sources:
   - {id: int, resource: "../../performance/integration-vs-madgraph.md", title: "Integration against MadGraph: throughput and time to accuracy"}
@@ -17,8 +17,8 @@ sources:
 The tables in [integration against MadGraph](../../performance/integration-vs-madgraph.md)
 (time to 0.1% on σ: 1.67× Cascade Lake, 3.84× M3 Max; throughput 3.97× / 8.76×)
 predate constant collection and fused scaled sums, and the map work since
-(the windowed decay angle halved `pp_to_llj`'s evaluations to 0.1%). These are
-the figures a public "integration is several times faster" claim rests on.
+(the windowed decay angle halved `pp_to_llj`'s evaluations to 0.1%), and none
+has been re-measured since.
 
 Needs, beyond a re-run:
 - **The same commit and hosts as

@@ -38,13 +38,13 @@ landed:
 - Whether to include any `-ffast-math`-style flag. If one is included, record
   it and keep it out of the like-for-like row.
 
-**One sitting for every public comparison.** This run fixes the commit and
+**One sitting for every MadGraph comparison.** This run fixes the commit and
 hosts that the end-to-end re-runs reuse:
 [integration](integration-vs-madgraph-stale.md),
 [reweighting](reweighting-vs-madgraph-stale.md) and
 [systematics](systematics-cost-vs-madgraph-unmeasured.md). It also closes
 [matrix1-ratio-unmeasured-since-constant-collection](matrix1-ratio-unmeasured-since-constant-collection.md).
-The scalar interpreter is the row that backs "on par with precompiled Fortran",
-so lanes stay out of this table. If a bare-metal Zen 4 host is available, a
+The table compares the scalar interpreter with MATRIX1, so lanes stay out of
+it. If a bare-metal Zen 4 host is available, a
 third column there would add an AMD point. The VMs have shown ±35% drift across
 separate processes.
