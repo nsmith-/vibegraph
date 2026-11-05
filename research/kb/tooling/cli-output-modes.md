@@ -98,7 +98,11 @@ and `logging::init` builds the layers for it (`logging::Sink`):
 | `run` | the run failed after its inputs were accepted, for a reason no other kind names |
 
 A PDF failure is classified from the library's `SelectFailure` and
-`LookupError` (`error::pdf_error_kind`).
+`LookupError` (`error::pdf_error_kind`); a systematics resolve failure by
+`error::systematics_error_kind`, which answers `network` for a download the
+network policy declined and `pdf` otherwise. `generate`'s library catch-all
+still streams as `run` and some systematics request errors as `pdf`
+([ldjson-error-kinds-too-coarse](../backlog/feature/ldjson-error-kinds-too-coarse.md)).
 
 ## Per-multiplicity totals (decision G11)
 
@@ -117,4 +121,9 @@ path and format version), or under `--output-ldjson` the `result` object.
 
 `validation/cms_gridpacks/vgrun.py` runs `integrate --output-ldjson`, and
 `parse.parse_vg_output` reads the stream's objects when it holds any, and an
-older campaign's text output otherwise; both are tested.
+older campaign's text output otherwise; both are tested. A refused run's `error_kind` is stored in
+`vg_run.error_kind` (database schema 3).
+
+Only the proc card `integrate` reads is announced at INFO; `generate` and
+`inspect` reparse the card an artifact records at DEBUG, so their streams do
+not read as if a card had been loaded from disk.
