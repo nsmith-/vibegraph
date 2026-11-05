@@ -79,3 +79,12 @@
   - H-G1's +1.5% is ≈1.2% MadEvent's default survey (`madevent-default-survey-bias`) + 0.2% its iteration combination + the large-√ŝ under-sampling.
   - The manager deleted `light-quark-qcd-sigma-high-vs-madgraph` as MadGraph's side and catalogued the under-sampling in `madgraph-defects.md`.
   - Found, to file: vibegraph's overflowed iteration χ²/dof (~1e289) near threshold at fixed √ŝ = 60.5 GeV; fixed-beam 3-jet seeds scatter at χ²/dof 2.79; H-M2's cut rows need the quadrature with `PASSCUTS`.
+* H-M2 done (d931b012 on `sprinth-massive-incoming`). The manager re-ran the onium and massive-parton lib tests on it: 12 passed.
+  - Taken from the report, all against LHAPDF-247000 MadGraph at 5 seeds per side:
+    - LL_HAHM +3.3e-4 (pull +0.66);
+    - ZprimeToTauTau +1.2e-3 (pull +0.62), every part passing;
+    - the 7 mirror rows +7e-4 to +1.1e-3, each passing;
+    - `validate.sh` exit 0.
+  - It deletes `massive-incoming-partons-refused` and `explicit-initial-state-ordering-counted-twice`, and lifts `ptonium`/`etaonium` as inert.
+  - H-M2's coherent +0.1% on the mirror rows (Found 2) agrees in sign and size with H-Q1's measurement of MadEvent itself on uncut `u u~ > e+ e-` (+5.8e-4 ± 3.5e-4 above an exact quadrature, where vibegraph is +2.8e-5). So it reads as MadEvent's survey, not vibegraph; the cut rows are still to check by quadrature.
+* #93 and #90 merged to main. origin/main was merged into `sprinth-massive-incoming` and is being re-gated.
