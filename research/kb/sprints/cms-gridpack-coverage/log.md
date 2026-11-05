@@ -65,3 +65,4 @@
 * H-M2 resumed from its on-disk state.
 * The user approved #93; the manager merges it on green CI, coordinating with #90, and files its Found items. No pushes to `sprinth-decay-duplicate` meanwhile. The squash makes the missing b78d280d trailer moot.
 * #93 Found triage (the user, via the manager): this sprint handles 1 (the stale `proc-card-grammar.md:159`, on `sprinth-kb`) and 4 (the TTToHcToWA proc card, a defect candidate, in the close-out catalogue). The manager files 2 (`define` optimize_order), 3 (the b̄ core leg order) and 5 (BSM census models). Nothing goes onto #93.
+* H-G1 done (2e2dd355 on `colour-split-groups`, pushed; gates on the merged tree green, `validate.sh` exit 0). With LHAPDF 247000 on MadGraph the σ offset persists: vibegraph is +1.5% (2→3) and +2.0% (HT 2→4), and the single-subprocess controls are too, so grouping is not the cause. Filed `light-quark-qcd-sigma-high-vs-madgraph` (high) for a diagnosis session.
