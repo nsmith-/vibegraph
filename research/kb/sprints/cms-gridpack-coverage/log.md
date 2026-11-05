@@ -56,3 +56,10 @@
 * #96 merged (56bcf347) and #94 merged (cbfaec61); #98 put items 7 and 8 on main. #96's item stays open for the massive rows after #95. The user approved building LHAPDF locally, so that local MadGraph runs with the same PDF set as vibegraph (`pdlabel = lhapdf`, 247000). LHAPDF 6.5.4 (hepforge tarball, sha256 2443a4b3…) is being built into /home/user/lhapdf. This follows H-G1's 1.4–2.1% and H-M2's ×1.0049 (αs) nn23lo1 offsets.
 * LHAPDF 6.5.4 built (`/home/user/lhapdf`, `--disable-python`), with 247000 and 315200 linked from `validation/pdf`. The main checkout's MadGraph config sets `lhapdf`. Checked by the manager: a C++ probe gives αs(91.188) = 0.1300027109 for 247000, the value vibegraph writes. A MadGraph `p p > e+ e-` launch with `pdlabel = lhapdf`, `lhaid = 247000` gives 667.1 ± 3.3 pb, with AQCDUP 0.12997 at 91.3 GeV. H-M2 was resumed and H-G1 told to redo their MadGraph σ on it.
 * The container restarted and stopped H-D3, H-G1 and H-M2. Their worktrees, commits and scratch survived: unpushed merges and commits on `colour-split-groups`, `sprinth-decay-duplicate` and `sprinth-massive-incoming`, and the onium change uncommitted on the last. The manager removed the merged worktrees (`wt-cuts`, `wt-mirror`, `wt-g0`, `wt-plan`) to free disk, then resumed H-G1 and H-D3 from their on-disk state. H-M2 resumes when one finishes, to keep two `validate.sh` runs at most on 4 cores.
+* H-D3 done (5f1d071f, 1ecf7d27, 02bea373 on `sprinth-decay-duplicate`). The manager re-ran the census gate on 02bea373: 27 of 30 cards matched, 107 contents reached twice, passes.
+  - Taken from the report: workspace 1907 passed; `validate.sh` exit 0.
+  - 7 of the 11 survey cards reached the cross-line refusal, so the session extended D3 to two lines whose decay assignments differ (MadGraph sums them).
+  - The item's file is deleted. PR #93 is marked ready.
+  - The cards now stop at `GroupCutsDiffer` (4), the compile timeout (full Zto2Q), a colour split (TpTp) and massive incoming u (VLLD/VLLVLL ×4).
+  - Merge b78d280d lacks the trailer.
+* H-M2 resumed from its on-disk state.
