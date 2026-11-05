@@ -126,7 +126,8 @@ impl DynamicalChoice {
         }
     }
 
-    pub(crate) fn as_i64(self) -> i64 {
+    /// The run-card integer this choice is spelled as.
+    pub fn as_i64(self) -> i64 {
         match self {
             DynamicalChoice::Clustered => -1,
             DynamicalChoice::TotalTransverseEnergy => 1,
@@ -468,6 +469,13 @@ impl ScaleChoice {
 
     pub fn choice(&self) -> DynamicalChoice {
         self.choice
+    }
+
+    /// Each beam's factorisation scale (GeV) where the card fixes it, and `None`
+    /// on a beam whose scale is read off each event. A fixed value holds on
+    /// every path a scale is taken by, the clustering included.
+    pub fn fixed_factorisation_scales(&self) -> [Option<f64>; 2] {
+        self.fixed_fac
     }
 
     pub fn scalefact(&self) -> f64 {

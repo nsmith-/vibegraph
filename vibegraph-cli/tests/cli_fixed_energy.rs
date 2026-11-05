@@ -348,3 +348,122 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
         widest(&unbounded)
     );
 }
+
+/// `e+ e- > mu+ mu-` at √ŝ = 100 TeV on `--fixed-budget --niter <niter>`: the
+/// artifact, the result line on stdout and the run summary on stderr.
+fn run_small_sigma(niter: &str) -> (IntegrateArtifact, String, String) {
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_path = tmp.path().join("proc_card.dat");
+    let run_path = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    std::fs::write(&run_path, fixed_beams(5.0e4, 5.0e4)).unwrap();
+    let out = tmp.path().join("out");
+    let output = common::vibegraph(tmp.path(), tmp.path())
+        .arg("integrate")
+        .arg(&proc_path)
+        .arg("--run-card")
+        .arg(&run_path)
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "4000", "--niter", niter])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&output);
+    assert!(output.status.success(), "integrate failed:\n{stderr}");
+    let artifact =
+        IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
+    (artifact, common::stdout_of(&output), stderr)
+}
+
+/// The digits after a printed number's decimal point.
+fn decimals(text: &str) -> usize {
+    text.split_once('.').map_or(0, |(_, d)| d.len())
+}
+
+/// A cross section of order `1e-5` pb is printed in attobarns with the digits
+/// its error supports: the error to two significant figures, and σ to the same
+/// decimal place, so σ reads back to within a twentieth of its error and the
+/// two carry the same number of decimals.
+#[test]
+fn a_small_cross_section_prints_the_digits_its_error_supports() {
+    let (artifact, stdout, _) = run_small_sigma("4");
+    let (sigma, err) = (artifact.sigma_pb, artifact.sigma_err_pb);
+    assert!(
+        (1.0e-6..1.0e-4).contains(&sigma) && err > 0.0,
+        "σ = {sigma} ± {err} pb is not the small cross section this test is for"
+    );
+    let printed = common::result_line(&stdout);
+    let line = printed.line;
+    assert_eq!((printed.symbol, printed.unit), ("σ", "ab"), "{line}");
+    let mantissa: f64 = printed.value_text.parse().expect("σ parses");
+    assert!(
+        (1.0..1000.0).contains(&mantissa),
+        "{line}: σ's mantissa is outside [1, 1000)"
+    );
+    let figures = printed
+        .error_text
+        .trim_start_matches(['0', '.'])
+        .chars()
+        .filter(char::is_ascii_digit)
+        .count();
+    assert_eq!(
+        figures, 2,
+        "{line}: the error carries two significant figures"
+    );
+    assert_eq!(
+        decimals(printed.value_text),
+        decimals(printed.error_text),
+        "{line}: σ is not printed to the error's decimal place"
+    );
+    assert!(
+        (printed.error / err - 1.0).abs() <= 0.05,
+        "{line}: the error reads {} pb for {err} pb",
+        printed.error
+    );
+    assert!(
+        (printed.value - sigma).abs() <= 0.05 * err,
+        "{line}: σ reads {} pb for {sigma} ± {err} pb",
+        printed.value
+    );
+}
+
+/// A `--fixed-budget --niter 3` run keeps one iteration past the two warm-up
+/// ones, and a χ² over one value has no degree of freedom: the summary prints
+/// `n/a` and the artifact records no χ²/dof, for the run or any channel. A
+/// fourth iteration makes it a number again, printed as the artifact records
+/// it. A fixed-energy run reads no parton densities, which the summary says
+/// and the artifact records as no factorization scale.
+#[test]
+fn a_chi2_over_one_iteration_is_reported_undefined() {
+    let vegas_line = |log: &str| -> String {
+        log.lines()
+            .find(|l| l.contains("VEGAS:"))
+            .unwrap_or_else(|| panic!("no VEGAS summary in:\n{log}"))
+            .to_string()
+    };
+    let (one, _, log) = run_small_sigma("3");
+    let line = vegas_line(&log);
+    assert!(
+        line.contains(" over 3 iters,") && line.trim_end().ends_with("(χ²/dof = n/a)"),
+        "{line}"
+    );
+    assert_eq!(one.chi2_per_dof, None);
+    for (j, c) in one.channels.iter().enumerate() {
+        assert_eq!(c.chi2_per_dof, None, "channel {j}");
+    }
+    assert!(log.contains("GeV,  no parton densities"), "{log}");
+    assert!(!log.contains("μF"), "{log}");
+    assert_eq!(one.mu_f, None);
+
+    let (two, _, log) = run_small_sigma("4");
+    let chi2 = two
+        .chi2_per_dof
+        .expect("two kept iterations define a χ²/dof");
+    let line = vegas_line(&log);
+    assert!(
+        line.contains(" over 4 iters,")
+            && line.trim_end().ends_with(&format!("(χ²/dof = {chi2:.3})")),
+        "{line}"
+    );
+    assert!(two.channels.iter().all(|c| c.chi2_per_dof.is_some()));
+}

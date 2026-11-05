@@ -66,6 +66,7 @@ use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonI
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::vegas::Chi2PerDof;
 
 type V = LorentzVector<f64>;
 
@@ -1691,7 +1692,7 @@ fn probe_accepted_point_floor_hadronic() {
             "  seed {seed:>10}: sigma {sigma_pb:.4} +- {sigma_err_pb:.4} pb | rel {:+.4} \
              | chi2/dof {:6.2}",
             sigma_pb / mg - 1.0,
-            result.chi2_per_dof,
+            Chi2PerDof(result.chi2_per_dof),
         );
         eprintln!("    {}", common::floor_coverage_line(&spend));
         runs.push(SeedResult {
@@ -1815,7 +1816,7 @@ fn probe_alpha_survey_budget_hadronic() {
                          | rel {:+.4} | χ²/dof {:6.2} | achieved_rel {:.5} \
                          | scaled_rel {:.5} (×{:.1})",
                         sigma_pb / mg - 1.0,
-                        result.chi2_per_dof,
+                        Chi2PerDof(result.chi2_per_dof),
                         spend.achieved_rel,
                         spend.scaled_rel,
                         spend.scaled_rel / spend.achieved_rel,
@@ -4846,7 +4847,7 @@ fn llj_scatter_calibration(
         eprintln!(
             "SCATTER map={label} seed={seed} sigma_pb={sigma_pb:.6} err_pb={sigma_err_pb:.6} \
              iter_chi2={:.3} seconds={:.1}",
-            total.chi2_per_dof,
+            Chi2PerDof(total.chi2_per_dof),
             clock.seconds()
         );
         for (j, (id, term)) in integ.channel_ids().iter().zip(&channels).enumerate() {
@@ -4858,7 +4859,7 @@ fn llj_scatter_calibration(
                 term.alpha,
                 term.result.integral * GEV2_TO_PB,
                 term.result.std_dev * GEV2_TO_PB,
-                term.result.chi2_per_dof
+                Chi2PerDof(term.result.chi2_per_dof)
             );
         }
         runs.push(SeedResult {
@@ -4977,7 +4978,7 @@ fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
          τ_min = {:.3e}, {} channels ──",
         total.integral,
         total.std_dev,
-        total.chi2_per_dof,
+        Chi2PerDof(total.chi2_per_dof),
         integ.tau_min(),
         channels.len(),
     );

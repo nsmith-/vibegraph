@@ -92,6 +92,7 @@ use vibegraph::unweight::Unweighter;
 use vibegraph::validation::samples::{
     compare, labelling_for, Chi2Column, EventSample, FieldColumn, FieldKind, Spectrum,
 };
+use vibegraph::vegas::Chi2PerDof;
 
 mod common;
 
@@ -2073,7 +2074,7 @@ fn vg_part(seed: u64, neval: usize) -> PartSplit {
 /// channel maps' fiducial scale and the VEGAS grids all adapt to the window, so
 /// the sum over windows is an audit of the unwindowed integral rather than a
 /// restatement of it.
-fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
+fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, Chi2PerDof) {
     let (lo, hi) = (PTA_EDGES[window], PTA_EDGES[window + 1]);
     with_mumua_integrand(Some((lo, hi)), seed, |integ| {
         let (_, r) = integ.adapt_grids(neval, PTA_NITER, seed);
@@ -2082,7 +2083,7 @@ fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
                 pb: r.integral * GEV2_TO_PB,
                 err: r.std_dev * GEV2_TO_PB,
             },
-            r.chi2_per_dof,
+            Chi2PerDof(r.chi2_per_dof),
         )
     })
 }
