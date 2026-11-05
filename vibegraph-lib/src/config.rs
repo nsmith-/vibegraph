@@ -7,12 +7,17 @@
 //! environment, the `~/.vibegraph` cache) is the caller's job; a UFO model is
 //! never downloaded.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use thiserror::Error;
 use tracing::{debug, info, info_span, trace};
 
-use crate::diagrams::ModelImport;
+use crate::diagrams::{
+    generate_from_proc_card_in, DiagramError, DiagramSet, EnumerationPool, ModelImport,
+    SupportedCard,
+};
 use crate::progress;
 use crate::runcard::{RunCard, RunCardError};
 use crate::ufo::identity::ModelIdentity;
@@ -63,7 +68,8 @@ pub struct GlobalConfig {
     /// Explicit restrict-card path, overriding a directive's `-<variant>` suffix
     /// and the default `restrict_default.dat` discovery (non-SM models only).
     pub restrict_path_override: Option<PathBuf>,
-    /// Optional MadGraph `run_card.dat`; absent → MadGraph LO defaults.
+    /// Optional MadGraph `run_card.dat`; absent → MadGraph's default card for
+    /// the process ([`load_run_card`](Self::load_run_card)).
     pub run_card_path: Option<PathBuf>,
 }
 
@@ -132,25 +138,56 @@ impl GlobalConfig {
         Ok(describe(model, identity))
     }
 
-    /// Resolve the run card: parse [`run_card_path`](Self::run_card_path) if set,
-    /// otherwise return the MadGraph LO defaults (an empty card).
-    pub fn load_run_card(&self) -> Result<RunCard, RunCardError> {
-        match &self.run_card_path {
-            Some(path) => RunCard::parse_file(path),
-            None => Ok(RunCard::default()),
+    /// Resolve the run card for the processes of `parsed`: parse
+    /// [`run_card_path`](Self::run_card_path) if set, and otherwise build
+    /// MadGraph's default card for them, as its `output` writes it.
+    ///
+    /// For a `1 → n` decay that is [`RunCard::decay_default`] (every cut
+    /// removed). For a scattering process it is [`RunCard::scattering_default`]
+    /// over the incoming partons of the generated subprocesses, which MadGraph
+    /// reads off its matrix elements and this reads off an enumeration of the
+    /// card under `model` on `pool`: a subprocess with no diagram is not one
+    /// MadGraph generates, so its partons do not count.
+    pub fn load_run_card(
+        &self,
+        parsed: &SupportedCard,
+        model: &UFOModel,
+        pool: EnumerationPool,
+    ) -> Result<RunCard, LoadRunCardError> {
+        if let Some(path) = &self.run_card_path {
+            return Ok(RunCard::parse_file(path)?);
         }
+        if parsed.is_decay() {
+            return Ok(RunCard::decay_default());
+        }
+        let sets = generate_from_proc_card_in(parsed, model, pool)?;
+        Ok(RunCard::scattering_default(incoming_pdg_ids(&sets, model)))
     }
+}
 
-    /// [`load_run_card`](Self::load_run_card) for a `1 → n` decay process, whose
-    /// card without a file is MadGraph's default for a decay
-    /// ([`RunCard::decay_default`]: every cut removed) rather than the
-    /// scattering one.
-    pub fn load_decay_run_card(&self) -> Result<RunCard, RunCardError> {
-        match &self.run_card_path {
-            Some(path) => RunCard::parse_file(path),
-            None => Ok(RunCard::decay_default()),
-        }
-    }
+/// Why [`GlobalConfig::load_run_card`] has no card.
+#[derive(Debug, Error)]
+pub enum LoadRunCardError {
+    #[error(transparent)]
+    Card(#[from] RunCardError),
+    /// The default card reads the generated subprocesses, and they could not be
+    /// generated.
+    #[error("cannot enumerate the processes the default card is built for: {0}")]
+    Process(#[from] DiagramError),
+}
+
+/// The PDG ids of the incoming legs of every subprocess with a diagram.
+fn incoming_pdg_ids(sets: &[DiagramSet], model: &UFOModel) -> BTreeSet<i64> {
+    sets.iter()
+        .filter(|set| !set.diagrams.is_empty())
+        .flat_map(|set| &set.particles_in)
+        .map(|name| {
+            let id = model
+                .particle_id(name)
+                .expect("an enumerated leg is a model particle");
+            model.particle(id).pdg_code
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -214,13 +251,90 @@ mod tests {
         assert_ne!(default.digest, no_b.digest);
     }
 
+    /// The run card `cfg` resolves for `proc_card` under its own model.
+    fn run_card_for(cfg: &GlobalConfig, proc_card: &str) -> RunCard {
+        let parsed = crate::diagrams::parse_proc_card(proc_card, &Default::default()).unwrap();
+        let model = cfg.load_ufo(&parsed.model).unwrap();
+        cfg.load_run_card(&parsed, &model, EnumerationPool::Serial)
+            .unwrap()
+    }
+
+    /// `(maxjetflavor, asrwgtflavor)` of a card.
+    fn flavours(rc: &RunCard) -> (i64, i64) {
+        (rc.maxjetflavor, rc.int("asrwgtflavor"))
+    }
+
     #[test]
     fn load_run_card_defaults_when_absent() {
-        let cfg = config();
-        let rc = cfg.load_run_card().unwrap();
+        let rc = run_card_for(&config(), "generate p p > e+ e-\n");
         // An absent card yields the MadGraph LO defaults.
         assert_eq!(rc.ebeam1, 6500.0);
         assert_eq!(rc.float("ptl"), 10.0);
+    }
+
+    /// With no run card, `maxjetflavor` is the heaviest incoming quark of a
+    /// generated subprocess, at least 4, as MadGraph's
+    /// `create_default_for_process` writes it: 5 once a massless b is in the
+    /// proton, 4 in the four-flavour model. `asrwgtflavor` stays at the
+    /// template's 5 in both, as in the card MadGraph writes and reads back.
+    #[test]
+    fn absent_card_takes_the_jet_flavours_from_the_beams() {
+        let cfg = config();
+        let five = run_card_for(&cfg, "import model sm-no_b_mass\ngenerate p p > j j\n");
+        assert_eq!(flavours(&five), (5, 5));
+        let four = run_card_for(&cfg, "import model sm\ngenerate p p > j j\n");
+        assert_eq!(flavours(&four), (4, 5));
+    }
+
+    /// Only the subprocesses that have a diagram count. Under a diagonal CKM no
+    /// b-initiated subprocess makes a single W+, so `p p > w+` stays at 4 in the
+    /// five-flavour model though `p` holds the b: MadGraph reads the flavours
+    /// off its matrix elements, not off the multiparticle label.
+    #[test]
+    fn absent_card_counts_only_generated_subprocesses() {
+        let cfg = config();
+        let w = run_card_for(&cfg, "import model sm-no_b_mass\ngenerate p p > w+\n");
+        assert_eq!(flavours(&w), (4, 5));
+        let bb = run_card_for(&cfg, "import model sm-no_b_mass\ngenerate b b~ > z\n");
+        assert_eq!(flavours(&bb), (5, 5));
+    }
+
+    /// Incoming leptons are no partons, so the template's `maxjetflavor` stays;
+    /// a decay keeps it too. So does a subprocess whose only incoming quarks
+    /// are tops: MadGraph takes the heaviest beam quark only when some incoming
+    /// parton is a quark up to b, a gluon or a photon.
+    #[test]
+    fn absent_card_without_incoming_partons_keeps_the_template_flavours() {
+        let cfg = config();
+        let ee = run_card_for(&cfg, "import model sm-no_b_mass\ngenerate e+ e- > b b~\n");
+        assert_eq!(flavours(&ee), (4, 5));
+        let decay = run_card_for(&cfg, "import model sm-no_b_mass\ngenerate z > b b~\n");
+        assert_eq!(flavours(&decay), (4, 5));
+        let tt = run_card_for(&cfg, "import model sm\ngenerate t t~ > z\n");
+        assert_eq!(flavours(&tt), (4, 5));
+    }
+
+    /// A run card that is given wins whatever the process, its own 4 included,
+    /// and a card silent on the two keeps the template's values.
+    #[test]
+    fn an_explicit_card_keeps_its_jet_flavours() {
+        let dir = tempfile::tempdir().unwrap();
+        let card = |name: &str, text: &str| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            GlobalConfig {
+                run_card_path: Some(path),
+                ..config()
+            }
+        };
+        let five_flavour = "import model sm-no_b_mass\ngenerate p p > j j\n";
+        let explicit = card("four.dat", "4 = maxjetflavor\n4 = asrwgtflavor\n");
+        assert_eq!(flavours(&run_card_for(&explicit, five_flavour)), (4, 4));
+        let silent = card("empty.dat", "");
+        assert_eq!(flavours(&run_card_for(&silent, five_flavour)), (4, 5));
+        let six = card("six.dat", "6 = maxjetflavor\n");
+        let four_flavour = "import model sm\ngenerate p p > j j\n";
+        assert_eq!(flavours(&run_card_for(&six, four_flavour)), (6, 5));
     }
 
     /// An unknown variant is refused as such, naming the variant asked for and
