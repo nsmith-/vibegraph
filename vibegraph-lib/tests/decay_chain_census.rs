@@ -13,8 +13,14 @@
 //!   does not permute identical particles between decays (it divides by
 //!   `identical_decay_chain_factor` instead), so those diagrams are the ones it has; the
 //!   rest are the permutations, whose count is reported;
+//! - per card, how many subprocesses two decay assignments reach (`g g > u u~ c c~` from
+//!   `g g > z j j, z > j j`, or from two lines whose resonances differ): each is two
+//!   entries on both sides, one per assignment;
 //! - where MadGraph refuses, stitching refuses too; where MadGraph drops a decay with a
 //!   warning (its particle is in no core subprocess), stitching refuses by design.
+//!
+//! Each card is stitched under the model it imports, the built-in SM at its restriction;
+//! a card needing any other model cannot be banked here.
 //!
 //! What it cannot see: which diagram is which beyond the forced lines' final states, and
 //! anything past the diagram list. The stitched diagrams themselves are checked against
@@ -25,6 +31,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value;
 use vibegraph::diagrams::check::check_supported;
@@ -130,6 +137,20 @@ enum Outcome {
     Refused(String),
 }
 
+/// The model a card imports: the built-in SM at the card's restriction (the default
+/// when it imports none). The census has no other model.
+fn model_for(card: &str) -> Arc<UFOModel> {
+    let ast = parse_proc_card_ast(card).expect("a census card parses");
+    let import = check_supported(&ast).ok().and_then(|c| c.model);
+    let Some(import) = import else {
+        return sm_model(SMRestrict::Default);
+    };
+    assert_eq!(import.name, "sm", "the census reads only the built-in SM");
+    let restrict = SMRestrict::from_suffix(import.restrict_variant.as_deref())
+        .unwrap_or_else(|| panic!("no SM restriction {:?}", import.restrict_variant));
+    sm_model(restrict)
+}
+
 fn stitch(card: &str, model: &UFOModel) -> Outcome {
     let ast = match parse_proc_card_ast(card) {
         Ok(ast) => ast,
@@ -150,6 +171,18 @@ fn stitch(card: &str, model: &UFOModel) -> Outcome {
     }
 }
 
+/// How many particle contents (sorted initial, sorted final) more than one of `keys`
+/// has.
+fn shared_contents<'a>(keys: impl Iterator<Item = &'a Key>) -> usize {
+    let mut counts: BTreeMap<Key, usize> = BTreeMap::new();
+    for (initial, final_state) in keys {
+        let mut sorted = final_state.clone();
+        sorted.sort_unstable();
+        *counts.entry((initial.clone(), sorted)).or_default() += 1;
+    }
+    counts.values().filter(|&&n| n > 1).count()
+}
+
 /// The identical-particle factor of a final state.
 fn identical_factor(ids: &[i64]) -> u64 {
     let mut counts: BTreeMap<i64, u64> = BTreeMap::new();
@@ -161,16 +194,16 @@ fn identical_factor(ids: &[i64]) -> u64 {
 
 #[test]
 fn decay_chain_census_matches_madgraph() {
-    let model = sm_model(SMRestrict::Default);
-    let pdg = |name: &str| model.particles[name].pdg_code;
     let doc = reference();
     let cases = doc["cases"].as_array().expect("cases");
     assert!(!cases.is_empty(), "the census banks no cards");
     let mut failures = Vec::new();
-    let (mut matched, mut refused, mut subprocesses) = (0, 0, 0);
+    let (mut matched, mut refused, mut subprocesses, mut shared) = (0, 0, 0, 0);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let card = case["card"].as_str().unwrap();
+        let model = model_for(card);
+        let pdg = |name: &str| model.particles[name].pdg_code;
         let dropped = case["warnings"].as_array().is_some_and(|w| {
             w.iter()
                 .any(|m| m.as_str().unwrap().starts_with("Decay without"))
@@ -225,16 +258,31 @@ fn decay_chain_census_matches_madgraph() {
                         identical_factor(&key.1)
                     ));
                 }
+                // A subprocess two decay assignments reach is two entries on each side,
+                // their final states in different orders (each decay's products at its
+                // particle's position).
+                let (here, there) = (shared_contents(ours.keys()), shared_contents(theirs.keys()));
+                if here != there {
+                    ok = false;
+                    failures.push(format!(
+                        "{name}: {here} subprocesses reached by two decay assignments here, \
+                         {there} in MadGraph"
+                    ));
+                }
                 if ok {
                     matched += 1;
                 }
-                eprintln!("{name}: {}", report.join("; "));
+                shared += there;
+                eprintln!(
+                    "{name}: {there} subprocesses from two decay assignments; {}",
+                    report.join("; ")
+                );
             }
         }
     }
     eprintln!(
-        "{} cards: {matched} stitched and matched ({subprocesses} subprocesses), {refused} \
-         refused as MadGraph refuses or drops",
+        "{} cards: {matched} stitched and matched ({subprocesses} subprocesses, {shared} of \
+         them reached by two decay assignments), {refused} refused as MadGraph refuses or drops",
         cases.len()
     );
     assert!(

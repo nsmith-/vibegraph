@@ -238,7 +238,9 @@ Other refusals:
   default particle names and `--modelname` (closed by [the default-particle-names sprint](../sprints/default-particle-names/sprint.md)).
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),
-  [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
+  duplicate subprocess across decay assignments (`decay-chain-duplicate-subprocess-vs-madgraph`, closed by
+  [the CMS gridpack coverage sprint](../sprints/cms-gridpack-coverage/sprint.md): each assignment is its own
+  subprocess, on one line or two, summed as MadGraph sums them).
 - Feature gaps: variation weights (`systematics-variation-weights-not-written`, since closed)
   and the silent drop of a systematics request (now a warning),
   `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
