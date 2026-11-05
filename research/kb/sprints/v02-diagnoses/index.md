@@ -6,6 +6,10 @@
 
 * [v0.2 diagnoses: one-point σ, VEGAS under-coverage, heap aborts](sprint.md) - Diagnose card 048's one-point σ, make VEGAS detect (or warn on) an under-covered cut slice, and attribute the two macOS heap-corruption aborts; part two of sprint G, one PR.
 
+## Sprint Record
+
+* [v0.2 diagnoses: one-point σ, VEGAS under-coverage, heap aborts](closeout.md) - Sprint G part two (#89): card 048's unbounded τ draw fixed, a Breit–Wigner τ map for whole-state narrow poles, generate's no-weight panic refused, the small-width deviation registered, the VEGAS slice shown correct on main, and the heap aborts deferred after Linux tooling and an M3 soak found nothing.
+
 ## Directories
 
 * [sessions](sessions/index.md)

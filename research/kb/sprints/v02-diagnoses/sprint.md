@@ -3,7 +3,7 @@ type: Sprint
 title: "v0.2 diagnoses: one-point σ, VEGAS under-coverage, heap aborts"
 description: "Diagnose card 048's one-point σ, make VEGAS detect (or warn on) an under-covered cut slice, and attribute the two macOS heap-corruption aborts; part two of sprint G, one PR."
 status: draft
-active: true
+active: false
 tags: [diagnosis, vegas, heap-corruption, decay-chains, sprint-g, v0.2]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-03}
 ---
