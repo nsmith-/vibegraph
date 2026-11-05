@@ -15,6 +15,7 @@ sources:
   - {id: mg-kin, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L95", title: "MadGraph kin_functions.f rap, R2, DELTA_PHI"}
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L200-L235", title: "MadGraph setcuts.f class membership"}
   - {id: mg-ht, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L517-L913", title: "MadGraph LO cuts.f, the jet and b transverse-momentum lists and the HT cuts"}
+  - {id: hm2-onium, resource: "../sprints/cms-gridpack-coverage/sessions/H-M2-report.md", title: "H-M2 report §1, every ptonium/etaonium reader and the measured equality"}
   - {id: mg-ht-defaults, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4401-L4411", title: "MadGraph banner.py, the HT parameters and their defaults"}
 ---
 
@@ -132,7 +133,7 @@ a positive Γ floored at `M·small_width_treatment`) and `cut_decays`. Under `xq
 jet thresholds are rewritten first ([run-card/matching-parameters](matching-parameters.md)).
 
 Everything else tagged `cut=` in `banner.py` is **parse-and-detect**:
-`UNIMPLEMENTED_CUTS` lists `misset(max)`, `ptheavy`, `ptonium`/`etaonium`,
+`UNIMPLEMENTED_CUTS` lists `misset(max)`, `ptheavy`,
 `xpt{j,b,a,l}`, the leading-object `ptj1..4`/`ptl1..4` min/max and `cutuse`, the
 partial sums `ht2min`..`ht4max`, `ptgmin` (Frixione isolation), `xetamin`/`deltaeta` (VBF),
 `ktdurham`/`dparameter`/`ptlund` (CKKW-L merging) and the per-PDG dictionary
@@ -143,7 +144,12 @@ unimplemented cut is never silently ignored; the error marks exactly when a real
 process needs one implemented[^n18-design][^n18-outcome]. The isolation
 parameters (`r0gamma`, `xn`, `epsgamma`, `isoem`) and `mxx_only_part_antipart`
 qualify only refused cuts and are classified benign
-([run-card/field-classification](field-classification.md)).
+([run-card/field-classification](field-classification.md)). So are `ptonium` and
+`etaonium`, at any value: MadGraph 3.7.1 registers them as legacy
+(`banner.py:4318`, `:4338`, `include=False`), its one Fortran reader, the
+quarkonium block of `setcuts.f:307-312`, is commented out, and `is_a_onium` is
+never assigned. A card with `0 = ptonium` and `-1 = etaonium` gives the same
+`run_card.inc`, σ and events as one with the defaults[^hm2-onium].
 
 Small inventory facts: `etajmin`/`etaamin` carry `cut='a'` in `banner.py`
 (harmless; `setcuts.f` keys `etaXmin` by class)[^n18-h6].
@@ -185,3 +191,4 @@ The parser and defaults are [run-card/run-card-parser-and-defaults](run-card-par
 [^mg-setcuts]: MadGraph `setcuts.f:200-235`, `do_cuts` (`:201-215`) and class membership (`:217-235`).
 [^mg-ht]: MadGraph `cuts.f:521-534` (the lists), `:817` (no jets), `:874-913` (the HT cuts); `setcuts.f:498-507` (the parameters' commons), at the pinned commit.
 [^mg-ht-defaults]: MadGraph `banner.py:4402-4405` (defaults), `:3858-3873` (`remove_all_cut`); `run_card.dat:102, 218-223` (the template's wording).
+[^hm2-onium]: H-M2 §1: the readers at the pinned commit, and MadGraph seeds 11–15 with the shipped and the default values giving one `run_card.inc`, one σ and bit-identical events per seed.
