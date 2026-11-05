@@ -461,6 +461,33 @@ class Schema(unittest.TestCase):
             db.execute("DELETE FROM vg_run WHERE run_id = ?", (ok,))
             self.assertEqual(db.execute("SELECT outcome, reason FROM comparison").fetchall(), [("refused", "x {}")])
 
+    def test_a_refusal_keeps_its_error_kind(self):
+        import sqlite3
+        import tempfile
+
+        import gpdb
+        parsed = P.parse_vg_output(VG_LDJSON_REFUSED, "", 1, False)
+        with tempfile.TemporaryDirectory() as d:
+            db = gpdb.connect(os.path.join(d, "t.sqlite"))
+            gid = db.execute("INSERT INTO gridpack (path, label) VALUES ('p', 'l')").lastrowid
+            bid = db.execute("INSERT INTO vg_build (version, binary_sha256) VALUES ('v', ?)", ("0" * 64,)).lastrowid
+            db.execute("INSERT INTO vg_campaign VALUES ('c', '{}', '2026-01-01T00:00:00')")
+
+            def run(attempt, outcome, kind):
+                return db.execute(
+                    "INSERT INTO vg_run (gridpack_id, build_id, campaign, attempt, patches, argv, started_at, "
+                    "exit_code, timed_out, outcome, sigma_pb, err_pb, error_kind) VALUES (?, ?, 'c', ?, '[]', "
+                    "'[]', '2026-01-01T00:00:00', ?, 0, ?, ?, ?, ?)",
+                    (gid, bid, attempt, int(outcome != "ok"), outcome,
+                     *((1.0, 0.1) if outcome == "ok" else (None, None)), kind)).lastrowid
+            run(1, parsed["outcome"], parsed["error_kind"])
+            self.assertEqual(db.execute("SELECT outcome, error_kind FROM comparison").fetchall(),
+                             [("refused", "process")])
+            with self.assertRaises(sqlite3.IntegrityError):  # not one of the CLI's kinds
+                run(2, "refused", "unknown")
+            with self.assertRaises(sqlite3.IntegrityError):  # only a refusal carries a kind
+                run(3, "ok", "run")
+
 
 if __name__ == "__main__":
     unittest.main()

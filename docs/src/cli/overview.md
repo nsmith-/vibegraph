@@ -222,7 +222,10 @@ its result or refusal together:
 carries one JSON object per line and nothing else, in the order the run
 produced them; the status pane is never drawn, and `--tui` with it is a
 usage error. Every object has a `kind` and a `schema_version` (currently
-`1`); a reader refuses a version it does not know.
+`1`); a reader refuses a version it does not know. A new field can appear in
+any object without a version bump, so a reader ignores fields it does not
+know; removing, renaming or re-meaning a field, or changing the list of error
+kinds, bumps the version.
 
 - `log`: an event at the visible level, as `tracing-subscriber`'s JSON
   formatter writes it: `timestamp`, `level`, `target`, the event's `fields`
@@ -230,7 +233,8 @@ usage error. Every object has a `kind` and a `schema_version` (currently
 - `progress`: a progress measurement, at any level, in the same layout. Its
   `fields` are the progress stream's own: `stage`, `done`, `total` when the
   stage knows it, and the stage's extras. The VEGAS stage's running `sigma`
-  and `err` are in the integrand's natural units (GeV⁻² for a cross section).
+  and `err` are in the integrand's natural units (GeV⁻² for a cross section,
+  GeV for a width).
 - `result`: the command's final object. `integrate`'s carries `process`,
   `model` (`label`, `digest`), `observable` and `unit` (`pb`, or `GeV` for a
   decay's width), `sigma`, `sigma_err`, `chi2_per_dof` (`null` over fewer than

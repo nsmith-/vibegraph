@@ -224,9 +224,11 @@ pub fn parse_proc_card(
 ) -> Result<SupportedCard, DiagramError> {
     let ast = parse_proc_card_ast(content)?;
     let card = check_supported(&ast)?;
+    // At `debug`: a caller that reads a card from disk announces it at `info`
+    // itself, and one reparsing a card an artifact recorded has read none.
     let _span = info_span!("proc_card").entered();
     for process in &card.processes {
-        info!("generate {process} @{}", process.id);
+        debug!("generate {process} @{}", process.id);
     }
     for command in &ast.commands {
         if let parse::Command::Define(def) = command {

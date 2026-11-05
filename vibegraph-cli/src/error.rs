@@ -7,6 +7,7 @@ use vibegraph::cache::lhapdf::LookupError;
 use vibegraph::cache::pinned::EnsureError;
 use vibegraph::cache::store::StoreError;
 use vibegraph::pdf::select::{PdfSelectError, SelectFailure};
+use vibegraph::systematics::plan::ResolveError;
 
 /// What a refusal is about, as a short name a tool can branch on without
 /// reading the message.
@@ -121,9 +122,38 @@ pub(crate) fn pdf_error_kind(e: &PdfSelectError) -> ErrorKind {
     }
 }
 
+/// The kind of a failure to resolve a systematics request's PDF sets: downloads
+/// the network policy did not allow are [`ErrorKind::Network`], and the rest
+/// are the sets' own.
+pub(crate) fn systematics_error_kind(e: &ResolveError) -> ErrorKind {
+    match e {
+        ResolveError::Declined { .. } => ErrorKind::Network,
+        _ => ErrorKind::Pdf,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ErrorKind;
+    use super::{systematics_error_kind, ErrorKind};
+    use vibegraph::systematics::plan::ResolveError;
+
+    /// A systematics set that would need a download nobody allowed is a network
+    /// refusal, like the run's own set; one that cannot be read is the set's.
+    #[test]
+    fn a_declined_systematics_download_is_a_network_refusal() {
+        let declined = ResolveError::Declined {
+            count: 1,
+            what: "NNPDF31_nnlo_as_0118".to_string(),
+            why: "the network is off".to_string(),
+        };
+        assert_eq!(systematics_error_kind(&declined), ErrorKind::Network);
+        let member = ResolveError::Member {
+            set: "NNPDF31_nnlo_as_0118".to_string(),
+            member: 3,
+            why: "unreadable".to_string(),
+        };
+        assert_eq!(systematics_error_kind(&member), ErrorKind::Pdf);
+    }
 
     /// The kinds' wire names are the schema's: pinned name for name, so a
     /// renamed variant fails here rather than in a consumer.

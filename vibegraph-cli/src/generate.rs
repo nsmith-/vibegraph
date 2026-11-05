@@ -36,7 +36,6 @@ use vibegraph::generate::{
     check_collider_energy, check_model, check_process, generate, reads_parton_densities,
     sample_pull, GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
 };
-use vibegraph::hadronic::Observable;
 use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
 use vibegraph::reweight::card::ReweightCard;
@@ -50,8 +49,8 @@ use vibegraph::ufo::UFOModel;
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
 use crate::assets;
-use crate::error::{err, pdf_error_kind, CliError, ErrorKind};
-use crate::integrate::{forbidden_onshell, process_string};
+use crate::error::{err, pdf_error_kind, systematics_error_kind, CliError, ErrorKind};
+use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
 use crate::output::{self, GenerateResult};
 use crate::parallel::ParallelArgs;
@@ -414,7 +413,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         model.vertices.len(),
         model.couplings.len(),
     );
-    tui::state::describe_process(&artifact.process);
+    tui::state::describe_process(&artifact.process, observable_of(&parsed));
     tui::state::note_channels(artifact.channels.len());
 
     let mut settings = artifact.generate.clone();
@@ -497,7 +496,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
                 resolve_systematics(request, central, &tiers, &assets::pdf_fetch(network))
                     .map_err(|e| {
                         err(
-                            ErrorKind::Pdf,
+                            systematics_error_kind(&e),
                             format!("systematics request refused at generate: {e}"),
                         )
                     })?,
@@ -536,11 +535,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
     output::text_line(format_args!("wrote {}", args.out.display()));
-    let observable = if parsed.is_decay() {
-        Observable::PartialWidth
-    } else {
-        Observable::CrossSection
-    };
+    let observable = observable_of(&parsed);
     output::result(&GenerateResult {
         events_written: summary.written,
         events_drawn: summary.drawn,

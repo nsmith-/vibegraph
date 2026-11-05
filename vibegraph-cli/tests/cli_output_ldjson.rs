@@ -49,6 +49,14 @@ fn of_kind<'a>(objects: &'a [Value], kind: &str) -> Vec<&'a Value> {
     objects.iter().filter(|o| o["kind"] == kind).collect()
 }
 
+/// How many `log` objects carry exactly `message`.
+fn logged(objects: &[Value], message: &str) -> usize {
+    of_kind(objects, "log")
+        .iter()
+        .filter(|l| l["fields"]["message"] == message)
+        .count()
+}
+
 /// The one final object of a run's stream, which must be its last line.
 fn final_object<'a>(objects: &'a [Value], kind: &str) -> &'a Value {
     let finals: Vec<&Value> = objects
@@ -257,8 +265,14 @@ fn inspect_emits_the_object_integrate_emitted() {
         "{}",
         common::stderr_of(&inspected)
     );
-    let objects = objects(&inspected);
-    assert_eq!(final_object(&objects, "result"), &emitted);
+    let streamed = objects(&inspected);
+    assert_eq!(final_object(&streamed, "result"), &emitted);
+
+    // The card `integrate` read is announced once; the copy `inspect` parses
+    // back out of the artifact is not a card read, and is not announced.
+    let announced = format!("generate {PROCESS} @1");
+    assert_eq!(logged(&objects(&run.output), &announced), 1);
+    assert_eq!(logged(&streamed, &announced), 0, "{streamed:?}");
 }
 
 /// Without the flag, `inspect` prints the recorded results as text: the result
@@ -280,8 +294,12 @@ fn inspect_prints_the_recorded_results_as_text() {
     let line = common::result_line(&stdout);
     assert_eq!(line.symbol, "σ");
     let a = &run.artifact;
+    // The error prints to two figures and the value to the same place, so the
+    // printed value and error are each within half that place of the recorded
+    // ones: under 5% of the error, bounded at 6% for the unit conversion's ulps.
     assert!(
-        (line.value - a.sigma_pb).abs() <= a.sigma_err_pb,
+        (line.value - a.sigma_pb).abs() <= 0.06 * a.sigma_err_pb
+            && (line.error - a.sigma_err_pb).abs() <= 0.06 * a.sigma_err_pb,
         "{} against {} ± {}",
         line.line,
         a.sigma_pb,
@@ -323,6 +341,7 @@ fn the_generate_result_carries_the_sample_and_its_pull() {
     );
     let objects = objects(&generated);
     assert!(!of_kind(&objects, "log").is_empty());
+    assert_eq!(logged(&objects, &format!("generate {PROCESS} @1")), 0);
     assert!(!of_kind(&objects, "progress").is_empty());
     let result = final_object(&objects, "result");
     assert!(events.exists());
@@ -361,6 +380,47 @@ fn the_generate_result_carries_the_sample_and_its_pull() {
         text.contains(&format!("{sample:.6e} +- {sample_err:.6e}")),
         "the file does not record {sample:.6e} +- {sample_err:.6e}"
     );
+}
+
+/// A decay's result is a width in GeV, and `inspect` names it so too: the
+/// observable `integrate` took from its integrand and the one `inspect` reads
+/// off the recorded card agree.
+#[test]
+fn a_decay_result_is_a_width_in_gev() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let card = dir.join("decay.dat");
+    std::fs::write(&card, "import model sm\ngenerate t > b e+ ve\n").unwrap();
+    let out = dir.join("out");
+    let output = common::vibegraph(dir, dir)
+        .arg("integrate")
+        .arg(&card)
+        .arg("--out")
+        .arg(&out)
+        .args(["--neval", "2000", "--niter", "3", "--output-ldjson"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(output.status.success(), "{}", common::stdout_of(&output));
+    let artifact_path = out.join("grid.bin.zst");
+    let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
+    let emitted = final_object(&objects(&output), "result").clone();
+    assert_eq!(emitted["observable"], "partial_width");
+    assert_eq!(emitted["unit"], "GeV");
+    assert_eq!(emitted["sigma"].as_f64(), Some(artifact.sigma_pb));
+    assert_eq!(emitted["mu_f"], serde_json::json!({"type": "no_densities"}));
+
+    let inspected = common::vibegraph(dir, dir)
+        .arg("inspect")
+        .arg(&artifact_path)
+        .arg("--output-ldjson")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        inspected.status.success(),
+        "{}",
+        common::stdout_of(&inspected)
+    );
+    assert_eq!(final_object(&objects(&inspected), "result"), &emitted);
 }
 
 /// A refusal is the stream's final object, with its stable kind and the
