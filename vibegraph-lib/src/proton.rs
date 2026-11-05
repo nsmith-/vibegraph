@@ -27,10 +27,10 @@
 //! group's `|M|²` but whose flows cannot be paired (a member carrying extra
 //! diagrams whose couplings vanish at the evaluated card, say) starts a group of
 //! its own. Grouping is refused unless the
-//! members also share the *outgoing pole masses* (so one phase-space map serves
+//! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
 //! the group; a card whose subprocesses differ in them is split into one
 //! decomposition per set of masses before it gets here, by
-//! [`crate::multiplicity::split_by_outgoing_masses`]) and an equal [`Cuts`] filter
+//! [`crate::multiplicity::split_by_external_masses`]) and an equal [`Cuts`] filter
 //! (so one cut indicator does), and unless distinct groups separate by more than
 //! [`GROUP_SEPARATION_MIN`] — a partition resting on a knife edge is a
 //! measurement that failed, not a decomposition. Groups split for colour alone
@@ -125,6 +125,7 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
+use crate::phasespace::beams;
 use crate::phasespace::diagram_channel::{DiagramChannel, MapIdentity};
 use crate::phasespace::maps::{
     pole_in_tau, tau_range, MapChoices, MapOptions, ProcessShape, TauMap,
@@ -556,6 +557,13 @@ impl FlavorGroups {
         &self.groups
     }
 
+    /// The pole masses of the two incoming legs in beam order, which every group
+    /// shares ([`derive_flavor_groups`] refuses a decomposition where they differ).
+    pub fn initial_masses(&self) -> [f64; 2] {
+        let legs = &self.groups[0].legs;
+        [legs[0].mass, legs[1].mass]
+    }
+
     /// Total number of concrete subprocesses summed, over all groups — the count
     /// the enumeration produced.
     pub fn subprocess_count(&self) -> usize {
@@ -573,15 +581,20 @@ pub enum ProtonError {
     NoSubprocess,
     #[error("subprocess {process} has {n_in} incoming legs; a beam decomposition needs 2")]
     NotTwoIncoming { process: String, n_in: usize },
+    /// The decomposition was handed subprocesses whose incoming legs carry
+    /// different pole masses. The incoming masses fix the partonic-frame beams,
+    /// the flux and the threshold every group of one decomposition shares, so
+    /// the subprocesses are split by incoming masses before they are decomposed
+    /// ([`crate::multiplicity::split_by_external_masses`]).
     #[error(
-        "subprocess {process} has an incoming leg of mass {mass} GeV; a parton distribution \
-         supplies massless partons and the probe puts the beams on the light cone"
+        "subprocesses {a} and {b} have different incoming masses, so no single partonic frame \
+         covers the sum; split them by incoming masses first"
     )]
-    MassiveInitialState { process: String, mass: f64 },
+    UnequalInitialMasses { a: String, b: String },
     /// The decomposition was handed subprocesses on two phase spaces. Every group
     /// of one decomposition is evaluated at every point its channels draw, so the
     /// subprocesses are split by outgoing masses before they are decomposed
-    /// ([`crate::multiplicity::split_by_outgoing_masses`]).
+    /// ([`crate::multiplicity::split_by_external_masses`]).
     #[error(
         "subprocesses {a} and {b} have different outgoing masses, so no single phase-space map \
          covers the sum; split them by outgoing masses first"
@@ -631,8 +644,15 @@ pub enum ProtonError {
 ///
 /// Rungs that collide after the threshold clamp collapse to one, so a heavy final
 /// state costs fewer points rather than repeating a point.
-fn probe_energies(final_masses: &[f64], resonance: Option<f64>) -> Vec<f64> {
-    let threshold: f64 = final_masses.iter().sum();
+fn probe_energies(
+    initial_masses: [f64; 2],
+    final_masses: &[f64],
+    resonance: Option<f64>,
+) -> Vec<f64> {
+    let threshold: f64 = final_masses
+        .iter()
+        .sum::<f64>()
+        .max(initial_masses[0] + initial_masses[1]);
     let base = threshold.max(100.0);
     let floor = 1.2 * threshold;
     let mut rungs: Vec<f64> = [
@@ -651,11 +671,32 @@ fn probe_energies(final_masses: &[f64], resonance: Option<f64>) -> Vec<f64> {
     rungs
 }
 
-/// Partonic-CM probe points: massless beams along ±z and a flat RAMBO draw over
-/// the outgoing legs, at each of [`probe_energies`].
-fn probe_momenta(final_masses: &[f64], resonance: Option<f64>, seed: u64) -> Vec<Vec<V>> {
+/// The two incoming partons in the partonic centre of mass at `sqrt_shat`, beam 1
+/// along `+z`, each on its own mass shell: MadEvent's
+/// `mom2cx(√ŝ, m₁, m₂, 1, 0, p₁, p₂)` (`genps.f`), with
+/// `E₁ = (ŝ + m₁² − m₂²)/(2√ŝ)` and `|p| = λ^{1/2}(ŝ, m₁², m₂²)/(2√ŝ)`.
+///
+/// Two massless partons come out as `(√ŝ/2)(1, 0, 0, ±1)`, the value the massive
+/// formula rounds to, written directly so the light-cone case is exact.
+pub(crate) fn partonic_beams(sqrt_shat: f64, masses: [f64; 2]) -> [V; 2] {
+    if masses == [0.0, 0.0] {
+        let e = sqrt_shat / 2.0;
+        return [V::new(e, 0.0, 0.0, e), V::new(e, 0.0, 0.0, -e)];
+    }
+    beams::beam_momenta(sqrt_shat, masses[0], masses[1])
+}
+
+/// Partonic-CM probe points: the beams along ±z on their own mass shells
+/// ([`partonic_beams`]) and a flat RAMBO draw over the outgoing legs, at each of
+/// [`probe_energies`].
+fn probe_momenta(
+    initial_masses: [f64; 2],
+    final_masses: &[f64],
+    resonance: Option<f64>,
+    seed: u64,
+) -> Vec<Vec<V>> {
     let mut points = Vec::new();
-    for (i, sqrt_s) in probe_energies(final_masses, resonance)
+    for (i, sqrt_s) in probe_energies(initial_masses, final_masses, resonance)
         .into_iter()
         .enumerate()
     {
@@ -664,8 +705,7 @@ fn probe_momenta(final_masses: &[f64], resonance: Option<f64>, seed: u64) -> Vec
         for _ in 0..PROBE_POINTS_PER_ENERGY {
             let u = stream.uniforms::<f64>(rambo.ndim());
             let drawn = rambo.sample(&u);
-            let e = sqrt_s / 2.0;
-            let mut momenta = vec![V::new(e, 0.0, 0.0, e), V::new(e, 0.0, 0.0, -e)];
+            let mut momenta = partonic_beams(sqrt_s, initial_masses).to_vec();
             momenta.extend(drawn.momenta.iter().cloned());
             points.push(momenta);
         }
@@ -775,12 +815,6 @@ pub fn derive_flavor_groups(
             });
         }
         let legs = process_external_legs(&evaluator, model, evaluated);
-        if let Some(leg) = legs[..2].iter().find(|l| l.mass != 0.0) {
-            return Err(ProtonError::MassiveInitialState {
-                process: process.clone(),
-                mass: leg.mass,
-            });
-        }
         let cuts =
             Cuts::compile_with(card, &legs, &ForcedResonances::of(&set.diagrams, evaluated))?;
         compiled.push((evaluator, legs, cuts));
@@ -792,8 +826,15 @@ pub fn derive_flavor_groups(
         Some(sets.len() as u64),
     );
 
+    let initial_masses = [compiled[0].1[0].mass, compiled[0].1[1].mass];
     let final_masses: Vec<f64> = compiled[0].1[2..].iter().map(|l| l.mass).collect();
     for (i, (_, legs, _)) in compiled.iter().enumerate().skip(1) {
+        if [legs[0].mass, legs[1].mass] != initial_masses {
+            return Err(ProtonError::UnequalInitialMasses {
+                a: labels[0].clone(),
+                b: labels[i].clone(),
+            });
+        }
         let masses: Vec<f64> = legs[2..].iter().map(|l| l.mass).collect();
         if masses != final_masses {
             return Err(ProtonError::UnequalFinalMasses {
@@ -804,6 +845,7 @@ pub fn derive_flavor_groups(
     }
 
     let points = probe_momenta(
+        initial_masses,
         &final_masses,
         s_channel_resonance(model, evaluated),
         PROBE_SEED,
@@ -1543,8 +1585,14 @@ pub struct OuterPoint {
 ///
 /// ```text
 /// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) |M_g(q)|²
-///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_cuts(q) / (2ŝ)
+///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_cuts(q) / F
 /// ```
+///
+/// with `F = 2λ^{1/2}(ŝ, m₁², m₂²)` the Møller flux of the incoming partons at
+/// their pole masses, `2ŝ` when both are massless, and `ŝ = x₁x₂s` from the
+/// massless convolution whatever the masses, as in MadEvent (`genps.f`). A
+/// massive parton sits on its mass shell in the partonic frame
+/// ([`partonic_beams`]), and a point below `√ŝ = m₁ + m₂` carries no weight.
 ///
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
@@ -1613,6 +1661,9 @@ pub struct ProtonIntegrand<'a> {
     /// Total hadronic invariant `s = 4E₁E₂` (head-on beams).
     s_had: f64,
     beams: ProtonBeams,
+    /// The incoming partons' pole masses in beam order
+    /// ([`FlavorGroups::initial_masses`]).
+    initial_masses: [f64; 2],
     /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
     /// Upper support of the `τ` map: one, or below it where the decay-chain
@@ -1950,7 +2001,13 @@ impl<'a> ProtonIntegrand<'a> {
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
-        let (tau_min, tau_max) = tau_range(cuts, s_had);
+        // The cuts and any whole-state decay window bound τ (`tau_range`); the
+        // incoming partons' masses raise its floor to their production threshold.
+        let initial_masses = groups.initial_masses();
+        let threshold = initial_masses[0] + initial_masses[1];
+        let (cut_tau_min, cut_tau_max) = tau_range(cuts, s_had);
+        let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+        let tau_max = cut_tau_max.max(tau_min);
         let tau_mixture = match maps.tau {
             TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
             TauMap::Log | TauMap::InverseSquare => None,
@@ -1970,6 +2027,7 @@ impl<'a> ProtonIntegrand<'a> {
             channel_map_keys,
             s_had,
             beams,
+            initial_masses,
             tau_min,
             tau_max,
             ln_tau_range: (tau_max / tau_min).ln(),
@@ -2435,12 +2493,16 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Fill the partonic-CM and lab-frame external momenta of one point: beams first,
     /// then the outgoing legs.
+    ///
+    /// The partonic-CM beams are on their own mass shells ([`partonic_beams`]).
+    /// The lab frame is reached by MadEvent's `cm_rap`, the rapidity of the
+    /// massless convolution's `x₁P₁ + x₂P₂`, as `passcuts` reads it: massless
+    /// beams are then exactly `xᵢPᵢ`, and massive ones are their partonic-CM
+    /// momenta boosted by it, at `ŝ = x₁x₂s` either way.
     fn build_frames(&self, sc: &ProtonScratch<'a>, m: &OuterPoint, out: &[V]) {
-        let e_cm = m.sqrt_shat / 2.0;
         let mut cm = sc.cm_buf.borrow_mut();
         cm.clear();
-        cm.push(V::new(e_cm, 0.0, 0.0, e_cm));
-        cm.push(V::new(e_cm, 0.0, 0.0, -e_cm));
+        cm.extend(partonic_beams(m.sqrt_shat, self.initial_masses));
         cm.extend_from_slice(out);
 
         // The partonic system's lab velocity is `tanh` of MadGraph's
@@ -2451,9 +2513,30 @@ impl<'a> ProtonIntegrand<'a> {
         let beta = (m.x1 - r * m.x2) / (m.x1 + r * m.x2);
         let mut lab = sc.lab_buf.borrow_mut();
         lab.clear();
-        lab.push(V::new(m.x1 * e1, 0.0, 0.0, m.x1 * e1));
-        lab.push(V::new(m.x2 * e2, 0.0, 0.0, -m.x2 * e2));
+        if self.initial_masses == [0.0, 0.0] {
+            lab.push(V::new(m.x1 * e1, 0.0, 0.0, m.x1 * e1));
+            lab.push(V::new(m.x2 * e2, 0.0, 0.0, -m.x2 * e2));
+        } else {
+            lab.extend(cm[..2].iter().map(|p| boost_z(*p, beta)));
+        }
         lab.extend(out.iter().map(|p| boost_z(*p, beta)));
+    }
+
+    /// `1/F`, the inverse Møller flux of the two incoming partons at `√ŝ`:
+    /// `1/(2λ^{1/2}(ŝ, m₁², m₂²))` (`genps.f`), which is `1/(2ŝ)` for massless
+    /// partons. `None` below the incoming threshold `√ŝ ≤ m₁ + m₂`, where
+    /// MadEvent's `one_tree` rejects the point (`jac = −5`) before any weight is
+    /// formed.
+    fn inverse_flux(&self, sqrt_shat: f64) -> Option<f64> {
+        let s = sqrt_shat * sqrt_shat;
+        let [m1, m2] = self.initial_masses;
+        if m1 == 0.0 && m2 == 0.0 {
+            return Some(1.0 / (2.0 * s));
+        }
+        if !(sqrt_shat > m1 + m2) {
+            return None;
+        }
+        Some(1.0 / (2.0 * beams::kallen(s, m1 * m1, m2 * m2).sqrt()))
     }
 
     /// The integrand at one point with the phase-space map's own weight left out:
@@ -2471,6 +2554,13 @@ impl<'a> ProtonIntegrand<'a> {
         channel: usize,
         scale_u: &[f64],
     ) -> f64 {
+        // Below the incoming threshold the point carries no weight before any
+        // cut is read, as MadEvent's `one_tree` rejects it; the census counts it
+        // with the points the cuts reject.
+        let Some(flux) = self.inverse_flux(m.sqrt_shat) else {
+            sc.census.rejected();
+            return 0.0;
+        };
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
         let passes = self.cuts.pass(&sc.lab_buf.borrow());
@@ -2488,7 +2578,6 @@ impl<'a> ProtonIntegrand<'a> {
         let value = if acc == 0.0 {
             0.0
         } else {
-            let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
             m.jac * flux * self.lips_2pi * acc
         };
         sc.census.passed(value);
@@ -3134,6 +3223,59 @@ impl<'a> ProtonIntegrand<'a> {
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
+    }
+
+    /// The laboratory momenta an accepted event's record carries under `ordering`,
+    /// beams first, in physical beam order.
+    ///
+    /// With massless partons this is the event's lab frame as the cuts read it,
+    /// [`ProtonEvent::lab`]: beams `xᵢPᵢ`, the outgoing legs boosted by `cm_rap`.
+    ///
+    /// With a massive parton it is the frame MadEvent's `write_leshouche` writes
+    /// (`unwgt.f`), which is a different boost from the one its cuts read. The
+    /// beams are put on their own mass shells in the partonic CM — under the
+    /// exchanged ordering beam 1 carries the member's second parton, so the
+    /// shells are exchanged too and the outgoing legs keep the event's `q` — and
+    /// one beam is chosen as the anchor: beam 1 when its parton is massless,
+    /// beam 2 otherwise. The boost along `z` is the one that takes the anchor's
+    /// `E*/xᵢ` to its beam energy `Eᵢ`, so the anchor's lab energy is `xᵢEᵢ`
+    /// while the other beam's is whatever its mass shell and the boost leave
+    /// it. MadEvent falls back to the `cm_rap` boost wherever that puts either
+    /// beam above its beam energy, and so does this. Unlike MadEvent, whose
+    /// anchor boost takes the anchor and its beam at the proton mass, this keeps
+    /// them massless, as [`ProtonBeams`] does: the two boosts differ at
+    /// `O(m_p²x²/E*²)`, which is largest where the anchor's `E*/x` falls far
+    /// below its beam energy. MadEvent's massless-parton record takes the same
+    /// anchored boost, so the light-cone record above differs from it at the
+    /// same order.
+    pub fn record_momenta(&self, event: &ProtonEvent, ordering: BeamOrdering) -> Vec<V> {
+        if self.initial_masses == [0.0, 0.0] {
+            return event.lab.clone();
+        }
+        let [m1, m2] = self.initial_masses;
+        let (incoming, beam1_mass) = match ordering {
+            BeamOrdering::Direct => ([event.cm[0], event.cm[1]], m1),
+            BeamOrdering::Exchanged => {
+                let flip = |p: &V| V::new(p.e(), 0.0, 0.0, -p.pz());
+                ([flip(&event.cm[1]), flip(&event.cm[0])], m2)
+            }
+        };
+        let energies = self.beams.energies();
+        let anchor = usize::from(beam1_mass != 0.0);
+        let r = energies[anchor] * event.x[anchor] / incoming[anchor].e();
+        let along = if anchor == 0 { 1.0 } else { -1.0 };
+        let mut beta = along * (r * r - 1.0) / (r * r + 1.0);
+        let over_beam = |b: f64| (0..2).any(|i| boost_z(incoming[i], b).e() > energies[i]);
+        if over_beam(beta) {
+            let [e1, e2] = energies;
+            let rr = e2 / e1;
+            beta = (event.x[0] - rr * event.x[1]) / (event.x[0] + rr * event.x[1]);
+        }
+        incoming
+            .iter()
+            .chain(&event.cm[2..])
+            .map(|p| boost_z(*p, beta))
+            .collect()
     }
 
     /// A point's weight taken apart into the factors it is a product of: the
@@ -4186,7 +4328,7 @@ mod tests {
 
         // A massless final state: five distinct rungs over two decades, one of
         // them the pole and one of them below the electroweak scale.
-        let massless = probe_energies(&[0.0, 0.0, 0.0], Some(m_z));
+        let massless = probe_energies([0.0, 0.0], &[0.0, 0.0, 0.0], Some(m_z));
         assert_eq!(massless.len(), 5);
         assert!(massless[0] < 91.0, "no rung below the electroweak scale");
         assert!(
@@ -4201,7 +4343,7 @@ mod tests {
         // A heavy final state: every rung sits above its threshold, and the ones
         // that would not collapse onto the floor instead of repeating a point.
         let m_t = evaluated.mass(m.particle_id("t").expect("t in the SM"));
-        let heavy = probe_energies(&[m_t, m_t], Some(m_z));
+        let heavy = probe_energies([0.0, 0.0], &[m_t, m_t], Some(m_z));
         assert!(
             heavy.iter().all(|&e| e > 2.0 * m_t),
             "a rung below the t t~ threshold: {heavy:?}"
@@ -4743,7 +4885,7 @@ mod tests {
             BoundAmplitude::<f64>::bind(&b, &evaluated),
         );
         let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
-        for point in probe_momenta(&[mw, 0.0], None, 7) {
+        for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
             let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
             assert!((ma / mb - 1.0).abs() < 1e-12, "{ma} against {mb}");
         }
@@ -5818,7 +5960,12 @@ mod tests {
         assert_eq!(a.cf_matrix(), b.cf_matrix());
         assert!(a.n_diagrams() < b.n_diagrams());
         assert!(flow_permutation(&a, &b).is_err());
-        let points = probe_momenta(&[0.0; 2], s_channel_resonance(&m, &evaluated), PROBE_SEED);
+        let points = probe_momenta(
+            [0.0, 0.0],
+            &[0.0; 2],
+            s_channel_resonance(&m, &evaluated),
+            PROBE_SEED,
+        );
         let trace = |e: &AmplitudeEvaluator, points: &[Vec<V>]| -> Vec<f64> {
             let bound = BoundAmplitude::<f64>::bind(e, &evaluated);
             let mut scratch = bound.scratch_space();
@@ -8383,6 +8530,332 @@ mod tests {
             }
         }
         lines.into_values().collect()
+    }
+
+    /// A Drell-Yan card with a massive parton on both beams, `mmll` keeping the
+    /// partonic energy above the lepton-pair floor.
+    fn massive_parton_card() -> RunCard {
+        RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  4000.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 0.0 = ptl\n  -1.0 = etal\n  0.0 = drll\n  12.0 = mmll\n",
+        )
+        .expect("run card")
+    }
+
+    /// MadGraph's `LAMBDA` (`genps.f`), in its own expanded form, so the flux is
+    /// checked against the reference's arithmetic rather than this crate's.
+    fn madgraph_lambda(s: f64, ma2: f64, mb2: f64) -> f64 {
+        s * s + ma2 * ma2 + mb2 * mb2 - 2.0 * s * ma2 - 2.0 * ma2 * mb2 - 2.0 * s * mb2
+    }
+
+    /// `b b~ > mu+ mu-` with the default Standard Model's `MB = 4.7`: in the
+    /// partonic CM each beam is on its own mass shell, they sum to `(√ŝ, 0, 0, 0)`
+    /// at `ŝ = x₁x₂s`, the flux is MadGraph's `1/(2√λ(ŝ, m₁², m₂²))`, and below
+    /// `√ŝ = 2MB` the point carries no flux at all. The lab frame the cuts read
+    /// is the partonic one boosted by `cm_rap`, so its beams keep their masses
+    /// and their sum keeps `√ŝ` at MadGraph's rapidity.
+    #[test]
+    fn massive_partons_sit_on_their_mass_shells_with_madgraphs_flux() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mb = evaluated.mass(m.particle_id("b").expect("b"));
+        assert_eq!(mb, 4.7, "the default Standard Model's b mass");
+        let groups = derive_flavor_groups(
+            enumerate("b b~ > mu+ mu-", &m),
+            &m,
+            &evaluated,
+            &massive_parton_card(),
+        )
+        .expect("a massive-parton subprocess decomposes");
+        assert_eq!(groups.initial_masses(), [mb, mb]);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        assert!(
+            (integ.tau_min() * integ.s_had - 144.0).abs() < 1e-9,
+            "the mmll floor, above 2 MB, sets the support: {}",
+            integ.tau_min() * integ.s_had
+        );
+
+        for (x1, x2) in [(0.01, 0.002), (3e-4, 0.4), (0.05, 0.05)] {
+            let sqrt_shat = (x1 * x2 * integ.s_had).sqrt();
+            let s = sqrt_shat * sqrt_shat;
+            let point = OuterPoint {
+                x1,
+                x2,
+                sqrt_shat,
+                jac: 1.0,
+            };
+            let out = vec![
+                V::new(sqrt_shat / 2.0, sqrt_shat / 2.0, 0.0, 0.0),
+                V::new(sqrt_shat / 2.0, -sqrt_shat / 2.0, 0.0, 0.0),
+            ];
+            let sc = integ.scratch();
+            integ.build_frames(sc, &point, &out);
+            let cm = sc.cm_buf.borrow().clone();
+            let lab = sc.lab_buf.borrow().clone();
+            for (p, sign) in cm[..2].iter().zip([1.0, -1.0]) {
+                assert!(
+                    (p.m2() / (mb * mb) - 1.0).abs() < 1e-10,
+                    "on shell: m² = {} at √ŝ = {sqrt_shat}",
+                    p.m2()
+                );
+                assert!(p.pz() * sign > 0.0 && p.px() == 0.0 && p.py() == 0.0);
+            }
+            let total = cm[0] + cm[1];
+            assert!((total.e() - sqrt_shat).abs() < 1e-12 * sqrt_shat);
+            assert!(total.pz().abs() < 1e-12 * sqrt_shat);
+            assert!((cm[0].e() - sqrt_shat / 2.0).abs() < 1e-12 * sqrt_shat);
+
+            let flux = integ.inverse_flux(sqrt_shat).expect("above threshold");
+            let want = 1.0 / (2.0 * madgraph_lambda(s, mb * mb, mb * mb).sqrt());
+            assert!(
+                (flux / want - 1.0).abs() < 1e-12,
+                "flux {flux:e} against MadGraph's {want:e}"
+            );
+            assert!(
+                (flux * 2.0 * s - 1.0).abs() > 1e-6,
+                "the massive flux is not the massless 1/(2ŝ) at √ŝ = {sqrt_shat}"
+            );
+
+            let cm_rap = 0.5 * (x1 * e1 / (x2 * e2)).ln();
+            let lab_total = lab[0] + lab[1];
+            assert!((lab_total.m2() / s - 1.0).abs() < 1e-10);
+            assert!((rapidity(&lab_total) - cm_rap).abs() < 1e-10);
+            for p in &lab[..2] {
+                assert!((p.m2() / (mb * mb) - 1.0).abs() < 1e-6, "lab m² {}", p.m2());
+            }
+        }
+        assert_eq!(integ.inverse_flux(2.0 * mb), None, "at threshold");
+        assert_eq!(integ.inverse_flux(9.0), None, "below threshold");
+        assert!(integ.inverse_flux(9.5).is_some());
+    }
+
+    /// The event record of a massive-parton event is MadEvent's `write_leshouche`
+    /// frame: anchored on beam 2 when beam 1's parton is massive, so beam 2's
+    /// parton has lab energy `x₂E₂`, every leg keeps its mass, and the record
+    /// conserves momentum. Beam 1 anchors when its parton is massless, which
+    /// under the exchanged ordering of `g b` is the other way round.
+    #[test]
+    fn a_massive_parton_record_is_anchored_where_madevent_anchors_it() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mb = evaluated.mass(m.particle_id("b").expect("b"));
+        let groups = derive_flavor_groups(
+            enumerate("g b > b a", &m),
+            &m,
+            &evaluated,
+            &massive_parton_card(),
+        )
+        .expect("a massive-parton subprocess decomposes");
+        assert_eq!(groups.initial_masses(), [0.0, mb]);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        let (x1, x2) = (0.02, 0.003);
+        let sqrt_shat = (x1 * x2 * integ.s_had).sqrt();
+        let point = OuterPoint {
+            x1,
+            x2,
+            sqrt_shat,
+            jac: 1.0,
+        };
+        let k = 0.4 * sqrt_shat;
+        let eb = (k * k + mb * mb).sqrt();
+        let out = vec![
+            V::new(eb, k * 0.6, 0.0, k * 0.8),
+            V::new(sqrt_shat - eb, -k * 0.6, 0.0, -k * 0.8),
+        ];
+        let sc = integ.scratch();
+        integ.build_frames(sc, &point, &out);
+        let event = ProtonEvent {
+            weight: 1.0,
+            x: [x1, x2],
+            group_scales: Vec::new(),
+            group_rewgt: Vec::new(),
+            group_records: Vec::new(),
+            group_histories: Vec::new(),
+            lab: sc.lab_buf.borrow().clone(),
+            cm: sc.cm_buf.borrow().clone(),
+        };
+        let conserved = |rec: &[V]| {
+            let into = rec[0] + rec[1];
+            let outof = rec[2] + rec[3];
+            for c in 0..4 {
+                let (a, b) = (components(&into)[c], components(&outof)[c]);
+                assert!(
+                    (a - b).abs() < 1e-9 * sqrt_shat,
+                    "component {c}: {a} vs {b}"
+                );
+            }
+        };
+
+        let direct = integ.record_momenta(&event, BeamOrdering::Direct);
+        assert!(
+            (direct[0].e() / (x1 * e1) - 1.0).abs() < 1e-12,
+            "massless beam 1 anchors"
+        );
+        assert!(direct[0].m2().abs() < 1e-6 * sqrt_shat * sqrt_shat);
+        assert!((direct[1].m2() / (mb * mb) - 1.0).abs() < 1e-6);
+        assert!(
+            (direct[1].e() / (x2 * e2) - 1.0).abs() > 1e-5,
+            "the massive parton is not at x₂E₂: {} against {}",
+            direct[1].e(),
+            x2 * e2
+        );
+        conserved(&direct);
+
+        let exchanged = integ.record_momenta(&event, BeamOrdering::Exchanged);
+        assert!(
+            (exchanged[1].e() / (x2 * e2) - 1.0).abs() < 1e-12,
+            "massless beam 2 anchors"
+        );
+        assert!(
+            (exchanged[0].m2() / (mb * mb) - 1.0).abs() < 1e-6,
+            "b on beam 1"
+        );
+        assert!(exchanged[1].m2().abs() < 1e-6 * sqrt_shat * sqrt_shat);
+        assert!(exchanged[0].pz() > 0.0 && exchanged[1].pz() < 0.0);
+        conserved(&exchanged);
+    }
+
+    /// The matrix element at massive incoming momenta, helicity by helicity,
+    /// against MadGraph's standalone `SMATRIXHEL` (its `IDEN` and
+    /// `HELAVGFACTOR` taken back out, so each entry is one helicity's
+    /// colour-summed `|M|²`) at the
+    /// same partonic-CM points: the beams built by `mom2cx` at `MB = 4.7` and at
+    /// `sm-c_mass`'s `MC = 1.55`, the outgoing pair by `mom2cx` at three angles,
+    /// from just above threshold to far above it. `g b > z b` puts a massive and
+    /// a massless parton on the beams.
+    ///
+    /// Per-helicity `|M|²` is colour-summed and blind to a global phase per
+    /// helicity; the per-diagram and per-flow complex values at massive incoming
+    /// spinors are the banked amplitude tables' (`bbx_to_h_identity`,
+    /// `tata_to_ttx_tensor4f`, `bbx_to_ccx_emmm_qcd0`).
+    #[test]
+    fn massive_incoming_helicity_amplitudes_match_madgraph_standalone() {
+        let tables: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/data/massive_incoming_standalone.json"
+        ))
+        .expect("standalone table");
+        let mut checked = 0;
+        for (name, table) in tables.as_object().expect("rows") {
+            let model = match table["model"].as_str() {
+                Some("sm") => sm_model(SMRestrict::Default),
+                Some("sm-c_mass") => sm_model(SMRestrict::CMass),
+                other => panic!("model {other:?}"),
+            };
+            let evaluated = EvaluatedModel::from_model(model.clone());
+            let process = table["process"].as_str().expect("process");
+            let sets: Vec<DiagramSet> = enumerate(process, &model)
+                .into_iter()
+                .filter(|s| !s.diagrams.is_empty())
+                .collect();
+            assert_eq!(sets.len(), 1, "{name}: one subprocess");
+            let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).expect("compile");
+            let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
+            let mut scratch = bound.scratch_space();
+            let mg_hels: Vec<Vec<i64>> = table["helicities"]
+                .as_array()
+                .expect("helicities")
+                .iter()
+                .map(|h| {
+                    h.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.as_i64().unwrap())
+                        .collect()
+                })
+                .collect();
+            let slot: Vec<usize> = evaluator
+                .helicities()
+                .iter()
+                .map(|h| {
+                    let h: Vec<i64> = h.iter().map(|&x| i64::from(x)).collect();
+                    mg_hels
+                        .iter()
+                        .position(|g| *g == h)
+                        .expect("a MadGraph helicity")
+                })
+                .collect();
+            let mut hel_m2 = vec![0.0; evaluator.helicities().len()];
+            let mut worst = 0.0f64;
+            for point in table["points"].as_array().expect("points") {
+                let momenta: Vec<V> = point["momenta"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| {
+                        let c: Vec<f64> = p
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|x| x.as_f64().unwrap())
+                            .collect();
+                        V::new(c[0], c[1], c[2], c[3])
+                    })
+                    .collect();
+                let mg_hel: Vec<f64> = point["hel_m2"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_f64().unwrap())
+                    .collect();
+                let mg_total = point["m2"].as_f64().unwrap();
+                bound.eval_hel_m2(&momenta, &mut scratch, &mut hel_m2);
+                let total = bound.eval_m2(&momenta, &mut scratch);
+                worst = worst.max((total / mg_total - 1.0).abs());
+                let scale = mg_hel.iter().copied().fold(0.0, f64::max);
+                for (c, &i) in slot.iter().enumerate() {
+                    worst = worst.max((hel_m2[c] - mg_hel[i]).abs() / scale);
+                }
+                let covered: f64 = slot.iter().map(|&i| mg_hel[i]).sum();
+                assert!(
+                    (covered / mg_total - 1.0).abs() < 1e-12,
+                    "{name}: a MadGraph helicity this evaluator lacks carries weight"
+                );
+                checked += 1;
+            }
+            eprintln!("{name}: worst relative deviation {worst:.2e}");
+            assert!(worst < 1e-10, "{name}: {worst:e}");
+        }
+        assert_eq!(checked, 30);
+    }
+
+    /// Subprocesses whose incoming masses differ cannot share one decomposition:
+    /// its groups share the partonic-frame beams, the flux and the threshold.
+    #[test]
+    fn unequal_incoming_masses_are_refused_in_one_decomposition() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut sets = enumerate("u u~ > mu+ mu-", &m);
+        sets.extend(enumerate("b b~ > mu+ mu-", &m));
+        let refused = derive_flavor_groups(sets, &m, &evaluated, &massive_parton_card());
+        assert!(
+            matches!(refused, Err(ProtonError::UnequalInitialMasses { .. })),
+            "{:?}",
+            refused.err()
+        );
     }
 }
 
