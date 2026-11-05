@@ -63,3 +63,4 @@
   - The cards now stop at `GroupCutsDiffer` (4), the compile timeout (full Zto2Q), a colour split (TpTp) and massive incoming u (VLLD/VLLVLL ×4).
   - Merge b78d280d lacks the trailer.
 * H-M2 resumed from its on-disk state.
+* The user approved #93; the manager merges it on green CI, coordinating with #90, and files its Found items. No pushes to `sprinth-decay-duplicate` meanwhile. The squash makes the missing b78d280d trailer moot.
