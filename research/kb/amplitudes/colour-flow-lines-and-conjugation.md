@@ -133,8 +133,9 @@ the table against the member's reps before writing.[^code-record]
 same `JAMP2` (the gluon amplitudes' reflection identity), so no fingerprint
 separates them. Against itself a representative needs no matching — the table
 indexed is the table drawn from, the identity by construction. Between two
-*distinct* subprocesses with a degenerate basis the pairing stays refused, because
-that ambiguity is real and would show in the emitted `ICOLUP`. `g g > g g` is a
+*distinct* subprocesses with a degenerate basis no pairing is made, because that
+ambiguity is real and would show in the emitted `ICOLUP`; the second subprocess
+forms a flavour group of its own, labelled from its own basis. `g g > g g` is a
 single flavour assignment and cannot become such a group.[^n29-c2]
 
 The reference for all of this is MadGraph's per-subprocess `leshouche.inc`, which

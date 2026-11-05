@@ -1,7 +1,7 @@
 ---
 type: Design
 title: Each flavour-group member writes its own colour-flow table
-description: "Flavour-group members can carry conjugate or crossed colour reps, so each writes its own ColorFlowTags under a fingerprint-matched flow permutation; ambiguity is refused."
+description: "Flavour-group members can carry conjugate or crossed colour reps, so each writes its own ColorFlowTags under a fingerprint-matched flow permutation; a subprocess whose flows cannot be paired forms a group of its own."
 status: draft
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, colour, icolup, flavour-groups, proton]
@@ -65,20 +65,29 @@ oracle for the global-conjugate class and is not used to build records.
 2. **Flow permutation `π`.** At group construction, `flow_permutation`
    (`vibegraph-lib/src/proton.rs:1050`) finds the unique bijection
    `rep flow f ↦ member flow π(f)` with equal fingerprints. **Ambiguity is
-   refused, never broken**: two equal fingerprints within either basis, no
-   bijection, or several is a `ProtonError::ColorFlowPairing` naming the group,
-   the subprocesses and the flows. No tie-break, no heuristic, no numeric
-   fallback; a wrong `π` would be a silently wrong label on every event of that
-   member.
+   never broken**: two equal fingerprints within either basis, no bijection, or
+   several, and the subprocess is not admitted to that group. It starts a group
+   of its own, where it is its own representative and draws on its own `JAMP2`
+   (logged at debug level, naming both subprocesses and the reason). No
+   tie-break, no heuristic, no numeric fallback; a wrong `π` would be a silently
+   wrong label on every event of that member, while a group of its own costs one
+   more amplitude evaluation per point. The pairing is a join condition of the
+   partition ([hadronic/flavour-groups](../hadronic/flavour-groups.md)), and so is
+   the CF matrix *under* `π`: `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly. The
+   matrices are never compared in their own orders, since a conjugate member's
+   basis sorts the same flows differently (`u u > g g u u` and
+   `u~ u~ > g g u~ u~` pair as `π = [7,3,5,1,8,10,9,11,6,2,4,0]`), and `π` is never
+   read off the matrices, which have automorphisms (16 on that pair) that would
+   pass the comparison and mislabel every event of the member.
 3. **Self-pairing is exempt.** When the member is the same compiled subprocess
    as the group's head (an identity of objects, not of process strings or
    fingerprints), `π` is the identity and the fingerprint is not consulted.
    This matters for `g g > g g`, whose trace-reversal pairs `(0,5) (1,3) (2,4)`
    carry identical contributions and identical JAMP2 — with signs and phases
    retained — so no fingerprint separates them. It is not a tie-break: applied
-   to a basis against itself the identity is the only answer. A group whose
-   representative basis is degenerate **and** which has a distinct member is
-   still refused; `g g > g g` cannot be one, being a single flavour
+   to a basis against itself the identity is the only answer. A distinct
+   subprocess cannot join a representative whose basis is degenerate; it forms
+   a group of its own. `g g > g g` cannot meet one, being a single flavour
    assignment[^n29-c1][^n29-c2][^n29-c3].
 4. **The member's table, reordered once.** Each member stores
    `member_flows[f] = member.color_flow_tags().flow(π(f))`, in the
@@ -154,9 +163,12 @@ every gated row except `pp_to_jj`[^n29-a5][^n29-b5].
 The **helicity** correspondence across a conjugate member is assumed, not
 proved: a member's event takes a helicity drawn off the representative's
 per-helicity `|M|²`. The dijet `SPINUP` column clearing its floor (p 0.18–0.35)
-is evidence, not proof[^n29-b5]. The group-formation checks (`n_flows`, the CF
-matrix) cannot see a flow permutation either: for `g q > g q` the 2×2 CF matrix
-is invariant under the reversal, which is why T9/T10 exist[^n29-a4]. Colour-flow
+is evidence, not proof[^n29-b5]. The group-formation check on the CF matrix,
+made under `π`, confirms `π` only up to the matrix's automorphisms: for
+`g q > g q` the 2×2 CF matrix is invariant under the reversal, and the 12-flow
+`u u > g g u u` matrix has 16 automorphisms, which is why T9/T10 and the
+conjugation check of `a_conjugate_pair_shares_one_group_under_the_flow_permutation`
+exist[^n29-a4]. Colour-flow
 conventions under charge conjugation in general are
 [amplitudes/colour-flow-lines-and-conjugation](../amplitudes/colour-flow-lines-and-conjugation.md).
 

@@ -4,7 +4,7 @@
 
 ## Algorithm
 
-* [Flavour groups derived from measured |M|² equality](flavour-groups.md) - Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses, cuts and colour basis, with a minimum cross-group separation.
+* [Flavour groups derived from measured |M|² equality](flavour-groups.md) - Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and cuts and a colour basis that pairs with the representative's under the fingerprint permutation; an unpaired one forms a group of its own; a minimum cross-group separation.
 
 ## Design
 
