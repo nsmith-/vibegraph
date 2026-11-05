@@ -1,7 +1,7 @@
 ---
 type: Algorithm
 title: Flavour groups derived from measured |M|² equality
-description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and cuts and a colour basis that pairs with the representative's under the fingerprint permutation; an unpaired one forms a group of its own; a minimum cross-group separation."
+description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and cuts and a colour basis that pairs with the representative's under the fingerprint permutation; an unpaired one forms a group of its own; groups that do not merge stay separate."
 status: draft
 tags: [hadronic, flavour-groups, proton, probe, colour]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -55,7 +55,7 @@ measurement.[^n24-p2]
    with `base = max(Σ m_out, 100 GeV)`, every rung raised to at least `1.2 × Σ m_out`, and
    rungs that collide after the clamp collapsed to one.[^derive]
 4. A subprocess joins the first group whose representative it is polarized alike with,
-   whose whole probe trace it matches to `GROUP_REL_TOL = 1e-10`, **and** whose colour
+   whose whole probe trace it matches to `GROUP_REL_TOL = 1e-9`, **and** whose colour
    bookkeeping it shares (`colour_pairing`): an equal `n_flows`, a pairing `π` of its
    flows with the representative's (`flow_permutation`, the unique fingerprint
    bijection), and `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly. `π` comes from the
@@ -71,24 +71,16 @@ measurement.[^n24-p2]
    `d d > d d QED=2` with `b b > b b QED=2` at a card setting the b mass and Yukawa to
    zero under the default restriction: equal `|M|²`, but the b flows carry Higgs
    exchanges of zero value, so their fingerprints have no counterpart.
-5. Refuse the partition if two distinct groups separate by no more than
-   `GROUP_SEPARATION_MIN = 1e-6` at their best-separated probe point (`DegenerateGroups`).
-   A partition made by two traces landing either side of the tolerance by rounding is a
-   failed measurement, not a decomposition. The one pair of groups exempt is one whose
-   traces agree to `GROUP_REL_TOL` and whose representatives are colour-incompatible:
-   step 4 split them on purpose, and each is evaluated with its own compiled amplitude,
-   so their sum is right whether their `|M|²` are equal or not. A colour-compatible pair
-   that close cannot be two groups (step 4 would have merged it), and a pair between
-   the two tolerances is refused whatever its colour.
-6. Within each group, refuse a member whose compiled `Cuts` differ from the
-   representative's (`CutIndicatorDiffers`; `Cuts: PartialEq` is equality of the
-   *filter*, since PDG codes are consumed by `compile`). A colour-split group whose
-   cuts differ from another group's is refused later, by the integrand
-   (`GroupCutsDiffer`), since one cut indicator serves every group.
-7. Each member's own `ICOLUP` table is reindexed into the representative's flow
-   indexing once, with the permutation it joined the group on, so a flow drawn on the
-   representative labels any member's event. A colour-split group's representative
-   draws on its own `JAMP2` and writes its own table under the identity.
+5. Groups that do not merge stay separate groups, whatever their separation: each is
+   evaluated with its own compiled amplitude and luminosity, so the sum over groups is
+   right however close two groups' `|M|²` are. The tolerance is set from a measurement
+   (sprint H, H-N1): the worst separation between members that differ only by rounding,
+   found by re-evaluating in `f32`, is 1.48e-10 (`d c~ > W- Z s d~` with `s u~ > W- Z d s~`),
+   6.8× below the bound; the closest physical pair is 1.18e-7, 120× above it. The γ+jets
+   pair `u b~ > a …` with its conjugate separates by 9.08e-7 at the same momenta. CP holds
+   (the conjugate at reflected momenta agrees to 3e-16), and the split is the
+   reflection-odd ε-tensor part of `|M|²`, whose absorptive phase comes from the W width.
+   It vanishes at `Γ_W = 0`, not at a zero CKM phase.
 
 Every subprocess still belongs to exactly one group, so the luminosity sum counts each
 once; a colour split only moves a subprocess from one group's member list to a group
@@ -119,7 +111,7 @@ where they differ, so they are not vacuous guards:
   to `[7,3,5,1,8,10,9,11,6,2,4,0]`.
 - `a_pair_whose_flows_cannot_be_paired_is_grouped_apart`: the `d d > d d` /
   `b b > b b` pair above decomposes into two groups of one, each its own
-  representative under the identity, and the separation floor does not refuse it.
+  representative under the identity.
 
 MadGraph keeps a conjugate pair as two matrix elements. Generating `uu dd > dd g uu`
 (with `uu = u u~`, `dd = d d~`) puts all four flavour assignments in one `P*` directory,
