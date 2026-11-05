@@ -533,7 +533,7 @@ fn probe_cut_edge_weight_tail() {
                 row.name,
                 total.integral * GEV2_TO_PB,
                 total.std_dev * GEV2_TO_PB,
-                total.chi2_per_dof,
+                crate::vegas::Chi2PerDof(total.chi2_per_dof),
                 channels.len(),
                 n_total,
                 clock.elapsed().as_secs_f64()

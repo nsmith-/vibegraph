@@ -43,9 +43,9 @@ pub(crate) struct UiState {
     /// produced one.
     pub(crate) sigma_pb: Option<f64>,
     pub(crate) err_pb: f64,
-    /// χ² per degree of freedom over the iterations combined so far; `0` until
-    /// there are two of them.
-    pub(crate) chi2: f64,
+    /// χ² per degree of freedom over the iterations combined so far; absent
+    /// until there are two of them.
+    pub(crate) chi2: Option<f64>,
     pub(crate) ns_per_eval: Option<f64>,
     pub(crate) model: Option<ModelBrief>,
     pub(crate) process: Option<String>,
@@ -129,7 +129,7 @@ impl Fields {
         if let Some(sigma) = self.sigma.filter(|s| *s != 0.0) {
             state.sigma_pb = Some(sigma * GEV2_TO_PB);
             state.err_pb = self.err.unwrap_or(0.0) * GEV2_TO_PB;
-            state.chi2 = self.chi2.unwrap_or(0.0);
+            state.chi2 = self.chi2;
         }
         if let Some(ns) = self.ns_per_eval {
             state.ns_per_eval = Some(ns);
@@ -274,23 +274,32 @@ mod tests {
     /// conversion belongs on the ingestion side so exactly one place performs it.
     #[test]
     fn the_cross_section_is_converted_out_of_inverse_gev_squared() {
-        let state = folded(|| progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, 1.02));
+        let state = folded(|| progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, Some(1.02)));
         let sigma = state.sigma_pb.expect("a cross section");
         assert!(
             (sigma - 2.0e-6 * GEV2_TO_PB).abs() < 1e-9 * sigma.abs(),
             "{sigma}"
         );
         assert!((state.err_pb - 8.0e-9 * GEV2_TO_PB).abs() < 1e-9 * state.err_pb.abs());
-        assert_eq!(state.chi2, 1.02);
+        assert_eq!(state.chi2, Some(1.02));
     }
 
     /// The warm-up iterations report a zero estimate. Showing it as "0 ± 0 pb"
     /// would state a measurement nobody made.
     #[test]
     fn a_warm_up_iteration_leaves_the_cross_section_unset() {
-        let state = folded(|| progress::vegas_iteration(1, Some(12), 0.0, 0.0, 0.0));
+        let state = folded(|| progress::vegas_iteration(1, Some(12), 0.0, 0.0, None));
         assert_eq!(state.sigma_pb, None);
         assert_eq!(state.done, 1);
+    }
+
+    /// The first kept iteration carries an estimate but no χ²/dof, which the
+    /// state keeps absent rather than reading as zero.
+    #[test]
+    fn a_single_kept_iteration_leaves_the_chi2_unset() {
+        let state = folded(|| progress::vegas_iteration(3, Some(12), 2.0e-6, 8.0e-9, None));
+        assert!(state.sigma_pb.is_some());
+        assert_eq!(state.chi2, None);
     }
 
     /// A result already shown is not erased by a later measurement that carries
@@ -298,7 +307,7 @@ mod tests {
     #[test]
     fn a_later_stage_does_not_erase_the_cross_section() {
         let state = folded(|| {
-            progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, 1.02);
+            progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, Some(1.02));
             progress::unweighting(250, 1_000);
         });
         assert!(state.sigma_pb.is_some());

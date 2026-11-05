@@ -14,16 +14,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Gauge, Widget};
 use vibegraph::progress::stage;
 
-use crate::si::fmt_si;
+use crate::si::{fmt_si, PICOBARN};
 use crate::tui::elapsed_text;
 use crate::tui::state::UiState;
 
 /// Rows the footer occupies: one rule and five of content.
 pub(crate) const HEIGHT: u16 = 6;
-
-/// One picobarn in barns. [`UiState`] carries the cross section in the unit the
-/// result line and the artifact use; `fmt_si` picks a prefix for a base unit.
-const PB_IN_BARN: f64 = 1.0e-12;
 
 /// Width the measurement column is given when the terminal can spare it.
 const MEASUREMENT_WIDTH: u16 = 26;
@@ -100,7 +96,8 @@ fn attention() -> Style {
 }
 
 /// A cross section and its uncertainty, in the prefix the value's own magnitude
-/// picks.
+/// picks. [`UiState`] carries them in picobarns, the unit the artifact records;
+/// `fmt_si` takes them in barns.
 ///
 /// The significant figures are chosen from how far the uncertainty sits below
 /// the value, because both are rendered at the value's width: a result quoted to
@@ -113,12 +110,7 @@ pub(crate) fn cross_section(sigma_pb: f64, err_pb: f64) -> String {
     } else {
         4
     };
-    fmt_si(
-        sigma_pb * PB_IN_BARN,
-        Some(err_pb * PB_IN_BARN),
-        "b",
-        digits,
-    )
+    fmt_si(sigma_pb * PICOBARN, Some(err_pb * PICOBARN), "b", digits)
 }
 
 /// The status pane. Construct it around the state to draw and render it into a
@@ -187,9 +179,9 @@ impl<'a> Footer<'a> {
             None => text.push_str(&format!("   {}", count(self.state.done))),
         }
         let mut spans = vec![Span::raw(text)];
-        if self.state.chi2 > 0.0 {
+        if let Some(chi2) = self.state.chi2 {
             spans.push(Span::styled(
-                format!("   \u{3c7}\u{b2}/dof {:.2}", self.state.chi2),
+                format!("   \u{3c7}\u{b2}/dof {chi2:.2}"),
                 muted(),
             ));
         }
@@ -487,7 +479,7 @@ mod tests {
             total: Some(12),
             sigma_pb: Some(802.94),
             err_pb: 3.11,
-            chi2: 1.02,
+            chi2: Some(1.02),
             ns_per_eval: Some(212.0),
             model: Some(ModelBrief {
                 label: "sm-default".to_string(),
@@ -572,7 +564,7 @@ mod tests {
     fn an_unmeasured_cross_section_is_shown_as_absent() {
         let mut state = integrating();
         state.sigma_pb = None;
-        state.chi2 = 0.0;
+        state.chi2 = None;
         let rows = rows(&state, 80);
         assert!(rows[2].contains("\u{3c3} = \u{2014}"), "{rows:?}");
         assert!(!rows[2].contains("pb"), "{rows:?}");

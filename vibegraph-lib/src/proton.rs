@@ -3534,7 +3534,7 @@ mod tests {
     use crate::phasespace::DiagramChannel;
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::vegas::VegasGrid;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
     /// An integrand under the maps every banked row was integrated under, for the
@@ -3964,6 +3964,84 @@ mod tests {
             min_cross > 0.1,
             "two groups differ by only {min_cross:.3e}; the partition is not a coupling distinction"
         );
+    }
+
+    /// A subprocess two decay assignments reach (`g g > u u~ c c~` from
+    /// `g g > z j j, z > j j`) is two members, one per assignment, each in the group
+    /// whose `|M|²` is its own at points the partition was not measured on. The
+    /// two assignments' `|M|²` agree, each in its own leg order, only through a
+    /// flavour symmetry (u ↔ c here), and then they share a group with two luminosity
+    /// terms, as MadGraph's one matrix element with two PDF terms does.
+    #[test]
+    fn each_decay_assignment_of_one_subprocess_is_a_member() {
+        const CHAIN: &str = "g g > z j j, z > j j";
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(CHAIN, &m, &evaluated);
+        let points = fresh_points(&groups.groups()[0].final_masses());
+        let representatives: Vec<Vec<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| m2_trace(g.evaluator(), &evaluated, &points))
+            .collect();
+
+        let sets: Vec<DiagramSet> = enumerate(CHAIN, &m)
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        assert_eq!(sets.len(), 16);
+        assert_eq!(groups.subprocess_count(), sets.len());
+        let mut placed: BTreeMap<(Vec<i32>, Vec<i32>), Vec<usize>> = BTreeMap::new();
+        for set in &sets {
+            let evaluator = compile_class(set, &m, &evaluated).expect("subprocess compiles");
+            let legs = process_external_legs(&evaluator, &m, &evaluated);
+            let incoming = [legs[0].pdg, legs[1].pdg];
+            let outgoing: Vec<i32> = legs[2..].iter().map(|l| l.pdg).collect();
+            let trace = m2_trace(&evaluator, &evaluated, &points);
+            let hits: Vec<usize> = (0..groups.groups().len())
+                .filter(|&i| worst_rel(&representatives[i], &trace) < 1e-12)
+                .collect();
+            assert_eq!(
+                hits.len(),
+                1,
+                "{} matches {} groups",
+                label(set),
+                hits.len()
+            );
+            let group = &groups.groups()[hits[0]];
+            assert_eq!(
+                group
+                    .members()
+                    .iter()
+                    .filter(|s| s.incoming == incoming && s.outgoing == outgoing)
+                    .count(),
+                1,
+                "{} is not a member of the group it agrees with",
+                label(set)
+            );
+            let mut content = outgoing.clone();
+            content.sort_unstable();
+            placed
+                .entry((incoming.to_vec(), content))
+                .or_default()
+                .push(hits[0]);
+        }
+        let shared: Vec<_> = placed.iter().filter(|(_, g)| g.len() > 1).collect();
+        assert_eq!(shared.len(), 6, "{placed:?}");
+        for (content, in_groups) in &shared {
+            assert_eq!(in_groups.len(), 2, "{content:?}");
+            eprintln!("{content:?}: assignments in groups {in_groups:?}");
+        }
+
+        // Every member carries its own luminosity: at unit parton densities each
+        // is one term, so the groups' terms add up to one per subprocess.
+        let ones: FlavorRow = [1.0; FLAVOR_SLOTS];
+        let terms: f64 = groups
+            .groups()
+            .iter()
+            .map(|g| g.luminosity_rows(&ones, &ones)[0])
+            .sum();
+        assert_eq!(terms, sets.len() as f64);
     }
 
     /// The mirror identity `|M_{b a}(q)|² = |M_{a b}(R q)|²`, against explicitly

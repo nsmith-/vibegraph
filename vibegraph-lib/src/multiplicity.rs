@@ -40,7 +40,7 @@ use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
 };
 use crate::hadronic::{combine_channels, ChannelIntegration};
-use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
+use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
@@ -166,7 +166,6 @@ pub fn multiplicity_groups(
     let sets = generate_from_proc_card_in(parsed, model, enumeration)
         .map_err(|e| format!("failed to enumerate process: {e}"))?;
     let forbidden = forbidden_onshell_ids(parsed, model).map_err(|e| e.to_string())?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
@@ -184,8 +183,8 @@ pub fn multiplicity_groups(
         for part in parts {
             let groups = derive_flavor_groups(part, model, evaluated, rc)
                 .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
-            let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-                .map_err(|e| e.to_string())?;
+            let vetoes =
+                group_vetoes(&groups, &forbidden, evaluated, rc).map_err(|e| e.to_string())?;
             out.groups.push(groups);
             out.vetoes.push(vetoes);
         }

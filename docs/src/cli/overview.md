@@ -185,7 +185,11 @@ the whole amplitude, so it cannot bound an interference term.
 ## Watching a run
 
 Standard output carries the result and nothing else, at every verbosity:
-the `σ = … pb` line, the path written, the `check-events` report.
+the `σ` line, the path written, the `check-events` report. The cross section
+and its error are printed under the one SI-prefixed barn unit σ's magnitude
+picks, the error to two significant figures and σ to the same decimal place:
+`σ = 8.6812 ± 0.0023 ab`, `σ = 1.23457 ± 0.00012 pb`. The per-multiplicity
+lines of a mixed-multiplicity card follow the same rule.
 Everything the run has to say about itself goes to standard error, at a
 level chosen by `-v`/`-q`/`--log-level`, with `--log-file` recording
 everything at `trace` regardless, and `RUST_LOG` as the per-module override.
