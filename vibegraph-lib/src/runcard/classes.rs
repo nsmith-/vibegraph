@@ -69,6 +69,10 @@ const R_CUT_MM: &str = "cuts::pair_mass; the name is built as mm{tag} over the s
                         pair tags";
 const R_UNIMPL: &str = "cuts::detect_unimplemented — parsed and detected rather than applied, \
                         so a value off the default is already a hard error";
+const R_XPT: &str = "cuts::detect_unimplemented, which reads a value at or below zero as off, \
+                     as every guarded MadGraph read does, and refuses a positive one";
+const R_PT_MIN_PDG: &str = "cuts::Cuts::compile's per-PDG single-leg block, and \
+                            cuts::detect_unimplemented, which refuses the codes MadGraph refuses";
 const R_PTGMIN: &str = "cuts::detect_unimplemented, and cuts::Cuts::compile, which raises the \
                         photon pT threshold to it";
 const R_SDE_STRATEGY: &str = "hadronic::configurations_weighted_by_amp2, which \
@@ -351,10 +355,10 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("mmnlmax",                 Integrate, Consumed(R_CUT_LITERAL)),
     ("ptllmin",                 Integrate, Consumed(R_CUT_LITERAL)),
     ("ptllmax",                 Integrate, Consumed(R_CUT_LITERAL)),
-    ("xptj",                    Integrate, Consumed(R_UNIMPL)),
-    ("xptb",                    Integrate, Consumed(R_UNIMPL)),
-    ("xpta",                    Integrate, Consumed(R_UNIMPL)),
-    ("xptl",                    Integrate, Consumed(R_UNIMPL)),
+    ("xptj",                    Integrate, Consumed(R_XPT)),
+    ("xptb",                    Integrate, Consumed(R_XPT)),
+    ("xpta",                    Integrate, Consumed(R_XPT)),
+    ("xptl",                    Integrate, Consumed(R_XPT)),
     ("ptj1min",                 Integrate, Consumed(R_UNIMPL)),
     ("ptj1max",                 Integrate, Consumed(R_UNIMPL)),
     ("ptj2min",                 Integrate, Consumed(R_UNIMPL)),
@@ -429,7 +433,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("vector_size",             Integrate, IgnoredBenign(B_INTEGRATOR)),
     ("nb_warp",                 Integrate, IgnoredBenign(B_INTEGRATOR)),
     ("vecsize_memmax",          Integrate, IgnoredBenign(B_INTEGRATOR)),
-    ("pt_min_pdg",              Integrate, Consumed(R_UNIMPL)),
+    ("pt_min_pdg",              Integrate, Consumed(R_PT_MIN_PDG)),
     ("pt_max_pdg",              Integrate, Consumed(R_UNIMPL)),
     ("E_min_pdg",               Integrate, Consumed(R_UNIMPL)),
     ("E_max_pdg",               Integrate, Consumed(R_UNIMPL)),

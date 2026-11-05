@@ -48,8 +48,8 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
-    multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
-    MultiplicitySum,
+    multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
+    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
@@ -1210,6 +1210,7 @@ fn integrate_fixed_energy(
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets).map_err(err)?;
+    refuse_exchanged_beam_orderings(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
