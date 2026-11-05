@@ -97,3 +97,4 @@
   - H-N1 (validation-dev) dispatched for item 2 per D1, on `sprinth-near-degenerate` from main 20aca9fe.
   - H-K1 (per-group cut indicators, D4, with item 8) is held. Sprint G's open #89 rewrites `ProtonIntegrand` (+520 lines in proton.rs), right where `GroupCutsDiffer` is raised, so H-K1 starts after #89 merges.
   - The merged worktrees were removed to free disk.
+* The manager confirmed H-D3 Found 7 with local MadGraph: the TTToHcToWA as-run `proc_card_mg5.dat` fails in MadGraph 3.7.1 too (`No particle t~> in model` at @1; @2–@5 not executed), because its own history writer wraps lines mid-token. Catalogued in `madgraph-defects.md` (record-only, no weight). `proc-card-grammar.md`'s duplicates paragraph now describes main's cross-line rule (#93 Found 1).
