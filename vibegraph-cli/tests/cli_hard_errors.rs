@@ -611,7 +611,8 @@ fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
 /// one scan point per channel misses that band on about one generation seed in
 /// five. Every seed up to the first refusal must generate or be refused by
 /// name, and a refusal must come within forty seeds (about 1e-4 to miss at one
-/// in five).
+/// in five). The same seed under `--output-ldjson` ends on a `refusal` of kind
+/// `run` that names the flag.
 #[test]
 fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
     let home = tempfile::tempdir().unwrap();
@@ -644,16 +645,20 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
         stderr_of(&integrated)
     );
 
-    let refused = (1..=40).find(|seed| {
-        let generated = vibegraph(cwd.path(), home.path())
+    let generate = |seed: u32, extra: &[&str]| {
+        vibegraph(cwd.path(), home.path())
             .arg("--no-network")
             .arg("generate")
             .arg(out.path().join("grid.bin.zst"))
             .args(["--seed", &seed.to_string(), "--nevents", "10"])
-            .args(["--scan-points", "1", "--force", "--no-tui", "--out"])
+            .args(["--scan-points", "1", "--force", "--out"])
             .arg(out.path().join("events.lhe"))
+            .args(extra)
             .output()
-            .expect("spawn vibegraph");
+            .expect("spawn vibegraph")
+    };
+    let refused = (1..=40u32).find(|&seed| {
+        let generated = generate(seed, &["--no-tui"]);
         let stderr = stderr_of(&generated);
         match generated.status.code() {
             Some(0) => false,
@@ -661,6 +666,7 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
                 assert!(
                     stderr.contains("the weight scan found no usable weight")
                         && stderr.contains("nothing can be generated")
+                        && stderr.contains("--scan-points")
                         && !stderr.contains("panicked"),
                     "seed {seed}:\n{stderr}"
                 );
@@ -669,8 +675,19 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
             code => panic!("seed {seed}: exit {code:?}\n{stderr}"),
         }
     });
+    let seed = refused.expect("no seed in 40 drew a scan that missed the accepted band");
+
+    let ldjson = generate(seed, &["--output-ldjson"]);
+    assert_eq!(ldjson.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&ldjson.stdout);
+    let last = stdout.lines().last().expect("an ldjson line");
+    let refusal: serde_json::Value = serde_json::from_str(last).expect("a JSON line");
+    assert_eq!(refusal["kind"], "refusal", "{refusal}");
+    assert_eq!(refusal["error_kind"], "run", "{refusal}");
+    let message = refusal["message"].as_str().expect("a message");
     assert!(
-        refused.is_some(),
-        "no seed in 40 drew a scan that missed the accepted band"
+        message.contains("the weight scan found no usable weight")
+            && message.contains("--scan-points"),
+        "{refusal}"
     );
 }
