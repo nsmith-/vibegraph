@@ -5621,7 +5621,7 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
     use vibegraph::diagrams::forbidden_onshell_ids;
     use vibegraph::hadronic::Observable;
     use vibegraph::multiplicity::{split_by_multiplicity, union_shape, MultiplicitySum};
-    use vibegraph::onshell::{group_vetoes, subprocess_markings};
+    use vibegraph::onshell::group_vetoes;
     use vibegraph::proton::process_shape;
 
     let clock = Stopwatch::start();
@@ -5648,12 +5648,11 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
 
     let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
     let forbidden = forbidden_onshell_ids(&proc_card, &model).expect("on-shell vetoes");
-    let markings = subprocess_markings(&sets, &forbidden, &model);
     let mut groups = Vec::new();
     let mut vetoes = Vec::new();
     for part in split_by_multiplicity(sets, &rc) {
         let g = derive_flavor_groups(part, &model, &evaluated, &rc).expect("flavour groups");
-        vetoes.push(group_vetoes(&g, &markings, &forbidden, &evaluated, &rc).expect("vetoes"));
+        vetoes.push(group_vetoes(&g, &forbidden, &evaluated, &rc).expect("vetoes"));
         groups.push(g);
     }
     assert_eq!(groups.len(), alpha_s.len(), "{row}: multiplicities");
