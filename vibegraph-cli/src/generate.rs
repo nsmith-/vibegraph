@@ -49,7 +49,7 @@ use vibegraph::ufo::UFOModel;
 use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
 use crate::assets;
-use crate::error::{err, pdf_error_kind, CliError, ErrorKind};
+use crate::error::{err, pdf_error_kind, systematics_error_kind, CliError, ErrorKind};
 use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
 use crate::output::{self, GenerateResult};
@@ -496,7 +496,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
                 resolve_systematics(request, central, &tiers, &assets::pdf_fetch(network))
                     .map_err(|e| {
                         err(
-                            ErrorKind::Pdf,
+                            systematics_error_kind(&e),
                             format!("systematics request refused at generate: {e}"),
                         )
                     })?,
