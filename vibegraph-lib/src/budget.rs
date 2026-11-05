@@ -108,8 +108,8 @@ use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{
-    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, IterationCombination,
-    VegasGrid, VegasResult,
+    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, Chi2PerDof,
+    IterationCombination, VegasGrid, VegasResult,
 };
 
 /// Floor on the points a channel gets through the cuts in one iteration.
@@ -395,6 +395,19 @@ pub struct ConvergenceReport {
     /// per-channel floor's denomination moves: an iteration with accepted points
     /// in it measures a variance.
     pub zero_variance_iterations: usize,
+    /// Points the kept iterations drew, over all channels: the points the
+    /// reported cross section is an average over.
+    pub kept_points: u64,
+    /// Points of [`kept_points`](Self::kept_points) whose weight was not exactly
+    /// zero — the points that carry the cross section at all.
+    pub nonzero_points: u64,
+    /// The kept points' effective sample size `(Σcᵢ)²/Σcᵢ²`, `cᵢ = wᵢ/Nⱼ` the
+    /// share of the total point `i` of channel `j` contributes, `Nⱼ` that
+    /// channel's kept points: on one channel the familiar `(Σw)²/Σw²`. It is
+    /// [`nonzero_points`](Self::nonzero_points) where every nonzero weight is
+    /// equal and falls towards one as a single weight comes to dominate; zero
+    /// with no nonzero point.
+    pub effective_points: f64,
 }
 
 /// One channel's running record over the iterations of a block-split adaptation.
@@ -421,6 +434,13 @@ struct ChannelHistory {
     /// the floor binds on draw few points an iteration, and an acceptance formed
     /// on one such allocation is noise.
     accepted: u64,
+    /// What the kept iterations' points come to, pooled over them: the points,
+    /// those of nonzero weight, `Σw` and `Σw²`. The record the run's support is
+    /// read from ([`ConvergenceReport::nonzero_points`]).
+    kept_points: u64,
+    kept_nonzero: u64,
+    kept_sum: f64,
+    kept_sum_sq: f64,
 }
 
 impl ChannelHistory {
@@ -433,6 +453,10 @@ impl ChannelHistory {
             point_var_sum: 0.0,
             point_var_n: 0,
             accepted: 0,
+            kept_points: 0,
+            kept_nonzero: 0,
+            kept_sum: 0.0,
+            kept_sum_sq: 0.0,
         }
     }
 
@@ -446,6 +470,10 @@ impl ChannelHistory {
         self.point_var_n += 1;
         if keep {
             self.kept.push((out.integral, out.variance));
+            self.kept_points += neval as u64;
+            self.kept_nonzero += out.accepted as u64;
+            self.kept_sum += out.integral * neval as f64;
+            self.kept_sum_sq += out.sum_sq;
         }
     }
 
@@ -809,7 +837,9 @@ where
             Some(total) => info!(
                 "iteration {iteration}: {:.6e} ± {:.6e} (χ²/dof {:.3}), {iteration_points} points \
                  at {ns_per_eval:.0} ns/eval",
-                total.integral, total.std_dev, total.chi2_per_dof
+                total.integral,
+                total.std_dev,
+                Chi2PerDof(total.chi2_per_dof)
             ),
             None => info!(
                 "iteration {iteration} (warm-up): {iteration_points} points at \
@@ -819,7 +849,7 @@ where
         let total = estimate.unwrap_or(VegasResult {
             integral: 0.0,
             std_dev: 0.0,
-            chi2_per_dof: 0.0,
+            chi2_per_dof: None,
         });
         let progress_total = budget.progress_total(iteration, warmup, scaled, iteration_bound);
         progress::vegas_iteration(
@@ -911,8 +941,28 @@ where
             .iter()
             .map(|c| c.kept.iter().filter(|&&(_, v)| v == 0.0).count())
             .sum(),
+        kept_points: channels.iter().map(|c| c.kept_points).sum(),
+        nonzero_points: channels.iter().map(|c| c.kept_nonzero).sum(),
+        effective_points: effective_points(&channels),
     };
     (per_channel, total, report)
+}
+
+/// [`ConvergenceReport::effective_points`] over the channels' kept points.
+fn effective_points(channels: &[ChannelHistory]) -> f64 {
+    let (sum, sum_sq) =
+        channels
+            .iter()
+            .filter(|c| c.kept_points > 0)
+            .fold((0.0_f64, 0.0_f64), |(s, s2), c| {
+                let n = c.kept_points as f64;
+                (s + c.kept_sum / n, s2 + c.kept_sum_sq / (n * n))
+            });
+    if sum_sq > 0.0 {
+        sum * sum / sum_sq
+    } else {
+        0.0
+    }
 }
 
 /// The split a run starts from, said once: the channel count, their coordinate
@@ -1119,16 +1169,16 @@ impl Budget {
 /// The combined estimate over every channel's kept iterations, as it stands.
 ///
 /// The same sum the run's own result is formed from: terms add, their variances
-/// add, and the reported χ²/dof is the mean of the channels' own.
+/// add, and the reported χ²/dof is the mean of the channels' own, undefined
+/// unless every channel's is.
 fn running_estimate(channels: &[ChannelHistory], combination: IterationCombination) -> VegasResult {
     let terms: Vec<VegasResult> = channels.iter().map(|c| c.combine(combination)).collect();
     let integral: f64 = terms.iter().map(|t| t.integral).sum();
     let variance: f64 = terms.iter().map(|t| t.std_dev * t.std_dev).sum();
-    let chi2_per_dof = if terms.is_empty() {
-        0.0
-    } else {
-        terms.iter().map(|t| t.chi2_per_dof).sum::<f64>() / terms.len() as f64
-    };
+    let chi2_per_dof = (!terms.is_empty())
+        .then(|| terms.iter().map(|t| t.chi2_per_dof).sum::<Option<f64>>())
+        .flatten()
+        .map(|sum| sum / terms.len() as f64);
     VegasResult {
         integral,
         std_dev: variance.sqrt(),
@@ -1457,17 +1507,115 @@ mod tests {
         }
     }
 
+    /// A single channel that is `1` on `u₀ < width` and zero elsewhere.
+    struct Window {
+        width: f64,
+    }
+
+    impl ChannelIntegrand for Window {
+        fn channel_count(&self) -> usize {
+            1
+        }
+        fn channel_grid_ndim(&self, _channel: usize) -> usize {
+            2
+        }
+        fn value_in_channel(&self, _channel: usize, u: &[f64]) -> f64 {
+            if u[0] < self.width {
+                1.0
+            } else {
+                0.0
+            }
+        }
+    }
+
+    /// The support counts read the kept iterations alone, and the nonzero count
+    /// is a binomial draw of the kept points at the window's width, which no
+    /// grid adaptation moves on a window the grid cannot resolve better than
+    /// its bins. The effective sample size of unequal weights falls below it.
+    #[test]
+    fn the_support_counts_are_the_kept_iterations_nonzero_points() {
+        let width = 0.3;
+        let (neval, niter) = (4_000, 5);
+        let (_, _, report) = integrate_channels(
+            &Window { width },
+            &[1.0],
+            0.0,
+            IterationCombination::Unweighted,
+            Budget::Fixed { neval, niter },
+            BlockAllocation::ByAlpha,
+            0x5_0FF,
+            &StopSignal::default(),
+        );
+        assert_eq!(report.kept_points, (report.kept_iterations * neval) as u64);
+        assert!(report.kept_iterations < niter, "the warm-up was kept");
+        let n = report.kept_points as f64;
+        let sd = (n * width * (1.0 - width)).sqrt();
+        assert!(
+            (report.nonzero_points as f64 - n * width).abs() < 5.0 * sd,
+            "{} nonzero of {} kept points at acceptance {width}",
+            report.nonzero_points,
+            report.kept_points
+        );
+        assert!(
+            report.effective_points <= report.nonzero_points as f64
+                && report.effective_points > 0.5 * report.nonzero_points as f64,
+            "effective {} against {} nonzero",
+            report.effective_points,
+            report.nonzero_points
+        );
+    }
+
+    /// `(Σcᵢ)²/Σcᵢ²` with `cᵢ = wᵢ/Nⱼ`, worked by hand: channel A keeps
+    /// `[1, 1, 0, 0]` and channel B `[4, 0]`, so `Σc = 2/4 + 4/2 = 2.5` and
+    /// `Σc² = 2/16 + 16/4 = 4.125`. Warm-up iterations are not counted.
+    #[test]
+    fn the_effective_sample_size_weighs_each_point_by_its_channel() {
+        let block = |weights: &[f64]| BlockIteration {
+            integral: weights.iter().sum::<f64>() / weights.len() as f64,
+            variance: 0.0,
+            accepted: weights.iter().filter(|&&w| w != 0.0).count(),
+            sum_sq: weights.iter().map(|w| w * w).sum(),
+            hist: Vec::new(),
+        };
+        let mut a = ChannelHistory::new(0.5);
+        let mut b = ChannelHistory::new(0.5);
+        a.record(&block(&[9.0, 9.0, 9.0, 9.0]), 4, false);
+        a.record(&block(&[1.0, 1.0, 0.0, 0.0]), 4, true);
+        b.record(&block(&[4.0, 0.0]), 2, true);
+        let ess = effective_points(&[a, b]);
+        let want = 2.5 * 2.5 / 4.125;
+        assert!((ess - want).abs() < 1e-12, "{ess} against {want}");
+    }
+
+    /// A run with no point of weight has no support at all, and says so as a
+    /// zero rather than a `0/0`.
+    #[test]
+    fn a_run_without_weight_has_no_support() {
+        let (_, _, report) = integrate_channels(
+            &Window { width: 0.0 },
+            &[1.0],
+            0.0,
+            IterationCombination::Unweighted,
+            Budget::Fixed {
+                neval: 1_000,
+                niter: 4,
+            },
+            BlockAllocation::ByAlpha,
+            0x5_0FF,
+            &StopSignal::default(),
+        );
+        assert!(report.kept_points > 0);
+        assert_eq!(report.nonzero_points, 0);
+        assert_eq!(report.effective_points, 0.0);
+    }
+
     /// One channel's kept history, built by hand. Handing the stopping test an
     /// iteration of exactly zero measured variance on demand is the only way to
     /// pin what it does with one.
     fn history(kept: &[(f64, f64)]) -> ChannelHistory {
         ChannelHistory {
-            alpha: 1.0,
-            drawn: 0,
             kept: kept.to_vec(),
-            point_var_sum: 0.0,
-            point_var_n: 0,
-            accepted: 0,
+            ..ChannelHistory::new(1.0)
         }
     }
 
@@ -1485,7 +1633,10 @@ mod tests {
         let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
         let scale = h.stop_scale();
         assert!((scale - 7.0 / 3.0).abs() < 1e-12, "{scale}");
-        let chi2 = h.combine(IterationCombination::Unweighted).chi2_per_dof;
+        let chi2 = h
+            .combine(IterationCombination::Unweighted)
+            .chi2_per_dof
+            .expect("three kept iterations");
         assert!(
             (scale / chi2 - 1.0).abs() < 1e-12,
             "{scale} vs χ²/dof {chi2}"
@@ -1517,6 +1668,7 @@ mod tests {
             integral,
             variance,
             accepted: neval,
+            sum_sq: neval as f64 * (variance * (neval as f64 - 1.0) + integral * integral),
             hist: Vec::new(),
         }
     }
@@ -1621,7 +1773,10 @@ mod tests {
         let mixed: Vec<(f64, f64)> = empty.iter().chain(&fired).copied().collect();
         let h = history(&mixed);
 
-        let reported = h.combine(IterationCombination::Unweighted).chi2_per_dof;
+        let reported = h
+            .combine(IterationCombination::Unweighted)
+            .chi2_per_dof
+            .expect("eight kept iterations");
         assert!(
             reported > 1.0e200 && reported.is_finite(),
             "the pathology this guards against did not reproduce: χ²/dof {reported}"
@@ -1649,6 +1804,7 @@ mod tests {
         }
         ChannelHistory::combine_kept(&informative, IterationCombination::Unweighted)
             .chi2_per_dof
+            .expect("two informative iterations or more")
             .max(1.0)
     }
 
@@ -1756,7 +1912,7 @@ mod tests {
         );
         let worst = per_channel
             .iter()
-            .map(|c| c.result.chi2_per_dof)
+            .filter_map(|c| c.result.chi2_per_dof)
             .fold(0.0_f64, f64::max);
         assert!(
             worst > 1.0e100,
@@ -1951,7 +2107,7 @@ mod tests {
                 // new), then rebuild the cache (healing it if it was already
                 // stamped). The primer carries `done = 0`, which no real
                 // iteration does, and is filtered out below.
-                crate::progress::vegas_iteration(0, None, 0.0, 0.0, 0.0);
+                crate::progress::vegas_iteration(0, None, 0.0, 0.0, None);
                 tracing::callsite::rebuild_interest_cache();
                 integrate_channels(
                     &integ,

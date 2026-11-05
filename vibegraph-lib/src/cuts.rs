@@ -63,9 +63,17 @@
 //!   `≥ 0` fails (`>`). Transverse momenta are boost-invariant along the beam,
 //!   so the frame does not matter.
 //!
+//! - **`pt_min_pdg`** (`banner.py:4700-4760`, `setcuts.f:318-334`): every
+//!   outgoing leg whose `|PDG|` is listed gets `pT ≥ threshold` and no other
+//!   single-leg cut, whatever its class, mass or flavour; only `cut_decays = F`
+//!   exempts a decay product. Its `smin` term (`setcuts.f:678-690`) is not
+//!   reproduced: the ŝ floor here is derived from the thresholds, see
+//!   [`Cuts::shat_min`]. That term reads the wrong loop index and can raise
+//!   MadEvent's `τ` floor past the cuts on some cards, which are refused.
+//!
 //! Cut families implemented here: ŝ window, single-leg pT/E/η (classes
-//! j/b/a/l), pairwise ΔR and invariant mass, `ptll`, `mmnl`, `htj` and `iht`,
-//! and the decay-chain Breit–Wigner windows. Every other
+//! j/b/a/l), the per-PDG pT minimum, pairwise ΔR and invariant mass, `ptll`,
+//! `mmnl`, `htj` and `iht`, and the decay-chain Breit–Wigner windows. Every other
 //! `cut=`-tagged parameter is parse-and-detect: [`Cuts::compile`] hard-errors
 //! with [`CutError::UnimplementedCutActive`] if its value deviates from the MG
 //! default, so an active but unimplemented cut is never silently ignored.
@@ -255,6 +263,8 @@ pub enum CutError {
         value: String,
         default: String,
     },
+    #[error("run card's pt_min_pdg = {value} is refused: {reason}")]
+    PdgCutRefused { value: String, reason: String },
 }
 
 /// The MadGraph letter class of a final-state leg used for pairwise cuts.
@@ -276,6 +286,10 @@ struct LegInfo {
     /// Single-leg and pairwise dr/mass cuts apply (mass ≤ 20 GeV, not a neutrino,
     /// and not a decay product under `cut_decays = F`).
     do_cuts: bool,
+    /// A decay product under `cut_decays = F`: the one exclusion the per-PDG
+    /// cuts read (`setcuts.f:322`), where `do_cuts` also covers mass and
+    /// neutrino flavour.
+    uncut_decay: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -421,7 +435,6 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "ktdurham",
     "dparameter",
     "ptlund",
-    "pt_min_pdg",
     "pt_max_pdg",
     "E_min_pdg",
     "E_max_pdg",
@@ -429,6 +442,192 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "eta_max_pdg",
     "mxx_min_pdg",
 ];
+
+/// Requirements that read as off at any value at or below zero, so only a
+/// positive value is refused: "at least one jet (photon, b, lepton) with
+/// `pT > xpt*`". Every MadGraph read of them is guarded by `> 0` or folded
+/// through `max(·, 0)`: the cut itself (`cuts.f:981`, `:994`, `:1007`,
+/// `:1020`), the `smin` hint (`setcuts.f:540`, `:584`, `:591`, `:613`, `:622`,
+/// `:645`, `:659`), the grouped-subprocess consistency report (`setcuts.f:752`,
+/// `:760`, `:763`, `:772`) and the reset for a process without the class
+/// (`setcuts.f:835-879`). `reweight.f`, `setscales.f` and `initcluster.f`
+/// declare the common block and read none of the four.
+const NONPOSITIVE_IS_OFF: &[&str] = &["xptj", "xptb", "xpta", "xptl"];
+
+/// The PDG codes `banner.py:4722` means to refuse a per-PDG cut on: the light
+/// quarks, the b, the charged leptons, the gluon and the photon, whose class
+/// cuts the per-PDG block would replace. The pinned `banner.py` compares the
+/// card's string keys against these integers, so the test never fires and
+/// MadEvent applies the cut, replacing the class's pT, energy and rapidity
+/// cuts with the per-PDG ones; refusing the card is what MadGraph intends and
+/// keeps both sides out of that path.
+const PDG_CUT_LIGHT: &[u32] = &[1, 2, 3, 4, 5, 11, 13, 15, 21, 22];
+
+/// `run.inc`'s `pdg_cut(0:25)`: at most 25 distinct PDG codes
+/// (`banner.py:4714`).
+const PDG_CUT_MAX_ENTRIES: usize = 25;
+
+/// MadGraph's per-PDG transverse-momentum minimum, `pt_min_pdg`, as
+/// `banner.py:4700-4760` turns it into `pdg_cut` / `ptmin4pdg`: one threshold
+/// per listed `|PDG|`, applied to particle and antiparticle alike.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct PdgPtMin {
+    entries: Vec<(u32, f64)>,
+}
+
+impl PdgPtMin {
+    /// The card's `pt_min_pdg`, with MadGraph's refusals: a negative code
+    /// (`banner.py:4717`), more than 25 codes (`:4714`), and the light codes
+    /// MadGraph means to refuse ([`PDG_CUT_LIGHT`]). Code 0 is refused too: it
+    /// names no particle, and listed first it would read as the empty list
+    /// (`setcuts.f:318` tests `pdg_cut(1).ne.0`) and drop every other entry.
+    fn from_card(rc: &RunCard) -> Result<Self, CutError> {
+        let text = match rc.get("pt_min_pdg") {
+            None => return Ok(Self::default()),
+            Some(v) => v.as_str().to_string(),
+        };
+        let refuse = |reason: String| CutError::PdgCutRefused {
+            value: format!("'{text}'"),
+            reason,
+        };
+        let mut entries: Vec<(u32, f64)> = Vec::new();
+        for (key, value) in parse_pdg_dict(&text).map_err(refuse)? {
+            // `banner.py:4712` drops these two bookkeeping keys from the list.
+            if key == "__type__" || key == "default" {
+                continue;
+            }
+            let pdg: i64 = key
+                .parse()
+                .map_err(|_| refuse(format!("'{key}' is not a PDG code")))?;
+            let pt: f64 = value
+                .parse()
+                .map_err(|_| refuse(format!("'{value}' is not a number")))?;
+            if pdg < 0 {
+                return Err(refuse(format!(
+                    "PDG {pdg} is negative; MadGraph applies a per-PDG cut to particle and \
+                     antiparticle alike and refuses a negative code (banner.py:4717)"
+                )));
+            }
+            if pdg == 0 {
+                return Err(refuse("PDG 0 names no particle".to_string()));
+            }
+            let pdg =
+                u32::try_from(pdg).map_err(|_| refuse(format!("PDG {pdg} is out of range")))?;
+            if PDG_CUT_LIGHT.contains(&pdg) {
+                return Err(refuse(format!(
+                    "PDG {pdg} is a light quark, b, charged lepton, gluon or photon, whose class \
+                     cuts apply instead; banner.py:4722 means to refuse it, and its test never \
+                     fires because it compares string keys with integers"
+                )));
+            }
+            match entries.iter_mut().find(|(p, _)| *p == pdg) {
+                Some(entry) => entry.1 = pt,
+                None => entries.push((pdg, pt)),
+            }
+        }
+        if entries.len() > PDG_CUT_MAX_ENTRIES {
+            return Err(refuse(format!(
+                "{} PDG codes are listed and MadGraph allows at most {PDG_CUT_MAX_ENTRIES} \
+                 (banner.py:4714)",
+                entries.len()
+            )));
+        }
+        Ok(Self { entries })
+    }
+
+    /// Refuse the cards on which MadEvent's `smin` from the per-PDG cuts can
+    /// exceed what the cuts allow and so remove phase space.
+    ///
+    /// `setcuts.f:678-690` counts the legs of the `i`-th listed code with
+    /// `abs(idup(i,1,iproc)).eq.pdg_cut(i)` and `do_cuts(i)`, the list index
+    /// where the leg index `j` is meant. The test then does not depend on `j`:
+    /// it fails on every iteration, adding nothing, or passes on all
+    /// `nexternal − nincoming + 1` of them, adding that many times
+    /// `pmass(nexternal)² + ptmin²` to `smin`, which `myamp.f:569-570` makes the
+    /// lower edge of the `τ` draw. Legs 1 and 2 are incoming partons, whose
+    /// codes are refused here, so the overcount needs at least three listed
+    /// codes and a listed outgoing leg with `do_cuts` set: at most 20 GeV, not
+    /// a neutrino, not an uncut decay product. Which code is `i`-th is the
+    /// iteration order of a Python set of strings (`banner.py:4726`), so
+    /// whether a given run overcounts depends on its hash seed and cannot be
+    /// reproduced; such a card is refused, whatever leg position it lists.
+    fn refuse_smin_overcount(&self, infos: &[LegInfo]) -> Result<(), CutError> {
+        if self.entries.len() < 3 {
+            return Ok(());
+        }
+        let Some(leg) = infos
+            .iter()
+            .find(|i| i.do_cuts && self.threshold(i.pdg).is_some())
+        else {
+            return Ok(());
+        };
+        Err(CutError::PdgCutRefused {
+            value: format!("{:?}", self.entries),
+            reason: format!(
+                "it lists {} codes and the outgoing PDG {} at or below 20 GeV, which \
+                 setcuts.f:681 counts once per leg of the process when the code's place in \
+                 MadGraph's hash-ordered pdg_cut list matches the leg's: its smin then \
+                 exceeds what the cut allows and removes phase space, in a run-dependent way",
+                self.entries.len(),
+                leg.pdg
+            ),
+        })
+    }
+
+    /// The threshold for an outgoing leg of code `pdg`, if its `|PDG|` is listed.
+    fn threshold(&self, pdg: i32) -> Option<f64> {
+        let a = pdg.unsigned_abs();
+        self.entries
+            .iter()
+            .find(|(p, _)| *p == a)
+            .map(|(_, pt)| *pt)
+    }
+}
+
+/// The `(key, value)` pairs of a dict-valued run-card entry, read as
+/// `banner.py:1220-1251` reads one: `{k1: v1, k2: v2}` (a trailing comma ends
+/// the list, quotes around a key are dropped, later keys overwrite earlier
+/// ones) or a single `k : v`, `k, v` or `k v`. The empty string is the empty
+/// dict.
+fn parse_pdg_dict(text: &str) -> Result<Vec<(String, String)>, String> {
+    let text = text.trim();
+    let unquote = |x: &str| -> String {
+        let x = x.trim();
+        let quoted =
+            x.len() >= 2 && (x.starts_with('"') || x.starts_with('\'')) && x.ends_with(&x[..1]);
+        if quoted {
+            x[1..x.len() - 1].to_string()
+        } else {
+            x.to_string()
+        }
+    };
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let malformed = || format!("'{text}' is not a dict of PDG codes to thresholds");
+    if let Some(body) = text.strip_prefix('{').and_then(|b| b.strip_suffix('}')) {
+        let mut pairs = Vec::new();
+        for pair in body.split(',') {
+            if pair.trim().is_empty() {
+                break;
+            }
+            let (k, v) = pair.rsplit_once(':').ok_or_else(malformed)?;
+            pairs.push((unquote(k), v.trim().to_string()));
+        }
+        return Ok(pairs);
+    }
+    let (k, v) = if text.contains(',') {
+        text.split_once(',').ok_or_else(malformed)?
+    } else if text.contains(':') {
+        text.split_once(':').ok_or_else(malformed)?
+    } else {
+        text.split_once(char::is_whitespace).ok_or_else(malformed)?
+    };
+    if v.contains([',', ':']) {
+        return Err(malformed());
+    }
+    Ok(vec![(unquote(k), v.trim().to_string())])
+}
 
 /// signed square used by MadGraph for mass/ptll thresholds: `x·|x|`.
 fn signed_sq(x: f64) -> f64 {
@@ -488,11 +687,32 @@ fn decay_windows(
         .collect()
 }
 
-/// Single-leg pT / E / η cuts for the j/b/a/l classes, on every final leg whose
-/// `do_cuts` is set.
-fn single_leg_cuts(rc: &RunCard, infos: &[LegInfo]) -> Vec<SingleLegCut> {
+/// Single-leg pT / E / η cuts: the j/b/a/l class cuts on every final leg whose
+/// `do_cuts` is set, and the per-PDG cut on every final leg whose `|PDG|` it
+/// lists.
+///
+/// The per-PDG block (`setcuts.f:318-334`) runs after the class block and
+/// overwrites all six of a listed leg's thresholds, the ones `pt_min_pdg` does
+/// not set at their inactive values. It reads `do_cuts` only through
+/// `cut_decays`: a leg above 20 GeV or a neutrino is cut, a decay product under
+/// `cut_decays = F` is not.
+fn single_leg_cuts(rc: &RunCard, infos: &[LegInfo], pdg: &PdgPtMin) -> Vec<SingleLegCut> {
     let mut single = Vec::new();
     for info in infos {
+        if !info.uncut_decay {
+            if let Some(pt_min) = pdg.threshold(info.pdg) {
+                single.push(SingleLegCut {
+                    idx: info.idx,
+                    pt_min,
+                    pt_max: -1.0,
+                    e_min: 0.0,
+                    e_max: -1.0,
+                    eta_min: 0.0,
+                    eta_max: -1.0,
+                });
+                continue;
+            }
+        }
         if !info.do_cuts {
             continue;
         }
@@ -610,6 +830,7 @@ impl Cuts {
         forced: &ForcedResonances,
     ) -> Result<Cuts, CutError> {
         detect_unimplemented(rc)?;
+        let pdg_pt_min = PdgPtMin::from_card(rc)?;
         let uncut_products = if cut_decays(rc) {
             0
         } else {
@@ -633,15 +854,17 @@ impl Cuts {
                 let mut info = classify(idx, l, maxjetflavor);
                 if k < 64 && uncut_products & (1u64 << k) != 0 {
                     info.do_cuts = false;
+                    info.uncut_decay = true;
                 }
                 info
             })
             .collect();
+        pdg_pt_min.refuse_smin_overcount(&infos)?;
         let finals: Vec<usize> = infos.iter().map(|i| i.idx).collect();
         let bwcutoff = rc.float("bwcutoff");
         let windows = decay_windows(forced, &finals, bwcutoff);
 
-        let single = single_leg_cuts(rc, &infos);
+        let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
@@ -1200,11 +1423,13 @@ const SINGLE_PT_MAXIMA: &[&str] = &[
     "ptl4max",
 ];
 
-/// Refuse a run card that activates a cut this crate parses but does not apply.
-/// Reads the run card alone, so callers run it before any process enumeration.
-/// A single-object transverse-momentum maximum at or above the collider's
-/// ceiling reads as its default.
+/// Refuse a run card that activates a cut this crate parses but does not apply,
+/// or a `pt_min_pdg` MadGraph refuses. Reads the run card alone, so callers run
+/// it before any process enumeration. A single-object transverse-momentum
+/// maximum at or above the collider's ceiling reads as its default, and so does
+/// an `xpt*` requirement at or below zero.
 pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
+    PdgPtMin::from_card(rc)?;
     let pt_ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
     for &name in UNIMPLEMENTED_CUTS {
         let (Some(cur), Some(def)) = (rc.get(name), param_default(name)) else {
@@ -1219,6 +1444,9 @@ pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
         if SINGLE_PT_MAXIMA.contains(&name)
             && matches!(cur, ParamValue::Float(x) if *x >= pt_ceiling)
         {
+            continue;
+        }
+        if NONPOSITIVE_IS_OFF.contains(&name) && matches!(cur, ParamValue::Float(x) if *x <= 0.0) {
             continue;
         }
         return Err(CutError::UnimplementedCutActive {
@@ -1269,6 +1497,7 @@ fn classify(idx: usize, leg: &ExternalLeg, maxjetflavor: i64) -> LegInfo {
         letter,
         is_neutrino,
         do_cuts,
+        uncut_decay: false,
     }
 }
 
@@ -2223,6 +2452,7 @@ mod tests {
         let err = Cuts::compile(&card("30 = ptj1min\n"), &dy_legs()).unwrap_err();
         match err {
             CutError::UnimplementedCutActive { name, .. } => assert_eq!(name, "ptj1min"),
+            other => panic!("{other}"),
         }
     }
 
@@ -2310,6 +2540,7 @@ mod tests {
                     assert_eq!(n, name);
                     assert_eq!(value, "500");
                 }
+                other => panic!("{name}: {other}"),
             }
         }
     }
@@ -2328,6 +2559,7 @@ mod tests {
         match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")) {
             Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "ht2max"),
             Ok(()) => panic!("ht2max = 1e5 is an active partial-sum cut"),
+            Err(other) => panic!("{other}"),
         }
         assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
     }
@@ -3136,5 +3368,264 @@ mod tests {
         let none = Cuts::compile(&card("300 = htjmin\n400 = ihtmin\n"), &dy_legs()).unwrap();
         let bare = Cuts::compile(&card(""), &dy_legs()).unwrap();
         assert_eq!(none.shat_min(), bare.shat_min());
+    }
+
+    // ── xpt* at or below zero ─────────────────────────────────────────────
+
+    /// Final states that give each `xpt*` class a leg: jets, b quarks, a
+    /// photon and leptons.
+    fn xpt_leg_sets() -> Vec<Vec<ExternalLeg>> {
+        vec![
+            legs([21, 21], &[21, 21]),
+            legs([21, 21], &[5, -5]),
+            legs([2, -2], &[22, 21]),
+            dy_legs(),
+        ]
+    }
+
+    /// `cuts.f` reads each `xpt*` behind `> 0` and `setcuts.f` through
+    /// `max(·, 0)`, so a value at or below zero is the default: it passes
+    /// detection and compiles to the default's filter on every class.
+    #[test]
+    fn a_nonpositive_xpt_compiles_to_the_default_cuts() {
+        for name in NONPOSITIVE_IS_OFF {
+            for value in ["-1", "0", "-0.5", "-100"] {
+                let rc = lhc(&format!("{value} = {name}\n"));
+                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+                for set in xpt_leg_sets() {
+                    let compiled = Cuts::compile(&rc, &set).unwrap();
+                    let default = Cuts::compile(&lhc(""), &set).unwrap();
+                    assert_eq!(compiled, default, "{name} = {value}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_positive_xpt_is_refused() {
+        for name in NONPOSITIVE_IS_OFF {
+            for value in ["1e-9", "10", "1e5"] {
+                match Cuts::compile(&lhc(&format!("{value} = {name}\n")), &dy_legs()) {
+                    Err(CutError::UnimplementedCutActive { name: n, .. }) => assert_eq!(n, *name),
+                    other => panic!("{name} = {value}: {other:?}"),
+                }
+            }
+        }
+    }
+
+    // ── pt_min_pdg ─────────────────────────────────────────────────────────
+
+    /// `g u > z u`, the Z at its pole mass.
+    fn zj_legs() -> Vec<ExternalLeg> {
+        vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::outgoing(23, MZ),
+            ExternalLeg::outgoing(2, 0.0),
+        ]
+    }
+
+    /// A leg of mass `m` at transverse momentum `pt`, rapidity `y`, azimuth `phi`.
+    fn massive(m: f64, pt: f64, y: f64, phi: f64) -> V {
+        let mt = (m * m + pt * pt).sqrt();
+        V::new(mt * y.cosh(), pt * phi.cos(), pt * phi.sin(), mt * y.sinh())
+    }
+
+    /// A Z and a jet balanced in the transverse plane, the Z at `pt` and a
+    /// rapidity no class cut would accept.
+    fn zj_point(pt: f64) -> Vec<V> {
+        with_beams(&[massive(MZ, pt, 6.0, 0.0), lep(pt, 0.0, PI)])
+    }
+
+    /// The Z is above 20 GeV, so no class cut reaches it, and the per-PDG minimum
+    /// does: `pT < threshold` fails (`cuts.f:333`), the threshold itself passes,
+    /// and no rapidity or energy cut comes with it.
+    #[test]
+    fn pt_min_pdg_cuts_a_listed_heavy_leg() {
+        let bare = Cuts::compile(&lhc(""), &zj_legs()).unwrap();
+        let cut = Cuts::compile(&lhc("{23: 100} = pt_min_pdg\n"), &zj_legs()).unwrap();
+        assert_ne!(bare, cut);
+        for pt in [20.0, 99.9, 100.0, 100.1, 400.0] {
+            assert!(bare.pass(&zj_point(pt)), "unlisted at {pt}");
+            assert_eq!(cut.pass(&zj_point(pt)), pt >= 100.0, "listed at {pt}");
+        }
+        // The jet keeps its class cuts: |y| = 6 fails etaj = 5.
+        let far_jet = with_beams(&[massive(MZ, 150.0, 0.0, 0.0), lep(150.0, 6.0, PI)]);
+        assert!(!cut.pass(&far_jet));
+    }
+
+    /// One threshold per `|PDG|`: an antiparticle is cut like its particle, and
+    /// a code the process does not carry compiles to the default filter.
+    #[test]
+    fn pt_min_pdg_reads_the_absolute_code() {
+        let w = |pdg: i32| {
+            vec![
+                ExternalLeg::incoming(1, 0.0),
+                ExternalLeg::incoming(-2, 0.0),
+                ExternalLeg::outgoing(pdg, 80.4),
+                ExternalLeg::outgoing(21, 0.0),
+            ]
+        };
+        let rc = lhc("{24: 50} = pt_min_pdg\n");
+        let point = |pt: f64| with_beams(&[massive(80.4, pt, 0.0, 0.0), lep(pt, 0.0, PI)]);
+        for pdg in [24, -24] {
+            let cuts = Cuts::compile(&rc, &w(pdg)).unwrap();
+            assert!(!cuts.pass(&point(49.0)), "{pdg}");
+            assert!(cuts.pass(&point(51.0)), "{pdg}");
+        }
+        for set in [dy_legs(), zj_legs(), legs([21, 21], &[21, 21])] {
+            assert_eq!(
+                Cuts::compile(&rc, &set).unwrap(),
+                Cuts::compile(&lhc(""), &set).unwrap()
+            );
+        }
+    }
+
+    /// `setcuts.f:318-334` overwrites every single-leg threshold of a listed
+    /// leg, ignoring `do_cuts` but for `cut_decays`: a neutrino, uncut by
+    /// class, gets the minimum and nothing else.
+    #[test]
+    fn pt_min_pdg_reaches_a_neutrino() {
+        let set = legs([2, -2], &[12, -12]);
+        let cuts = Cuts::compile(&lhc("{12: 30} = pt_min_pdg\n"), &set).unwrap();
+        let point = |pt: f64, y: f64| with_beams(&[lep(pt, y, 0.0), lep(pt, -y, PI)]);
+        assert!(!cuts.pass(&point(29.0, 0.0)));
+        assert!(cuts.pass(&point(31.0, 0.0)));
+        assert!(cuts.pass(&point(31.0, 8.0)));
+    }
+
+    /// A decay product is exempt under `cut_decays = F` and cut under
+    /// `cut_decays = T`, though above 20 GeV it has no class cut either way.
+    #[test]
+    fn pt_min_pdg_follows_cut_decays() {
+        let set = legs([21, 21], &[23, 23]);
+        let parent = forced(vec![vec![ForcedLine {
+            slots: 0b11,
+            mass: 500.0,
+            width: 0.0,
+        }]]);
+        let point = |pt: f64| with_beams(&[massive(MZ, pt, 0.0, 0.0), massive(MZ, pt, 0.0, PI)]);
+        let exempt = Cuts::compile_with(
+            &lhc("{23: 100} = pt_min_pdg\nF = cut_decays\n"),
+            &set,
+            &parent,
+        )
+        .unwrap();
+        assert!(exempt.pass(&point(50.0)));
+        let cut = Cuts::compile_with(
+            &lhc("{23: 100} = pt_min_pdg\nT = cut_decays\n"),
+            &set,
+            &parent,
+        )
+        .unwrap();
+        assert!(!cut.pass(&point(50.0)));
+        assert!(cut.pass(&point(150.0)));
+        let undecayed =
+            Cuts::compile(&lhc("{23: 100} = pt_min_pdg\nF = cut_decays\n"), &set).unwrap();
+        assert!(!undecayed.pass(&point(50.0)));
+    }
+
+    /// The ŝ floor counts the per-PDG minimum with the class cuts, `√ŝ ≥ Σ pT`,
+    /// and stays below the least ŝ an accepted point can have: a Z at
+    /// `pT = 100` recoiling against a jet needs `√ŝ ≥ m_T(Z) + 100`.
+    #[test]
+    fn pt_min_pdg_enters_the_shat_floor_as_a_bound() {
+        let cuts = Cuts::compile(&lhc("{23: 100} = pt_min_pdg\n"), &zj_legs()).unwrap();
+        assert_eq!(cuts.shat_min(), (100.0f64 + 20.0).powi(2));
+        let at_threshold = zj_point(100.0);
+        let shat = (at_threshold[2] + at_threshold[3]).m2();
+        assert!(cuts.pass(&at_threshold));
+        assert!(cuts.shat_min() < shat);
+        assert!(cuts.spacelike_floor() == 100.0 * 100.0);
+    }
+
+    /// The `setcuts.f:681` overcount needs three listed codes and a listed
+    /// outgoing leg with `do_cuts`; anything short of both compiles.
+    #[test]
+    fn pt_min_pdg_refuses_the_cards_madevent_overcounts_smin_on() {
+        let light = |mass: f64| {
+            vec![
+                ExternalLeg::incoming(21, 0.0),
+                ExternalLeg::incoming(21, 0.0),
+                ExternalLeg::outgoing(1023, mass),
+                ExternalLeg::outgoing(21, 0.0),
+                ExternalLeg::outgoing(21, 0.0),
+            ]
+        };
+        let three = lhc("{1023: 100, 23: 0, 24: 0} = pt_min_pdg\n");
+        let two = lhc("{1023: 100, 23: 0} = pt_min_pdg\n");
+        assert!(matches!(
+            Cuts::compile(&three, &light(1.0)),
+            Err(CutError::PdgCutRefused { .. })
+        ));
+        assert!(Cuts::compile(&two, &light(1.0)).is_ok());
+        assert!(Cuts::compile(&three, &light(30.0)).is_ok());
+        assert!(Cuts::compile(&three, &zj_legs()).is_ok());
+        assert!(detect_unimplemented(&three).is_ok());
+        let decayed = forced(vec![vec![ForcedLine {
+            slots: 0b001,
+            mass: 1.0,
+            width: 0.0,
+        }]]);
+        let uncut = lhc("{1023: 100, 23: 0, 24: 0} = pt_min_pdg\nF = cut_decays\n");
+        assert!(Cuts::compile_with(&uncut, &light(1.0), &decayed).is_ok());
+    }
+
+    #[test]
+    fn pt_min_pdg_spellings_read_as_banner_py_reads_them() {
+        let threshold = |text: &str| {
+            let rc = lhc(&format!("{text} = pt_min_pdg\n"));
+            PdgPtMin::from_card(&rc).unwrap().entries
+        };
+        assert_eq!(threshold("{23: 100}"), vec![(23, 100.0)]);
+        assert_eq!(threshold("{'23': 100.0}"), vec![(23, 100.0)]);
+        assert_eq!(
+            threshold("{23: 100, 1023: 50.5,}"),
+            vec![(23, 100.0), (1023, 50.5)]
+        );
+        assert_eq!(threshold("{23: 10, 23: 20}"), vec![(23, 20.0)]);
+        assert_eq!(threshold("23 : 100"), vec![(23, 100.0)]);
+        assert_eq!(threshold("{}"), vec![]);
+        assert_eq!(PdgPtMin::from_card(&lhc("")).unwrap().entries, vec![]);
+    }
+
+    /// MadGraph's refusals: a negative code, more than 25 codes, and the light
+    /// codes `banner.py:4722` means to refuse; plus code 0 and a malformed entry.
+    #[test]
+    fn pt_min_pdg_refusals() {
+        let mut refused = vec![
+            "{-23: 100}".to_string(),
+            "{0: 10}".to_string(),
+            "{z: 10}".to_string(),
+            "{23: many}".to_string(),
+        ];
+        refused.extend(PDG_CUT_LIGHT.iter().map(|p| format!("{{{p}: 10}}")));
+        refused.push(format!("{{23: 100, {}: 10}}", PDG_CUT_LIGHT[0]));
+        let many: Vec<String> = (0..26).map(|k| format!("{}: 10", 9000001 + k)).collect();
+        refused.push(format!("{{{}}}", many.join(", ")));
+        for text in &refused {
+            let rc = lhc(&format!("{text} = pt_min_pdg\n"));
+            assert!(
+                matches!(
+                    detect_unimplemented(&rc),
+                    Err(CutError::PdgCutRefused { .. })
+                ),
+                "{text}"
+            );
+            assert!(
+                matches!(
+                    Cuts::compile(&rc, &zj_legs()),
+                    Err(CutError::PdgCutRefused { .. })
+                ),
+                "{text}"
+            );
+        }
+        let at_cap: Vec<String> = (0..25).map(|k| format!("{}: 10", 9000001 + k)).collect();
+        let rc = lhc(&format!("{{{}}} = pt_min_pdg\n", at_cap.join(", ")));
+        assert!(detect_unimplemented(&rc).is_ok());
+        for allowed in ["{6: 10}", "{12: 10}", "{16: 10}", "{1023: 100}", "{25: 0}"] {
+            let rc = lhc(&format!("{allowed} = pt_min_pdg\n"));
+            assert!(detect_unimplemented(&rc).is_ok(), "{allowed}");
+        }
     }
 }

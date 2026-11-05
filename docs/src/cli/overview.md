@@ -92,6 +92,19 @@ parameters the restriction merged, and an entry the model has no parameter
 for. A value for a mass or width the model computes, such as the W mass in
 the Standard Model, is ignored, as MadGraph ignores it, with a warning when it
 disagrees with the computed one.
+`integrate` also refuses a result its points do not carry, and writes no
+artifact for it. If no point of the integration has weight, the error says how
+many points passed the cuts: none means the cuts reject everything the sampler
+reaches (the run card's, or the `bwcutoff` window a decay chain holds its
+resonances in); some means the matrix element is zero wherever they passed, so
+a coupling or width is zero at the parameters in force, or the restriction
+removes the process. If some points have weight but fewer than an effective 20
+carry it, measured as `(Σw)²/Σw²` over the points the cross section averages,
+the estimate and its error are set by those few draws, and the error gives the
+counts. A process whose phase space the sampler reaches only by chance, such as
+a resonance far narrower than the window a decay chain holds it in, ends this
+way.
+
 ## The artifact
 
 `grid.bin.zst` is a bincode + zstd snapshot of the adapted per-channel VEGAS
@@ -113,7 +126,8 @@ against the record: a recorded proc card this build parses to another
 process, or a model whose digest is not the recorded one, is refused, with
 the advice to re-integrate. In return the expensive adaptive integration
 runs once and the artifact is a read-only input to any number of
-`generate` jobs. Each job must pass its own `--seed`, which has no default,
+`generate` jobs. An artifact that records `σ = 0`, which a build without
+`integrate`'s refusal could write, is refused: there is nothing to sample. Each job must pass its own `--seed`, which has no default,
 so that jobs on one grid cannot write the same events by accident;
 `--nevents` and `--event-norm` override the recorded values. The random number generator is a counter-based ChaCha8, so
 distinct seeds give independent streams and the resulting files concatenate
@@ -171,7 +185,11 @@ the whole amplitude, so it cannot bound an interference term.
 ## Watching a run
 
 Standard output carries the result and nothing else, at every verbosity:
-the `σ = … pb` line, the path written, the `check-events` report.
+the `σ` line, the path written, the `check-events` report. The cross section
+and its error are printed under the one SI-prefixed barn unit σ's magnitude
+picks, the error to two significant figures and σ to the same decimal place:
+`σ = 8.6812 ± 0.0023 ab`, `σ = 1.23457 ± 0.00012 pb`. The per-multiplicity
+lines of a mixed-multiplicity card follow the same rule.
 Everything the run has to say about itself goes to standard error, at a
 level chosen by `-v`/`-q`/`--log-level`, with `--log-file` recording
 everything at `trace` regardless, and `RUST_LOG` as the per-module override.

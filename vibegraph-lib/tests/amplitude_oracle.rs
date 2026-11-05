@@ -503,6 +503,7 @@ impl Rounded {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: diagrams.iter().map(|&d| set.diagrams[d].clone()).collect(),
+                mirrored: set.mirrored,
             };
             parts.push((
                 AmplitudeEvaluator::compile(&subset, model)?,
@@ -1131,7 +1132,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .param_card
         .parse::<ParamCard>()
         .map_err(|e| format!("[{name}] banked param card: {e:?}"))?;
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let sets = common::generate_with(&table.process, model.as_ref());
     let set = sets
@@ -1236,6 +1237,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                         particles_out: set.particles_out.clone(),
                         polarizations: set.polarizations.clone(),
                         diagrams: vec![d.clone()],
+                        mirrored: set.mirrored,
                     },
                     model.as_ref(),
                 )

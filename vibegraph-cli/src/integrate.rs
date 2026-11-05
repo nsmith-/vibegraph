@@ -36,6 +36,7 @@ use vibegraph::artifact::{
     PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
+use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
@@ -44,12 +45,11 @@ use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
-    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
-    multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
-    MultiplicitySum,
+    multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
+    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
@@ -60,12 +60,13 @@ use vibegraph::phasespace::maps::{
 use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
+use vibegraph::support::{check_support, PointCensus};
 use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
-use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
+use vibegraph::vegas::{BinWeight, Chi2PerDof, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -73,6 +74,7 @@ use crate::assets;
 use crate::error::{err, CliError};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
+use crate::si::{fmt_si_measured, GEV, PICOBARN};
 use crate::tui;
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
@@ -609,14 +611,71 @@ pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError>
     }
 }
 
-/// The factorization scale the run artifact records: the run card's constant when
-/// it fixes one on both beams, and `0` when the scale is chosen per event and no
-/// single number describes the run.
-fn recorded_mu_f(report: &RunningCouplingReport) -> f64 {
-    match report.constant_scales {
-        Some(scales) if scales.mu_f[0] == scales.mu_f[1] => scales.mu_f[0],
-        _ => 0.0,
+/// The factorization scale a run read its parton densities at, as the summary
+/// names it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FactorizationScale {
+    /// The beams read no parton densities: fixed-energy beams, or a decay.
+    NoDensities,
+    /// The run card's constant, the same on both beams.
+    Constant(f64),
+    /// A constant on each beam, the two different.
+    PerBeam([f64; 2]),
+    /// Read off each event, on one beam or both, under the run card's
+    /// `dynamical_scale_choice`.
+    PerEvent { choice: i64 },
+}
+
+impl FactorizationScale {
+    /// The scale a run card's prescription reads the densities at. A beam's
+    /// fixed scale holds on every event whatever the renormalisation scale or
+    /// the clustering does, so the constant cases are read from the fixed
+    /// flags alone.
+    fn of(card: &RunCard) -> Result<Self, CliError> {
+        let choice = ScaleChoice::from_run_card_for(card, ClosedForms::Honour)
+            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+        Ok(match choice.fixed_factorisation_scales() {
+            [Some(a), Some(b)] if a == b => FactorizationScale::Constant(a),
+            [Some(a), Some(b)] => FactorizationScale::PerBeam([a, b]),
+            _ => FactorizationScale::PerEvent {
+                choice: choice.choice().as_i64(),
+            },
+        })
     }
+
+    /// What the artifact records: the constant where one describes the whole
+    /// run, and `None` where none does.
+    fn recorded(self) -> Option<f64> {
+        match self {
+            FactorizationScale::Constant(mu) => Some(mu),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for FactorizationScale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FactorizationScale::NoDensities => f.write_str("no parton densities"),
+            FactorizationScale::Constant(mu) => write!(f, "μF = {mu} GeV"),
+            FactorizationScale::PerBeam([a, b]) => write!(f, "μF = {a} GeV, {b} GeV by beam"),
+            FactorizationScale::PerEvent { choice } => {
+                write!(f, "μF dynamical, choice {choice}")
+            }
+        }
+    }
+}
+
+/// `value ± error` of `observable` in its reported unit (pb, or GeV for a
+/// width), printed by [`fmt_si_measured`] under one SI-prefixed barn or
+/// electronvolt unit: a 9e-6 pb cross section is `8.6812 ± 0.0023 ab`, a
+/// 2e-7 GeV width `200.1 ± 1.2 eV`.
+fn measurement(observable: Observable, value: f64, error: f64) -> String {
+    let (base, unit) = match observable {
+        Observable::CrossSection => (PICOBARN, "b"),
+        Observable::PartialWidth => (GEV, "eV"),
+    };
+    fmt_si_measured(value * base, error * base, unit)
 }
 
 /// The metadata printed and banked for a completed run, independent of beam mode.
@@ -626,7 +685,7 @@ struct RunOutput {
     observable: Observable,
     /// The parton densities the run read.
     pdf: PdfInput,
-    mu_f: f64,
+    mu_f: FactorizationScale,
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
     channels: Vec<ChannelGrid>,
@@ -640,6 +699,8 @@ struct RunOutput {
     alpha_floor: Option<f64>,
     result: VegasResult,
     convergence: ConvergenceReport,
+    /// The integrand's own count over the integration's points.
+    census: PointCensus,
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
@@ -750,6 +811,19 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
              was written",
         ));
     }
+    let conv = &output.convergence;
+    info!(
+        "support:  {} of {} kept points carry weight (effective sample size {:.0}); {} of {} \
+         integration points passed the cuts",
+        conv.nonzero_points,
+        conv.kept_points,
+        conv.effective_points,
+        output.census.passed_cuts,
+        output.census.evaluated,
+    );
+    // A cross section no point carries, or only a handful do, is not a result:
+    // refused before it is printed or banked, so nothing downstream reads it.
+    check_support(conv, output.census).map_err(|e| err(format!("{e}; no artifact was written")))?;
 
     let observable = output.observable;
     let sigma_pb = output.result.integral * observable.per_natural_unit();
@@ -775,7 +849,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             {
                 info!("PDF set:  {set} (member {member}, lhaid {lhaid})");
             }
-            info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+            info!("√s:       {} GeV,  {}", output.sqrt_s, output.mu_f);
         }
         Observable::PartialWidth => {
             info!(
@@ -784,10 +858,12 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             );
         }
     }
-    let conv = &output.convergence;
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
-        conv.points, conv.iterations, seed, output.result.chi2_per_dof
+        conv.points,
+        conv.iterations,
+        seed,
+        Chi2PerDof(output.result.chi2_per_dof)
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
@@ -837,17 +913,14 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         );
     }
     // The command's result, and the reason `stdout` carries nothing else: a
-    // caller pipes this to read the cross section, at any verbosity.
-    // A partial width spans many decades — `h > e+ e- mu+ mu-` is `2e-7` GeV —
-    // so it is printed to six significant figures rather than six decimals.
-    match observable {
-        Observable::CrossSection => {
-            tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"))
-        }
-        Observable::PartialWidth => {
-            tui::result_line(format_args!("Γ = {sigma_pb:.6e} ± {sigma_err_pb:.6e} GeV"))
-        }
-    }
+    // caller pipes this to read the cross section, at any verbosity. A cross
+    // section or a partial width spans many decades — `h > e+ e- mu+ mu-` is
+    // `2e-7` GeV — so its digits are set by its error, not by a decimal count.
+    tui::result_line(format_args!(
+        "{} = {}",
+        observable.symbol(),
+        measurement(observable, sigma_pb, sigma_err_pb)
+    ));
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
@@ -857,8 +930,9 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         inputs: RunInputs {
             pdf: output.pdf,
             params: moved,
+            decays: evaluated.decay_tables().to_vec(),
         },
-        mu_f: output.mu_f,
+        mu_f: output.mu_f.recorded(),
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
         niter: output.convergence.iterations,
@@ -890,13 +964,17 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 }
 
 /// The model evaluated at `--param-card`, and the parameters the card moved off
-/// the restricted defaults; the defaults, and none moved, without a card.
+/// the restricted defaults; the defaults, and none moved, without a card. The
+/// defaults are bound like a card, so what binding refuses of them (a negative
+/// mass) is refused without a card too.
 fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
 ) -> Result<(EvaluatedModel, Vec<MovedParam>), CliError> {
     let Some(path) = path else {
-        return Ok((EvaluatedModel::from_model(model.clone()), Vec::new()));
+        let bound = bind_card(model.clone(), &ParamCard::default())
+            .map_err(|e| err(format!("the model's default parameters: {e}")))?;
+        return Ok((bound.evaluated, bound.moved));
     };
     let card = ParamCard::from_file(path).map_err(|e| {
         err(format!(
@@ -1025,7 +1103,6 @@ fn integrate_hadronic(
     let maps = multiplicity_maps(&groups, evaluated, sqrt_s_had, args.maps.options());
 
     let mut parts = Vec::with_capacity(groups.len());
-    let mut scale_report = None;
     for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
         let mut integ = ProtonIntegrand::new_with_maps(
             part_groups,
@@ -1041,7 +1118,7 @@ fn integrate_hadronic(
         // Both scales and the strong coupling come from the run card; the coupling
         // is the PDF member's own tabulation, which is what the densities were
         // fitted with.
-        let report = integ
+        integ
             .use_run_card_scales(
                 model,
                 evaluated,
@@ -1049,10 +1126,8 @@ fn integrate_hadronic(
                 Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
             )
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-        scale_report.get_or_insert(report);
         parts.push(integ);
     }
-    let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
     integ.set_grid_rule(args.grid.rule()?);
     integ.set_alpha_floor(args.alpha_floor.0);
@@ -1062,8 +1137,10 @@ fn integrate_hadronic(
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
+    integ.clear_census();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+    let census = integ.census();
     if groups.len() > 1 {
         report_multiplicities(&integ, &groups, &per_channel, convergence.iterations);
     }
@@ -1078,7 +1155,7 @@ fn integrate_hadronic(
         process,
         observable: Observable::CrossSection,
         pdf: pdf_input,
-        mu_f: recorded_mu_f(&scale_report),
+        mu_f: FactorizationScale::of(rc)?,
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
@@ -1087,6 +1164,7 @@ fn integrate_hadronic(
         alpha_floor: integ.alpha_floor(),
         result,
         convergence,
+        census,
     })
 }
 
@@ -1097,7 +1175,8 @@ fn report_multiplicities(
     per_channel: &[ChannelIntegration],
     niter: usize,
 ) {
-    let unit = Observable::CrossSection.per_natural_unit();
+    let observable = Observable::CrossSection;
+    let unit = observable.per_natural_unit();
     for (k, part) in integ.part_results(per_channel, niter).iter().enumerate() {
         let ids: Vec<String> = part_process_ids(&groups[k])
             .iter()
@@ -1109,12 +1188,11 @@ fn report_multiplicities(
             .map(|m| format!("{m}"))
             .collect();
         info!(
-            "{} outgoing legs ({}; masses {} GeV): σ = {:.6} ± {:.6} pb over {} channels",
+            "{} outgoing legs ({}; masses {} GeV): σ = {} over {} channels",
             integ.final_state_count(k),
             ids.join(" "),
             masses.join(", "),
-            part.integral * unit,
-            part.std_dev * unit,
+            measurement(observable, part.integral * unit, part.std_dev * unit),
             integ.offsets()[k + 1] - integ.offsets()[k],
         );
     }
@@ -1140,6 +1218,7 @@ fn integrate_fixed_energy(
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets).map_err(err)?;
+    refuse_exchanged_beam_orderings(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
@@ -1191,14 +1270,16 @@ fn integrate_fixed_energy(
     // isotropically and has no chain: the legacy choices describe it exactly.
     let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
+    integ.clear_census();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+    let census = integ.census();
     Ok(RunOutput {
         process,
         observable: initial.observable(),
         pdf: PdfInput::None,
         // No parton distributions, so no factorisation scale enters the integral.
-        mu_f: 0.0,
+        mu_f: FactorizationScale::NoDensities,
         sqrt_s,
         channels: per_channel
             .iter()
@@ -1219,6 +1300,7 @@ fn integrate_fixed_energy(
         alpha_floor: integ.maps().and(integ.alpha_floor()),
         result,
         convergence,
+        census,
     })
 }
 
@@ -1227,6 +1309,87 @@ mod tests {
     use super::*;
     use clap::Args;
     use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
+
+    /// A cross section in pb is printed under a barn prefix and a width in GeV
+    /// under an electronvolt one, each aligned to its error.
+    #[test]
+    fn a_measurement_is_printed_in_its_observables_prefixed_unit() {
+        for (observable, value, error, printed) in [
+            (
+                Observable::CrossSection,
+                8.681_234_567e-6,
+                2.345e-9,
+                "8.6812 ± 0.0023 ab",
+            ),
+            (Observable::CrossSection, 802.94, 3.11, "802.9 ± 3.1 pb"),
+            (
+                Observable::PartialWidth,
+                2.001_23e-7,
+                1.234e-9,
+                "200.1 ± 1.2 eV",
+            ),
+            (
+                Observable::PartialWidth,
+                2.495_23,
+                0.001_23,
+                "2.4952 ± 0.0012 GeV",
+            ),
+        ] {
+            assert_eq!(
+                measurement(observable, value, error),
+                printed,
+                "{value} ± {error} {}",
+                observable.unit()
+            );
+        }
+    }
+
+    fn scale_of(card: &str) -> FactorizationScale {
+        FactorizationScale::of(&RunCard::parse(card).expect("the card parses"))
+            .expect("the prescription compiles")
+    }
+
+    /// The factorization scale is read from the fixed flags alone: a fixed μF
+    /// is the run's constant whatever μR does, and a per-event or per-beam one
+    /// is recorded as no constant at all.
+    #[test]
+    fn the_factorization_scale_is_named_by_its_fixed_flags() {
+        let fixed = "True = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+                     91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n";
+        assert_eq!(scale_of(fixed), FactorizationScale::Constant(91.188));
+        assert_eq!(scale_of(fixed).recorded(), Some(91.188));
+        assert_eq!(scale_of(fixed).to_string(), "μF = 91.188 GeV");
+
+        let running_ren = fixed.replace("True = fixed_ren_scale", "False = fixed_ren_scale");
+        assert_eq!(scale_of(&running_ren), FactorizationScale::Constant(91.188));
+
+        let per_beam = fixed.replace("91.188 = dsqrt_q2fact2", "50 = dsqrt_q2fact2");
+        assert_eq!(
+            scale_of(&per_beam),
+            FactorizationScale::PerBeam([91.188, 50.0])
+        );
+        assert_eq!(scale_of(&per_beam).recorded(), None);
+        assert_eq!(
+            scale_of(&per_beam).to_string(),
+            "μF = 91.188 GeV, 50 GeV by beam"
+        );
+
+        let dynamical = "False = fixed_ren_scale\nFalse = fixed_fac_scale\n\
+                         -1 = dynamical_scale_choice\n";
+        assert_eq!(
+            scale_of(dynamical),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+        assert_eq!(scale_of(dynamical).recorded(), None);
+        assert_eq!(scale_of(dynamical).to_string(), "μF dynamical, choice -1");
+        let one_beam = format!("{dynamical}True = fixed_fac_scale1\n30 = dsqrt_q2fact1\n");
+        assert_eq!(
+            scale_of(&one_beam),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+
+        assert_eq!(FactorizationScale::NoDensities.recorded(), None);
+    }
 
     /// `--seed`'s help spells the default seed out, since a doc comment cannot
     /// name a constant; this keeps the two equal.

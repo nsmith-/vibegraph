@@ -41,8 +41,8 @@ use crate::lhef::emit::{
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
-    multiplicity_groups, multiplicity_maps, refuse_mixed_multiplicity, MultiplicityGroups,
-    MultiplicitySum,
+    multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
+    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::subprocess_vetoes;
 use crate::pdf::{PdfMember, PdfSet};
@@ -388,6 +388,7 @@ fn generate_sample(
     let sets = generate_from_proc_card_in(parsed, model, options.enumeration)
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets).map_err(err)?;
+    refuse_exchanged_beam_orderings(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
@@ -1752,7 +1753,7 @@ mod tests {
                 member: 0,
                 files: Vec::new(),
             }),
-            mu_f: 0.0,
+            mu_f: None,
             sqrt_s_had: 13000.0,
             neval: 1000,
             niter: 1,
@@ -1769,12 +1770,12 @@ mod tests {
                 grid: VegasGrid::new(4, 16, 1.5),
                 sigma_pb: 1.0,
                 sigma_err_pb: 0.01,
-                chi2_per_dof: 1.0,
+                chi2_per_dof: Some(1.0),
                 sampler: None,
             }],
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
-            chi2_per_dof: 1.0,
+            chi2_per_dof: Some(1.0),
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: String::new(),

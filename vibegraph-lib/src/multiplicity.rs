@@ -35,13 +35,14 @@ use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
 };
 use crate::hadronic::{combine_channels, ChannelIntegration};
-use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
+use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
     derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonEvent, ProtonIntegrand,
 };
 use crate::runcard::RunCard;
+use crate::support::PointCensus;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{GridRule, IterationCombination, VegasResult};
@@ -152,7 +153,6 @@ pub fn multiplicity_groups(
     let sets = generate_from_proc_card_in(parsed, model, enumeration)
         .map_err(|e| format!("failed to enumerate process: {e}"))?;
     let forbidden = forbidden_onshell_ids(parsed, model).map_err(|e| e.to_string())?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
@@ -170,8 +170,8 @@ pub fn multiplicity_groups(
         for part in parts {
             let groups = derive_flavor_groups(part, model, evaluated, rc)
                 .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
-            let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-                .map_err(|e| e.to_string())?;
+            let vetoes =
+                group_vetoes(&groups, &forbidden, evaluated, rc).map_err(|e| e.to_string())?;
             out.groups.push(groups);
             out.vetoes.push(vetoes);
         }
@@ -221,6 +221,41 @@ pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+    }
+    Ok(())
+}
+
+/// Refuse, on fixed-energy beams, two subprocesses that are one initial state in
+/// its two beam orderings (`e+ e- > mu+ mu-` with `add process e- e+ > mu- mu+`).
+///
+/// At proton beams the two orderings are two physical initial states, each with
+/// its own luminosity, and the enumeration keeps both. Fixed-energy beams carry
+/// one particle each, and both subprocesses would integrate the same collision,
+/// counting it twice.
+pub fn refuse_exchanged_beam_orderings(sets: &[DiagramSet]) -> Result<(), String> {
+    let populated: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+    for (i, a) in populated.iter().enumerate() {
+        let [a1, a2] = a.particles_in.as_slice() else {
+            continue;
+        };
+        let mut a_out = a.particles_out.clone();
+        a_out.sort();
+        for b in &populated[i + 1..] {
+            let [b1, b2] = b.particles_in.as_slice() else {
+                continue;
+            };
+            let mut b_out = b.particles_out.clone();
+            b_out.sort();
+            if a1 != a2 && (a1, a2) == (b2, b1) && a_out == b_out {
+                return Err(format!(
+                    "'{}' and '{}' are one initial state in its two beam orderings; at fixed-energy \
+                     beams both would integrate the same collision, so the card is refused rather \
+                     than counting it twice",
+                    a.label(),
+                    b.label()
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -592,6 +627,18 @@ impl<'a> MultiplicitySum<'a> {
             .zip(&self.budget_shares)
             .flat_map(|(p, &w)| p.channel_alphas().into_iter().map(move |a| a * w))
             .collect()
+    }
+
+    /// Every part's [`ProtonIntegrand::census`], added.
+    pub fn census(&mut self) -> PointCensus {
+        self.parts.iter_mut().map(|p| p.census()).sum()
+    }
+
+    /// Start every part's census over from zero.
+    pub fn clear_census(&mut self) {
+        for p in &mut self.parts {
+            p.clear_census();
+        }
     }
 
     /// Integrate every channel of every part under `budget`, one grid per

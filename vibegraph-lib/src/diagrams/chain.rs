@@ -32,6 +32,19 @@
 //! final state), so a stitched set is exactly the diagrams of the full final state in
 //! which every chain resonance is an s-channel line with its stated products.
 //!
+//! **One subprocess from two decay assignments** follows MadGraph.
+//! `g g > z j j, z > j j` reaches `g g > u u~ c c~` as Z → cc̄ on the uū core and as
+//! Z → uū on the cc̄ core. MadGraph combines each core matrix element with each decay
+//! assignment separately, so the two land in different matrix elements, or as two PDF
+//! terms of one where their tags agree, and the cross section is the incoherent sum
+//! `|M_a|²Θ_a + |M_b|²Θ_b`. Here they are two [`DiagramSet`]s with the same particles,
+//! each with its own forced lines, and so its own windows and, under `cut_decays = F`,
+//! its own cut legs. Their interference is not kept: it measures 10⁻³ of the cross
+//! section or less, inside the narrow-width approximation's own accuracy, while one coherent set
+//! would need a cut rule for legs that are decay products in one assignment and core
+//! particles in the other. Identical particles are different: there every pairing is one
+//! set, since every pairing cuts the same particles.
+//!
 //! **What is rebuilt from the graph.** A stitched diagram's propagator momenta
 //! ([`Diagram::tree_momentum`]) and its sign (the fermion-pairing parity times the line
 //! sign) are recomputed from the stitched graph, not combined from the parts: both are
@@ -200,22 +213,31 @@ fn chain_sets(
             other.set.particles_out.len()
         )));
     }
-    let mut seen = HashSet::new();
-    for s in &out {
-        let mut key = s.set.particles_out.clone();
-        key.sort();
-        let mut initial = s.set.particles_in.clone();
-        initial.sort();
-        if !seen.insert((initial, key)) {
-            return Err(DiagramError::DuplicateSubprocess {
-                subprocess: format!(
-                    "{} > {}",
-                    s.set.particles_in.join(" "),
-                    s.set.particles_out.join(" ")
-                ),
-                first: process.to_string(),
-                second: process.to_string(),
-            });
+    // Each (core, assignment) is stitched once, so two sets of one subprocess are two
+    // different decay assignments: MadGraph's two combined matrix elements (or two PDF
+    // terms of one), summed incoherently, each with its own windows and cuts.
+    debug_assert!(
+        out.iter().map(|s| &s.key).all_unique(),
+        "one (core, assignment) stitched twice"
+    );
+    if node.0 == 0 {
+        let mut assignments_of: HashMap<(Vec<&String>, Vec<&String>), usize> = HashMap::new();
+        for s in out.iter().filter(|s| !s.set.diagrams.is_empty()) {
+            let key = (
+                s.set.particles_in.iter().sorted().collect(),
+                s.set.particles_out.iter().sorted().collect(),
+            );
+            *assignments_of.entry(key).or_default() += 1;
+        }
+        let shared = assignments_of.values().filter(|&&n| n > 1).count();
+        if shared > 0 {
+            info!(
+                "{shared} subprocess{} of '{process}' {} reached by more than one decay \
+                 assignment; each assignment is its own subprocess and they are summed \
+                 incoherently, as MadGraph does",
+                if shared == 1 { "" } else { "es" },
+                if shared == 1 { "is" } else { "are" },
+            );
         }
     }
     Ok(out)
@@ -475,6 +497,7 @@ fn stitch_set(
             particles_out,
             polarizations,
             diagrams,
+            mirrored: core.mirrored,
         },
     })
 }

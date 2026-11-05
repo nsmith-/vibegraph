@@ -136,6 +136,7 @@ use vibegraph::phasespace::{parse_alpha_floor, AlphaAdaptation, DEFAULT_ALPHA_FL
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
+use vibegraph::vegas::Chi2PerDof;
 
 mod common;
 
@@ -877,7 +878,13 @@ fn row_model(dir: &str) -> std::sync::Arc<vibegraph::ufo::UFOModel> {
 }
 
 /// Integrate one process and return `(sigma_pb, err_pb, chi2_per_dof)`.
-fn integrate(dir: &str, process: &str, neval: usize, niter: usize, seed: u64) -> (f64, f64, f64) {
+fn integrate(
+    dir: &str,
+    process: &str,
+    neval: usize,
+    niter: usize,
+    seed: u64,
+) -> (f64, f64, Chi2PerDof) {
     let (s, e, c, _) = integrate_with(
         dir,
         process,
@@ -899,7 +906,7 @@ fn integrate_reported(
     neval: usize,
     niter: usize,
     seed: u64,
-) -> (f64, f64, f64, Vec<ChannelSummary>) {
+) -> (f64, f64, Chi2PerDof, Vec<ChannelSummary>) {
     with_integrand(
         dir,
         process,
@@ -921,7 +928,7 @@ fn integrate_reported(
             (
                 result.integral * GEV2_TO_PB,
                 result.std_dev * GEV2_TO_PB,
-                result.chi2_per_dof,
+                Chi2PerDof(result.chi2_per_dof),
                 summary,
             )
         },
@@ -938,7 +945,7 @@ fn integrate_with(
     seed: u64,
     n_survey: usize,
     n_adapt_iter: usize,
-) -> (f64, f64, f64, Vec<f64>) {
+) -> (f64, f64, Chi2PerDof, Vec<f64>) {
     integrate_probe(
         dir,
         process,
@@ -968,7 +975,7 @@ fn integrate_probe(
     n_adapt_iter: usize,
     mmll_override: Option<f64>,
     vegas_alpha: Option<f64>,
-) -> (f64, f64, f64, Vec<f64>) {
+) -> (f64, f64, Chi2PerDof, Vec<f64>) {
     with_integrand(
         dir,
         process,
@@ -987,7 +994,7 @@ fn integrate_probe(
             (
                 result.integral * GEV2_TO_PB,
                 result.std_dev * GEV2_TO_PB,
-                result.chi2_per_dof,
+                Chi2PerDof(result.chi2_per_dof),
                 adaptation.trajectory.last().cloned().unwrap_or_default(),
             )
         },
@@ -1084,7 +1091,7 @@ fn with_integrand_parts<R>(
     );
 
     let model = row_model(dir);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
 
     let sets = common::generate_with(process, model.as_ref());
     let evals =
@@ -1560,14 +1567,14 @@ fn probe_per_channel_grid_variance_cpu() {
                     eprintln!(
                         "  seed {seed:>10} | shared   sigma {s_shared:.6e} +- {d_shared:.3e} \
                          ({t_shared:.2} s, {evals_shared} evals, chi2/dof {:.2})",
-                        shared.chi2_per_dof
+                        Chi2PerDof(shared.chi2_per_dof)
                     );
                     eprintln!(
                         "  {:>15} | {:>3} chan sigma {s_split:.6e} +- {d_split:.3e} \
                          ({t_split:.2} s, {evals_split} evals, chi2/dof {:.2})",
                         "",
                         channels.len(),
-                        split.chi2_per_dof
+                        Chi2PerDof(split.chi2_per_dof)
                     );
                     eprintln!(
                         "  {:>15} | err ratio {:.3}x | err^2*CPU {fom_shared:.3e} vs \
@@ -1746,7 +1753,7 @@ fn probe_accepted_point_floor() {
                         "  seed {seed:>10}: sigma {sigma_pb:.6e} +- {sigma_err_pb:.3e} pb \
                          | rel {:+.4} | chi2/dof {:8.2}",
                         sigma_pb / entry.sigma_pb - 1.0,
-                        result.chi2_per_dof,
+                        Chi2PerDof(result.chi2_per_dof),
                     );
                     eprintln!("    {}", common::floor_coverage_line(&spend));
                     runs.push(SeedResult {
@@ -2558,7 +2565,7 @@ fn probe_alpha_survey_budget() {
                              | rel {:+.4} | χ²/dof {:7.2} | achieved_rel {:.5} \
                              | scaled_rel {:.5} (×{:.1})",
                             sigma_pb / entry.sigma_pb - 1.0,
-                            result.chi2_per_dof,
+                            Chi2PerDof(result.chi2_per_dof),
                             spend.achieved_rel,
                             spend.scaled_rel,
                             spend.scaled_rel / spend.achieved_rel,
@@ -2853,7 +2860,7 @@ fn probe_scale_cost() {
         let card_path = output_dir().join(dir).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("run card parses");
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -2962,7 +2969,7 @@ fn probe_scale_draw_cost() {
         let off = RunCard::parse(&patched).expect("patched run card parses");
 
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -3065,7 +3072,7 @@ fn probe_event_readout_cost() {
             .expect("run card readable");
         let live = RunCard::parse(&text).expect("banked run card parses");
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile");
         let bounds: Vec<_> = evals
@@ -4363,7 +4370,7 @@ fn probe_channel_map_degeneracy() {
         let entry = &banked[dir];
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate(&entry.process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
@@ -4498,7 +4505,7 @@ fn probe_photon_pole_is_the_instability() {
                 None,
             );
             sigmas.push(s);
-            worst_chi2 = worst_chi2.max(chi2);
+            worst_chi2 = worst_chi2.max(chi2.0.expect("eight iterations define a χ²/dof"));
         }
         let mean = sigmas.iter().sum::<f64>() / sigmas.len() as f64;
         let lo = sigmas.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -4686,7 +4693,9 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
         (
             per_seed[0].sigma_pb,
             per_seed[0].sigma_err_pb,
-            integration_chi2,
+            integration_chi2
+                .0
+                .expect("a plan keeps two iterations or more past its warm-up"),
         )
     };
     let (pull, rel) = compare(sigma_vg, err_vg, banked);
@@ -5015,7 +5024,7 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
         let model = row_model(dir);
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
         let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
@@ -5320,7 +5329,7 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     let model = row_model(dir);
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir)).unwrap();
 
     let sets = common::generate_with(process, model.as_ref());
     let diagrams: Vec<_> = sets
@@ -6085,7 +6094,7 @@ fn probe_ee_nsz_channel_split() {
                     terms.resize(channels.len(), Vec::new());
                     let mut line = format!(
                         "NSZ_SEED neval {neval} seed {seed} sigma {s:.6} err {e:.6} chi2 {:.3}",
-                        total.chi2_per_dof
+                        Chi2PerDof(total.chi2_per_dof)
                     );
                     for (j, ch) in channels.iter().enumerate() {
                         let (sj, ej) = (
@@ -6093,9 +6102,10 @@ fn probe_ee_nsz_channel_split() {
                             ch.result.std_dev * GEV2_TO_PB,
                         );
                         terms[j].push((sj, ej));
-                        line += &format!(
+                        line +=
+                            &format!(
                             " | ch{j} alpha {:.4e} neval {} sigma {sj:.6} err {ej:.6} chi2 {:.3}",
-                            ch.alpha, ch.neval, ch.result.chi2_per_dof
+                            ch.alpha, ch.neval, Chi2PerDof(ch.result.chi2_per_dof)
                         );
                     }
                     eprintln!("{line} | {:.2} s", t.elapsed().as_secs_f64());

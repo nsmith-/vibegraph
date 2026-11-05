@@ -51,6 +51,12 @@ fix.
   a defect, and with the flag on by default it changes today's output on such
   cards; their σ row is informational, so no gate moves.
 
+- (e) the restriction's zero-coupling rule (`ufo/mod.rs` `is_zero_coupling`):
+  on, MadGraph's `detect_identical_couplings` rule, |g| < 1e-13 is zero with a
+  strict-zero rerun when any coupling lies in [1e-13, 1e-10); off, a rule that
+  does not depend on another coupling's value (exact zeros only, or a fixed
+  relative threshold). Added at the user's request (sprint G, 2026-11-03).
+
 - (f) MadEvent's small-width convention: for Γ below M·1e-6 MadEvent evaluates
   the propagator at fk_W = M·1e-6 and corrects σ through the mapped channel's
   Jacobian (`transpole.f:44`), broadening the lineshape; vibegraph uses the

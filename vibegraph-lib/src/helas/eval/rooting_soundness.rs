@@ -253,7 +253,7 @@ fn all_rootings_preserve_amplitude() {
             .get(&normalize(process))
             .unwrap_or_else(|| panic!("no committed amplitude table for '{process}'"));
         let points = &reference.momenta;
-        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card);
+        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card).unwrap();
 
         // Baseline oracle: production rooting.
         clear_root_override();
@@ -366,7 +366,7 @@ fn root_override_hook_is_transparent() {
             .get(&normalize(process))
             .unwrap_or_else(|| panic!("no committed amplitude table for '{process}'"));
         let points = &reference.momenta;
-        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card);
+        let evaluated = EvaluatedModel::from_model_card((*model).clone(), &reference.card).unwrap();
 
         clear_root_override();
         let base = eval_m2_all(set, &model, &evaluated, points).expect("baseline eval");
@@ -428,7 +428,7 @@ fn momentum_slashed_chain_is_rooting_invariant() {
         .join("\n")
         .parse()
         .expect("the banked param card");
-    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card).unwrap();
     let opts = ParsingOptions::default();
     let pc = parse_proc_card("generate e+ e- > t t~ NP<=1", &opts).unwrap();
     let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
@@ -467,6 +467,7 @@ fn momentum_slashed_chain_is_rooting_invariant() {
                     particles_out: set.particles_out.clone(),
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![d.clone()],
+                    mirrored: set.mirrored,
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -533,7 +534,7 @@ fn four_fermion_currents_are_rooting_invariant() {
         .join("\n")
         .parse()
         .expect("the banked param card");
-    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card).unwrap();
     let opts = ParsingOptions::default();
     let pc = parse_proc_card("generate e+ e- > mu+ mu- a NP<=1", &opts).unwrap();
     let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
@@ -612,6 +613,7 @@ fn four_fermion_currents_are_rooting_invariant() {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
+                mirrored: set.mirrored,
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -690,7 +692,7 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
         .join("\n")
         .parse()
         .expect("the banked param card");
-    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card);
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card).unwrap();
     let opts = ParsingOptions::default();
     let pc = parse_proc_card("generate ta+ ta- > t t~ a NP<=1", &opts).unwrap();
     let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
@@ -744,6 +746,7 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
+                mirrored: set.mirrored,
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -866,6 +869,7 @@ fn literal_sigma_currents_are_rooting_invariant() {
                     particles_out: set.particles_out.clone(),
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![(*diagram).clone()],
+                    mirrored: set.mirrored,
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);

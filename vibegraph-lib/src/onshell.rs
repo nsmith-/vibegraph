@@ -33,8 +33,6 @@
 //! own diagrams, so each subprocess gets its own veto; flavour groups sharing one
 //! matrix element are required to share the marking too ([`check_group_members`]).
 
-use std::collections::BTreeMap;
-
 use thiserror::Error;
 
 use crate::diagrams::diagram::{Diagram, OnShell, Prop};
@@ -43,7 +41,7 @@ use crate::diagrams::DiagramSet;
 use crate::hadronic::{compile_class, HadronicError};
 use crate::helas::eval::AmplitudeEvaluator;
 use crate::helas::repr::lorentz::LorentzVector;
-use crate::proton::FlavorGroups;
+use crate::proton::{FlavorGroup, FlavorGroups};
 use crate::runcard::RunCard;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
@@ -269,6 +267,7 @@ impl OnShellVeto {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
+                mirrored: set.mirrored,
             };
             let part = compile_class(&subset, model, evaluated)?;
             let tags = part.color_flow_tags();
@@ -410,38 +409,6 @@ fn marking(diagrams: &[Diagram], forbidden: &[i64], model: &UFOModel) -> Marking
     out
 }
 
-/// The key a subprocess is found under: its incoming and outgoing PDG codes.
-type SubprocessKey = (Vec<i64>, Vec<i64>);
-
-fn set_key(set: &DiagramSet, model: &UFOModel) -> SubprocessKey {
-    let pdg = |names: &[String]| {
-        names
-            .iter()
-            .map(|n| model.particles.get(n.as_str()).map_or(0, |p| p.pdg_code))
-            .collect()
-    };
-    (pdg(&set.particles_in), pdg(&set.particles_out))
-}
-
-/// The marking of every subprocess of an enumeration, taken before the
-/// enumeration is partitioned into flavour groups (which keep only each group's
-/// representative diagrams).
-pub fn subprocess_markings(
-    sets: &[DiagramSet],
-    forbidden: &[i64],
-    model: &UFOModel,
-) -> BTreeMap<SubprocessKey, (String, Marking)> {
-    sets.iter()
-        .filter(|s| !s.diagrams.is_empty())
-        .map(|s| {
-            (
-                set_key(s, model),
-                (s.label(), marking(&s.diagrams, forbidden, model)),
-            )
-        })
-        .collect()
-}
-
 /// Refuse a flavour group whose members `$` marks differently from its
 /// representative. The group's members share one evaluator, one set of
 /// diagrams and so one set of amplitudes with marked lines removed; MadEvent marks each subprocess's own diagrams, and
@@ -449,37 +416,57 @@ pub fn subprocess_markings(
 /// That fails only where the `$` list is not closed under the relabelling the
 /// group makes — a member whose propagator is the antiparticle of the
 /// representative's, say, under `$ w+` alone.
+///
+/// Each member's marking is read off its own diagrams, legs in the
+/// representative's positions, never looked up by flavour: one decay chain can
+/// give two subprocesses of the same particles (two decay assignments), and
+/// they are marked differently.
 pub(crate) fn check_group_members(
     groups: &FlavorGroups,
-    markings: &BTreeMap<SubprocessKey, (String, Marking)>,
     forbidden: &[i64],
     model: &UFOModel,
 ) -> Result<(), OnShellVetoError> {
     for g in groups.groups() {
-        let rep = marking(g.diagrams(), forbidden, model);
-        for member in g.members() {
-            let key = (
-                member.incoming.iter().map(|&c| i64::from(c)).collect(),
-                member.outgoing.iter().map(|&c| i64::from(c)).collect(),
-            );
-            if let Some((label, own)) = markings.get(&key) {
-                if *own != rep {
-                    return Err(OnShellVetoError::GroupMarkingDiffers {
-                        a: g.diagram_set().label(),
-                        b: label.clone(),
-                    });
-                }
-            }
-        }
+        let (rep, members) = group_markings(g, forbidden, model);
+        first_differing_member(&g.diagram_set().label(), &rep, &members)?;
     }
     Ok(())
+}
+
+/// A group's representative marking, and each member's label and marking.
+fn group_markings(
+    group: &FlavorGroup,
+    forbidden: &[i64],
+    model: &UFOModel,
+) -> (Marking, Vec<(String, Marking)>) {
+    let rep = marking(group.diagrams(), forbidden, model);
+    let members = (0..group.members().len())
+        .map(|i| {
+            let set = group.member_diagram_set(i);
+            (set.label(), marking(&set.diagrams, forbidden, model))
+        })
+        .collect();
+    (rep, members)
+}
+
+fn first_differing_member(
+    group: &str,
+    rep: &Marking,
+    members: &[(String, Marking)],
+) -> Result<(), OnShellVetoError> {
+    match members.iter().find(|(_, own)| own != rep) {
+        Some((label, _)) => Err(OnShellVetoError::GroupMarkingDiffers {
+            a: group.to_string(),
+            b: label.clone(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// One veto per flavour group, in group order, each built on the group's
 /// representative. Empty when `forbidden` is.
 pub fn group_vetoes(
     groups: &FlavorGroups,
-    markings: &BTreeMap<SubprocessKey, (String, Marking)>,
     forbidden: &[i64],
     evaluated: &EvaluatedModel,
     card: &RunCard,
@@ -488,7 +475,7 @@ pub fn group_vetoes(
         return Ok(Vec::new());
     }
     let window = BwWindow::from_run_card(card);
-    check_group_members(groups, markings, forbidden, evaluated.model())?;
+    check_group_members(groups, forbidden, evaluated.model())?;
     groups
         .groups()
         .iter()
@@ -756,7 +743,7 @@ mod tests {
     fn a_wide_resonance_is_still_zeroed() {
         let model = sm_model(SMRestrict::Default);
         let card: ParamCard = "DECAY 23 12.0\n".parse().unwrap();
-        let wide = EvaluatedModel::from_model_card(Arc::clone(&model), &card);
+        let wide = EvaluatedModel::from_model_card(Arc::clone(&model), &card).unwrap();
         let veto = veto("e+ e- > mu+ mu-", &["z"], &wide, WINDOW).unwrap();
         assert_eq!(veto.pattern(&two_to_two(91.188 + 150.0, 0.2)), 1);
         assert_eq!(veto.pattern(&two_to_two(91.188 + 190.0, 0.2)), 0);
@@ -840,6 +827,7 @@ mod tests {
                 particles_out: set.particles_out.clone(),
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
+                mirrored: set.mirrored,
             };
             let reference = compile_class(&subset, model, &evaluated).unwrap();
             let (part, _) = veto.amplitude(pattern).unwrap();
@@ -879,26 +867,22 @@ mod tests {
         let evaluated = EvaluatedModel::from_model(Arc::clone(&model));
         let z = [particle(&model, "z").pdg_code];
         let all = sets("p p > e+ e-", &model);
-        let mut markings = subprocess_markings(&all, &z, &model);
         let groups = derive_flavor_groups(all, &model, &evaluated, &RunCard::default()).unwrap();
         assert!(groups.groups().iter().any(|g| g.members().len() > 1));
-        check_group_members(&groups, &markings, &z, &model).unwrap();
-        let vetoes = group_vetoes(&groups, &markings, &z, &evaluated, &RunCard::default()).unwrap();
+        check_group_members(&groups, &z, &model).unwrap();
+        let vetoes = group_vetoes(&groups, &z, &evaluated, &RunCard::default()).unwrap();
         assert!(vetoes.iter().all(Option::is_some));
 
-        let member = groups
+        let group = groups
             .groups()
             .iter()
-            .flat_map(|g| g.members().iter().skip(1))
-            .next()
+            .find(|g| g.members().len() > 1)
             .unwrap();
-        let key = (
-            member.incoming.iter().map(|&c| i64::from(c)).collect(),
-            member.outgoing.iter().map(|&c| i64::from(c)).collect(),
-        );
-        markings.get_mut(&key).unwrap().1.clear();
+        let (rep, mut members) = group_markings(group, &z, &model);
+        assert!(members.iter().all(|(_, own)| *own == rep));
+        members[1].1.clear();
         assert!(matches!(
-            check_group_members(&groups, &markings, &z, &model),
+            first_differing_member(&group.diagram_set().label(), &rep, &members),
             Err(OnShellVetoError::GroupMarkingDiffers { .. })
         ));
     }

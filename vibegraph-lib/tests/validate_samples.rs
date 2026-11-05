@@ -92,6 +92,7 @@ use vibegraph::unweight::Unweighter;
 use vibegraph::validation::samples::{
     compare, labelling_for, Chi2Column, EventSample, FieldColumn, FieldKind, Spectrum,
 };
+use vibegraph::vegas::Chi2PerDof;
 
 mod common;
 
@@ -703,7 +704,7 @@ fn with_integrand<R>(
     // SMEFTsim and toy rows, and a sample drawn under one model compared against
     // MadGraph's under another would measure the model choice.
     let model = common::model_for_row(row.key).unwrap_or_else(|e| panic!("[{}] {e}", row.key));
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key)).unwrap();
 
     let sets = common::generate_with(row.process, model.as_ref());
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
@@ -1372,7 +1373,8 @@ fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
         let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
         let model = common::sm_model();
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
+        let evaluated =
+            EvaluatedModel::from_model_card(model.clone(), &param_card(row.key)).unwrap();
         let sets = common::generate(row.process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let bounds: Vec<_> = evals
@@ -1697,7 +1699,7 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
     let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key)).unwrap();
     let sets = common::generate(row.process);
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
     let bounds: Vec<_> = evals
@@ -1900,7 +1902,7 @@ fn with_mumua_integrand<R>(
     );
 
     let model = common::sm_model();
-    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(KEY));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(KEY)).unwrap();
     let sets = common::generate(PROCESS);
     let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
     let bounds: Vec<_> = evals
@@ -2072,7 +2074,7 @@ fn vg_part(seed: u64, neval: usize) -> PartSplit {
 /// channel maps' fiducial scale and the VEGAS grids all adapt to the window, so
 /// the sum over windows is an audit of the unwindowed integral rather than a
 /// restatement of it.
-fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
+fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, Chi2PerDof) {
     let (lo, hi) = (PTA_EDGES[window], PTA_EDGES[window + 1]);
     with_mumua_integrand(Some((lo, hi)), seed, |integ| {
         let (_, r) = integ.adapt_grids(neval, PTA_NITER, seed);
@@ -2081,7 +2083,7 @@ fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
                 pb: r.integral * GEV2_TO_PB,
                 err: r.std_dev * GEV2_TO_PB,
             },
-            r.chi2_per_dof,
+            Chi2PerDof(r.chi2_per_dof),
         )
     })
 }

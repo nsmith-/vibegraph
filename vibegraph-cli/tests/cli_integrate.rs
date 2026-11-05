@@ -127,7 +127,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
     );
     assert!(artifact.inputs.params.is_empty());
     assert_eq!(artifact.sqrt_s_had, 13000.0);
-    assert_eq!(artifact.mu_f, 91.1880);
+    assert_eq!(artifact.mu_f, Some(91.1880));
 
     // (3) The reloaded per-channel grids drive a frozen sampling pass that
     // reproduces the adapted estimate within the single-pass MC error (the
@@ -153,7 +153,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         &evaluated,
         &pdf,
         ProtonBeams::from_run_card(&rc),
-        artifact.mu_f,
+        artifact.mu_f.expect("the card fixes μF on both beams"),
         MapOptions::fixed(artifact.maps),
     )
     .expect("hadronic integrand");
@@ -260,6 +260,84 @@ fn integrate_mmll_window_reproduces_h7_sigma() {
     );
 }
 
+/// `integrate` on the Drell-Yan proc card under `dy13_default_run_card.dat`
+/// with `edit` applied to its text, on a budget that carries σ: the summary on
+/// stderr and the artifact.
+fn integrate_card_variant(edit: impl Fn(&str) -> String) -> (String, IntegrateArtifact) {
+    let tmp = tempfile::tempdir().unwrap();
+    let card = tmp.path().join("run_card.dat");
+    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
+        .expect("the banked run card");
+    let edited = edit(&text);
+    assert_ne!(edited, text, "the edit changed nothing");
+    std::fs::write(&card, edited).unwrap();
+    let out = tmp.path().join("out");
+    let output = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(&card)
+        .pdf_data_path(pdf_dir())
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "3"])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&output);
+    assert!(output.status.success(), "integrate failed:\n{stderr}");
+    let artifact =
+        IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
+    (stderr, artifact)
+}
+
+/// The summary's `√s` line, which names the factorization scale.
+fn scale_line(stderr: &str) -> &str {
+    stderr
+        .lines()
+        .find(|l| l.contains("√s:"))
+        .unwrap_or_else(|| panic!("no √s line in:\n{stderr}"))
+        .trim_end()
+}
+
+/// With no constant factorization scale the summary names the scale choice and
+/// the artifact records no scale, rather than `μF = 0 GeV` and a zero; a μF the
+/// card fixes on both beams is that constant whatever μR does; and two fixed
+/// scales that differ by beam are printed per beam and recorded as no single
+/// constant.
+#[test]
+fn the_summary_names_a_factorization_scale_with_no_constant() {
+    let (log, dynamical) = integrate_card_variant(|text| {
+        text.replace("True    = fixed_ren_scale", "False   = fixed_ren_scale")
+            .replace("True    = fixed_fac_scale", "False   = fixed_fac_scale")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF dynamical, choice -1"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(dynamical.mu_f, None);
+
+    let (log, fixed_fac) = integrate_card_variant(|text| {
+        text.replace("True    = fixed_ren_scale", "False   = fixed_ren_scale")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF = 91.188 GeV"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(fixed_fac.mu_f, Some(91.1880));
+
+    let (log, per_beam) = integrate_card_variant(|text| {
+        text.replace("91.1880 = dsqrt_q2fact2", "50.0 = dsqrt_q2fact2")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF = 91.188 GeV, 50 GeV by beam"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(per_beam.mu_f, None);
+}
+
 /// The artifact refuses to overwrite an existing grid unless `--force` is given.
 #[test]
 fn integrate_refuses_overwrite_without_force() {
@@ -275,18 +353,35 @@ fn integrate_refuses_overwrite_without_force() {
         .pdf_data_path(pdf_dir())
         .arg("--out")
         .arg(tmp.path())
-        // Keep it cheap: a single tiny iteration is enough to write the artifact.
+        // Cheap, but enough points to carry σ: `integrate` refuses a cross
+        // section carried by too few effective points before writing anything.
         .arg("--fixed-budget")
         .arg("--neval")
-        .arg("200")
+        .arg("2000")
         .arg("--niter")
-        .arg("1");
+        .arg("2");
 
     assert!(base.status().expect("spawn").success(), "first run");
+    let artifact =
+        std::fs::read(tmp.path().join("grid.bin.zst")).expect("the first run writes its artifact");
 
-    // Second run without --force must fail (and not clobber).
-    let refuse = base.status().expect("spawn");
-    assert!(!refuse.success(), "overwrite without --force must fail");
+    // Second run without --force must fail on the overwrite check itself, and
+    // not clobber the first run's artifact.
+    let refuse = base.output().expect("spawn");
+    assert!(
+        !refuse.status.success(),
+        "overwrite without --force must fail"
+    );
+    let stderr = String::from_utf8_lossy(&refuse.stderr);
+    assert!(
+        stderr.contains("already exists (pass --force to overwrite)"),
+        "the second run must be refused for the existing artifact, got:\n{stderr}"
+    );
+    assert_eq!(
+        std::fs::read(tmp.path().join("grid.bin.zst")).expect("artifact still present"),
+        artifact,
+        "the refused run must leave the first artifact untouched"
+    );
 
     // With --force it succeeds.
     let forced = base.arg("--force").status().expect("spawn");

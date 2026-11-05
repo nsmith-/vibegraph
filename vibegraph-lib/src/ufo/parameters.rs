@@ -1,11 +1,10 @@
 use super::ast_util::{
-    conditional_definitions, constructor_calls, extract_int, kwarg_float, kwarg_str, parse_stmts,
+    conditional_definitions, constructor_calls, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
 use num_complex::Complex64;
 use num_traits::Zero;
-use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -27,6 +26,8 @@ pub enum ParameterError {
         "internal parameter '{user}' references '{name}', which parameters.py does not define"
     )]
     UnknownParameter { name: String, user: String },
+    #[error(transparent)]
+    Field(#[from] FieldError),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -283,7 +284,22 @@ impl ParameterSet {
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`].
+#[cfg(test)]
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
+    parse_parameters_with_variables(content).map(|(set, _)| set)
+}
+
+/// Parse `parameters.py` content into a [`ParameterSet`], with each
+/// parameter's Python variable mapped to its UFO `name`.
+///
+/// The `name` is the canonical name, as in MadGraph: a value string refers to
+/// a parameter by it (`model_reader.py` evaluates each one with `param.name`
+/// bound), and a `Param.<variable>` reference in another file is the object,
+/// which UFO's `UFOBaseClass.__str__` writes as its `name`. The map is how such
+/// a reference is resolved.
+pub(crate) fn parse_parameters_with_variables(
+    content: &str,
+) -> Result<(ParameterSet, HashMap<String, String>), ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
     if let Some(names) = conditional_definitions(&stmts, "Parameter") {
@@ -293,17 +309,30 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
     let mut externals: Vec<Parameter> = Vec::new();
     let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new();
 
+    // `Parameter.require_args` in UFO's object library
+    // (`mg5amcnlo/models/sm/object_library.py` L148) lists every field read here
+    // but `lhablock` and `lhacode`, which its constructor requires of an external
+    // parameter (L161). MadGraph refuses a name defined twice (`import_ufo.py`,
+    // `UFOMG5Converter.load_model`, "define multiple time").
+    let mut seen = UniqueNames::new("parameter");
+    let mut variables: HashMap<String, String> = HashMap::new();
     for (python_name, keywords) in constructor_calls(&stmts, "Parameter") {
-        // The Python variable name is the canonical name.
-        let name = python_name.to_owned();
-        let is_complex = kwarg_str(keywords, "type").as_deref() == Some("complex");
-        let nature_str = kwarg_str(keywords, "nature");
+        let fields = Fields::new("parameter", python_name, keywords);
+        let name = fields.str("name")?;
+        seen.insert(python_name, &name)?;
+        variables.insert(python_name.to_owned(), name.clone());
+        let is_complex = match fields.str("type")?.as_str() {
+            "real" => false,
+            "complex" => true,
+            _ => return Err(fields.malformed("type", "'real' or 'complex'").into()),
+        };
+        fields.str("texname")?;
 
-        match nature_str.as_deref() {
-            Some("external") => {
-                let default_value = kwarg_float(keywords, "value").unwrap_or(0.0);
-                let lha_block = kwarg_str(keywords, "lhablock").unwrap_or_default();
-                let lha_code = extract_lhacode(keywords);
+        match fields.str("nature")?.as_str() {
+            "external" => {
+                let default_value = fields.float("value")?;
+                let lha_block = fields.str("lhablock")?;
+                let lha_code = fields.int32_list("lhacode")?;
                 externals.push(Parameter {
                     name,
                     complex: is_complex,
@@ -314,8 +343,8 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
                     },
                 });
             }
-            _ => {
-                let expr_str = kwarg_str(keywords, "value").unwrap_or_else(|| "0.0".to_owned());
+            "internal" => {
+                let expr_str = fields.str("value")?;
                 let expr = parse_expr(&expr_str).map_err(|e| ParameterError::ExprParse {
                     name: name.clone(),
                     cause: e.to_string(),
@@ -323,6 +352,11 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
                 let mut deps = Vec::new();
                 collect_deps(&expr, &mut deps);
                 raw_internals.push((name, is_complex, expr, deps));
+            }
+            _ => {
+                return Err(fields
+                    .malformed("nature", "'external' or 'internal'")
+                    .into())
             }
         }
     }
@@ -352,30 +386,15 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
         }
     }
 
-    Ok(ParameterSet {
+    let set = ParameterSet {
         externals,
         internals,
         rdeps,
         zeros: BTreeSet::new(),
         merged: Vec::new(),
         ones: BTreeSet::new(),
-    })
-}
-
-/// Extract `lhacode = [ 3 ]` as a Vec<i32>.
-fn extract_lhacode(keywords: &[ast::Keyword]) -> Vec<i32> {
-    use super::ast_util::get_kwarg;
-    let Some(val) = get_kwarg(keywords, "lhacode") else {
-        return vec![];
     };
-    match val {
-        ast::Expr::List(ast::ExprList { elts, .. }) => elts
-            .iter()
-            .filter_map(extract_int)
-            .map(|n| n as i32)
-            .collect(),
-        _ => extract_int(val).map(|n| vec![n as i32]).unwrap_or_default(),
-    }
+    Ok((set, variables))
 }
 
 fn toposort_internals(
@@ -617,7 +636,7 @@ elif configuration.b:
 if configuration.a:
     helper = Helper(value = 1.0)
     plain = 1.0
-ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0')
+ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')
 ";
         assert_eq!(parse_parameters(src).unwrap().internals.len(), 1);
     }
@@ -625,7 +644,7 @@ ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0
     #[test]
     fn internal_expression_naming_an_undefined_parameter_is_refused() {
         let src = r"
-a = Parameter(name = 'a', nature = 'internal', type = 'real', value = '2*b')
+a = Parameter(name = 'a', nature = 'internal', type = 'real', value = '2*b', texname = 'a')
 ";
         assert!(matches!(
             parse_parameters(src).unwrap_err(),

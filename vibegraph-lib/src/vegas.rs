@@ -420,8 +420,26 @@ pub struct VegasResult {
     pub std_dev: f64,
     /// χ²/dof across iterations.  Values near 1 indicate consistency between
     /// iterations; large values warn of poor convergence or a pathological
-    /// integrand.  `0` for a single-iteration (e.g. frozen-grid) pass.
-    pub chi2_per_dof: f64,
+    /// integrand.  `None` where fewer than two iterations entered the estimate
+    /// (a frozen-grid pass, or a run whose warm-up left one), since a χ² over one
+    /// value has no degree of freedom.
+    pub chi2_per_dof: Option<f64>,
+}
+
+/// A [`VegasResult::chi2_per_dof`] as a line prints it: the number under the
+/// caller's width and precision, or `n/a` (right-aligned to the width) where it
+/// is undefined, so a statistic over one iteration never reads as perfect
+/// agreement.
+#[derive(Debug, Clone, Copy)]
+pub struct Chi2PerDof(pub Option<f64>);
+
+impl std::fmt::Display for Chi2PerDof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(chi2) => std::fmt::Display::fmt(&chi2, f),
+            None => write!(f, "{:>1$}", "n/a", f.width().unwrap_or(0)),
+        }
+    }
 }
 
 impl VegasGrid {
@@ -1004,6 +1022,10 @@ pub(crate) struct BlockIteration {
     /// An integrand whose support had interior zeros would be undercounted by
     /// them, a set a continuous draw hits with probability zero.
     pub(crate) accepted: usize,
+    /// `Σwᵢ²` over the block's points, unscaled: with
+    /// [`integral`](Self::integral) and the point count it is what an
+    /// effective sample size `(Σw)²/Σw²` is formed from.
+    pub(crate) sum_sq: f64,
     /// `hist[dim][bin]` as the grid's [`GridRule`] accumulates it, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
@@ -1144,6 +1166,7 @@ where
             integral: mean,
             variance,
             accepted,
+            sum_sq: sum2,
             hist: hist.finish(),
         });
     }
@@ -1184,15 +1207,13 @@ pub(crate) fn combine_iterations(
         }
     };
 
-    let chi2_per_dof = if niter > 1 {
+    let chi2_per_dof = (niter > 1).then(|| {
         iter_results
             .iter()
             .map(|(i, v)| (i - integral).powi(2) / v)
             .sum::<f64>()
             / (niter - 1) as f64
-    } else {
-        0.0
-    };
+    });
 
     VegasResult {
         integral,
@@ -1356,7 +1377,11 @@ mod tests {
         let r = grid.adapt(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
         assert_matches_golden(r.integral, 4605706486304428084, "integral");
         assert_matches_golden(r.std_dev, 4564401184564159150, "std_dev");
-        assert_matches_golden(r.chi2_per_dof, 4605496727683902589, "chi2_per_dof");
+        assert_matches_golden(
+            r.chi2_per_dof.expect("four kept iterations"),
+            4605496727683902589,
+            "chi2_per_dof",
+        );
     }
 
     // ── Warm-up discard ─────────────────────────────────────────────────
@@ -1466,7 +1491,17 @@ mod tests {
         assert!(got.integral.is_finite() && got.std_dev.is_finite());
         assert_eq!(got.integral.to_bits(), want.integral.to_bits());
         assert_eq!(got.std_dev.to_bits(), want.std_dev.to_bits());
-        assert_eq!(got.chi2_per_dof, 0.0);
+        assert_eq!(got.chi2_per_dof, None);
+    }
+
+    /// A defined χ²/dof prints under the caller's format; an undefined one
+    /// prints `n/a` at the caller's width, never a number.
+    #[test]
+    fn an_undefined_chi2_prints_as_not_a_number() {
+        assert_eq!(format!("{:.3}", Chi2PerDof(Some(1.02))), "1.020");
+        assert_eq!(format!("{:6.2}", Chi2PerDof(Some(1.0))), "  1.00");
+        assert_eq!(format!("{:.3}", Chi2PerDof(None)), "n/a");
+        assert_eq!(format!("{:6.2}", Chi2PerDof(None)), "   n/a");
     }
 
     /// The warm-up count is a run-time knob, not part of a stored grid: a
@@ -1845,8 +1880,8 @@ mod tests {
                     "std_dev at {nthreads} threads, chunk {chunk}"
                 );
                 assert_eq!(
-                    r_par.0.chi2_per_dof.to_bits(),
-                    r_seq.chi2_per_dof.to_bits(),
+                    r_par.0.chi2_per_dof.map(f64::to_bits),
+                    r_seq.chi2_per_dof.map(f64::to_bits),
                     "chi2 at {nthreads} threads, chunk {chunk}"
                 );
                 // The trained grid, not only the estimate: a refinement fed
@@ -1971,8 +2006,8 @@ mod tests {
                         "block {b} std_dev at {nthreads} threads, chunk {chunk}"
                     );
                     assert_eq!(
-                        g.chi2_per_dof.to_bits(),
-                        w.chi2_per_dof.to_bits(),
+                        g.chi2_per_dof.map(f64::to_bits),
+                        w.chi2_per_dof.map(f64::to_bits),
                         "block {b} chi2 at {nthreads} threads, chunk {chunk}"
                     );
                     for (dim, (a, e)) in

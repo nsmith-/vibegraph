@@ -66,7 +66,7 @@ fn test_load_taudecay() {
         .expect("failed to load taudecay param_card.dat");
 
     let model = UFOModel::load(&path, None).expect("failed to load taudecay UFO");
-    let ev = EvaluatedModel::from_model_card(model.clone(), &card);
+    let ev = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
 
     let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));
     assert!((mta - 1.776820).abs() < 1e-4, "taudecay MTA = {mta}");
@@ -127,4 +127,19 @@ fn test_recompute_propagates() {
         (gc10.re + expected_g).abs() < 1e-6,
         "After recompute: GC_10 = {gc10}"
     );
+}
+
+/// A Majorana fermion's negative mass binds, and its width is negated as
+/// MadGraph's Fortran negates it: `MSSM_SLHA2`'s default restriction sets
+/// `Mneu3 = -363.756`. Diagram generation refuses Majorana fermions, so no
+/// amplitude reads it yet.
+#[test]
+fn a_majorana_negative_mass_binds_and_negates_its_width() {
+    let model = UFOModel::load(&model_dir("MSSM_SLHA2"), None).unwrap();
+    let bound = vibegraph::ufo::bind::bind_card(model, &vibegraph::ufo::slha::ParamCard::default())
+        .unwrap();
+    assert!(bound.evaluated.param_values["Mneu3"].re < 0.0);
+    let wneu3 = bound.evaluated.param_values["Wneu3"].re;
+    assert!(wneu3 < 0.0, "Wneu3 = {wneu3}");
+    assert_eq!(bound.evaluated.card_value("Wneu3"), -wneu3);
 }

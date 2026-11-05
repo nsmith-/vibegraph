@@ -512,8 +512,9 @@ factor. The flux $F$ of a scattering becomes $2M$, and the invariant the
 outgoing map is built on becomes $M$; nothing else in the integrand changes,
 and the same [channel maps](#channels-from-diagrams) serve it: with one
 incoming leg every internal line is an s-channel, so each channel is the
-all-timelike tree. `vibegraph integrate` reports the width in GeV
-(`Γ = … GeV`), whatever the beams on the run card say.
+all-timelike tree. `vibegraph integrate` reports a width, whatever the beams
+on the run card say, under the SI-prefixed electronvolt unit its magnitude
+picks (`Γ = 2.4952 ± 0.0012 GeV`, `Γ = 200.1 ± 1.2 eV`).
 
 MadEvent reads the run card of a decay run its own way, and so does this
 crate. With no run card, the default is MadGraph's decay default: the LO
