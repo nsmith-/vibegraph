@@ -70,16 +70,22 @@ use crate::vegas::{GridRule, VegasGrid};
 /// result. A version-18 file wrote `0` for both, which a reader cannot tell from
 /// a value, and its `f64` fields do not decode into this shape.
 ///
-/// `20` bounds a hadronic run's `τ` draw from above where a decay chain forces
+/// `20` records each final-state phase space's total of a proton-beam run
+/// ([`IntegrateArtifact::multiplicities`]), so a reader of the file gets the
+/// per-multiplicity results `integrate` reported without re-deriving them from
+/// the channel keys. A version-19 file has no such field, so it cannot decode
+/// into this shape.
+///
+/// `21` bounds a hadronic run's `τ` draw from above where a decay chain forces
 /// a line carrying the whole final state (`p p > z, z > e+ e-`): both `τ` maps
 /// span that line's `bwcutoff` window rather than reaching `τ = 1`. A
-/// version-19 grid of such a process was adapted to the unbounded draw and has
+/// version-20 grid of such a process was adapted to the unbounded draw and has
 /// the same keys, dimensions and channel maps, so it would replay against a
 /// `τ` map it was not trained on. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 20;
+pub const FORMAT_VERSION: u32 = 21;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 20;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 21;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -339,6 +345,31 @@ pub struct ChannelGrid {
     pub sampler: Option<ChannelSampler>,
 }
 
+/// One final-state phase space's share of a proton-beam integration: the
+/// processes with `final_state` outgoing legs and one set of outgoing masses,
+/// integrated as one part of the sum over phase spaces.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MultiplicityTotal {
+    /// Outgoing legs.
+    pub final_state: usize,
+    /// The process numbers (`@N`) of the part's subprocesses, each once, in
+    /// increasing order.
+    pub process_ids: Vec<u32>,
+    /// The outgoing masses (GeV) the part's phase space is built for, in leg
+    /// order.
+    pub final_masses: Vec<f64>,
+    /// How many of [`IntegrateArtifact::channels`] belong to the part. The
+    /// parts' channels are contiguous and in part order.
+    pub channels: usize,
+    /// The part's cross section in picobarns: its channels' terms summed, their
+    /// errors in quadrature.
+    pub sigma_pb: f64,
+    pub sigma_err_pb: f64,
+    /// The part's χ²/dof over the iterations that entered it, `None` where
+    /// fewer than two did.
+    pub chi2_per_dof: Option<f64>,
+}
+
 /// The result of one `vibegraph integrate` run: the trained [`VegasGrid`]s plus
 /// the inputs that produced them.
 ///
@@ -414,6 +445,10 @@ pub struct IntegrateArtifact {
     /// The run's iteration χ²/dof, `None` where fewer than two iterations
     /// entered the result.
     pub chi2_per_dof: Option<f64>,
+    /// Each final-state phase space's total, in part order, for a run at
+    /// proton beams; empty for fixed-energy beams and decays, which integrate a
+    /// single phase space and record its total as [`sigma_pb`](Self::sigma_pb).
+    pub multiplicities: Vec<MultiplicityTotal>,
     /// The phase-space maps the run integrated under, every choice settled. A
     /// generator rebuilds its channels from these.
     pub maps: MapChoices,
@@ -586,6 +621,15 @@ mod tests {
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: Some(1.02),
+            multiplicities: vec![MultiplicityTotal {
+                final_state: 2,
+                process_ids: vec![1],
+                final_masses: vec![0.0, 0.0],
+                channels: 1,
+                sigma_pb: 934.42,
+                sigma_err_pb: 0.87,
+                chi2_per_dof: Some(1.02),
+            }],
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: channel_map_digest(&["n=2;T"]),
@@ -901,7 +945,7 @@ mod tests {
     }
 
     /// A version-14 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode. Version 19 holds
+    /// to re-integrate, however well its bytes would decode. Version 20 holds
     /// grids of a whole-state decay chain trained on a `τ` draw reaching
     /// `τ = 1`, which this build bounds by the chain's window; version 16 holds
     /// grids trained through maps this build no longer builds for the same
@@ -913,7 +957,7 @@ mod tests {
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14, 15, 16, 17, 18, 19, FORMAT_VERSION + 1] {
+        for version in [13, 14, 15, 16, 17, 18, 19, 20, FORMAT_VERSION + 1] {
             let path = stamped(&sample_artifact(), &dir, version);
             let err = IntegrateArtifact::read_from_path(&path).expect_err("another version");
             assert!(
@@ -921,8 +965,8 @@ mod tests {
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 20,
-                        expected: 20
+                        oldest: 21,
+                        expected: 21
                     } if found == version
                 ),
                 "{err}"
@@ -963,8 +1007,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 16,
-                    oldest: 20,
-                    expected: 20
+                    oldest: 21,
+                    expected: 21
                 }
             ),
             "{err}"
@@ -1003,8 +1047,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 17,
-                    oldest: 20,
-                    expected: 20
+                    oldest: 21,
+                    expected: 21
                 }
             ),
             "{err}"
@@ -1100,11 +1144,13 @@ mod tests {
         for c in &mut current.channels {
             c.chi2_per_dof = Some(0.0);
         }
+        current.multiplicities.clear();
         let tags = 2 + current.channels.len();
         assert_eq!(
             bincode::serialize(&current).unwrap().len(),
-            raw.len() + tags,
-            "the legacy shape differs from this one by exactly its Option tags"
+            raw.len() + tags + EMPTY_VEC,
+            "the legacy shape differs from this one by exactly its Option tags and the \
+             multiplicities list"
         );
 
         let dir = scratch_dir("v18");
@@ -1116,8 +1162,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 18,
-                    oldest: 20,
-                    expected: 20
+                    oldest: 21,
+                    expected: 21
                 }
             ),
             "{err}"
@@ -1125,6 +1171,115 @@ mod tests {
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The bytes bincode spends on an empty `Vec`: its `u64` length.
+    const EMPTY_VEC: usize = 8;
+
+    /// A version-19 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 19's real shape, field for field: this
+    /// build's values without [`IntegrateArtifact::multiplicities`]. Its bytes
+    /// differ from a version-20 file with no multiplicities only by that empty
+    /// list's length.
+    #[test]
+    fn a_version_19_artifact_is_refused() {
+        #[derive(Serialize)]
+        struct V19Artifact {
+            format_version: u32,
+            process: String,
+            proc_card: String,
+            model: ModelIdentity,
+            inputs: RunInputs,
+            mu_f: Option<f64>,
+            sqrt_s_had: f64,
+            neval: usize,
+            niter: usize,
+            seed: u64,
+            run_card: RunCard,
+            generate: GenerateSettings,
+            channels: Vec<ChannelGrid>,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: Option<f64>,
+            maps: MapChoices,
+            grid_rule: Option<GridRule>,
+            alpha_floor: Option<f64>,
+            channel_map_digest: String,
+        }
+
+        let a = sample_artifact();
+        let legacy = V19Artifact {
+            format_version: 19,
+            process: a.process.clone(),
+            proc_card: a.proc_card.clone(),
+            model: a.model.clone(),
+            inputs: a.inputs.clone(),
+            mu_f: a.mu_f,
+            sqrt_s_had: a.sqrt_s_had,
+            neval: a.neval,
+            niter: a.niter,
+            seed: a.seed,
+            run_card: a.run_card.clone(),
+            generate: a.generate.clone(),
+            channels: a.channels.clone(),
+            sigma_pb: a.sigma_pb,
+            sigma_err_pb: a.sigma_err_pb,
+            chi2_per_dof: a.chi2_per_dof,
+            maps: a.maps,
+            grid_rule: a.grid_rule,
+            alpha_floor: a.alpha_floor,
+            channel_map_digest: a.channel_map_digest.clone(),
+        };
+        let raw = bincode::serialize(&legacy).unwrap();
+        let mut current = a.clone();
+        current.format_version = 19;
+        current.multiplicities.clear();
+        assert_eq!(
+            bincode::serialize(&current).unwrap().len(),
+            raw.len() + EMPTY_VEC,
+            "the legacy shape differs from this one by exactly the multiplicities list"
+        );
+
+        let dir = scratch_dir("v19");
+        let path = dir.join("v19.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-19 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 19,
+                    oldest: 21,
+                    expected: 21
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The per-multiplicity totals survive the file, entry for entry.
+    #[test]
+    fn the_multiplicity_totals_round_trip() {
+        let dir = scratch_dir("multiplicities");
+        let mut artifact = sample_artifact();
+        artifact.multiplicities.push(MultiplicityTotal {
+            final_state: 3,
+            process_ids: vec![2, 3],
+            final_masses: vec![0.0, 0.0, 172.5],
+            channels: 4,
+            sigma_pb: 1.25e-3,
+            sigma_err_pb: 2.5e-5,
+            chi2_per_dof: None,
+        });
+        let path = dir.join("multiplicities.bin.zst");
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.multiplicities, artifact.multiplicities);
         std::fs::remove_dir_all(&dir).ok();
     }
 
