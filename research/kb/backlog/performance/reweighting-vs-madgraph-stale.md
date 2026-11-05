@@ -5,7 +5,7 @@ description: "The 50–150× (polynomial up to 320×) reweighting figures are fr
 area: performance
 state: open
 priority: medium
-closes_when: "reweighting-cost-vs-madgraph.md carries a re-run of bench-reweight at the commit and on the hosts of the MATRIX1 re-measurement (an x86 host and the M3), including an operator-basis row: n SMEFT operators at NP=1, (n+1)(n+2)/2 hypotheses (n = 8 → 45), timed on both the exact and polynomial paths, with MadGraph measured at that H, not extrapolated."
+closes_when: "reweighting-cost-vs-madgraph.md carries a re-run of bench-reweight at the v0.2.0 tag on the hosts of the MATRIX1 re-measurement (an x86 host and the M3), including an operator-basis row: n SMEFT operators at NP=1, (n+1)(n+2)/2 hypotheses (n = 8 → 45), timed on both the exact and polynomial paths, with MadGraph measured at that H, not extrapolated, and README.md quotes the result with its host."
 blocked_by: []
 opened: 2026-11-04
 tags: [performance, madgraph-comparison, reweighting, re-measure, user-requested]
@@ -28,3 +28,6 @@ comparison. It needs the same treatment as the other comparisons:
   this row measures it at the real H, or works around the defect and says how;
 - both sides at `change helicity False`, recorded, since vibegraph has only the
   helicity-summed ratio ([reweight-helicity-summed-only](../feature/reweight-helicity-summed-only.md)).
+
+**When (user, 2026-11-05).** Run after v0.2.0 is cut, at that tag, together with
+the other three comparisons, then update `README.md` from the results.

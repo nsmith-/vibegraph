@@ -5,7 +5,7 @@ description: "Time to 0.1% on σ and throughput against MadEvent predate the eva
 area: performance
 state: open
 priority: medium
-closes_when: "integration-vs-madgraph.md carries fresh time-to-0.1% and throughput tables at the commit and on the hosts of the MATRIX1 re-measurement (an x86 host and the M3 at least), over the five existing time-to-accuracy rows plus at least one MLM-matched multi-jet row and one 2→4 row, each with ≥3 seeds, MadGraph's version and flags recorded, and a wall-clock column at equal core count beside the cumulated_time one."
+closes_when: "integration-vs-madgraph.md carries fresh time-to-0.1% and throughput tables at the v0.2.0 tag on the hosts of the MATRIX1 re-measurement (an x86 host and the M3 at least), over the five existing time-to-accuracy rows plus at least one MLM-matched multi-jet row and one 2→4 row, each with ≥3 seeds, MadGraph's version and flags recorded, and a wall-clock column at equal core count beside the cumulated_time one; README.md's time-to-accuracy and throughput sections quote the new tables."
 blocked_by: []
 opened: 2026-11-04
 tags: [performance, madgraph-comparison, integration, time-to-accuracy, throughput, re-measure, user-requested]
@@ -34,3 +34,6 @@ Needs, beyond a re-run:
   user experiences and is immune to it.
 - `pp_to_llj` re-measured here closes step 1 of
   [llj-map-lower-edge-on-cut-edge](llj-map-lower-edge-on-cut-edge.md).
+
+**When (user, 2026-11-05).** Run after v0.2.0 is cut, at that tag, together with
+the other three comparisons, then update `README.md` from the results.

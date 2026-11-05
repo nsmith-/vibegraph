@@ -5,7 +5,7 @@ description: "generate writes MadGraph-format systematics weights in-process (CM
 area: performance
 state: open
 priority: medium
-closes_when: "A Measurement concept records, on one host in one sitting, the added cost per event of vibegraph's systematics weights and of MadGraph's systematics module on the same events, for a scale-only request and for CMS's runcmsgrid.sh request, at the commit of the MATRIX1 re-measurement."
+closes_when: "A Measurement concept records, on one host in one sitting, the added cost per event of vibegraph's systematics weights and of MadGraph's systematics module on the same events, for a scale-only request and for CMS's runcmsgrid.sh request, at the v0.2.0 tag, and README.md quotes the result with its host."
 blocked_by: []
 opened: 2026-11-04
 tags: [performance, madgraph-comparison, systematics, pdf, user-requested]
@@ -26,3 +26,6 @@ Measure: generate with and without the request (same grid, seed, events) on
 our side; MadGraph's `systematics` on the same LHE file, setup and loop
 separated as in the reweighting comparison. Two requests: a 9-point scale
 variation and the CMS one.
+
+**When (user, 2026-11-05).** Run after v0.2.0 is cut, at that tag, together with
+the other three comparisons, then update `README.md` from the results.
