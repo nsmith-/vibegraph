@@ -41,7 +41,9 @@ import io
 import json
 import logging
 import os
+import shutil
 import sys
+import tempfile
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _out = os.path.join(_here, "decay_chain_census.json")
@@ -49,6 +51,9 @@ _root = os.environ.get("MG5AMCNLO_PATH") or os.path.join(
     _here, "..", "..", "research", "refs", "mg5amcnlo"
 )
 sys.path.insert(0, os.path.abspath(_root))
+# Restriction cards this crate bundles for the SM that the pinned tree does not
+# ship (`restrict_ckm_no_b_mass.dat`, from CMS genproductions' copy of models/sm).
+_sm_assets = os.path.join(_here, "..", "..", "vibegraph-lib", "src", "ufo", "sm_assets")
 
 with contextlib.redirect_stdout(io.StringIO()):
     import madgraph.core.helas_objects as helas_objects  # noqa: E402
@@ -85,16 +90,34 @@ def _decay(process):
     }
 
 
+def _model_line(line, scratch):
+    """`import model sm-<r>` for a restriction only this crate bundles, pointed at a
+    scratch copy of the pinned `models/sm` that carries it; any other line as is."""
+    words = line.split()
+    if words[:2] != ["import", "model"] or len(words) < 3 or not words[2].startswith("sm-"):
+        return line
+    card = f"restrict_{words[2][len('sm-'):]}.dat"
+    sm = os.path.join(_root, "models", "sm")
+    bundled = os.path.join(_sm_assets, card)
+    if os.path.exists(os.path.join(sm, card)) or not os.path.exists(bundled):
+        return line
+    copy = os.path.join(scratch, "sm")
+    if not os.path.isdir(copy):
+        shutil.copytree(sm, copy, ignore=shutil.ignore_patterns("*.pkl", "__pycache__"))
+        shutil.copy(bundled, copy)
+    return " ".join(words[:2] + [f"{copy}-{words[2][len('sm-'):]}"] + words[3:])
+
+
 def census(card):
     cmd = _new_cmd()
     handler = _Warnings()
     logging.getLogger("madgraph").addHandler(handler)
     try:
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()), tempfile.TemporaryDirectory() as scratch:
             for line in card.split("\n"):
                 line = line.strip()
                 if line:
-                    cmd.exec_cmd(line, precmd=True, printcmd=False)
+                    cmd.exec_cmd(_model_line(line, scratch), precmd=True, printcmd=False)
             multi = helas_objects.HelasMultiProcess(cmd._curr_amps)
     except Exception as e:  # MadGraph's refusal is the datum
         return {"error": _error(e), "warnings": handler.messages}
@@ -162,6 +185,35 @@ CORPUS = [
     ("pp_ttx_qed4", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=4"),
     ("pp_ttx_qcd0", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QCD=0"),
     ("ee_zz_qed3", "generate e+ e- > z z, z > e+ e-, z > mu+ mu- @1 QED=3"),
+    # One subprocess reached by two decay assignments (`g g > u u~ c c~`: Z > u u~ on
+    # the c c~ core, Z > c c~ on the u u~ core): two matrix elements, summed.
+    ("gg_zjj_jj", "generate g g > z j j, z > j j"),
+    ("ee_zjj_noz_jj", "generate e+ e- > z j j / z, z > j j"),
+    ("pp_zjj_jj", "generate p p > z j j, z > j j"),
+    # The same, five-flavour, as the CMS Zto2Q-4Jets gridpacks generate it (their
+    # `@1` line). The labels are written in the order MadGraph's `define` stores
+    # them (`optimize_order`: quarks, then antiquarks), so that both sides list
+    # each subprocess's legs alike. Where the b quark meets a lighter flavour, the
+    # two assignments have equal tags and are one matrix element with two PDF terms.
+    (
+        "cms_zto2q_zjj_jj",
+        "import model sm-ckm_no_b_mass\n"
+        "define p = g u c d s b u~ c~ d~ s~ b~\n"
+        "define j = p\n"
+        "generate p p > z j j, z > j j @1",
+    ),
+    # Two assignments of one subprocess on two lines: one matrix element with two PDF
+    # terms (equal tags, same process number), and two lines whose resonances differ
+    # (W+ > u d~ and W- > d u~ both reach `g g > u d~ d u~`), as the CMS Wto2Q,
+    # TTToHcToWA, TpTp and VLLVLL cards do.
+    (
+        "ee_zuu_cc_two_lines",
+        "generate e+ e- > z u u~, z > c c~ @1\nadd process e+ e- > z c c~, z > u u~ @1",
+    ),
+    (
+        "gg_wpjj_wmjj_two_lines",
+        "generate g g > w+ j j, w+ > j j @1\nadd process g g > w- j j, w- > j j @2",
+    ),
     # A decay whose particle the core does not have: MadGraph drops it with a warning.
     ("ee_ttx_unused_w", "generate e+ e- > t t~, t > w+ b, w+ > e+ ve"),
     # A decay with more than one initial particle.

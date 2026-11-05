@@ -291,10 +291,10 @@ fn summary(state: &UiState, elapsed: Duration) -> String {
     if state.stopping {
         line.push_str(" (stopped early)");
     }
-    if let Some(sigma_pb) = state.sigma_pb {
+    if let Some(estimate) = state.estimate {
         line.push_str(&format!(
-            ", \u{3c3} = {}",
-            footer::cross_section(sigma_pb, state.err_pb)
+            ", {}",
+            footer::measured(state.observable(), estimate, state.estimate_err)
         ));
     }
     line.push_str(&format!(", {}", elapsed_text(elapsed)));
@@ -974,8 +974,8 @@ mod tests {
     fn the_summary_records_that_a_run_was_stopped_early() {
         let state = UiState {
             stage: Some("vegas".to_string()),
-            sigma_pb: Some(802.94),
-            err_pb: 3.11,
+            estimate: Some(802.94),
+            estimate_err: 3.11,
             stopping: true,
             ..UiState::default()
         };
@@ -1066,8 +1066,8 @@ mod tests {
     fn the_summary_states_the_stage_the_result_and_the_time() {
         let state = UiState {
             stage: Some("vegas".to_string()),
-            sigma_pb: Some(802.94),
-            err_pb: 3.11,
+            estimate: Some(802.94),
+            estimate_err: 3.11,
             ..UiState::default()
         };
         assert_eq!(

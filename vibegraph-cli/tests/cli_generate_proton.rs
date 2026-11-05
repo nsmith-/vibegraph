@@ -946,12 +946,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
         "a dynamical-scale card did not integrate:\n{stderr}"
     );
     let stdout = common::stdout_of(&out);
-    let sigma: f64 = stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("σ = "))
-        .and_then(|tail| tail.split_whitespace().next())
-        .and_then(|token| token.parse().ok())
-        .unwrap_or_else(|| panic!("the run reports no cross section:\n{stdout}"));
+    let sigma = common::result_line(&stdout).value;
     assert!(
         sigma.is_finite() && sigma > 0.0,
         "the dynamical-scale run reports σ = {sigma}"
@@ -1105,6 +1100,84 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         "each multiplicity's weights sum to one: {alpha:?}"
     );
     assert!(((sigma[0] + sigma[1]) / artifact.sigma_pb - 1.0).abs() < 1e-9);
+    let mut error = [0.0f64; 2];
+    for c in &artifact.channels {
+        let (ChannelKey::MultiplicityChannel { final_state, .. }
+        | ChannelKey::MergedChannel { final_state, .. }) = c.key
+        else {
+            unreachable!("checked above");
+        };
+        error[final_state - 2] += c.sigma_err_pb * c.sigma_err_pb;
+    }
+    let error = error.map(f64::sqrt);
+    // Each part's summary line prints its σ as the result line prints the
+    // total: to its error's second figure, under one barn prefix.
+    for k in 0..2 {
+        let part = common::part_line(&stderr, k + 2);
+        let decimals = |t: &str| t.split_once('.').map_or(0, |(_, d)| d.len());
+        assert_eq!(
+            decimals(part.value_text),
+            decimals(part.error_text),
+            "{}",
+            part.line
+        );
+        assert!(
+            (part.error / error[k] - 1.0).abs() <= 0.05
+                && (part.value - sigma[k]).abs() <= 0.05 * error[k],
+            "{} against the artifact's {} ± {} pb",
+            part.line,
+            sigma[k],
+            error[k]
+        );
+    }
+    // The artifact records each part's total, the one its line printed, and
+    // `inspect` reads it back.
+    assert_eq!(artifact.multiplicities.len(), 2);
+    for (k, part) in artifact.multiplicities.iter().enumerate() {
+        assert_eq!(part.final_state, k + 2);
+        assert_eq!(part.process_ids, [k as u32]);
+        assert!(
+            (part.sigma_pb / sigma[k] - 1.0).abs() < 1e-12
+                && (part.sigma_err_pb / error[k] - 1.0).abs() < 1e-12,
+            "{part:?} against the channels' {} ± {} pb",
+            sigma[k],
+            error[k]
+        );
+        assert!(common::part_line(&stderr, k + 2)
+            .line
+            .trim_end()
+            .ends_with(&format!(" over {} channels", part.channels)));
+    }
+    let inspected = common::vibegraph_ambient()
+        .arg("inspect")
+        .arg(&artifact_path)
+        .arg("--output-ldjson")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        inspected.status.success(),
+        "{}",
+        common::stderr_of(&inspected)
+    );
+    let object: serde_json::Value = serde_json::from_str(
+        common::stdout_of(&inspected)
+            .lines()
+            .last()
+            .unwrap_or_default(),
+    )
+    .expect("the result object is the last line");
+    let parts = object["multiplicities"].as_array().unwrap();
+    assert_eq!(parts.len(), 2, "{object}");
+    for (part, recorded) in parts.iter().zip(&artifact.multiplicities) {
+        assert_eq!(
+            part["final_state"].as_u64(),
+            Some(recorded.final_state as u64)
+        );
+        assert_eq!(part["process_ids"], serde_json::json!(recorded.process_ids));
+        assert_eq!(part["sigma"].as_f64(), Some(recorded.sigma_pb));
+        assert_eq!(part["sigma_err"].as_f64(), Some(recorded.sigma_err_pb));
+        assert_eq!(part["channels"].as_u64(), Some(recorded.channels as u64));
+    }
 
     let nevents = 4_000;
     let lhe = dir.join("events.lhe");
@@ -1132,15 +1205,6 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     // `<init>` entry declares that part's integrated σ and error, and its events'
     // written weights sum to it over the file's event count. The sample's own
     // estimate before the normalisation is what still measures the pass.
-    let mut error = [0.0f64; 2];
-    for c in &artifact.channels {
-        let (ChannelKey::MultiplicityChannel { final_state, .. }
-        | ChannelKey::MergedChannel { final_state, .. }) = c.key
-        else {
-            unreachable!("checked above");
-        };
-        error[final_state - 2] += c.sigma_err_pb * c.sigma_err_pb;
-    }
     for (k, entry) in file.init.processes.iter().enumerate() {
         let summed: f64 = file
             .events
@@ -1152,19 +1216,16 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         eprintln!(
             "@{k}: XSECUP {:.6} ± {:.6} pb, written weights {summed:.6} pb over N, \
              integration {:.6} ± {:.6} pb",
-            entry.xsec_pb,
-            entry.xerr_pb,
-            sigma[k],
-            error[k].sqrt()
+            entry.xsec_pb, entry.xerr_pb, sigma[k], error[k]
         );
         assert!(
             (entry.xsec_pb / sigma[k] - 1.0).abs() < 1e-6
-                && (entry.xerr_pb / error[k].sqrt() - 1.0).abs() < 1e-6,
+                && (entry.xerr_pb / error[k] - 1.0).abs() < 1e-6,
             "@{k} declares {} ± {} pb against its integration's {} ± {}",
             entry.xsec_pb,
             entry.xerr_pb,
             sigma[k],
-            error[k].sqrt()
+            error[k]
         );
         assert!(
             (summed / sigma[k] - 1.0).abs() < 1e-6,

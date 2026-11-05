@@ -12,18 +12,15 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Gauge, Widget};
+use vibegraph::hadronic::Observable;
 use vibegraph::progress::stage;
 
-use crate::si::fmt_si;
+use crate::si::{fmt_si, GEV, PICOBARN};
 use crate::tui::elapsed_text;
 use crate::tui::state::UiState;
 
 /// Rows the footer occupies: one rule and five of content.
 pub(crate) const HEIGHT: u16 = 6;
-
-/// One picobarn in barns. [`UiState`] carries the cross section in the unit the
-/// result line and the artifact use; `fmt_si` picks a prefix for a base unit.
-const PB_IN_BARN: f64 = 1.0e-12;
 
 /// Width the measurement column is given when the terminal can spare it.
 const MEASUREMENT_WIDTH: u16 = 26;
@@ -99,25 +96,30 @@ fn attention() -> Style {
     Style::default().fg(ATTENTION)
 }
 
-/// A cross section and its uncertainty, in the prefix the value's own magnitude
-/// picks.
+/// A running estimate of `observable` and its uncertainty, in the prefix the
+/// value's own magnitude picks. [`UiState`] carries them in the unit the
+/// artifact records, picobarns for a cross section and GeV for a width;
+/// `fmt_si` takes them in barns or electronvolts.
 ///
 /// The significant figures are chosen from how far the uncertainty sits below
 /// the value, because both are rendered at the value's width: a result quoted to
 /// a part in 10⁴ at three figures would print its error bar as `0.00`, which
 /// states a precision nobody measured. One digit past the gap between them is
 /// the fewest that leaves the uncertainty something to say.
-pub(crate) fn cross_section(sigma_pb: f64, err_pb: f64) -> String {
-    let digits = if err_pb > 0.0 && sigma_pb.abs() > 0.0 {
-        ((sigma_pb.abs() / err_pb).log10().ceil() as i64 + 1).clamp(3, 8) as usize
+pub(crate) fn measured(observable: Observable, value: f64, err: f64) -> String {
+    let digits = if err > 0.0 && value.abs() > 0.0 {
+        ((value.abs() / err).log10().ceil() as i64 + 1).clamp(3, 8) as usize
     } else {
         4
     };
-    fmt_si(
-        sigma_pb * PB_IN_BARN,
-        Some(err_pb * PB_IN_BARN),
-        "b",
-        digits,
+    let (base, unit) = match observable {
+        Observable::CrossSection => (PICOBARN, "b"),
+        Observable::PartialWidth => (GEV, "eV"),
+    };
+    format!(
+        "{} = {}",
+        observable.symbol(),
+        fmt_si(value * base, Some(err * base), unit, digits)
     )
 }
 
@@ -187,9 +189,9 @@ impl<'a> Footer<'a> {
             None => text.push_str(&format!("   {}", count(self.state.done))),
         }
         let mut spans = vec![Span::raw(text)];
-        if self.state.chi2 > 0.0 {
+        if let Some(chi2) = self.state.chi2 {
             spans.push(Span::styled(
-                format!("   \u{3c7}\u{b2}/dof {:.2}", self.state.chi2),
+                format!("   \u{3c7}\u{b2}/dof {chi2:.2}"),
                 muted(),
             ));
         }
@@ -307,10 +309,14 @@ impl<'a> Footer<'a> {
     }
 
     fn sigma_line(&self) -> Line<'static> {
-        match self.state.sigma_pb {
-            None => Line::from(Span::styled("\u{3c3} = \u{2014}", muted())),
-            Some(sigma_pb) => Line::from(Span::styled(
-                format!("\u{3c3} = {}", cross_section(sigma_pb, self.state.err_pb)),
+        let observable = self.state.observable();
+        match self.state.estimate {
+            None => Line::from(Span::styled(
+                format!("{} = \u{2014}", observable.symbol()),
+                muted(),
+            )),
+            Some(estimate) => Line::from(Span::styled(
+                measured(observable, estimate, self.state.estimate_err),
                 accent().add_modifier(Modifier::BOLD),
             )),
         }
@@ -458,6 +464,7 @@ mod tests {
 
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use vibegraph::hadronic::Observable;
     use vibegraph::phasespace::GEV2_TO_PB;
     use vibegraph::progress::stage;
 
@@ -485,9 +492,10 @@ mod tests {
             stage: Some(stage::VEGAS.to_string()),
             done: 4,
             total: Some(12),
-            sigma_pb: Some(802.94),
-            err_pb: 3.11,
-            chi2: 1.02,
+            estimate: Some(802.94),
+            estimate_err: 3.11,
+            observable: None,
+            chi2: Some(1.02),
             ns_per_eval: Some(212.0),
             model: Some(ModelBrief {
                 label: "sm-default".to_string(),
@@ -536,14 +544,29 @@ mod tests {
         );
     }
 
+    /// A decay's running width is a width: Γ, in electronvolts, at the value the
+    /// state holds in GeV.
+    #[test]
+    fn a_width_renders_in_electronvolts() {
+        let mut state = integrating();
+        state.observable = Some(Observable::PartialWidth);
+        state.estimate = Some(2.0e-6);
+        state.estimate_err = 8.0e-9;
+        let rows = rows(&state, 80);
+        assert!(
+            rows[2].contains("\u{393} = 2.000 \u{b1} 0.008 keV"),
+            "{rows:?}"
+        );
+    }
+
     /// A run converged four decades below its own value must still show an
     /// error bar: rendering both at a fixed three figures would print
     /// "2.025 ± 0.000 nb" and claim an exact result.
     #[test]
     fn an_uncertainty_far_below_the_value_keeps_a_digit() {
         let mut state = integrating();
-        state.sigma_pb = Some(2024.729713);
-        state.err_pb = 0.362891;
+        state.estimate = Some(2024.729713);
+        state.estimate_err = 0.362891;
         let rows = rows(&state, 80);
         assert!(
             rows[2].contains("\u{3c3} = 2.0247 \u{b1} 0.0004 nb"),
@@ -557,8 +580,8 @@ mod tests {
     #[test]
     fn a_cross_section_in_another_decade_changes_prefix_not_width() {
         let mut state = integrating();
-        state.sigma_pb = Some(802_940.0);
-        state.err_pb = 3_110.0;
+        state.estimate = Some(802_940.0);
+        state.estimate_err = 3_110.0;
         let wide = rows(&state, 80);
         assert!(
             wide[2].contains("\u{3c3} = 802.9 \u{b1} 3.1 nb"),
@@ -571,8 +594,8 @@ mod tests {
     #[test]
     fn an_unmeasured_cross_section_is_shown_as_absent() {
         let mut state = integrating();
-        state.sigma_pb = None;
-        state.chi2 = 0.0;
+        state.estimate = None;
+        state.chi2 = None;
         let rows = rows(&state, 80);
         assert!(rows[2].contains("\u{3c3} = \u{2014}"), "{rows:?}");
         assert!(!rows[2].contains("pb"), "{rows:?}");
@@ -824,8 +847,8 @@ mod tests {
     fn the_printed_cross_section_matches_the_result_line_arithmetic() {
         let mut state = integrating();
         let sigma_gev2 = 1.0e-6;
-        state.sigma_pb = Some(sigma_gev2 * GEV2_TO_PB);
-        state.err_pb = 0.0;
+        state.estimate = Some(sigma_gev2 * GEV2_TO_PB);
+        state.estimate_err = 0.0;
         let rows = rows(&state, 80);
         // 1e-6 GeV⁻² × 3.893793721e8 pb·GeV² = 389.4 pb.
         assert!(rows[2].contains("389.4 \u{b1} 0.0 pb"), "{rows:?}");

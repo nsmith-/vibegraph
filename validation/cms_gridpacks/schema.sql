@@ -323,13 +323,18 @@ CREATE TABLE vg_run (
   n_diagrams INTEGER CHECK (n_diagrams >= 0),
   vg_model_hash TEXT CHECK (length(vg_model_hash) = 64 AND vg_model_hash NOT GLOB '*[^0-9a-f]*'),
   error_text TEXT,
+  -- A refusal's stable kind, as `--output-ldjson` names it; NULL for a run read
+  -- from text output, which carries none.
+  error_kind TEXT CHECK (error_kind IN ('usage', 'card', 'model', 'process', 'pdf', 'network', 'support',
+                                        'artifact', 'io', 'run')),
   output_sha256 TEXT REFERENCES blob,
   trace_path TEXT,
   UNIQUE (gridpack_id, build_id, campaign, attempt),
   CHECK (timed_out = (outcome = 'timeout')),
   CHECK (outcome <> 'timeout' OR exit_code IS NULL),
   CHECK (outcome <> 'ok' OR (exit_code = 0 AND sigma_pb IS NOT NULL AND err_pb IS NOT NULL)),
-  CHECK ((sigma_pb IS NULL) = (err_pb IS NULL))
+  CHECK ((sigma_pb IS NULL) = (err_pb IS NULL)),
+  CHECK (error_kind IS NULL OR outcome = 'refused')
 ) STRICT;
 
 -- Why a refused or panicking run stopped. A reason is the CLI's message with
@@ -378,11 +383,11 @@ CREATE TABLE vg_run_multiplicity (
 ) STRICT;
 
 -- The final attempt of each (gridpack, build, campaign), against MG's reference σ;
--- `reason` is the first of the run's reasons.
+-- `reason` is the first of the run's reasons, `error_kind` a refusal's kind.
 CREATE VIEW comparison AS
 SELECT g.gridpack_id, g.label, r.build_id, b.version, r.campaign, r.run_id, r.attempt, r.patches,
        r.outcome, (SELECT e.template FROM vg_run_reason rr JOIN vg_reason e USING (reason_id)
-                    WHERE rr.run_id = r.run_id AND rr.ordinal = 0) AS reason, r.wall_s,
+                    WHERE rr.run_id = r.run_id AND rr.ordinal = 0) AS reason, r.error_kind, r.wall_s,
        r.sigma_pb, r.err_pb,
        m.sigma_pb AS mg_sigma_pb, m.err_pb AS mg_err_pb,
        CASE WHEN r.outcome = 'ok' THEN r.sigma_pb / m.sigma_pb END AS ratio,
@@ -396,5 +401,5 @@ WHERE r.attempt = (SELECT max(attempt) FROM vg_run r2
                    WHERE r2.gridpack_id = r.gridpack_id AND r2.build_id = r.build_id
                      AND r2.campaign = r.campaign);
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 COMMIT;

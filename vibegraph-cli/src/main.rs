@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
 mod assets;
@@ -12,21 +12,25 @@ mod check;
 mod error;
 mod fetch;
 mod generate;
+mod inspect;
 mod integrate;
 mod logging;
 mod network;
+mod output;
 mod parallel;
 mod si;
 mod tui;
 
-use error::{err, CliError};
+use error::{err, CliError, ErrorKind};
 use network::NetworkPolicy;
+use output::Mode;
 
 /// The proc-card argument as `integrate` reads it, with the card's text: the
 /// card in the file at `path`, or, when `path` is `-`, the card on stdin — so a
 /// one-process card can be piped straight in (`echo "generate p p > e+ e-" |
-/// vibegraph integrate -`) rather than written to a file first. A failure names
-/// the card it could not read or parse.
+/// vibegraph integrate -`) rather than written to a file first. Each process
+/// the card holds is logged at `info`; a failure names the card it could not
+/// read or parse.
 pub(crate) fn read_proc_card_text(
     path: &Path,
     opts: &ParsingOptions,
@@ -38,9 +42,22 @@ pub(crate) fn read_proc_card_text(
     } else {
         (std::fs::read_to_string(path), path.display().to_string())
     };
-    let card = card.map_err(|e| err(format!("cannot read the proc card {origin}: {e}")))?;
-    let parsed = parse_proc_card(&card, opts)
-        .map_err(|e| err(format!("cannot parse the proc card {origin}: {e}")))?;
+    let card = card.map_err(|e| {
+        err(
+            ErrorKind::Card,
+            format!("cannot read the proc card {origin}: {e}"),
+        )
+    })?;
+    let parsed = parse_proc_card(&card, opts).map_err(|e| {
+        err(
+            ErrorKind::Card,
+            format!("cannot parse the proc card {origin}: {e}"),
+        )
+    })?;
+    let _span = tracing::info_span!("proc_card").entered();
+    for process in &parsed.processes {
+        tracing::info!("generate {process} @{}", process.id);
+    }
     Ok((parsed, card))
 }
 
@@ -103,6 +120,8 @@ enum Command {
     Generate(generate::GenerateArgs),
     /// Read a Les Houches file back and check that it is internally consistent.
     CheckEvents(check::CheckArgs),
+    /// Print the results a saved integration artifact records.
+    Inspect(inspect::InspectArgs),
 }
 
 impl Command {
@@ -112,13 +131,23 @@ impl Command {
     fn is_watchable(&self) -> bool {
         match self {
             Command::Integrate(_) | Command::Generate(_) => true,
-            Command::CheckEvents(_) => false,
+            Command::CheckEvents(_) | Command::Inspect(_) => false,
         }
     }
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    // `check-events` prints a report a person reads; it has no result object
+    // for the stream to carry.
+    if cli.log.output_ldjson && matches!(cli.command, Command::CheckEvents(_)) {
+        Cli::command()
+            .error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "`check-events` prints a text report and has no --output-ldjson form",
+            )
+            .exit();
+    }
     // The display takes the terminal before the subscriber is built, because
     // where the lines go depends on whether it got it.
     let (display, unavailable) = if cli.log.wants_tui() && cli.command.is_watchable() {
@@ -129,15 +158,30 @@ fn main() -> ExitCode {
     } else {
         (None, None)
     };
+    let mode = match &display {
+        _ if cli.log.output_ldjson => Mode::Ldjson,
+        Some(_) => Mode::Rich,
+        None => Mode::Plain,
+    };
+    output::set_mode(mode);
+    let sink = match &display {
+        Some(display) => logging::Sink::Rich(display.feed()),
+        None if mode == Mode::Ldjson => logging::Sink::Ldjson,
+        None => logging::Sink::Plain,
+    };
     // Nothing above this line may log: until the subscriber is installed there
     // is nowhere for an event to go.
-    let logging = match logging::init(&cli.log, display.as_ref().map(tui::Tui::feed)) {
+    let logging = match logging::init(&cli.log, sink) {
         Ok(handle) => handle,
         Err(why) => {
             if let Some(display) = display {
                 display.finish();
             }
-            eprintln!("error: {why}");
+            if mode == Mode::Ldjson {
+                output::refusal(&err(ErrorKind::Io, why));
+            } else {
+                eprintln!("error: {why}");
+            }
             return ExitCode::FAILURE;
         }
     };
@@ -156,11 +200,15 @@ fn main() -> ExitCode {
         Command::Integrate(args) => integrate::run(&args, network),
         Command::Generate(args) => generate::run(&args, network),
         Command::CheckEvents(args) => check::run(&args),
+        Command::Inspect(args) => inspect::run(&args),
     };
     // Reported before the display comes down, so the message lands in the
     // scrollback with the rest of the run rather than after its closing line.
     if let Err(err) = &result {
-        tracing::error!("{err}");
+        match mode {
+            Mode::Ldjson => output::refusal(err),
+            Mode::Plain | Mode::Rich => tracing::error!("{err}"),
+        }
     }
     if let Some(display) = display {
         display.finish();

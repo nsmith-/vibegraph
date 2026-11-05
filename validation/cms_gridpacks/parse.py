@@ -518,14 +518,26 @@ def runcmsgrid_systematics(text):
 # --- vibegraph output ------------------------------------------------------
 
 VG_SIGMA = re.compile(r"^σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+)", re.M)
-VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)\): σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
-VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan)\)")
+# A part's line names its process numbers and, in output from builds that split
+# a part by outgoing masses, those masses: `(@0)` or `(@0 @1; masses 0, 172.5
+# GeV)`. A part is recorded under its first process number, which no other part
+# shares.
+VG_MULT = re.compile(r"(\d+) outgoing legs \(@(\d+)(?: @\d+)*(?:; masses [^)]*)?\): "
+                     r"σ = ([0-9.eE+-]+) ± ([0-9.eE+-]+) (\w+) over (\d+) channels")
+# χ²/dof reads `n/a` where fewer than two iterations entered the result, which
+# `_f` records as NULL.
+VG_VEGAS = re.compile(r"VEGAS:\s+(\d+) evals over (\d+) iters, seed (\d+) \(χ²/dof = ([0-9.eE+-]+|NaN|nan|n/a)\)")
 VG_CHANNELS = re.compile(r"channels:\s+(\d+) grids")
 VG_MODEL = re.compile(r"model:?\s+(\S+) \(([0-9a-f]{64})\)")
 VG_ENUMERATED = re.compile(r"enumerated (\d+) diagrams in (\d+) subprocess")
 VG_TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z\s+[A-Z]+\s+(\S+)")
 VG_STAGES = ("proc_card", "ufo_load", "enumerate", "compile", "alpha_survey", "vegas")
-UNIT_TO_PB = {"fb": 1e-3, "pb": 1.0, "nb": 1e3, "ub": 1e6, "mb": 1e9}
+# integrate prints σ under the one SI-prefixed barn unit its magnitude picks
+# (`8.6812 ± 0.0023 ab`), micro as U+00B5; older builds printed pb throughout,
+# as `0.001952` or `1.952e-3`. A unit missing here leaves σ unread rather than
+# read as pb.
+UNIT_TO_PB = {"zb": 1e-9, "ab": 1e-6, "fb": 1e-3, "pb": 1.0, "nb": 1e3,
+              "\u00b5b": 1e6, "\u03bcb": 1e6, "ub": 1e6, "mb": 1e9, "b": 1e12}
 
 # A refusal's reason is its message with the run-specific parts (paths, quoted
 # names and values, unquoted process strings, numbers) pulled out as arguments,
@@ -575,14 +587,123 @@ def error_reasons(error_text, outcome):
     return [(ctx + ": " + t, args[:n] + a) for t, a in map(normalize_reason, bullets)]
 
 
+# The `--output-ldjson` schema versions this parser reads.
+LDJSON_SCHEMAS = {1}
+
+
+def ldjson_objects(text):
+    """(objects, other lines): the `--output-ldjson` objects of a run's output,
+    and the lines that are not one (a panic's message on the merged stderr)."""
+    objects, other = [], []
+    for line in (text or "").splitlines():
+        s = line.strip()
+        if s.startswith("{"):
+            try:
+                o = json.loads(s)
+            except ValueError:
+                o = None
+            if isinstance(o, dict) and "kind" in o and "schema_version" in o:
+                objects.append(o)
+                continue
+        if s:
+            other.append(line)
+    return objects, other
+
+
+def _empty_vg_result():
+    return {"sigma_pb": None, "err_pb": None, "chi2_dof": None, "n_evals": None, "n_channels": None,
+            "n_subprocesses": None, "n_diagrams": None, "vg_model_hash": None, "multiplicities": [],
+            "stages": {}, "error_text": None, "error_kind": None, "reasons": []}
+
+
+def _stages(trace_text):
+    """Each stage's wall time from the `--log-file` trace: the span of its first
+    to last timestamped line."""
+    first, last = {}, {}
+    from datetime import datetime
+    for line in (trace_text or "").splitlines():
+        m = VG_TS.match(line)
+        if not m:
+            continue
+        stage = re.sub(r"\{.*", "", m.group(2)).rstrip(":")
+        if stage not in VG_STAGES:
+            continue
+        t = datetime.fromisoformat(m.group(1)).timestamp()
+        first.setdefault(stage, t)
+        last[stage] = t
+    return {s: last[s] - first[s] for s in first}
+
+
+def parse_vg_ldjson(objects, other, trace_text, exit_code, timed_out):
+    """`parse_vg_output` for a run under `--output-ldjson`: σ, χ²/dof, the
+    channels, the per-multiplicity totals and the model from the `result`
+    object; the outcome and reason from the `refusal` object; the evaluation
+    and diagram counts from the `log` objects' messages."""
+    res = _empty_vg_result()
+    res["stages"] = _stages(trace_text) if trace_text else {}
+    unknown = sorted({o["schema_version"] for o in objects} - LDJSON_SCHEMAS)
+    if unknown:
+        res["outcome"] = "error"
+        res["error_text"] = "unknown --output-ldjson schema_version %s (this parser reads %s)" % (
+            unknown, sorted(LDJSON_SCHEMAS))
+        return res
+    messages = "\n".join(str(o.get("fields", {}).get("message", "")) for o in objects if o["kind"] == "log")
+    m = None
+    for m in VG_VEGAS.finditer(messages):
+        pass
+    if m:
+        res["n_evals"] = int(m.group(1))
+    enum = [(int(d), int(n)) for d, n in VG_ENUMERATED.findall(messages)]
+    if enum:
+        res["n_diagrams"], res["n_subprocesses"] = sum(d for d, _ in enum), sum(n for _, n in enum)
+    result = next((o for o in objects if o["kind"] == "result"), None)
+    refusal = next((o for o in objects if o["kind"] == "refusal"), None)
+    if result is not None:
+        res["vg_model_hash"] = result["model"]["digest"]
+        res["chi2_dof"] = result["chi2_per_dof"]
+        res["n_channels"] = len(result["channels"])
+        if result["unit"] == "pb":
+            res["sigma_pb"], res["err_pb"] = result["sigma"], result["sigma_err"]
+        # A run of one phase space reports no per-multiplicity line in text, so
+        # its total is recorded only as the run's.
+        parts = result["multiplicities"]
+        if len(parts) > 1:
+            res["multiplicities"] = [{"n_out": p["final_state"], "tag": p["process_ids"][0],
+                                      "sigma_pb": p["sigma"], "err_pb": p["sigma_err"],
+                                      "n_channels": p["channels"]} for p in parts]
+    if timed_out:
+        res["outcome"] = "timeout"
+    elif exit_code == 0 and res["sigma_pb"] is not None:
+        res["outcome"] = "ok"
+    elif any("panicked at" in l for l in other):
+        res["outcome"] = "panic"
+        idx = next(i for i, l in enumerate(other) if "panicked at" in l)
+        res["error_text"] = "\n".join(other[idx:])[:6000]
+        res["reasons"] = error_reasons(res["error_text"], "panic")
+    elif refusal is not None and exit_code not in (None, 0):
+        res["outcome"] = "refused"
+        res["error_kind"] = refusal["error_kind"]
+        res["error_text"] = refusal["message"][:6000]
+        res["reasons"] = error_reasons(res["error_text"], "refused")
+    else:
+        res["outcome"] = "error"
+        res["error_text"] = "\n".join(other[-15:])[:6000] or None
+    return res
+
+
 def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
     """Outcome, σ and per-multiplicity results from the CLI's output, and
     per-stage wall times from the `--log-file` trace (span of each stage's
-    first to last timestamped line)."""
+    first to last timestamped line).
+
+    Output written under `--output-ldjson` is read from its objects
+    (`parse_vg_ldjson`); anything else is an older campaign's text output, read
+    from its summary lines."""
+    objects, other = ldjson_objects(stdout_text)
+    if objects:
+        return parse_vg_ldjson(objects, other, trace_text, exit_code, timed_out)
     both = stdout_text or ""
-    res = {"sigma_pb": None, "err_pb": None, "chi2_dof": None, "n_evals": None, "n_channels": None,
-           "n_subprocesses": None, "n_diagrams": None, "vg_model_hash": None, "multiplicities": [],
-           "stages": {}, "error_text": None, "reasons": []}
+    res = _empty_vg_result()
     src = both + "\n" + (trace_text or "")
     sig = list(VG_SIGMA.finditer(both))
     if sig:
@@ -591,7 +712,9 @@ def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
         if f is not None:
             res["sigma_pb"], res["err_pb"] = float(m.group(1)) * f, float(m.group(2)) * f
     for m in VG_MULT.finditer(src):
-        f = UNIT_TO_PB.get(m.group(5), 1.0)
+        f = UNIT_TO_PB.get(m.group(5), None)
+        if f is None:
+            continue
         res["multiplicities"].append({"n_out": int(m.group(1)), "tag": int(m.group(2)),
                                       "sigma_pb": float(m.group(3)) * f, "err_pb": float(m.group(4)) * f,
                                       "n_channels": int(m.group(6))})
@@ -614,19 +737,7 @@ def parse_vg_output(stdout_text, trace_text, exit_code, timed_out):
     if enum:
         res["n_diagrams"], res["n_subprocesses"] = sum(d for d, _ in enum), sum(n for _, n in enum)
     if trace_text:
-        first, last = {}, {}
-        from datetime import datetime
-        for line in trace_text.splitlines():
-            m = VG_TS.match(line)
-            if not m:
-                continue
-            stage = re.sub(r"\{.*", "", m.group(2)).rstrip(":")
-            if stage not in VG_STAGES:
-                continue
-            t = datetime.fromisoformat(m.group(1)).timestamp()
-            first.setdefault(stage, t)
-            last[stage] = t
-        res["stages"] = {s: last[s] - first[s] for s in first}
+        res["stages"] = _stages(trace_text)
     if timed_out:
         res["outcome"] = "timeout"
     elif exit_code == 0 and res["sigma_pb"] is not None:

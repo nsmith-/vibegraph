@@ -191,8 +191,7 @@ pub struct EmitSummary {
     /// The cross section the accept/reject sample itself estimated
     /// ([`EventSource::sigma_pb`]) before any normalisation, and that estimate's
     /// statistical error (see [`sample_estimate_error`]).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) sample_sigma_pb: f64,
+    pub sample_sigma_pb: f64,
     pub sample_sigma_err_pb: f64,
     /// The `XMAXUP` the file declares.
     pub xmax: f64,

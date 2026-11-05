@@ -543,8 +543,8 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 self.rng.random(),
             ],
         )?;
-        let externals: Vec<[f64; 4]> = event
-            .lab
+        let externals: Vec<[f64; 4]> = integrand
+            .record_momenta(&event, selection.ordering)
             .iter()
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])
             .collect();

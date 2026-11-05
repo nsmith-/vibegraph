@@ -127,7 +127,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
     );
     assert!(artifact.inputs.params.is_empty());
     assert_eq!(artifact.sqrt_s_had, 13000.0);
-    assert_eq!(artifact.mu_f, 91.1880);
+    assert_eq!(artifact.mu_f, Some(91.1880));
 
     // (3) The reloaded per-channel grids drive a frozen sampling pass that
     // reproduces the adapted estimate within the single-pass MC error (the
@@ -153,7 +153,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         &evaluated,
         &pdf,
         ProtonBeams::from_run_card(&rc),
-        artifact.mu_f,
+        artifact.mu_f.expect("the card fixes μF on both beams"),
         MapOptions::fixed(artifact.maps),
     )
     .expect("hadronic integrand");
@@ -257,6 +257,127 @@ fn integrate_mmll_window_reproduces_h7_sigma() {
         "integrate_mmll_window_reproduces_h7_sigma",
         "mmll_60_120",
         "dy13_mmll_run_card.dat",
+    );
+}
+
+/// `integrate` on the Drell-Yan proc card under `dy13_default_run_card.dat`
+/// with `edit` applied to its text, on a budget that carries σ: the summary on
+/// stderr, the artifact, and the `result` object `inspect --output-ldjson`
+/// prints for it.
+fn integrate_card_variant(
+    edit: impl Fn(&str) -> String,
+) -> (String, IntegrateArtifact, serde_json::Value) {
+    let tmp = tempfile::tempdir().unwrap();
+    let card = tmp.path().join("run_card.dat");
+    let text = std::fs::read_to_string(validation_dir().join("dy13_default_run_card.dat"))
+        .expect("the banked run card");
+    let edited = edit(&text);
+    assert_ne!(edited, text, "the edit changed nothing");
+    std::fs::write(&card, edited).unwrap();
+    let out = tmp.path().join("out");
+    let output = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(&card)
+        .pdf_data_path(pdf_dir())
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "3"])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&output);
+    assert!(output.status.success(), "integrate failed:\n{stderr}");
+    let artifact =
+        IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).expect("reload artifact");
+    let inspected = common::vibegraph_ambient()
+        .arg("inspect")
+        .arg(out.join("grid.bin.zst"))
+        .arg("--output-ldjson")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        inspected.status.success(),
+        "{}",
+        common::stderr_of(&inspected)
+    );
+    let result: serde_json::Value = serde_json::from_str(
+        common::stdout_of(&inspected)
+            .lines()
+            .last()
+            .unwrap_or_default(),
+    )
+    .expect("the result object is the last line");
+    assert_eq!(result["kind"], "result");
+    (stderr, artifact, result)
+}
+
+/// The summary's `√s` line, which names the factorization scale.
+fn scale_line(stderr: &str) -> &str {
+    stderr
+        .lines()
+        .find(|l| l.contains("√s:"))
+        .unwrap_or_else(|| panic!("no √s line in:\n{stderr}"))
+        .trim_end()
+}
+
+/// With no constant factorization scale the summary names the scale choice and
+/// the artifact records no scale, rather than `μF = 0 GeV` and a zero; a μF the
+/// card fixes on both beams is that constant whatever μR does; and two fixed
+/// scales that differ by beam are printed per beam and recorded as no single
+/// constant.
+#[test]
+fn the_summary_names_a_factorization_scale_with_no_constant() {
+    let (log, dynamical, object) = integrate_card_variant(|text| {
+        text.replace("True    = fixed_ren_scale", "False   = fixed_ren_scale")
+            .replace("True    = fixed_fac_scale", "False   = fixed_fac_scale")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF dynamical, choice -1"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(dynamical.mu_f, None);
+    assert_eq!(
+        object["mu_f"],
+        serde_json::json!({"type": "per_event", "dynamical_scale_choice": -1})
+    );
+    // One phase space at proton beams: its total is the run's, recorded once.
+    let parts = object["multiplicities"].as_array().unwrap();
+    assert_eq!(parts.len(), 1, "{object}");
+    assert_eq!(parts[0]["final_state"], 2);
+    assert_eq!(
+        parts[0]["channels"].as_u64(),
+        Some(dynamical.channels.len() as u64)
+    );
+    assert!((parts[0]["sigma"].as_f64().unwrap() / dynamical.sigma_pb - 1.0).abs() < 1e-12);
+
+    let (log, fixed_fac, object) = integrate_card_variant(|text| {
+        text.replace("True    = fixed_ren_scale", "False   = fixed_ren_scale")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF = 91.188 GeV"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(fixed_fac.mu_f, Some(91.1880));
+    assert_eq!(
+        object["mu_f"],
+        serde_json::json!({"type": "constant", "gev": 91.1880})
+    );
+
+    let (log, per_beam, object) = integrate_card_variant(|text| {
+        text.replace("91.1880 = dsqrt_q2fact2", "50.0 = dsqrt_q2fact2")
+    });
+    assert!(
+        scale_line(&log).ends_with("GeV,  μF = 91.188 GeV, 50 GeV by beam"),
+        "{}",
+        scale_line(&log)
+    );
+    assert_eq!(per_beam.mu_f, None);
+    assert_eq!(
+        object["mu_f"],
+        serde_json::json!({"type": "per_beam", "gev": [91.1880, 50.0]})
     );
 }
 

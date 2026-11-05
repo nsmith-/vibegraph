@@ -397,8 +397,6 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "misset",
     "missetmax",
     "ptheavy",
-    "ptonium",
-    "etaonium",
     "xptj",
     "xptb",
     "xpta",
@@ -2519,6 +2517,29 @@ mod tests {
             Err(other) => panic!("{other}"),
         }
         assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
+    }
+
+    /// MadGraph never applies `ptonium` or `etaonium` (`banner.py` registers
+    /// them as legacy, out of `run_card.inc`), so no value is refused and none
+    /// changes the compiled cuts. The values are the ones CMS cards ship
+    /// (`0 = ptonium`, `-1 = etaonium`), MadGraph's defaults, and two that
+    /// would bind if anything read them.
+    #[test]
+    fn onium_cuts_are_accepted_at_any_value_and_change_nothing() {
+        let reference = Cuts::compile(&lhc(""), &dy_legs()).unwrap();
+        for extra in [
+            "0 = ptonium\n-1 = etaonium\n",
+            "1 = ptonium\n0.6 = etaonium\n",
+            "500 = ptonium\n0.01 = etaonium\n",
+        ] {
+            let rc = lhc(extra);
+            assert!(detect_unimplemented(&rc).is_ok(), "{extra}");
+            assert_eq!(
+                Cuts::compile(&rc, &dy_legs()).unwrap(),
+                reference,
+                "{extra}"
+            );
+        }
     }
 
     // ── cut-implied timelike floors ─────────────────────────────────────
