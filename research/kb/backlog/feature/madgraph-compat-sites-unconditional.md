@@ -63,3 +63,12 @@ fix.
   card's width. About 1.5 % on σ for a 1 MeV, 3.5 TeV resonance (sprint G,
   G-V1). On, emulate it; off, the card's width. Registered as a deviation by
   the user (2026-11-04).
+- (g) `cut_decays = F` with identical particles across a decay: MadEvent
+  exempts from the cuts the decay products of the first configuration only
+  (`check_decay`, `setcuts.f:193`), so of `g g > z u u~, z > u u~` it cuts the
+  core pair of one pairing. vibegraph keeps every pairing (site (d)) and so has
+  no single set of decay products. On, reproduce the first configuration's
+  exemption per group; off, a pairing-symmetric rule. Measured in sprint H's
+  H-K1: 5.348 pb against MadGraph's 7.211 pb on that subprocess, −6.8% on the
+  whole `g g > z j j, z > j j` card. The user chose to reproduce it
+  (2026-11-06), so it is filed here for the off mode.

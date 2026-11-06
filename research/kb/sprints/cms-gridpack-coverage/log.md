@@ -125,3 +125,7 @@
   - **Survey cards now:** TTToHcToWA ×2 and Wto2Q ×2 integrate; Zto2Q passes grouping but is too costly (11421 channels).
   - **Item 8 deleted.** MadGraph itself refuses b cuts that differ from jet cuts at maxjetflavor 4 (`setcuts.f:808`). Whether vibegraph should refuse them too is raised to the user.
   - **Found:** τ_min = 0 panics with x = NaN (also on main, `p p > b b~` at ptb 0); stale `flavour-groups.md` and `proton-integrand.md`; the first-row cut-class rule; Zto2Q cost; the quoted error is 3× the seed scatter on p p > j j j.
+* The user answered D5 and D6 ([D5](decisions/D5-cut-decays-exemption-and-b-cut-cards.md)):
+  - reproduce MadEvent's `cut_decays = F` first-configuration exemption, filed as `--madgraph-compat` site (g);
+  - keep integrating the b-cut cards MadGraph refuses, explained to the user as its grouped-P-directory limitation.
+* A fourth container restart killed H-K1's `validate.sh` before a verdict. The manager reran it alone, detached.
