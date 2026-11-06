@@ -26,15 +26,17 @@
 //! different orders and shares a group through that pairing. One that matches a
 //! group's `|M|²` but whose flows cannot be paired (a member carrying extra
 //! diagrams whose couplings vanish at the evaluated card, say) starts a group of
-//! its own. Grouping is refused unless the
+//! its own. Two subprocesses whose traces separate by more than the tolerance,
+//! however little, are two groups: a charge-conjugate pair whose `|M|²` differ
+//! through the W width, as `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7`
+//! under the CKM restriction, is a physical distinction, and a split costs one
+//! more evaluation per point where a merge of distinct functions would be an
+//! error. Grouping is refused unless the
 //! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
 //! the group; a card whose subprocesses differ in them is split into one
 //! decomposition per set of masses before it gets here, by
 //! [`crate::multiplicity::split_by_external_masses`]) and an equal [`Cuts`] filter
-//! (so one cut indicator does), and unless distinct groups separate by more than
-//! [`GROUP_SEPARATION_MIN`] — a partition resting on a knife edge is a
-//! measurement that failed, not a decomposition. Groups split for colour alone
-//! are the exception to the separation floor: their `|M|²` agree by construction.
+//! (so one cut indicator does).
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
 //! global phase, and it would not move if two members' colour bases differed by a
@@ -126,8 +128,10 @@ use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
 use crate::phasespace::beams;
-use crate::phasespace::diagram_channel::MapIdentity;
-use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
+use crate::phasespace::diagram_channel::{DiagramChannel, MapIdentity};
+use crate::phasespace::maps::{
+    pole_in_tau, tau_range, MapChoices, MapOptions, ProcessShape, TauMap,
+};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     floored_alphas, identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap,
@@ -145,23 +149,24 @@ type V = LorentzVector<f64>;
 
 /// Relative agreement at which two subprocesses' `|M|²` count as one group's.
 ///
-/// Members of a group are the *same* arithmetic on differently-labelled legs, so
-/// the observed agreement is exact (measured: bit-for-bit over every `p p → ℓℓj`
-/// group). The bound is loose against that and still eleven orders below the
-/// closest measured separation between distinct groups.
-pub(crate) const GROUP_REL_TOL: f64 = 1e-10;
-
-/// Minimum relative separation between two distinct groups at their best-separated
-/// probe point.
+/// Two subprocesses with one matrix element need not be one arithmetic: two
+/// flavour assignments related by a relabelling, or by charge conjugation,
+/// compile to programs that reach the same value through other couplings and
+/// in another order. Their traces then differ by rounding, amplified by the
+/// gauge cancellations of an electroweak amplitude. The worst such separation
+/// measured is `1.48e-10` (it is `3.9e-11` on another machine: last-ulp
+/// arithmetic), on `d c~ > w- z s d~` against `s u~ > w- z d s~`
+/// under the five-flavour CKM restriction, and it is rounding: evaluated in `f32` the same pair separates
+/// `2.3e8` times further, which a coupling difference would not. The bound sits
+/// a factor 6.8 above it. The closest separation measured that does not grow
+/// with the precision is `1.2e-7` (`u b~ > a u b~` against its conjugate with
+/// the CKM phase at zero), a factor 120 above the bound.
 ///
-/// Without it a partition could be produced by two subprocesses landing either
-/// side of [`GROUP_REL_TOL`] by rounding, which is not a physical distinction.
-/// It is a floor and not evidence of a margin: the margin is measured instead by
-/// `group_members_agree_where_the_partition_was_not_measured`, where the closest
-/// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
-/// fitted on — six orders above this floor, and asserted there to stay above
-/// `0.1`.
-pub(crate) const GROUP_SEPARATION_MIN: f64 = 1e-6;
+/// A pair separated by more than the bound is two groups, each evaluated with
+/// its own compiled amplitude, which is right whether or not the separation is
+/// physical. Rounding that crosses the bound therefore costs one evaluation per
+/// point, not a wrong cross section.
+pub(crate) const GROUP_REL_TOL: f64 = 1e-9;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
 const PROBE_POINTS_PER_ENERGY: usize = 4;
@@ -604,11 +609,6 @@ pub enum ProtonError {
     )]
     CutIndicatorDiffers { a: String, b: String },
     #[error(
-        "the groups represented by {a} and {b} separate by only {rel:.3e} at their best-separated \
-         probe point; a partition that close is rounding, not a coupling distinction"
-    )]
-    DegenerateGroups { a: String, b: String, rel: f64 },
-    #[error(
         "groups {a} and {b} compile to different cut filters, so the sum has no single phase-space \
          indicator; a process whose groups are cut differently needs one indicator per group"
     )]
@@ -896,32 +896,6 @@ pub fn derive_flavor_groups(
         }
     }
 
-    for (a, ga) in partition.iter().enumerate() {
-        let ha = ga[0].0;
-        for gb in &partition[a + 1..] {
-            let hb = gb[0].0;
-            if compiled[ha].0.polarizations() != compiled[hb].0.polarizations() {
-                continue;
-            }
-            let rel = worst_rel(&traces[ha], &traces[hb]);
-            // Two groups with one matrix element exist only when their colour
-            // bases could not be paired, and each is evaluated with its own
-            // compiled amplitude, so their sum does not rest on the two traces
-            // being equal. A colour-compatible pair this close would have been
-            // one group, so it falls through to the refusal.
-            if rel < GROUP_REL_TOL && colour_pairing(&compiled[ha].0, &compiled[hb].0).is_err() {
-                continue;
-            }
-            if rel <= GROUP_SEPARATION_MIN {
-                return Err(ProtonError::DegenerateGroups {
-                    a: labels[ha].clone(),
-                    b: labels[hb].clone(),
-                    rel,
-                });
-            }
-        }
-    }
-
     let mut sets: Vec<Option<DiagramSet>> = sets.into_iter().map(Some).collect();
     let mut compiled: Vec<Option<_>> = compiled.into_iter().map(Some).collect();
     let mut groups = Vec::with_capacity(partition.len());
@@ -1178,6 +1152,184 @@ fn flow_permutation(
         }
     }
     Ok(pi)
+}
+
+/// One Breit–Wigner component of [`TauMixture`]: MadEvent's
+/// `transpole(pole, width)` in `τ`, `τ = τ₀ + w tan z` with `z` flat over the
+/// arctangents of the range's ends, so its density is
+/// `w/((τ − τ₀)² + w²)/(z_hi − z_lo)` on `[τ_min, τ_max]`.
+#[derive(Clone, Copy, Debug)]
+struct TauPole {
+    mass: f64,
+    width: f64,
+    /// `M²/s`.
+    tau0: f64,
+    /// `MΓ/s`.
+    w: f64,
+    z_lo: f64,
+    z_hi: f64,
+    /// The share of the `(group, diagram)` channels that carry this pole.
+    weight: f64,
+}
+
+impl TauPole {
+    fn density(&self, tau: f64) -> f64 {
+        let d = tau - self.tau0;
+        self.w / (d * d + self.w * self.w) / (self.z_hi - self.z_lo)
+    }
+}
+
+/// The `τ` density of [`TauMap::BreitWigner`]: the mean, over the
+/// `(group, diagram)` channels, of the density MadEvent maps each channel's `τ`
+/// with — a Breit–Wigner at the channel's whole-state pole where it has one in
+/// range, the logarithmic map elsewhere.
+///
+/// The draw splits the unit coordinate into one segment per component, sized by
+/// its weight, and maps the segment's own uniform through that component; the
+/// Jacobian is the reciprocal of the whole mixture's density at the drawn `τ`, so
+/// a point reached through any component carries the same weight. VEGAS adapts
+/// on the coordinate as it does on any other, and so moves points between the
+/// components.
+#[derive(Clone, Debug)]
+struct TauMixture {
+    /// The share of the channels without a pole in range: the log map's weight.
+    log_weight: f64,
+    poles: Vec<TauPole>,
+    tau_min: f64,
+    tau_max: f64,
+    /// `ln(τ_max/τ_min)`, the log component's normalisation.
+    ln_range: f64,
+}
+
+/// `τ_min^(1−v) τ_max^v`: the logarithmic map's draw over `[τ_min, τ_max]`.
+fn log_tau(tau_min: f64, tau_max: f64, v: f64) -> f64 {
+    tau_min.powf(1.0 - v) * tau_max.powf(v)
+}
+
+impl TauMixture {
+    /// The mixture for `groups`' channel diagrams over `[tau_min, tau_max]` at
+    /// hadronic invariant `s`, or `None` where no channel's whole-state pole lies
+    /// strictly inside the range.
+    fn of(
+        groups: &FlavorGroups,
+        model: &EvaluatedModel,
+        s: f64,
+        tau_min: f64,
+        tau_max: f64,
+    ) -> Option<Self> {
+        let mut log_count = 0usize;
+        let mut counts: Vec<((f64, f64), usize)> = Vec::new();
+        for g in groups.groups() {
+            for d in channel_diagrams(g.diagrams(), model) {
+                let pole = DiagramChannel::<f64>::whole_state_resonance(d, model)
+                    .filter(|&(m, _)| pole_in_tau(m, s, tau_min, tau_max));
+                match pole {
+                    Some(key) => match counts.iter_mut().find(|(k, _)| *k == key) {
+                        Some((_, n)) => *n += 1,
+                        None => counts.push((key, 1)),
+                    },
+                    None => log_count += 1,
+                }
+            }
+        }
+        Self::from_counts(log_count, counts, s, tau_min, tau_max)
+    }
+
+    /// The mixture of `log_count` log-map channels and, for each `(M, Γ)` pole,
+    /// its count of channels, over `[tau_min, tau_max]` at hadronic invariant
+    /// `s`; `None` without a pole.
+    fn from_counts(
+        log_count: usize,
+        counts: Vec<((f64, f64), usize)>,
+        s: f64,
+        tau_min: f64,
+        tau_max: f64,
+    ) -> Option<Self> {
+        if counts.is_empty() {
+            return None;
+        }
+        let total = (log_count + counts.iter().map(|(_, n)| n).sum::<usize>()) as f64;
+        let poles = counts
+            .into_iter()
+            .map(|((mass, width), n)| {
+                let tau0 = mass * mass / s;
+                let w = mass * width / s;
+                TauPole {
+                    mass,
+                    width,
+                    tau0,
+                    w,
+                    z_lo: ((tau_min - tau0) / w).atan(),
+                    z_hi: ((tau_max - tau0) / w).atan(),
+                    weight: n as f64 / total,
+                }
+            })
+            .collect();
+        Some(TauMixture {
+            log_weight: log_count as f64 / total,
+            poles,
+            tau_min,
+            tau_max,
+            ln_range: (tau_max / tau_min).ln(),
+        })
+    }
+
+    /// `τ` at the unit coordinate `u0`, and `(dτ/du)/τ` there.
+    fn draw(&self, u0: f64) -> (f64, f64) {
+        let tau = if u0 < self.log_weight {
+            log_tau(self.tau_min, self.tau_max, u0 / self.log_weight)
+        } else {
+            // The last pole takes whatever rounding leaves above the summed weights.
+            let last = self.poles.len() - 1;
+            let mut start = self.log_weight;
+            let mut k = last;
+            for (i, p) in self.poles.iter().enumerate() {
+                if u0 < start + p.weight {
+                    k = i;
+                    break;
+                }
+                start += p.weight;
+            }
+            let pole = &self.poles[k];
+            if k == last {
+                start = 1.0 - pole.weight;
+            }
+            let v = ((u0 - start) / pole.weight).clamp(0.0, 1.0);
+            let z = pole.z_lo + v * (pole.z_hi - pole.z_lo);
+            (pole.tau0 + pole.w * z.tan()).clamp(self.tau_min, self.tau_max)
+        };
+        (tau, 1.0 / (tau * self.density(tau)))
+    }
+
+    /// The mixture's density in `τ`.
+    fn density(&self, tau: f64) -> f64 {
+        self.log_weight / (tau * self.ln_range)
+            + self
+                .poles
+                .iter()
+                .map(|p| p.weight * p.density(tau))
+                .sum::<f64>()
+    }
+
+    /// One line naming each component and its weight.
+    fn describe(&self, s: f64) -> String {
+        let poles: Vec<String> = self
+            .poles
+            .iter()
+            .map(|p| {
+                format!(
+                    "Breit-Wigner at M = {} GeV, width {} GeV ({:.3})",
+                    p.mass, p.width, p.weight
+                )
+            })
+            .collect();
+        format!(
+            "log ({:.3}), {} over sqrt(s) {:.4e} GeV",
+            self.log_weight,
+            poles.join(", "),
+            s.sqrt()
+        )
+    }
 }
 
 /// Unit-hypercube coordinates the `(τ, y)` outer map consumes. They are *prepended*
@@ -1486,7 +1638,14 @@ pub struct ProtonIntegrand<'a> {
     initial_masses: [f64; 2],
     /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
-    ln_inv_tau_min: f64,
+    /// Upper support of the `τ` map: one, or below it where the decay-chain
+    /// windows bound `ŝ` ([`Cuts::shat_max`]).
+    tau_max: f64,
+    /// `ln(τ_max/τ_min)`, the logarithmic map's `(dτ/du)/τ`.
+    ln_tau_range: f64,
+    /// The Breit–Wigner components of [`TauMap::BreitWigner`], `None` under any
+    /// other map and where no whole-state pole lies inside `[τ_min, τ_max]`.
+    tau_mixture: Option<TauMixture>,
     /// The maps this integrand was built under, every choice settled.
     maps: MapChoices,
     /// The `(2π)^{4−3n}` measure factor.
@@ -1814,9 +1973,20 @@ impl<'a> ProtonIntegrand<'a> {
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
+        // The cuts and any whole-state decay window bound τ (`tau_range`); the
+        // incoming partons' masses raise its floor to their production threshold.
         let initial_masses = groups.initial_masses();
         let threshold = initial_masses[0] + initial_masses[1];
-        let tau_min = cuts.shat_min().max(threshold * threshold) / s_had;
+        let (cut_tau_min, cut_tau_max) = tau_range(cuts, s_had);
+        let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+        let tau_max = cut_tau_max.max(tau_min);
+        let tau_mixture = match maps.tau {
+            TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
+            TauMap::Log | TauMap::InverseSquare => None,
+        };
+        if let Some(mix) = &tau_mixture {
+            tracing::info!("tau: {}", mix.describe(s_had));
+        }
         Ok(ProtonIntegrand {
             subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
@@ -1831,7 +2001,9 @@ impl<'a> ProtonIntegrand<'a> {
             beams,
             initial_masses,
             tau_min,
-            ln_inv_tau_min: (1.0 / tau_min).ln(),
+            tau_max,
+            ln_tau_range: (tau_max / tau_min).ln(),
+            tau_mixture,
             maps,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
@@ -2253,21 +2425,29 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
     ///
-    /// `τ` is drawn over `[τ_min, 1]` by the banked [`TauMap`]: the logarithmic
-    /// `τ = τ_min^(1−u)` with `dτ/du = τ ln(1/τ_min)`, or the inverse-square
-    /// `τ = 1/(1/τ_min − u(1/τ_min − 1))` with `dτ/du = τ²(1/τ_min − 1)`. Either
-    /// measure carries one power of `τ` that the `1/(x₁x₂)` of the luminosity
-    /// cancels (the type's doc), so what enters the Jacobian is `(dτ/du)/τ`.
+    /// `τ` is drawn over `[τ_min, τ_max]` ([`tau_range`]) by the banked
+    /// [`TauMap`]: the logarithmic `τ = τ_min^(1−u) τ_max^u` with
+    /// `dτ/du = τ ln(τ_max/τ_min)`; the inverse-square
+    /// `τ = 1/(1/τ_min − u(1/τ_min − 1/τ_max))` with
+    /// `dτ/du = τ²(1/τ_min − 1/τ_max)`; or the Breit–Wigner mixture
+    /// ([`TauMixture`]), whose `(dτ/du)/τ` is `1/(τ p(τ))` at the mixture's
+    /// density `p`, and which is the logarithmic map where it has no pole in
+    /// range. Every measure carries one power of `τ` that the `1/(x₁x₂)` of the
+    /// luminosity cancels (the type's doc), so what enters the Jacobian is
+    /// `(dτ/du)/τ`.
     fn map_point(&self, u: &[f64]) -> OuterPoint {
         self.map_point_with(self.maps.tau, u)
     }
 
     /// [`map_point`](Self::map_point) under a named `τ` map rather than the run's.
     fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
-        let (tau, dtau_du_over_tau) = match tau_map {
-            TauMap::Log => (self.tau_min.powf(1.0 - u[0]), self.ln_inv_tau_min),
-            TauMap::InverseSquare => {
-                let k = 1.0 / self.tau_min - 1.0;
+        let (tau, dtau_du_over_tau) = match (tau_map, &self.tau_mixture) {
+            (TauMap::BreitWigner, Some(mix)) => mix.draw(u[0]),
+            (TauMap::Log | TauMap::BreitWigner, _) => {
+                (log_tau(self.tau_min, self.tau_max, u[0]), self.ln_tau_range)
+            }
+            (TauMap::InverseSquare, _) => {
+                let k = 1.0 / self.tau_min - 1.0 / self.tau_max;
                 let tau = 1.0 / (1.0 / self.tau_min - u[0] * k);
                 (tau, tau * k)
             }
@@ -3677,6 +3857,308 @@ mod tests {
                 "{map:?}: {mean} ± {err} against the exact {exact}"
             );
         }
+    }
+
+    /// A decay chain that forces a line carrying the whole final state confines
+    /// both `τ` maps to that line's window, `√ŝ ∈ (M − 15Γ, M + 15Γ)` at the
+    /// default `bwcutoff`, and each still integrates `∫ τ^p dτ/τ` over the
+    /// narrowed range. Unbounded, the draw would reach `√s`, and a point above the
+    /// window would carry no weight.
+    #[test]
+    fn a_whole_state_window_bounds_both_tau_maps() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(
+            enumerate("p p > z, z > e+ e-", &m),
+            &m,
+            &evaluated,
+            &RunCard::default(),
+        )
+        .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let z = m.particle_id("Z").expect("Z");
+        let (mz, wz) = (evaluated.mass(z), evaluated.width(z));
+        let s_had = SQRT_S_HAD * SQRT_S_HAD;
+        let (lo, hi) = (mz - 15.0 * wz, mz + 15.0 * wz);
+        let (tau_min, tau_max) = (integ.tau_min, integ.tau_max);
+        assert!(
+            (tau_min * s_had / (lo * lo) - 1.0).abs() < 1e-12,
+            "{tau_min}"
+        );
+        assert!(
+            (tau_max * s_had / (hi * hi) - 1.0).abs() < 1e-12,
+            "{tau_max}"
+        );
+        let p = -0.5f64;
+        let exact = (tau_max.powf(p) - tau_min.powf(p)) / p;
+        for map in [TauMap::Log, TauMap::InverseSquare] {
+            for edge in [0.0, 1.0] {
+                let pt = integ.map_point_with(map, &[edge, 0.5]);
+                let bound = if edge == 0.0 { lo } else { hi };
+                assert!((pt.sqrt_shat / bound - 1.0).abs() < 1e-12, "{map:?} {edge}");
+            }
+            let mut stream = SubStream::from_stream(0x7A0_3333, 5);
+            let n = 200_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let pt = integ.map_point_with(map, &stream.uniforms::<f64>(2));
+                assert!(pt.sqrt_shat >= lo * (1.0 - 1e-12) && pt.sqrt_shat <= hi * (1.0 + 1e-12));
+                let tau = pt.x1 * pt.x2;
+                let v = pt.jac / (-tau.ln()) * tau.powf(p);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{map:?}: {mean} ± {err} against the exact {exact}"
+            );
+        }
+    }
+
+    /// The Breit–Wigner `τ` mixture carries the Jacobian of its own density. On
+    /// Drell–Yan, whose `γ` and `Z` channels give the log map and the `Z` pole one
+    /// half each, the flat average of the outer weight reproduces both
+    /// `∫ τ^(−1/2) dτ/τ`, which the log component carries, and the `Z`'s own
+    /// Lorentzian in `τ`, which the pole component carries.
+    /// A component missing from the density, or a segment mapped through the
+    /// wrong component, misses either by many standard errors.
+    #[test]
+    fn the_breit_wigner_tau_mixture_integrates_known_functions() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = ProtonIntegrand::new_with_maps(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            BEAMS,
+            MU_F,
+            MapOptions {
+                tau: Some(TauMap::BreitWigner),
+                ..MapOptions::fixed(MapChoices::LEGACY)
+            },
+        )
+        .expect("integrand");
+        let mix = integ.tau_mixture.clone().expect("the Z pole is in range");
+        let z = m.particle_id("Z").expect("Z");
+        let (mz, wz) = (evaluated.mass(z), evaluated.width(z));
+        assert_eq!(mix.poles.len(), 1);
+        let pole = mix.poles[0];
+        assert_eq!((pole.mass, pole.width), (mz, wz));
+        assert!((mix.log_weight - 0.5).abs() < 1e-15 && (pole.weight - 0.5).abs() < 1e-15);
+        let (tau_min, tau_max) = (integ.tau_min, integ.tau_max);
+        for (edge, want) in [(0.0, tau_min), (1.0, tau_max)] {
+            let pt = integ.map_point_with(TauMap::BreitWigner, &[edge, 0.5]);
+            assert!(((pt.x1 * pt.x2) / want - 1.0).abs() < 1e-9, "{edge}");
+        }
+        let p = -0.5f64;
+        let power = (tau_max.powf(p) - tau_min.powf(p)) / p;
+        let lorentzian = pole.z_hi - pole.z_lo;
+        // The last entry bounds the relative error. The pole half of the draws
+        // carries the Lorentzian at a near-constant weight and the log half almost
+        // none of it, so its error is the binomial `1/√n` of that split; without
+        // the pole component it would be an order of magnitude larger.
+        /// A name, the exact integral, the integrand and the relative error bound.
+        type Target<'f> = (&'f str, f64, &'f dyn Fn(f64) -> f64, f64);
+        let targets: [Target; 2] = [
+            ("tau^-1/2", power, &|tau: f64| tau.powf(p), 5e-3),
+            (
+                "Z Lorentzian",
+                lorentzian,
+                &|tau: f64| tau * pole.w / ((tau - pole.tau0).powi(2) + pole.w * pole.w),
+                3e-3,
+            ),
+        ];
+        for (name, exact, h, precision) in targets {
+            let mut stream = SubStream::from_stream(0x7A0_4444, 5);
+            let n = 400_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let pt = integ.map_point_with(TauMap::BreitWigner, &stream.uniforms::<f64>(2));
+                let tau = pt.x1 * pt.x2;
+                assert!(tau >= tau_min * (1.0 - 1e-12) && tau <= tau_max * (1.0 + 1e-12));
+                let v = pt.jac / (-tau.ln()) * h(tau);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
+            eprintln!("{name}: {mean:.8} ± {err:.1e} against {exact:.8}");
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{name}: {mean} ± {err} against the exact {exact}"
+            );
+            assert!(err < precision * exact, "{name}: error {err} on {exact}");
+        }
+    }
+
+    /// A mixture of the log map and three poles, built from channel counts 1, 1,
+    /// 1 and 2, over a range whose ceiling cuts into the upper pole's line. Each
+    /// component's segment of the unit coordinate draws that component's own
+    /// distribution, so the drawn `τ` follows the weighted sum of the
+    /// components' distribution functions; and the returned `(dτ/du)/τ` is
+    /// `1/(τ p)` at the summed density `p`, so each component's own normalised
+    /// density integrates to one under it. Both are read off the components'
+    /// definitions, not off the mixture. The draw runs on a midpoint grid of the
+    /// unit coordinate, so both checks are deterministic: a count of grid points
+    /// below `τ` is off by under one per segment, and each integral by under one
+    /// grid step of its largest value, `1/c` for the smallest weight `c`, per
+    /// segment edge.
+    #[test]
+    fn a_three_pole_tau_mixture_draws_its_density_over_a_bounded_range() {
+        let (s, tau_min, tau_max) = (1e8f64, 1e-4f64, 1e-2f64);
+        // Poles at `τ₀` = 1e-3, 3e-3 and 8e-3 with `MΓ/s` = 5e-5, 1.5e-4 and
+        // 4e-4: the ceiling sits five half-widths above the upper one, and the
+        // middle pole's segment starts neither at the log map's end nor at the
+        // last pole's.
+        let line = |tau0: f64, w: f64| {
+            let mass = (tau0 * s).sqrt();
+            (mass, w * s / mass)
+        };
+        let (a, m, b) = (line(1e-3, 5e-5), line(3e-3, 1.5e-4), line(8e-3, 4e-4));
+        let mix = TauMixture::from_counts(1, vec![(a, 1), (m, 1), (b, 2)], s, tau_min, tau_max)
+            .expect("every pole is in range");
+        let weights: Vec<f64> = mix.poles.iter().map(|p| p.weight).collect();
+        let fifth = 1.0 / 5.0;
+        assert_eq!(
+            (mix.log_weight, weights),
+            (fifth, vec![fifth, fifth, 2.0 / 5.0])
+        );
+
+        let ln_range = (tau_max / tau_min).ln();
+        // A component's distribution function and density at `τ`.
+        let log = move |tau: f64| ((tau / tau_min).ln() / ln_range, 1.0 / (tau * ln_range));
+        let breit_wigner = |(mass, width): (f64, f64)| {
+            let (tau0, w) = (mass * mass / s, mass * width / s);
+            let lo = ((tau_min - tau0) / w).atan();
+            let norm = ((tau_max - tau0) / w).atan() - lo;
+            move |tau: f64| {
+                (
+                    (((tau - tau0) / w).atan() - lo) / norm,
+                    w / ((tau - tau0).powi(2) + w * w) / norm,
+                )
+            }
+        };
+        let (bw_a, bw_m, bw_b) = (breit_wigner(a), breit_wigner(m), breit_wigner(b));
+        /// A name, the weight, and the distribution function and density at `τ`.
+        type Component<'f> = (&'f str, f64, &'f dyn Fn(f64) -> (f64, f64));
+        let components: [Component; 4] = [
+            ("log", fifth, &log),
+            ("pole a", fifth, &bw_a),
+            ("pole m", fifth, &bw_m),
+            ("pole b", 2.0 / 5.0, &bw_b),
+        ];
+
+        assert_eq!(mix.draw(0.0).0, tau_min);
+        assert!((mix.draw(1.0).0 / tau_max - 1.0).abs() < 1e-9);
+        let n = 400_000;
+        let draws: Vec<(f64, f64)> = (0..n)
+            .map(|i| mix.draw((i as f64 + 0.5) / n as f64))
+            .collect();
+        assert!(draws
+            .iter()
+            .all(|&(tau, _)| (tau_min..=tau_max).contains(&tau)));
+
+        let count_bound = components.len() as f64 / n as f64;
+        for t in [
+            1.5e-4, 5e-4, 9.5e-4, 1e-3, 1.05e-3, 2.8e-3, 3e-3, 3.3e-3, 7.6e-3, 8e-3, 8.8e-3, 9.9e-3,
+        ] {
+            let below = draws.iter().filter(|&&(tau, _)| tau <= t).count() as f64 / n as f64;
+            let want: f64 = components.iter().map(|(_, c, f)| c * f(t).0).sum();
+            assert!(
+                (below - want).abs() < count_bound,
+                "P(τ ≤ {t}): drawn {below}, the components' {want}"
+            );
+        }
+        let integral_bound = components.len() as f64 / fifth / n as f64;
+        for (name, _, f) in components {
+            let integral = draws
+                .iter()
+                .map(|&(tau, jac)| f(tau).1 * tau * jac)
+                .sum::<f64>()
+                / n as f64;
+            eprintln!("{name}: ∫ p dτ = {integral:.9}");
+            assert!(
+                (integral - 1.0).abs() < integral_bound,
+                "{name}: ∫ p dτ = {integral} under the mixture's weight"
+            );
+        }
+    }
+
+    /// `breit-wigner` with no whole-state pole inside the range is the log map,
+    /// point for point: Drell–Yan above `m_ll > 150 GeV` puts the `Z` pole below
+    /// `τ_min`, so the mixture has no Breit–Wigner component.
+    #[test]
+    fn the_breit_wigner_map_without_a_pole_in_range_is_the_log_map() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  150.0 = mmll\n",
+        )
+        .expect("run card");
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = ProtonIntegrand::new_with_maps(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            BEAMS,
+            MU_F,
+            MapOptions {
+                tau: Some(TauMap::BreitWigner),
+                ..MapOptions::fixed(MapChoices::LEGACY)
+            },
+        )
+        .expect("integrand");
+        assert!(integ.tau_mixture.is_none());
+        let mut stream = SubStream::from_stream(0x7A0_5555, 5);
+        for _ in 0..1000 {
+            let u = stream.uniforms::<f64>(2);
+            let (bw, log) = (
+                integ.map_point_with(TauMap::BreitWigner, &u),
+                integ.map_point_with(TauMap::Log, &u),
+            );
+            let bits = |p: &OuterPoint| [p.x1, p.x2, p.sqrt_shat, p.jac].map(f64::to_bits);
+            assert_eq!(bits(&bw), bits(&log), "{u:?}");
+        }
+    }
+
+    /// The rule judges a whole-state resonance's narrowness over the range the
+    /// `τ` map draws, which a decay chain's window bounds. At `Γ_Z` = 0.1 GeV the
+    /// `Z` of `p p > e+ e-` above `m_ll > 50 GeV` holds about 2e-4 of the log
+    /// map's unit interval and takes the Breit–Wigner mixture; `p p > z, z > e+ e-`
+    /// confines the draw to the `Z`'s ±15Γ window, where it holds about 3e-2,
+    /// and keeps the log map, as card 048's chain does.
+    #[test]
+    fn the_tau_rule_reads_the_range_a_decay_window_bounds() {
+        let m = model();
+        let card: crate::ufo::slha::ParamCard = "DECAY 23 0.1\n".parse().expect("param card");
+        let evaluated = EvaluatedModel::from_model_card(m.clone(), &card).expect("the card binds");
+        let shape = |process: &str, card: &RunCard| {
+            let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, card)
+                .expect("flavour groups");
+            process_shape(&groups, &evaluated, SQRT_S_HAD)
+        };
+        let open = shape("p p > e+ e-", &llj_card());
+        let chain = shape("p p > z, z > e+ e-", &RunCard::default());
+        assert!(open.whole_state_resonance && open.narrow_whole_state_resonance);
+        assert!(chain.whole_state_resonance && !chain.narrow_whole_state_resonance);
+        let rule = MapOptions::default();
+        assert_eq!(rule.resolve(&open).tau, TauMap::BreitWigner);
+        assert_eq!(rule.resolve(&chain).tau, TauMap::Log);
     }
 
     /// The multi-subprocess hadronic process the grouping rule is measured on:
@@ -5424,8 +5906,7 @@ mod tests {
     /// but the b flows carry the extra (zero-valued) diagrams, so no fingerprint
     /// pairing exists. The premise is asserted first. Each group is its own
     /// representative under the identity, and the two traces agree at points the
-    /// partition was not fitted on: the separation floor must not refuse a pair
-    /// that close when the partition split it for colour.
+    /// partition was not fitted on.
     ///
     /// What it cannot see: whether such a pair would be better served by pruning
     /// the zero-valued diagrams and grouping it, which is a question about the
@@ -5492,6 +5973,199 @@ mod tests {
                 &trace(gb.evaluator(), &fresh)
             ) < GROUP_REL_TOL
         );
+    }
+
+    /// `|M|²` of every compiled subprocess of `sets` at `points`, evaluated in
+    /// scalar precision `F`, after the slot ordering `derive_flavor_groups` gives
+    /// them, so a trace here is the one the partition reads.
+    fn content_traces<F: crate::helas::repr::Real + num_traits::FromPrimitive>(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+        run_card: &RunCard,
+        points: &[Vec<V>],
+    ) -> Vec<Vec<f64>> {
+        let at = |x: f64| F::from_f64(x).expect("an f64 converts");
+        content_ordered(sets.to_vec(), m, evaluated, run_card)
+            .expect("content order")
+            .iter()
+            .map(|set| {
+                let evaluator = compile_class(set, m, evaluated).expect("compile");
+                let bound = BoundAmplitude::<F>::bind(&evaluator, evaluated);
+                let mut scratch = bound.scratch_space();
+                points
+                    .iter()
+                    .map(|k| {
+                        let k: Vec<LorentzVector<F>> = k
+                            .iter()
+                            .map(|p| {
+                                LorentzVector::new(at(p.e()), at(p.px()), at(p.py()), at(p.pz()))
+                            })
+                            .collect();
+                        bound
+                            .eval_m2(&k, &mut scratch)
+                            .to_f64()
+                            .expect("an F converts")
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// The probe points `derive_flavor_groups` reads for massless partons and the
+    /// final masses of `sets`' first subprocess.
+    fn partition_points(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Vec<Vec<V>> {
+        let evaluator = compile_class(&sets[0], m, evaluated).expect("compile");
+        let legs = process_external_legs(&evaluator, m, evaluated);
+        let final_masses: Vec<f64> = legs[2..].iter().map(|l| l.mass).collect();
+        probe_momenta(
+            [legs[0].mass, legs[1].mass],
+            &final_masses,
+            s_channel_resonance(m, evaluated),
+            PROBE_SEED,
+        )
+    }
+
+    /// Two subprocesses whose traces differ by rounding share one group.
+    ///
+    /// `d c~ > w- z s d~` and `s u~ > w- z d s~` under the five-flavour CKM
+    /// restriction are one matrix element computed through differently signed
+    /// couplings, and the gauge cancellations of W Z scattering amplify the
+    /// rounding of that arithmetic to around `1e-10`. The premise is asserted
+    /// first: the separation is below [`GROUP_REL_TOL`], and in `f32` it grows by
+    /// more than a factor `1e6`, which a coupling difference would not. The CMS
+    /// survey's `VBS_WPMZTo4Q` card was refused on a pair separated by this same
+    /// rounding, `1.5e-10`. Its size is last-ulp arithmetic and differs between
+    /// machines (`1.48e-10` on one, `3.9e-11` on CI), so the test does not pin it
+    /// above the old bound; the headroom assertion checks the margin instead.
+    ///
+    /// What it cannot see: a physical difference smaller than the rounding, which
+    /// the group then sums under one member's `|M|²`, an error below
+    /// [`GROUP_REL_TOL`] on that member at the probe points.
+    #[test]
+    fn a_pair_separated_by_rounding_shares_one_group() {
+        const PAIR: &str = "d c~ > w- z s d~ QCD=0\nadd process s u~ > w- z d s~ QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let sets = enumerate(PAIR, &m);
+        assert_eq!(sets.len(), 2);
+        let points = partition_points(&sets, &m, &evaluated);
+        let [a, b] = &content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points)[..] else {
+            unreachable!()
+        };
+        let [a32, b32] = &content_traces::<f32>(&sets, &m, &evaluated, &run_card, &points)[..]
+        else {
+            unreachable!()
+        };
+        let (rel, rel32) = (worst_rel(a, b), worst_rel(a32, b32));
+        eprintln!("f64 separation {rel:.3e}, f32 separation {rel32:.3e}");
+        assert!(
+            rel < GROUP_REL_TOL / 4.0,
+            "{rel:.3e} leaves under 4x headroom"
+        );
+        assert!(rel32 > 1e6 * rel, "{rel32:.3e} against {rel:.3e}");
+
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+        let [group] = groups.groups() else {
+            panic!("{} groups", groups.groups().len());
+        };
+        assert_eq!(group.members().len(), 2);
+    }
+
+    /// `(E, pₓ, p_y, p_z) ↦ (E, −pₓ, p_y, p_z)`: parity followed by the rotation by
+    /// π about the x axis, so the beams stay on the z axis.
+    fn mirror_x(points: &[Vec<V>]) -> Vec<Vec<V>> {
+        points
+            .iter()
+            .map(|k| {
+                k.iter()
+                    .map(|p| V::new(p.e(), -p.px(), p.py(), p.pz()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A charge-conjugate pair whose `|M|²` differ through the W width is two
+    /// groups, not a refusal.
+    ///
+    /// Under the five-flavour CKM restriction `u b~ > a u b~` and `u~ b > a u~ b`
+    /// separate by `9.1e-7` at the probe points; the CMS survey's γ + 2 jets EWK
+    /// cards were refused on it. The split is not CP violation. Under CP the
+    /// conjugate's `|M|²` at `p` is the subprocess's at the reflected `M p`
+    /// ([`mirror_x`]), and that agreement holds to rounding on every card here,
+    /// the CKM phase included. The two differ at the same `p` by twice the part
+    /// of `|M|²` odd under the reflection, a Levi-Civita contraction of the
+    /// momenta that needs an absorptive phase, here the W width:
+    ///
+    /// | card | at `p` | conjugate at `M p` |
+    /// |---|---|---|
+    /// | the restriction's | split, `9.1e-7` | rounding |
+    /// | CKM phase `η = 0` | split, `1.2e-7` | rounding |
+    /// | `η = 0`, `ρ` raised to keep `\|V_ub\|` | split, as the restriction's | rounding |
+    /// | W width `0` | rounding: one group | rounding |
+    ///
+    /// The phase moves the split only through `|V_ub|`, which the W exchange
+    /// carries; the W width alone removes it.
+    ///
+    /// What it cannot see: a reflection-odd part whose absorptive phase comes
+    /// from another width than the W's, which no card here switches off.
+    #[test]
+    fn a_conjugate_pair_split_by_the_w_width_is_two_groups() {
+        const PAIR: &str = "u b~ > a u b~ QCD=0\nadd process u~ b > a u~ b QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let rounding = 1e-12;
+        // `ρ² + η²` of the restriction's `ρ = 0.132`, `η = 0.341`.
+        let rho_at_eta_zero = (0.132f64.powi(2) + 0.341f64.powi(2)).sqrt();
+        let cards = [
+            String::new(),
+            "BLOCK WOLFENSTEIN\n  4 0.0\n".to_string(),
+            format!("BLOCK WOLFENSTEIN\n  3 {rho_at_eta_zero}\n  4 0.0\n"),
+            "DECAY 24 0.0\n".to_string(),
+        ];
+        let mut split = Vec::new();
+        for card in &cards {
+            let evaluated = if card.is_empty() {
+                EvaluatedModel::from_model(m.clone())
+            } else {
+                let card: crate::ufo::slha::ParamCard = card.parse().expect("param card");
+                EvaluatedModel::from_model_card(m.clone(), &card).expect("evaluated card")
+            };
+            let sets = enumerate(PAIR, &m);
+            assert_eq!(sets.len(), 2);
+            let points = partition_points(&sets, &m, &evaluated);
+            let at = content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points);
+            let reflected =
+                content_traces::<f64>(&sets, &m, &evaluated, &run_card, &mirror_x(&points));
+            let at_p = worst_rel(&at[0], &at[1]);
+            let at_mp = worst_rel(&at[0], &reflected[1]);
+            eprintln!("{card:?}: at p {at_p:.3e}, conjugate at M p {at_mp:.3e}");
+            assert!(at_mp < rounding, "{card:?}: CP fails by {at_mp:.3e}");
+
+            let groups =
+                derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+            assert_eq!(groups.subprocess_count(), 2);
+            let expected = if at_p < GROUP_REL_TOL { 1 } else { 2 };
+            assert_eq!(groups.groups().len(), expected, "{card:?}");
+            split.push(at_p);
+        }
+        let [restriction, eta_zero, vub_kept, no_width] = split[..] else {
+            unreachable!()
+        };
+        assert!(restriction > 100.0 * GROUP_REL_TOL, "{restriction:.3e}");
+        assert!(eta_zero > 100.0 * GROUP_REL_TOL && eta_zero < 0.5 * restriction);
+        assert!(
+            (vub_kept / restriction - 1.0).abs() < 1e-2,
+            "{vub_kept:.3e}"
+        );
+        assert!(no_width < rounding, "{no_width:.3e}");
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,

@@ -201,12 +201,13 @@ Options:
       --map-tau <TAU>
           How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
           
-          `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance spans the whole final state, and `log` where one does. `inverse-square` measures better where it applies (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the resonance's peak sits in the `τ` draw.
+          `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance spans the whole final state, and `log` where one does. `inverse-square` measures better where it applies (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the resonance's peak sits in the `τ` draw. Where that peak is narrower than one draw in a thousand of the log map, `auto` is `breit-wigner`: each channel with a whole-state pole in range draws `τ` on that pole's Breit–Wigner, as MadEvent does, and the others on the log map.
 
           Possible values:
-          - auto:           `inverse-square`, or `log` where a resonance spans the whole final state
+          - auto:           `inverse-square`, `log` where a resonance spans the whole final state, and `breit-wigner` where that resonance is too narrow for the log map
           - log:            Density `∝ 1/τ` above the cut-implied `τ_min`
           - inverse-square: Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance spanning the whole final state
+          - breit-wigner:   The channel average of MadEvent's per-channel maps: a Breit–Wigner at each channel's whole-state pole, the log map on channels without one
           
           [default: auto]
 
