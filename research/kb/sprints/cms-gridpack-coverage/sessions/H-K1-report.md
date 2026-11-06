@@ -287,8 +287,8 @@ ERROR failed to decompose into flavour groups: subprocesses g g > u u~ and g g >
 
 After: `INFO 13 flavour groups are cut by 3 distinct filters, each group by its own`.
 
-**`p p > j j j` (item 8's process), same card, `--target-rel 0.02`**
-(`$S/H-K1-ppjjj.out`):
+**`p p > j j j` (item 8's process), same card.** Refused before, integrates
+after (`--target-rel 0.02`, `$S/H-K1-ppjjj.out`):
 
 ```
 == before   ERROR failed to decompose into flavour groups: subprocesses g g > g u u~ and g g > g b b~ share a matrix element but compile to different cut filters, …
@@ -296,7 +296,52 @@ After: `INFO 13 flavour groups are cut by 3 distinct filters, each group by its 
             σ = 47.79 ± 0.16 µb
 ```
 
-There is no MadGraph row for `j j j` (§1), only the `j j` analogue above.
+**`p p > j j j` against MadGraph, five seeds a side.** MadGraph refuses this
+card as one process too, so its reference is four outputs, one per outgoing
+class pattern, each run with the same card (`$S/H-K1-mg-sweep-ppjjj.sh`, seeds
+1–5, `nevents 10000`, `hard_survey 2`, LHAPDF 247000; `Using random number seed
+offset = <seed>` in each log):
+
+- `H-K1-ppjjj-A`: `p p > j4 j4 j4` (P1_gg_ggg … P1_qq_gqq, six P directories);
+- `H-K1-ppjjj-B`: `p p > b j4 j4`, `p p > b~ j4 j4`;
+- `H-K1-ppjjj-C`: `p p > b b~ j4`, `p p > b b j4`, `p p > b~ b~ j4`;
+- `H-K1-ppjjj-D`: `p p > b b b~`, `p p > b b~ b~`.
+
+vibegraph: `vibegraph-merged integrate ppjjj_5f.dat --run-card
+rc_ppjj_mjf4diff.dat --seed <s> --target-rel 0.003 -j 2`
+(`$S/H-K1-vg-sweep-ppjjj.sh`, `$S/H-K1-vg-sweep-ppjjj.out`). Stats:
+`VGP=vgsig3 python3 H-K1-stats.py ppjjj` (`$S/H-K1-stats-ppjjj.out`):
+
+```
+A s1..s5: 0.46823E+08 0.46766E+08 0.46747E+08 0.46498E+08 0.46674E+08
+B s1..s5: 0.65988E+06 0.65943E+06 0.66174E+06 0.65989E+06 0.66322E+06
+C s1..s5: 0.16255E+06 0.16193E+06 0.16172E+06 0.16133E+06 0.16260E+06
+D s1..s5: 0.12936E+04 0.12911E+04 0.12939E+04 0.12929E+04 0.12943E+04
+vibegraph  n=5 mean 4.766600e+07 pb sd 4.561e+04 (9.57e-04) se(scatter) 2.040e+04 se(quoted) 5.821e+04 chi2/dof 0.12
+           seeds: 4.76500e+07±1.3e+05, 4.76100e+07±1.3e+05, 4.77300e+07±1.3e+05, 4.76900e+07±1.4e+05, 4.76500e+07±1.2e+05
+madgraph   n=5 mean 4.752575e+07 pb sd 1.259e+05 (2.65e-03) se(scatter) 5.632e+04 se(quoted) 5.917e+04 chi2/dof 0.78
+           seeds: 4.76467e+07±1.7e+05, 4.75887e+07±1.1e+05, 4.75718e+07±1.1e+05, 4.73205e+07±1.4e+05, 4.75011e+07±1.2e+05
+vg-mg: +1.4025e+05 pb (+2.951e-03); pull +2.34 (scatter), +1.69 (quoted)
+```
+
+How to read it:
+
+- vibegraph is +0.30% high, the sign and size of MadEvent's known low reading:
+  VEGAS iterations weighted by mean²/variance read −0.1% to −0.25% on 2 → 3 rows ([iteration weighting](../../../validation/madevent-iteration-weighting-bias.md),
+  registered in [MadGraph defects](../../../validation/madgraph-defects.md)), on top of
+  the survey's grid shortfall that `hard_survey 2` reduces but does not always
+  remove ([survey bias](../../../validation/madevent-default-survey-bias.md)).
+  MadGraph's own seeds spread 0.27% (sd), with seed 4 at −0.43% from the
+  vibegraph mean. I read the row as agreement at the known MadEvent offset, not
+  as a demonstration of it: the pull is +2.3 by scatter and +1.7 by the quoted
+  errors, and five seeds cannot calibrate a 0.3% difference (AGENTS.md).
+- vibegraph's χ²/dof is 0.12: its quoted errors (0.27%) are about three times
+  its seed scatter (0.096%). Quoted errors too large make the row conservative,
+  but a χ²/dof this far below 1 is a warning; it is recorded in Found.
+- The b classes are visible at this size. The b-containing parts (B + C + D) are
+  1.73% of the total. In §5a's `j j` control, cutting the b as a light jet moves
+  the total +2.3% from a b content of 0.67%, so the b part changes several-fold
+  under the wrong classes; a 0.3% offset cannot hide that.
 
 ### (b) `g g > z j j, z > j j`, 13 TeV
 
@@ -414,7 +459,26 @@ VALIDATE-PLACEHOLDER
 
 ## 8. The survey's decay-chain cards
 
-CMS-PLACEHOLDER
+Before this change every one of these cards stopped at the grouping refusal
+(H-D1 §4: *"groups 0 and 1 compile to different cut filters, …"*). Each card
+was run through the CLI with its own run, param and UFO cards at a small fixed
+budget, `--neval 1000 --niter 1 --fixed-budget --seed 1 -j 2`
+(`$S/H-K1-cms3.sh`, `$S/H-K1-cms-cards.sh`; logs `$S/cms/<card>.<binary>.log`).
+
+| card | where it stops now | evidence |
+|---|---|---|
+| `TTToHcToWA_AToMuMu_MHc160_MA15` | integrates: σ = 603 ± 23 fb | `80 flavour groups are cut by 14 distinct filters`, `138 channels over 22 coordinates`, grid written; same σ on `vibegraph-after2` and `vibegraph-merged` |
+| `TTToHcToWA_AToMuMu_MHc160_MA125` | integrates: σ = 520 ± 37 ab | as above |
+| `Zto2Q-4Jets_Bin-HT-100to400` | past grouping on every multiplicity; the 4-jet integration does not finish in 2400 s | `13 / 93 / 165 / 675 flavour groups are cut by 3 / 8 / 14 / 30 distinct filters`; `11421 channels over 7 to 16 coordinates, 5847552 points per iteration`; `exit 124 (2401 s)` (`$S/H-K1-cms-cards.out`) |
+| `Zto2Q-4Jets_Bin-HT-800to1500` | not measured: the run was cut by a container restart during enumeration | last line `enumerate: 428 diagrams for g s~ > Z g g g s~` |
+| `Wto2Q-3Jets_Bin-HT-400to800` | past grouping (`948 flavour groups are cut by 7 distinct filters`); WTO2Q-PLACEHOLDER | |
+| `Wto2Q-3Jets_Bin-HT-800to1500` | not run | |
+
+The TTToHcToWA σ values are one-iteration, 1000-point fixed-budget numbers that
+show the card integrates; they are not compared with MadGraph here.
+
+The Zto2Q `HT-100to400` stop is cost, not a refusal: 11421 channels each at the
+512-point floor make one iteration 5.8 M points before any `--neval` is spent.
 
 ## Found
 
