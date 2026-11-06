@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "H-K1 report: per-group cut indicators, and cut agreement as a grouping join condition"
-description: "D4 and item 8 implemented. A subprocess whose cut filter differs from a group's starts a group of its own (CutIndicatorDiffers is gone), and every flavour group carries its own cut indicator in ProtonIntegrand (GroupCutsDiffer is gone): a point's value is Σ_g Θ_g·term_g and its event is drawn among the passing groups. Every channel is built under the weakest of the groups' floors (UnionBounds): built under its own group's floors, the mixture read g g > z j j, z > j j 4% low, because a channel's density below its floors is positive. MadGraph refuses 5F p p > j j at maxjetflavor 4 whenever the b cuts differ from the jet cuts (setcuts.f consistency check), so the backlog item's 'MadGraph runs this card' holds only for equal b and jet cuts. σ: p p > j j at maxjetflavor 4 with ptb 30/etab 2.5 against MadGraph's three class-split runs, −6.1e-4, pull −0.98, five seeds each; g g > z j j, z > j j at cut_decays T +4.3e-3 (pull +2.7); at cut_decays F −6.8%, all of it in the four same-flavour subprocesses (an existing decay-product rule, Found); the twelve others agree to 1e-4. Cards with one filter are bit for bit."
+description: "D4 and item 8 implemented. A subprocess whose cut filter differs from a group's starts a group of its own (CutIndicatorDiffers is gone), and every flavour group carries its own cut indicator in ProtonIntegrand (GroupCutsDiffer is gone): a point's value is Σ_g Θ_g·term_g and its event is drawn among the passing groups. Every channel is built under the weakest of the groups' floors (UnionBounds): built under its own group's floors, the mixture read g g > z j j, z > j j 4% low, because a channel's density below its floors is positive. MadGraph refuses 5F p p > j j at maxjetflavor 4 whenever the b cuts differ from the jet cuts (setcuts.f consistency check), so the backlog item's 'MadGraph runs this card' holds only for equal b and jet cuts. σ: p p > j j at maxjetflavor 4 with ptb 30/etab 2.5 against MadGraph's three class-split runs, −6.1e-4, pull −0.98, five seeds each; g g > z j j, z > j j at cut_decays T +4.3e-3 (pull +2.7); at cut_decays F −6.8%, all of it in the four same-flavour subprocesses (an existing decay-product rule, Found); the twelve others agree to 1e-4. p p > j j j on the same card +3.0e-3 against MadGraph's four class-split runs (pull +2.3, the sign and size of MadEvent's known low reading). Cards with one filter are bit for bit, also on the merge with main. TTToHcToWA and both Wto2Q cards now integrate; Zto2Q stops on cost (11421 channels), not a refusal."
 status: draft
 tags: [cuts, flavour-groups, five-flavour, decay-chains, madgraph-parity, sprint-h, report, validation]
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-11-05}]
@@ -483,6 +483,26 @@ show the card integrates; they are not compared with MadGraph here.
 
 The Zto2Q `HT-100to400` stop is cost, not a refusal: 11421 channels each at the
 512-point floor make one iteration 5.8 M points before any `--neval` is spent.
+
+## Item 8's `closes_when`
+
+> p p > j j j under sm-no_b_mass with a run card that sets maxjetflavor 4
+> integrates, subprocesses whose cut indicators differ go to separate groups
+> (or one group carries per-member cut indicators), and σ agrees with MadGraph
+> by the multi-seed criterion.
+
+- Integrates: §5a, `28 flavour groups are cut by 4 distinct filters`, five
+  seeds at 47.61–47.73 µb.
+- Separate groups and per-group indicators: both (§2, §7's
+  `subprocesses_cut_differently_are_grouped_apart`).
+- σ: +3.0e-3 against MadGraph's class-split reference, five seeds a side,
+  MadGraph χ²/dof 0.78, vibegraph 0.12 (§5a). MadGraph has no single-run
+  reference for this card, since it refuses it (§1); with b cuts equal to the
+  jet cuts it runs the card, and there vibegraph is bit for bit unchanged (§4).
+
+I read the condition as met and delete the item's file in this branch. The
+item's literal template card (`ptb 0`, `etab −1`) now panics instead of being
+refused; that is filed under Found below, not left in item 8.
 
 ## Found
 
