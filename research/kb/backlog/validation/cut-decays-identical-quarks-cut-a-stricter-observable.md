@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "With cut_decays = F, identical quarks across a decay are all cut, a stricter observable than the card asks for"
-description: "vibegraph cuts every quark that is a core particle in some pairing, so g g > z u u~, z > u u~ reads −26% below MadGraph (−6.8% on g g > z j j, z > j j); exempt the pair that reconstructs the resonance instead."
+description: "vibegraph cuts every quark that is a core particle in some pairing, so g g > z u u~, z > u u~ reads −26% below MadGraph; exempt the pair that reconstructs the resonance instead."
 area: validation
 state: open
 priority: high
