@@ -114,3 +114,14 @@
 * #103 merged (9af360ac) at the user's instruction once CI was green. The first CI run failed `a_pair_separated_by_rounding_shares_one_group`: CI rounds the pair to 3.9e-11, the host to 1.48e-10, so the test pinned last-ulp arithmetic. Fixed in ba303ca3: the test asserts the pair is rounding (f32 ×1e6) with 4× headroom. Banked passed. `ckm-flavour-groups-near-degenerate-refused` stays open for the 3.88e-8 card (CERN rerun).
 * A second container restart stopped H-K1 mid-`validate.sh`. Its code (proton.rs, maps.rs; uncommitted) and its scratch survived. The manager had spotted that its bit-for-bit events hashes were the empty-input SHA-256, because the LHE path was wrong. H-K1 was resumed from disk to fix that check, commit early, merge main (#103), gate, and finish its σ oracles.
 * Third container restart, during parallel heavy jobs (cargo test, vibegraph σ sweeps, MadGraph). All three restarts happened under such load. H-K1 had committed and pushed ba2fa70a and the merge 9601bfe0 beforehand. The manager read the fixed bit-for-bit check: σ, grid and events SHA-256 identical before and after on `pp_to_jj`, `pp_to_llj` and 5F `ppjj`. TTToHcToWA now integrates (80 groups, 14 cut filters). H-K1 was resumed with a binding one-heavy-job-at-a-time rule.
+* H-K1 handed back (ba2fa70a, merge 9601bfe0, kb commits to cd3690a4; pushed). `validate.sh` is still running, detached.
+  - **Gates on 9601bfe0:** fmt ok, clippy ok, 1968 passed.
+  - **Bit for bit against main:** identical σ, grid and events SHA on ppjj, llj and ppjj5.
+  - **σ against LHAPDF MadGraph (5 seeds a side):**
+    - 5F p p > j j at maxjetflavor 4: −6.1e-4;
+    - p p > j j j, against MadGraph class-split references: +2.95e-3, pull 2.3;
+    - g g > z j j, z > j j, cut_decays T: +4.3e-3.
+  - **cut_decays F: −6.8%.** MadEvent exempts configuration 1's decay products when quarks are identical across a decay (`check_decay`, `setcuts.f:193`); vibegraph cuts all four. A pre-existing silent difference, raised to the user.
+  - **Survey cards now:** TTToHcToWA ×2 and Wto2Q ×2 integrate; Zto2Q passes grouping but is too costly (11421 channels).
+  - **Item 8 deleted.** MadGraph itself refuses b cuts that differ from jet cuts at maxjetflavor 4 (`setcuts.f:808`). Whether vibegraph should refuse them too is raised to the user.
+  - **Found:** τ_min = 0 panics with x = NaN (also on main, `p p > b b~` at ptb 0); stale `flavour-groups.md` and `proton-integrand.md`; the first-row cut-class rule; Zto2Q cost; the quoted error is 3× the seed scatter on p p > j j j.
