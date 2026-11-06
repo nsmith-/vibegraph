@@ -470,11 +470,15 @@ budget, `--neval 1000 --niter 1 --fixed-budget --seed 1 -j 2`
 | `TTToHcToWA_AToMuMu_MHc160_MA15` | integrates: σ = 603 ± 23 fb | `80 flavour groups are cut by 14 distinct filters`, `138 channels over 22 coordinates`, grid written; same σ on `vibegraph-after2` and `vibegraph-merged` |
 | `TTToHcToWA_AToMuMu_MHc160_MA125` | integrates: σ = 520 ± 37 ab | as above |
 | `Zto2Q-4Jets_Bin-HT-100to400` | past grouping on every multiplicity; the 4-jet integration does not finish in 2400 s | `13 / 93 / 165 / 675 flavour groups are cut by 3 / 8 / 14 / 30 distinct filters`; `11421 channels over 7 to 16 coordinates, 5847552 points per iteration`; `exit 124 (2401 s)` (`$S/H-K1-cms-cards.out`) |
-| `Zto2Q-4Jets_Bin-HT-800to1500` | not measured: the run was cut by a container restart during enumeration | last line `enumerate: 428 diagrams for g s~ > Z g g g s~` |
-| `Wto2Q-3Jets_Bin-HT-400to800` | past grouping (`948 flavour groups are cut by 7 distinct filters`); WTO2Q-PLACEHOLDER | |
-| `Wto2Q-3Jets_Bin-HT-800to1500` | not run | |
+| `Zto2Q-4Jets_Bin-HT-800to1500` | not measured: the run was cut by a container restart during enumeration | last line `enumerate: 428 diagrams for g s~ > Z g g g s~`. Its proc card is `HT-100to400`'s but for the `output` line (`diff`), so it meets the same 11421-channel cost |
+| `Wto2Q-3Jets_Bin-HT-400to800` | integrates: σ = 1.90 ± 0.13 nb, 990 s | `948 flavour groups are cut by 7 distinct filters`; per multiplicity `82.7 ± 6.7 pb over 3 channels`, `459 ± 36 pb over 39 channels`, `1.36 ± 0.12 nb over 374 channels`; grid written (`$S/H-K1-cms4-wto2q.out`, run under `ulimit -v 8000000`) |
+| `Wto2Q-3Jets_Bin-HT-800to1500` | integrates: σ = 155 ± 13 pb, 862 s | per multiplicity `4.02 ± 0.43 pb`, `29.4 ± 2.7 pb`, `122 ± 13 pb` over 3 / 39 / 374 channels; grid written (`$S/H-K1-cms4-wto2q800.out`) |
 
-The TTToHcToWA σ values are one-iteration, 1000-point fixed-budget numbers that
+Earlier attempts at the Wto2Q and Zto2Q `HT-800to1500` cards stopped mid-run
+at container restarts (the same log line on two binaries) that came while other
+heavy jobs ran beside them; run alone, the Wto2Q cards finish.
+
+The TTToHcToWA and Wto2Q σ values are one-iteration, 1000-point fixed-budget numbers that
 show the card integrates; they are not compared with MadGraph here.
 
 The Zto2Q `HT-100to400` stop is cost, not a refusal: 11421 channels each at the
@@ -491,6 +495,13 @@ The Zto2Q `HT-100to400` stop is cost, not a refusal: 11421 channels each at the
   takes reproducing `check_decay`'s configuration-1 exemption per group. With
   per-group indicators that is one filter per pairing, or a filter that reads the
   drawn configuration. The cell to flip is §5b's `cut_decays F` row.
+- **vibegraph's quoted σ error on `p p > j j j` is about three times its seed
+  scatter.** Five seeds at `--target-rel 0.003` quote 0.27% each and scatter
+  0.096% (χ²/dof 0.12, §5a). On `p p > j j` the same flags give χ²/dof 0.43.
+  An over-quoted error is conservative, but it hides real offsets from the
+  pull. Closing it takes a 20-seed run on `p p > j j j` to measure the scatter,
+  and a look at how the per-iteration errors are combined when many channels
+  sit at the point floor.
 - **A card with no `ŝ` floor panics instead of being refused.** A massless final
   state with a leg left uncut gives `τ_min = 0`, and the first point stops with
   `PDF evaluation point (x=NaN, …)`. This holds on main for `p p > b b~` under
