@@ -153,7 +153,7 @@ instead, which is MadGraph's per-matrix-element rule on every card it runs.
 | refusal | condition | why |
 |---|---|---|
 | `AmplitudeCount` / `AmplitudeMismatch` | the bound amplitudes are not one per group, in group order, each from that group's evaluator (`std::ptr::eq`) | crossing the pairing weights one group's `|M|²` with another's luminosity — a smooth σ shift with no other symptom, pinned by a test that swaps two amplitudes[^n24-p2d-corr] |
-| from `derive_flavor_groups` | unequal outgoing masses across subprocesses, an unsupported initial state, degenerate groups | see [flavour groups](flavour-groups.md) |
+| from `derive_flavor_groups` | no subprocess; a subprocess without two incoming legs; unequal incoming or outgoing masses across the subprocesses of one decomposition | see [flavour groups](flavour-groups.md) |
 
 ## Scales: shared path and per-term path
 
