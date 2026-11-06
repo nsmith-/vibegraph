@@ -33,5 +33,9 @@ pairings are in the window at once, which is the interference region. Exempting
 MadGraph's configuration-1 legs on vibegraph's every-pairing |M|² instead makes σ
 diverge logarithmically (H-C2).
 
-Read `setcuts.f`'s other `from_decay` readers before implementing. Exact
+Read `setcuts.f`'s other `from_decay` readers before implementing. The exemption
+changes per point, so it cannot use the fixed per-subprocess `uncut_products` mask.
+The IR-unsafe-exemption guard (`refuse_ir_unsafe_exemption`, `cuts.rs`) must also
+be checked against the exempting pairing's own diagrams: as written it ORs over
+every kept diagram and would refuse this rule (H-C3, Found 2). Exact
 single-pairing reproduction is compat site (d), a separate item.
