@@ -9,6 +9,7 @@ from a gridpack is ever imported or executed: UFO model files are read with
 import ast
 import hashlib
 import json
+import math
 import re
 import warnings
 
@@ -666,11 +667,20 @@ def parse_vg_ldjson(objects, other, trace_text, exit_code, timed_out):
             res["sigma_pb"], res["err_pb"] = result["sigma"], result["sigma_err"]
         # A run of one phase space reports no per-multiplicity line in text, so
         # its total is recorded only as the run's.
-        parts = result["multiplicities"]
-        if len(parts) > 1:
-            res["multiplicities"] = [{"n_out": p["final_state"], "tag": p["process_ids"][0],
-                                      "sigma_pb": p["sigma"], "err_pb": p["sigma_err"],
-                                      "n_channels": p["channels"]} for p in parts]
+        # The result lists one part per flavour group, so a process split into
+        # several groups repeats its tag; its groups are independent integrals
+        # and add (errors in quadrature).
+        tags = {}
+        for p in result["multiplicities"]:
+            t = tags.setdefault(p["process_ids"][0], {"n_out": p["final_state"], "tag": p["process_ids"][0],
+                                                      "sigma_pb": 0.0, "err2": 0.0, "n_channels": 0})
+            t["sigma_pb"] += p["sigma"]
+            t["err2"] += p["sigma_err"] ** 2
+            t["n_channels"] += p["channels"]
+        if len(tags) > 1:
+            res["multiplicities"] = [{"n_out": t["n_out"], "tag": t["tag"], "sigma_pb": t["sigma_pb"],
+                                      "err_pb": math.sqrt(t["err2"]), "n_channels": t["n_channels"]}
+                                     for t in tags.values()]
     if timed_out:
         res["outcome"] = "timeout"
     elif exit_code == 0 and res["sigma_pb"] is not None:
