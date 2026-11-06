@@ -455,7 +455,22 @@ $ grep "test result" H-K1-test-merged.log | awk '{p+=$4; f+=$6; i+=$8} END {prin
 55 suites, passed 1968, failed 0, ignored 25
 ```
 
-VALIDATE-PLACEHOLDER
+`bash validation/validate.sh` on cd3690a4 (code identical to 9601bfe0). The
+manager ran it alone and detached, because a container restart killed the
+session's run. Logged to `mgr-validate-gc.log` in the session scratchpad:
+
+```
+$ export CARGO_TARGET_DIR=/home/user/H-K1-validate-target CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=3; bash validation/validate.sh; echo "VALIDATE-EXIT $?"
+HEAD cd3690a433fdfe4dc08a4603d82c7f5074094eb9
+77 rows × 4 categories = 308 cells: 218 measured in the layers this run drove (213 ✅, 5 ⚠️, 14 ⏳, 76 — / uncovered).
+The measured cells are exactly the cells the manifest declares, every gate cell passed
+VALIDATE-EXIT 0
+$ grep "^test result" mgr-validate-gc.log | awk '{p+=$4; f+=$6} END {print "passed", p, "failed", f}'
+passed 2422 failed 0
+```
+
+The untracked `.cargo/config.toml` (`release-debug debug = 0`) was deleted
+afterwards.
 
 ## 8. The survey's decay-chain cards
 
