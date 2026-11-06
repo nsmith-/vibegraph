@@ -589,7 +589,7 @@ fn probe_cut_edge_weight_tail() {
                     let jac = ch.grid.draw(&mut rng, &mut u[..ndim]);
                     trailing.fill_uniforms(&mut u[ndim..]);
                     let (lab, cm, tau) = lab_frame(&integ, j, &u);
-                    let pass = integ.cuts.pass(&lab);
+                    let pass = integ.any_group_passes(&lab);
                     let margins: Vec<f64> = edges.iter().map(|e| e.margin(&lab)).collect();
                     let mine = margins.iter().all(|&m| m >= 0.0);
                     if mine != pass {

@@ -1,7 +1,7 @@
 ---
 type: Algorithm
 title: Flavour groups derived from measured |M|² equality
-description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and cuts and a colour basis that pairs with the representative's under the fingerprint permutation; an unpaired one forms a group of its own; groups that do not merge stay separate."
+description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and a cut filter equal to the representative's and a colour basis that pairs with its own under the fingerprint permutation; a subprocess with a different cut filter or an unpaired colour basis forms a group of its own; groups that do not merge stay separate."
 status: draft
 tags: [hadronic, flavour-groups, proton, probe, colour]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -55,8 +55,8 @@ measurement.[^n24-p2]
    with `base = max(Σ m_out, 100 GeV)`, every rung raised to at least `1.2 × Σ m_out`, and
    rungs that collide after the clamp collapsed to one.[^derive]
 4. A subprocess joins the first group whose representative it is polarized alike with,
-   whose whole probe trace it matches to `GROUP_REL_TOL = 1e-9`, **and** whose colour
-   bookkeeping it shares (`colour_pairing`): an equal `n_flows`, a pairing `π` of its
+   whose whole probe trace it matches to `GROUP_REL_TOL = 1e-9`, whose compiled cut
+   filter it equals (`Cuts` equality), **and** whose colour bookkeeping it shares (`colour_pairing`): an equal `n_flows`, a pairing `π` of its
    flows with the representative's (`flow_permutation`, the unique fingerprint
    bijection), and `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly. `π` comes from the
    fingerprints and the CF matrix only confirms it; a permutation found from the CF
@@ -66,8 +66,16 @@ measurement.[^n24-p2]
    `u~ d~ > d~ g u~`, `u u > g g u u` with `u~ u~ > g g u~ u~`) sorts the same flows
    into different orders, so its matrices differ entry by entry until reindexed, and it
    shares one group through `π`. A subprocess that matches a group's `|M|²` but whose
-   flows cannot be paired is compiled already, so it starts a group of its own instead
-   of refusing the card: one more evaluation per point. The SM instance is
+   cut filter differs, or whose flows cannot be paired, is compiled already, so it
+   starts a group of its own instead of refusing the card: one more evaluation per
+   point. Cut filters differ when subprocesses class their legs differently (`g g > u u~`
+   against `g g > b b~` at `maxjetflavor = 4` with b cuts apart from the jet cuts) or
+   force different decay-chain lines; the groups then carry the distinct filters, which
+   [the integrand](proton-integrand.md) applies one per group. MadGraph's grouped
+   P directories instead require every matrix element of a directory to compile to the
+   same cuts and refuse the card otherwise (`setcuts.f`); vibegraph does not reproduce
+   that refusal, and on a card MadGraph accepts, each subprocess is cut by its own
+   classes as there. The SM instance is
    `d d > d d QED=2` with `b b > b b QED=2` at a card setting the b mass and Yukawa to
    zero under the default restriction: equal `|M|²`, but the b flows carry Higgs
    exchanges of zero value, so their fingerprints have no counterpart.
@@ -83,7 +91,7 @@ measurement.[^n24-p2]
    It vanishes at `Γ_W = 0`, not at a zero CKM phase.
 
 Every subprocess still belongs to exactly one group, so the luminosity sum counts each
-once; a colour split only moves a subprocess from one group's member list to a group
+once; a cut or colour split only moves a subprocess from one group's member list to a group
 of its own. The CF condition under `π` admits every join the raw-order comparison
 admitted (`π` is unique, and a pair equal in raw order is equal under it whenever the
 fingerprints pair the flows), so the partition of a card that grouped before is

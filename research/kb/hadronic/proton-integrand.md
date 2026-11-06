@@ -1,7 +1,7 @@
 ---
 type: Design
 title: The hadronic cross section and ProtonIntegrand
-description: "σ = ∫dτ dy dΦ Σ_g avg_g[L_d|M(q)|² + L_m|M(Rq)|²]Θ/(2ŝ): PDF convolution and averaging, (τ,y) outer map, pooled inner map, |M|² in the partonic CM with lab-frame cuts."
+description: "σ = ∫dτ dy dΦ Σ_g avg_g[L_d|M(q)|² + L_m|M(Rq)|²]Θ_g/(2ŝ), each group cut by its own filter: PDF convolution and averaging, (τ,y) outer map, pooled inner map, |M|² in the partonic CM with lab-frame cuts."
 status: draft
 tags: [hadronic, proton, integrand, pdf, cross-section]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -28,7 +28,7 @@ A proton–proton run (`lpp1 = lpp2 = 1`) computes
 
 ```text
 σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) |M_g(q)|²
-                              + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_cuts(q) / (2ŝ)
+                              + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_g(q) / (2ŝ)
 ```
 
 summed over the process's [flavour groups](flavour-groups.md).[^proton-rs] It
@@ -42,7 +42,7 @@ symbol, and where it lives:
 | `avg_g` | `1/Π_a(n_spin·n_colour)` over the incoming legs; `1/96` for `g q`, `1/36` for `q q̄` | `FlavorGroup::spin_color_average`, from `hadronic::initial_spin_color_average` |
 | `L_g^direct`, `L_g^mirror` | the group's two beam orderings' `x·f` products, summed over members, each member times its own identical-particle factor | `FlavorGroup::symmetry_weighted_luminosity` |
 | `R` | rotation by π about x, applied to the outgoing legs only | `FlavorGroup::mirror_into`; see [the mirror identity](beam-mirror-identity.md) |
-| `Θ_cuts(q)` | **one** cut indicator, on the unreflected final state, in the lab frame | the groups' shared `Cuts` |
+| `Θ_g(q)` | group `g`'s cut indicator, on the unreflected final state, in the lab frame; groups with equal filters share one evaluation | the group's `Cuts` (`ProtonIntegrand::filters`, `group_filter`) |
 | `1/(2ŝ)` | flux | — |
 
 `|M_g|²` is colour- and helicity-**summed** (MadGraph's `MATRIX1` convention), which
@@ -119,13 +119,41 @@ boost-invariant.[^n18-h7] One consequence, worth knowing before trusting a cut t
 live: at LO a back-to-back lepton pair has Δφ = π in every frame, so `drll` never fires
 on `p p → ℓℓ`.
 
+## Per-group cuts
+
+Subprocesses whose compiled cut filters differ are in different groups
+([flavour groups](flavour-groups.md)), and each group's term is cut by its own filter, as
+MadEvent cuts each subprocess directory with its own `passcuts` and adds their cross
+sections. `ProtonIntegrand` keeps the distinct filters; on most cards that is one.
+`cut_point` evaluates each distinct filter once per point and a point is integrated
+wherever some filter accepts it. The two beam orderings of a group share its indicator
+unless the MadEvent mirrored-cut emulation is on, which reads one pass per ordering.
+
+The maps are shared by all groups, so they are built under bounds that hold over the
+union of the filters' accepted regions (`UnionBounds`, `phasespace/maps.rs`): each
+spacelike, timelike and energy floor is the weakest of the filters', `bwcutoff` is the
+run card's, and the `τ` range, hence `ŝ_min`, is the hull of the filters' ranges. A channel
+built under one group's tighter floors keeps a positive density below them, where
+another group's term is not zero, so the mixture overstates its own density there and
+σ reads low (`g g > z j j, z > j j` at `cut_decays = F`, 4% low). Over one filter the
+bounds are that filter's, bit for bit.
+
+An event's cut record is drawn among the groups whose filter accepts the point. A
+rejecting group's scales are recorded as absent, and `select_event` gives a term with no
+scale no weight.
+
+MadGraph does not take every card this accepts: a grouped P directory whose matrix
+elements compile to different cuts is refused (`setcuts.f`, "Grouping of subprocesses
+not consistent with setcuts.f"). The case is 5F `p p > j j` at `maxjetflavor = 4` whose b
+cuts differ from the jet cuts. vibegraph cuts each subprocess with its own classes
+instead, which is MadGraph's per-matrix-element rule on every card it runs.
+
 ## Guards the construction enforces
 
 | refusal | condition | why |
 |---|---|---|
-| `GroupCutsDiffer` | two **groups** compile to different cut filters | the formula has one `Θ`; a process cut differently per group needs one indicator per group |
 | `AmplitudeCount` / `AmplitudeMismatch` | the bound amplitudes are not one per group, in group order, each from that group's evaluator (`std::ptr::eq`) | crossing the pairing weights one group's `|M|²` with another's luminosity — a smooth σ shift with no other symptom, pinned by a test that swaps two amplitudes[^n24-p2d-corr] |
-| from `derive_flavor_groups` | unequal outgoing masses, unequal cuts or colour basis within a group, degenerate groups | see [flavour groups](flavour-groups.md) |
+| from `derive_flavor_groups` | no subprocess; a subprocess without two incoming legs; unequal incoming or outgoing masses across the subprocesses of one decomposition | see [flavour groups](flavour-groups.md) |
 
 ## Scales: shared path and per-term path
 
