@@ -129,3 +129,4 @@
   - reproduce MadEvent's `cut_decays = F` first-configuration exemption, filed as `--madgraph-compat` site (g);
   - keep integrating the b-cut cards MadGraph refuses, explained to the user as its grouped-P-directory limitation.
 * A fourth container restart killed H-K1's `validate.sh` before a verdict. The manager reran it alone, detached.
+* `validate.sh` on `sprinth-group-cuts` cd3690a4, rerun by the manager alone: exit 0, 2422 passed, 213 ✅ / 5 ⚠️, every gate cell passed. The H-K1 report was completed (2155bcd1) and PR #104 opened as a draft. H-K2 (hygiene-dev, Sonnet) dispatched to update `flavour-groups.md` and `proton-integrand.md` for per-group cut indicators. The user asked whether the `cut_decays` exemption is a MadGraph bug. Answer: no. It is MadGraph's single-pairing narrow-width approximation (`check_decay` reads configuration 1, which stands for every diagram of a stitched matrix element), to be catalogued as an approximation.
