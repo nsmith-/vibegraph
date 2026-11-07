@@ -1,0 +1,6 @@
+import model loop_sm-ckm_no_b_mass
+
+generate p p > a j j QCD=0 QED=3 @0
+
+output VBFtoG_PTG-100to200_madgraph-pythia8 -nojpeg
+

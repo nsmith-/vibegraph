@@ -1,0 +1,801 @@
+Starting job on  Tue May 20 11:10:07 CEST 2025
+Running on  Linux b9g02p2419.cern.ch 5.14.0-503.22.1.el9_5.x86_64 #1 SMP PREEMPT_DYNAMIC Fri Jan 24 03:55:12 EST 2025 x86_64 x86_64 x86_64 GNU/Linux
+System release  AlmaLinux release 8.10 (Cerulean Leopard)
+name: idm_dilepton_mH80_mA160
+carddir: cards/iDMParameterScanUpdatedWidths_mHmA_noLLLNu/cards/13p6/mH80/idm_dilepton_mH80_mA160
+queue: local
+scram_arch: el8_amd64_gcc10
+cmssw_version: CMSSW_12_4_8
+On branch master
+Your branch is up to date with 'origin/master'.
+
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   createGridpacks_mHmA_scan.jdl
+	deleted:    gridpack_generation.sh
+	deleted:    idm_dilepton_mH80_mA150.log
+	modified:   submit_condor_gridpack_generation.sh
+	modified:   submit_gridpack_generation_local.sh
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	TEST_log.txt
+	cards/IDM_TEST_CARDS/
+	cards/iDMParameterScanUpdatedWidths_mHmA_noLLLNu/cards/13p6/test.ipynb
+	cards/iDMParameterScanUpdatedWidths_mHmA_noLLLNu/cards/13p6/unique_input_arguments.txt
+	createGridpacks_mHmA_scan_NEW.jdl
+	idm_dilepton_mH80_mA160.log
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Current git revision is:
+bb7147599e6de331e00e0b50a1f6d8a4fb2faec1
+diff --git a/bin/MadGraph5_aMCatNLO/createGridpacks_mHmA_scan.jdl b/bin/MadGraph5_aMCatNLO/createGridpacks_mHmA_scan.jdl
+index a229095ec..9cc95d0b5 100644
+--- a/bin/MadGraph5_aMCatNLO/createGridpacks_mHmA_scan.jdl
++++ b/bin/MadGraph5_aMCatNLO/createGridpacks_mHmA_scan.jdl
+@@ -2,7 +2,7 @@
+ # directory on EOS
+ # Name of the process:
+ tag = idm_dilepton
+-outputname = idm_dilepton_13p6_parameterscan_updatedWidths_CMSSW_12_4_8
++outputname = idm_dilepton_13p6_parameterscan_updatedWidths_CMSSW_12_4_8_NEW
+ 
+ # These define the arguments for input
+ scram_version=el8_amd64_gcc10
+@@ -15,9 +15,9 @@ Executable = gridpack_generation.sh
+ 
+ # have to do logging on afs
+ home=/afs/cern.ch/user/e/ecurtis/idmStudyImperial
+-output = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_NewGenProd_SDEstrategy1.out
+-error = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_NewGenProd_SDEstrategy1.err
+-log = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_NewGenProd_SDEstrategy1.log
++output = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_withPatches.out
++error = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_withPatches.err
++log = $(home)/logging/$(tag)_mH$(mH)_mA$(mA)_withPatches.log
+ 
+ 
+ arguments = $(run_name) $(run_folder) local ALL $(scram_version) $(CMSSW_version) $(outputname)
+@@ -28,7 +28,7 @@ when_to_transfer_output = ON_EXIT
+ Transfer_Output_Files = ""
+ Universe = vanilla
+ Initialdir = .
+-getenv = False
++getenv = True
+ #+MaxRuntime=14400
+ +JobFlavour = "nextweek"
+ #+JobFlavour = "testmatch"
+@@ -37,5 +37,5 @@ RequestCpus = 8
+ MY.WantOS = "el8"
+ 
+ 
+-queue mH, mA from cards/iDMParameterScanUpdatedWidths_mHmA_noLLLNu/cards/13p6/to_fix.txt
++queue mH, mA from cards/iDMParameterScanUpdatedWidths_mHmA_noLLLNu/cards/13p6/unique_input_arguments.txt
+ 
+diff --git a/bin/MadGraph5_aMCatNLO/gridpack_generation.sh b/bin/MadGraph5_aMCatNLO/gridpack_generation.sh
+deleted file mode 100755
+index e245b511d..000000000
+--- a/bin/MadGraph5_aMCatNLO/gridpack_generation.sh
++++ /dev/null
+@@ -1,882 +0,0 @@
+-#!/bin/bash
+-
+-##########################################################################################
+-#GENERAL INSTRUCTIONS:                                                                   #
+-#You should take care of having the following ingredients in order to have this recipe   #
+-#working: run card and proc card (in a "cards" folder), MadGraph release, this script    #
+-#all in the same folder!                                                                 #
+-#Important: Param card is not mandatory for this script                                  #
+-##########################################################################################
+-
+-
+-##########################################################################################
+-#For runnning, the following command should be used                                      #
+-#./create_gridpack_template.sh NAME_OF_PRODCUTION RELATIVE_PATH_TO_CARDS QUEUE_SELECTION #
+-#by NAME_OF_PRODUCTION you should use the names of run and proc card                     #
+-#for example if the cards are bb_100_250_proc_card_mg5.dat and bb_100_250_run_card.dat   #
+-#NAME_OF_PRODUCTION should be bb_100_250                                                 #
+-#for QUEUE_SELECTION is commonly used 1nd, but you can take another choice from bqueues  #
+-#If QUEUE_SELECTION is omitted, then run on local machine only (using multiple cores)    #
+-##########################################################################################
+-
+-cd newGenproductions/bin/MadGraph5_aMCatNLO
+-
+-# Create tarball with very aggressive xz settings.
+-# (trade memory and cpu usage for compression ratio)
+-make_tarball () {
+-    echo "Creating tarball"
+-    cd $WORKDIR/gridpack
+-
+-    if [ $iscmsconnect -gt 0 ]; then
+-        XZ_OPT="--lzma2=preset=2,dict=256MiB"
+-    else
+-        XZ_OPT="--lzma2=preset=9,dict=512MiB"
+-    fi
+-
+-    mkdir InputCards
+-    cp $CARDSDIR/${name}*.* InputCards
+-
+-    if [ -e $CARDSDIR/BIAS ]; then
+-      cp -r $CARDSDIR/BIAS InputCards/
+-    fi
+-
+-    EXTRA_TAR_ARGS=""
+-    if [ -e $CARDSDIR/${name}_externaltarball.dat ]; then
+-        EXTRA_TAR_ARGS="external_tarball header_for_madspin.txt "
+-    fi
+-    ### include merge.pl script for LO event merging 
+-    if [ -e merge.pl ]; then
+-        EXTRA_TAR_ARGS+="merge.pl "
+-    fi
+-    XZ_OPT="$XZ_OPT" tar -cJpf ${PRODHOME}/${name}_${scram_arch}_${cmssw_version}_tarball.tar.xz mgbasedir process runcmsgrid.sh gridpack_generation*.log InputCards $EXTRA_TAR_ARGS
+-
+-    echo "Created gridpack, now transferring to EOS area"
+-    # Move back to the MadGraph directory in genproductions
+-    cd ../../../..
+-    pwd
+-    ls
+-    # Now move over to the EOS area
+-    mkdir -p /eos/user/e/ecurtis/idmFilesEOS/gridpacks/${PROCESSNAME}/${name}/;
+-    cp ${PRODHOME}/${name}_${scram_arch}_${cmssw_version}_tarball.tar.xz /eos/user/e/ecurtis/idmFilesEOS/gridpacks/${PROCESSNAME}/${name}/.
+-    #mv ${PRODHOME}/${name}/ /eos/user/e/ecurtis/idmFilesEOS/gridpacks/${PROCESSNAME}/${name}/.
+-    cp $LOGFILE /eos/user/e/ecurtis/idmFilesEOS/gridpacks/${PROCESSNAME}/${name}/.
+-  
+-
+-    echo "Gridpack created successfully at ${PRODHOME}/${name}_${scram_arch}_${cmssw_version}_tarball.tar.xz"
+-    echo "End of job"
+-
+-    if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 0; else exit 0; fi
+-}
+-
+-make_gridpack () {
+-    echo "Starting job on " `date` #Only to display the starting of production date
+-    echo "Running on " `uname -a` #Only to display the machine where the job is running
+-    echo "System release " `cat /etc/redhat-release` #And the system release
+-    
+-    echo "name: ${name}"
+-    echo "carddir: ${carddir}"
+-    echo "queue: ${queue}"
+-    echo "scram_arch: ${scram_arch}"
+-    echo "cmssw_version: ${cmssw_version}"
+-
+-    ########################
+-    #Locating the proc card#
+-    ########################
+-
+-    if [ ! -d $CARDSDIR ]; then
+-      echo $CARDSDIR " does not exist!"
+-      if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 1; else exit 1; fi
+-    fi
+-
+-    if [ ! -e $CARDSDIR/${name}_proc_card.dat ]; then
+-      echo $CARDSDIR/${name}_proc_card.dat " does not exist!"
+-      if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 1; else exit 1; fi
+-    fi
+-
+-    if [ ! -e $CARDSDIR/${name}_run_card.dat ]; then
+-      echo $CARDSDIR/${name}_run_card.dat " does not exist!"
+-      if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 1; else exit 1; fi
+-    fi
+-    
+-    # avoid compute_widths in customizecards 
+-    if [ -e $CARDSDIR/${name}_customizecards.dat ]; then
+-        if grep -F "compute_widths" $CARDSDIR/${name}_customizecards.dat ; then
+-            echo "<<compute_widths X>> is used in your customizecards.dat"
+-            echo "This could be problematic from time to time, so instead use <<set decay wX AUTO>> for width computations. Please take a look at \"compute_widths\" under \"Troubleshooting_and_Suggestions\" section."
+-            echo "https://twiki.cern.ch/twiki/bin/view/CMS/QuickGuideMadGraph5aMCatNLO#Troubleshooting_and_Suggestions"
+-            exit 1;
+-        fi
+-    fi
+-
+-    # avoid compute_widths in customizecards 
+-    if [ -e $CARDSDIR/${name}_madspin_card.dat ]; then
+-        if grep -F "Nevents_for_max_weigth" $CARDSDIR/${name}_madspin_card.dat ; then
+-            echo "Nevents_for_max_weigth typo is fixed to Nevents_for_max_weight in MGv2.7.x releases."
+-            echo "$CARDSDIR/${name}_madspin_card.dat contains Nevents_for_max_weigth instead of Nevents_for_max_weight."
+-            echo "Please correct the typo."
+-            exit 1;
+-        fi
+-    fi
+-
+-    # avoid characters in weight names that potentially corrupt lhe header 
+-    if [ -e $CARDSDIR/${name}_reweight_card.dat ]; then
+-        for weightname in `grep rwgt_name $CARDSDIR/${name}_reweight_card.dat` ; do
+-            if [[ "$weightname" == *"rwgt_name="* ]]; then
+-                remove="rwgt_name="
+-                weightname=${weightname#*$remove}
+-            else
+-                continue
+-            fi
+-            if [[ $weightname == *['!'@#\$%^\&*()\+\[\]{}]* ]]; then 
+-                echo " Please remove problematic characters from weight name: $weightname"  
+-                exit 1;    
+-            fi
+-        done 
+-    fi
+-
+-    # CMS Connect runs git status inside its own script.
+-    if [ $iscmsconnect -eq 0 ]; then
+-      cd $PRODHOME
+-      if [ -x "$(command -v git)" ]; then
+-        git status
+-        echo "Current git revision is:"
+-        git rev-parse HEAD
+-        git diff | cat
+-      fi
+-      cd -
+-    fi
+-    
+-    # where to find the madgraph tarred distribution
+-    MGBASEDIR=mgbasedir
+-    
+-    MG_EXT=".tar.gz"
+-    MG=MG5_aMC_v2.9.18$MG_EXT
+-    MGSOURCE=https://cms-project-generators.web.cern.ch/cms-project-generators/$MG
+-    
+-    MGBASEDIRORIG=$(echo ${MG%$MG_EXT} | tr "." "_")
+-    isscratchspace=0
+-    
+-    if [ ! -d ${GEN_FOLDER}/${name}_gridpack ]; then
+-      #directory doesn't exist, create it and set up environment
+-      
+-      if [ ! -d ${GEN_FOLDER} ]; then
+-        mkdir ${GEN_FOLDER}
+-      fi
+-    
+-      cd $GEN_FOLDER
+-    
+-      export SCRAM_ARCH=${scram_arch}
+-      export RELEASE=${cmssw_version}
+-    
+-      ############################
+-      #Create a workplace to work#
+-      ############################
+-      export VO_CMS_SW_DIR=/cvmfs/cms.cern.ch
+-      set +u
+-      source $VO_CMS_SW_DIR/cmsset_default.sh
+-      set -u
+-
+-      scram project -n ${name}_gridpack CMSSW ${RELEASE} ;
+-      if [ ! -d ${name}_gridpack ]; then  
+-        if [ "${BASH_SOURCE[0]}" != "${0}" ]; then echo "yes here"; return 1; else exit 1; fi
+-      fi
+-      
+-      cd ${name}_gridpack ; mkdir -p work ; cd work
+-      WORKDIR=`pwd`
+-      eval `scram runtime -sh`
+-
+-      if [[ $queue == *"condor"* ]]; then
+-        echo "Use HTCondor for gridpack generation"
+-        source ${PRODHOME}/Utilities/source_condor.sh
+-      fi
+-
+-      #############################################
+-      #Copy, Unzip and Delete the MadGraph tarball#
+-      #############################################
+-      wget --no-check-certificate ${MGSOURCE}
+-      tar xzf ${MG}
+-      rm "$MG"
+-    
+-      #############################################
+-      #Apply any necessary patches on top of official release
+-      #############################################
+-    
+-      cd $MGBASEDIRORIG
+-      cp -r $PRODHOME/InertDoublet_UFO models/.
+-      cat $PRODHOME/patches/*.patch | patch -p1
+-      cp -r $PRODHOME/PLUGIN/CMS_CLUSTER/ PLUGIN/ 
+-
+-      # Copy bias module (cp3.irmp.ucl.ac.be/projects/madgraph/wiki/LOEventGenerationBias)
+-      # Expected structure: 
+-      # $CARDSDIR/BIAS/{module_name}/...
+-      #     .../makefile (mandatory)
+-      #     .../{module_name}.f (mandatory)
+-      #     .../bias_dependencies (optional)
+-      if [ -e $CARDSDIR/BIAS ]; then
+-        echo "copying bias module folder. Current dir:"
+-        pwd
+-        ls -lrth
+-        cp -r $CARDSDIR/BIAS/* Template/LO/Source/BIAS
+-      fi
+-    
+-      LHAPDFCONFIG=`echo "$LHAPDF_DATA_PATH/../../bin/lhapdf-config"`
+-    
+-      LHAPDFINCLUDES=`$LHAPDFCONFIG --incdir`
+-      LHAPDFLIBS=`$LHAPDFCONFIG --libdir`
+-    
+-      echo "set auto_update 0" > mgconfigscript
+-      echo "set automatic_html_opening False" >> mgconfigscript
+-      echo "set auto_convert_model True" >> mgconfigscript
+-      if [ $iscmsconnect -gt 0 ]; then
+-        echo "set output_dependencies internal" >> mgconfigscript
+-      fi
+-    #  echo "set output_dependencies internal" >> mgconfigscript
+-      echo "set lhapdf_py3 $LHAPDFCONFIG" >> mgconfigscript
+-    #   echo "set ninja $PWD/HEPTools/lib" >> mgconfigscript
+-    
+-      if [ "$queue" == "local" ]; then
+-          echo "set run_mode 2" >> mgconfigscript
+-      elif [ "$queue" == "pdmv" ]; then
+-          echo "set run_mode 2" >> mgconfigscript
+-	  echo "set nb_core $NB_CORE" >> mgconfigscript
+-      else
+-          #suppress lsf emails
+-          export LSB_JOB_REPORT_MAIL="N"
+-      
+-          echo "set run_mode  1" >> mgconfigscript
+-          if [ "$queue" == "condor" ]; then
+-            echo "set cluster_type cms_condor" >> mgconfigscript
+-            echo "set cluster_queue None" >> mgconfigscript
+-          elif [ "$queue" == "condor_spool" ]; then
+-            echo "set cluster_type cms_condor_spool" >> mgconfigscript
+-            echo "set cluster_queue None" >> mgconfigscript
+-          else
+-            echo "set cluster_type cms_lsf" >> mgconfigscript
+-            #*FIXME* broken in mg_amc 2.4.0
+-    #         echo "set cluster_queue $queue" >> mgconfigscript
+-          fi 
+-          if [ $iscmsconnect -gt 0 ]; then
+-    	  n_retries=10
+-    	  long_wait=300
+-    	  short_wait=120
+-          else
+-    	  n_retries=3
+-    	  long_wait=60
+-    	  short_wait=30
+-          fi
+-          echo "set cluster_status_update $long_wait $short_wait" >> mgconfigscript
+-          echo "set cluster_nb_retry $n_retries" >> mgconfigscript
+-          echo "set cluster_retry_wait 300" >> mgconfigscript
+-          #echo "set cluster_local_path `${LHAPDFCONFIG} --datadir`" >> mgconfigscript 
+-          if [[ ! "$RUNHOME" =~ ^/afs/.* ]]; then
+-              echo "local path is not an afs path, batch jobs will use worker node scratch space instead of afs"
+-              #*FIXME* broken in mg_amc 2.4.0
+-    #           echo "set cluster_temp_path `echo $RUNHOME`" >> mgconfigscript 
+-              echo "set cluster_retry_wait 30" >> mgconfigscript 
+-              isscratchspace=1
+-          fi      
+-      fi
+-    
+-      echo "save options --all" >> mgconfigscript
+-    
+-      ./bin/mg5_aMC mgconfigscript
+-    
+-      #load extra models if needed
+-      if [ -e $CARDSDIR/${name}_extramodels.dat ]; then
+-        echo "Loading extra models specified in $CARDSDIR/${name}_extramodels.dat"
+-        #strip comments
+-        sed 's:#.*$::g' $CARDSDIR/${name}_extramodels.dat | while read -r model || [ -n "$model" ]
+-        do
+-          #get needed BSM model
+-          if [[ $model = *[!\ ]* ]]; then
+-            echo "Loading extra model $model"
+-            wget --no-check-certificate https://cms-project-generators.web.cern.ch/cms-project-generators/$model	
+-            cd models
+-            if [[ $model == *".zip"* ]]; then
+-              unzip ../$model
+-            elif [[ $model == *".tgz"* ]]; then
+-              tar zxvf ../$model
+-            elif [[ $model == *".tar"* ]]; then
+-              tar xavf ../$model
+-            else 
+-              echo "A BSM model is specified but it is not in a standard archive (.zip or .tar)"
+-            fi
+-            cd ..
+-          fi
+-        done
+-      fi
+-    
+-      cd $WORKDIR
+-      
+-      if [ "$name" == "interactive" ]; then
+-        set +e
+-        set +u
+-        if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 0; else exit 0; fi
+-      fi
+-
+-      cd $MGBASEDIRORIG
+-      # Intended for expert use only!
+-      if ls $CARDSDIR/${name}*.patch; then
+-        echo "    WARNING: Applying custom user patch. I hope you know what you're doing!"
+[... 983121 of 983921 lines cut: the full log is in the gridpack tarball ...]
+INFO:  Idle: 190,  Running: 64,  Completed: 14458 [  20h 18m  ] 
+INFO:  Idle: 186,  Running: 64,  Completed: 14462 [  20h 18m  ] 
+INFO:  Idle: 184,  Running: 64,  Completed: 14464 [  20h 18m  ] 
+INFO:  Idle: 183,  Running: 64,  Completed: 14465 [  20h 18m  ] 
+INFO:  Idle: 181,  Running: 64,  Completed: 14467 [  20h 18m  ] 
+INFO:  Idle: 180,  Running: 64,  Completed: 14468 [  20h 18m  ] 
+INFO:  Idle: 178,  Running: 64,  Completed: 14470 [  20h 18m  ] 
+INFO:  Idle: 175,  Running: 64,  Completed: 14473 [  20h 18m  ] 
+INFO:  Idle: 174,  Running: 64,  Completed: 14474 [  20h 18m  ] 
+INFO:  Idle: 172,  Running: 64,  Completed: 14476 [  20h 18m  ] 
+INFO:  Idle: 169,  Running: 64,  Completed: 14479 [  20h 18m  ] 
+INFO:  Idle: 168,  Running: 64,  Completed: 14480 [  20h 18m  ] 
+INFO:  Idle: 167,  Running: 64,  Completed: 14481 [  20h 19m  ] 
+INFO:  Idle: 166,  Running: 64,  Completed: 14482 [  20h 19m  ] 
+INFO:  Idle: 164,  Running: 64,  Completed: 14484 [  20h 19m  ] 
+INFO:  Idle: 162,  Running: 64,  Completed: 14486 [  20h 19m  ] 
+INFO:  Idle: 156,  Running: 64,  Completed: 14492 [  20h 19m  ] 
+INFO:  Idle: 152,  Running: 64,  Completed: 14496 [  20h 19m  ] 
+INFO:  Idle: 149,  Running: 64,  Completed: 14499 [  20h 19m  ] 
+INFO:  Idle: 145,  Running: 64,  Completed: 14503 [  20h 19m  ] 
+INFO:  Idle: 144,  Running: 64,  Completed: 14504 [  20h 19m  ] 
+INFO:  Idle: 142,  Running: 64,  Completed: 14506 [  20h 19m  ] 
+INFO:  Idle: 141,  Running: 64,  Completed: 14507 [  20h 19m  ] 
+INFO:  Idle: 138,  Running: 64,  Completed: 14510 [  20h 20m  ] 
+INFO:  Idle: 136,  Running: 64,  Completed: 14512 [  20h 20m  ] 
+INFO:  Idle: 133,  Running: 64,  Completed: 14515 [  20h 20m  ] 
+INFO:  Idle: 131,  Running: 64,  Completed: 14517 [  20h 20m  ] 
+INFO:  Idle: 129,  Running: 64,  Completed: 14519 [  20h 20m  ] 
+INFO:  Idle: 126,  Running: 64,  Completed: 14522 [  20h 20m  ] 
+INFO:  Idle: 124,  Running: 64,  Completed: 14524 [  20h 20m  ] 
+INFO:  Idle: 118,  Running: 64,  Completed: 14530 [  20h 20m  ] 
+INFO:  Idle: 113,  Running: 64,  Completed: 14535 [  20h 20m  ] 
+INFO:  Idle: 107,  Running: 64,  Completed: 14541 [  20h 20m  ] 
+INFO:  Idle: 105,  Running: 64,  Completed: 14543 [  20h 20m  ] 
+INFO:  Idle: 102,  Running: 64,  Completed: 14546 [  20h 20m  ] 
+INFO:  Idle: 95,  Running: 64,  Completed: 14553 [  20h 20m  ] 
+INFO:  Idle: 91,  Running: 64,  Completed: 14557 [  20h 20m  ] 
+INFO:  Idle: 87,  Running: 64,  Completed: 14561 [  20h 21m  ] 
+INFO:  Idle: 85,  Running: 64,  Completed: 14563 [  20h 21m  ] 
+INFO:  Idle: 82,  Running: 64,  Completed: 14566 [  20h 21m  ] 
+INFO:  Idle: 80,  Running: 64,  Completed: 14568 [  20h 21m  ] 
+INFO:  Idle: 77,  Running: 64,  Completed: 14571 [  20h 21m  ] 
+INFO:  Idle: 73,  Running: 64,  Completed: 14575 [  20h 21m  ] 
+INFO:  Idle: 68,  Running: 64,  Completed: 14580 [  20h 21m  ] 
+INFO:  Idle: 65,  Running: 64,  Completed: 14583 [  20h 21m  ] 
+INFO:  Idle: 60,  Running: 64,  Completed: 14588 [  20h 21m  ] 
+INFO:  Idle: 56,  Running: 64,  Completed: 14592 [  20h 21m  ] 
+INFO:  Idle: 51,  Running: 64,  Completed: 14597 [  20h 21m  ] 
+INFO:  Idle: 47,  Running: 64,  Completed: 14601 [  20h 21m  ] 
+INFO:  Idle: 45,  Running: 64,  Completed: 14603 [  20h 21m  ] 
+INFO:  Idle: 42,  Running: 64,  Completed: 14606 [  20h 21m  ] 
+INFO:  Idle: 33,  Running: 64,  Completed: 14615 [  20h 21m  ] 
+INFO:  Idle: 29,  Running: 64,  Completed: 14619 [  20h 21m  ] 
+INFO:  Idle: 24,  Running: 64,  Completed: 14624 [  20h 22m  ] 
+INFO:  Idle: 21,  Running: 64,  Completed: 14627 [  20h 22m  ] 
+INFO:  Idle: 17,  Running: 64,  Completed: 14631 [  20h 22m  ] 
+INFO:  Idle: 15,  Running: 64,  Completed: 14633 [  20h 22m  ] 
+INFO:  Idle: 11,  Running: 64,  Completed: 14637 [  20h 22m  ] 
+INFO:  Idle: 8,  Running: 64,  Completed: 14640 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 63,  Completed: 14649 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 61,  Completed: 14651 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 54,  Completed: 14658 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 49,  Completed: 14663 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 46,  Completed: 14666 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 40,  Completed: 14672 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 37,  Completed: 14675 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 33,  Completed: 14679 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 29,  Completed: 14683 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 24,  Completed: 14688 [  20h 22m  ] 
+INFO:  Idle: 0,  Running: 19,  Completed: 14693 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 13,  Completed: 14699 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 10,  Completed: 14702 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 6,  Completed: 14706 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 5,  Completed: 14707 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 1,  Completed: 14711 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 0,  Completed: 14712 [  20h 23m  ] 
+INFO:  Idle: 0,  Running: 0,  Completed: 14712 [  20h 23m  ] 
+sum of cpu time of last step: 24 days,9h27m50s
+  === Results Summary for run: pilotrun tag: tag_1 ===
+
+     Cross-section :   0.009 +- 0.0003591 pb
+     Nb of events :  0
+ 
+INFO: End survey 
+combine_events
+INFO: Combining Events 
+combination of events done in 9.036587238311768 s 
+store_events
+INFO: Storing parton level results 
+INFO: End Parton 
+decay_events -from_cards
+create_gridpack
+INFO: Creating gridpack 
+P2_uux_h2h2epemvevex
+P2_uux_h2h2mupmumvmvmx
+P2_uux_h2h2taptamvtvtx
+P2_ccx_h2h2epemvevex
+P2_ccx_h2h2mupmumvmvmx
+P2_ccx_h2h2taptamvtvtx
+P2_ddx_h2h2epemvevex
+P2_ddx_h2h2mupmumvmvmx
+P2_ddx_h2h2taptamvtvtx
+P2_ssx_h2h2epemvevex
+P2_ssx_h2h2mupmumvmvmx
+P2_ssx_h2h2taptamvtvtx
+P2_uux_h2h2epemvmvmx
+P2_uux_h2h2epemvtvtx
+P2_uux_h2h2mupmumvevex
+P2_uux_h2h2mupmumvtvtx
+P2_uux_h2h2taptamvevex
+P2_uux_h2h2taptamvmvmx
+P2_ccx_h2h2epemvmvmx
+P2_ccx_h2h2epemvtvtx
+P2_ccx_h2h2mupmumvevex
+P2_ccx_h2h2mupmumvtvtx
+P2_ccx_h2h2taptamvevex
+P2_ccx_h2h2taptamvmvmx
+P2_ddx_h2h2epemvmvmx
+P2_ddx_h2h2epemvtvtx
+P2_ddx_h2h2mupmumvevex
+P2_ddx_h2h2mupmumvtvtx
+P2_ddx_h2h2taptamvevex
+P2_ddx_h2h2taptamvmvmx
+P2_ssx_h2h2epemvmvmx
+P2_ssx_h2h2epemvtvtx
+P2_ssx_h2h2mupmumvevex
+P2_ssx_h2h2mupmumvtvtx
+P2_ssx_h2h2taptamvevex
+P2_ssx_h2h2taptamvmvmx
+P2_uux_h2h2epmumvevmx
+P2_uux_h2h2eptamvevtx
+P2_uux_h2h2mupemvmvex
+P2_uux_h2h2muptamvmvtx
+P2_uux_h2h2tapemvtvex
+P2_uux_h2h2tapmumvtvmx
+P2_ccx_h2h2epmumvevmx
+P2_ccx_h2h2eptamvevtx
+P2_ccx_h2h2mupemvmvex
+P2_ccx_h2h2muptamvmvtx
+P2_ccx_h2h2tapemvtvex
+P2_ccx_h2h2tapmumvtvmx
+P2_ddx_h2h2epmumvevmx
+P2_ddx_h2h2eptamvevtx
+P2_ddx_h2h2mupemvmvex
+P2_ddx_h2h2muptamvmvtx
+P2_ddx_h2h2tapemvtvex
+P2_ddx_h2h2tapmumvtvmx
+P2_ssx_h2h2epmumvevmx
+P2_ssx_h2h2eptamvevtx
+P2_ssx_h2h2mupemvmvex
+P2_ssx_h2h2muptamvmvtx
+P2_ssx_h2h2tapemvtvex
+P2_ssx_h2h2tapmumvtvmx
+P2_gg_h2h2epemvevex
+P2_gg_h2h2mupmumvmvmx
+P2_gg_h2h2taptamvtvtx
+P2_gg_h2h2epemvmvmx
+P2_gg_h2h2epemvtvtx
+P2_gg_h2h2epmumvevmx
+P2_gg_h2h2eptamvevtx
+P2_gg_h2h2mupemvmvex
+P2_gg_h2h2mupmumvevex
+P2_gg_h2h2mupmumvtvtx
+P2_gg_h2h2muptamvmvtx
+P2_gg_h2h2tapemvtvex
+P2_gg_h2h2tapmumvtvmx
+P2_gg_h2h2taptamvevex
+P2_gg_h2h2taptamvmvmx
+P2_ucx_h2h2epemvevex
+P2_ucx_h2h2epmumvevmx
+P2_ucx_h2h2eptamvevtx
+P2_ucx_h2h2mupemvmvex
+P2_ucx_h2h2mupmumvmvmx
+P2_ucx_h2h2muptamvmvtx
+P2_ucx_h2h2tapemvtvex
+P2_ucx_h2h2tapmumvtvmx
+P2_ucx_h2h2taptamvtvtx
+P2_cux_h2h2epemvevex
+P2_cux_h2h2epmumvevmx
+P2_cux_h2h2eptamvevtx
+P2_cux_h2h2mupemvmvex
+P2_cux_h2h2mupmumvmvmx
+P2_cux_h2h2muptamvmvtx
+P2_cux_h2h2tapemvtvex
+P2_cux_h2h2tapmumvtvmx
+P2_cux_h2h2taptamvtvtx
+P2_dsx_h2h2epemvevex
+P2_dsx_h2h2epmumvevmx
+P2_dsx_h2h2eptamvevtx
+P2_dsx_h2h2mupemvmvex
+P2_dsx_h2h2mupmumvmvmx
+P2_dsx_h2h2muptamvmvtx
+P2_dsx_h2h2tapemvtvex
+P2_dsx_h2h2tapmumvtvmx
+P2_dsx_h2h2taptamvtvtx
+P2_sdx_h2h2epemvevex
+P2_sdx_h2h2epmumvevmx
+P2_sdx_h2h2eptamvevtx
+P2_sdx_h2h2mupemvmvex
+P2_sdx_h2h2mupmumvmvmx
+P2_sdx_h2h2muptamvmvtx
+P2_sdx_h2h2tapemvtvex
+P2_sdx_h2h2tapmumvtvmx
+P2_sdx_h2h2taptamvtvtx
+P1_uux_h2h2epem
+P1_uux_h2h2mupmum
+P1_uux_h2h2taptam
+P1_ccx_h2h2epem
+P1_ccx_h2h2mupmum
+P1_ccx_h2h2taptam
+P1_ddx_h2h2epem
+P1_ddx_h2h2mupmum
+P1_ddx_h2h2taptam
+P1_ssx_h2h2epem
+P1_ssx_h2h2mupmum
+P1_ssx_h2h2taptam
+P1_gg_h2h2epem
+P1_gg_h2h2mupmum
+P1_gg_h2h2taptam
+Cleaning  SubProcesses.............................................................................................................................. 
+INFO: gridpack created 
+quit
+INFO: storing files of previous run 
+INFO: Done 
+INFO:  
+finished pilot run
+cleaning temporary output
+unpacking temporary gridpack
+cleaning temporary gridpack
+Now generating 1000 events with random seed 234567 and granularity 1
+************************************************************
+*                                                          *
+*                      W E L C O M E to                    *
+*             M A D G R A P H 5 _ a M C @ N L O            *
+*                      M A D E V E N T                     *
+*                                                          *
+*                 *                       *                *
+*                   *        * *        *                  *
+*                     * * * * 5 * * * *                    *
+*                   *        * *        *                  *
+*                 *                       *                *
+*                                                          *
+*         VERSION 2.9.18                                   *
+*                                                          *
+*    The MadGraph5_aMC@NLO Development Team - Find us at   *
+*    https://server06.fynu.ucl.ac.be/projects/madgraph     *
+*                                                          *
+*               Type 'help' for in-line help.              *
+*                                                          *
+************************************************************
+INFO: load configuration from /srv/newGenproductions/bin/MadGraph5_aMCatNLO/idm_dilepton_mH80_mA160/idm_dilepton_mH80_mA160_gridpack/work/process/madevent/Cards/me5_configuration.txt  
+INFO: load configuration from /srv/newGenproductions/bin/MadGraph5_aMCatNLO/idm_dilepton_mH80_mA160/idm_dilepton_mH80_mA160_gridpack/work/MG5_aMC_v2_9_18/input/mg5_configuration.txt  
+INFO: load configuration from /srv/newGenproductions/bin/MadGraph5_aMCatNLO/idm_dilepton_mH80_mA160/idm_dilepton_mH80_mA160_gridpack/work/process/madevent/Cards/me5_configuration.txt  
+No valid eps viewer found. Please set in ./input/mg5_configuration.txt
+No valid web browser found. Please set in ./input/mg5_configuration.txt
+WRITE GRIDCARD /srv/newGenproductions/bin/MadGraph5_aMCatNLO/idm_dilepton_mH80_mA160/idm_dilepton_mH80_mA160_gridpack/work/process/madevent
+generate 1000 events
+P2_uux_h2h2epemvevex
+P2_uux_h2h2mupmumvmvmx
+P2_uux_h2h2taptamvtvtx
+P2_ccx_h2h2epemvevex
+P2_ccx_h2h2mupmumvmvmx
+P2_ccx_h2h2taptamvtvtx
+P2_ddx_h2h2epemvevex
+P2_ddx_h2h2mupmumvmvmx
+P2_ddx_h2h2taptamvtvtx
+P2_ssx_h2h2epemvevex
+P2_ssx_h2h2mupmumvmvmx
+P2_ssx_h2h2taptamvtvtx
+P2_uux_h2h2epemvmvmx
+P2_uux_h2h2epemvtvtx
+P2_uux_h2h2mupmumvevex
+P2_uux_h2h2mupmumvtvtx
+P2_uux_h2h2taptamvevex
+P2_uux_h2h2taptamvmvmx
+P2_ccx_h2h2epemvmvmx
+P2_ccx_h2h2epemvtvtx
+P2_ccx_h2h2mupmumvevex
+P2_ccx_h2h2mupmumvtvtx
+P2_ccx_h2h2taptamvevex
+P2_ccx_h2h2taptamvmvmx
+P2_ddx_h2h2epemvmvmx
+P2_ddx_h2h2epemvtvtx
+P2_ddx_h2h2mupmumvevex
+P2_ddx_h2h2mupmumvtvtx
+P2_ddx_h2h2taptamvevex
+P2_ddx_h2h2taptamvmvmx
+P2_ssx_h2h2epemvmvmx
+P2_ssx_h2h2epemvtvtx
+P2_ssx_h2h2mupmumvevex
+P2_ssx_h2h2mupmumvtvtx
+P2_ssx_h2h2taptamvevex
+P2_ssx_h2h2taptamvmvmx
+P2_uux_h2h2epmumvevmx
+P2_uux_h2h2eptamvevtx
+P2_uux_h2h2mupemvmvex
+P2_uux_h2h2muptamvmvtx
+P2_uux_h2h2tapemvtvex
+P2_uux_h2h2tapmumvtvmx
+P2_ccx_h2h2epmumvevmx
+P2_ccx_h2h2eptamvevtx
+P2_ccx_h2h2mupemvmvex
+P2_ccx_h2h2muptamvmvtx
+P2_ccx_h2h2tapemvtvex
+P2_ccx_h2h2tapmumvtvmx
+P2_ddx_h2h2epmumvevmx
+P2_ddx_h2h2eptamvevtx
+P2_ddx_h2h2mupemvmvex
+P2_ddx_h2h2muptamvmvtx
+P2_ddx_h2h2tapemvtvex
+P2_ddx_h2h2tapmumvtvmx
+P2_ssx_h2h2epmumvevmx
+P2_ssx_h2h2eptamvevtx
+P2_ssx_h2h2mupemvmvex
+P2_ssx_h2h2muptamvmvtx
+P2_ssx_h2h2tapemvtvex
+P2_ssx_h2h2tapmumvtvmx
+P2_gg_h2h2epemvevex
+P2_gg_h2h2mupmumvmvmx
+P2_gg_h2h2taptamvtvtx
+P2_gg_h2h2epemvmvmx
+P2_gg_h2h2epemvtvtx
+P2_gg_h2h2epmumvevmx
+P2_gg_h2h2eptamvevtx
+P2_gg_h2h2mupemvmvex
+P2_gg_h2h2mupmumvevex
+P2_gg_h2h2mupmumvtvtx
+P2_gg_h2h2muptamvmvtx
+P2_gg_h2h2tapemvtvex
+P2_gg_h2h2tapmumvtvmx
+P2_gg_h2h2taptamvevex
+P2_gg_h2h2taptamvmvmx
+P2_ucx_h2h2epemvevex
+P2_ucx_h2h2epmumvevmx
+P2_ucx_h2h2eptamvevtx
+P2_ucx_h2h2mupemvmvex
+P2_ucx_h2h2mupmumvmvmx
+P2_ucx_h2h2muptamvmvtx
+P2_ucx_h2h2tapemvtvex
+P2_ucx_h2h2tapmumvtvmx
+P2_ucx_h2h2taptamvtvtx
+P2_cux_h2h2epemvevex
+P2_cux_h2h2epmumvevmx
+P2_cux_h2h2eptamvevtx
+P2_cux_h2h2mupemvmvex
+P2_cux_h2h2mupmumvmvmx
+P2_cux_h2h2muptamvmvtx
+P2_cux_h2h2tapemvtvex
+P2_cux_h2h2tapmumvtvmx
+P2_cux_h2h2taptamvtvtx
+P2_dsx_h2h2epemvevex
+P2_dsx_h2h2epmumvevmx
+P2_dsx_h2h2eptamvevtx
+P2_dsx_h2h2mupemvmvex
+P2_dsx_h2h2mupmumvmvmx
+P2_dsx_h2h2muptamvmvtx
+P2_dsx_h2h2tapemvtvex
+P2_dsx_h2h2tapmumvtvmx
+P2_dsx_h2h2taptamvtvtx
+P2_sdx_h2h2epemvevex
+P2_sdx_h2h2epmumvevmx
+P2_sdx_h2h2eptamvevtx
+P2_sdx_h2h2mupemvmvex
+P2_sdx_h2h2mupmumvmvmx
+P2_sdx_h2h2muptamvmvtx
+P2_sdx_h2h2tapemvtvex
+P2_sdx_h2h2tapmumvtvmx
+P2_sdx_h2h2taptamvtvtx
+P1_uux_h2h2epem
+P1_uux_h2h2mupmum
+P1_uux_h2h2taptam
+P1_ccx_h2h2epem
+P1_ccx_h2h2mupmum
+P1_ccx_h2h2taptam
+P1_ddx_h2h2epem
+P1_ddx_h2h2mupmum
+P1_ddx_h2h2taptam
+P1_ssx_h2h2epem
+P1_ssx_h2h2mupmum
+P1_ssx_h2h2taptam
+P1_gg_h2h2epem
+P1_gg_h2h2mupmum
+P1_gg_h2h2taptam
+Using random number seed offset = 234567
+INFO: Generating 1000.0 unweighted events. 
+sum of cpu time of last step: 24 days,9h27m50s
+INFO: need to improve 78 channels 
+combine_events
+store_events
+  === Results Summary for run: GridRun_234567 tag: tag_1 ===
+
+     Cross-section :   0 +- 0 pb
+     Nb of events :  1000
+ 
+decay_events -from_cards
+DONE
+write ./events.lhe.gz
+preparing final gridpack
+cleaning unneeded files from gridpack
+rm: cannot remove 'mgbasedir/doc': No such file or directory

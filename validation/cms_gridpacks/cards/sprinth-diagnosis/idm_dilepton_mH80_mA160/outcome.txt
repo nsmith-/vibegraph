@@ -1,0 +1,6 @@
+panic attempt 2 sigma_pb=None err_pb=None patches=["runpatch:small_width_treatment=0.000001"]
+thread '<unnamed>' (380454) panicked at vibegraph-lib/src/proton.rs:3167:33:
+per-event scale on a sampled point: the event carries no cluster scale: Clustering(NoAdmissiblePair)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+thread '<unnamed>' (380453) panicked at vibegraph-lib/src/proton.rs:3167:33:
+per-event scale on a sampled point: the event carries no cluster scale: Clustering(NoAdmissiblePair)

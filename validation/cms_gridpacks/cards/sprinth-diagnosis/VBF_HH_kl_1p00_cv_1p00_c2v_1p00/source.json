@@ -1,0 +1,24 @@
+{
+ "label": "VBF_HH_kl_1p00_cv_1p00_c2v_1p00",
+ "gridpack_id": 3,
+ "tarball": "/cvmfs/cms.cern.ch/phys_generator/gridpacks/RunIII/13p6TeV/slc7_amd64_gcc10/MadGraph5_aMCatNLO/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_slc7_amd64_gcc10_CMSSW_12_4_0_tarball.tar.xz",
+ "model": "SM_HEL_UFO_noLightYukawa",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 0.001911,
+ "mg_reference_err_pb": 6.534e-06,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_customizecards.dat",
+  "InputCards/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_extramodels.dat",
+  "InputCards/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_proc_card.dat",
+  "InputCards/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_reweight_card.dat",
+  "InputCards/VBF_HH_kl_1p00_cv_1p00_c2v_1p00_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

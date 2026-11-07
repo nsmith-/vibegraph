@@ -1,0 +1,24 @@
+{
+ "label": "DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8",
+ "gridpack_id": 79,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/DarkPhoton-StableZD/PTZD-100/DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8_slc7_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "HAHM_variableMW_v5_UFO",
+ "final_attempt": 2,
+ "patches": [
+  "param-card:dropped"
+ ],
+ "mg_reference_sigma_pb": 4.431,
+ "mg_reference_err_pb": 0.007604,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8_customizecards.dat",
+  "InputCards/DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8_proc_card.dat",
+  "InputCards/DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

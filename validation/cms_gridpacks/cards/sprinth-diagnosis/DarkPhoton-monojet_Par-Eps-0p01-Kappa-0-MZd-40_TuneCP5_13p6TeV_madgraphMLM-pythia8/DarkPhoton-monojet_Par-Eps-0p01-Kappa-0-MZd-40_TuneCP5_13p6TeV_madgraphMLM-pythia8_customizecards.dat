@@ -1,0 +1,6 @@
+set run_card pt_min_pdg {1023:100}
+set param_card mzdinput 40
+set param_card mhsinput 999999
+set param_card epsilon 0.01
+set param_card kap 1.e-9
+set param_card wzp 1.e-4

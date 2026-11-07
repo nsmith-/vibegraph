@@ -1,0 +1,5 @@
+import model HAHM_variableMW_v5_UFO
+generate p p > zp
+add process p p > zp j
+add process p p > zp j j
+output DarkPhoton-monojet_Par-Eps-0p01-Kappa-0-MZd-86_TuneCP5_13p6TeV_madgraphMLM-pythia8

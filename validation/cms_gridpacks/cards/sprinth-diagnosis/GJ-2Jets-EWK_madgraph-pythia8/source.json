@@ -1,0 +1,22 @@
+{
+ "label": "GJ-2Jets-EWK_madgraph-pythia8",
+ "gridpack_id": 29,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/CommonBkg/RunIII2024Summer24/MadGraph5_aMCatNLO/Others/GJ-2Jets-EWK_madgraph-pythia8_slc7_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "loop_sm-ckm_no_b_mass",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 5894.0,
+ "mg_reference_err_pb": 209.8,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/GJ-2Jets-EWK_madgraph-pythia8_customizecards.dat",
+  "InputCards/GJ-2Jets-EWK_madgraph-pythia8_proc_card.dat",
+  "InputCards/GJ-2Jets-EWK_madgraph-pythia8_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "mgbasedir/models/loop_sm/restrict_ckm_no_b_mass.dat"
+ ],
+ "notes": []
+}

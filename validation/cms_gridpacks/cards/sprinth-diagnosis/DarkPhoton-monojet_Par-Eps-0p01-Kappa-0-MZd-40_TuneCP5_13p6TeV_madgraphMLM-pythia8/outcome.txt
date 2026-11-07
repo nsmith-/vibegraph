@@ -1,0 +1,4 @@
+panic attempt 2 sigma_pb=None err_pb=None patches=["param-card:dropped"]
+thread 'main' (380306) panicked at vibegraph-lib/src/phasespace/rambo.rs:52:5:
+RAMBO needs at least two final-state momenta
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

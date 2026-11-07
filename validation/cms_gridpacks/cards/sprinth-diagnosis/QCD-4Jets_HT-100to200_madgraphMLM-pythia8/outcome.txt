@@ -1,0 +1,2 @@
+refused attempt 1 sigma_pb=None err_pb=None patches=[]
+run card scale prescription: every sampled point's factorisation scale fell below the 2 GeV floor a parton density is fitted down to, so the cross section this card asks for is zero by construction

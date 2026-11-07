@@ -1,0 +1,23 @@
+{
+ "label": "TCP_m55_ht_400toInf",
+ "gridpack_id": 175,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraphMLM/GluGlutoALPtoBoostedTauTau/TCP_m55_ht_400toInf_el8_amd64_gcc10_CMSSW_12_4_14_patch3_tarball.tar.xz",
+ "model": "SM_alp_UFO",
+ "final_attempt": 1,
+ "patches": [],
+ "mg_reference_sigma_pb": 4.364e-05,
+ "mg_reference_err_pb": 1.933e-07,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/TCP_m55_ht_400toInf_customizecards.dat",
+  "InputCards/TCP_m55_ht_400toInf_extramodels.dat",
+  "InputCards/TCP_m55_ht_400toInf_proc_card.dat",
+  "InputCards/TCP_m55_ht_400toInf_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": []
+}

@@ -1,0 +1,27 @@
+{
+ "label": "idm_dilepton_mH80_mA160",
+ "gridpack_id": 94,
+ "tarball": "/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/IDM-2L2H/idm_dilepton_mH80_mA160_el8_amd64_gcc10_CMSSW_12_4_8_tarball.tar.xz",
+ "model": "InertDoublet_UFO",
+ "final_attempt": 2,
+ "patches": [
+  "runpatch:small_width_treatment=0.000001"
+ ],
+ "mg_reference_sigma_pb": 0.009,
+ "mg_reference_err_pb": 0.0003591,
+ "mg_reference_step": "survey",
+ "files": [
+  "InputCards/idm_dilepton_mH80_mA160_customizecards.dat",
+  "InputCards/idm_dilepton_mH80_mA160_extramodels.dat",
+  "InputCards/idm_dilepton_mH80_mA160_proc_card.dat",
+  "InputCards/idm_dilepton_mH80_mA160_run_card.dat",
+  "process/madevent/Cards/run_card.dat",
+  "process/madevent/Cards/param_card.dat",
+  "process/madevent/Cards/proc_card_mg5.dat",
+  "gridpack_generation.log",
+  "process/madevent/bin/internal/ufomodel/ -> ufomodel/"
+ ],
+ "notes": [
+  "gridpack_generation.log is truncated to its first and last 400 lines (of 983921; 34 MB in full)"
+ ]
+}

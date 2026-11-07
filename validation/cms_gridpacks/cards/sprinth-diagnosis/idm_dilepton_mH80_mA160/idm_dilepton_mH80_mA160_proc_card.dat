@@ -1,0 +1,8 @@
+import model InertDoublet_UFO
+define l+ = e+ mu+ ta+
+define l- = e- mu- ta-
+define vl = ve vm vt
+define vl~ = ve~ vm~ vt~
+generate p p > h2 h2 l+ l-
+add process p p > h2 h2 l+ l- vl vl~
+output idm_dilepton_mH80_mA160 -nojpeg
