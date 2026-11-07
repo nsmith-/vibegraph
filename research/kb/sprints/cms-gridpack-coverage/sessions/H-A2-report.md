@@ -26,10 +26,11 @@ where every log and scratch artefact of this session lives (`signfix-*.log`).
 
 ## 1. The rule and the change
 
-**Derivation** (the diagnosis session's; this session checked it against the
-measured rows of §2–§3, not by a fresh reading of ALOHA's source, whose
-momentum bookkeeping is `aloha_writers.py` `get_momentum_conservation_sign`).
-ALOHA reads every momentum at a vertex outgoing. The kernels
+**Derivation.** HELAS stores every external momentum outgoing: `vxxxxx`
+writes `nsv·p` with `nsv = −1` on an initial leg
+(`aloha/template_files/aloha_functions.f:798-873` at `b7687064`; the generated
+`matrix.f` calls `VXXXXX(P(0,1),…,-1*IC(1),…)`), so ALOHA reads every momentum
+at a vertex outgoing. The kernels
 here read every momentum incoming: an off-shell leg's `P` is minus the sum of
 the inputs (`LorentzEvalNode::POut`). So each `P` of a Lorentz term is minus
 MadGraph's, and a term with `n_P` momenta is `(−1)^{n_P}` times MadGraph's. The
@@ -352,13 +353,16 @@ counts) is identical line for line (`diff a.txt b.txt` shows only the test count
   `ε_slot` for `σ^{μν}`/`γ^μ` bilinears under the slot reversal, and show that
   `(−1)^{n_P} · ε_slot = +1` for every momentum-bearing fermion vertex the
   dipole rows reach (or find the counterexample).
-- **The kb concept pages name the old function and rule.**
-  `research/kb/amplitudes/convention-sign-inventory.md` (the
-  `triple_gluon_sign`, "−1 per coloured three-vector vertex" row) and
-  `research/kb/amplitudes/vector-vertex-signs.md` (the standalone-row list)
-  describe what the code no longer does. What would close it: the close-out
-  session rewrites the row to `boson_momentum_sign` and the rule, and adds the
-  four new rows.
+- **Backlog items the rule touches** (for the manager; dev sessions do not edit
+  items). `odd-gluon-vertex-sign-unmeasured`: its `closes_when` (a gated
+  standalone row such as `g g > g g g NP<=1` under `vg_cG`, or `g g > g h` under
+  `vg_cHG`) is met by `gg_to_ggg_cg` and `gg_to_hg_chg`.
+  `colourless-self-conjugate-vvv-sign-unoracled`: still open, but its text
+  ("gets none", `is_yang_mills_vvv && is_coloured`) describes the old code; the
+  code now gives `−1` by derivation. `w-pair-vvv-slot-exchange-oddness-unpinned`
+  and `code-docs-stale-after-root-free-convention` name `triple_gluon_sign`.
+  The kb concept pages were brought in line in the follow-up commit on this
+  branch.
 - **A full banked run on a complete bundle is owed.** This worktree's copied
   `validation/madgraph/output` lacks several seed records and banked runs (§7),
   so `validate.sh` could not go green here. What would close it: `pixi run
