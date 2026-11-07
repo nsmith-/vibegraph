@@ -129,8 +129,8 @@ use crate::hadronic::{
     components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
     ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
-    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
-    VEGAS_ALPHA_MAPPED,
+    RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto, SubprocessProto,
+    SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -638,6 +638,21 @@ pub enum ProtonError {
     NoSubprocess,
     #[error("subprocess {process} has {n_in} incoming legs; a beam decomposition needs 2")]
     NotTwoIncoming { process: String, n_in: usize },
+    /// A `2 → 1` subprocess. Its phase space is the one-body `δ(ŝ − M²)`, which
+    /// fixes `τ = M²/s` and leaves only the rapidity to integrate; no phase-space
+    /// map here integrates it.
+    ///
+    /// `cut_to_zero` records that the run card's cuts reject every point the
+    /// subprocess could reach anyway: its single outgoing particle has zero
+    /// transverse momentum, and a positive `pT` minimum on it rejects that
+    /// ([`Cuts::rejects_zero_transverse_momentum`]). Such a subprocess contributes
+    /// exactly nothing, as it does in MadGraph, and a caller summing
+    /// multiplicities may drop it ([`crate::multiplicity::multiplicity_groups`]).
+    #[error(
+        "subprocess {process} has a single outgoing particle, whose phase space is the one-body \
+         δ(ŝ − M²); vibegraph has no one-body phase space to integrate it over"
+    )]
+    OneBodyFinalState { process: String, cut_to_zero: bool },
     /// The decomposition was handed subprocesses whose incoming legs carry
     /// different pole masses. The incoming masses fix the partonic-frame beams,
     /// the flux and the threshold every group of one decomposition shares, so
@@ -711,6 +726,17 @@ fn probe_energies(
     rungs.sort_by(f64::total_cmp);
     rungs.dedup_by(|a, b| (*a - *b).abs() <= 1e-9 * a.abs().max(b.abs()));
     rungs
+}
+
+/// Whether an outgoing momentum is one a configuration can carry weight at:
+/// finite in every component, with positive energy. A massless leg drawn at
+/// zero momentum fails it, and so does any momentum a singular boost left
+/// non-finite.
+fn physical_outgoing(p: &V) -> bool {
+    p.e() > 0.0
+        && [p.e(), p.px(), p.py(), p.pz()]
+            .iter()
+            .all(|c| c.is_finite())
 }
 
 /// The two incoming partons in the partonic centre of mass at `sqrt_shat`, beam 1
@@ -864,6 +890,7 @@ pub fn derive_flavor_groups(
         .collect();
 
     let mut compiled = Vec::with_capacity(sets.len());
+    let mut one_body: Option<(String, bool)> = None;
     for (set, process) in sets.iter().zip(&labels) {
         progress::step(
             progress::stage::COMPILE,
@@ -880,7 +907,23 @@ pub fn derive_flavor_groups(
         let legs = process_external_legs(&evaluator, model, evaluated);
         let cuts =
             Cuts::compile_with(card, &legs, &ForcedResonances::of(&set.diagrams, evaluated))?;
+        if legs.len() < 4 {
+            let cut_to_zero = cuts.rejects_zero_transverse_momentum();
+            one_body = Some(match one_body {
+                Some((first, all)) => (first, all && cut_to_zero),
+                None => (process.clone(), cut_to_zero),
+            });
+        }
         compiled.push((evaluator, legs, cuts));
+    }
+    // Refused before the probe below, which draws the outgoing momenta with RAMBO
+    // and has nothing to draw for one particle. Every subprocess is read first, so
+    // `cut_to_zero` holds of all of them and not only of the first.
+    if let Some((process, cut_to_zero)) = one_body {
+        return Err(ProtonError::OneBodyFinalState {
+            process,
+            cut_to_zero,
+        });
     }
     refuse_polarized_frame(card, compiled.iter().map(|(e, ..)| e), model)?;
     progress::step(
@@ -2359,22 +2402,32 @@ impl<'a> ProtonIntegrand<'a> {
         Ok(report)
     }
 
-    /// Resolve the scale on the first cut-passing point of a fixed pseudo-random
-    /// draw, so a refusal that would otherwise surface mid-integration surfaces at
+    /// Resolve the scale on the cut-passing points of a fixed pseudo-random draw,
+    /// so a refusal that would otherwise surface mid-integration surfaces at
     /// setup.
-    /// A point below the factorisation floor is not a refusal — it is one ordinary
-    /// zero-weight point — so the probe steps over it and keeps drawing. Only the
-    /// degenerate case is reported: cut-passing points exist and *every* one of
-    /// them was vetoed, which makes the cross section zero by construction and is
-    /// worth saying before the integration spends anything on it. A run whose
-    /// support is partly below the floor integrates normally, as it does in
-    /// MadGraph.
+    ///
+    /// A vetoed point is not a refusal — it is one ordinary zero-weight point, as
+    /// `reweight.f` treats it — so the probe steps over it and keeps drawing, and
+    /// stops at the first point that resolves a scale. The one degenerate case it
+    /// reports ([`ScaleProbeTally`]) is the factorisation floor's: enough
+    /// cut-passing points fell below the floor and none resolved a scale, so the
+    /// card's scale prescription puts its support below the densities' fitted
+    /// range and the cross section is zero by construction. MadGraph has no such setup step and would integrate the
+    /// card to zero; the refusal says why before anything is spent. Every other
+    /// outcome lets the integration run and decide: a point vetoed by `xqcut` or
+    /// on degenerate momenta says nothing about the floor, and fewer floor
+    /// vetoes than the minimum is too little evidence to refuse on.
+    ///
+    /// The draws go round the sampling channels in turn, so one channel whose
+    /// region the cuts or the matching mostly reject cannot stand for the card.
     fn probe_scale(&self, source: &EventScaleSource) -> Result<(), ProtonError> {
         use rand::Rng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
         let ndim = self.channel_grid_ndim();
-        let mut any_passed_cuts = false;
-        for _ in 0..SCALE_PROBE_DRAWS {
+        let n_channels = self.channel_ids.len();
+        let mut tally = ScaleProbeTally::default();
+        for draw in 0..SCALE_PROBE_DRAWS {
+            let channel = draw % n_channels;
             let u: Vec<f64> = (0..ndim).map(|_| rng.random::<f64>()).collect();
             // The probe asks whether any accepted point clears the floor, not how the
             // run samples. The logarithmic `τ` spreads its draws over the whole `ŝ`
@@ -2383,26 +2436,24 @@ impl<'a> ProtonIntegrand<'a> {
             let m = self.map_point_with(TauMap::Log, &u);
             let pt = self
                 .combiner
-                .draw_in_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
+                .draw_in_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
+            if !pt.momenta.iter().all(physical_outgoing) {
+                continue;
+            }
             let sc = self.scratch();
             self.build_frames(sc, &m, &pt.momenta);
             let lab = sc.lab_buf.borrow();
             if self.filters.iter().any(|c| c.pass(&lab)) {
-                any_passed_cuts = true;
                 let resolved = self
-                    .scales_of(sc, source, &lab, self.sampled_channel(0))
+                    .scales_of(sc, source, &lab, self.sampled_channel(channel))
                     .map_err(HadronicError::from)?;
-                if let PointScales::Scales(_) = resolved {
-                    return Ok(());
+                match resolved {
+                    PointScales::Scales(_) => return Ok(()),
+                    PointScales::Vetoed(veto) => tally.record(veto),
                 }
             }
         }
-        if any_passed_cuts {
-            return Err(HadronicError::FactorisationScaleBelowFloor.into());
-        }
-        // No draw passed the cuts, which says something about the cuts and
-        // nothing about the scale.
-        Ok(())
+        Ok(tally.verdict()?)
     }
 
     /// Lower support `ŝ_min/s` of the logarithmic τ map.
@@ -2671,6 +2722,16 @@ impl<'a> ProtonIntegrand<'a> {
             sc.census.rejected();
             return 0.0;
         };
+        // A channel map that draws an invariant at its degenerate edge (a massless
+        // pair at `s = 0`) builds its daughters at zero momentum, or, through a
+        // singular boost, non-finite. The point lies on the boundary of phase space
+        // and carries no weight there, but neither the cuts nor the scale
+        // clustering read such momenta meaningfully, so it is zeroed before either.
+        if !out.iter().all(physical_outgoing) {
+            sc.census.degenerate();
+            sc.census.rejected();
+            return 0.0;
+        }
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
         let passes = self.cut_point(sc, m, &cm);
@@ -3185,7 +3246,12 @@ impl<'a> ProtonIntegrand<'a> {
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
             PointScales::Scales(scales) => Some(scales),
-            PointScales::Vetoed => None,
+            PointScales::Vetoed(veto) => {
+                if veto == ScaleVeto::Degenerate {
+                    sc.census.degenerate();
+                }
+                None
+            }
         }
     }
 
@@ -3218,7 +3284,12 @@ impl<'a> ProtonIntegrand<'a> {
                 rewgt,
                 record,
             } => Some((scales, rewgt, record)),
-            PointHistory::Vetoed => None,
+            PointHistory::Vetoed(veto) => {
+                if veto == ScaleVeto::Degenerate {
+                    sc.census.degenerate();
+                }
+                None
+            }
         }
     }
 
@@ -7019,6 +7090,53 @@ mod tests {
     /// rotation about the beam axis, or by a boost that flips no sign at this
     /// point; and the configuration draw, whose `AMP2` already reads the CM.
     #[test]
+    fn a_point_with_a_massless_leg_at_rest_is_zeroed_and_counted() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        // No lepton cut, so the cuts cannot stand in for the guard: before it,
+        // the point reached the clustering, whose `l+ l-` measure is `ln(0/0)`.
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  0.0 = ptl\n  5.0 = etaj\n  -1 = etal\n\
+             \x20 0.0 = drll\n  0.0 = drjl\n  0.0 = mmll\n  4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        let groups =
+            derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card).expect("groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&probe_alpha_s()))
+            .expect("the clustered prescription compiles");
+        let sqrt_shat = 300.0_f64;
+        let point = OuterPoint {
+            x1: sqrt_shat / SQRT_S_HAD,
+            x2: sqrt_shat / SQRT_S_HAD,
+            sqrt_shat,
+            jac: 1.0,
+        };
+        // The two leptons at an `s = 0` edge of their pair invariant, with the
+        // gluon taking the energy; and the same with a non-finite boost.
+        let e = 0.5 * sqrt_shat;
+        let zero = V::new(0.0, 0.0, 0.0, 0.0);
+        let at_rest = [zero, zero, V::new(e, 0.0, e * 0.6, e * 0.8)];
+        let nan = V::new(f64::NAN, 0.0, 0.0, 0.0);
+        let non_finite = [nan, zero, V::new(e, 0.0, e * 0.6, e * 0.8)];
+        integ.clear_census();
+        for out in [at_rest, non_finite] {
+            let sc = integ.scratch();
+            assert_eq!(integ.shape(sc, &point, &out, 0, &[0.5]), 0.0);
+        }
+        let census = integ.census();
+        assert_eq!(census.evaluated, 2);
+        assert_eq!(census.passed_cuts, 0);
+        assert_eq!(census.degenerate, 2, "{census:?}");
+    }
+
+    #[test]
     fn clustered_scales_are_read_in_the_partonic_centre_of_mass() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
@@ -7401,10 +7519,10 @@ mod tests {
     }
 
     /// A card whose support is *entirely* below the floor is refused at setup
-    /// rather than integrated to zero. The scale probe already draws 64 points to
-    /// surface a refusal before the integration starts; it now steps over vetoed
-    /// draws instead of reporting the first one, so a partly vetoed card passes
-    /// it and an entirely vetoed one does not.
+    /// rather than integrated to zero. The scale probe draws 64 points to surface
+    /// a refusal before the integration starts, and steps over vetoed draws
+    /// instead of reporting the first one, so a partly vetoed card passes it and
+    /// an entirely vetoed one does not.
     ///
     /// This is deliberately not a per-event counter: a partly vetoed run is
     /// legitimate physics with a correct cross section, so only the degenerate
@@ -7427,7 +7545,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ProtonError::Hadronic(HadronicError::FactorisationScaleBelowFloor)
+                ProtonError::Hadronic(HadronicError::FactorisationScaleBelowFloor { .. })
             ),
             "refused for the wrong reason: {err}"
         );

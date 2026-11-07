@@ -37,6 +37,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder};
+use crate::coupling::cluster::kt::ClusterFailure;
 use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtSettings};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{
@@ -109,6 +110,44 @@ pub(crate) const CHANNEL_STREAM_BASE: u64 = 0xC7A0_0000;
 pub(crate) const SCALE_PROBE_SEED: u64 = 0x5CA1_E9E0;
 pub(crate) const SCALE_PROBE_DRAWS: usize = 64;
 
+/// Fewest probe points below the factorisation floor, with none above it, that
+/// the setup probe refuses a card on ([`HadronicError::FactorisationScaleBelowFloor`]).
+/// A quarter of the draws: a card whose cuts or matching reject most of what the
+/// probe reaches leaves too few points to say anything about where its support
+/// lies, and is integrated instead, as MadGraph integrates every card.
+pub(crate) const SCALE_PROBE_MIN_FLOOR: usize = SCALE_PROBE_DRAWS / 4;
+
+/// What the setup scale probe found on the cut-passing points it drew, and the
+/// verdict it reaches: only points below the factorisation floor are evidence
+/// for the floor's refusal, and fewer than [`SCALE_PROBE_MIN_FLOOR`] of them is
+/// too little to refuse on. A point vetoed by `xqcut`, or met on degenerate
+/// momenta, says nothing about the floor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ScaleProbeTally {
+    below_floor: usize,
+}
+
+impl ScaleProbeTally {
+    /// One cut-passing probe point whose scales vetoed it.
+    pub(crate) fn record(&mut self, veto: ScaleVeto) {
+        match veto {
+            ScaleVeto::FactorisationFloor => self.below_floor += 1,
+            ScaleVeto::JetCut | ScaleVeto::Degenerate => {}
+        }
+    }
+
+    /// The probe's verdict once no drawn point resolved a scale.
+    pub(crate) fn verdict(&self) -> Result<(), HadronicError> {
+        if self.below_floor >= SCALE_PROBE_MIN_FLOOR {
+            return Err(HadronicError::FactorisationScaleBelowFloor {
+                below_floor: self.below_floor,
+                draws: SCALE_PROBE_DRAWS,
+            });
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum HadronicError {
     #[error("diagram enumeration failed: {0}")]
@@ -152,10 +191,12 @@ pub enum HadronicError {
     #[error("channel forests for the clustering scale: {0}")]
     Channels(#[from] crate::coupling::cluster::configs::ConfigError),
     #[error(
-        "every sampled point's factorisation scale fell below the 2 GeV floor a parton density \
-         is fitted down to, so the cross section this card asks for is zero by construction"
+        "{below_floor} of the {draws} points the setup probe drew passed the cuts with a \
+         factorisation scale below the 2 GeV floor a parton density is fitted down to, and none \
+         passed above it, so the scale prescription puts the support of this card below the \
+         floor and the cross section it asks for is zero by construction"
     )]
-    FactorisationScaleBelowFloor,
+    FactorisationScaleBelowFloor { below_floor: usize, draws: usize },
     #[error(
         "the decaying particle (PDG {pdg}) has pole mass {mass} GeV: a decay needs a massive \
          particle to have a rest frame to decay in"
@@ -449,8 +490,10 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(e) if vetoes_point(&e) => Ok(PointScales::Vetoed),
-            Err(other) => Err(other),
+            Err(e) => match point_veto(&e) {
+                Some(veto) => Ok(PointScales::Vetoed(veto)),
+                None => Err(e),
+            },
         }
     }
 
@@ -489,7 +532,7 @@ impl EventScaleSource {
                     rewgt: None,
                     record: None,
                 },
-                PointScales::Vetoed => PointHistory::Vetoed,
+                PointScales::Vetoed(veto) => PointHistory::Vetoed(veto),
             });
         };
         let event = ScaleEvent { incoming, outgoing };
@@ -499,8 +542,10 @@ impl EventScaleSource {
                 rewgt: history.rewgt_history(),
                 record: history.matched_record(sets[channel.group].colors()),
             }),
-            Err(e) if vetoes_point(&e) => Ok(PointHistory::Vetoed),
-            Err(other) => Err(other),
+            Err(e) => match point_veto(&e) {
+                Some(veto) => Ok(PointHistory::Vetoed(veto)),
+                None => Err(e),
+            },
         }
     }
 }
@@ -522,14 +567,36 @@ fn channel_input(sets: &[Channels], channel: SampledChannel) -> ClusterInput<'_>
     set.input(set.config_of_channel(channel.channel))
 }
 
-/// Whether a scale error is one of the refusals `reweight.f` answers by zeroing
-/// the point's weight — the factorisation floor, or a jet vertex below `xqcut` —
-/// rather than one meaning the prescription does not apply.
-fn vetoes_point(error: &ScaleError) -> bool {
-    matches!(
-        error,
-        ScaleError::Clustering(ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut)
-    )
+/// Why a point's scales zero its weight instead of stopping the run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScaleVeto {
+    /// A beam carrying a parton density ended below the factorisation floor.
+    FactorisationFloor,
+    /// A jet vertex of the clustering fell below `xqcut`.
+    JetCut,
+    /// A clustering measure came out non-finite: the momenta are degenerate (a
+    /// massless leg with no momentum, whose pseudorapidity is `ln(0/0)`), so no
+    /// scale can be read off them. Such a point lies on the boundary of phase
+    /// space, where its weight vanishes in the limit; it is zeroed and counted
+    /// ([`PointCensus::degenerate`]) so a systematic source cannot hide.
+    Degenerate,
+}
+
+/// The veto a scale error stands for: the refusals `reweight.f` answers by
+/// zeroing the point's weight — the factorisation floor, or a jet vertex below
+/// `xqcut` — and a clustering made on degenerate momenta, or `None` for an error
+/// meaning the prescription does not apply.
+fn point_veto(error: &ScaleError) -> Option<ScaleVeto> {
+    match error {
+        ScaleError::Clustering(ScaleRefusal::FactorisationFloor) => {
+            Some(ScaleVeto::FactorisationFloor)
+        }
+        ScaleError::Clustering(ScaleRefusal::JetCut) => Some(ScaleVeto::JetCut),
+        ScaleError::Clustering(ScaleRefusal::Clustering(ClusterFailure::NonFiniteMeasure)) => {
+            Some(ScaleVeto::Degenerate)
+        }
+        _ => None,
+    }
 }
 
 /// What resolving one point's scales produced, with the clustering the matched
@@ -548,7 +615,7 @@ pub(crate) enum PointHistory {
         record: Option<MatchedRecord>,
     },
     /// As [`PointScales::Vetoed`].
-    Vetoed,
+    Vetoed(ScaleVeto),
 }
 
 /// What resolving one point's scales produced.
@@ -559,8 +626,8 @@ pub(crate) enum PointScales {
     /// The point carries no weight: a beam carrying a parton density ended below
     /// the factorisation floor, or a jet vertex of the clustering fell below
     /// `xqcut`, where MadGraph zero-weights the point and moves on rather than
-    /// stopping.
-    Vetoed,
+    /// stopping; or the clustering met degenerate momenta.
+    Vetoed(ScaleVeto),
 }
 
 /// What installing a run card's per-event scale did to one integrand.
@@ -2251,16 +2318,18 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// energy, say — has no beam measure to compare, and refusing on one would say
     /// nothing about the process.
     ///
-    /// A point below the factorisation floor is not a refusal — it is one ordinary
-    /// zero-weight point — so the probe steps over it and keeps drawing. Only the
-    /// degenerate case is reported: cut-passing points exist and *every* one of them
-    /// was vetoed, which makes the cross section zero by construction and is worth
-    /// saying before the integration spends anything on it. A run whose support is
-    /// partly below the floor integrates normally, as it does in MadGraph.
+    /// A vetoed point is not a refusal — it is one ordinary zero-weight point — so
+    /// the probe steps over it and keeps drawing. The one degenerate case reported
+    /// is the factorisation floor's, on the evidence
+    /// [`SCALE_PROBE_MIN_FLOOR`] asks for; a point vetoed by `xqcut` says nothing
+    /// about the floor. Fixed-energy beams carry no parton density, so the floor
+    /// is never applied here and the refusal is the proton integrand's in
+    /// practice; the rule is the same on both so that neither reports a cause
+    /// it did not observe.
     fn probe_scale(&self, source: &EventScaleSource) -> Result<(), HadronicError> {
         use rand::Rng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
-        let mut any_passed_cuts = false;
+        let mut tally = ScaleProbeTally::default();
         for _ in 0..SCALE_PROBE_DRAWS {
             let u: Vec<f64> = (0..self.sampler.ndim())
                 .map(|_| rng.random::<f64>())
@@ -2268,20 +2337,13 @@ impl<'a> FixedBeamIntegrand<'a> {
             let (channel, point) = self.sampler.draw_from(&u);
             let ext = self.externals(&point.momenta);
             if self.passes_cuts(&ext) {
-                any_passed_cuts = true;
-                if let PointScales::Scales(_) =
-                    self.point_scales_of(self.scratch(), source, &point.momenta, channel)?
-                {
-                    return Ok(());
+                match self.point_scales_of(self.scratch(), source, &point.momenta, channel)? {
+                    PointScales::Scales(_) => return Ok(()),
+                    PointScales::Vetoed(veto) => tally.record(veto),
                 }
             }
         }
-        if any_passed_cuts {
-            return Err(HadronicError::FactorisationScaleBelowFloor);
-        }
-        // No draw passed the cuts, which says something about the cuts and
-        // nothing about the scale.
-        Ok(())
+        tally.verdict()
     }
 
     /// The scales at one phase-space point, from the beams, the outgoing momenta
@@ -2299,7 +2361,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             // `ScaleChoice::from_run_card` reads that off the card as
             // `lpp != 0`. A fixed-energy card gives `false` on both beams, so
             // the comparison is short-circuited and the refusal is never built.
-            PointScales::Vetoed => unreachable!(
+            PointScales::Vetoed(_) => unreachable!(
                 "the factorisation floor was applied on beams carrying no parton density"
             ),
         })
@@ -3249,6 +3311,46 @@ mod tail_probe;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only points below the factorisation floor are evidence for its refusal,
+    /// and a quarter of the draws is the least it refuses on. The probe used to
+    /// refuse whenever every cut-passing point was vetoed for any reason, so a
+    /// card whose one cut-passing probe point fell below `xqcut` was refused
+    /// with the floor's message, though no point had a scale below the floor.
+    #[test]
+    fn the_scale_probe_refuses_only_on_floor_evidence() {
+        let tally = |vetoes: &[(ScaleVeto, usize)]| {
+            let mut t = ScaleProbeTally::default();
+            for &(veto, n) in vetoes {
+                (0..n).for_each(|_| t.record(veto));
+            }
+            t.verdict()
+        };
+        assert!(tally(&[]).is_ok());
+        assert!(tally(&[(ScaleVeto::JetCut, 1)]).is_ok());
+        assert!(tally(&[(ScaleVeto::JetCut, SCALE_PROBE_DRAWS)]).is_ok());
+        assert!(tally(&[(ScaleVeto::Degenerate, SCALE_PROBE_DRAWS)]).is_ok());
+        let few = SCALE_PROBE_MIN_FLOOR - 1;
+        assert!(tally(&[
+            (ScaleVeto::FactorisationFloor, few),
+            (ScaleVeto::JetCut, 40)
+        ])
+        .is_ok());
+        let refused = tally(&[
+            (ScaleVeto::FactorisationFloor, SCALE_PROBE_MIN_FLOOR),
+            (ScaleVeto::JetCut, 3),
+        ])
+        .unwrap_err();
+        assert!(
+            matches!(
+                refused,
+                HadronicError::FactorisationScaleBelowFloor { below_floor, .. }
+                    if below_floor == SCALE_PROBE_MIN_FLOOR
+            ),
+            "{refused}"
+        );
+        eprintln!("{refused}");
+    }
     use crate::budget::sequential_channel_reference;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::runcard::RunCard;
@@ -4173,7 +4275,7 @@ mod tests {
                 let at = SampledChannel::sole(channel);
                 assert_eq!(
                     source.point_scales(incoming, &event(20.0), at),
-                    Ok(PointScales::Vetoed)
+                    Ok(PointScales::Vetoed(ScaleVeto::JetCut))
                 );
                 let Ok(PointScales::Scales(scales)) =
                     source.point_scales(incoming, &event(40.0), at)
@@ -4209,7 +4311,7 @@ mod tests {
         assert!(source.constant_scales().is_none());
         assert_eq!(
             source.point_scales(incoming, &event(20.0), SampledChannel::sole(0)),
-            Ok(PointScales::Vetoed)
+            Ok(PointScales::Vetoed(ScaleVeto::JetCut))
         );
     }
 
