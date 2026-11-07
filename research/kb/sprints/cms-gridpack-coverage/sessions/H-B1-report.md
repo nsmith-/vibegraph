@@ -177,10 +177,57 @@ The effective sample size is the sharpest reading of the divergence: the
 same binary, card family and budget gives ESS 60000–86000 at any finite
 `draj` and 15–23 at `draj = 0`.
 
+## Local MadGraph on the same cuts
+
+MadGraph is H-N1's copy of the pinned tree (`/home/user/H-N1-scratch/mg/mg5`,
+`b7687064`, with `restrict_ckm_no_b_mass.dat` added to `models/sm`) and its
+never-launched output `ajj_base` (`import model sm-ckm_no_b_mass`, `generate
+p p > a j j QCD=0`), one fresh copy per seed (`mg/H-B1-mg-seeds.sh`), σ the
+`Cross-section` line of `generate_events`. Cards `mg/M_ptj<x>_draj<y>.dat`
+are H-N1's MadGraph run card (`lhaid 247000`, `hard_survey 2`, `nevents
+5000`) with `ebeam 6800`, `pta 200`, `mmjj 100`, `drjj 0`, `etaj -1`,
+`etaa -1` and the named `ptj`, `draj`: the VBFtoG-200 cuts on MadGraph's own
+card.
+
+```
+$ cat mg/H-B1-mg-driver.log mg/H-B1-mg2-driver.log mg/H-B1-mg3-driver.log
+ptj 20, draj 0.02   seed 101  0.5449 +- 0.001516 pb   seed 102  0.5461 +- 0.001609 pb
+ptj 0,  draj 0.004  seed 101  0.6749 +- 0.002936 pb
+ptj 0,  draj 0.001  seed 101  0.7358 +- 0.002162 pb
+ptj 0,  draj 1e-4   seed 101  0.9509 +- 0.005418 pb
+ptj 0,  draj 1e-7   seed 101  0.9509 +- 0.005418 pb
+ptj 0,  draj 0      seed 101  0.9509 +- 0.005418 pb   seed 102  0.9452 +- 0.004766 pb
+$ python3 -I seedstats.py ...
+draj 0.02: n=2 mean=0.5455 sd=0.0008485 sem=0.0006 (rel 0.110%) chi2/dof=0.296
+draj 0:    n=2 mean=0.94805 sd=0.004031 sem=0.00285 (rel 0.301%) chi2/dof=0.634
+```
+
+- At a finite regulator MadGraph and vibegraph agree: `ptj 20, draj 0.02`
+  MadGraph 0.5455 ± 0.0006 (2 seeds) against vibegraph 0.5470 ± 0.0018 (seed
+  1; the gridpack-format card with the same cuts, `S_ptj20_draj0.02.dat`),
+  +0.3%.
+- MadGraph's own collinear slope, `draj` 0.004 → 0.001: (0.7358 − 0.6749) /
+  ln 16 = **0.022 pb** per unit of ln(1/ΔR²), the logarithm vibegraph measures
+  (0.019).
+- MadGraph at `draj = 0` reads 0.948 pb with a 0.3% seed spread: a confident,
+  reproducible, finite number for an infinite integral. The runs at `draj =
+  1e-4` and `1e-7` return **bit-identical** results to `draj = 0` (same σ,
+  same error, seed 101): with `draj = 1e-4` applied (`DRAJ =
+  1.000000000000000D-04` in the run banner) not one weight-carrying point of
+  4.58M fell below ΔR = 1e-4. MadEvent's phase space never resolves the
+  collinear region below that, so its `draj = 0` σ is that sampler's
+  effective cut, not a property of the process. (Between 0.001 and 1e-4 it
+  rises by 0.215 pb where the logarithm predicts 0.022 × ln 100 = 0.10; where
+  MadEvent's resolution stops inside that decade is not resolved here.)
+
+This is the decisive comparison: on identical cuts, both programs agree at
+every finite `draj` measured and share the logarithm; at `draj = 0` the
+MadGraph reference is the cutoff of its own sampler and vibegraph's reading
+is a few heavy draws (ESS 15–23). The CERN ratio σ/MG for this family is a
+ratio of two regulator artefacts.
+
 ## Pending
 
-- Local MadGraph on the same regulated cards (`mg/M_ptj20_draj0.4.dat`,
-  `M_ptj20_draj0.02.dat`, `M_ptj0_draj0.dat`, H-N1's card with `ebeam 6800`,
-  `pta 200`, `mmjj 100`, `drjj 0`, `etaj/etaa -1`) against vibegraph on the
-  identical files.
+- vibegraph on MadGraph's identical `M_*` files at `ptj 0`, `draj` 0.004,
+  0.001, 1e-4.
 - Task 1, H-N1's card on this branch.
