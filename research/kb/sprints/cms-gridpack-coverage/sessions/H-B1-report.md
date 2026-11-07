@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "H-B1 report: group B's σ deficit is an IR-divergent card, not the u b~ / u~ b split"
-description: "The four CKM γ+jets gridpacks run with draj = 0 and no photon isolation (ptgmin = 0), so σ diverges logarithmically in the quark–photon collinear limit: vibegraph's σ grows by 0.019 pb (4.3% of the regulated σ) per unit of ln(1/ΔR²) over draj 0.4 → 0.004 with a constant slope. Neither MadGraph's survey σ nor vibegraph's is a number the other can be gated against. The spacelike-floor cap and the flavour split were tested as causes and do not carry the deficit on the regulated cards. PARTIAL: committed early against container restarts."
+description: "The four CKM γ+jets gridpacks run with draj = 0 and no photon isolation, so σ of p p > a j j QCD=0 diverges logarithmically in the quark–photon collinear limit. On identical cards vibegraph and local MadGraph agree within 0.6% at every finite draj from 0.02 to 3e-4 and share the slope (0.019–0.022 pb per unit ln(1/ΔR²)); below ΔR ≈ 3e-4 neither samples the pole, and each returns its draj = 0 σ bit for bit at draj = 1e-4. The MadGraph reference is its sampler cutoff. Ruled out: the u b~ / u~ b split (merged vs apart −0.13% ± 0.47%), the mirror term (0.987–1.005 per group), the spacelike cap (≤ 1%). H-N1's card reproduces bit for bit on main."
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-11-07}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-07}
 ---
@@ -11,9 +11,8 @@ under `/home/user/H-B1-scratch/`; none of it is committed. The survey cards are
 read from `origin/sprinth-diagnosis-cards` (`1795adea`), extracted with
 `git archive` into `/home/user/H-B1-scratch/cards/`.
 
-**Status: partial.** This file is committed early because the container
-restarted five times during the session; sections marked *pending* are filled
-in by later commits on this branch.
+This report was committed in stages because the container
+restarted five times during the session.
 
 ## Binaries
 
@@ -112,8 +111,10 @@ Agreement at 0.2–0.5% where the cap is active against `ptj = 20` jets. At
 `ptj 0.2` 0.46437 ± 0.00185 against zero `ptj 0.01` 0.4694 ± 0.0011; main
 `ptj 1` 0.4742 ± 0.0034 with an effective sample size of 18822 against
 60000–78000 on the neighbours, a single large weight): a percent-level
-under-coverage, one seed a point, not the 25–55% of B. *Pending: a seed sweep
-of main against zero at `ptj = 0.01`.*
+under-coverage, one seed a point, not the 25–55% of B. The seed sweep that
+would establish it was not run (Found 2). On MadGraph's identical cards at
+`ptj = 0` the capped main binary agrees with MadGraph within 0.6% at every
+finite `draj` (below), which bounds the cap's effect there too.
 
 ### The u b~ / u~ b split
 
@@ -345,6 +346,79 @@ physics answer needs isolation or a fragmentation contribution.
 
 ## Task 1: H-N1's card on this branch
 
-*Pending (running at the time of this commit): `vibegraph-main integrate
-ajj_proc_card.dat --run-card HN1_run_card.dat --seed N --target-rel 0.002`,
-seeds 1–5, inputs `diff`-identical to H-N1's.*
+`vibegraph-main integrate ajj_proc_card.dat --run-card HN1_run_card.dat
+--seed N --target-rel 0.002 --out H-B1-hn1-sN --force`, seeds 1–5, with the
+proc and run cards `diff`-identical to H-N1's (`vg/H-B1-hn1.sh`):
+
+```
+$ cat vg/H-B1-hn1-driver.log | grep σ
+σ = 208.46 ± 0.41 pb
+σ = 208.09 ± 0.41 pb
+σ = 208.67 ± 0.39 pb
+σ = 208.01 ± 0.39 pb
+σ = 208.62 ± 0.38 pb
+$ diff H-B1-hn1-sigmas.txt H-N1-vg-ajj-sigmas.txt && echo IDENTICAL
+IDENTICAL
+$ python3 -I seedstats.py < H-B1-hn1-sigmas.txt
+n=5 mean=208.37 sd=0.3036 sem=0.1358 (rel 0.065%) median_quoted_err=0.39 chi2/dof=0.598
+```
+
+Every seed reproduces H-N1's σ and error to the printed digits: #104 (per-group
+cut indicators), #105 and #106 did not move this card, so no bisection was
+needed. Against H-N1's local MadGraph (207.986 ± 0.114) the +0.18% stands.
+
+## Brief corrections
+
+- The four cards' cuts, not the `QED=3`, `loop_sm` or split candidates, carry
+  B. `QED=3` is what `a j j QCD=0` generates anyway; `loop_sm` was not needed
+  to reproduce the effect (every measurement here is `sm-ckm_no_b_mass`).
+- "The CERN side's MadGraph reference" was the right suspect in a narrower
+  sense than a MadGraph defect: it is MG 2.9.18's survey-step σ of an
+  IR-divergent integral (`mg_reference_step: survey` in every `source.json`),
+  so it is not a cross section to compare against, from either program.
+- The CERN ladder's "σ moves toward MadGraph with budget" is real and is the
+  divergence, not under-sampling of a finite region: there is no finite value
+  to converge to, and MadGraph's own value is its sampler's cutoff.
+
+## Gates
+
+No source change is committed (diagnosis session); the probe edits stay in
+`/home/user/H-B1-scratch/H-B1-probe.patch` (spacelike floor, group tolerance)
+and `H-B1-probe4.patch` (adds the mirror instrument), and are reverted in the
+worktree. `cargo build`/`cargo test`/`validate.sh` were not run: nothing
+under `vibegraph-lib` or `vibegraph-cli` changes on this branch.
+
+## Found
+
+1. **vibegraph integrates IR-divergent cards silently.** `draj = 0` with
+   `ptgmin = 0` and a photon attached to a massless quark line gives a
+   log-divergent σ, which vibegraph returns as a number (or, at `--fixed-budget`
+   12 × 120000, refuses only through the generic effective-sample-size check,
+   ESS 15 < 20). Evidence: the `draj` scan above. Closing it: a run-card IR-safety
+   check alongside `refuse_ir_unsafe_exemption` (photon–quark separation or
+   isolation; jet separation/pT where a coloured core parton is otherwise
+   uncut), with a test that refuses each of the four B cards and accepts the
+   banked cards.
+2. **`Cuts::spacelike_floor` caps every rung at the hardest single-leg pT**,
+   which bounds a rung's transfer only when the emitted leg carries that cut.
+   With `pta = 200` and `ptj ≤ 1`, the spine channels exclude soft-jet rungs.
+   Evidence (one seed a point, `draj = 0.4`): main `ptj 0.2` 0.46437 ± 0.00185
+   against the uncapped probe at `ptj 1` / `0.01` / `1e-4` 0.4706 / 0.4694 /
+   0.4688 (±0.0011), about −1.2% at 2.7σ, and main `ptj 1` 0.4742 ± 0.0034
+   carried by one large weight (ESS 18822 against 60000–78000). At `ptj = 20`
+   the cap is harmless (0.433334 vs 0.432966; 0.480597 vs 0.479433 on C1).
+   The docstring's "for a three-body final state [the floor] is always [a
+   bound]" is false when the hardest threshold is on a leg that is not emitted
+   at the rung. Closing it: floor each rung at the threshold of the legs it
+   emits (or the minimum over final legs), and a ≥5-seed sweep, capped against
+   uncapped, on `S_ptj0.01_draj0.4.dat`.
+3. **The gridpack database gates these four on σ/MG.** Their reference is an
+   IR-divergent integral's sampler cutoff. Closing it: an outcome category for
+   IR-unsafe cards (driven by item 1's refusal) and removal from the σ/MG
+   statistics.
+4. **MadGraph's `draj = 0` value contains a step beyond the logarithm**: +0.159
+   pb between `draj` 3e-4 and 1e-4 where the slope gives +0.048, and nothing
+   below 1e-4 (bit-identical runs at 1e-4, 1e-7, 0). Not a defect to fix on our
+   side; worth a line in `validation/madgraph-defects` as "MadEvent's σ on an
+   uncut collinear pole is its phase-space resolution" so the next divergent
+   card is recognised by its bit-identical regulator scan.
