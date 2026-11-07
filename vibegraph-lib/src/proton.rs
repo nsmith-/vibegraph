@@ -51,26 +51,36 @@
 //! Diagram enumeration emits **one ordering per unordered initial state**: `g u`
 //! is generated, `u g` is not. Both are physical — the parton distributions of
 //! the two beams are evaluated at different momentum fractions — so the missing
-//! ordering must be restored, and it is not free. The identity is
+//! ordering must be restored. It is restored as MadEvent restores it
+//! (`IMIRROR = 2` in `super_auto_dsig_group_v4.inc`): every leg of the sampled
+//! configuration `(x₁, x₂, q)` is rotated by π about the x axis,
 //!
 //! ```text
-//! |M_{b a}(p₁, p₂, q)|² = |M_{a b}(p₁, p₂, R q)|²,   R: (E, pₓ, p_y, p_z) ↦ (E, pₓ, −p_y, −p_z)
+//! R: (E, pₓ, p_y, p_z) ↦ (E, pₓ, −p_y, −p_z),
 //! ```
 //!
-//! `R` is the rotation by π about the x axis, which maps a partonic-CM beam
-//! momentum onto the other beam's (`R p₁ = p₂`); rotating the mirrored
-//! configuration by it puts the beams back where the amplitude expects them and
-//! leaves the outgoing legs reflected. So a group contributes
+//! which carries the representative's first parton onto the `−z` beam and its
+//! second onto the `+z` one. The rotated configuration is the event of the
+//! exchanged ordering: beam 1 carries `b` at the sampled `x₂`, beam 2 carries `a`
+//! at the sampled `x₁`, and the outgoing legs are `R q`. Its matrix element is the
+//! sampled one, `|M_{b a}(R q)|² = |M_{a b}(q)|²` by rotation invariance, so a
+//! group contributes
 //!
 //! ```text
-//! xf_a(x₁)·xf_b(x₂)·|M(q)|²  +  xf_b(x₁)·xf_a(x₂)·|M(R q)|²
+//! xf_a(x₁, μ_F1)·xf_b(x₂, μ_F2)·|M(q)|²·Θ(q)  +  xf_a(x₁, μ_F1)·xf_b(x₂, μ_F2)·|M(q)|²·Θ(R q)
 //! ```
 //!
-//! under one cut indicator: `R` is an argument to the matrix element, not a
-//! change to the event, whose final state stays `q`. [`FlavorGroup::mirror_into`]
-//! builds the reflected argument and [`FlavorGroup::luminosity`] returns the two
-//! sums. An initial state with `a == b` has only one ordering and contributes no
-//! mirror term.
+//! for a mirrored member, with one matrix element per point. The mirror term's
+//! densities are the beams' exchanged — `a`'s read from beam 2, `b`'s from beam
+//! 1 — at each parton's own sampled fraction and factorisation scale, which is
+//! MadEvent's `PDG2PDF(LPP(IB(1)), a, IB(1), XBK(IB(1)), Q2FACT(1))` after it
+//! exchanges `XBK` and `IB`; both beams are protons, so the two terms read the
+//! same numbers. The term peaks where the direct one does, which is where the
+//! group's own channels sample. Each term is cut on its own event's lab frame
+//! (`Θ(R q)` boosted at the exchanged fractions), which at equal beam energies is
+//! the direct lab frame rotated. [`exchange_into`] builds the exchanged event and
+//! [`FlavorGroup::luminosity`] returns the two sums. An initial state with
+//! `a == b` has only one ordering and contributes no mirror term.
 //!
 //! # Identical outgoing particles
 //!
@@ -253,8 +263,9 @@ pub enum BeamOrdering {
     /// the shared matrix element is evaluated at the point as drawn.
     Direct,
     /// The exchanged ordering: beam 1 carries [`Subprocess::incoming`]`[1]`, and
-    /// the shared matrix element is evaluated at the rotated argument
-    /// ([`FlavorGroup::mirror_into`]).
+    /// the event is the sampled one rotated by π about the x axis with its beams
+    /// exchanged ([`exchange_into`]), at which the shared matrix element takes the
+    /// value it takes at the point as drawn.
     Exchanged,
 }
 
@@ -335,6 +346,40 @@ pub(crate) fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [F
     rows
 }
 
+/// The exchanged beam ordering's event built from the sampled one, in physical
+/// leg order: every leg rotated by π about the x axis, `(E, pₓ, p_y, p_z) ↦
+/// (E, pₓ, −p_y, −p_z)`, and the two beams exchanged, so that `out[0]` is the
+/// sampled second beam rotated onto `+z` and `out[1]` the sampled first beam
+/// rotated onto `−z`. Physical leg `i` is the representative's leg
+/// `order[i]` of [`FlavorGroup::event_legs`].
+///
+/// The rotation is proper, so every invariant of the sampled configuration —
+/// its `|M|²`, each diagram's and each colour flow's squared amplitude, every
+/// helicity — is the rotated event's. `momenta` is in any frame whose z axis is
+/// the beam axis; `out` is overwritten and may be a reused buffer.
+pub fn exchange_into(momenta: &[V], out: &mut Vec<V>) {
+    let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+    out.clear();
+    out.push(rotate(&momenta[1]));
+    out.push(rotate(&momenta[0]));
+    out.extend(momenta[2..].iter().map(rotate));
+}
+
+/// The scales of the exchanged ordering's event, from the ones the sampled
+/// configuration was evaluated at: the same renormalisation scale and clustering,
+/// with the two factorisation scales exchanged into physical beam order.
+///
+/// A factorisation scale belongs to a parton, not to a beam: MadEvent reads
+/// `Q2FACT(1)` for the representative's first parton in either ordering, and
+/// under `IMIRROR = 2` that parton rides beam 2.
+pub(crate) fn exchanged_scales(scales: EventScales) -> EventScales {
+    EventScales {
+        mu_f: [scales.mu_f[1], scales.mu_f[0]],
+        mu_f_record: [scales.mu_f_record[1], scales.mu_f_record[0]],
+        ..scales
+    }
+}
+
 impl FlavorGroup {
     /// The compiled, helicity-pruned amplitude every member shares.
     pub fn evaluator(&self) -> &AmplitudeEvaluator {
@@ -391,32 +436,22 @@ impl FlavorGroup {
         self.members.iter().any(Subprocess::has_mirror)
     }
 
-    /// The argument the shared `|M|²` takes for the mirrored beam ordering:
-    /// the beams untouched, the outgoing legs rotated by π about the x axis.
-    ///
-    /// The rotation maps each beam momentum onto the other's, so evaluating the
-    /// group's amplitude here is evaluating the subprocess with its two incoming
-    /// flavours exchanged. `out` is overwritten and may be a reused buffer.
-    pub fn mirror_into(&self, momenta: &[V], out: &mut Vec<V>) {
-        out.clear();
-        out.extend_from_slice(&momenta[..self.n_in()]);
-        out.extend(
-            momenta[self.n_in()..]
-                .iter()
-                .map(|p| V::new(p.e(), p.px(), -p.py(), -p.pz())),
-        );
-    }
-
     /// Summed `x·f` luminosity of the group, as `[direct, mirror]`:
     ///
     /// ```text
-    /// direct = Σ_members xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (mirrored members only)
+    /// direct = Σ_members xf_a^(beam 1)(x₁, μ_F1) · xf_b^(beam 2)(x₂, μ_F2)
+    /// mirror = Σ_members xf_a^(beam 2)(x₁, μ_F1) · xf_b^(beam 1)(x₂, μ_F2)   (mirrored members only)
     /// ```
     ///
-    /// `direct` weights `|M(q)|²` and `mirror` weights `|M(R q)|²`
-    /// ([`mirror_into`](Self::mirror_into)). `mu_f` is per beam in beam order,
-    /// since MadGraph's `q2fact(1)` and `q2fact(2)` need not coincide.
+    /// at the sampled fractions, with `a` and `b` the member's incoming partons in
+    /// enumerated order. Both weight the matrix element at the sampled point,
+    /// `|M(q)|²`: the mirror term is the event rotated by π about the x axis
+    /// ([`exchange_into`]), where `a` rides beam 2 at `x₁` and `b` beam 1 at `x₂`,
+    /// as MadEvent evaluates `IMIRROR = 2`. `mu_f` is per parton in the
+    /// representative's leg order — `μ_F1` is `a`'s scale in both orderings, as
+    /// MadEvent's `Q2FACT(1)` is — since `q2fact(1)` and `q2fact(2)` need not
+    /// coincide. Both beams are protons, so a mirrored member contributes the same
+    /// number to both sums.
     ///
     /// A member without a mirrored ordering ([`Subprocess::has_mirror`]) — its
     /// beams carry the same parton, or the card generated it in one ordering —
@@ -485,8 +520,12 @@ impl FlavorGroup {
 
     /// One member's `[direct, mirror]` luminosity — the share that decides which
     /// concrete flavour an accepted event of this group is labelled with — off the
-    /// two beam flavour rows: two array reads per ordering, at slots resolved when
-    /// the group was built.
+    /// two flavour rows at the sampled `(x₁, μ_F1)` and `(x₂, μ_F2)`: two array
+    /// reads, at slots resolved when the group was built.
+    ///
+    /// The mirror term reads `a` at `x₁` and `b` at `x₂` as the direct one does
+    /// ([`luminosity`](Self::luminosity)); only the beams those densities belong
+    /// to are exchanged, and at proton–proton beams that is the same row.
     pub(crate) fn member_luminosity_rows(
         &self,
         member: usize,
@@ -496,8 +535,21 @@ impl FlavorGroup {
         let m = self.member_slots[member];
         let [a, b] = m.slots;
         let direct = f1[a] * f2[b];
-        let mirror = if m.mirrored { f1[b] * f2[a] } else { 0.0 };
+        let mirror = if m.mirrored { direct } else { 0.0 };
         [direct, mirror]
+    }
+
+    /// The members' matched reweighting factors under the exchanged ordering,
+    /// from their direct ones: a mirrored member's is its direct factor, since
+    /// the exchanged event clusters as the sampled one with every parton at its
+    /// own fraction; a member without a mirrored ordering carries no luminosity
+    /// there and takes `1`.
+    pub(crate) fn mirrored_rewgts(&self, direct: &[f64]) -> Vec<f64> {
+        direct
+            .iter()
+            .zip(&self.member_slots)
+            .map(|(&f, m)| if m.mirrored { f } else { 1.0 })
+            .collect()
     }
 
     /// The external legs one member carries under one beam ordering, as an event
@@ -505,14 +557,13 @@ impl FlavorGroup {
     /// first), and the permutation `order[physical] = representative` that carries
     /// the shared amplitude's per-leg data onto those legs.
     ///
-    /// Under [`BeamOrdering::Exchanged`] the two beams trade places. The mirrored
-    /// term evaluates the shared amplitude at the rotated argument
-    /// ([`mirror_into`](Self::mirror_into)), and that rotation maps each beam
-    /// momentum onto the other's, so everything the representative says about its
-    /// leg 0 — colour lines, helicity, mass — describes the event's *second* beam.
-    /// The rotation is a proper one, so a helicity is carried across unchanged.
-    /// The outgoing legs are untouched: the mirror is an argument to the matrix
-    /// element, not a second final state.
+    /// Under [`BeamOrdering::Exchanged`] the two beams trade places. The exchanged
+    /// event is the sampled configuration rotated by π about the x axis
+    /// ([`exchange_into`]), which carries the representative's leg 0 onto the
+    /// `−z` beam, so everything the representative says about its leg 0 — colour
+    /// lines, helicity, mass — describes the event's *second* beam. The rotation
+    /// is a proper one, so a helicity is carried across unchanged, and it keeps
+    /// each outgoing leg in its place.
     pub fn event_legs(&self, member: usize, ordering: BeamOrdering) -> (Vec<i32>, Vec<usize>) {
         let m = &self.members[member];
         let mut order: Vec<usize> = (0..self.legs.len()).collect();
@@ -1395,16 +1446,19 @@ pub struct ProtonEvent {
     /// [`value_in_channel`](ProtonIntegrand::value_in_channel) returns at the same
     /// coordinates.
     pub weight: f64,
-    /// Beam momentum fractions `(x₁, x₂)`.
+    /// Beam momentum fractions `(x₁, x₂)` of the sampled configuration: the
+    /// representative's first parton at `x₁`, its second at `x₂`, in either beam
+    /// ordering.
     pub x: [f64; 2],
     /// Per flavour group, the scales its two beam orderings' terms were evaluated
-    /// at, `[direct, mirrored]`, each with its factorisation scales in physical
-    /// beam order; `None` where that term's factorisation scale fell below the
-    /// floor and it carries no weight, or where the group has no mirrored
-    /// ordering. Every entry is the same where the prescription does not read an
-    /// integration configuration; under the clustering each term's scale is
-    /// clustered in its own group's configurations, at the momenta its own
-    /// matrix element is evaluated at.
+    /// at, `[direct, mirrored]`, each with its factorisation scales in that
+    /// ordering's physical beam order; `None` where that term's factorisation
+    /// scale fell below the floor, where its event fails the group's cuts, or
+    /// where the group has no mirrored ordering. Every group's entry is the same
+    /// where the prescription does not read an integration configuration; under
+    /// the clustering each group's scale is clustered in its own configurations,
+    /// at the sampled momenta. The two orderings of a group share the clustering
+    /// and differ only in which beam each factorisation scale is reported on.
     pub group_scales: Vec<[Option<EventScales>; 2]>,
     /// Per flavour group and beam ordering, `[direct, mirrored]`, the matched
     /// reweighting factor (`rewgt`) of each member of the group, in member order;
@@ -1420,9 +1474,12 @@ pub struct ProtonEvent {
     /// clustering `rewgt` read, from which the drawn member's `<mgrwt>` record
     /// is taken; `None` without matching and where the term carries no weight.
     pub(crate) group_histories: Vec<[Option<RewgtHistory>; 2]>,
-    /// Lab-frame external momenta, beams first — what the event record reports.
+    /// Lab-frame external momenta of the sampled configuration, beams first —
+    /// what the event record reports under the direct ordering
+    /// ([`ProtonIntegrand::record_momenta`] gives either ordering's).
     pub lab: Vec<V>,
-    /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
+    /// Partonic-CM external momenta of the sampled configuration, beams first —
+    /// the frame `|M|²` is taken in, in both orderings.
     pub cm: Vec<V>,
 }
 
@@ -1465,18 +1522,33 @@ pub struct ProtonSelection {
     /// `SCALUP` and the argument of its `AQCDUP`.
     pub scales: EventScales,
     /// Under matching, what the record reads of the drawn term's clustering,
-    /// in the group representative's leg order with the drawn ordering's beams
-    /// in place (the clustering of a mirrored term sees its own first parton on
-    /// the first beam); `None` without matching.
+    /// in the group representative's leg order (its first parton on clustering
+    /// beam 0, which is physical beam 2 under the exchanged ordering); `None`
+    /// without matching.
     pub record: Option<MatchedRecord>,
     /// Under matching, the drawn member's reweighting under the drawn
     /// ordering, factor by factor, in clustering order; `None` without it.
     pub rewgt: Option<Rewgt>,
-    /// The drawn group's `|M|²` under the drawn ordering, as this integrand
+    /// The drawn group's `|M|²` at the sampled point, as this integrand
     /// evaluated it for the point's value, at the term's own coupling: what any
     /// other evaluation of the event's member at the model's own parameters, at
-    /// the same momenta and ordering, must reproduce.
+    /// the same momenta, must reproduce. Under the exchanged ordering it is also
+    /// the member's mirrored subprocess at the written (rotated) event.
     pub m2: f64,
+}
+
+/// One accepted point's terms per flavour group
+/// ([`ProtonIntegrand::ordering_contributions`]).
+struct OrderingTerms {
+    /// Per group, `[direct, mirrored]`, the matrix element each ordering's term
+    /// read, zero where the term carries no luminosity.
+    m2: Vec<[f64; 2]>,
+    /// Per group, its whole term of the point's value.
+    terms: Vec<f64>,
+    /// Per group, `[direct, mirrored]`, that term split by ordering.
+    split: Vec<[f64; 2]>,
+    /// Per group, the density rows each ordering's term read.
+    rows: Vec<[[FlavorRow; 2]; 2]>,
 }
 
 /// What one point's multichannel weight is made of
@@ -1576,8 +1648,8 @@ pub struct OuterPoint {
 /// # Master formula
 ///
 /// ```text
-/// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) |M_g(q)|²
-///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_g(q) / F
+/// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) Θ_g(q)
+///                               + L_g^mirror(x₁,x₂,μF) Θ_g(R q) ] · |M_g(q)|² / F
 /// ```
 ///
 /// with `F = 2λ^{1/2}(ŝ, m₁², m₂²)` the Møller flux of the incoming partons at
@@ -1589,10 +1661,15 @@ pub struct OuterPoint {
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
-/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R` the mirror map
-/// ([`FlavorGroup::mirror_into`]). Each group carries **one** cut indicator
-/// `Θ_g`, its own filter ([`FlavorGroup::cuts`]), on the unreflected final state:
-/// the mirror is an argument to the matrix element, not a second event.
+/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R q` the exchanged
+/// ordering's event, the sampled one rotated by π about the x axis with its beams
+/// exchanged ([`exchange_into`]). Both terms weight the matrix element at the
+/// sampled point, as MadEvent's `IMIRROR = 2` does, so the mirror term peaks
+/// where the direct one does and the group's own channels sample both. Each group
+/// carries its own filter ([`FlavorGroup::cuts`]), read on each term's own event
+/// in the lab frame: `Θ_g(q)` at the sampled fractions, `Θ_g(R q)` with `x₁` and
+/// `x₂` on the exchanged beams. At equal beam energies the second is the first
+/// rotated, and the two differ only for a cut that tells `+z` from `−z`.
 ///
 /// # Groups cut apart
 ///
@@ -1658,6 +1735,9 @@ pub struct ProtonIntegrand<'a> {
     filters: Vec<&'a Cuts>,
     /// Per flavour group, the index into `filters` of the group's own filter.
     group_filter: Vec<usize>,
+    /// Per filter, whether some group cut by it has a mirrored ordering, so that
+    /// the exchanged event is cut at all.
+    filter_mirrored: Vec<bool>,
     combiner: ScaledMultiChannel<f64>,
     /// Per sampling channel, the first `(group, diagram)` pair its map was built
     /// from — the channel's name.
@@ -1753,7 +1833,9 @@ struct ProtonScratch<'a> {
     scale_buf: RefCell<Vec<[f64; 4]>>,
     cm_buf: RefCell<Vec<V>>,
     lab_buf: RefCell<Vec<V>>,
-    mirror_buf: RefCell<Vec<V>>,
+    /// The exchanged ordering's event in the frame the cuts read
+    /// ([`ProtonIntegrand::exchanged_lab_into`]).
+    exchanged_lab_buf: RefCell<Vec<V>>,
     /// The last `(μR, αs(μR))` pair, so a repeated scale does not repeat the
     /// coupling lookup.
     last_coupling: Cell<(f64, f64)>,
@@ -1778,13 +1860,9 @@ struct ProtonScratch<'a> {
     /// ([`ProtonIntegrand::census`]).
     census: CensusCell,
     /// Per cut filter ([`ProtonIntegrand::filters`]), which of the point's
-    /// `[direct, mirrored]` terms it passes. The two agree except under
-    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`].
+    /// `[direct, mirrored]` events it passes: the sampled one, and the exchanged
+    /// one where the filter cuts a mirrored group (`false` elsewhere).
     filter_passes: RefCell<Vec<[bool; 2]>>,
-    /// The configuration MadEvent cuts a point's mirrored term on, under
-    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
-    #[cfg(any(test, feature = "extended-validation"))]
-    madevent_lab_buf: RefCell<Vec<V>>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1804,8 +1882,8 @@ impl<'a> ProtonIntegrand<'a> {
     ///   prescription by [`use_run_card_scales`](Self::use_run_card_scales).
     ///
     /// Every group's diagrams contribute a channel and all of them are pooled into
-    /// one mixture, so a peak one group's own diagrams do not cover — the mirrored
-    /// `g q` configuration above all — is still covered by another group's.
+    /// one mixture. A group's mirror term weights the matrix element at the
+    /// sampled point, so the group's own channels cover both of its orderings.
     /// Diagrams whose maps are the same function
     /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)),
     /// within a group or across groups, share one channel at their summed
@@ -1930,6 +2008,10 @@ impl<'a> ProtonIntegrand<'a> {
             }
         }
         let (filters, group_filter) = distinct_filters(groups);
+        let mut filter_mirrored = vec![false; filters.len()];
+        for (g, &k) in groups.groups().iter().zip(&group_filter) {
+            filter_mirrored[k] |= g.has_mirror();
+        }
         // Every channel is shaped by bounds that hold wherever some group's cuts
         // accept, since a channel's density below its floors is positive and is
         // read against every group's term ([`ChannelBounds`]).
@@ -2042,6 +2124,7 @@ impl<'a> ProtonIntegrand<'a> {
             subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
             pdf,
+            filter_mirrored,
             filters,
             group_filter,
             combiner,
@@ -2104,7 +2187,7 @@ impl<'a> ProtonIntegrand<'a> {
                 scale_buf: RefCell::new(Vec::with_capacity(n_out)),
                 cm_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-                mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                exchanged_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
@@ -2114,8 +2197,6 @@ impl<'a> ProtonIntegrand<'a> {
                 vetoed: bind_vetoes(&self.vetoes),
                 census: CensusCell::default(),
                 filter_passes: RefCell::new(vec![[true, true]; self.filters.len()]),
-                #[cfg(any(test, feature = "extended-validation"))]
-                madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
             }
         })
     }
@@ -2592,9 +2673,7 @@ impl<'a> ProtonIntegrand<'a> {
         };
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
-        let passes = self.cut_point(sc);
-        #[cfg(any(test, feature = "extended-validation"))]
-        let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
+        let passes = self.cut_point(sc, m, &cm);
         if !passes {
             sc.census.rejected();
             return 0.0;
@@ -2626,92 +2705,97 @@ impl<'a> ProtonIntegrand<'a> {
     /// afterwards (`super_auto_dsig_group_v4.inc:815-829`), and the `PASSCUTS`
     /// call there (`:835`) is commented out. A mirrored event is therefore cut
     /// on the configuration it was sampled from, not on the one it is written
-    /// as. Here the mirrored term at `(x₁, x₂, q)` is the event MadEvent samples
-    /// at `(x₂, x₁, R q)`, `R` the rotation by π about x, so that is the
-    /// configuration its cut reads, boosted at its own `cm_rap`. At equal beams
+    /// as: here, the mirror term takes the direct term's cut. At equal beams
     /// the two coincide; at `E₁ ≠ E₂` they differ by `ln(E₁/E₂)` in every
     /// rapidity.
     ///
-    /// Cross section only: drawing an event from the integrand panics, as does
-    /// a scale prescription that clusters each term on its own.
+    /// Cross section only: drawing an event from the integrand panics.
     #[cfg(any(test, feature = "extended-validation"))]
     pub fn emulate_madevent_mirrored_cut(&mut self) {
         self.madevent_mirrored_cut = true;
     }
 
-    /// Evaluate every distinct cut filter on the lab-frame point in the frame
-    /// buffers, recording in the scratch which filters pass, and whether any
-    /// does: a point is integrated wherever some group's cuts accept it, and
-    /// each group's term carries its own filter's indicator.
-    fn cut_point(&self, sc: &ProtonScratch<'a>) -> bool {
+    /// Evaluate every distinct cut filter on the point in the frame buffers,
+    /// recording in the scratch which filters pass each ordering's event, and
+    /// whether any does: a point is integrated wherever some group's cuts accept
+    /// it, and each group's term carries its own filter's indicator on its own
+    /// event. The exchanged event ([`exchanged_lab_into`](Self::exchanged_lab_into))
+    /// is cut only by a filter some mirrored group reads.
+    fn cut_point(&self, sc: &ProtonScratch<'a>, m: &OuterPoint, cm: &[V]) -> bool {
         let lab = sc.lab_buf.borrow();
+        let mut exchanged = sc.exchanged_lab_buf.borrow_mut();
+        let mut built = false;
         let mut passes = sc.filter_passes.borrow_mut();
         let mut any = false;
-        for (p, cuts) in passes.iter_mut().zip(&self.filters) {
-            let pass = cuts.pass(&lab);
-            *p = [pass, pass];
-            any |= pass;
+        for (k, (p, cuts)) in passes.iter_mut().zip(&self.filters).enumerate() {
+            let direct = cuts.pass(&lab);
+            let mirrored = self.filter_mirrored[k]
+                && if self.cuts_exchanged_as_sampled() {
+                    direct
+                } else {
+                    if !built {
+                        self.exchanged_lab_into([m.x1, m.x2], cm, &mut exchanged);
+                        built = true;
+                    }
+                    cuts.pass(&exchanged)
+                };
+            *p = [direct, mirrored];
+            any |= direct || mirrored;
         }
         any
+    }
+
+    /// Whether the exchanged ordering is cut on the sampled configuration rather
+    /// than on its own event ([`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut)).
+    #[cfg(any(test, feature = "extended-validation"))]
+    fn cuts_exchanged_as_sampled(&self) -> bool {
+        self.madevent_mirrored_cut
+    }
+
+    /// Whether the exchanged ordering is cut on the sampled configuration rather
+    /// than on its own event: never, outside the test-side emulation.
+    #[cfg(not(any(test, feature = "extended-validation")))]
+    fn cuts_exchanged_as_sampled(&self) -> bool {
+        false
+    }
+
+    /// The exchanged ordering's event ([`exchange_into`]) in the frame the cuts
+    /// read, from the sampled fractions `x` and partonic-CM momenta `cm`: the
+    /// partonic configuration rotated with its beams exchanged, boosted at
+    /// MadEvent's `cm_rap` for beam 1 carrying `x₂` and beam 2 carrying `x₁`,
+    /// `½ ln(x₂E₁/(x₁E₂))`. Massless beams are then exactly `x₂P₁` and `x₁P₂`.
+    /// At equal beam energies this is the sampled lab frame rotated.
+    fn exchanged_lab_into(&self, x: [f64; 2], cm: &[V], out: &mut Vec<V>) {
+        let [e1, e2] = self.beams.energies();
+        let r = e2 / e1;
+        let beta = (x[1] - r * x[0]) / (x[1] + r * x[0]);
+        exchange_into(cm, out);
+        for p in out.iter_mut() {
+            *p = boost_z(*p, beta);
+        }
+        if self.initial_masses == [0.0, 0.0] {
+            out[0] = V::new(x[1] * e1, 0.0, 0.0, x[1] * e1);
+            out[1] = V::new(x[0] * e2, 0.0, 0.0, -x[0] * e2);
+        }
     }
 
     /// Whether group `gi`'s cuts accept the point last cut, in either beam
     /// ordering ([`cut_point`](Self::cut_point)).
     fn group_passes(&self, sc: &ProtonScratch<'a>, gi: usize) -> bool {
-        let [direct, mirrored] = sc.filter_passes.borrow()[self.group_filter[gi]];
+        let [direct, mirrored] = self.group_cut(sc, gi);
         direct || mirrored
     }
 
-    /// Whether a point passes some filter's cuts in either ordering under
-    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut),
-    /// recording per filter which ordering passed; `lab_passes` alone without
-    /// it.
-    #[cfg(any(test, feature = "extended-validation"))]
-    fn cut_orderings_as_madevent(
-        &self,
-        sc: &ProtonScratch<'a>,
-        m: &OuterPoint,
-        out: &[V],
-        lab_passes: bool,
-    ) -> bool {
-        if !self.madevent_mirrored_cut {
-            return lab_passes;
-        }
-        let [e1, e2] = self.beams.energies();
-        let r = e2 / e1;
-        let beta = (m.x2 - r * m.x1) / (m.x2 + r * m.x1);
-        let mut sampled = sc.madevent_lab_buf.borrow_mut();
-        sampled.clear();
-        sampled.push(V::new(m.x2 * e1, 0.0, 0.0, m.x2 * e1));
-        sampled.push(V::new(m.x1 * e2, 0.0, 0.0, -m.x1 * e2));
-        sampled.extend(
-            out.iter()
-                .map(|p| boost_z(V::new(p.e(), p.px(), -p.py(), -p.pz()), beta)),
-        );
-        let mut passes = sc.filter_passes.borrow_mut();
-        let mut any = false;
-        for (p, cuts) in passes.iter_mut().zip(&self.filters) {
-            p[1] = cuts.pass(&sampled);
-            any |= p[0] || p[1];
-        }
-        any
+    /// Group `gi`'s cut indicator on each ordering's event, `[direct, mirrored]`,
+    /// at the point last cut.
+    fn group_cut(&self, sc: &ProtonScratch<'a>, gi: usize) -> [bool; 2] {
+        sc.filter_passes.borrow()[self.group_filter[gi]]
     }
 
-    /// Group `gi`'s `[direct, mirrored]` with the ordering whose cut failed
-    /// zeroed, under
-    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut);
-    /// unchanged without it.
-    #[cfg(any(test, feature = "extended-validation"))]
-    fn madevent_cut_luminosities(
-        &self,
-        sc: &ProtonScratch<'a>,
-        gi: usize,
-        lumi: [f64; 2],
-    ) -> [f64; 2] {
-        if !self.madevent_mirrored_cut {
-            return lumi;
-        }
-        let passes = sc.filter_passes.borrow()[self.group_filter[gi]];
+    /// Group `gi`'s `[direct, mirrored]` luminosities with the ordering whose
+    /// event its cuts reject zeroed.
+    fn cut_luminosities(&self, sc: &ProtonScratch<'a>, gi: usize, lumi: [f64; 2]) -> [f64; 2] {
+        let passes = self.group_cut(sc, gi);
         [0, 1].map(|o| if passes[o] { lumi[o] } else { 0.0 })
     }
 
@@ -2735,13 +2819,17 @@ impl<'a> ProtonIntegrand<'a> {
         {
             let mut out = sc.group_scales.borrow_mut();
             out.clear();
+            // An ordering whose event the group's cuts reject carries no weight
+            // here. The exchanged event's scales are the sampled ones with the
+            // beams' factorisation scales exchanged: MadEvent evaluates the
+            // prescription once, on the sampled momenta, and reads `Q2FACT(1)`
+            // for the representative's first parton in either ordering.
             out.extend((0..n_groups).map(|gi| {
-                if self.group_passes(sc, gi) {
-                    [scales, scales]
-                } else {
-                    // A group whose cuts reject the point carries no weight here.
-                    [None, None]
-                }
+                let [direct, mirrored] = self.group_cut(sc, gi);
+                [
+                    scales.filter(|_| direct),
+                    scales.filter(|_| mirrored).map(exchanged_scales),
+                ]
             }));
             let mut factors = sc.group_rewgt.borrow_mut();
             factors.clear();
@@ -2764,10 +2852,9 @@ impl<'a> ProtonIntegrand<'a> {
         let [f1, f2] = beam_rows(self.pdf, m.x1, m.x2, scales.mu_f);
 
         let mut acc = 0.0;
-        let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             if self.group_passes(sc, gi) {
-                acc += self.group_term(sc, gi, g, sub, cm, &mut mirror, &f1, &f2);
+                acc += self.group_term(sc, gi, g, sub, cm, &f1, &f2);
             }
         }
         acc
@@ -2782,19 +2869,18 @@ impl<'a> ProtonIntegrand<'a> {
     /// evaluated at. Here every group is summed at every point, so every group
     /// draws its own configuration from the one trailing uniform, clusters in it,
     /// and has its parton densities read at its own `μF` and its coupling moved to
-    /// its own `μR`. A group's mirrored term is a different physical event — the
-    /// same momenta with the beams' partons exchanged — and MadEvent clusters it
-    /// as that event: the configuration is drawn from `AMP2` at the mirrored
-    /// argument `Rq` and clustered at `Rq` too, where the representative's first
-    /// parton is on the first beam again. Both terms cluster in the partonic CM
-    /// ([`term_at`](Self::term_at)). The draws share the uniform, which correlates
-    /// them without changing any one term's distribution, and the sum is linear in
-    /// each term.
+    /// its own `μR`. Both of a group's terms take that one clustering: MadEvent's
+    /// `update_scale_coupling` clusters the sampled `PP` in either ordering, and
+    /// the exchanged event is that configuration rotated, at which every `AMP2_c`
+    /// and every clustering measure is the sampled one. Its factorisation scales
+    /// stay with their partons, so per physical beam they come out exchanged
+    /// ([`exchanged_scales`]). The clustering reads the partonic CM
+    /// ([`term_at`](Self::term_at)).
     ///
-    /// The sampling channel reaches only the direct terms of the groups whose
-    /// diagrams it was built from, and only as the draw's fallback where `AMP2`
-    /// carries no probability, where that group's own diagram of the channel is
-    /// kept; every other term falls back to its group's first configuration.
+    /// The sampling channel reaches only the groups whose diagrams it was built
+    /// from, and only as the draw's fallback where `AMP2` carries no probability,
+    /// where that group's own diagram of the channel is kept; every other group
+    /// falls back to its first configuration.
     fn per_group_sum(
         &self,
         sc: &ProtonScratch<'a>,
@@ -2806,11 +2892,6 @@ impl<'a> ProtonIntegrand<'a> {
         let &[v] = scale_u else {
             panic!("a configuration-drawing prescription takes one trailing uniform")
         };
-        #[cfg(any(test, feature = "extended-validation"))]
-        assert!(
-            !self.madevent_mirrored_cut,
-            "MadEvent's mirrored-ordering cut is emulated on a shared-scale sum only"
-        );
         let mut out = sc.group_scales.borrow_mut();
         out.clear();
         let mut factors = sc.group_rewgt.borrow_mut();
@@ -2829,7 +2910,6 @@ impl<'a> ProtonIntegrand<'a> {
             }
         };
         let mut acc = 0.0;
-        let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             // A group whose cuts reject the point carries no weight and is not
             // clustered there.
@@ -2840,6 +2920,8 @@ impl<'a> ProtonIntegrand<'a> {
                 factors.push([None, None]);
                 continue;
             }
+            let [cut_direct, cut_mirrored] = self.group_cut(sc, gi);
+            let mirrored = cut_mirrored && g.has_mirror();
             let fallback = SampledChannel {
                 group: gi,
                 channel: self.channel_members[channel]
@@ -2847,91 +2929,69 @@ impl<'a> ProtonIntegrand<'a> {
                     .find(|id| id.group == gi)
                     .map_or(0, |id| id.channel),
             };
-            let direct = {
-                let drawn = self.scale_channel(sc, cm, fallback, v);
-                self.term_at(sc, cm, drawn)
-            };
-            let mirrored = if g.has_mirror() {
-                g.mirror_into(cm, &mut mirror);
-                let drawn = self.scale_channel(
-                    sc,
-                    &mirror,
-                    SampledChannel {
-                        group: gi,
-                        channel: 0,
-                    },
-                    v,
-                );
-                // Clustered with the beams exchanged, so its per-beam
-                // factorisation scales come back in that order.
-                self.term_at(sc, &mirror, drawn)
-                    .map(|(s, history, record)| {
-                        (
-                            EventScales {
-                                mu_f: [s.mu_f[1], s.mu_f[0]],
-                                mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
-                                ..s
-                            },
-                            history,
-                            record,
-                        )
-                    })
-            } else {
-                None
-            };
-            // The matched reweighting of each member, per ordering. The mirrored
-            // clustering puts the representative's first parton on its first
-            // beam, which is the physical second one.
-            let direct_rewgt = direct.as_ref().and_then(|(_, history, _)| {
-                history
-                    .as_ref()
-                    .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2], BeamOrdering::Direct))
-            });
-            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history, _)| {
-                history
-                    .as_ref()
-                    .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
-            });
-            let (direct, direct_history, direct_record) =
-                direct.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
-            let (mirrored, mirrored_history, mirrored_record) =
-                mirrored.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
-            out.push([direct, mirrored]);
-            records.push([direct_record, mirrored_record]);
-            histories.push([direct_history, mirrored_history]);
+            let drawn = self.scale_channel(sc, cm, fallback, v);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
+            let Some((scales, history, record)) = self.term_at(sc, cm, drawn) else {
+                out.push([None, None]);
+                records.push([None, None]);
+                histories.push([None, None]);
+                factors.push([None, None]);
+                continue;
+            };
+            // The matched reweighting of each member. The exchanged event's
+            // clustering is the sampled one with every parton at its own
+            // fraction, so a mirrored member's factor is its direct one.
+            let direct_rewgt = history
+                .as_ref()
+                .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2]));
+            let mirrored_rewgt = direct_rewgt
+                .as_ref()
+                .filter(|_| mirrored)
+                .map(|direct| g.mirrored_rewgts(direct));
+            let f = rows_at(scales.mu_f);
+            let lumi = [
+                if cut_direct {
+                    term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref())
+                } else {
+                    0.0
+                },
+                if mirrored {
+                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref())
+                } else {
+                    0.0
+                },
+            ];
             let mut term = 0.0;
-            if let Some(scales) = direct {
-                let f = rows_at(scales.mu_f);
-                let lumi = term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref());
-                if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
-                }
+            if lumi != [0.0, 0.0] {
+                self.apply_scale_to(sc, sub, scales.mu_r);
+                term = (lumi[0] + lumi[1]) * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
             }
-            if let Some(scales) = mirrored {
-                let f = rows_at(scales.mu_f);
-                let lumi =
-                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref());
-                if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
-                }
-            }
-            factors.push([direct_rewgt, mirrored_rewgt]);
+            out.push([
+                Some(scales).filter(|_| cut_direct),
+                Some(exchanged_scales(scales)).filter(|_| mirrored),
+            ]);
+            records.push([
+                record.clone().filter(|_| cut_direct),
+                record.filter(|_| mirrored),
+            ]);
+            histories.push([
+                history.clone().filter(|_| cut_direct),
+                history.filter(|_| mirrored),
+            ]);
+            factors.push([direct_rewgt.filter(|_| cut_direct), mirrored_rewgt]);
             acc += g.spin_color_average() * term;
         }
         acc
     }
 
-    /// Each member's matched reweighting factor for one beam ordering of group
-    /// `gi`, from the clustering that ordering's term was scaled in.
+    /// Each member's matched reweighting factor in group `gi`, from the
+    /// clustering the group's scale was taken in, at the momentum fractions `x`
+    /// of the representative's two partons.
     ///
     /// `rewgt` reads the flavours of the one combination MadEvent drew for the
     /// point; here every member carries its own factor, weighted by its own
-    /// luminosity, which is that draw's expectation. A member with no mirrored
-    /// ordering carries no luminosity there and takes `1` unread.
+    /// luminosity, which is that draw's expectation.
     ///
     /// # Panics
     ///
@@ -2943,14 +3003,10 @@ impl<'a> ProtonIntegrand<'a> {
         g: &FlavorGroup,
         history: &RewgtHistory,
         x: [f64; 2],
-        ordering: BeamOrdering,
     ) -> Vec<f64> {
         let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
         (0..g.members().len())
             .map(|i| {
-                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
-                    return 1.0;
-                }
                 self.member_rewgt(gi, g, i, history, x, &mut flavours)
                     .weight
             })
@@ -3009,8 +3065,9 @@ impl<'a> ProtonIntegrand<'a> {
         .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
     }
 
-    /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
-    /// coupling its amplitudes are bound at and the density rows given.
+    /// One group's `avg_g · (L_g^direct Θ(q) + L_g^mirror Θ(R q)) · |M_g(q)|²` at
+    /// the coupling its amplitudes are bound at and the density rows given: one
+    /// matrix element for both orderings.
     #[allow(clippy::too_many_arguments)]
     fn group_term(
         &self,
@@ -3019,24 +3076,16 @@ impl<'a> ProtonIntegrand<'a> {
         g: &FlavorGroup,
         sub: &BoundSubprocess<'a>,
         cm: &[V],
-        mirror: &mut Vec<V>,
         f1: &FlavorRow,
         f2: &FlavorRow,
     ) -> f64 {
-        let [direct, reflected] = g.symmetry_weighted_luminosity_rows(f1, f2);
-        #[cfg(any(test, feature = "extended-validation"))]
-        let [direct, reflected] = self.madevent_cut_luminosities(sc, gi, [direct, reflected]);
-        let mut term = 0.0;
-        if direct != 0.0 {
-            term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
+        let lumi = g.symmetry_weighted_luminosity_rows(f1, f2);
+        let [direct, mirrored] = self.cut_luminosities(sc, gi, lumi);
+        let luminosity = direct + mirrored;
+        if luminosity == 0.0 {
+            return 0.0;
         }
-        // Zero for a group whose beams carry one parton ([`FlavorGroup::has_mirror`]),
-        // so such a group costs one matrix element per point rather than two.
-        if reflected != 0.0 {
-            g.mirror_into(cm, mirror);
-            term += reflected * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, mirror);
-        }
-        g.spin_color_average() * term
+        g.spin_color_average() * (luminosity * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm))
     }
 
     /// Which of a group's channels names the integration configuration its scale
@@ -3051,10 +3100,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// history. `fallback` names the group and the channel kept where no
     /// configuration carries probability.
     ///
-    /// `cm` is the ordering being evaluated. A group with a mirror is asked twice
-    /// per point, at the direct momenta and at the mirrored ones, with the same
-    /// `v`: each ordering's scale is clustered in a configuration drawn from that
-    /// ordering's own amplitudes.
+    /// `cm` is the sampled configuration; the exchanged ordering's event is its
+    /// rotation, at which every `AMP2_c` is the same, so one draw serves both.
     fn scale_channel(
         &self,
         sc: &ProtonScratch<'a>,
@@ -3147,8 +3194,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// matrix element is evaluated at, beams first.
     ///
     /// The frame is MadEvent's: `update_scale_coupling` clusters the `PP` that
-    /// `DSIGPROC` evaluates, and that is the partonic CM, mirrored for an
-    /// `IMIRROR = 2` term. The clustering is not invariant under the
+    /// `DSIGPROC` receives, the sampled partonic CM, in either beam ordering. The
+    /// clustering is not invariant under the
     /// longitudinal boost to the lab: `cluster.f` breaks the tie between the two
     /// beams of an initial-state merge on the sign of the merged leg's `p_z`, and
     /// its massive-pair measure reads pseudorapidities.
@@ -3309,15 +3356,20 @@ impl<'a> ProtonIntegrand<'a> {
     /// The laboratory momenta an accepted event's record carries under `ordering`,
     /// beams first, in physical beam order.
     ///
-    /// With massless partons this is the event's lab frame as the cuts read it,
-    /// [`ProtonEvent::lab`]: beams `xᵢPᵢ`, the outgoing legs boosted by `cm_rap`.
+    /// Under [`BeamOrdering::Exchanged`] the event is the sampled configuration
+    /// rotated by π about the x axis with its beams exchanged ([`exchange_into`]),
+    /// beam 1 carrying the member's second parton at the sampled `x₂` and beam 2
+    /// its first at `x₁`, as MadEvent writes an `IMIRROR = 2` event. Everything
+    /// below reads that event's partonic momenta and fractions.
+    ///
+    /// With massless partons this is the event's lab frame as the cuts read it:
+    /// beams `xᵢPᵢ`, the outgoing legs boosted by `cm_rap` (for the direct
+    /// ordering, [`ProtonEvent::lab`]).
     ///
     /// With a massive parton it is the frame MadEvent's `write_leshouche` writes
     /// (`unwgt.f`), which is a different boost from the one its cuts read. The
-    /// beams are put on their own mass shells in the partonic CM — under the
-    /// exchanged ordering beam 1 carries the member's second parton, so the
-    /// shells are exchanged too and the outgoing legs keep the event's `q` — and
-    /// one beam is chosen as the anchor: beam 1 when its parton is massless,
+    /// beams are put on their own mass shells in the partonic CM, and one beam is
+    /// chosen as the anchor: beam 1 when its parton is massless,
     /// beam 2 otherwise. The boost along `z` is the one that takes the anchor's
     /// `E*/xᵢ` to its beam energy `Eᵢ`, so the anchor's lab energy is `xᵢEᵢ`
     /// while the other beam's is whatever its mass shell and the boost leave
@@ -3330,33 +3382,39 @@ impl<'a> ProtonIntegrand<'a> {
     /// anchored boost, so the light-cone record above differs from it at the
     /// same order.
     pub fn record_momenta(&self, event: &ProtonEvent, ordering: BeamOrdering) -> Vec<V> {
-        if self.initial_masses == [0.0, 0.0] {
+        let massless = self.initial_masses == [0.0, 0.0];
+        if ordering == BeamOrdering::Direct && massless {
             return event.lab.clone();
         }
+        let mut cm = Vec::with_capacity(event.cm.len());
+        if massless {
+            self.exchanged_lab_into(event.x, &event.cm, &mut cm);
+            return cm;
+        }
         let [m1, m2] = self.initial_masses;
-        let (incoming, beam1_mass) = match ordering {
-            BeamOrdering::Direct => ([event.cm[0], event.cm[1]], m1),
+        let (x, beam1_mass) = match ordering {
+            BeamOrdering::Direct => {
+                cm.extend_from_slice(&event.cm);
+                (event.x, m1)
+            }
             BeamOrdering::Exchanged => {
-                let flip = |p: &V| V::new(p.e(), 0.0, 0.0, -p.pz());
-                ([flip(&event.cm[1]), flip(&event.cm[0])], m2)
+                exchange_into(&event.cm, &mut cm);
+                ([event.x[1], event.x[0]], m2)
             }
         };
+        let incoming = [cm[0], cm[1]];
         let energies = self.beams.energies();
         let anchor = usize::from(beam1_mass != 0.0);
-        let r = energies[anchor] * event.x[anchor] / incoming[anchor].e();
+        let r = energies[anchor] * x[anchor] / incoming[anchor].e();
         let along = if anchor == 0 { 1.0 } else { -1.0 };
         let mut beta = along * (r * r - 1.0) / (r * r + 1.0);
         let over_beam = |b: f64| (0..2).any(|i| boost_z(incoming[i], b).e() > energies[i]);
         if over_beam(beta) {
             let [e1, e2] = energies;
             let rr = e2 / e1;
-            beta = (event.x[0] - rr * event.x[1]) / (event.x[0] + rr * event.x[1]);
+            beta = (x[0] - rr * x[1]) / (x[0] + rr * x[1]);
         }
-        incoming
-            .iter()
-            .chain(&event.cm[2..])
-            .map(|p| boost_z(*p, beta))
-            .collect()
+        cm.iter().map(|p| boost_z(*p, beta)).collect()
     }
 
     /// A point's weight taken apart into the factors it is a product of: the
@@ -3384,45 +3442,15 @@ impl<'a> ProtonIntegrand<'a> {
         })
     }
 
-    /// Fill in an accepted event's discrete labels: which flavour group produced
-    /// it, which concrete flavour assignment inside that group, which way round the
-    /// beams carry it, which helicity combination and which colour flow.
-    ///
-    /// The five uniforms are consumed in that order. The draws are nested rather
-    /// than independent, and each is proportional to the term of the point's own
-    /// value that the label names:
-    ///
-    /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`, with
-    ///   the two luminosities symmetry-weighted as in the cross section and each
-    ///   group's term at its own scales ([`ProtonEvent::group_scales`]), which
-    ///   become the selection's;
-    /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q or Rq)|²`,
-    ///   which at fixed ordering is the member's share of the group's summed
-    ///   parton luminosity at this event's `(x₁, x₂)`, times its own
-    ///   identical-particle factor — the whole of what distinguishes one member of a
-    ///   group from another, since they share the matrix element exactly;
-    /// * the helicity `∝ |M_c|²`, then the colour flow through
-    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
-    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
-    ///   admitted set — all evaluated at the argument the drawn ordering implies,
-    ///   as on a fixed-beam run.
-    ///
-    /// All of them are selections, not sampling channels: the cross section sums
-    /// over every one, and this reads accumulators that sum already contains. A
-    /// caller may skip it entirely and integrate the same number.
-    ///
-    /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+    /// Each flavour group's share of an accepted point's value, per beam ordering:
+    /// the terms [`select_event`](Self::select_event) draws the group and the
+    /// ordering from, each read at the coupling and densities its term of the
+    /// point's value was taken at.
+    fn ordering_terms(&self, event: &ProtonEvent) -> OrderingTerms {
         let sc = self.scratch();
-        let mut mirror = Vec::with_capacity(event.cm.len());
-        assert_eq!(
-            event.group_scales.len(),
-            sc.subs.len(),
-            "an event carries one scale entry per flavour group"
-        );
-
         let mut m2 = Vec::with_capacity(sc.subs.len());
         let mut terms = Vec::with_capacity(sc.subs.len());
+        let mut split = Vec::with_capacity(sc.subs.len());
         // Per group, the density rows each ordering's term read.
         let mut group_rows: Vec<[[FlavorRow; 2]; 2]> = Vec::with_capacity(sc.subs.len());
         let mut last: Option<([f64; 2], [FlavorRow; 2])> = None;
@@ -3443,9 +3471,11 @@ impl<'a> ProtonIntegrand<'a> {
             let mut term_m2 = [0.0; 2];
             let mut rows = [no_rows; 2];
             let mut term = 0.0;
+            let mut lumis = [0.0; 2];
             if let Some(scales) = direct_scales {
                 rows[0] = rows_at(scales.mu_f);
                 let lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
+                lumis[0] = lumi;
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term_m2[0] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm);
@@ -3453,19 +3483,91 @@ impl<'a> ProtonIntegrand<'a> {
                 term += lumi * term_m2[0];
             }
             if let Some(scales) = mirrored_scales {
-                rows[1] = rows_at(scales.mu_f);
+                // The densities are read per parton, in the representative's leg
+                // order, which the exchanged scales hold in physical beam order.
+                rows[1] = rows_at(exchanged_scales(scales).mu_f);
                 let lumi = term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
+                lumis[1] = lumi;
                 if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    g.mirror_into(&event.cm, &mut mirror);
-                    term_m2[1] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
+                    // The sampled point's matrix element, at the same coupling.
+                    let shared =
+                        direct_scales.filter(|d| d.mu_r == scales.mu_r && term_m2[0] != 0.0);
+                    term_m2[1] = if shared.is_some() {
+                        term_m2[0]
+                    } else {
+                        self.apply_scale_to(sc, sub, scales.mu_r);
+                        vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm)
+                    };
                 }
                 term += lumi * term_m2[1];
             }
             m2.push(term_m2);
             group_rows.push(rows);
             terms.push(g.spin_color_average() * term);
+            split.push([0, 1].map(|o| g.spin_color_average() * (lumis[o] * term_m2[o])));
         }
+        OrderingTerms {
+            m2,
+            terms,
+            split,
+            rows: group_rows,
+        }
+    }
+
+    /// Per flavour group, `[direct, mirrored]`, the two orderings' terms of an
+    /// accepted point's value, `avg_g · L_g^o · |M_g(q)|²` with each ordering's
+    /// cut and scales: what a mirror term contributes against its direct term
+    /// at this point. A symmetric proton–proton process gives a mirrored member
+    /// equal terms in both orderings at every point.
+    pub fn ordering_contributions(&self, event: &ProtonEvent) -> Vec<[f64; 2]> {
+        self.ordering_terms(event).split
+    }
+
+    /// Fill in an accepted event's discrete labels: which flavour group produced
+    /// it, which concrete flavour assignment inside that group, which way round the
+    /// beams carry it, which helicity combination and which colour flow.
+    ///
+    /// The five uniforms are consumed in that order. The draws are nested rather
+    /// than independent, and each is proportional to the term of the point's own
+    /// value that the label names:
+    ///
+    /// * the group `∝ avg_g · (L_g^direct + L_g^mirror) · |M_g(q)|²`, each ordering
+    ///   cut on its own event, with the two luminosities symmetry-weighted as in
+    ///   the cross section and each group's term at its own scales
+    ///   ([`ProtonEvent::group_scales`]), which become the selection's;
+    /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q)|²`,
+    ///   the member's share of the group's summed parton luminosity at this
+    ///   event's `(x₁, x₂)`, times its own identical-particle factor — the whole of
+    ///   what distinguishes one member of a group from another, since they share
+    ///   the matrix element exactly. A mirrored member's two orderings carry the
+    ///   same share, so the beams are exchanged on half of its events;
+    /// * the helicity `∝ |M_c|²`, then the colour flow through
+    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
+    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
+    ///   admitted set — all evaluated at the sampled point, as on a fixed-beam
+    ///   run. The exchanged event is its rotation, at which every one of them is
+    ///   the same, and its helicities are relabelled onto the physical legs
+    ///   ([`FlavorGroup::event_legs`]).
+    ///
+    /// All of them are selections, not sampling channels: the cross section sums
+    /// over every one, and this reads accumulators that sum already contains. A
+    /// caller may skip it entirely and integrate the same number.
+    ///
+    /// `None` when the point carries no weight, where no label is defined.
+    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+        let sc = self.scratch();
+        assert_eq!(
+            event.group_scales.len(),
+            sc.subs.len(),
+            "an event carries one scale entry per flavour group"
+        );
+
+        let OrderingTerms {
+            m2,
+            terms,
+            rows: group_rows,
+            ..
+        } = self.ordering_terms(event);
         let group = select_index(&terms, u[0])?;
         let g = &self.groups.groups()[group];
         let [direct_rows, mirrored_rows] = group_rows[group];
@@ -3504,13 +3606,9 @@ impl<'a> ProtonIntegrand<'a> {
             },
         );
 
-        let argument = match ordering {
-            BeamOrdering::Direct => &event.cm,
-            BeamOrdering::Exchanged => {
-                g.mirror_into(&event.cm, &mut mirror);
-                &mirror
-            }
-        };
+        // Both orderings' labels are read at the sampled point: the exchanged
+        // event is its rotation, which no diagonal sees.
+        let argument = &event.cm;
         let scales = event.group_scales[group][ordering_slot(ordering)]
             .expect("a drawn ordering carries weight");
         let sub = &sc.subs[group];
@@ -3550,11 +3648,9 @@ impl<'a> ProtonIntegrand<'a> {
             .get(group)
             .and_then(|h| h[slot].as_ref())
             .map(|history| {
-                let x = match ordering {
-                    BeamOrdering::Direct => event.x,
-                    BeamOrdering::Exchanged => [event.x[1], event.x[0]],
-                };
-                self.member_rewgt(group, g, member, history, x, &mut Vec::new())
+                // The clustering's beams are the representative's partons, at
+                // their sampled fractions in either ordering.
+                self.member_rewgt(group, g, member, history, event.x, &mut Vec::new())
             });
 
         Some(ProtonSelection {
@@ -4532,7 +4628,9 @@ mod tests {
         assert_eq!(t.len(), 4, "u u~, c c~, d d~, s s~, each once");
         for ([a, b], mirrored, l) in t {
             assert!(mirrored, "{a} {b}");
-            assert_eq!(l, [lumi(a, b), lumi(b, a)], "{a} {b}");
+            // The exchanged event reads each parton at its own fraction, on the
+            // other beam: the direct product again.
+            assert_eq!(l, [lumi(a, b), lumi(a, b)], "{a} {b}");
         }
     }
 
@@ -4683,14 +4781,17 @@ mod tests {
         assert_eq!(terms, sets.len() as f64);
     }
 
-    /// The mirror identity `|M_{b a}(q)|² = |M_{a b}(R q)|²`, against explicitly
-    /// enumerated mirrored subprocesses.
+    /// The mirror identity `|M_{b a}(E)|² = |M_{a b}(q)|²`, with `E` the exchanged
+    /// event the integrand writes ([`exchange_into`]: the sampled point rotated by
+    /// π about the x axis, beams exchanged), against explicitly enumerated
+    /// mirrored subprocesses.
     ///
     /// This is the term the enumeration does not produce: only one ordering of
     /// each unordered initial state exists, and its parton luminosity is not the
-    /// other's. The identity control is the load-bearing half — evaluating the
-    /// representative at the *unreflected* point is what dropping the mirror
-    /// amounts to, and it has to be wrong by enough to be seen.
+    /// other's. The identity control is the load-bearing half — the mirrored
+    /// subprocess at the sampled momenta with only the beams' flavours exchanged
+    /// is what writing the exchanged event *unrotated* would amount to, and it
+    /// has to be wrong by enough to be seen.
     ///
     /// How much is enough is a function of `s-hat`, not a constant, and it is not
     /// a statement about the *weakest* point: the visibility vanishes wherever
@@ -4719,13 +4820,14 @@ mod tests {
             let mirror_bound = BoundAmplitude::<f64>::bind(mirror_eval, &evaluated);
             let mut mirror_scratch = mirror_bound.scratch_space();
 
-            let mut reflected = Vec::new();
+            let mut exchanged = Vec::new();
             for k in &points {
-                let target = mirror_bound.eval_m2(k, &mut mirror_scratch);
+                let target = bound.eval_m2(k, &mut scratch);
                 let rel = |x: f64| (x - target).abs() / target.abs().max(f64::MIN_POSITIVE);
 
-                g.mirror_into(k, &mut reflected);
-                worst_mirror = worst_mirror.max(rel(bound.eval_m2(&reflected, &mut scratch)));
+                exchange_into(k, &mut exchanged);
+                worst_mirror =
+                    worst_mirror.max(rel(mirror_bound.eval_m2(&exchanged, &mut mirror_scratch)));
 
                 let py_flipped: Vec<V> = k
                     .iter()
@@ -4756,8 +4858,8 @@ mod tests {
         // evaluates *one* program at both arguments.
         assert!(
             worst_mirror < 1e-11,
-            "the reflected representative disagrees with the mirrored subprocess by \
-             {worst_mirror:.3e}"
+            "the mirrored subprocess at the exchanged event disagrees with the sampled \
+             point's matrix element by {worst_mirror:.3e}"
         );
         assert!(
             worst_py < 1e-12,
@@ -4765,8 +4867,9 @@ mod tests {
              in the mirror map is pinned after all and this test's blind spot is misstated"
         );
 
-        // What a dropped mirror would cost, as a function of s-hat rather than as
-        // one number: at each rung, nine draws in ten move by more than the floor.
+        // What an unrotated exchanged event would cost, as a function of s-hat
+        // rather than as one number: at each rung, nine draws in ten move by more
+        // than the floor.
         let masses = groups.groups()[0].final_masses();
         for sqrt_s in [25.0f64, 65.0, 150.0, 400.0, 1200.0] {
             let rels = mirror_visibility(&evaluated, &pairs, &masses, sqrt_s, 32, 0x0FF5_E7ED);
@@ -4780,9 +4883,136 @@ mod tests {
             assert!(
                 p10 > floor,
                 "at sqrt(s-hat) = {sqrt_s} nine draws in ten move |M|² by only {p10:.3e}, under \
-                 the measured floor {floor:.3e}; a dropped mirror would not be visible there"
+                 the measured floor {floor:.3e}; an unrotated exchanged event would not be \
+                 visible there"
             );
         }
+    }
+
+    /// Each ordering's term of an accepted point is the physical term of the event
+    /// that ordering writes, assembled from parts that share no code with the
+    /// integrand's: the member's densities read straight from the parton
+    /// distribution at the partons' own fractions and beams, the mirrored
+    /// subprocess compiled from **its own** proc card evaluated at the exchanged
+    /// event ([`exchange_into`]), and the group's filter applied to the lab-frame
+    /// record of that event ([`ProtonIntegrand::record_momenta`]). Between beams of
+    /// 6500 and 4000 GeV, so the two orderings' events are boosted differently.
+    ///
+    /// Proton–proton symmetry then makes a mirrored member's two terms equal
+    /// wherever both events pass the cuts: the exact-symmetry gate. MadEvent's
+    /// `IMIRROR = 2` meets it point by point, which is why its mirror term is
+    /// sampled where its direct term is. The construction that kept the beams
+    /// and rotated only the outgoing legs met it in expectation only, reading
+    /// `f_b(x₁)·f_a(x₂)·|M(p₁, p₂, R q)|²` at the point: the known-wrong reading,
+    /// asserted to be rejected at most points so the gate can tell the two apart.
+    ///
+    /// What it cannot see: anything the integrand and this oracle share — the
+    /// cut filter, the representative's compiled amplitude for the direct term,
+    /// and the scales, which are fixed here (the clustered scales of the two
+    /// orderings are pinned by `matched_terms_carry_each_member_s_own_reweighting`).
+    #[test]
+    fn each_ordering_carries_the_term_of_the_event_it_writes() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, _) = llj_setup(&m, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let amps = bind_all(&groups, &evaluated);
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        let pairs = mirror_pairs(&m, &evaluated, &groups);
+        let q2 = MU_F * MU_F;
+        let xf = |pdg: i32, x: f64| pdf.xfx_q2(pdg, x, q2);
+        let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(f64::MIN_POSITIVE);
+
+        let events = find_events(&integ, 0x0E1D_E0A2, |_| true, 300);
+        let (mut worst, mut worst_symmetry) = (0.0f64, 0.0f64);
+        let (mut mirrored_terms, mut symmetric, mut one_sided, mut old_rejected) = (0, 0, 0, 0);
+        let mut exchanged = Vec::new();
+        for event in &events {
+            let split = integ.ordering_contributions(event);
+            let [x1, x2] = event.x;
+            let lab = integ.record_momenta(event, BeamOrdering::Direct);
+            let written = integ.record_momenta(event, BeamOrdering::Exchanged);
+            assert!(rel(written[0].e(), x2 * e1) < 1e-12, "beam 1 carries x₂");
+            assert!(rel(written[1].e(), x1 * e2) < 1e-12, "beam 2 carries x₁");
+            exchange_into(&event.cm, &mut exchanged);
+            for (gi, (g, mirror_eval)) in pairs.iter().enumerate() {
+                let rep = BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated);
+                let mirror = BoundAmplitude::<f64>::bind(mirror_eval, &evaluated);
+                let m2 = rep.eval_m2(&event.cm, &mut rep.scratch_space());
+                let m2_written = mirror.eval_m2(&exchanged, &mut mirror.scratch_space());
+                let cut = [g.cuts().pass(&lab), g.cuts().pass(&written)];
+                let (mut direct, mut mirrored, mut old) = (0.0, 0.0, 0.0);
+                for member in g.members() {
+                    let [a, b] = member.incoming;
+                    let s = member.symmetry_factor() * g.spin_color_average();
+                    direct += s * xf(a, x1) * xf(b, x2) * m2;
+                    if member.has_mirror() {
+                        // Beam 1 carries `b` at x₂, beam 2 carries `a` at x₁.
+                        mirrored += s * xf(b, x2) * xf(a, x1) * m2_written;
+                        let mut kept = event.cm[..2].to_vec();
+                        kept.extend(
+                            event.cm[2..]
+                                .iter()
+                                .map(|p| V::new(p.e(), p.px(), -p.py(), -p.pz())),
+                        );
+                        old += s
+                            * xf(b, x1)
+                            * xf(a, x2)
+                            * rep.eval_m2(&kept, &mut rep.scratch_space());
+                    }
+                }
+                let want = [
+                    if cut[0] { direct } else { 0.0 },
+                    if cut[1] { mirrored } else { 0.0 },
+                ];
+                for o in 0..2 {
+                    worst = worst.max(rel(split[gi][o], want[o]));
+                }
+                if mirrored != 0.0 && cut[1] {
+                    mirrored_terms += 1;
+                    old_rejected += usize::from(rel(old, mirrored) > 1e-3);
+                }
+                if cut == [true, true]
+                    && g.has_mirror()
+                    && g.members().iter().all(Subprocess::has_mirror)
+                {
+                    symmetric += 1;
+                    worst_symmetry = worst_symmetry.max(rel(split[gi][0], split[gi][1]));
+                }
+                one_sided += usize::from(g.has_mirror() && cut[0] != cut[1]);
+            }
+        }
+        eprintln!(
+            "ordering terms: worst {worst:.2e} against the written events' own terms; \
+             {symmetric} fully mirrored group terms symmetric to {worst_symmetry:.2e}; \
+             {one_sided} cut on one ordering only; the beams-kept reading rejected on \
+             {old_rejected} of {mirrored_terms} mirrored terms"
+        );
+        assert!(
+            worst < 1e-10,
+            "an ordering's term is off its event's by {worst:.2e}"
+        );
+        assert!(
+            worst_symmetry < 1e-12,
+            "a mirrored group's two orderings differ by {worst_symmetry:.2e}"
+        );
+        assert!(symmetric > 100, "{symmetric} symmetric terms compared");
+        assert!(one_sided > 0, "no point separates the two orderings' cuts");
+        assert!(
+            old_rejected * 10 > mirrored_terms * 9,
+            "the beams-kept reading agrees with the written event's term on {} of \
+             {mirrored_terms} points, so this gate could not reject it",
+            mirrored_terms - old_rejected
+        );
     }
 
     /// Every group paired with the compiled matrix element of its mirrored beam
@@ -4821,9 +5051,9 @@ mod tests {
     }
 
     /// How far `|M|²` moves when the mirrored ordering's matrix element is
-    /// replaced by the representative's at the *unreflected* point — what
-    /// dropping the mirror term amounts to — over `npts` RAMBO draws at
-    /// `sqrt_s`, for every group. Returned sorted.
+    /// replaced by the representative's at the *unrotated* point — what writing
+    /// the exchanged event without its rotation amounts to — over `npts` RAMBO
+    /// draws at `sqrt_s`, for every group. Returned sorted.
     fn mirror_visibility(
         evaluated: &EvaluatedModel,
         pairs: &[(&FlavorGroup, AmplitudeEvaluator)],
@@ -5027,8 +5257,11 @@ mod tests {
     }
 
     /// The flavour partition of `p p > e+ e-` lands on the two Z/gamma* coupling
-    /// classes — up-type `{u, c}` and down-type `{d, s}` — and each group's two
-    /// beam orderings sum to that class's parton luminosity.
+    /// classes — up-type `{u, c}` and down-type `{d, s}`. Each group's direct
+    /// luminosity is the class's `q(x₁)q̄(x₂)`, its mirror term reads each parton
+    /// at its own fraction on the other beam and so is the same number, and the
+    /// direct luminosities at `(x₁, x₂)` and `(x₂, x₁)` sum to the class's
+    /// unordered pair.
     #[test]
     fn drell_yan_classes_and_their_two_orderings_are_reproduced() {
         let m = model();
@@ -5052,25 +5285,32 @@ mod tests {
                 "classes: {quarks:?}"
             );
 
-            let expected: f64 = quarks
-                .iter()
-                .map(|&q| {
-                    pdf.xfx_q2(q, x1, q2[0]) * pdf.xfx_q2(-q, x2, q2[1])
-                        + pdf.xfx_q2(-q, x1, q2[0]) * pdf.xfx_q2(q, x2, q2[1])
-                })
-                .sum();
+            let ordered = |xa: f64, xb: f64| -> f64 {
+                quarks
+                    .iter()
+                    .map(|&q| pdf.xfx_q2(q, xa, q2[0]) * pdf.xfx_q2(-q, xb, q2[1]))
+                    .sum()
+            };
             let [direct, mirror] = g.luminosity(&pdf, x1, x2, mu_f);
-            let rel = (direct + mirror - expected).abs() / expected;
+            let rel = (direct - ordered(x1, x2)).abs() / direct;
             assert!(rel < 1e-14, "class luminosity off by {rel:.3e}");
+            assert_eq!(
+                mirror, direct,
+                "the mirror term's partons left their fractions"
+            );
+            let swapped = g.luminosity(&pdf, x2, x1, mu_f)[0];
+            let pair = ordered(x1, x2) + ordered(x2, x1);
+            assert!((direct + swapped - pair).abs() / pair < 1e-14);
             assert!(
-                (direct - mirror).abs() / direct > 1e-3,
-                "the two orderings coincide here, so this test cannot see a dropped one"
+                (direct - swapped).abs() / direct > 1e-3,
+                "the two fractions read alike here, so this test cannot see them exchanged"
             );
         }
     }
 
     /// A `g g` initial state is one ordering, not two: its mirror carries no
-    /// luminosity, while a `q q̄` group's does and differs from the direct term.
+    /// luminosity, while a `q q̄` group's carries the direct term's, its partons at
+    /// their own fractions, which the fractions exchanged would not reproduce.
     #[test]
     fn an_identical_parton_initial_state_carries_a_single_ordering() {
         let m = model();
@@ -5097,7 +5337,9 @@ mod tests {
                 // coupling structure, so all four flavours are one group.
                 assert_eq!(g.members().len(), 4);
                 assert!(g.has_mirror());
-                assert!(mirror > 0.0 && (direct - mirror).abs() / direct > 1e-3);
+                assert!(mirror > 0.0 && mirror == direct);
+                let swapped = g.luminosity(&pdf, x2, x1, mu_f)[0];
+                assert!((direct - swapped).abs() / direct > 1e-3);
                 assert!((g.spin_color_average() - 1.0 / 36.0).abs() < 1e-15);
             }
         }
@@ -5812,11 +6054,13 @@ mod tests {
     ///
     /// The oracle re-derives the `(τ, y)` map, both frames, the flux and the `2π`
     /// measure, and — decisively — takes the mirrored beam ordering from an
-    /// **explicitly enumerated** `b a > …` subprocess evaluated at the *unreflected*
-    /// point, with each member's `x·f` product formed directly from the parton
-    /// distribution. So it shares neither [`FlavorGroup::luminosity`] nor
-    /// [`FlavorGroup::mirror_into`] with the integrand: a dropped or mis-argued mirror
-    /// term, a swapped beam ordering, or a lost spin/colour average all move it.
+    /// **explicitly enumerated** `b a > …` subprocess evaluated at the event that
+    /// ordering writes (every leg rotated by π about the x axis, the beams
+    /// exchanged, built here by hand), cut on that event's own lab frame, with each
+    /// member's `x·f` product formed directly from the parton distribution at its
+    /// partons' own fractions. So it shares neither [`FlavorGroup::luminosity`] nor
+    /// [`exchange_into`] with the integrand: a dropped or mis-argued mirror term, a
+    /// swapped beam ordering, or a lost spin/colour average all move it.
     ///
     /// What it cannot see: the phase-space weight, which it takes from its own copy of
     /// the same channel construction, and anything the cut filter and the parton
@@ -5907,7 +6151,17 @@ mod tests {
             ];
             lab.extend(point.momenta.iter().map(|p| boost_z(*p, beta)));
 
-            let expected = if !cuts.pass(&lab) {
+            // The exchanged event: every leg rotated by π about the x axis, the
+            // beams exchanged, beam 1 carrying `b` at `x₂` and beam 2 `a` at `x₁`.
+            let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+            let swap = |k: &[V]| {
+                let mut out = vec![rotate(&k[1]), rotate(&k[0])];
+                out.extend(k[2..].iter().map(rotate));
+                out
+            };
+            let (cm_x, lab_x) = (swap(&cm), swap(&lab));
+            let pass = [cuts.pass(&lab), cuts.pass(&lab_x)];
+            let expected = if pass == [false, false] {
                 rejected += 1;
                 0.0
             } else {
@@ -5916,13 +6170,15 @@ mod tests {
                     let mut scratch = direct_bound[gi].scratch_space();
                     let m2_direct = direct_bound[gi].eval_m2(&cm, &mut scratch);
                     let mut mirror_scratch = mirror_bound[gi].scratch_space();
-                    let m2_mirror = mirror_bound[gi].eval_m2(&cm, &mut mirror_scratch);
+                    let m2_mirror = mirror_bound[gi].eval_m2(&cm_x, &mut mirror_scratch);
                     let mut term = 0.0;
                     for s in g.members() {
                         let [a, b] = s.incoming;
-                        term += pdf.xfx_q2(a, x1, q2[0]) * pdf.xfx_q2(b, x2, q2[1]) * m2_direct;
-                        if a != b {
-                            let w = pdf.xfx_q2(b, x1, q2[0]) * pdf.xfx_q2(a, x2, q2[1]);
+                        if pass[0] {
+                            term += pdf.xfx_q2(a, x1, q2[0]) * pdf.xfx_q2(b, x2, q2[1]) * m2_direct;
+                        }
+                        if s.has_mirror() && pass[1] {
+                            let w = pdf.xfx_q2(b, x2, q2[1]) * pdf.xfx_q2(a, x1, q2[0]);
                             term += w * m2_mirror;
                             mirror_weight = mirror_weight
                                 .max(w * m2_mirror / (term).abs().max(f64::MIN_POSITIVE));
@@ -6037,13 +6293,21 @@ mod tests {
             if !cuts.pass(&lab) || beta.abs() < 0.1 {
                 continue;
             }
+            // The mirrored ordering's event is the point rotated by π about the x
+            // axis with its beams exchanged: `u~` on beam 1 at `x₂`, `u` on beam 2
+            // at `x₁`. The rotation is proper, so it keeps the Z's helicity.
+            let exchange = |frame: &[V]| {
+                let mut out = Vec::new();
+                exchange_into(frame, &mut out);
+                out
+            };
             let assemble = |frame: &[V], sd: &mut _, sm: &mut _| {
                 let (d, r) = (
                     direct.eval_m2(frame, sd),
-                    mirror_unpruned.eval_m2(frame, sm),
+                    mirror_unpruned.eval_m2(&exchange(frame), sm),
                 );
                 let term = pdf.xfx_q2(2, x1, q2[0]) * pdf.xfx_q2(-2, x2, q2[1]) * d
-                    + pdf.xfx_q2(-2, x1, q2[0]) * pdf.xfx_q2(2, x2, q2[1]) * r;
+                    + pdf.xfx_q2(-2, x2, q2[1]) * pdf.xfx_q2(2, x1, q2[0]) * r;
                 let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
                 jac * flux * lips_2pi * g.spin_color_average() * term * point.weight
             };
@@ -6605,11 +6869,10 @@ mod tests {
     }
 
     /// Under matching every term of a point carries each member's own `rewgt`,
-    /// computed from the clustering its ordering was scaled in, with the
-    /// ordering's own beam momentum fractions: `[x₁, x₂]` for the direct term and
-    /// `[x₂, x₁]` for the mirrored one, whose clustering has the
-    /// representative's first parton on its first beam. Without matching no
-    /// term carries one.
+    /// computed from the clustering of the sampled point with the
+    /// representative's partons at their sampled fractions `[x₁, x₂]`, in both
+    /// orderings: the exchanged event is the sampled one rotated, and each parton
+    /// keeps its fraction. Without matching no term carries one.
     #[test]
     fn matched_terms_carry_each_member_s_own_reweighting() {
         let m = model();
@@ -6663,31 +6926,19 @@ mod tests {
                         // The clustering the term was scaled in, drawn and
                         // clustered again from the event's own momenta.
                         let sc = integ.scratch();
-                        let (argument, fallback, x) = match ordering {
-                            BeamOrdering::Direct => (
-                                event.cm.clone(),
-                                SampledChannel {
-                                    group: gi,
-                                    channel: integ.channel_members()[channel]
-                                        .iter()
-                                        .find(|id| id.group == gi)
-                                        .map_or(0, |id| id.channel),
-                                },
-                                event.x,
-                            ),
-                            BeamOrdering::Exchanged => {
-                                let mut cm = Vec::new();
-                                g.mirror_into(&event.cm, &mut cm);
-                                (
-                                    cm,
-                                    SampledChannel {
-                                        group: gi,
-                                        channel: 0,
-                                    },
-                                    [event.x[1], event.x[0]],
-                                )
-                            }
-                        };
+                        // Both orderings cluster the sampled point, with the
+                        // representative's partons at their sampled fractions.
+                        let (argument, fallback, x) = (
+                            event.cm.clone(),
+                            SampledChannel {
+                                group: gi,
+                                channel: integ.channel_members()[channel]
+                                    .iter()
+                                    .find(|id| id.group == gi)
+                                    .map_or(0, |id| id.channel),
+                            },
+                            event.x,
+                        );
                         let drawn = integ.scale_channel(sc, &argument, fallback, v);
                         let (_, history, _) = integ.term_at(sc, &argument, drawn).expect("scaled");
                         let history = history.expect("matched");
@@ -6757,9 +7008,12 @@ mod tests {
     /// initial-state merge by the sign of the gluon's `p_z`, so clustering the lab
     /// momenta there moves the gluon's scale onto the other beam: both
     /// assertions fail on such an integrand. Under matching, MadEvent's rule on
-    /// the CM momenta gives beam 1 the gluon's `p_T` and beam 2 the hard scale,
-    /// for the direct term and for the mirrored one, whose clustering sees the
-    /// same physical event rotated and is reported in physical beam order.
+    /// the CM momenta gives the representative's first parton the gluon's `p_T`
+    /// and its second the hard scale, in both orderings: the exchanged event is
+    /// the sampled one rotated, so its gluon follows the first parton onto the
+    /// `−z` beam, and its scales are reported in physical beam order — the
+    /// gluon's on beam 2, as MadEvent's `Q2FACT(1)` rides beam 2 under
+    /// `IMIRROR = 2`.
     ///
     /// What it cannot see: a frame that differs from the partonic CM by a
     /// rotation about the beam axis, or by a boost that flips no sign at this
@@ -6834,13 +7088,16 @@ mod tests {
                         let Some(scales) = scales else {
                             continue;
                         };
+                        // The beam the representative's first parton rides.
+                        let (gluon, hard) = if slot == 0 { (0, 1) } else { (1, 0) };
                         assert!(
-                            (scales.mu_f[0] - pt_g).abs() < 1e-9 * pt_g,
-                            "group {gi} ordering {slot}: beam 1 carries the gluon's scale, \
+                            (scales.mu_f[gluon] - pt_g).abs() < 1e-9 * pt_g,
+                            "group {gi} ordering {slot}: beam {} carries the gluon's scale, \
                              got {:?}",
+                            gluon + 1,
                             scales.mu_f
                         );
-                        assert!(scales.mu_f[1] > 2.0 * pt_g, "{:?}", scales.mu_f);
+                        assert!(scales.mu_f[hard] > 2.0 * pt_g, "{:?}", scales.mu_f);
                         checked += 1;
                     }
                 }
@@ -7879,21 +8136,23 @@ mod tests {
     }
 
     /// Exchanging the two beams' energies is a reflection `z → −z` of the whole
-    /// collision, so at unequal energies the integrand at `(x₁, x₂, q)` equals the
-    /// integrand with the energies exchanged at `(x₂, x₁, Rq)`, `R` the rotation by
-    /// π about the x axis: each beam ordering's term of one becomes the other
-    /// ordering's term of the other, and a symmetric lab cut sees reflected
-    /// momenta.
+    /// collision, and under it each beam ordering's event at a point becomes the
+    /// other ordering's event at the *same* point: the direct event of
+    /// `(x₁, x₂, q)` between beams `E₁ × E₂` is the exchanged event of
+    /// `(x₁, x₂, q)` between `E₂ × E₁` rotated by π about the x axis, and the
+    /// other way round, with the parton luminosity and the matrix element
+    /// unchanged. So at unequal energies the integrand at a point equals the
+    /// integrand with the energies exchanged at the same point.
     ///
-    /// The mirrored ordering's term is what this pins at a point: it is a
-    /// different physical event from the direct one (the beams' partons
-    /// exchanged), and its lab-frame cut has to be the one that event's own
-    /// momenta pass. A mirrored term cut in any other frame — the one MadEvent
-    /// cuts in, at `cm_rap` with the beam energies exchanged, among them — breaks
-    /// the symmetry at points near the `etal` edge. Blind to anything symmetric
-    /// under the reflection: a boost of the wrong sign in both orderings, or
-    /// partons placed on the wrong beam in both, pass; the boost's direction is
-    /// [`unequal_beams_place_and_boost_the_partons_as_madgraph_does`]'s.
+    /// The mirrored ordering's term is what this pins: its event is a different
+    /// physical event from the direct one (the beams' partons exchanged, each at
+    /// its own fraction), and its lab-frame cut has to be the one that event's
+    /// own momenta pass. A mirrored term cut in any other frame — the sampled
+    /// one, which is where MadEvent cuts it, among them — breaks the identity at
+    /// points near the `etal` edge, which the sweep counts. Blind to anything
+    /// symmetric under the reflection: a boost of the wrong sign in both
+    /// orderings, or partons placed on the wrong beam in both, pass; the boost's
+    /// direction is [`unequal_beams_place_and_boost_the_partons_as_madgraph_does`]'s.
     #[test]
     fn exchanging_unequal_beam_energies_reflects_the_integrand() {
         let m = model();
@@ -7925,7 +8184,6 @@ mod tests {
         let backward = build(4000.0, 6500.0);
         assert_eq!(forward.point_ndim(), forward.channel_grid_ndim());
 
-        let reflect = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
         let mut stream = SubStream::from_stream(0x00BE_A352, 3);
         let (mut nonzero, mut one_sided) = (0, 0);
         for trial in 0..20_000 {
@@ -7936,34 +8194,28 @@ mod tests {
                 forward
                     .combiner
                     .draw_in_channel_at(channel, point.sqrt_shat, &u[OUTER_NDIM..]);
-            let mirrored = OuterPoint {
-                x1: point.x2,
-                x2: point.x1,
-                ..point
-            };
-            let reflected: Vec<V> = drawn.momenta.iter().map(reflect).collect();
             let a = forward.shape(forward.scratch(), &point, &drawn.momenta, channel, &[]);
-            let b = backward.shape(backward.scratch(), &mirrored, &reflected, channel, &[]);
+            let b = backward.shape(backward.scratch(), &point, &drawn.momenta, channel, &[]);
             assert!(
                 (a - b).abs() <= 1e-12 * a.abs().max(b.abs()),
                 "trial {trial}: {a:e} with beams 6500 x 4000, {b:e} exchanged"
             );
             nonzero += usize::from(a != 0.0);
-            // A point whose lab frame at the other beams' boost fails the cuts
-            // is one where a mirrored term cut in that frame would be lost.
-            let lab = lab_frame(&forward, &point, &drawn.momenta);
-            let other_beta =
-                (point.x1 - point.x2 * 6500.0 / 4000.0) / (point.x1 + point.x2 * 6500.0 / 4000.0);
-            let mut other = lab[..2].to_vec();
-            other.extend(drawn.momenta.iter().map(|p| boost_z(*p, other_beta)));
+            // A point whose two orderings' events disagree on the cuts is one where
+            // a mirrored term cut on the sampled event would be wrong.
+            let sc = forward.scratch();
+            let lab = sc.lab_buf.borrow().clone();
+            let cm = sc.cm_buf.borrow().clone();
+            let mut exchanged = Vec::new();
+            forward.exchanged_lab_into([point.x1, point.x2], &cm, &mut exchanged);
             one_sided +=
-                usize::from(forward.filters[0].pass(&lab) != forward.filters[0].pass(&other));
+                usize::from(forward.filters[0].pass(&lab) != forward.filters[0].pass(&exchanged));
         }
-        eprintln!("{nonzero} weighted points, {one_sided} between the two frames' cuts");
+        eprintln!("{nonzero} weighted points, {one_sided} between the two orderings' cuts");
         assert!(nonzero > 5_000, "{nonzero} points carry weight");
         assert!(
             one_sided > 500,
-            "{one_sided} points sit between the two frames' cuts"
+            "{one_sided} points sit between the two orderings' cuts"
         );
     }
 
@@ -8006,8 +8258,9 @@ mod tests {
     /// The beam-exchange test above cannot see this: cutting both orderings in the
     /// partonic CM is symmetric under the reflection it checks. Here
     /// `x₁ = x₂` at `6500 × 4000` boosts the system by `½ ln(13/8)`, carrying the
-    /// first lepton from `y = 2.4` to `2.64`; the mirrored ordering's physical event
-    /// has the same lab momenta and fails with it. Control: the same
+    /// first lepton from `y = 2.4` to `2.64`; the mirrored ordering's event, the
+    /// configuration rotated with its leptons at `∓2.4`, is boosted the same way
+    /// at `x₁ = x₂` and fails with it. Control: the same
     /// configuration between beams of equal energy at the same `√s` is at rest,
     /// passes, and carries weight, so the zero is the cut's.
     #[test]
@@ -8057,19 +8310,19 @@ mod tests {
         assert_eq!(boosted, 0.0, "a lab-frame failure carries weight");
     }
 
-    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] cuts the mirrored term at
-    /// `(x₁, x₂, q)` on the configuration MadEvent sampled it from, `(x₂, x₁, Rq)`
-    /// at that configuration's `cm_rap`, and leaves the direct term on the lab
-    /// frame.
+    /// Each ordering's term is cut on its own event, and
+    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] cuts the mirrored term on
+    /// the sampled configuration instead, where MadEvent cuts it.
     ///
     /// Two points at `x₁/x₂ = (E₁/E₂)^±1` with the leptons at partonic
-    /// `y = ±2.4`. At `x₁/x₂ = E₁/E₂` the lab frame moves the
-    /// pair by `ln(E₁/E₂) = 0.486`, past `etal`, while MadEvent's sampled
-    /// configuration is at rest: only the emulated mirrored term survives. At
-    /// `x₁/x₂ = E₂/E₁` the lab frame is at rest and MadEvent's configuration
-    /// moves by `0.486`: the emulation keeps the direct term alone, below the
-    /// unemulated value. Control: at equal beams the emulation is bit-identical
-    /// over a sweep of production points, as MadEvent's two frames coincide there.
+    /// `y = ±2.4`. At `x₁/x₂ = E₁/E₂` the sampled lab frame moves the pair by
+    /// `ln(E₁/E₂) = 0.486`, past `etal`, while the exchanged event (beam 1 at
+    /// `x₂`, beam 2 at `x₁`) is at rest: only the mirrored term survives, and the
+    /// emulation loses it. At `x₁/x₂ = E₂/E₁` the sampled frame is at rest and the
+    /// exchanged event moves by `0.486`: the direct term survives alone, and the
+    /// emulation keeps the mirrored term with it. Control: at equal beams the
+    /// emulation is bit-identical over a sweep of production points, as the two
+    /// events are one another's rotation there.
     #[test]
     fn the_emulated_madevent_mirrored_cut_reads_the_sampled_configuration() {
         let m = model();
@@ -8112,21 +8365,25 @@ mod tests {
 
         let forward = at(6500.0 / 4000.0);
         assert!(!plain.filters[0].pass(&lab_frame(&plain, &forward, &out)));
-        assert_eq!(value(&plain, &forward), 0.0);
-        let mirrored_only = value(&emulated, &forward);
+        let mirrored_only = value(&plain, &forward);
         assert!(
             mirrored_only > 0.0,
-            "the mirrored term MadEvent keeps is lost: {mirrored_only:e}"
+            "the mirrored term, whose event is at rest, is lost: {mirrored_only:e}"
+        );
+        assert_eq!(
+            value(&emulated, &forward),
+            0.0,
+            "MadEvent cuts it on the sampled frame"
         );
 
         let backward = at(4000.0 / 6500.0);
         assert!(plain.filters[0].pass(&lab_frame(&plain, &backward, &out)));
-        let both = value(&plain, &backward);
-        let direct_only = value(&emulated, &backward);
+        let direct_only = value(&plain, &backward);
+        let both = value(&emulated, &backward);
         assert!(
             direct_only > 0.0 && direct_only < both * (1.0 - 1e-6),
-            "the emulation kept {direct_only:e} of {both:e}: the mirrored term MadEvent \
-             drops survived, or the direct term went with it"
+            "the plain integrand kept {direct_only:e} of the emulation's {both:e}: the \
+             mirrored term whose event fails the cuts survived, or the direct term went with it"
         );
 
         let (even, even_emulated) = (build(6500.0, 6500.0, false), build(6500.0, 6500.0, true));
@@ -8241,8 +8498,12 @@ mod tests {
     /// rule's own and carry no Monte Carlo error: the only residual is the sweep's
     /// grid, and every margin below is quoted in units of it.
     ///
-    /// What it cannot see: which of `x₁`, `x₂` belongs to which beam is pinned only as
-    /// far as the probe distribution separates them, so the margin against the
+    /// Under the exchanged ordering the member's partons keep their sampled fractions
+    /// (`a` at `x₁`, `b` at `x₂`, on exchanged beams), so its share is the direct
+    /// one; the assignment ruled out is the one that reads `a` at `x₂`.
+    ///
+    /// What it cannot see: which of `x₁`, `x₂` belongs to which parton is pinned only
+    /// as far as the probe distribution separates them, so the margin against the
     /// exchanged assignment is measured and asserted rather than assumed. It also says
     /// nothing about *realised* frequencies over a generated sample against MadGraph's
     /// — that is the deferred validation pass's content.
@@ -8317,8 +8578,8 @@ mod tests {
                 }
 
                 // The luminosity share, formed from the parton distribution directly,
-                // and the same shares with the two beams exchanged — the assignment
-                // this test has to be able to rule out.
+                // and the same shares with the two fractions exchanged — the
+                // assignment this test has to be able to rule out.
                 let share = |swapped: bool, ordering: usize| -> Vec<f64> {
                     let (xa, xb) = if swapped {
                         (event.x[1], event.x[0])
@@ -8328,12 +8589,8 @@ mod tests {
                     g.members()
                         .iter()
                         .map(|s| {
-                            let [a, b] = if ordering == 0 {
-                                s.incoming
-                            } else {
-                                [s.incoming[1], s.incoming[0]]
-                            };
-                            if ordering == 1 && s.incoming[0] == s.incoming[1] {
+                            let [a, b] = s.incoming;
+                            if ordering == 1 && !s.has_mirror() {
                                 return 0.0;
                             }
                             pdf.xfx_q2(a, xa, q2[0]) * pdf.xfx_q2(b, xb, q2[1])
@@ -8400,8 +8657,9 @@ mod tests {
     /// two incoming legs traded, and nothing else moved.
     ///
     /// The claim is that the mirror identity extends from `|M|²` to the accumulators an
-    /// event record is filled from: the rotation `R` maps each beam momentum onto the
-    /// other's, so the representative's leg 0 describes the event's *second* beam.
+    /// event record is filled from: the exchanged event is the sampled one rotated by
+    /// `R` ([`exchange_into`]), which carries the representative's leg 0 onto the
+    /// `−z` beam, so that leg describes the event's *second* beam.
     /// That is a convention claim about helicity labels and colour lines, which no
     /// cross-section-level check can see, so it is pinned against the mirrored
     /// subprocess compiled from **its own** proc card.
@@ -8475,18 +8733,20 @@ mod tests {
                 flows += 1;
             }
 
-            let mut reflected = Vec::new();
+            // The representative at the sampled point, where the integrand reads
+            // the labels; the mirrored subprocess at the exchanged event it writes.
+            let mut exchanged = Vec::new();
             for k in &points {
-                g.mirror_into(k, &mut reflected);
+                exchange_into(k, &mut exchanged);
                 let mut rep_hel = vec![0.0; g.evaluator().helicities().len()];
                 let mut rep_jamp = vec![0.0; g.evaluator().n_flows()];
-                rep.eval_hel_m2(&reflected, &mut rep_scratch, &mut rep_hel);
-                rep.eval_jamp2(&reflected, &mut rep_scratch, &mut rep_jamp);
+                rep.eval_hel_m2(k, &mut rep_scratch, &mut rep_hel);
+                rep.eval_jamp2(k, &mut rep_scratch, &mut rep_jamp);
 
                 let mut mirror_hel = vec![0.0; mirror_eval.helicities().len()];
                 let mut mirror_jamp = vec![0.0; mirror_eval.n_flows()];
-                mirror.eval_hel_m2(k, &mut mirror_scratch, &mut mirror_hel);
-                mirror.eval_jamp2(k, &mut mirror_scratch, &mut mirror_jamp);
+                mirror.eval_hel_m2(&exchanged, &mut mirror_scratch, &mut mirror_hel);
+                mirror.eval_jamp2(&exchanged, &mut mirror_scratch, &mut mirror_jamp);
 
                 let scale: f64 = mirror_hel.iter().sum();
                 for (c, combination) in g.evaluator().helicities().iter().enumerate() {
@@ -9140,7 +9400,10 @@ mod tests {
     /// frame: anchored on beam 2 when beam 1's parton is massive, so beam 2's
     /// parton has lab energy `x₂E₂`, every leg keeps its mass, and the record
     /// conserves momentum. Beam 1 anchors when its parton is massless, which
-    /// under the exchanged ordering of `g b` is the other way round.
+    /// under the exchanged ordering of `g b` is the other way round: there the
+    /// gluon rides beam 2 at its sampled `x₁`, as MadEvent writes an
+    /// `IMIRROR = 2` event, and the outgoing legs are the sampled ones rotated
+    /// by π about the x axis.
     #[test]
     fn a_massive_parton_record_is_anchored_where_madevent_anchors_it() {
         let m = model();
@@ -9221,9 +9484,20 @@ mod tests {
 
         let exchanged = integ.record_momenta(&event, BeamOrdering::Exchanged);
         assert!(
-            (exchanged[1].e() / (x2 * e2) - 1.0).abs() < 1e-12,
-            "massless beam 2 anchors"
+            (exchanged[1].e() / (x1 * e2) - 1.0).abs() < 1e-12,
+            "massless beam 2 anchors, at the gluon's own fraction"
         );
+        // Rotated, then boosted along z: every outgoing rapidity is the sampled
+        // partonic one reversed, plus one common shift.
+        let shifts: Vec<f64> = exchanged[2..]
+            .iter()
+            .zip(&event.cm[2..])
+            .map(|(p, q)| {
+                assert_eq!(p.px(), q.px(), "the rotation keeps p_x");
+                rapidity(p) + rapidity(q)
+            })
+            .collect();
+        assert!((shifts[0] - shifts[1]).abs() < 1e-10, "{shifts:?}");
         assert!(
             (exchanged[0].m2() / (mb * mb) - 1.0).abs() < 1e-6,
             "b on beam 1"
