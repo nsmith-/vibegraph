@@ -102,14 +102,15 @@ and line numbers describe the code of its date.
 
 **Witness pairs.** W1, against the strong reading: `g g > g g`'s contact diagram
 and an exchange diagram had empty, identical charge-flow inputs and different
-contact/VVV signs (their product agreed). In the current code a gluon contact
-takes no sign and a gluon exchange diagram takes `−1` at each of its two
+contact/VVV signs (their product agreed). In the current code the SM four-gluon
+contact takes no sign and a gluon exchange diagram takes `−1` at each of its two
 triple-gluon vertices, so the two carry the same net sign and W1 no longer holds as
 written. Nor do the arrow-free arms it names exist: the code has no
-colourless-VVV source sign, contact sign, pure-metric-VVS sign or scalar-sink sign
-at all, and no root or anchor is read. The arrow-free factors that remain are
+colourless-VVV source sign, contact-specific sign, pure-metric-VVS sign or
+scalar-sink sign at all, and no root or anchor is read. The arrow-free factors that remain are
 class constants of the graph, `propagator_phase_sign`'s `−1` per internal scalar
-line and `triple_gluon_sign`'s `−1` per coloured three-vector vertex
+line and `boson_momentum_sign`'s `−1` per all-boson vertex of self-conjugate
+legs with an odd number of momenta
 ([convention-sign-inventory](convention-sign-inventory.md),
 [vector-vertex-signs](vector-vertex-signs.md)); they too factorize from the charge
 flow. That is read from the code, not re-measured. W2,
