@@ -1477,7 +1477,17 @@ fn a_matched_sample_carries_the_shower_record() {
                 }
             }
             let m = (p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3]).sqrt();
-            assert!((z.mass / m - 1.0).abs() < 1e-8, "event {i}: the Z's mass");
+            // The daughters are read back at the record's eleven significant
+            // digits, each component good to 5e-11 of itself, so the mass rebuilt
+            // from them is good to about `1e-10 (E/m)²` of itself: a boosted Z
+            // loses that much to the cancellation in `E² − p²`.
+            let printed = 1e-9 + 1e-10 * (p[0] / m).powi(2);
+            assert!(
+                (z.mass / m - 1.0).abs() < printed,
+                "event {i}: the Z's mass {} against its daughters' {m} (E/m = {:.1})",
+                z.mass,
+                p[0] / m
+            );
             assert!(
                 (m - SCALE).abs() < 15.0 * 2.5,
                 "event {i}: a Z off its window at {m}"
