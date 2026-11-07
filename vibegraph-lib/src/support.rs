@@ -40,11 +40,20 @@ pub const MIN_EFFECTIVE_POINTS: f64 = 20.0;
 /// What an integrand's evaluations came to, point by point: how many it
 /// evaluated, how many of those passed the cuts, and how many of those carried
 /// a nonzero weight.
+///
+/// `degenerate` counts, among the evaluated points, those zeroed because their
+/// kinematics are degenerate: an outgoing momentum that is non-finite or
+/// carries no energy, or a scale clustering whose measure came out non-finite.
+/// Such points lie on the boundary of phase space, where the weight vanishes
+/// in the limit, and a sampler reaches them only through rounding; the count
+/// is there so that a systematic source of them shows instead of reading as
+/// ordinary zero-weight points.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PointCensus {
     pub evaluated: u64,
     pub passed_cuts: u64,
     pub nonzero: u64,
+    pub degenerate: u64,
 }
 
 /// The censuses' counts added: per-thread counts into an integrand's, or
@@ -55,19 +64,22 @@ impl std::iter::Sum for PointCensus {
             evaluated: acc.evaluated + c.evaluated,
             passed_cuts: acc.passed_cuts + c.passed_cuts,
             nonzero: acc.nonzero + c.nonzero,
+            degenerate: acc.degenerate + c.degenerate,
         })
     }
 }
 
-/// One thread's running [`PointCensus`], kept beside its evaluation scratch.
+/// One thread's running [`PointCensus`], kept beside its evaluation scratch,
+/// and whether the point being evaluated has been found degenerate.
 #[derive(Debug, Default)]
-pub(crate) struct CensusCell(Cell<PointCensus>);
+pub(crate) struct CensusCell(Cell<PointCensus>, Cell<bool>);
 
 impl CensusCell {
     /// A point the cuts rejected.
     pub(crate) fn rejected(&self) {
         let mut c = self.0.get();
         c.evaluated += 1;
+        self.close(&mut c);
         self.0.set(c);
     }
 
@@ -77,7 +89,19 @@ impl CensusCell {
         c.evaluated += 1;
         c.passed_cuts += 1;
         c.nonzero += u64::from(weight != 0.0);
+        self.close(&mut c);
         self.0.set(c);
+    }
+
+    /// Mark the point being evaluated as degenerate; it is counted once, by the
+    /// [`rejected`](Self::rejected) or [`passed`](Self::passed) that closes it,
+    /// however many of its terms found it so.
+    pub(crate) fn degenerate(&self) {
+        self.1.set(true);
+    }
+
+    fn close(&self, c: &mut PointCensus) {
+        c.degenerate += u64::from(self.1.replace(false));
     }
 
     pub(crate) fn get(&self) -> PointCensus {
@@ -86,6 +110,7 @@ impl CensusCell {
 
     pub(crate) fn clear(&self) {
         self.0.set(PointCensus::default());
+        self.1.set(false);
     }
 }
 
@@ -198,6 +223,7 @@ mod tests {
         evaluated: 4_000,
         passed_cuts: 3_000,
         nonzero: 2_000,
+        degenerate: 0,
     };
 
     /// The cause is read off the census: no point through the cuts is the

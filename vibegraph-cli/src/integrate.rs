@@ -50,7 +50,7 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
-    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
+    refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
@@ -867,6 +867,15 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         output.census.passed_cuts,
         output.census.evaluated,
     );
+    if output.census.degenerate > 0 {
+        warn!(
+            "{} of {} integration points were zeroed as degenerate (an outgoing momentum with no \
+             energy or not finite, or a scale clustering with a non-finite measure): points on \
+             the boundary of phase space, reached through rounding; a share beyond a handful \
+             points at a map that draws outside its range",
+            output.census.degenerate, output.census.evaluated,
+        );
+    }
     // A cross section no point carries, or only a handful do, is not a result:
     // refused before it is printed or banked, so nothing downstream reads it.
     check_support(conv, output.census)
@@ -1403,6 +1412,7 @@ fn integrate_fixed_energy(
             )
         })?;
     refuse_mixed_multiplicity(&sets).map_err(|e| err(ErrorKind::Process, e))?;
+    refuse_one_body_final_state(&sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_exchanged_beam_orderings(&sets).map_err(|e| err(ErrorKind::Process, e))?;
     let evals = compile_subprocesses(&sets, model, evaluated).map_err(|e| {
         err(

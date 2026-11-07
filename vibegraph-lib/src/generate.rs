@@ -42,7 +42,7 @@ use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
-    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
+    refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::subprocess_vetoes;
 use crate::pdf::{PdfMember, PdfSet};
@@ -388,6 +388,7 @@ fn generate_sample(
     let sets = generate_from_proc_card_in(parsed, model, options.enumeration)
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets).map_err(err)?;
+    refuse_one_body_final_state(&sets).map_err(err)?;
     refuse_exchanged_beam_orderings(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;

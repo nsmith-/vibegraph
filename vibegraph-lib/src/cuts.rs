@@ -57,6 +57,12 @@
 //!   leave uncut a massless coloured leg descending from no forced line in some
 //!   diagram is refused ([`CutError::IrUnsafeExemption`]): that leg's collinear
 //!   region is divergent.
+//! - **Photon–parton collinear limit**: a card whose diagrams attach an outgoing
+//!   photon and an outgoing massless coloured particle to one vertex, and whose
+//!   cuts put no ΔR minimum between the two, is refused
+//!   ([`CutError::UncutPhotonSplitting`]): the `q → q γ` splitting is divergent
+//!   there, and photon isolation, the other regulator MadGraph has, is not
+//!   implemented.
 //!
 //! - **HT** (`cuts.f:874-913`): `htj` is the scalar sum of the transverse
 //!   momenta of the jet-class legs, `iht` that sum plus the b-class legs, so
@@ -83,10 +89,11 @@
 
 use thiserror::Error;
 
-use crate::diagrams::diagram::{Diagram, OnShell, PropIdx};
+use crate::diagrams::diagram::{Diagram, LegIdx, OnShell, PropIdx, Ray, Vertex};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::runcard::{decay_cut_reset, param_default, ParamValue, RunCard};
+use crate::ufo::particles::ParticleId;
 use crate::ufo::EvaluatedModel;
 
 /// MadGraph's `small_width_treatment` default, the floor on every width as a
@@ -142,6 +149,11 @@ pub struct ForcedResonances {
     /// The outgoing legs, bit `k` naming the `k`-th, that are massless and
     /// coloured and descend from no forced line in at least one diagram.
     massless_coloured_core: u64,
+    /// Pairs `(photon, parton)` of outgoing-leg positions, the `k`-th outgoing
+    /// leg named `k`, at which some diagram attaches an outgoing photon and an
+    /// outgoing massless coloured particle to one vertex: a `q → q γ` splitting,
+    /// whose propagator goes on shell as the two become collinear.
+    photon_splittings: Vec<(usize, usize)>,
 }
 
 impl ForcedResonances {
@@ -154,7 +166,13 @@ impl ForcedResonances {
     pub fn of(diagrams: &[Diagram], model: &EvaluatedModel) -> Self {
         let mut patterns: Vec<Vec<ForcedLine>> = Vec::new();
         let mut massless_coloured_core = 0u64;
+        let mut photon_splittings: Vec<(usize, usize)> = Vec::new();
         for diagram in diagrams {
+            for pair in photon_parton_vertices(diagram, model) {
+                if !photon_splittings.contains(&pair) {
+                    photon_splittings.push(pair);
+                }
+            }
             let mut lines: Vec<ForcedLine> = forced_lines(diagram, model);
             let products = lines.iter().fold(0u64, |m, l| m | l.slots);
             massless_coloured_core |= massless_coloured_finals(diagram, model) & !products;
@@ -175,9 +193,11 @@ impl ForcedResonances {
             let key = |p: &Vec<ForcedLine>| p.iter().map(|l| l.slots).collect::<Vec<_>>();
             key(a).cmp(&key(b))
         });
+        photon_splittings.sort_unstable();
         ForcedResonances {
             patterns,
             massless_coloured_core,
+            photon_splittings,
         }
     }
 
@@ -214,6 +234,79 @@ fn massless_coloured_finals(diagram: &Diagram, model: &EvaluatedModel) -> u64 {
             model.model().particle(leg.particle).color.abs() != 1 && model.mass(leg.particle) == 0.0
         })
         .fold(0u64, |m, (k, _)| m | (1u64 << k))
+}
+
+/// The `(photon, parton)` outgoing-leg positions that `diagram` attaches to one
+/// vertex, the photon an outgoing `γ` and the parton an outgoing massless
+/// coloured particle ([`ForcedResonances::photon_splittings`]).
+fn photon_parton_vertices(diagram: &Diagram, model: &EvaluatedModel) -> Vec<(usize, usize)> {
+    let n_in = diagram.n_in;
+    let finals = |vertex: &Vertex| -> Vec<(usize, ParticleId)> {
+        vertex
+            .rays
+            .iter()
+            .filter_map(|ray| match ray {
+                Ray::Leg(LegIdx(i)) if *i >= n_in => Some((*i - n_in, diagram.legs[*i].particle)),
+                _ => None,
+            })
+            .collect()
+    };
+    let is_photon = |id: ParticleId| model.model().particle(id).pdg_code == 22;
+    let is_parton =
+        |id: ParticleId| model.model().particle(id).color.abs() != 1 && model.mass(id) == 0.0;
+    let mut pairs = Vec::new();
+    for vertex in &diagram.vertices {
+        let legs = finals(vertex);
+        for &(photon, a) in &legs {
+            for &(parton, b) in &legs {
+                if is_photon(a) && is_parton(b) {
+                    pairs.push((photon, parton));
+                }
+            }
+        }
+    }
+    pairs
+}
+
+/// Refuse a card whose cuts leave a photon's collinear splitting off a massless
+/// coloured parton uncut ([`ForcedResonances::photon_splittings`]).
+///
+/// In `q → q γ` the propagator goes as `1/s_qγ`, and `s_qγ ≈ pT_q pT_γ ΔR²`
+/// vanishes in the collinear limit whatever the two transverse momenta are, so
+/// σ diverges logarithmically in `ΔR` unless a cut keeps `ΔR` away from zero.
+/// Two regulate it in MadGraph: the pair's ΔR minimum (`draj` for a jet-class
+/// parton, `drab` for a b-class one), and Frixione photon isolation
+/// (`cuts.f:1104-1222`, on when `ptgmin ≠ 0`), which caps the parton `pT` inside
+/// `ΔR ≤ R0gamma` by `epsgamma·pT_γ·((1 − cos ΔR)/(1 − cos R0gamma))^xn`, a cap
+/// that closes at `ΔR → 0` for `xn > 0`. Isolation is not implemented here and
+/// a card turning it on is refused before this check ([`detect_unimplemented`]),
+/// so the pair cut is the only regulator to look for. A pair the compiled
+/// filter does not cut at all (an uncut decay product, a leg above the class
+/// mass threshold) is uncut here too.
+///
+/// The run would otherwise report a number set by how far its sampler happens
+/// to reach into the logarithm, growing with the budget. MadGraph returns such a
+/// number too, its own phase space's effective cutoff.
+fn refuse_uncut_photon_splitting(
+    forced: &ForcedResonances,
+    finals: &[usize],
+    pairs: &[PairCut],
+    legs: &[ExternalLeg],
+) -> Result<(), CutError> {
+    for &(photon, parton) in &forced.photon_splittings {
+        let (i, j) = (finals[photon], finals[parton]);
+        let cut = pairs
+            .iter()
+            .any(|pc| ((pc.i, pc.j) == (i, j) || (pc.i, pc.j) == (j, i)) && pc.dr2_min > 0.0);
+        if !cut {
+            return Err(CutError::UncutPhotonSplitting {
+                photon,
+                parton,
+                pdg: legs[j].pdg,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Refuse a `cut_decays` exemption, `uncut` naming the exempt outgoing legs,
@@ -325,6 +418,18 @@ pub enum CutError {
          collinear region diverges, and the channels' spacelike floor would cap it silently"
     )]
     IrUnsafeExemption { leg: usize, pdg: i32 },
+    #[error(
+        "final-state photon (outgoing leg {photon}) and massless coloured parton (outgoing leg \
+         {parton}, PDG {pdg}) meet at a vertex of a kept diagram, and the run card leaves their \
+         collinear limit uncut: no ΔR minimum between them (draj, or drab for a b-class parton) \
+         and no photon isolation. The q → qγ splitting then diverges logarithmically and any \
+         cross section reported is set by how far the sampler reaches into it; set draj > 0"
+    )]
+    UncutPhotonSplitting {
+        photon: usize,
+        parton: usize,
+        pdg: i32,
+    },
 }
 
 /// The MadGraph letter class of a final-state leg used for pairwise cuts.
@@ -925,6 +1030,7 @@ impl Cuts {
 
         let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
+        refuse_uncut_photon_splitting(forced, &finals, &pairs, legs)?;
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
 
@@ -1176,6 +1282,19 @@ impl Cuts {
             .iter()
             .find(|c| c.idx == idx)
             .map_or(0.0, |c| c.pt_min.max(0.0))
+    }
+
+    /// Whether the filter rejects every configuration in which the outgoing legs
+    /// carry no transverse momentum: some outgoing leg has a positive `pT`
+    /// minimum, which [`Cuts::pass`] fails at `pT = 0` (`pt < pt_min`, as
+    /// `cuts.f` compares it).
+    ///
+    /// A `2 → 1` subprocess at collinear beams puts its single outgoing particle
+    /// at exactly `pT = 0`, so for one this is the statement that the cuts zero
+    /// it outright. A sufficient condition read off the thresholds: `false` does
+    /// not mean such a configuration passes.
+    pub fn rejects_zero_transverse_momentum(&self) -> bool {
+        self.single.iter().any(|s| s.pt_min > 0.0)
     }
 
     /// Whether the compiled filter admits every point of every phase space: no ŝ
@@ -2934,6 +3053,7 @@ mod tests {
         ForcedResonances {
             patterns,
             massless_coloured_core: 0,
+            photon_splittings: Vec::new(),
         }
     }
 
@@ -3267,6 +3387,54 @@ mod tests {
         assert!(refuse_ir_unsafe_exemption(products | core, &forced, &legs).is_err());
     }
 
+    /// `u d > a u d` radiates the photon off a final-state quark, so at
+    /// `draj = 0` with isolation off (`ptgmin = 0`) its `q → q γ` collinear
+    /// limit is uncut and the card is refused; the MadGraph default `draj = 0.4`
+    /// regulates it and compiles. A card that turns isolation on is refused
+    /// earlier, as an unimplemented cut, not as this.
+    ///
+    /// Kept narrow: a photon that meets no final-state quark at a vertex is not
+    /// refused at `draj = 0` — off a lepton line (`e+ e- > mu+ mu- a`), with a
+    /// gluon as the only parton (`u u~ > a g`), or beside quarks that come from a
+    /// decay the photon is not part of (`u u~ > z a, z > d d~`).
+    #[test]
+    fn an_uncut_photon_quark_splitting_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate u d > a u d");
+        let mut pairs = forced.photon_splittings.clone();
+        pairs.sort_unstable();
+        assert_eq!(pairs, [(0, 1), (0, 2)], "the photon meets both quarks");
+        let err = Cuts::compile_with(&card("0 = draj\n"), &legs, &forced).unwrap_err();
+        let CutError::UncutPhotonSplitting {
+            photon,
+            parton,
+            pdg,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((photon, parton), (0, 1));
+        assert_eq!(pdg, 2);
+        eprintln!("u d > a u d at draj = 0: {err}");
+        Cuts::compile_with(&card(""), &legs, &forced).expect("draj = 0.4 regulates it");
+        Cuts::compile_with(&card("0.01 = draj\n"), &legs, &forced).expect("any draj > 0 does");
+        let isolated = Cuts::compile_with(&card("0 = draj\n20 = ptgmin\n"), &legs, &forced);
+        assert!(
+            matches!(&isolated, Err(CutError::UnimplementedCutActive { name, .. }) if name == "ptgmin"),
+            "{isolated:?}"
+        );
+
+        for text in [
+            "generate e+ e- > mu+ mu- a",
+            "generate u u~ > a g",
+            "generate u u~ > z a, z > d d~",
+        ] {
+            let (forced, legs) = stitched_subprocess(text);
+            assert!(forced.photon_splittings.is_empty(), "{text}");
+            Cuts::compile_with(&card("0 = draj\n0 = dral\n"), &legs, &forced)
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+        }
+    }
+
     // ── HT ──────────────────────────────────────────────────────────────
 
     // The HT tests place massless legs with `lep` at azimuth 0, π/2 or π, where
@@ -3413,6 +3581,7 @@ mod tests {
                 width: 2.0,
             }]],
             massless_coloured_core: 0,
+            photon_splittings: Vec::new(),
         };
         // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
         let half = 40.2;
