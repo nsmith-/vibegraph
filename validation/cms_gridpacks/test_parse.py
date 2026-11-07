@@ -292,6 +292,17 @@ class VgLdjson(unittest.TestCase):
         self.assertEqual(r["vg_model_hash"][:8], "1c5615f0")
         self.assertAlmostEqual(r["stages"]["compile"], 2.5)
 
+    def test_a_process_split_into_flavour_groups_records_one_row_per_tag(self):
+        group = '{"final_state": 5, "process_ids": [1, 2], "final_masses": [0, 0, 0, 1, 1], "channels": 48, ' \
+                '"sigma": 0.00141, "sigma_err": 0.000192, "chi2_per_dof": null}'
+        split = group.replace("48", "30").replace("0.00141", "0.001").replace("0.000192", "0.00012") + ", " + \
+            group.replace("48", "18").replace("0.00141", "0.00041").replace("0.000192", "0.00016")
+        r = P.parse_vg_output(VG_LDJSON_OK.replace(group, split), "", 0, False)
+        parts = sorted((m["tag"], m["n_out"], m["n_channels"]) for m in r["multiplicities"])
+        self.assertEqual(parts, [(0, 4, 5), (1, 5, 48)])
+        five = next(m for m in r["multiplicities"] if m["tag"] == 1)
+        self.assertTrue(math.isclose(five["sigma_pb"], 0.00141) and math.isclose(five["err_pb"], 0.0002), five)
+
     def test_the_same_run_reads_alike_in_both_formats(self):
         text, ld = P.parse_vg_output(VG_OK, "", 0, False), P.parse_vg_output(VG_LDJSON_OK, "", 0, False)
         for key in ("outcome", "n_evals", "n_channels", "n_diagrams", "n_subprocesses", "vg_model_hash"):

@@ -8,7 +8,7 @@ priority: medium
 closes_when: A --madgraph-compat flag (default on, recorded in the integrate artifact and LHEF header) exists; with it on every banked byte and sigma gate is unchanged, and with it off a documented per-site delta table exists.
 blocked_by: []
 opened: 2026-09-06
-tags: [cli, madgraph-parity, lhef, alphas, kt-clustering, user-request]
+tags: [cli, madgraph-parity, lhef, alphas, kt-clustering, cuts, decay-chains, user-request]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L643-L667", title: "TODO.md entry T058"}
@@ -42,14 +42,22 @@ is reproduced bug-for-bug; off, the more robust calculation runs. A defect
 upstream fixes leaves the flag's scope when the MadGraph pin moves past the
 fix.
 
-- (d) identical particles across decays
-  ([concept](../../process/identical-particles-across-decays.md)): on, one
-  pairing per MadGraph block and the `identical_decay_chain_factor` division,
-  with the interference between pairings dropped; off, every pairing and its
-  interference. Cheap to reproduce: the stitching already marks which stitched
-  diagrams lead to MadGraph's blocks. This site is an approximation rather than
-  a defect, and with the flag on by default it changes today's output on such
-  cards; their σ row is informational, so no gate moves.
+- (d) identical particles across decays, with the `cut_decays = F` exemption
+  folded in (formerly site (g); [concept](../../process/identical-particles-across-decays.md)).
+  On, MadGraph's single pairing per block, its `identical_decay_chain_factor`,
+  its per-pairing window and its configuration-1 exemption (`check_decay`)
+  together; off, every pairing, the window union, and only the legs that are
+  decay products in every pairing exempt. **The exemption is IR-unsafe
+  without the single-pairing |M|²** (sprint H, H-C2: an exempt leg is a core
+  quark of another pairing and σ diverges), so `CutError::IrUnsafeExemption`
+  refuses it apart from the pairing. MadGraph's pairing must be carried out
+  of `stitch_set` (the forced-line patterns cannot name it). Size: about
+  −0.2 % for the pairing; −26 % / −6.8 % on this side's stricter cut on `g g > z u u~, z > u u~` /
+  `g g > z j j, z > j j` at `cut_decays = F` (H-K1). Registered deviations
+  (user, 2026-09-26 and 2026-11-06); their σ rows are informational, so no
+  gate moves. The default-path fix for the exemption, a kinematic window rule
+  (exempt the pairing whose pair mass is inside the forced window), is
+  tracked separately; this site is the exact single-pairing reproduction.
 
 - (e) the restriction's zero-coupling rule (`ufo/mod.rs` `is_zero_coupling`):
   on, MadGraph's `detect_identical_couplings` rule, |g| < 1e-13 is zero with a

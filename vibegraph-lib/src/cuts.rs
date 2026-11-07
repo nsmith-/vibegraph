@@ -53,7 +53,10 @@
 //!   stay on. MadEvent reads the forced lines of configuration 1
 //!   (`check_decay`, `setcuts.f:995`); here a leg counts as a decay product when
 //!   it descends from a forced line in every diagram, which is the same set on a
-//!   card without identical particles across its decays.
+//!   card without identical particles across its decays. An exemption that would
+//!   leave uncut a massless coloured leg descending from no forced line in some
+//!   diagram is refused ([`CutError::IrUnsafeExemption`]): that leg's collinear
+//!   region is divergent.
 //!
 //! - **HT** (`cuts.f:874-913`): `htj` is the scalar sum of the transverse
 //!   momenta of the jet-class legs, `iht` that sum plus the b-class legs, so
@@ -136,6 +139,9 @@ impl ForcedLine {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ForcedResonances {
     patterns: Vec<Vec<ForcedLine>>,
+    /// The outgoing legs, bit `k` naming the `k`-th, that are massless and
+    /// coloured and descend from no forced line in at least one diagram.
+    massless_coloured_core: u64,
 }
 
 impl ForcedResonances {
@@ -147,8 +153,11 @@ impl ForcedResonances {
     /// The forced lines of `diagrams`, which share one external-leg order.
     pub fn of(diagrams: &[Diagram], model: &EvaluatedModel) -> Self {
         let mut patterns: Vec<Vec<ForcedLine>> = Vec::new();
+        let mut massless_coloured_core = 0u64;
         for diagram in diagrams {
             let mut lines: Vec<ForcedLine> = forced_lines(diagram, model);
+            let products = lines.iter().fold(0u64, |m, l| m | l.slots);
+            massless_coloured_core |= massless_coloured_finals(diagram, model) & !products;
             if lines.is_empty() {
                 continue;
             }
@@ -166,7 +175,10 @@ impl ForcedResonances {
             let key = |p: &Vec<ForcedLine>| p.iter().map(|l| l.slots).collect::<Vec<_>>();
             key(a).cmp(&key(b))
         });
-        ForcedResonances { patterns }
+        ForcedResonances {
+            patterns,
+            massless_coloured_core,
+        }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -189,6 +201,48 @@ impl ForcedResonances {
             .reduce(|a, b| a & b)
             .unwrap_or(0)
     }
+}
+
+/// The outgoing legs of `diagram` that are massless and carry colour, bit `k`
+/// naming the `k`-th final-state leg.
+fn massless_coloured_finals(diagram: &Diagram, model: &EvaluatedModel) -> u64 {
+    diagram.legs[diagram.n_in..]
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| *k < 64)
+        .filter(|(_, leg)| {
+            model.model().particle(leg.particle).color.abs() != 1 && model.mass(leg.particle) == 0.0
+        })
+        .fold(0u64, |m, (k, _)| m | (1u64 << k))
+}
+
+/// Refuse a `cut_decays` exemption, `uncut` naming the exempt outgoing legs,
+/// that leaves uncut a massless coloured leg which descends from no forced line
+/// in some diagram of `forced`.
+///
+/// In that diagram the leg is a core parton, whose emission off a beam or
+/// another parton is collinear-singular: the integrand grows as `1/pT²` on the
+/// uncut region and σ diverges logarithmically. The channels would not show it,
+/// because [`Cuts::spacelike_floor`] caps every spacelike transfer at the
+/// hardest `pT` threshold, which bounds the accepted region only while every such
+/// leg is cut; the run would report a finite, wrong σ. An exemption of legs that
+/// are decay products in every diagram never trips this.
+fn refuse_ir_unsafe_exemption(
+    uncut: u64,
+    forced: &ForcedResonances,
+    legs: &[ExternalLeg],
+) -> Result<(), CutError> {
+    let unsafe_legs = uncut & forced.massless_coloured_core;
+    if unsafe_legs == 0 {
+        return Ok(());
+    }
+    let leg = unsafe_legs.trailing_zeros() as usize;
+    let pdg = legs
+        .iter()
+        .filter(|l| l.is_final)
+        .nth(leg)
+        .map_or(0, |l| l.pdg);
+    Err(CutError::IrUnsafeExemption { leg, pdg })
 }
 
 /// The forced lines of one diagram.
@@ -265,6 +319,12 @@ pub enum CutError {
     },
     #[error("run card's pt_min_pdg = {value} is refused: {reason}")]
     PdgCutRefused { value: String, reason: String },
+    #[error(
+        "cut_decays = F would leave final-state leg {leg} (PDG {pdg}) uncut, but it is a \
+         massless coloured core parton in a kept diagram: the exemption is IR-unsafe, its \
+         collinear region diverges, and the channels' spacelike floor would cap it silently"
+    )]
+    IrUnsafeExemption { leg: usize, pdg: i32 },
 }
 
 /// The MadGraph letter class of a final-state leg used for pairwise cuts.
@@ -834,6 +894,7 @@ impl Cuts {
         } else {
             forced.decay_products()
         };
+        refuse_ir_unsafe_exemption(uncut_products, forced, legs)?;
 
         let maxjetflavor = rc.maxjetflavor;
         let incoming: Vec<usize> = legs
@@ -2870,7 +2931,10 @@ mod tests {
     }
 
     fn forced(patterns: Vec<Vec<ForcedLine>>) -> ForcedResonances {
-        ForcedResonances { patterns }
+        ForcedResonances {
+            patterns,
+            massless_coloured_core: 0,
+        }
     }
 
     /// Outgoing legs `(a, b, c, d)` with `m(a b) = m1`, `m(c d) = m2`, `m(a d)`
@@ -3138,6 +3202,71 @@ mod tests {
         assert_eq!(f.decay_products(), (1 << set.particles_out.len()) - 1);
     }
 
+    /// The stitched diagrams of one proc-card line's single subprocess under
+    /// the default SM, with its external legs.
+    fn stitched_subprocess(text: &str) -> (ForcedResonances, Vec<ExternalLeg>) {
+        use crate::diagrams::diagram::antiparticle;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let card = parse_proc_card(text, &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        assert_eq!(sets.len(), 1, "{text}");
+        let diagrams = &sets[0].diagrams;
+        let first = &diagrams[0];
+        let legs = first
+            .legs
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                if i < first.n_in {
+                    let pdg = model.particle(l.particle).pdg_code as i32;
+                    ExternalLeg::incoming(pdg, evaluated.mass(l.particle))
+                } else {
+                    let crossed = antiparticle(&model, l.particle);
+                    let pdg = model.particle(crossed).pdg_code as i32;
+                    ExternalLeg::outgoing(pdg, evaluated.mass(crossed))
+                }
+            })
+            .collect();
+        (ForcedResonances::of(diagrams, &evaluated), legs)
+    }
+
+    /// On `g g > z u u~, z > u u~` every quark is a core parton in some kept
+    /// pairing, so exempting MadEvent's configuration-1 decay legs is refused,
+    /// as is any single quark; the exemption `cut_decays = F` compiles to (the
+    /// legs that are decay products in every pairing, none here) passes, and so
+    /// does the non-empty one of the distinct-flavour chain.
+    #[test]
+    fn an_exemption_of_a_massless_coloured_core_leg_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate g g > z u u~, z > u u~");
+        assert_eq!(forced.patterns().len(), 4);
+        assert_eq!(forced.decay_products(), 0);
+        assert_eq!(forced.massless_coloured_core, 0b1111);
+        for mask in [0b0011u64, 0b1100, 0b0001, 0b1000] {
+            let err = refuse_ir_unsafe_exemption(mask, &forced, &legs).unwrap_err();
+            let CutError::IrUnsafeExemption { leg, pdg } = err else {
+                panic!("{err}");
+            };
+            assert_eq!(leg, mask.trailing_zeros() as usize);
+            assert_eq!(pdg.abs(), 2);
+        }
+        refuse_ir_unsafe_exemption(forced.decay_products(), &forced, &legs).unwrap();
+        let rc = card("F = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        let cuts = Cuts::compile_with(&rc, &legs, &forced).unwrap();
+        assert_eq!(cuts.spacelike_floor(), 400.0);
+
+        let (forced, legs) = stitched_subprocess("generate g g > z u u~, z > d d~");
+        assert_eq!(forced.patterns().len(), 1);
+        let products = forced.decay_products();
+        assert_eq!(products.count_ones(), 2);
+        assert_eq!(forced.massless_coloured_core, 0b1111 & !products);
+        Cuts::compile_with(&rc, &legs, &forced).unwrap();
+        let core = forced.massless_coloured_core;
+        assert!(refuse_ir_unsafe_exemption(products | core, &forced, &legs).is_err());
+    }
+
     // ── HT ──────────────────────────────────────────────────────────────
 
     // The HT tests place massless legs with `lep` at azimuth 0, π/2 or π, where
@@ -3283,6 +3412,7 @@ mod tests {
                 mass: 80.4,
                 width: 2.0,
             }]],
+            massless_coloured_core: 0,
         };
         // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
         let half = 40.2;

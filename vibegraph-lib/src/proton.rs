@@ -26,17 +26,20 @@
 //! different orders and shares a group through that pairing. One that matches a
 //! group's `|M|²` but whose flows cannot be paired (a member carrying extra
 //! diagrams whose couplings vanish at the evaluated card, say) starts a group of
-//! its own. Two subprocesses whose traces separate by more than the tolerance,
-//! however little, are two groups: a charge-conjugate pair whose `|M|²` differ
-//! through the W width, as `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7`
-//! under the CKM restriction, is a physical distinction, and a split costs one
-//! more evaluation per point where a merge of distinct functions would be an
-//! error. Grouping is refused unless the
+//! its own, and so does one whose [`Cuts`] filter differs from the group's: a
+//! group carries one cut indicator, and every group its own
+//! ([`ProtonIntegrand`]). At `maxjetflavor = 4` with a massless b, `g g > g u u~`
+//! and `g g > g b b~` share a matrix element, but the b legs are cut with the
+//! b-class thresholds, so the two are two groups. Two subprocesses whose traces
+//! separate by more than the tolerance, however little, are two groups: a
+//! charge-conjugate pair whose `|M|²` differ through the W width, as
+//! `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7` under the CKM restriction, is
+//! a physical distinction, and a split costs one more evaluation per point where
+//! a merge of distinct functions would be an error. Grouping is refused unless the
 //! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
-//! the group; a card whose subprocesses differ in them is split into one
+//! the decomposition; a card whose subprocesses differ in them is split into one
 //! decomposition per set of masses before it gets here, by
-//! [`crate::multiplicity::split_by_external_masses`]) and an equal [`Cuts`] filter
-//! (so one cut indicator does).
+//! [`crate::multiplicity::split_by_external_masses`]).
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
 //! global phase, and it would not move if two members' colour bases differed by a
@@ -130,7 +133,7 @@ use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
 use crate::phasespace::beams;
 use crate::phasespace::diagram_channel::{DiagramChannel, MapIdentity};
 use crate::phasespace::maps::{
-    pole_in_tau, tau_range, MapChoices, MapOptions, ProcessShape, TauMap,
+    pole_in_tau, ChannelBounds, MapChoices, MapOptions, ProcessShape, TauMap, UnionBounds,
 };
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
@@ -604,16 +607,6 @@ pub enum ProtonError {
     )]
     UnequalFinalMasses { a: String, b: String },
     #[error(
-        "subprocesses {a} and {b} share a matrix element but compile to different cut filters, \
-         so no single cut indicator covers the sum"
-    )]
-    CutIndicatorDiffers { a: String, b: String },
-    #[error(
-        "groups {a} and {b} compile to different cut filters, so the sum has no single phase-space \
-         indicator; a process whose groups are cut differently needs one indicator per group"
-    )]
-    GroupCutsDiffer { a: usize, b: usize },
-    #[error(
         "{amps} bound amplitudes were supplied for {groups} flavour groups, in an order that must \
          match one for one"
     )]
@@ -755,12 +748,14 @@ fn report_alpha_spread(variance_shares: &[f64], alphas: &[f64]) {
 
 /// What the map rule reads off the channels [`ProtonIntegrand`] builds for
 /// `groups` at collider energy `sqrt_s_had`: every group's channel diagrams, under
-/// the first group's cuts, which every group shares.
+/// the bounds every group's cuts share ([`UnionBounds`]), as the channels are
+/// built.
 pub fn process_shape(
     groups: &FlavorGroups,
     model: &EvaluatedModel,
     sqrt_s_had: f64,
 ) -> ProcessShape {
+    let (filters, _) = distinct_filters(groups);
     ProcessShape::of(
         groups
             .groups()
@@ -768,8 +763,27 @@ pub fn process_shape(
             .flat_map(|g| channel_diagrams(g.diagrams(), model)),
         model,
         sqrt_s_had,
-        groups.groups()[0].cuts(),
+        &UnionBounds(&filters),
     )
+}
+
+/// The distinct cut filters of `groups`, in order of first appearance, and per
+/// group the index of its own filter among them. Groups of one filter share its
+/// evaluation at every point; most cards have one filter for all of them.
+fn distinct_filters(groups: &FlavorGroups) -> (Vec<&Cuts>, Vec<usize>) {
+    let mut filters: Vec<&Cuts> = Vec::new();
+    let group_filter = groups
+        .groups()
+        .iter()
+        .map(|g| match filters.iter().position(|&c| c == g.cuts()) {
+            Some(k) => k,
+            None => {
+                filters.push(g.cuts());
+                filters.len() - 1
+            }
+        })
+        .collect();
+    (filters, group_filter)
 }
 
 /// Partition a hadronic enumeration into flavour groups.
@@ -863,11 +877,11 @@ pub fn derive_flavor_groups(
     // Members of a group share the representative's initial-state average and
     // its per-leg helicity sums, so a polarized subprocess only ever joins one
     // polarized the same way, whatever its probe trace. They also share its
-    // colour bookkeeping (see `colour_pairing`), so a subprocess whose basis
-    // cannot be paired with a group's starts a group of its own: it is compiled
-    // already, and a separate group costs one more evaluation per point, not a
-    // refusal. Each entry carries the member's flow permutation into its head's
-    // indexing.
+    // colour bookkeeping (see `colour_pairing`) and its cut filter, so a
+    // subprocess whose basis cannot be paired with a group's, or whose cuts
+    // differ from it, starts a group of its own: it is compiled already, and a
+    // separate group costs one more evaluation per point, not a refusal. Each
+    // entry carries the member's flow permutation into its head's indexing.
     let mut partition: Vec<Vec<(usize, Vec<usize>)>> = Vec::new();
     for i in 0..compiled.len() {
         let joined = partition.iter_mut().find_map(|g| {
@@ -875,6 +889,15 @@ pub fn derive_flavor_groups(
             if compiled[head].0.polarizations() != compiled[i].0.polarizations()
                 || worst_rel(&traces[head], &traces[i]) >= GROUP_REL_TOL
             {
+                return None;
+            }
+            if compiled[head].2 != compiled[i].2 {
+                tracing::debug!(
+                    "{} shares the matrix element of {} but not its cut filter; grouped \
+                     separately",
+                    labels[i],
+                    labels[head]
+                );
                 return None;
             }
             match colour_pairing(&compiled[head].0, &compiled[i].0) {
@@ -901,16 +924,13 @@ pub fn derive_flavor_groups(
     let mut groups = Vec::with_capacity(partition.len());
     for entries in &partition {
         let head = entries[0].0;
-        let (_, _, head_cuts) = compiled[head].as_ref().expect("group head unclaimed");
-        for &(i, _) in &entries[1..] {
-            let (_, _, member_cuts) = compiled[i].as_ref().expect("member unclaimed");
-            if member_cuts != head_cuts {
-                return Err(ProtonError::CutIndicatorDiffers {
-                    a: labels[head].clone(),
-                    b: labels[i].clone(),
-                });
-            }
-        }
+        debug_assert!(
+            entries[1..]
+                .iter()
+                .all(|&(i, _)| compiled[i].as_ref().map(|c| &c.2)
+                    == compiled[head].as_ref().map(|c| &c.2)),
+            "a member joined a group whose cut filter it does not share"
+        );
         let indices: Vec<usize> = entries.iter().map(|&(i, _)| i).collect();
         // The representative's entry carries the identity: its table *is* the one
         // an event was drawn from, so there is no correspondence to establish and
@@ -1557,7 +1577,7 @@ pub struct OuterPoint {
 ///
 /// ```text
 /// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) |M_g(q)|²
-///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_cuts(q) / F
+///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_g(q) / F
 /// ```
 ///
 /// with `F = 2λ^{1/2}(ŝ, m₁², m₂²)` the Møller flux of the incoming partons at
@@ -1570,9 +1590,29 @@ pub struct OuterPoint {
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
 /// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R` the mirror map
-/// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
-/// unreflected final state: the mirror is an argument to the matrix element, not a
-/// second event.
+/// ([`FlavorGroup::mirror_into`]). Each group carries **one** cut indicator
+/// `Θ_g`, its own filter ([`FlavorGroup::cuts`]), on the unreflected final state:
+/// the mirror is an argument to the matrix element, not a second event.
+///
+/// # Groups cut apart
+///
+/// Groups whose subprocesses classify their legs differently, or force different
+/// decay-chain lines, compile to different filters, and each term is cut by its
+/// own, as MadEvent cuts each subprocess directory with its own `passcuts` and
+/// adds their cross sections. A point is integrated wherever some group's filter
+/// accepts it, and the event it writes is drawn among the groups whose filters
+/// do: a rejecting group's scales are recorded as absent, which is how
+/// [`select_event`](Self::select_event) reads a term that carries no weight.
+/// The channels of every group are pooled into one mixture, and every channel is
+/// built under the bounds that hold over the union of the groups' accepted
+/// regions, the weakest of each floor ([`UnionBounds`]), with the `τ` range the
+/// hull of the groups' ranges. A channel built under one group's tighter floors
+/// would keep a positive density below them, where another group's term is not
+/// zero, and the mixture would overstate its own density there and read σ low
+/// (`g g > z j j, z > j j` at `cut_decays = F`, whose same-flavour groups cut all
+/// four quarks and whose others cut only the two not from the `Z`, by 4%).
+/// Groups that share one filter, which on most cards is all of them, share its
+/// evaluation at every point.
 ///
 /// Each group's term is taken at **that group's own scales**: `L_g` at its `μF`,
 /// `|M_g|²` at `αs` of its `μR`. They are the same numbers for every group under a
@@ -1614,8 +1654,10 @@ pub struct ProtonIntegrand<'a> {
     groups: &'a FlavorGroups,
     subs: Vec<SubprocessProto<'a>>,
     pdf: &'a PdfMember,
-    /// The one cut filter every group compiles to.
-    cuts: &'a Cuts,
+    /// The distinct cut filters of the groups, in order of first appearance.
+    filters: Vec<&'a Cuts>,
+    /// Per flavour group, the index into `filters` of the group's own filter.
+    group_filter: Vec<usize>,
     combiner: ScaledMultiChannel<f64>,
     /// Per sampling channel, the first `(group, diagram)` pair its map was built
     /// from — the channel's name.
@@ -1735,13 +1777,14 @@ struct ProtonScratch<'a> {
     /// This thread's count of the points it evaluated
     /// ([`ProtonIntegrand::census`]).
     census: CensusCell,
-    /// The configuration MadEvent cuts a point's mirrored term on, and which of
-    /// `[direct, mirrored]` passed the cuts, under
+    /// Per cut filter ([`ProtonIntegrand::filters`]), which of the point's
+    /// `[direct, mirrored]` terms it passes. The two agree except under
+    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`].
+    filter_passes: RefCell<Vec<[bool; 2]>>,
+    /// The configuration MadEvent cuts a point's mirrored term on, under
     /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
     #[cfg(any(test, feature = "extended-validation"))]
     madevent_lab_buf: RefCell<Vec<V>>,
-    #[cfg(any(test, feature = "extended-validation"))]
-    ordering_passes: Cell<[bool; 2]>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1769,7 +1812,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// selection weight: a point's value does not depend on which of them drew it.
     ///
     /// The peripheral channels are regulated at [`Cuts::spacelike_floor`], the scale
-    /// the process's own transverse-momentum cuts imply: it bounds each rung's
+    /// the process's own transverse-momentum cuts imply (the weakest of the groups'
+    /// where their cuts differ): it bounds each rung's
     /// transfer and sets its pole floor. A run with no such cut gets a spine on the
     /// default pole floor and an unbounded transfer.
     pub fn new(
@@ -1885,11 +1929,17 @@ impl<'a> ProtonIntegrand<'a> {
                 return Err(ProtonError::AmplitudeMismatch { index: i });
             }
         }
-        let cuts = groups.groups()[0].cuts();
-        for (i, g) in groups.groups().iter().enumerate().skip(1) {
-            if g.cuts() != cuts {
-                return Err(ProtonError::GroupCutsDiffer { a: 0, b: i });
-            }
+        let (filters, group_filter) = distinct_filters(groups);
+        // Every channel is shaped by bounds that hold wherever some group's cuts
+        // accept, since a channel's density below its floors is positive and is
+        // read against every group's term ([`ChannelBounds`]).
+        let bounds = UnionBounds(&filters);
+        if filters.len() > 1 {
+            tracing::info!(
+                "{} flavour groups are cut by {} distinct filters, each group by its own",
+                groups.groups().len(),
+                filters.len()
+            );
         }
 
         let sqrt_s_had = beams.sqrt_s();
@@ -1917,7 +1967,7 @@ impl<'a> ProtonIntegrand<'a> {
                 // The baked-in energy is unread through `ScaledChannel`, which takes
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
-                let channel = maps.channel(d, model, sqrt_s_had, cuts);
+                let channel = maps.channel(d, model, sqrt_s_had, &bounds);
                 let channel = if bound_transfer {
                     channel
                 } else {
@@ -1973,11 +2023,12 @@ impl<'a> ProtonIntegrand<'a> {
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
-        // The cuts and any whole-state decay window bound τ (`tau_range`); the
-        // incoming partons' masses raise its floor to their production threshold.
+        // The cuts and any whole-state decay window bound τ (`tau_range`), and
+        // the map covers every group's range; the incoming partons' masses raise
+        // its floor to their production threshold.
         let initial_masses = groups.initial_masses();
         let threshold = initial_masses[0] + initial_masses[1];
-        let (cut_tau_min, cut_tau_max) = tau_range(cuts, s_had);
+        let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
         let tau_min = cut_tau_min.max(threshold * threshold / s_had);
         let tau_max = cut_tau_max.max(tau_min);
         let tau_mixture = match maps.tau {
@@ -1991,7 +2042,8 @@ impl<'a> ProtonIntegrand<'a> {
             subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
             pdf,
-            cuts,
+            filters,
+            group_filter,
             combiner,
             channel_ids,
             channel_members,
@@ -2061,10 +2113,9 @@ impl<'a> ProtonIntegrand<'a> {
                 group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
                 census: CensusCell::default(),
+                filter_passes: RefCell::new(vec![[true, true]; self.filters.len()]),
                 #[cfg(any(test, feature = "extended-validation"))]
                 madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-                #[cfg(any(test, feature = "extended-validation"))]
-                ordering_passes: Cell::new([true, true]),
             }
         })
     }
@@ -2255,7 +2306,7 @@ impl<'a> ProtonIntegrand<'a> {
             let sc = self.scratch();
             self.build_frames(sc, &m, &pt.momenta);
             let lab = sc.lab_buf.borrow();
-            if self.cuts.pass(&lab) {
+            if self.filters.iter().any(|c| c.pass(&lab)) {
                 any_passed_cuts = true;
                 let resolved = self
                     .scales_of(sc, source, &lab, self.sampled_channel(0))
@@ -2278,11 +2329,17 @@ impl<'a> ProtonIntegrand<'a> {
         self.tau_min
     }
 
-    /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
-    /// the process's own cuts.
+    /// The spacelike-pole floor (GeV²) the peripheral channels were built with,
+    /// the weakest of the groups' own cuts imply.
     #[cfg(test)]
     pub(crate) fn spacelike_floor(&self) -> f64 {
-        self.cuts.spacelike_floor()
+        UnionBounds(&self.filters).spacelike_floor()
+    }
+
+    /// Whether some group's cuts accept the lab-frame momenta `lab`.
+    #[cfg(test)]
+    pub(crate) fn any_group_passes(&self, lab: &[V]) -> bool {
+        self.filters.iter().any(|c| c.pass(lab))
     }
 
     /// What the rule-based composition chose for each sampling channel, in channel
@@ -2425,7 +2482,7 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
     ///
-    /// `τ` is drawn over `[τ_min, τ_max]` ([`tau_range`]) by the banked
+    /// `τ` is drawn over `[τ_min, τ_max]` ([`tau_range`](crate::phasespace::maps::tau_range)) by the banked
     /// [`TauMap`]: the logarithmic `τ = τ_min^(1−u) τ_max^u` with
     /// `dτ/du = τ ln(τ_max/τ_min)`; the inverse-square
     /// `τ = 1/(1/τ_min − u(1/τ_min − 1/τ_max))` with
@@ -2535,7 +2592,7 @@ impl<'a> ProtonIntegrand<'a> {
         };
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
-        let passes = self.cuts.pass(&sc.lab_buf.borrow());
+        let passes = self.cut_point(sc);
         #[cfg(any(test, feature = "extended-validation"))]
         let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
         if !passes {
@@ -2582,9 +2639,33 @@ impl<'a> ProtonIntegrand<'a> {
         self.madevent_mirrored_cut = true;
     }
 
-    /// Whether a point passes the cuts in either ordering under
+    /// Evaluate every distinct cut filter on the lab-frame point in the frame
+    /// buffers, recording in the scratch which filters pass, and whether any
+    /// does: a point is integrated wherever some group's cuts accept it, and
+    /// each group's term carries its own filter's indicator.
+    fn cut_point(&self, sc: &ProtonScratch<'a>) -> bool {
+        let lab = sc.lab_buf.borrow();
+        let mut passes = sc.filter_passes.borrow_mut();
+        let mut any = false;
+        for (p, cuts) in passes.iter_mut().zip(&self.filters) {
+            let pass = cuts.pass(&lab);
+            *p = [pass, pass];
+            any |= pass;
+        }
+        any
+    }
+
+    /// Whether group `gi`'s cuts accept the point last cut, in either beam
+    /// ordering ([`cut_point`](Self::cut_point)).
+    fn group_passes(&self, sc: &ProtonScratch<'a>, gi: usize) -> bool {
+        let [direct, mirrored] = sc.filter_passes.borrow()[self.group_filter[gi]];
+        direct || mirrored
+    }
+
+    /// Whether a point passes some filter's cuts in either ordering under
     /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut),
-    /// recording which ordering passed; `lab_passes` alone without it.
+    /// recording per filter which ordering passed; `lab_passes` alone without
+    /// it.
     #[cfg(any(test, feature = "extended-validation"))]
     fn cut_orderings_as_madevent(
         &self,
@@ -2607,20 +2688,30 @@ impl<'a> ProtonIntegrand<'a> {
             out.iter()
                 .map(|p| boost_z(V::new(p.e(), p.px(), -p.py(), -p.pz()), beta)),
         );
-        let mirrored = self.cuts.pass(&sampled);
-        sc.ordering_passes.set([lab_passes, mirrored]);
-        lab_passes || mirrored
+        let mut passes = sc.filter_passes.borrow_mut();
+        let mut any = false;
+        for (p, cuts) in passes.iter_mut().zip(&self.filters) {
+            p[1] = cuts.pass(&sampled);
+            any |= p[0] || p[1];
+        }
+        any
     }
 
-    /// `[direct, mirrored]` with the ordering whose cut failed zeroed, under
+    /// Group `gi`'s `[direct, mirrored]` with the ordering whose cut failed
+    /// zeroed, under
     /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut);
     /// unchanged without it.
     #[cfg(any(test, feature = "extended-validation"))]
-    fn madevent_cut_luminosities(&self, sc: &ProtonScratch<'a>, lumi: [f64; 2]) -> [f64; 2] {
+    fn madevent_cut_luminosities(
+        &self,
+        sc: &ProtonScratch<'a>,
+        gi: usize,
+        lumi: [f64; 2],
+    ) -> [f64; 2] {
         if !self.madevent_mirrored_cut {
             return lumi;
         }
-        let passes = sc.ordering_passes.get();
+        let passes = sc.filter_passes.borrow()[self.group_filter[gi]];
         [0, 1].map(|o| if passes[o] { lumi[o] } else { 0.0 })
     }
 
@@ -2644,7 +2735,14 @@ impl<'a> ProtonIntegrand<'a> {
         {
             let mut out = sc.group_scales.borrow_mut();
             out.clear();
-            out.resize(n_groups, [scales, scales]);
+            out.extend((0..n_groups).map(|gi| {
+                if self.group_passes(sc, gi) {
+                    [scales, scales]
+                } else {
+                    // A group whose cuts reject the point carries no weight here.
+                    [None, None]
+                }
+            }));
             let mut factors = sc.group_rewgt.borrow_mut();
             factors.clear();
             factors.resize(n_groups, [None, None]);
@@ -2668,7 +2766,9 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            acc += self.group_term(sc, gi, g, sub, cm, &mut mirror, &f1, &f2);
+            if self.group_passes(sc, gi) {
+                acc += self.group_term(sc, gi, g, sub, cm, &mut mirror, &f1, &f2);
+            }
         }
         acc
     }
@@ -2731,6 +2831,15 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
+            // A group whose cuts reject the point carries no weight and is not
+            // clustered there.
+            if !self.group_passes(sc, gi) {
+                out.push([None, None]);
+                records.push([None, None]);
+                histories.push([None, None]);
+                factors.push([None, None]);
+                continue;
+            }
             let fallback = SampledChannel {
                 group: gi,
                 channel: self.channel_members[channel]
@@ -2916,7 +3025,7 @@ impl<'a> ProtonIntegrand<'a> {
     ) -> f64 {
         let [direct, reflected] = g.symmetry_weighted_luminosity_rows(f1, f2);
         #[cfg(any(test, feature = "extended-validation"))]
-        let [direct, reflected] = self.madevent_cut_luminosities(sc, [direct, reflected]);
+        let [direct, reflected] = self.madevent_cut_luminosities(sc, gi, [direct, reflected]);
         let mut term = 0.0;
         if direct != 0.0 {
             term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
@@ -5068,6 +5177,226 @@ mod tests {
         assert_eq!(
             light, bottom_as_jet,
             "the difference is the jet classification, not the leg's mass"
+        );
+    }
+
+    /// Five-flavour `p p > j j` at `maxjetflavor = 4`: a massless b is cut with
+    /// `ptb`, `etab`, `drbb` and `drbj`, which `b_cuts` sets, and a light jet
+    /// with `ptj = 20`, `etaj = 5`, `drjj = 0.4`.
+    fn five_flavour_dijet(b_cuts: &str) -> (Arc<UFOModel>, EvaluatedModel, RunCard) {
+        let m = sm_model(SMRestrict::NoBMass);
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(&format!(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 -1 = dynamical_scale_choice\n  4 = maxjetflavor\n\
+             \x20 20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n{b_cuts}"
+        ))
+        .expect("run card");
+        (m, evaluated, card)
+    }
+
+    const B_CUTS_APART: &str = "  30.0 = ptb\n  2.5 = etab\n  0.4 = drbb\n  0.4 = drbj\n";
+    const B_CUTS_AS_JETS: &str = "  20.0 = ptb\n  5.0 = etab\n  0.4 = drbb\n  0.4 = drbj\n";
+
+    /// The index of the group whose members include the subprocess
+    /// `incoming > outgoing`.
+    fn group_of(groups: &FlavorGroups, incoming: [i32; 2], outgoing: &[i32]) -> usize {
+        groups
+            .groups()
+            .iter()
+            .position(|g| {
+                g.members()
+                    .iter()
+                    .any(|s| s.incoming == incoming && s.outgoing == outgoing)
+            })
+            .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
+    }
+
+    /// Two subprocesses that share a matrix element but not a cut filter are two
+    /// groups, each carrying its own filter, and the decomposition no longer
+    /// refuses them. Under b cuts equal to the jet cuts the filters agree, and the
+    /// b subprocesses stay in the light-quark groups, as they do at
+    /// `maxjetflavor = 5`.
+    #[test]
+    fn subprocesses_cut_differently_are_grouped_apart() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let groups = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("a cut difference splits groups rather than refusing them");
+        let light = group_of(&groups, [21, 21], &[2, -2]);
+        let bottom = group_of(&groups, [21, 21], &[5, -5]);
+        assert_ne!(light, bottom, "g g > u u~ and g g > b b~ share a group");
+        let (gl, gb) = (&groups.groups()[light], &groups.groups()[bottom]);
+        assert_ne!(gl.cuts(), gb.cuts());
+        let points = fresh_points(&gl.final_masses());
+        let rel = worst_rel(
+            &m2_trace(gl.evaluator(), &evaluated, &points),
+            &m2_trace(gb.evaluator(), &evaluated, &points),
+        );
+        assert!(
+            rel < GROUP_REL_TOL,
+            "the two groups' |M|² differ by {rel:e}"
+        );
+        // No group mixes a b with a light quark in one outgoing slot.
+        for g in groups.groups() {
+            let pattern = |s: &Subprocess| -> Vec<bool> {
+                s.outgoing.iter().map(|&c| c.abs() == 5).collect()
+            };
+            let head = pattern(&g.members()[0]);
+            assert!(g.members().iter().all(|s| pattern(s) == head));
+        }
+
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_AS_JETS);
+        let same = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        assert_eq!(
+            group_of(&same, [21, 21], &[2, -2]),
+            group_of(&same, [21, 21], &[5, -5]),
+            "equal filters split a group"
+        );
+        assert!(same.groups().len() < groups.groups().len());
+    }
+
+    /// Every channel of a decomposition whose groups are cut by different filters
+    /// is built under the weakest of their bounds, not under its own group's: a
+    /// channel's density stays positive below the floors it was built with, and
+    /// there another group's term is not zero. The b groups' `ptb = 30` gives
+    /// their own channels a spacelike floor of 900 GeV² against the light groups'
+    /// 400, so building them under their own cuts would give different maps.
+    #[test]
+    fn channels_are_built_under_bounds_every_group_shares() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let groups = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        let (filters, _) = distinct_filters(&groups);
+        assert!(filters.len() > 1);
+        let keys = |own: bool| -> BTreeSet<String> {
+            groups
+                .groups()
+                .iter()
+                .flat_map(|g| {
+                    channel_diagrams(g.diagrams(), &evaluated)
+                        .into_iter()
+                        .map(move |d| (g, d))
+                })
+                .map(|(g, d)| {
+                    let channel = if own {
+                        integ.maps().channel(d, &evaluated, SQRT_S_HAD, g.cuts())
+                    } else {
+                        integ
+                            .maps()
+                            .channel(d, &evaluated, SQRT_S_HAD, &UnionBounds(&filters))
+                    };
+                    channel.map_key()
+                })
+                .collect()
+        };
+        let built: BTreeSet<String> = integ.channel_map_keys().iter().cloned().collect();
+        assert_eq!(built, keys(false));
+        assert_ne!(
+            built,
+            keys(true),
+            "every group's own cuts build the same maps"
+        );
+    }
+
+    /// Each group's term carries its own group's cut indicator. At a dijet point
+    /// both of whose partons have `20 < pT < 30` GeV, the light-jet groups' cuts
+    /// accept and the b groups' (`ptb = 30`) reject: the point's value is the
+    /// light groups' terms alone, which a decomposition holding only the light
+    /// groups reproduces, no b group records a scale, and the event's draw never
+    /// lands on one. Above 30 GeV both kinds contribute.
+    #[test]
+    fn a_point_carries_the_terms_of_the_groups_whose_cuts_accept_it() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let derive = || {
+            derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+                .expect("flavour groups")
+        };
+        let full = derive();
+        let outgoing_b = |g: &FlavorGroup| g.members()[0].outgoing.iter().any(|c| c.abs() == 5);
+        let mut light = derive();
+        light.groups.retain(|g| !outgoing_b(g));
+        let mut bottom = derive();
+        bottom.groups.retain(outgoing_b);
+        assert!(!light.groups().is_empty() && !bottom.groups().is_empty());
+
+        let pdf = probe_pdf();
+        let full_amps = bind_all(&full, &evaluated);
+        let light_amps = bind_all(&light, &evaluated);
+        let bottom_amps = bind_all(&bottom, &evaluated);
+        let integrand = |g, a| ProtonIntegrand::new(g, a, &evaluated, &pdf, BEAMS, MU_F).unwrap();
+        let full_integ = integrand(&full, &full_amps);
+        let light_integ = integrand(&light, &light_amps);
+        let bottom_integ = integrand(&bottom, &bottom_amps);
+
+        // Back to back in the partonic centre of mass at zero rapidity, so the
+        // lab frame is the partonic one; |y| stays below `etab`.
+        let sqrt_shat = 100.0;
+        let tau = sqrt_shat * sqrt_shat / (SQRT_S_HAD * SQRT_S_HAD);
+        let point = OuterPoint {
+            x1: tau.sqrt(),
+            x2: tau.sqrt(),
+            sqrt_shat,
+            jac: 1.0,
+        };
+        let dijet = |pt: f64| {
+            let e = sqrt_shat / 2.0;
+            let pz = (e * e - pt * pt).sqrt();
+            vec![V::new(e, pt, 0.0, pz), V::new(e, -pt, 0.0, -pz)]
+        };
+        let shape = |integ: &ProtonIntegrand<'_>, out: &[V]| {
+            integ.shape(integ.scratch(), &point, out, 0, &[])
+        };
+
+        let between = dijet(25.0);
+        let value = shape(&full_integ, &between);
+        let light_value = shape(&light_integ, &between);
+        assert!(value > 0.0);
+        assert_eq!(shape(&bottom_integ, &between), 0.0);
+        assert!(
+            (value - light_value).abs() <= 1e-12 * value,
+            "the point carries {value:e}, the light groups alone {light_value:e}"
+        );
+        let sc = full_integ.scratch();
+        let event = ProtonEvent {
+            weight: value,
+            x: [point.x1, point.x2],
+            group_scales: sc.group_scales.borrow().clone(),
+            group_rewgt: sc.group_rewgt.borrow().clone(),
+            group_records: sc.group_records.borrow().clone(),
+            group_histories: sc.group_histories.borrow().clone(),
+            lab: sc.lab_buf.borrow().clone(),
+            cm: sc.cm_buf.borrow().clone(),
+        };
+        for (g, scales) in full.groups().iter().zip(&event.group_scales) {
+            assert_eq!(
+                outgoing_b(g),
+                scales.iter().all(Option::is_none),
+                "a group records a scale exactly where its cuts accept the point"
+            );
+        }
+        let mut stream = SubStream::from_stream(0x00B0_C075, 1);
+        for _ in 0..200 {
+            let u = stream.uniforms::<f64>(5);
+            let drawn = full_integ
+                .select_event(&event, [u[0], u[1], u[2], u[3], u[4]])
+                .expect("the point carries weight");
+            assert!(!outgoing_b(&full.groups()[drawn.group]));
+        }
+
+        let above = dijet(40.0);
+        let value = shape(&full_integ, &above);
+        let parts = shape(&light_integ, &above) + shape(&bottom_integ, &above);
+        assert!(shape(&bottom_integ, &above) > 0.0);
+        assert!(
+            (value - parts).abs() <= 1e-12 * value,
+            "the point carries {value:e}, its groups {parts:e}"
         );
     }
 
@@ -7520,13 +7849,13 @@ mod tests {
             assert!((into - outof).abs() < 1e-12 * sqrt_shat, "component {c}");
         }
         assert!(
-            !unequal.cuts.pass(&lab),
+            !unequal.filters[0].pass(&lab),
             "a lepton at lab rapidity {} passed etal = 2.5",
             rapidity(fwd)
         );
         let lab_even = lab_frame(&even, &point, &out);
         assert!(
-            even.cuts.pass(&lab_even),
+            even.filters[0].pass(&lab_even),
             "the configuration at rest fails a cut"
         );
 
@@ -7627,7 +7956,8 @@ mod tests {
                 (point.x1 - point.x2 * 6500.0 / 4000.0) / (point.x1 + point.x2 * 6500.0 / 4000.0);
             let mut other = lab[..2].to_vec();
             other.extend(drawn.momenta.iter().map(|p| boost_z(*p, other_beta)));
-            one_sided += usize::from(forward.cuts.pass(&lab) != forward.cuts.pass(&other));
+            one_sided +=
+                usize::from(forward.filters[0].pass(&lab) != forward.filters[0].pass(&other));
         }
         eprintln!("{nonzero} weighted points, {one_sided} between the two frames' cuts");
         assert!(nonzero > 5_000, "{nonzero} points carry weight");
@@ -7712,12 +8042,12 @@ mod tests {
             jac: 1.0,
         };
         assert!(
-            unequal.cuts.pass(&cm_frame(&point, &out)),
+            unequal.filters[0].pass(&cm_frame(&point, &out)),
             "the configuration fails a cut in the partonic CM"
         );
         let lab = lab_frame(&unequal, &point, &out);
         assert!(
-            !unequal.cuts.pass(&lab),
+            !unequal.filters[0].pass(&lab),
             "the boosted lepton at y = {} passes etal",
             rapidity(&lab[2])
         );
@@ -7781,7 +8111,7 @@ mod tests {
         };
 
         let forward = at(6500.0 / 4000.0);
-        assert!(!plain.cuts.pass(&lab_frame(&plain, &forward, &out)));
+        assert!(!plain.filters[0].pass(&lab_frame(&plain, &forward, &out)));
         assert_eq!(value(&plain, &forward), 0.0);
         let mirrored_only = value(&emulated, &forward);
         assert!(
@@ -7790,7 +8120,7 @@ mod tests {
         );
 
         let backward = at(4000.0 / 6500.0);
-        assert!(plain.cuts.pass(&lab_frame(&plain, &backward, &out)));
+        assert!(plain.filters[0].pass(&lab_frame(&plain, &backward, &out)));
         let both = value(&plain, &backward);
         let direct_only = value(&emulated, &backward);
         assert!(
