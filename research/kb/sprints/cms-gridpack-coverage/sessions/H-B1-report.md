@@ -226,8 +226,33 @@ MadGraph reference is the cutoff of its own sampler and vibegraph's reading
 is a few heavy draws (ESS 15–23). The CERN ratio σ/MG for this family is a
 ratio of two regulator artefacts.
 
+### vibegraph on MadGraph's identical files
+
+`vibegraph-main integrate ajj_proc_card.dat --run-card M_<...>.dat --seed 1
+--fixed-budget` (the `M_*` files minus `hard_survey`):
+
+```
+$ cat vg/H-B1-vgM-driver.log                    MadGraph (above)
+M_ptj20_draj0.02   0.547002 0.001828  chi2/dof=1.532   0.5455 ± 0.0006 (2 seeds)   +0.3%
+M_ptj0_draj0.004   0.67356  0.003249  chi2/dof=2.411   0.6749 ± 0.0029             −0.2%
+M_ptj0_draj0.001   0.73702  0.004312  chi2/dof=2.066   0.7358 ± 0.0022             +0.2%
+M_ptj0_draj0.0001  refused: effective sample size 15  0.9509 ± 0.0054
+support lines: draj 0.004 ESS 41449; draj 0.001 ESS 28495;
+               draj 1e-4 "823046 of 1283523 kept points carry weight (effective sample size 15)"
+```
+
+`M_ptj20_draj0.02` reproduces the gridpack-format `S_ptj20_draj0.02` bit for
+bit (0.547002 0.001828), so the two card families carry the same cuts. At
+`draj` 0.02, 0.004 and 0.001 — `ptj = 0` and the spacelike cap at `pta²`
+included — vibegraph and MadGraph agree within 0.3%. At `draj = 1e-4` vibegraph,
+like MadGraph, returns its `draj = 0` result bit for bit (the support line is
+identical to the as-shipped run's): neither program puts a weight-carrying point
+below ΔR = 1e-4. The two part company only inside the decade ΔR ∈ [1e-4,
+1e-3], which MadGraph integrates to +0.215 pb and vibegraph to a handful of
+heavy draws. That decade is where the CERN host's budget ladder lives: more
+vibegraph points land in it and the ratio rises.
+
 ## Pending
 
-- vibegraph on MadGraph's identical `M_*` files at `ptj 0`, `draj` 0.004,
-  0.001, 1e-4.
+- Both programs at `draj = 3e-4`.
 - Task 1, H-N1's card on this branch.
