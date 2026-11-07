@@ -117,12 +117,35 @@ of main against zero at `ptj = 0.01`.*
 
 ### The u b~ / u~ b split
 
-*Pending: forced-merge (`VG_PROBE_GROUP_REL_TOL=1e-5`) against kept-apart at
-matched fixed budget on the as-shipped card.* What is already known: the
-channel grids are per distinct map, not per group (`544 (group, diagram)
-channels share 27 distinct phase-space maps` in every run's log, 27 grids in
-the result record), so keeping the pair apart adds one term to the integrand
-mixture but does not split any grid's budget, unlike the VBF_HH mass split.
+Forced merge (`VG_PROBE_GROUP_REL_TOL=1e-5`) against kept apart, same binary,
+seed 1, `--fixed-budget` (12 × 120000), on the as-shipped VBFtoG-200 card
+(`S_asshipped.dat` = `C0_run_card.dat`) and on the regulated
+`S_ptj20_draj0.02.dat`:
+
+```
+$ cat vg/H-B1-split-driver.log; grep 'channels share|support:' (per log)
+kept apart  as-shipped  refused: "the cross section is carried by an effective 14.8 points,
+                        below the 20 it is accepted on"; last iteration 3.476e-9 ± 9.03e-10 GeV^-2
+                        (1.35 ± 0.35 pb), χ²/dof 13.3; ESS 15
+            544 (group, diagram) channels share 27 distinct phase-space maps
+merged      as-shipped  1.3001 0.2688  chi2/dof=15.931; ESS 23
+            535 (group, diagram) channels share 27 distinct phase-space maps
+kept apart  draj 0.02   0.547002 0.001828  chi2/dof=1.532; ESS 83263   (bit-identical to vibegraph-main)
+merged      draj 0.02   0.54631  0.001791  chi2/dof=1.559; ESS 86072
+```
+
+The merge took (535 against 544 group–diagram pairs: the pair's nine diagrams
+now ride one group). On the regulated card the two agree to −0.13% ± 0.47%,
+with the same χ²/dof and effective sample size; on the as-shipped card both
+are a handful of draws (ESS 15 and 23, χ²/dof 13–16) and agree within their
+26% errors. Merging does not change the sampling: the channel grids are per
+distinct map, not per group (27 maps, 27 grids in both runs), so keeping the
+pair apart adds one term to the integrand mixture but splits no grid's
+budget, unlike the VBF_HH mass split. The split is not B's cause.
+
+The effective sample size is the sharpest reading of the divergence: the
+same binary, card family and budget gives ESS 60000–86000 at any finite
+`draj` and 15–23 at `draj = 0`.
 
 ## Pending
 
