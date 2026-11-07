@@ -252,7 +252,99 @@ below ΔR = 1e-4. The two part company only inside the decade ΔR ∈ [1e-4,
 heavy draws. That decade is where the CERN host's budget ladder lives: more
 vibegraph points land in it and the ratio rises.
 
-## Pending
+### Both programs at `draj = 3e-4`
 
-- Both programs at `draj = 3e-4`.
-- Task 1, H-N1's card on this branch.
+```
+$ cat mg/H-B1-mg4-driver.log vg/H-B1-vgM2-driver.log
+MadGraph   seed 101   0.7921 +- 0.006542 pb
+vibegraph  seed 1     0.787358 0.01089  chi2/dof=3.026   (ESS 5199)
+```
+
+They agree (−0.6% ± 1.6%), and both sit on the logarithm: MadGraph's 0.001 →
+3e-4 step is +0.056 against 0.022 × ln 11.1 = +0.053. The whole collinear
+table, `ptj = 0`:
+
+| draj | MadGraph (pb) | vibegraph (pb) | vibegraph ESS |
+|---|---|---|---|
+| 0.004 | 0.6749 ± 0.0029 | 0.6736 ± 0.0032 | 41449 |
+| 0.001 | 0.7358 ± 0.0022 | 0.7370 ± 0.0043 | 28495 |
+| 3e-4 | 0.7921 ± 0.0065 | 0.7874 ± 0.0109 | 5199 |
+| 1e-4 | 0.9509 ± 0.0054 (= its `draj 0` bit for bit) | refused, ESS 15 (= its `draj 0` bit for bit) | 15 |
+| 0 | 0.9509, 0.9452 (seeds 101, 102) | refused, ESS 15; merged-groups run 1.30 ± 0.27 | 15–23 |
+
+From 3e-4 to 1e-4 MadGraph adds +0.159 pb where the logarithm gives +0.048,
+and stops there (nothing below 1e-4 carries weight); vibegraph's
+effective sample size falls from 5199 to 15 over the same step. Below ΔR ≈
+3e-4 neither program integrates this process: the quark–photon invariant is
+`s_qγ ≈ pT_q pT_γ ΔR²`, a few 1e-3 GeV² at the photon's 200 GeV, and the
+`1/s_qγ` pole there is sampled by neither phase-space map. Whatever each
+returns at `draj = 0` is what its sampler does with that region.
+
+## Conclusion
+
+**The cause of B is the cards, not the flavour split.** All four group-B
+gridpacks carry
+
+```
+GJ-2Jets-EWK_Bin-PTG-40     lhaid=325300 ptj=0.0 pta=40.0  ptamax=-1.0  draj=0.0 drjj=0.0 mmjj=4.0   ptgmin=0.0 etaj/etaa=-1
+GJ-2Jets-EWK (inclusive)    lhaid=325300 ptj=0.0 pta=10.0  ptamax=-1.0  draj=0.0 drjj=0.0 mmjj=4.0   ptgmin=0.0
+VBFtoG_Bin-PTG-100to200     lhaid=325300 ptj=0.0 pta=100.0 ptamax=200.0 draj=0.0 drjj=0.0 mmjj=100.0 ptgmin=0.0
+VBFtoG_Bin-PTG-200          lhaid=325300 ptj=0.0 pta=200.0 ptamax=-1.0  draj=0.0 drjj=0.0 mmjj=100.0 ptgmin=0.0
+```
+
+so the photon is neither separated from the jets (`draj = 0`) nor isolated
+(`ptgmin = 0`), and σ of `p p > a j j QCD=0 QED=3` diverges logarithmically
+in the final-state quark–photon collinear limit. The MadGraph reference
+(MG 2.9.18, survey step only) is the effective cut of MadEvent's phase space,
+reproducible across seeds, and not a σ of the process. vibegraph agrees with
+MadGraph at every finite `draj` down to 3e-4 on identical cards and seeds the
+same logarithm, and at `draj = 0` returns a heavy-tailed estimate that grows
+with budget — the CERN ladder's 0.738 → 0.915 is vibegraph's sampler reaching
+further into the logarithm, and there is no converged value for it to reach.
+
+The evidence chain, and what would falsify it:
+
+1. σ grows by a constant 0.019–0.022 pb per unit of ln(1/ΔR²) over
+   `draj` 0.4 → 3e-4 in both programs. *Falsified by* a slope that falls to
+   zero at small `draj` (a finite integral); none is seen.
+2. vibegraph = MadGraph within 0.6% at `draj` 0.02, 0.004, 0.001, 3e-4 on the
+   same files. *Falsified by* a percent-level disagreement at any finite
+   `draj`, which would put a vibegraph defect back in play.
+3. At `draj ≤ 1e-4` each program's σ is bit-identical to its `draj = 0` σ, and
+   vibegraph's effective sample size collapses to 15–23. The `draj = 0` σ is a
+   sampler artefact on both sides.
+4. Ruled out as carriers of B: the u b~ / u~ b split (merged vs apart agree,
+   −0.13% ± 0.47% on the regulated card; channel grids are shared per map),
+   the mirror term (mirror/direct 0.987–1.005 on every group above 1e-3 of σ
+   on the regulated card; on the as-shipped card the spikes hit both
+   orderings, mostly the mirror *high*), and the spacelike-floor cap (≤ 1%,
+   below).
+
+What this does not settle: which program is closer to anything physical in
+the ΔR < 3e-4 region. Nothing there is physical with massless quarks; the
+physics answer needs isolation or a fragmentation contribution.
+
+## Proposed fix (not implemented)
+
+1. **vibegraph refuses IR-unsafe cards** instead of returning a number. A
+   final-state photon and a massless coloured final-state parton that some
+   diagram joins at one vertex, with `draj = 0` and photon isolation off
+   (`ptgmin = 0`), make σ divergent; so does a massless coloured core parton
+   with no `ptj`/`drjj`/`mmjj` regulating its singular limits. This extends
+   `refuse_ir_unsafe_exemption`'s rule (#105) from `cut_decays` to the run
+   card, with the same failure mode it was written against ("the run would
+   report a finite, wrong σ"). The four B gridpacks then read *refused, IR-unsafe
+   card*, which is the true outcome.
+2. **The gridpack database stops gating these four on σ/MG.** Their reference is
+   not a cross section. A campaign outcome category ("IR-unsafe card, MG
+   reference is sampler-limited") keeps them out of the σ statistics. The
+   CMS-side record agrees: GJ inclusive's own gridpack run produced 25 of 1000
+   requested events (`fail to reach target 1000`, `need to improve 20
+   channels`), PTG-40's 994 of 1000.
+3. Independently, a small sampling item: the spacelike-floor cap (Found 2).
+
+## Task 1: H-N1's card on this branch
+
+*Pending (running at the time of this commit): `vibegraph-main integrate
+ajj_proc_card.dat --run-card HN1_run_card.dat --seed N --target-rel 0.002`,
+seeds 1–5, inputs `diff`-identical to H-N1's.*
