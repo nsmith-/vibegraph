@@ -35,8 +35,8 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 1 | squark–squark–gluon–gluon colour `T(1,-1,3)*T(2,4,-1)` | 3 | [coloured-scalar-seagull-colour-unsupported](../backlog/feature/coloured-scalar-seagull-colour-unsupported.md) | high |
 | 2 | `import model --modelname`, plus gpdb's rewrite of it | 2 | [proc-card-import-model-options-refused](../backlog/feature/proc-card-import-model-options-refused.md) | high |
 | 3 | model without `coupling_orders.py` (`QAD`) | 2 | [coupling-orders-not-inferred-without-coupling-orders-py](../backlog/feature/coupling-orders-not-inferred-without-coupling-orders-py.md) | high |
-| 4 | `ptj4min = -1` | 2 | `ptj-n-min-nonpositive-refused` (*Sprint H branch*) | medium |
-| 5 | negative coupling order (onia_sm) | 2 | `negative-ufo-coupling-orders-refused` (*Sprint H branch*) | medium |
+| 4 | `ptj4min = -1` | 2 | [ptj-n-min-nonpositive-refused](../backlog/feature/ptj-n-min-nonpositive-refused.md) | medium |
+| 5 | negative coupling order (onia_sm) | 2 | [negative-ufo-coupling-orders-refused](../backlog/feature/negative-ufo-coupling-orders-refused.md) | medium |
 | 6 | coupling order as a Python expression (dim6top) | 2 | [ufo-coupling-order-expressions-refused](../backlog/feature/ufo-coupling-order-expressions-refused.md) | medium |
 | 7 | particle charge referencing a parameter | 2 | [ufo-particle-attribute-parameter-references-refused](../backlog/feature/ufo-particle-attribute-parameter-references-refused.md) | medium |
 | 8 | subprocesses with different outgoing masses | 2 | [mixed-outgoing-mass-subprocesses-not-split](../backlog/feature/mixed-outgoing-mass-subprocesses-not-split.md) | medium |
