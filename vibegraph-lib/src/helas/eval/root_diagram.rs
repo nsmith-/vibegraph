@@ -937,35 +937,45 @@ impl std::fmt::Display for DiagramEval {
     }
 }
 
-/// True iff `interaction` is a Yang-Mills triple-vector (VVV) vertex: a **three-leg**
-/// all-vector vertex whose Lorentz structure carries a momentum (`P`) factor.
+/// `−1` for an all-boson vertex of self-conjugate legs whose Lorentz terms carry an
+/// odd number of momenta, `+1` for every other vertex.
 ///
-/// The leg count is part of the predicate, not a consequence of the momentum test: a
-/// contact of four or more vectors *can* carry momenta (SMEFTsim's `VVVV2`/`VVVV3` and
-/// the five-vector structures of `O_W` all do), and such a vertex is a contact, not a
-/// triple-vector vertex.
-fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
+/// See [`boson_momentum_sign`] for the derivation. The momentum count is read per
+/// term, a `P(μ,i)**2` counting twice. In a Lorentz-scalar term of an all-boson
+/// vertex every vector leg and every `P` carries one free index and every `Metric` and
+/// `Epsilon` contracts an even number, so the count has the parity of the vector legs
+/// and is the same in every term. A vertex whose terms disagree is not such a scalar,
+/// its sign is not defined, and it is refused.
+fn momentum_parity_sign(model: &UFOModel, interaction: VertexId) -> Result<i8, RootLorentzError> {
     use crate::ufo::lorentz::LorentzOp;
     let def = model.vertex_def(interaction);
-    def.particles.len() == 3
-        && def.particles.iter().all(|&p| model.particle(p).spin == 3)
-        && def.lorentz.iter().any(|&lid| {
-            model
-                .lorentz_struct(lid)
-                .expr
+    let boson_self_conjugate = def.particles.iter().all(|&p| {
+        let particle = model.particle(p);
+        particle.spin % 2 == 1 && particle.is_self_conjugate
+    });
+    if !boson_self_conjugate {
+        return Ok(1);
+    }
+    let mut parities = def.lorentz.iter().flat_map(|&lid| {
+        model.lorentz_struct(lid).expr.iter().map(|term| {
+            term.ops
                 .iter()
-                .any(|t| t.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })))
+                .filter(|op| matches!(op, LorentzOp::P { .. }))
+                .count()
+                % 2
         })
-}
-
-/// Whether any leg of `interaction` carries colour (an antiparticle stores its
-/// representation negated, so a singlet is `±1`).
-fn is_coloured(model: &UFOModel, interaction: VertexId) -> bool {
-    model
-        .vertex_def(interaction)
-        .particles
-        .iter()
-        .any(|&p| model.particle(p).color.abs() != 1)
+    });
+    let Some(first) = parities.next() else {
+        return Ok(1);
+    };
+    if parities.any(|parity| parity != first) {
+        return Err(RootLorentzError::UnsupportedVertex(format!(
+            "vertex {}: its Lorentz terms carry both odd and even numbers of momenta, so \
+             its sign against MadGraph's all-outgoing momenta is not defined",
+            def.name
+        )));
+    }
+    Ok(if first == 1 { -1 } else { 1 })
 }
 
 /// The spinor binding each external leg's wavefunction carries (`None` for a boson):
@@ -1020,15 +1030,15 @@ fn line_end(diagram: &Diagram, model: &UFOModel, v: VtxIdx, slot: usize) -> LegI
 ///
 /// * [`propagator_phase_sign`]: the phase of each propagator against ALOHA's;
 /// * [`vertex_root_signs`]: each vertex's reading of its fermion bilinears;
-/// * [`triple_gluon_sign`]: the slot exchange the triple-gluon vertex, alone of the
-///   triple-vector vertices, does not get from the crossing.
+/// * [`boson_momentum_sign`]: the momentum sign of each all-boson vertex of
+///   self-conjugate legs, which reads its momenta incoming against MadGraph's outgoing.
 ///
 /// With [`Diagram::sign`] (the external fermions' pairing parity and the crossed-line
 /// reordering) that is the whole of `fermi_sign`.
 fn convention_sign(diagram: &Diagram, model: &UFOModel, chain: &[u8]) -> Result<i8, CompileError> {
     Ok(propagator_phase_sign(diagram, model)
         * vertex_root_signs(diagram, model, chain)?
-        * triple_gluon_sign(diagram, model))
+        * boson_momentum_sign(diagram, model)?)
 }
 
 /// `−1` per internal scalar line and per internal fermion line of a crossed fermion
@@ -1107,50 +1117,48 @@ fn vertex_root_signs(
     Ok(sign)
 }
 
-/// `−1` per triple-gluon vertex: the slot exchange every other triple-vector vertex
-/// carries in its kernel.
+/// `−1` per all-boson vertex of self-conjugate legs with an odd number of momenta in
+/// its Lorentz structure ([`momentum_parity_sign`]): the triple-gluon vertex, and
+/// contacts such as a scalar's three-gluon one.
 ///
-/// feyngraph reads every interaction slot incoming and MadGraph reads it outgoing, so
-/// each leg stands in its antiparticle's slot of the UFO vertex, and the two slots of
-/// every conjugate pair hold each other's legs against MadGraph's reading. At a fermion
-/// vertex that exchange is undone, in the colour by `convert_expr`'s transpose of each
-/// `T` and in the bilinear by [`vertex_root_signs`]. At a `γW⁺W⁻` or `ZW⁺W⁻` vertex
-/// nothing undoes it: the `W⁺` and `W⁻` slots are exchanged, and `VVV1`, like every
-/// triple-vector structure the SM and SMEFTsim put on a W pair, is odd under that
-/// exchange, so the kernel reads `−1` against MadGraph's `COUP · L`. The other factors
-/// of [`convention_sign`] are set against kernels that carry it: `w+ w- > u u~` and
-/// `g g > u u~` carry the same [`Diagram::sign`], propagator phases and bilinear
-/// parities diagram for diagram, as do `e+ e- > w+ w-` and `u u~ > g g`, and the
-/// colourless one of each pair agrees with MadGraph with no vertex sign.
+/// MadGraph's ALOHA routines read every momentum at a vertex outgoing; the kernels
+/// here read every momentum incoming (an off-shell leg's `P` is minus the sum of the
+/// inputs, [`POut`](super::root_lorentz::LorentzEvalNode::POut)). Each `P` of a term is
+/// therefore minus MadGraph's, and a term with `n_P` momenta is `(−1)^{n_P}` times
+/// MadGraph's. The incoming reading also puts each leg in its antiparticle's slot of
+/// the UFO vertex, which multiplies the structure by its parity `ε_slot` under that
+/// exchange of slots. Per vertex this side reads `(−1)^{n_P} · ε_slot` times
+/// MadGraph's `COUP · L`.
 ///
-/// A gluon is its own antiparticle, so the crossing exchanges none of the triple-gluon
-/// vertex's slots. Its rays stand in MadGraph's slot order up to a permutation its
-/// colour `f(1,2,3)` follows, since both are read positionally; its coupling `GC_10`
-/// is MadGraph's; and its colour coefficients are MadGraph's JAMP coefficients term by
-/// term, because `f` passes through `convert_expr` untouched and `f_to_traces` is
-/// MadGraph's expansion. So the `−1` is not in the colour factor or the coupling: it
-/// is the slot exchange the kernel does not get. The vertices counted are the coloured
-/// ones; by the same account a colourless triple-vector vertex of three self-conjugate
-/// legs would take it too, and no model in reach has one.
+/// A vertex whose legs are all self-conjugate has nothing to exchange, `ε_slot = +1`,
+/// and its factor is `(−1)^{n_P}`: `−1` on the triple-gluon vertex (`VVV1`, one
+/// momentum), on O_HG's and O_HGtil's Higgs-three-gluon contacts (one or three per
+/// term, O_HGtil's through `Epsilon`), and on O_G's five-gluon contact; `+1` on O_G's
+/// four-gluon contacts, the Higgs-gluon-pair vertex and O_HG's Higgs-four-gluon
+/// contact (zero or two per term). The rule involves neither colour nor the coupling:
+/// the triple-gluon vertex's colour `f(1,2,3)` follows the same positional slot
+/// reading as its Lorentz structure and its coefficients are MadGraph's JAMP
+/// coefficients term by term, and a colourless vertex of self-conjugate legs with an
+/// odd momentum count takes the same `−1`.
 ///
-/// Only its ratio to the quark–gluon vertex is observable: a process's external gluons
-/// fix the parity of the two counts together, so `−1` per quark–gluon vertex is the
-/// same convention up to a sign common to the process. Without it the diagrams through
-/// a triple-gluon vertex come out with the wrong sign against those with a quark line
-/// in its place: every MadGraph row that has both (`u u~ > g g g`, `u g > u g`,
-/// `g g > u u~`, `g g > t t~` and the `t t~ + jet` rows) disagrees. The factors are
-/// pinned one by one against MadGraph's `AMP()` in `helas::eval::triple_gluon`.
-pub(super) fn triple_gluon_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
-    let n = diagram
-        .vertices
-        .iter()
-        .filter(|v| is_yang_mills_vvv(model, v.interaction) && is_coloured(model, v.interaction))
-        .count();
-    if n.is_multiple_of(2) {
-        1
-    } else {
-        -1
+/// A vertex with a conjugate pair carries its own `ε_slot`, and the kernel already
+/// evaluates the exchanged structure. At a `γW⁺W⁻` or `ZW⁺W⁻` vertex `VVV1` is odd
+/// under the exchange of the W slots, `ε_slot = −1 = (−1)^{n_P}`, and the vertex
+/// agrees with MadGraph with no factor here; so do the momentum-bearing structures
+/// SMEFTsim puts on a W pair. Fermion vertices are not counted: their slots' reading
+/// is the bilinear reversal of [`vertex_root_signs`].
+///
+/// Without it the diagrams through such a vertex come out with the wrong sign against
+/// those without one: every MadGraph row that has both (`u u~ > g g g`, `u g > u g`,
+/// `g g > u u~`, `g g > t t~`, the `t t~ + jet` rows, and the O_HG, O_HGtil and O_G
+/// gluon rows) disagrees. The triple-gluon factor is pinned against MadGraph's `AMP()`
+/// in `helas::eval::triple_gluon`.
+pub(super) fn boson_momentum_sign(diagram: &Diagram, model: &UFOModel) -> Result<i8, CompileError> {
+    let mut sign = 1i8;
+    for vertex in &diagram.vertices {
+        sign *= momentum_parity_sign(model, vertex.interaction)?;
     }
+    Ok(sign)
 }
 
 /// Compile a single diagram into an evaluable [`DiagramEval`].
@@ -1328,7 +1336,7 @@ mod tests {
                 > 0
         );
         // The triple-gluon vertex: the s-channel gluon of `g g > t t~`.
-        assert!(firing(&sm, "g g > t t~", &|d| triple_gluon_sign(d, &sm)) > 0);
+        assert!(firing(&sm, "g g > t t~", &|d| boson_momentum_sign(d, &sm).unwrap()) > 0);
         // A tensor four-fermion contact as the amplitude, on a crossed line.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let toy = crate::ufo::UFOModel::load(
@@ -1613,68 +1621,165 @@ mod tests {
             ]
         );
     }
-    /// The triple-gluon sign is a property of the *three*-vector vertex, and a
-    /// momentum-bearing contact of four or more vectors is not one.
-    ///
-    /// An all-vector contact can carry momenta — `O_G` gives SMEFTsim four- and
-    /// five-gluon structures built from momenta and metrics — so "all vector legs and
-    /// some `P`" does not separate the triple vertex from the contact, and counted as a
-    /// triple-gluon vertex such a contact would take its sign.
-    ///
-    /// Both halves are checked: the predicate itself, and that the model really does
-    /// carry the momentum-bearing contacts that make the leg count do work — a check on
-    /// a model whose only contact were the pure-metric Standard-Model one would pass
-    /// with or without the arity test.
-    #[test]
-    fn a_momentum_bearing_vector_contact_is_not_a_triple_vector_vertex() {
-        use crate::ufo::lorentz::LorentzOp;
-
+    /// SMEFTsim under one of this repository's restrict cards.
+    fn smeft(card: &str) -> std::sync::Arc<UFOModel> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let model = crate::ufo::UFOModel::load(
+        crate::ufo::UFOModel::load(
             &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
-            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_cG.dat")),
+            Some(&root.join(format!(
+                "../validation/madgraph/cards/smeft/restrict_{card}.dat"
+            ))),
         )
-        .expect("load SMEFTsim under vg_cG");
+        .unwrap_or_else(|e| panic!("load SMEFTsim under {card}: {e}"))
+    }
 
-        let mut momentum_bearing_by_legs: std::collections::BTreeMap<usize, usize> =
-            Default::default();
-        for (name, vertex) in &model.vertices {
-            let id = model.vertex_id(name).expect("every vertex has an id");
-            let all_vector = vertex
-                .particles
-                .iter()
-                .all(|&p| model.particle(p).spin == 3);
-            if !all_vector {
-                assert!(
-                    !is_yang_mills_vvv(&model, id),
-                    "vertex '{name}' has a non-vector leg"
-                );
-                continue;
-            }
-            let has_momentum = vertex.lorentz.iter().any(|&lid| {
-                model
-                    .lorentz_struct(lid)
-                    .expr
+    /// [`momentum_parity_sign`] of every vertex of `model` whose legs are exactly
+    /// `legs` (UFO names, in any order), with each one's momentum count per term.
+    /// Panics if there is none, so a check cannot pass on a model that lacks the
+    /// vertex it names.
+    fn signs_of(model: &UFOModel, legs: &[&str]) -> Vec<(i8, Vec<usize>)> {
+        use crate::ufo::lorentz::LorentzOp;
+        let mut want: Vec<&str> = legs.to_vec();
+        want.sort_unstable();
+        let found: Vec<(i8, Vec<usize>)> = model
+            .vertices
+            .keys()
+            .map(|name| model.vertex_id(name).unwrap())
+            .filter(|&id| {
+                let mut have: Vec<&str> = model
+                    .vertex_def(id)
+                    .particles
                     .iter()
-                    .any(|t| t.ops.iter().any(|op| matches!(op, LorentzOp::P { .. })))
-            });
-            if has_momentum {
-                *momentum_bearing_by_legs
-                    .entry(vertex.particles.len())
-                    .or_default() += 1;
-            }
-            assert_eq!(
-                is_yang_mills_vvv(&model, id),
-                has_momentum && vertex.particles.len() == 3,
-                "vertex '{name}' with {} vector legs, momentum-bearing {has_momentum}",
-                vertex.particles.len()
+                    .map(|&p| model.particle(p).name.as_str())
+                    .collect();
+                have.sort_unstable();
+                have == want
+            })
+            .map(|id| {
+                let counts = model
+                    .vertex_def(id)
+                    .lorentz
+                    .iter()
+                    .flat_map(|&lid| {
+                        model.lorentz_struct(lid).expr.iter().map(|t| {
+                            t.ops
+                                .iter()
+                                .filter(|op| matches!(op, LorentzOp::P { .. }))
+                                .count()
+                        })
+                    })
+                    .collect();
+                (momentum_parity_sign(model, id).unwrap(), counts)
+            })
+            .collect();
+        assert!(!found.is_empty(), "no vertex with legs {legs:?}");
+        found
+    }
+
+    /// Asserts every vertex with legs `legs` takes `sign`, and that every term of it
+    /// carries an odd (`odd`) or even number of momenta, so the check is about the
+    /// structure it names.
+    fn assert_sign(model: &UFOModel, legs: &[&str], odd: bool, sign: i8) {
+        for (got, counts) in signs_of(model, legs) {
+            assert!(
+                counts.iter().all(|&n| (n % 2 == 1) == odd),
+                "{legs:?}: expected an {} momentum count in every term, found {counts:?}",
+                if odd { "odd" } else { "even" }
             );
+            assert_eq!(got, sign, "{legs:?}, momentum counts {counts:?}");
         }
+    }
+
+    /// The triple-gluon vertex: three self-conjugate vectors, one momentum.
+    #[test]
+    fn the_triple_gluon_vertex_takes_minus_one() {
+        assert_sign(&sm_model(SMRestrict::Default), &["g", "g", "g"], true, -1);
+    }
+
+    /// A charged triple-vector vertex reads its momentum incoming too, but the
+    /// exchange of its W slots supplies the compensating `−1` in the kernel.
+    #[test]
+    fn a_charged_triple_vector_vertex_takes_none() {
+        let sm = sm_model(SMRestrict::Default);
+        assert_sign(&sm, &["a", "W+", "W-"], true, 1);
+        assert_sign(&sm, &["Z", "W+", "W-"], true, 1);
+    }
+
+    /// Contacts of four and five self-conjugate bosons with an odd number of
+    /// momenta: O_HG's and O_HGtil's Higgs-three-gluon contacts and O_G's
+    /// five-gluon contact. A sign restricted to three-leg vertices misses all three.
+    #[test]
+    fn an_odd_momentum_contact_takes_minus_one() {
+        assert_sign(&smeft("vg_cHG"), &["H", "g", "g", "g"], true, -1);
+        assert_sign(&smeft("vg_cHGtil"), &["H", "g", "g", "g"], true, -1);
+        assert_sign(&smeft("vg_cG"), &["g", "g", "g", "g", "g"], true, -1);
+    }
+
+    /// Vertices with an even number of momenta keep their sign: O_HG's
+    /// Higgs-four-gluon contact, the Higgs-gluon-pair vertex, O_G's four-gluon
+    /// contact and the Standard Model's.
+    #[test]
+    fn an_even_momentum_vertex_takes_none() {
+        let chg = smeft("vg_cHG");
+        assert_sign(&chg, &["H", "g", "g", "g", "g"], false, 1);
+        assert_sign(&chg, &["H", "g", "g"], false, 1);
+        assert_sign(
+            &sm_model(SMRestrict::Default),
+            &["g", "g", "g", "g"],
+            false,
+            1,
+        );
+        let cg = smeft("vg_cG");
+        assert_sign(&cg, &["g", "g", "g", "g"], false, 1);
         assert!(
-            momentum_bearing_by_legs.get(&4).copied().unwrap_or(0) > 0
-                && momentum_bearing_by_legs.get(&5).copied().unwrap_or(0) > 0,
-            "this card carries no momentum-bearing vector contact, so the leg count \
-             does no work here: {momentum_bearing_by_legs:?}"
+            signs_of(&cg, &["g", "g", "g", "g"])
+                .iter()
+                .any(|(_, counts)| counts.iter().any(|&n| n > 0)),
+            "vg_cG carries no momentum-bearing four-gluon contact"
+        );
+    }
+
+    /// A vertex whose Lorentz terms disagree on the parity of their momentum count is
+    /// refused rather than given either sign, and the refusal reaches compilation.
+    #[test]
+    fn a_vertex_of_mixed_momentum_parity_is_refused() {
+        use crate::ufo::lorentz::{LorentzOp, LorentzTerm};
+        let mut model = (*sm_model(SMRestrict::Default)).clone();
+        let g = model.particle_id("g").unwrap();
+        let (name, lid) = model
+            .vertices
+            .iter()
+            .find(|(_, v)| v.particles == vec![g, g, g])
+            .map(|(name, v)| (name.clone(), v.lorentz[0]))
+            .expect("the triple-gluon vertex");
+        let id = model.vertex_id(&name).unwrap();
+        assert_eq!(momentum_parity_sign(&model, id).unwrap(), -1);
+        let pos = (0..model.lorentz.len())
+            .find(|&i| crate::ufo::lorentz::LorentzId::from(i) == lid)
+            .unwrap();
+        model.lorentz[pos].expr.push(LorentzTerm {
+            coeff: 1.0,
+            ops: vec![LorentzOp::Metric { mu: 1, nu: 2 }],
+        });
+        let err = momentum_parity_sign(&model, id).unwrap_err();
+        assert!(
+            matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains(&name)),
+            "{err}"
+        );
+
+        let opts = ParsingOptions::default();
+        let card = parse_proc_card("generate g g > t t~", &opts).unwrap();
+        let sets = generate_from_proc_card(&card, &model).unwrap();
+        let refused = sets
+            .iter()
+            .flat_map(|set| set.diagrams.iter())
+            .filter(|d| d.vertices.iter().any(|v| v.interaction == id))
+            .map(|d| compile_single_diagram(d, &model, &vec![0u8; d.vertices.len()]))
+            .filter(|r| matches!(r, Err(CompileError::RootVertex(_))))
+            .count();
+        assert!(
+            refused > 0,
+            "no diagram through the altered vertex was refused"
         );
     }
 }
