@@ -1,7 +1,7 @@
 ---
 type: Physics Convention
 title: Convention signs in a diagram's sign and what pins each
-description: "fermi_sign = Diagram::sign × convention_sign × the live tree's reversed parity: the Wick and line signs, the propagator phases, each vertex's reversed-bilinear parity as the amplitude root, the tensor-path sign and the triple-gluon −1; what each reads and which oracle pins it."
+description: "fermi_sign = Diagram::sign × convention_sign × the live tree's reversed parity: the Wick and line signs, the propagator phases, each vertex's reversed-bilinear parity as the amplitude root, the tensor-path sign and the all-boson momentum sign (−1 per self-conjugate all-boson vertex with odd n_P, the triple-gluon vertex among them); what each reads and which oracle pins it."
 status: draft
 tags: [sign-convention, fermi-sign, rooting, amplitudes, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
@@ -10,7 +10,9 @@ sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the derivation, the census comparison and the per-factor mutations"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
   - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the per-factor mutations re-measured on 0ec027a"}
-  - {id: code-compile, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: convention_sign, propagator_phase_sign, vertex_root_signs, triple_gluon_sign, compile_single_diagram"}
+  - {id: code-compile, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: convention_sign, propagator_phase_sign, vertex_root_signs, boson_momentum_sign, momentum_parity_sign, compile_single_diagram"}
+  - {id: ha2-report, resource: "../sprints/cms-gridpack-coverage/sessions/H-A2-report.md", title: "H-A2 report: every all-boson vertex of self-conjugate legs takes (−1)^{n_P} against MadGraph"}
+  - {id: mg-vxxxxx, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/template_files/aloha_functions.f#L798-L873", title: "HELAS vxxxxx: the stored momentum is nsv·p, nsv = −1 on an initial leg"}
   - {id: code-rootl, resource: "vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "root_lorentz.rs: term_reversed_parity, RootedTerm::build_sign (the tensor path)"}
   - {id: code-kernel, resource: "vibegraph-lib/src/helas/eval/kernel.rs", title: "kernel.rs: propagate_core (every propagator −i)"}
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L755", title: "Note 24 P1: rows enforced per channel; c_i·AMP(i) is the comparable object"}
@@ -54,7 +56,7 @@ and `convention_sign` is that product[^b-report].
 | propagator phase | `propagator_phase_sign` | `−1` per internal scalar line, and per internal fermion line of a crossed line | 25 standalone rows fail without the scalar term, 22 without the crossed-line term |
 | vertex reading | `vertex_root_signs`, from `VertexInfo::reversed_sign` | each vertex's reversed-bilinear parity, read with the vertex as the amplitude root: `−1` per `γ^μ` or `σ^{μν}` bilinear whose row slot is bound to a ket | 17 standalone rows fail without it, and 13 amplitude-oracle rows per diagram or per flow (15 more only on the `CONFIG_AMP_SIGNS` tripwire) |
 | tensor-path sign | `vertex_root_signs`, from `VertexInfo::build_sign` on a cyclic four-fermion term | the sign the tensor path gives its amplitude root: `−1` per crossed line of the cyclic structure | `tata_to_ttxa_tensor4f`, `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` |
-| triple gluon | `triple_gluon_sign` | `−1` per coloured three-vector vertex | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`; oracle `gg_to_ttx` and its two SM-limit rows; which factor carries it, by `helas::eval::triple_gluon` |
+| all-boson momentum sign | `boson_momentum_sign`, from `momentum_parity_sign` | `−1` per all-boson vertex whose legs are all self-conjugate and whose Lorentz terms carry an odd number of momenta (the triple-gluon vertex; the Higgs–three-gluon contacts; `O_G`'s five-gluon contact); a vertex mixing parities is refused | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`, `gg_to_hg_chg`, `gg_to_hg_chgtil`, `gg_to_hgg_chg`, `gg_to_ggg_cg`; oracle `gg_to_ttx` and its two SM-limit rows; which factor carries the triple-gluon sign, by `helas::eval::triple_gluon`; the rule per vertex class, by `root_diagram::tests` |
 | live reversed parity | `DiagramEvalTree::live_reversed_parity` | the runtime parity of the live tree, applied again so that it cancels | `rooting_soundness` (`literal_sigma_currents_are_rooting_invariant`, 3 of the sweep's 270 re-rootings), and 6 standalone and 7 amplitude-oracle rows |
 
 The "pinned by" column is the per-factor mutation of the B′ session, re-measured
@@ -90,23 +92,31 @@ carry instead the sign that path gives its amplitude root
 (`RootedTerm::build_sign`, `+1` on every tree-rooted term). See
 [four-fermion-vertices](four-fermion-vertices.md).
 
-**The triple-gluon vertex.** Against MadGraph's all-outgoing reading every
-triple-vector vertex carries `−1`. feyngraph reads every slot incoming, so the
-two slots of each conjugate pair hold each other's legs; at a charged vertex
-(γW⁺W⁻, ZW⁺W⁻) that exchanges the W⁺ and W⁻ slots, and `VVV1` is odd under it,
-so the kernel itself reads `−1` against MadGraph's `COUP · L` and
-`convention_sign` has no factor for it. The other factors here are set against
-kernels that carry that `−1`. A gluon is self-conjugate, so the crossing
-exchanges none of the triple-gluon vertex's slots, and `triple_gluon_sign`
-supplies the `−1`. Its colour coefficients and its coupling `GC_10` are
-MadGraph's, per diagram and per flow, so the sign is not in the colour
-factor[^t1-report]. Where every other vertex carries an even number of gluons,
-as in the SM, only its ratio to the quark–gluon vertex is observable: a
-process's external gluons fix the parity of the two counts together, so `−1`
-per quark–gluon vertex is the same convention up to a sign common to the
-process. SMEFTsim's vertices of odd gluon number (the five-gluon `O_G` contact,
-`g g g H`, `q q̄ g H`) break that identity, and no row reaches one. The derivation, and why the contacts and VVS vertices carry no sign,
-are [vector-vertex-signs](vector-vertex-signs.md).
+**The all-boson momentum sign.** HELAS stores every external momentum
+outgoing (`nsv·p`, `nsv = −1` on an initial leg)[^mg-vxxxxx] and the kernels
+read every momentum incoming, so each `P` of a Lorentz term is minus
+MadGraph's. feyngraph's incoming reading also puts each leg in its
+antiparticle's slot, which multiplies a structure by its parity `ε_slot` under
+the exchange of each conjugate pair. A vertex therefore reads
+`(−1)^{n_P}·ε_slot` against MadGraph's `COUP · L`[^ha2-report]. At a charged
+VVV (γW⁺W⁻, ZW⁺W⁻) `VVV1` is odd under the W-slot exchange, the two signs
+cancel inside the kernel, and `convention_sign` has no factor for it. An
+all-boson vertex whose legs are all self-conjugate has no exchange, and
+`boson_momentum_sign` supplies `−1` where its terms carry an odd number of
+momenta: the triple-gluon vertex, the Higgs–three-gluon contacts of `O_HG` and
+`O_HGtil`, `O_G`'s five-gluon contact. Only the parity is uniform within a
+vertex, not the count; a vertex whose terms disagree is refused
+(`RootLorentzError::UnsupportedVertex`). The triple-gluon vertex's colour
+coefficients and its coupling `GC_10` are MadGraph's, per diagram and per flow,
+so its sign is not in the colour factor[^t1-report]. Where every other vertex
+carries an even number of gluons, as in the SM, only its ratio to the
+quark–gluon vertex is observable: a process's external gluons fix the parity of
+the two counts together, so `−1` per quark–gluon vertex is the same convention
+up to a sign common to the process. The odd-gluon contacts break that identity,
+and the rows `gg_to_hg_chg`, `gg_to_hg_chgtil` and `gg_to_ggg_cg` show MadGraph
+agreeing with the momentum rule. The derivation in full, and why the
+even-parity contacts and VVS vertices carry no sign, are
+[vector-vertex-signs](vector-vertex-signs.md).
 
 The colour side has one more convention, the `3`/`3̄` transpose of every `T`
 under feyngraph's crossing; see
@@ -182,17 +192,30 @@ the sign pattern over graph features, as above.
 
 ## Open
 
-- **The triple-gluon predicate is a proxy.** `triple_gluon_sign` counts coloured
-  Yang–Mills triple-vector vertices; the derivation counts triple-vector
-  vertices with no conjugate pair among their legs. They part only on a
-  colourless vertex of three self-conjugate vectors, which no model in reach has
+- **The colourless odd-`n_P` case is derived, not measured.** The rule counts
+  all-boson vertices whose legs are all self-conjugate, with no colour
+  condition: that is the derivation's "no conjugate pair among the legs",
+  stated directly, so the coloured-VVV proxy is gone. It parts from the earlier
+  coloured count only on a colourless vertex of self-conjugate bosons with odd
+  `n_P` (a 2HDM `A Z h`), which no model in reach has
   ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
+- **The fermion dipole.** The naive `(−1)^{n_P}` would put `−1` on a
+  one-momentum fermion vertex (the `σ^{μν}q_ν` dipole, SMEFTsim's
+  `P(-1,3)·γγ` FFV structures), yet `ee_to_ttx_dipole`, `ll_to_qqx_toy_dipole`
+  and the `ctZ`/`ctA` chains of `ee_to_ttx_smeft` agree with MadGraph with no
+  such factor. Whether the bilinear's slot reversal (`vertex_root_signs`)
+  supplies the cancelling `ε_slot` is not established; `boson_momentum_sign`
+  counts no fermion vertex[^ha2-report].
+- **`ε_slot = (−1)^{n_P}` on conjugate-pair vertices is assumed, not computed.**
+  It holds on every W-pair structure a gated row reaches; a structure that broke
+  it would come out wrong with no refusal.
 - **Unmeasured classes.** No committed row reaches a scalar⊗scalar four-fermion
   contact rooted in a tree (`O_ledq`-type: the convention gives it no vertex
   sign), a cyclic tensor structure on two mixed lines (the tensor-path sign is
   pinned on (initial, crossed) line pairs only), a VSS vertex (no vertex
-  sign, and `−1` for the scalar lines beside it), or a vertex of odd gluon
-  number other than `q q̄ g` and `g g g` (above).
+  sign with a charged pair, `−1` with every leg self-conjugate, and `−1` for the
+  scalar lines beside it), or `g g g H H` and `q q̄ g H`, the odd-gluon vertices
+  no row reaches.
 - [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md):
   per-configuration phases and sign patterns are asserted on the rows with a
   per-diagram comparison (`CONFIG_AMP_SIGNS`), not yet on the multi-flow rows.
@@ -208,6 +231,8 @@ do not reduce to one principle).
 [^b-report]: B′ report: the derivation table, the GF(2) solve, the (diagram, chain) comparison and the per-factor mutations.
 [^t1-report]: T1 report: "The derivation" and "The convention, stated".
 [^r1-report]: R1 report, "Mutations".
+[^ha2-report]: H-A2 report: §1 (the rule), §2 (unit tests and mutations), §3 (the four rows), §6 (the dipole).
+[^mg-vxxxxx]: `aloha/template_files/aloha_functions.f`, `vxxxxx`, at mg5amcnlo `b7687064`.
 [^code-compile]: `vibegraph-lib/src/helas/eval/root_diagram.rs`.
 [^code-rootl]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`, `term_reversed_parity` and `RootedTerm::build_sign`.
 [^code-kernel]: `vibegraph-lib/src/helas/eval/kernel.rs`, `propagate_core`.

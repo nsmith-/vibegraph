@@ -116,10 +116,11 @@ feature, has a root-free solution, and `convention_sign` in
 with no anchor. What the code does now is
 [convention-sign-inventory](../amplitudes/convention-sign-inventory.md) (the
 factors and the derivation) and
-[vector-vertex signs](../amplitudes/vector-vertex-signs.md) (no colourless vector
-vertex carries a convention sign, a charged triple-vector vertex reads `−1` in
-its kernel from the crossing's slot exchange, and the self-conjugate
-triple-gluon vertex takes that `−1` from `triple_gluon_sign`); the
+[vector-vertex signs](../amplitudes/vector-vertex-signs.md) (a vertex reads
+`(−1)^{n_P}·ε_slot` against MadGraph: a charged triple-vector vertex's slot
+exchange cancels its momentum sign in the kernel, and an all-boson vertex of
+self-conjugate legs with odd `n_P`, the triple-gluon vertex among them, takes
+`−1` from `boson_momentum_sign`); the
 rooting-invariance argument is in
 [rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 

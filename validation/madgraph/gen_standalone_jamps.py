@@ -149,6 +149,26 @@ ROWS = {
         # beside the top line holding leg 0, interfering with QCD.
         Row("ttx_to_gg_chg", "t t~ > g g NP<=1", (6, -6), (21, 21), 800.0, 3, 4056,
             model=SMEFT, restrict="vg_cHG", model_row="gg_to_h_cpeven", zero_widths=True),
+        # All-boson contacts of self-conjugate legs, whose momentum count fixes their
+        # sign against MadGraph. O_HG's Higgs-three-gluon contact (odd momenta)
+        # beside the gluon exchanges through its Higgs-gluon-pair vertex and the
+        # triple-gluon vertex.
+        Row("gg_to_hg_chg", "g g > h g NP<=1", (21, 21), (25, 21), 800.0, 3, 5104,
+            model=SMEFT, restrict="vg_cHG", model_row="gg_to_h_cpeven"),
+        # One gluon more: O_HG's Higgs-four-gluon contact (even momenta) beside the
+        # three-gluon one and the exchanges. Widths are zero for the spacelike Higgs
+        # between two of SMEFTsim's loop-induced Higgs-gluon vertices.
+        Row("gg_to_hgg_chg", "g g > h g g NP<=1", (21, 21), (25, 21, 21), 800.0, 3, 5105,
+            model=SMEFT, restrict="vg_cHG", model_row="gg_to_h_cpeven", zero_widths=True),
+        # O_HGtil's Higgs-three-gluon contact, `Epsilon` with odd momenta: the
+        # CP-odd scalar-gluon contact, the structure of an axion-like particle's.
+        Row("gg_to_hg_chgtil", "g g > h g NP<=1", (21, 21), (25, 21), 800.0, 3, 5106,
+            model=SMEFT, restrict="vg_cHGtil", model_row="gg_to_h_cpodd"),
+        # O_G's five-gluon contact (odd momenta) beside its four-gluon contacts
+        # (even) and its triple-gluon vertex (odd). Widths are zero for the spacelike
+        # Higgs exchanged between SMEFTsim's loop-induced Higgs-gluon vertices.
+        Row("gg_to_ggg_cg", "g g > g g g NP<=1", (21, 21), (21, 21, 21), 500.0, 3, 5107,
+            model=SMEFT, restrict="vg_cG", model_row="gg_to_gg_cg", zero_widths=True),
         # A W pair at leg 0 beside a final-state lepton line: the neutrino exchange
         # against the photon and Z s-channel, whose diagrams hold leg 0 at a lepton
         # vertex and at the WWV vertex respectively.

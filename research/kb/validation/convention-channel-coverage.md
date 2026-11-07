@@ -39,7 +39,7 @@ that every factor reads the graph alone. The factors themselves are
 fermi_sign = diagram.sign                           // Wick parity × fermion-line sign
            * convention_sign(diagram, model, chain) // propagator_phase_sign
                                                     //   × vertex_root_signs
-                                                    //   × triple_gluon_sign
+                                                    //   × boson_momentum_sign
            * tree.live_reversed_parity()            // cancels the runtime parity
 ```
 
@@ -61,7 +61,7 @@ named process, the diagrams on which a factor is `−1`, and asserts each count 
 | `propagator_phase_sign`, crossed fermion line | `e+ e- > ta+ ta- h` | the tau propagator when the Higgs comes off the final-state pair |
 | `vertex_root_signs`, reversed bilinear | `e+ e- > mu+ mu-` | the initial electron line, read against its UFO order |
 | `vertex_root_signs`, tensor path | `lt~ lt > qt qt~ NP<=1 NPGG<=1` (toy, `restrict_tensor`) | the tensor contact as the amplitude, on a crossed line |
-| `triple_gluon_sign` | `g g > t t~` | the s-channel gluon |
+| `boson_momentum_sign` | `g g > t t~` | the s-channel gluon (the triple-gluon vertex) |
 
 Each part, set to `+1` on its own, fails the test (B-H report)[^bh-report]. The
 test calls each factor directly, so it cannot see `convention_sign` drop a factor
@@ -154,20 +154,23 @@ on `CONFIG_AMP_SIGNS` only (R1 review)[^r1-report].
 ## What no gate here sees
 
 - **Which factor carries the triple-gluon `−1`.** The sign is derived: it is the
-  slot exchange the all-incoming crossing gives every charged triple-vector
-  vertex inside its kernel, which the self-conjugate gluon vertex does not get
+  momentum sign `(−1)^{n_P}` of MadGraph's all-outgoing against this side's
+  all-incoming reading, which a charged triple-vector vertex's slot exchange
+  cancels inside its kernel and the self-conjugate gluon vertex does not
   ([vector-vertex-signs](../amplitudes/vector-vertex-signs.md)). Both MadGraph
   gates are blind to where it sits. Moved into the colour (`f_to_traces`
-  negated, `triple_gluon_sign` at `+1`), all 49 tests of `standalone_jamps`
+  negated, `boson_momentum_sign` at `+1`), all 49 tests of `standalone_jamps`
   (its 45 table rows and four checks) and all 49 of `amplitude_oracle` pass; moved into the coupling (`GC_10` negated),
   every SM row passes and only SMEFTsim rows, whose triple-gluon coupling has
   another name, fail. `amplitude_oracle` compares `gg_to_ttx` per flow, not per
   diagram, although its table banks `AMP()`. The colour and the rest are pinned
   separately by `helas::eval::triple_gluon` on `g g > t t~`, with
   `e+ e- > w+ w-` as the colourless control[^t1-report].
-- **The triple-gluon predicate is a proxy** for "no conjugate pair among the
-  legs": a colourless vertex of three self-conjugate vectors would need `−1` by
-  the derivation and gets none; no model in reach has one.
+- **The colourless odd-`n_P` case is derived, not measured.** The rule reads
+  "every leg self-conjugate" directly, with no colour condition; a colourless
+  all-boson vertex of self-conjugate legs with odd `n_P` takes `−1` by the
+  derivation, and no model in reach has one, so reinstating a colour condition
+  would fail no gate.
 - **The per-process sign is free.** Every oracle here and `|M|²` are blind to a
   sign shared by all diagrams of a process; `CONFIG_AMP_SIGNS` banks the one the
   convention gives as a tripwire.

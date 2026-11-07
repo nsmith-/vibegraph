@@ -160,7 +160,8 @@ average):[^n38-s1]
 
 On the vector-path contact the sign spoils an exact agreement.
 `u u~ > t t~ g NP<=1` under `vg_c4q` once missed MadGraph with the four-quark contacts blameless: the cause was the triple-gluon
-sign, which is `triple_gluon_sign`'s `−1` per coloured three-vector vertex
+sign, which is `boson_momentum_sign`'s `−1` per all-boson vertex of
+self-conjugate legs with an odd number of momenta
 ([vector-vertex-signs](vector-vertex-signs.md)), and the process agrees per
 flow.[^n39-1] The full sign inventory is
 [convention-sign-inventory](convention-sign-inventory.md).

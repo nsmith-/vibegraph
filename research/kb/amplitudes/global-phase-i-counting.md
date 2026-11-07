@@ -92,14 +92,19 @@ propagator outputs a contravariant current.[^code-metricvout]
   the `−i`, so vibegraph's VVS current is `+i × VVS1P1N_1`.[^n13-s7]
 - A `P`-carrying term rooted at its vector leg (`P(1,2)·Metric(2,3)` at leg 1)
   emits the bare momentum wrapped in the same `MetricVout`. The output-leg momentum
-  is `PMomOut = −Σ inputs`, ALOHA's `P1 = −(V2+V3)`.
-- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting, and
-  `convention_sign` gives a colourless VVV vertex no factor. A charged one still
-  reads `−1` against MadGraph inside its kernel, because the all-incoming
-  crossing exchanges its W⁺ and W⁻ slots and its structure is odd under that.
-  The triple-gluon vertex, self-conjugate, gets no exchange, so its `−1` is a
-  diagram-level factor (`triple_gluon_sign` in `convention_sign`), not a
-  producer phase ([vector-vertex-signs](vector-vertex-signs.md)).
+  is `PMomOut = −Σ inputs`, ALOHA's `P1 = −(V2+V3)`. The two close momentum
+  conservation alike but store the external momenta with opposite signs: HELAS
+  stores `nsv·p` with `nsv = −1` on an initial leg (all-outgoing), this side
+  reads every leg incoming. So every `P` differs by a sign, and a term with
+  `n_P` momenta by `(−1)^{n_P}` ([vector-vertex-signs](vector-vertex-signs.md)).
+- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting. At a
+  charged VVV the momentum sign `(−1)^1` is cancelled inside the kernel by the
+  all-incoming crossing's exchange of the W⁺ and W⁻ slots, under which its
+  structure is odd, so `convention_sign` gives it no factor. The triple-gluon
+  vertex, self-conjugate, gets no exchange, so its momentum sign is a
+  diagram-level factor (`boson_momentum_sign` in `convention_sign`), not a
+  producer phase, as is every all-boson vertex of self-conjugate legs with odd
+  `n_P` ([vector-vertex-signs](vector-vertex-signs.md)).
 - There is no covariant vector slot and no index-lowering op. Variance is a type
   parameter on `VectorWf`; the evaluator's register carries contravariant vectors
   only (see [flat-op-ir](flat-op-ir.md)).
