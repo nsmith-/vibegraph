@@ -143,6 +143,36 @@ distinct map, not per group (27 maps, 27 grids in both runs), so keeping the
 pair apart adds one term to the integrand mixture but splits no grid's
 budget, unlike the VBF_HH mass split. The split is not B's cause.
 
+### The mirror term (the VBF_HH mechanism)
+
+`FlavorGroup::mirror_into` keeps the beams and rotates the outgoing legs, so
+a group's mirror term peaks where the beam–jet pairing is exchanged; if no
+channel samples that peak, the mirror half reads low. Instrumented in the
+scratch probe (`H-B1-probe4.patch`, `VG_PROBE_MIRROR=1`): `group_term` and
+`per_group_sum` record each group's `spin_color_average · L · |M|²` for the
+direct and the mirrored ordering at the current point; the VEGAS block loop
+(`vegas.rs`, after `f · wgt`) apportions the point's jacobian-weighted value
+over those terms and accumulates per channel; the dump is
+`Σ_channels (Σ points)/n_points`, i.e. the run's own σ decomposition. Its total
+reproduces σ (1.40286e-9 GeV⁻² against the run's 1.405e-9 = 0.547 pb; the dump
+is at 1.5M of the run's 1.51M evaluations). By pp symmetry with rapidity-even
+cuts each mirrored group's ratio is 1 in expectation.
+
+```
+$ VG_PROBE_MIRROR=1 vibegraph-probe4 integrate ... --seed 1 --fixed-budget   (vg/H-B1-mirror4-*.txt)
+card              groups (share>1e-3, mirrored)  mirror/direct min..max  <1 / >1   Σmirror/Σdirect  max point / σ
+draj 0.02  (reg)  28                             0.987 .. 1.005          21 / 7    0.9954           118
+as-shipped        28                             0.765 .. 3.079           3 / 25   1.1555           2.66e4
+```
+
+On the regulated card every mirrored group's halves agree to ≤ 1.3% (the
+dominant `u d → γ u d` group, 43% of σ: 0.9973), and the u b~ / u~ b groups
+read 1.0006 and 1.0007: the mirror peak is sampled. On the as-shipped card the
+ratios scatter both ways, mostly *above* 1, and single points carry up to
+2.7·10⁴ times σ (`maxd`/`maxm` 4e-5–9e-5 GeV⁻² on groups whose whole term is
+~1e-10): spikes in either ordering from the collinear region, not a starved
+mirror peak (which would read systematically below 1).
+
 The effective sample size is the sharpest reading of the divergence: the
 same binary, card family and budget gives ESS 60000–86000 at any finite
 `draj` and 15–23 at `draj = 0`.
