@@ -795,6 +795,34 @@ fn ttx_to_gg_chg() {
     check("ttx_to_gg_chg");
 }
 
+/// O_HG's Higgs-three-gluon contact, odd momenta on self-conjugate legs, beside the
+/// gluon exchanges through the Higgs-gluon-pair and triple-gluon vertices.
+#[test]
+fn gg_to_hg_chg() {
+    check("gg_to_hg_chg");
+}
+
+/// O_HGtil's Higgs-three-gluon contact, odd momenta through `Epsilon`: the CP-odd
+/// scalar-gluon contact.
+#[test]
+fn gg_to_hg_chgtil() {
+    check("gg_to_hg_chgtil");
+}
+
+/// O_HG's Higgs-four-gluon contact, even momenta, beside the three-gluon contact and
+/// the exchanges.
+#[test]
+fn gg_to_hgg_chg() {
+    check("gg_to_hgg_chg");
+}
+
+/// O_G's five-gluon contact (odd momenta) beside its four-gluon contacts (even) and
+/// its triple-gluon vertex (odd).
+#[test]
+fn gg_to_ggg_cg() {
+    check("gg_to_ggg_cg");
+}
+
 /// A W pair at leg 0 beside a final-state lepton line: the neutrino exchange against
 /// the photon and Z s-channel, whose two kinds of diagram hold leg 0 at a two-fermion
 /// vertex and at the WWV vertex.

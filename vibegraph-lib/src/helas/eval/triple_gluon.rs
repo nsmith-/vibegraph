@@ -1,6 +1,7 @@
 //! The triple-gluon vertex's `−1` against MadGraph, factor by factor.
 //!
-//! [`triple_gluon_sign`] multiplies a diagram by `−1` per triple-gluon vertex. These
+//! [`boson_momentum_sign`] multiplies a diagram by `−1` per triple-gluon vertex (among
+//! the all-boson vertices it counts, the only kind these two processes have). These
 //! tests split each diagram's per-flow value into three factors and pin each against
 //! MadGraph's own per-graph `AMP()` and `JAMP()`, banked in
 //! `validation/madgraph/amplitudes/`:
@@ -17,7 +18,7 @@
 //! `e+ e- > w+ w-`, the colourless control, the rest is MadGraph's `AMP()` up to one
 //! constant on every diagram, the charged triple-vector one included: a vertex the
 //! crossing exchanges two slots of carries its `−1` in its kernel (see
-//! [`triple_gluon_sign`] for the derivation).
+//! [`boson_momentum_sign`] for the derivation).
 //!
 //! What each check cannot see: a sign shared by every diagram of the process (the
 //! fitted constants absorb it); a sign that moves between the colour and the rest by
@@ -31,7 +32,7 @@ use num_complex::Complex;
 use num_traits::ToPrimitive;
 
 use super::renumbering::single_diagram_amplitudes_at;
-use super::root_diagram::triple_gluon_sign;
+use super::root_diagram::boson_momentum_sign;
 use crate::diagrams::diagram::{antiparticle, Ray};
 use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
 use crate::helas::color::coeff::ColorCoeff;
@@ -74,7 +75,7 @@ struct MadGraphRow {
     values: Vec<Vec<Vec<C>>>,
     /// `colour[d][f]`: this side's colour coefficient of diagram `d` in flow `f`.
     colour: Vec<Vec<C>>,
-    /// Per diagram: [`triple_gluon_sign`].
+    /// Per diagram: [`boson_momentum_sign`].
     triple_gluon: Vec<f64>,
 }
 
@@ -310,7 +311,7 @@ impl MadGraphRow {
         let triple_gluon = set
             .diagrams
             .iter()
-            .map(|d| f64::from(triple_gluon_sign(d, &model)))
+            .map(|d| f64::from(boson_momentum_sign(d, &model).unwrap()))
             .collect();
         (
             MadGraphRow {
@@ -438,7 +439,7 @@ fn the_triple_gluon_diagram_agrees_with_madgraph() {
     );
     assert_eq!(
         row.triple_gluon[s], -1.0,
-        "triple_gluon_sign on the triple-gluon diagram {s} of g g > t t~"
+        "boson_momentum_sign on the triple-gluon diagram {s} of g g > t t~"
     );
 }
 
@@ -528,7 +529,7 @@ fn a_charged_triple_vector_vertex_carries_its_sign_in_its_kernel() {
     );
     assert!(
         row.triple_gluon.iter().all(|&s| s == 1.0),
-        "triple_gluon_sign fires on e+ e- > w+ w-: {:?}",
+        "boson_momentum_sign fires on e+ e- > w+ w-: {:?}",
         row.triple_gluon
     );
     let (k, dev) = row.fit(&row.rest(&all));
