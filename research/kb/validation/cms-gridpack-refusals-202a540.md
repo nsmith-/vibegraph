@@ -45,7 +45,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 11 | polarised leg in a non-default `me_frame` | 2 | [me-frame-other-than-partonic-cm-refused](../backlog/feature/me-frame-other-than-partonic-cm-refused.md) | medium |
 | 12 | polarisation on a decayed leg | 1 | [polarized-intermediate-resonances-refused](../backlog/feature/polarized-intermediate-resonances-refused.md) | medium |
 | 13 | σ carried by an effective 1.2 points (TTZ2b) | 1 | [ttz2b-sigma-carried-by-one-point](../backlog/performance/ttz2b-sigma-carried-by-one-point.md) | medium |
-| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md) | low (descoped by user decision) |
+| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md) | high (planned after v0.2, user, 2026-11-07) |
 | 15 | `xqcut` with a resolved `ptj` below it | 3 | [mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md) | low (user, 2026-10-09) |
 | 16 | spin-2 propagator (bulk graviton) | 2 | [spin-2-and-spin-3-2-particles-unsupported](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md) | low (descoped by user decision) |
 | 17 | clustering scale with a four-line vertex | 1 | [clustering-scale-contact-vertex-refused](../backlog/feature/clustering-scale-contact-vertex-refused.md) | low |
@@ -54,12 +54,12 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | — | NLO or split-order proc card | 36 | [nlo-generation-missing](../backlog/feature/nlo-generation-missing.md) | low; outside the LO charter |
 | — | μF below the PDF floor (QCD-4Jets_HT-100to200) | 1 | Sprint H fix in progress | — |
 
-Total 93. **Proposed for the user's decision, not applied:** the Majorana and
-fermion-number-violating refusals are the largest in-charter group (21: HNL,
-type-III seesaw, dark Higgs, higgsinos, gluinos, RPV stops, diquarks,
-leptoquarks), which argues for lifting the earlier descoping and raising that
-item to high. The `mlm-ptj-below-xqcut` cards (DY2Jets, WJets HT) are common
-SM backgrounds, which argues for medium.
+Total 93. The Majorana and fermion-number-violating refusals are the largest
+in-charter group (21: HNL, type-III seesaw, dark Higgs, higgsinos, gluinos,
+RPV stops, diquarks, leptoquarks); the user lifted their earlier descoping and
+planned them after the v0.2 cut. **Proposed for the user's decision, not
+applied:** the `mlm-ptj-below-xqcut` cards (DY2Jets, WJets HT) are common SM
+backgrounds, which argues for raising that item to medium.
 
 ## Timeouts and panics
 

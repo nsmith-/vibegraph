@@ -4,11 +4,11 @@ title: Majorana fermions and charge conjugation are unsupported
 description: Fermion-flow handling assumes Dirac-continuous lines and the UFO `C` operator is refused, so no Majorana or fermion-number-violating model can be evaluated.
 area: feature
 state: open
-priority: low
+priority: high
 closes_when: A process with an internal or external Majorana fermion (e.g. a neutralino) and one with a fermion-number-violating vertex match MadGraph per diagram and per helicity on banked rows.
 blocked_by: []
 opened: 2026-09-05
-tags: [non-sm-ufo, descoped-v1, majorana, fermion-flow]
+tags: [non-sm-ufo, majorana, fermion-flow, cms-gridpacks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L905-L912", title: "TODO.md entry T076"}
@@ -41,3 +41,10 @@ stricter than needed: a Majorana propagator on a line whose two ends are a
 particle and an antiparticle (`lt~ lt > sc sc~` in `vibegraph_toy_majorana_UFO`
 gave σ = 0.5158 ± 0.0023 pb before the refusal, unvalidated). Lift the refusal
 for it only after a per-diagram comparison with MadGraph.
+
+**Planned after the v0.2 cut (user, 2026-11-07)**, lifting the earlier
+descoping. In the `main-202a540-200-pc` campaign this refusal stops 21 CMS
+gridpacks, the largest in-charter group: 11 Majorana (HNL, type-III seesaw,
+dark Higgs, higgsinos, gluinos, NMSSM cascades) and 10 fermion-number-violating
+vertices (RPV single stop, diquarks, leptoquarks). See the
+[refusal census](../../validation/cms-gridpack-refusals-202a540.md).
