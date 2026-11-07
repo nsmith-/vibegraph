@@ -2968,8 +2968,8 @@ impl<'a> ProtonIntegrand<'a> {
                 term = (lumi[0] + lumi[1]) * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
             }
             out.push([
-                Some(scales).filter(|_| cut_direct),
-                Some(exchanged_scales(scales)).filter(|_| mirrored),
+                cut_direct.then_some(scales),
+                mirrored.then_some(exchanged_scales(scales)),
             ]);
             records.push([
                 record.clone().filter(|_| cut_direct),
