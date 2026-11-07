@@ -46,7 +46,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 12 | polarisation on a decayed leg | 1 | [polarized-intermediate-resonances-refused](../backlog/feature/polarized-intermediate-resonances-refused.md) | medium |
 | 13 | σ carried by an effective 1.2 points (TTZ2b) | 1 | [ttz2b-sigma-carried-by-one-point](../backlog/performance/ttz2b-sigma-carried-by-one-point.md) | medium |
 | 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md) | high (planned after v0.2, user, 2026-11-07) |
-| 15 | `xqcut` with a resolved `ptj` below it | 3 | [mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md) | low (user, 2026-10-09) |
+| 15 | `xqcut` with a resolved `ptj` below it | 3 | [mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md) | medium (user, 2026-11-07; was low) |
 | 16 | spin-2 propagator (bulk graviton) | 2 | [spin-2-and-spin-3-2-particles-unsupported](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md) | low (descoped by user decision) |
 | 17 | clustering scale with a four-line vertex | 1 | [clustering-scale-contact-vertex-refused](../backlog/feature/clustering-scale-contact-vertex-refused.md) | low |
 | 18 | custom `propagators.py` form | 1 | [custom-ufo-propagators-unevaluated](../backlog/feature/custom-ufo-propagators-unevaluated.md) | low |
@@ -57,9 +57,9 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 Total 93. The Majorana and fermion-number-violating refusals are the largest
 in-charter group (21: HNL, type-III seesaw, dark Higgs, higgsinos, gluinos,
 RPV stops, diquarks, leptoquarks); the user lifted their earlier descoping and
-planned them after the v0.2 cut. **Proposed for the user's decision, not
-applied:** the `mlm-ptj-below-xqcut` cards (DY2Jets, WJets HT) are common SM
-backgrounds, which argues for raising that item to medium.
+planned them after the v0.2 cut. The `mlm-ptj-below-xqcut` cards (DY2Jets,
+WJets HT) are common SM backgrounds, so the user raised that item from low to
+medium (2026-11-07).
 
 ## Timeouts and panics
 
