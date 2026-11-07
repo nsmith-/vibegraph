@@ -125,6 +125,8 @@ pub(crate) const SCALE_PROBE_MIN_FLOOR: usize = SCALE_PROBE_DRAWS / 4;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ScaleProbeTally {
     below_floor: usize,
+    jet_cut: usize,
+    degenerate: usize,
 }
 
 impl ScaleProbeTally {
@@ -132,12 +134,20 @@ impl ScaleProbeTally {
     pub(crate) fn record(&mut self, veto: ScaleVeto) {
         match veto {
             ScaleVeto::FactorisationFloor => self.below_floor += 1,
-            ScaleVeto::JetCut | ScaleVeto::Degenerate => {}
+            ScaleVeto::JetCut => self.jet_cut += 1,
+            ScaleVeto::Degenerate => self.degenerate += 1,
         }
     }
 
     /// The probe's verdict once no drawn point resolved a scale.
     pub(crate) fn verdict(&self) -> Result<(), HadronicError> {
+        tracing::debug!(
+            below_floor = self.below_floor,
+            jet_cut = self.jet_cut,
+            degenerate = self.degenerate,
+            draws = SCALE_PROBE_DRAWS,
+            "no scale probe point resolved a scale"
+        );
         if self.below_floor >= SCALE_PROBE_MIN_FLOOR {
             return Err(HadronicError::FactorisationScaleBelowFloor {
                 below_floor: self.below_floor,
