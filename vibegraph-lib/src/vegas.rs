@@ -1102,7 +1102,9 @@ where
 
     let chunks: Vec<(Vec<f64>, Vec<u16>)> = tasks
         .par_iter()
-        .map(|&(b, c)| {
+        .enumerate()
+        .map(|(task, &(b, c))| {
+            worker_fault::at_task(task);
             let grid = &grids[b];
             let plan = &plans[b];
             let ndim = grid.ndim;
@@ -1253,6 +1255,36 @@ impl Vegas {
 }
 
 // ── Unit tests ─────────────────────────────────────────────────────────────────
+
+/// A fault point in the parallel adaptation, compiled into debug builds only.
+///
+/// With `VIBEGRAPH_FAULT_WORKER_PANIC` set to a number of milliseconds, the
+/// first task of every adaptation iteration panics and every other task stalls
+/// that long before its points: a worker panic beside long-running sibling
+/// work, which is what a caller's handling of a worker panic has to survive.
+/// Release builds, every shipped binary among them, compile it to nothing, so
+/// no environment can reach it there; debug builds read the variable once.
+mod worker_fault {
+    #[cfg(debug_assertions)]
+    pub(super) fn at_task(task: usize) {
+        static STALL: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+        let stall = STALL.get_or_init(|| {
+            std::env::var("VIBEGRAPH_FAULT_WORKER_PANIC")
+                .ok()
+                .and_then(|v| v.trim().parse().ok())
+        });
+        if let Some(ms) = *stall {
+            if task == 0 {
+                panic!("injected worker panic (VIBEGRAPH_FAULT_WORKER_PANIC)");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[inline(always)]
+    pub(super) fn at_task(_task: usize) {}
+}
 
 #[cfg(test)]
 mod tests {
