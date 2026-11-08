@@ -14,6 +14,7 @@
 * [The helicity program: typed instruction stream, SoA arenas and the fill_arenas loop](evaluator-program-layout.md) - Binary Mul peepholed into typed Instr variants, SoA per-type arenas with 8 B tagged Const, hoisted arena slices, kernel inlining, and the fill_arenas alternatives measured dead.
 * [Helicity expansion and zero-operand pruning](helicity-expansion.md) - Every helicity combination baked into one hash-consed program so each distinct current is computed once per point; liveness slots, lazy expansion, and probe-verified removal of zero operands.
 * [Float reassociation in the Lorentz kernels](kernel-float-reassociation.md) - Serial accumulation chains in dot/dot4/dot_lorentz/contract* are split into two-chain or tree forms by hand; f64::algebraic_* was rejected because results then depend on the inliner.
+* [Per-lane decisions in the scalar trait: masks, select, indices (draft)](lane-scalar-trait.md) - What a comparison means on a lane scalar: a scalar trait without PartialOrd whose comparisons return masks, with select, explicit uniform/any/all branches and per-lane indices; the measured cost, FlashJet's clustering shape and cuTile's tile model.
 * [Lane-batched evaluation of eval_m2](simd-lane-evaluation.md) - eval_m2 over LaneField<N>: broadcast_lanes, the lane-uniformity branch contract, the bit-identity gate, and why lanes are built but not in production.
 
 ## Design Decision

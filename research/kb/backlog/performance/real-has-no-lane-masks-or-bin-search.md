@@ -33,13 +33,10 @@ code that branches on a value or turns it into an index is correct only at N = 1
   `vegas.rs:585`, edge gather `:587-588`) and accumulate (`:667`, `:910`), the
   PDF grid's x/Q² lookup, histogramming.
 
-**Design questions for the session** (not decided here): masks as an
-associated type on `Real` or a companion trait; how `PartialOrd`'s pack-level
-meaning coexists with per-lane comparison without silent misuse; the index
-type a bin search returns and how a gather is written; divergent control flow
-(clustering paths, merge order) by masking, same-path compaction, or scalar; a
-scatter-add that keeps the point order the `-j` contract rests on; and the GPU
-mapping it must not preclude. **Separately**, VEGAS refine runs once per
+**Draft design:** [lane-scalar-trait](../../performance/lane-scalar-trait.md)
+(2026-10-26, for the user's review) answers the session's questions: masks,
+`PartialOrd` on lanes, index and gather, divergent control flow, scatter-add
+order and the GPU mapping. **Separately**, VEGAS refine runs once per
 iteration over bins, not per point, and stays `f64`: how its damping, smoothing,
 serial edge rebuild and PR #48's `bound_bin_width` are vectorised across bins
 or dimensions (`vegas.rs:695-742`).
@@ -51,4 +48,5 @@ Consumers waiting on it:
 [sampler-draw-not-lane-generic](sampler-draw-not-lane-generic.md) (draw,
 accumulate, refine over bins), [jet-clustering-f64-only](jet-clustering-f64-only.md),
 [pdf-lookup-f64-only](pdf-lookup-f64-only.md),
-[per-point-branches-f64-only](per-point-branches-f64-only.md) (cuts).
+[per-point-branches-f64-only](per-point-branches-f64-only.md) (cuts), and the map's
+cut-aware windows ([seam design](../../phase-space/sampler-and-map-seams.md) D6).

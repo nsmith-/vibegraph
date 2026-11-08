@@ -92,8 +92,9 @@ count. vibegraph's coordinate is the **fractional** position in each
 invariant's own `[lo, hi]` window, so a feature at a fixed absolute invariant
 moves in the unit cube as the other draws move `lo` and `hi`. For a
 Breit–Wigner or log-mapped invariant the analytic map already pins the feature,
-so the difference matters for flat-drawn invariants and residual shape. It is
-open as [vegas-grid-coords-not-absolute](../../backlog/performance/vegas-grid-coords-not-absolute.md).
+so the difference matters for flat-drawn invariants and residual shape.
+vibegraph does not follow MadEvent here (D2 of
+[the joint seam design](../../phase-space/sampler-and-map-seams.md#decisions)).
 
 ## Channels and grids
 
