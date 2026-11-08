@@ -49,3 +49,4 @@
   - The banked MadGraph gates run with the flag on.
   - The D2 wording on H-C3 Found 2 is narrowed: it is unsound only for exemptions on the full |M|², and it is the right guard under the weighted cut.
   - Updated: the compat-sites item (its `closes_when` is now default off; site (d)), the `cut_decays` item (now the weighted-cut item), `release-scope.md`, `identical-particles-across-decays.md`, the `madgraph-defects` row and the release notes.
+* The vibegraph manager re-reviewed #113 at 2b26c109 with CI green: the xqcut fix (aee3812e) resolves the finding, and the zero-τ test fix is accepted. The merge waits only on the CERN census, and nothing more is pushed to `sprinti-cuts`. I-C2's addenda 1 and 2 are appended to its report; the manager read both gate logs (EXIT 0).
