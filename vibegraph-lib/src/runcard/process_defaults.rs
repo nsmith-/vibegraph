@@ -322,7 +322,7 @@ mod tests {
         let eej = vec![21, 2, -11, 11, 2];
         assert!(matches_by_jets(&[ee.clone(), eej.clone()]));
         assert!(!matches_by_jets(&[ee.clone(), ee.clone()]));
-        assert!(!matches_by_jets(&[eej.clone()]));
+        assert!(!matches_by_jets(std::slice::from_ref(&eej)));
         assert!(!matches_by_jets(&[]));
         // A photon is no jet.
         assert!(!matches_by_jets(&[ee.clone(), vec![2, -2, -11, 11, 22]]));
