@@ -142,10 +142,14 @@ them differs from its MadGraph default — or from the reset value MadGraph's
 `remove_all_cut` gives a decay card, which is equally inactive. An active but
 unimplemented cut is never silently ignored; the error marks exactly when a real
 process needs one implemented[^n18-design][^n18-outcome]. The isolation
-parameters (`r0gamma`, `xn`, `epsgamma`, `isoem`) and `mxx_only_part_antipart`
-qualify only refused cuts and are classified benign
-([run-card/field-classification](field-classification.md)). So are `ptonium` and
-`etaonium`, at any value: MadGraph 3.7.1 registers them as legacy
+parameters (`r0gamma`, `xn`, `epsgamma`, `isoem`) qualify only refused cuts and
+are classified benign
+([run-card/field-classification](field-classification.md)).
+`mxx_only_part_antipart` is consumed: its keys join MadGraph's `pdg_cut` list
+beside `pt_min_pdg`'s (`banner.py:4708-4750`), so a listed leg's class cuts are
+replaced by the per-PDG defaults (`setcuts.f:318-334`), and a light code is
+refused as it is for `pt_min_pdg`. `ptonium` and `etaonium`
+are benign too, at any value: MadGraph 3.7.1 registers them as legacy
 (`banner.py:4318`, `:4338`, `include=False`), its one Fortran reader, the
 quarkonium block of `setcuts.f:307-312`, is commented out, and `is_a_onium` is
 never assigned. A card with `0 = ptonium` and `-1 = etaonium` gives the same
