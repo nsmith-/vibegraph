@@ -44,3 +44,8 @@
 * The user asked to run `validate-deep` and the CERN rerun in parallel, once the manager has merged #111 and #113. A synthetic RC branch (`sprinti-rc`) and its run were started, then withdrawn on the user's follow-up (wait for the merges); nothing ran past the build.
 * The vibegraph manager reviewed #113 with one blocking finding: the guard ignores the per-event xqcut veto (`setclscales.rs:347-351`, MadEvent's `reweight.f:1063-1077`), so it refuses matched cards with `auto_ptj_mjj = F` that are regulated. I-C2's claim that the kT clustering cut is not implemented was wrong. I-C2 resumed to fix it. The vibegraph manager is running a refusal-only CMS census on #113's head on the CERN host; re-review waits for it.
 * #111 merged as 2803c0e9, all checks green. I-C2 told to merge main into `sprinti-cuts` and re-gate on the merged head.
+* **Decision D3** (the user, relayed by the vibegraph manager, 2026-11-08; documentation only in v0.2). Identical particles across decays move behind `--madgraph-compat`, which defaults to off for every site.
+  - By default, every pairing is kept coherently and `cut_decays = F` becomes a pairing-weighted cut.
+  - The banked MadGraph gates run with the flag on.
+  - The D2 wording on H-C3 Found 2 is narrowed: it is unsound only for exemptions on the full |M|², and it is the right guard under the weighted cut.
+  - Updated: the compat-sites item (its `closes_when` is now default off; site (d)), the `cut_decays` item (now the weighted-cut item), `release-scope.md`, `identical-particles-across-decays.md`, the `madgraph-defects` row and the release notes.

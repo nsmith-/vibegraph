@@ -36,5 +36,8 @@ floor would cap it silently.
 **Decided (a)** (the user, 2026-11-08). The deviation stays registered (D5).
 The item `cut-decays-identical-quarks-cut-a-stricter-observable` is rewritten
 toward the per-pairing route and released from sprint I. H-C3's Found 2
-("rebuild the guard over the exempting pairing's diagrams") is unsound, because
-the pole comes from the other pairings. No future design should carry it.
+("rebuild the guard over the exempting pairing's diagrams") is unsound for any
+rule that exempts on the full |M|², because the pole comes from the other
+pairings. Under the pairing-weighted cut of [D3](D3-identical-decays-behind-madgraph-compat.md),
+where each pairing's exemption multiplies that pairing's share of |M|², it is
+the right guard.

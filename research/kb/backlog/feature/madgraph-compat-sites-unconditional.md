@@ -5,7 +5,7 @@ description: Several sites reproduce a MadGraph choice a clean design would not 
 area: feature
 state: open
 priority: medium
-closes_when: A --madgraph-compat flag (default on, recorded in the integrate artifact and LHEF header) exists; with it on every banked byte and sigma gate is unchanged, and with it off a documented per-site delta table exists.
+closes_when: "A --madgraph-compat flag (default off, recorded in the integrate artifact and LHEF header) exists; the banked MadGraph gates run with it on and every banked byte and σ gate is unchanged, and a documented per-site delta table gives what turning it off changes."
 blocked_by: []
 opened: 2026-09-06
 tags: [cli, madgraph-parity, lhef, alphas, kt-clustering, cuts, decay-chains, user-request]
@@ -13,8 +13,11 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L643-L667", title: "TODO.md entry T058"}
 ---
-A user request on PR #4. One flag, default on (every banked gate depends on
-the compatible behaviour), recorded in the artifact and LHEF header. Each site
+A user request on PR #4. One flag, recorded in the artifact and LHEF header.
+It **defaults to off**, for every site: vibegraph's own behaviour is the default,
+and the banked MadGraph gates run with `--madgraph-compat` on (the user, sprint
+I [D3](../../sprints/v02-last-refusals/decisions/D3-identical-decays-behind-madgraph-compat.md),
+2026-11-08; earlier the plan was default on). Each site
 gets a "MadGraph compatibility" admonition in the docs. Sites:
 
 - (a) `vibegraph-lib/src/coupling/cluster/kt.rs`: the `1 + 1e-6` crossed
@@ -44,21 +47,24 @@ fix.
 
 - (d) identical particles across decays, with the `cut_decays = F` exemption
   folded in (formerly site (g); [concept](../../process/identical-particles-across-decays.md)).
-  On, MadGraph's single pairing per block, its `identical_decay_chain_factor`,
-  its per-pairing window and its configuration-1 exemption (`check_decay`)
-  together; off, every pairing, the window union, and only the legs that are
-  decay products in every pairing exempt. **The exemption is IR-unsafe
-  without the single-pairing |M|²** (sprint H, H-C2: an exempt leg is a core
-  quark of another pairing and σ diverges), so `CutError::IrUnsafeExemption`
-  refuses it apart from the pairing. MadGraph's pairing must be carried out
-  of `stitch_set` (the forced-line patterns cannot name it). Size: about
-  −0.2 % for the pairing; −26 % / −6.8 % on this side's stricter cut on `g g > z u u~, z > u u~` /
-  `g g > z j j, z > j j` at `cut_decays = F` (H-K1). Registered deviations
-  (user, 2026-09-26 and 2026-11-06); their σ rows are informational, so no
-  gate moves. A kinematic window rule (exempt the pairing whose pair mass is
-  inside the forced window) is IR-divergent on the every-pairing |M|² (sprint
-  I, I-C1), so this site's single-pairing |M|² is the only route to MadGraph's
-  number.
+  - **On:** MadGraph's single pairing per block, its
+    `identical_decay_chain_factor`, its per-pairing window and its
+    configuration-1 exemption (`check_decay`, `setcuts.f:961`) together. It also
+    evaluates fewer diagrams. MadGraph's pairing must be carried out of
+    `stitch_set` (the forced-line patterns cannot name it).
+  - **Off (the default):** every pairing coherently, the window union, and
+    `cut_decays = F` through the pairing-weighted cut
+    ([cut-decays-identical-quarks-cut-a-stricter-observable](../validation/cut-decays-identical-quarks-cut-a-stricter-observable.md)).
+    Until that is implemented, the default is D2's stricter rule: only legs that
+    are decay products in every pairing are exempt.
+  - **Size:** about −0.2% for the pairing; −26% / −6.8% for the stricter cut on
+    `g g > z u u~, z > u u~` / `g g > z j j, z > j j` at `cut_decays = F`
+    (H-K1).
+  - **History:** registered deviations (user, 2026-09-26 and 2026-11-06);
+    D3 (2026-11-08) puts MadGraph's behaviour behind the flag.
+  - **No exemption on the full every-pairing |M|² is IR-safe.** MadGraph's
+    configuration-1 legs (H-C2) and the kinematic window rule (I-C1) both leave
+    an exempt quark uncut where it is a core quark of another pairing.
 
 - (e) the restriction's zero-coupling rule (`ufo/mod.rs` `is_zero_coupling`):
   on, MadGraph's `detect_identical_couplings` rule, |g| < 1e-13 is zero with a

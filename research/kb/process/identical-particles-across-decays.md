@@ -68,9 +68,20 @@ the other kept pairings that quark is a core quark of a `g → q q̄` splitting,
 integrand grows as 1/pT² (|M|²·pT² constant to 1e-4 over two decades on
 `g g > z u u~, z > u u~`; no pole on `z > d d~`). [^ic1] Any rule that leaves an identical
 massless quark uncut has the same divergence; MadGraph is finite only because it keeps
-one pairing. The route to MadGraph's number is the per-pairing \|M\|²
-([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md),
-site (d)), and the user kept the stricter, IR-safe cut for v0.2 (sprint I, D2).
+one pairing. The user kept the stricter, IR-safe cut for v0.2 (sprint I, D2).
+
+After v0.2 the two behaviours separate (sprint I, D3).
+- **By default,** every pairing is kept, and `cut_decays = F` is a
+  pairing-weighted cut, Σ_p w_p Θ_p \|M\|² with w_p = \|M_p\|²/Σ_q \|M_q\|²,
+  where Θ_p exempts pairing p's decay products. By Cauchy–Schwarz
+  (\|M\|² ≤ N Σ_q \|M_q\|²), each term is bounded by N Θ_p \|M_p\|². So σ is
+  finite wherever each pairing's own \|M_p\|² is: for two-body decays of a
+  massive resonance, but not for multi-body decays with massless products. There
+  the limit guard must run per pairing.
+- **With `--madgraph-compat`,** MadGraph's single pairing, factor and
+  exemption apply
+  ([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md),
+  site (d)).
 Exempting configuration 1's legs on this side's
 \|M\|² is not a fix: each is a massless core quark of another kept pairing, whose
 collinear region then goes uncut, and σ diverges logarithmically (the integrand grows
