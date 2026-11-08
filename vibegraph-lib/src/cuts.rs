@@ -69,9 +69,10 @@
 //!   vector boson needs its own `pT` or energy minimum, which a ΔR cut cannot
 //!   replace ([`CutError::UncutSoftEmission`]). An emission collinear with a
 //!   beam through a massless spacelike propagator needs the leg's `pT` minimum or
-//!   a rapidity maximum ([`CutError::UncutInitialCollinear`]); through an
-//!   exchanged massless vector boson, the equivalent-photon limit, it is not
-//!   refused. Partons above `maxjetflavor` take the b-class cuts and are read
+//!   a rapidity maximum ([`CutError::UncutInitialCollinear`]), whatever the
+//!   exchanged line: through a t-channel photon off a massless quark it is the
+//!   equivalent-photon limit, whose `∫ dt/t` reaches `t = 0`. Partons above
+//!   `maxjetflavor` take the b-class cuts and are read
 //!   the same way. Only diagram-aware compilation ([`Cuts::compile_with`] with
 //!   [`ForcedResonances::of`]) sees the limits.
 //!
@@ -273,21 +274,6 @@ pub enum MasslessLimit {
     Soft { leg: usize },
 }
 
-/// Whether an initial-state collinear limit through the massless spacelike
-/// `exchange` is refused when uncut.
-///
-/// A massless vector boson exchanged off a massless incoming fermion is the
-/// equivalent-photon (or equivalent-gluon) limit: the boson goes on shell as
-/// the outgoing fermion becomes collinear with the beam, and σ picks up
-/// `∫ dt/t` down to `t = 0`. That limit is not refused here: the banked
-/// electroweak `p p > e+ e- j j QCD=0` card at `ptj = 0`, `etaj = -1` reaches it
-/// through its t-channel photons, and whether that card's σ is finite in
-/// practice is an open measurement. Returning `true` for every exchange
-/// refuses it with the rest.
-fn initial_collinear_is_guarded(exchange: ParticleId, model: &EvaluatedModel) -> bool {
-    model.model().particle(exchange).spin != 3
-}
-
 /// The [`MasslessLimit`]s `diagram` reaches.
 ///
 /// Only three-point vertices with one propagator and two external legs are
@@ -324,9 +310,7 @@ fn diagram_massless_limits(diagram: &Diagram, model: &EvaluatedModel) -> Vec<Mas
                 let (a, b) = (x.min(y) - n_in, x.max(y) - n_in);
                 limits.push(MasslessLimit::FinalCollinear { a, b });
             }
-            (true, false) | (false, true)
-                if all_massless && initial_collinear_is_guarded(prop, model) =>
-            {
+            (true, false) | (false, true) if all_massless => {
                 let (beam, out) = if x < n_in { (x, y) } else { (y, x) };
                 limits.push(MasslessLimit::InitialCollinear {
                     beam,
@@ -3773,33 +3757,38 @@ mod tests {
     }
 
     /// The initial-state limit through an exchanged massless vector boson, the
-    /// equivalent-photon limit, is not refused ([`initial_collinear_is_guarded`]):
-    /// `u d > e+ e- u d QCD=0` on the cuts of the banked electroweak
-    /// `p p > e+ e- j j` card (`ptj = ptl = 0`, no rapidity or ΔR cut,
-    /// `mmjj = 4`, `mmll = 50`) reaches it through its t-channel photons and
-    /// compiles. Every other limit of that card is regulated, so refusing the
-    /// equivalent-photon limit refuses this card, and this test pins which way
-    /// that choice is set.
+    /// equivalent-photon limit, is refused like any other: `u d > e+ e- u d
+    /// QCD=0` on the cuts of the electroweak `p p > e+ e- j j` card (`ptj = ptl =
+    /// 0`, no rapidity or ΔR cut, `mmjj = 4`, `mmll = 50`) emits each outgoing
+    /// quark off its beam through a t-channel photon, whose `1/t` pole no cut of
+    /// that card keeps away. A rapidity maximum regulates it; with `mmll = 0` the
+    /// card is refused first for its `γ* → e+ e-` splitting.
     #[test]
-    fn the_equivalent_photon_limit_is_not_refused() {
-        let ewk = |mmll: f64| {
+    fn the_equivalent_photon_limit_is_refused() {
+        let ewk = |mmll: f64, etaj: f64| {
             format!(
-                "0 = ptj\n0 = ptl\n-1 = etaj\n-1 = etal\n0 = drjj\n0 = drll\n0 = drjl\n\
+                "0 = ptj\n0 = ptl\n{etaj} = etaj\n-1 = etal\n0 = drjj\n0 = drll\n0 = drjl\n\
                  4 = mmjj\n{mmll} = mmll\n5 = maxjetflavor\n"
             )
         };
         let (forced, legs) = stitched_subprocess("generate u d > e+ e- u d QCD=0");
-        assert!(
-            !forced
-                .massless_limits
-                .iter()
-                .any(|l| matches!(l, MasslessLimit::InitialCollinear { .. })),
-            "{:?}",
-            forced.massless_limits
-        );
-        Cuts::compile_with(&card(&ewk(50.0)), &legs, &forced)
-            .expect("the electroweak card compiles");
-        let err = Cuts::compile_with(&card(&ewk(0.0)), &legs, &forced)
+        let err = Cuts::compile_with(&card(&ewk(50.0, -1.0)), &legs, &forced).unwrap_err();
+        let CutError::UncutInitialCollinear {
+            beam,
+            beam_pdg,
+            leg,
+            pdg,
+            ref regulator,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((beam, beam_pdg, leg, pdg), (0, 2, 2, 2), "{err}");
+        assert_eq!(regulator, "ptj > 0 or a rapidity maximum etaj");
+        eprintln!("u d > e+ e- u d QCD=0 on the electroweak card: {err}");
+        Cuts::compile_with(&card(&ewk(50.0, 5.0)), &legs, &forced)
+            .expect("etaj = 5 regulates the beam-collinear limits");
+        let err = Cuts::compile_with(&card(&ewk(0.0, 5.0)), &legs, &forced)
             .expect_err("γ* → e+ e- at mmll = drll = 0 is refused");
         assert!(
             matches!(
