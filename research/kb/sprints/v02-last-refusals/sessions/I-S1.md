@@ -17,8 +17,14 @@ doc (`vibegraph-lib/src/cuts.rs` ~:1107) and its uses in
 **User decision: the CERN host establishes the MadGraph reference first.** The
 manager has asked the host for MadGraph 3.7.1 σ on `p p > a j j` at `pta 40`,
 `ptj 0.1`, `draj 0.4` (and `ptj 1` as a control), with ≥ 5-seed vibegraph σ for
-stock and for the smallest-threshold build. The manager relays the numbers;
-until then do steps 1–3, which need no reference.
+stock and for the smallest-threshold build. The card is the
+GJ-2Jets-EWK_Bin-PTG-40 gridpack's: `import model loop_sm-ckm_no_b_mass`,
+`generate p p > a j j QCD=0 QED=3 $ t t~`, its param card and run card with
+lhaid 315200, `draj 0.4` and `ptj` 0.1 or 1.0 (`pta 40`, `mmjj 4`, `drjj 0`,
+`etaj`/`etaa −1` and `dynamical_scale_choice −1` unchanged). The host's
+diagnostic build (`VG_DIAG_FLOOR=min`) takes the minimum over the legs that
+carry a single-leg cut, not a per-rung bound. The manager relays the numbers
+and the cards; until then, do steps 1–3, which need no reference.
 
 ## Worktree & long-command discipline
 

@@ -55,7 +55,10 @@ seagull, `import model` options, coupling-order inference, the sampler seams
 
 ### PR 3: close-out and release preparation (`sprinti-plan`, this PR)
 
-The sprint record; the workspace version 0.1.0 → 0.2.0; the release notes
+Session [I-Z1](sessions/I-Z1.md) (the user's instruction, 2026-11-08):
+`build.rs` describes `v*` tags only; tags with a hyphen publish as
+prereleases; the release notes come from a committed file, and publishing fails
+without one; the workspace version 0.1.0 → 0.2.0. Then the sprint record; the release notes
 draft with their known issues; `validate-deep` on the release-candidate head,
 recorded; the CERN host's CMS campaign rerun (bar: ≥ 66 ok, no panics, against
 `main-202a540-200-pc`).
@@ -69,7 +72,8 @@ recorded; the CERN host's CMS campaign rerun (bar: ≥ 66 ok, no panics, against
 | [I-C2](sessions/I-C2.md) | validation-dev | 2 | – | The uncut-collinear guards. |
 | [I-S1](sessions/I-S1.md) | validation-dev | 2 | the host's reference for its gate | The per-rung spacelike bound. |
 | [I-C1](sessions/I-C1.md) | validation-dev | 2 | I-C2 | The `cut_decays` window rule and the restated exemption guard. |
-| I-Z | manager | 3 | PRs 1–2 merged | Version bump, release notes, `validate-deep`, the CMS rerun request, the record. |
+| [I-Z1](sessions/I-Z1.md) | feature-dev (Sonnet) | 3 | – | Release tooling: `v*` tags, prereleases, committed notes, the version bump. |
+| I-Z | manager | 3 | PRs 1–2 merged | Release notes content, `validate-deep`, the CMS rerun request, the record. |
 
 I-R1 and I-R2 run in parallel (light builds). I-C2 and I-S1's derivation run
 next; I-C1 follows I-C2 because both rewrite the guards in `cuts.rs`. Heavy
