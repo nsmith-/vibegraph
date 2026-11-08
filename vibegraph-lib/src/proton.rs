@@ -638,6 +638,17 @@ pub enum ProtonError {
     NoSubprocess,
     #[error("subprocess {process} has {n_in} incoming legs; a beam decomposition needs 2")]
     NotTwoIncoming { process: String, n_in: usize },
+    /// A subprocess whose incoming parton has no parton density: a hadron beam
+    /// carries quarks, gluons and the photon only.
+    #[error(
+        "subprocess {process} has the incoming particle {particle} (PDG {pdg}) on a proton beam, \
+         which carries no density for it; a lepton or other fixed-energy beam is lpp = 0"
+    )]
+    UntabulatedParton {
+        process: String,
+        particle: String,
+        pdg: i32,
+    },
     /// A `2 → 1` subprocess. Its phase space is the one-body `δ(ŝ − M²)`, which
     /// fixes `τ = M²/s` and leaves only the rapidity to integrate; no phase-space
     /// map here integrates it.
@@ -682,6 +693,20 @@ pub enum ProtonError {
          the luminosity of one group would weight another's matrix element"
     )]
     AmplitudeMismatch { index: usize },
+    /// No cut bounds `ŝ` from below: every outgoing leg is massless and no cut
+    /// keeps the partonic energy away from zero, so `τ_min = 0`. The `τ` map
+    /// divides by `ln(1/τ_min)` and the cross section is collinear-divergent
+    /// there; the card is refused before any point is drawn.
+    #[error(
+        "subprocess {process} has no lower bound on ŝ: the outgoing {legs} massless and \
+         uncut (no pT minimum, and no ŝ, invariant-mass or HT cut bounds the final state), so \
+         τ reaches 0 and the cross section diverges; give {them} a pT cut"
+    )]
+    ZeroTauFloor {
+        process: String,
+        legs: String,
+        them: &'static str,
+    },
 }
 
 /// Partonic energies the grouping probe measures at, spread over two decades so
@@ -797,6 +822,39 @@ fn worst_rel(a: &[f64], b: &[f64]) -> f64 {
 }
 
 /// `u u~ > e+ e- g`-style label for an enumerated subprocess.
+/// The refusal for a decomposition whose `τ` floor is zero, naming a group cut
+/// by a filter with no `ŝ` floor and that group's outgoing legs with no `pT`
+/// minimum.
+fn zero_tau_floor(groups: &FlavorGroups, filters: &[&Cuts], group_filter: &[usize]) -> ProtonError {
+    let all = groups.groups();
+    let g = all
+        .iter()
+        .zip(group_filter)
+        .position(|(_, &k)| !(filters[k].shat_min() > 0.0))
+        .unwrap_or(0);
+    let group = &all[g];
+    let cuts = filters[group_filter[g]];
+    let n_in = group.n_in();
+    let outgoing = &group.members()[0].outgoing;
+    let name = |k: usize| format!("leg {} (PDG {})", n_in + k + 1, outgoing[k]);
+    let mut uncut: Vec<String> = (0..outgoing.len())
+        .filter(|&k| !cuts.has_pt_floor(n_in + k))
+        .map(name)
+        .collect();
+    if uncut.is_empty() {
+        uncut = (0..outgoing.len()).map(name).collect();
+    }
+    let (legs, them) = match uncut.len() {
+        1 => (format!("{} is", uncut[0]), "it"),
+        _ => (format!("{} are", uncut.join(", ")), "them"),
+    };
+    ProtonError::ZeroTauFloor {
+        process: label(group.diagram_set()),
+        legs,
+        them,
+    }
+}
+
 fn label(set: &DiagramSet) -> String {
     set.label()
 }
@@ -863,6 +921,28 @@ fn distinct_filters(groups: &FlavorGroups) -> (Vec<&Cuts>, Vec<usize>) {
     (filters, group_filter)
 }
 
+/// Refuse a subprocess with an incoming particle no parton density describes,
+/// before anything is compiled.
+fn refuse_untabulated_partons(sets: &[DiagramSet], model: &UFOModel) -> Result<(), ProtonError> {
+    for set in sets {
+        for name in &set.particles_in {
+            let id = model
+                .particle_id(name)
+                .expect("an enumerated leg is a model particle");
+            let pdg = model.particle(id).pdg_code;
+            let slot = i32::try_from(pdg).ok().and_then(flavor_slot);
+            if slot.is_none() {
+                return Err(ProtonError::UntabulatedParton {
+                    process: label(set),
+                    particle: name.clone(),
+                    pdg: i32::try_from(pdg).unwrap_or(i32::MAX),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Partition a hadronic enumeration into flavour groups.
 ///
 /// `sets` are the `DiagramSet`s of one proc card (empty ones ignored), `card` the
@@ -881,6 +961,7 @@ pub fn derive_flavor_groups(
     if sets.is_empty() {
         return Err(ProtonError::NoSubprocess);
     }
+    refuse_untabulated_partons(&sets, model)?;
 
     let sets = content_ordered(sets, model, evaluated, card)?;
     let labels: Vec<String> = sets.iter().map(label).collect();
@@ -1070,9 +1151,7 @@ pub fn derive_flavor_groups(
             .map(|m| {
                 let [a, b] = m.incoming;
                 let slot = |pdg: i32| {
-                    flavor_slot(pdg).unwrap_or_else(|| {
-                        panic!("initial-state parton {pdg} is not a tabulated parton density")
-                    })
+                    flavor_slot(pdg).expect("refuse_untabulated_partons admitted every beam parton")
                 };
                 BeamSlots {
                     slots: [slot(a), slot(b)],
@@ -2155,6 +2234,9 @@ impl<'a> ProtonIntegrand<'a> {
         let threshold = initial_masses[0] + initial_masses[1];
         let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
         let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+        if !(tau_min > 0.0) {
+            return Err(zero_tau_floor(groups, &filters, &group_filter));
+        }
         let tau_max = cut_tau_max.max(tau_min);
         let tau_mixture = match maps.tau {
             TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
@@ -4458,6 +4540,30 @@ mod tests {
         generate_from_proc_card(&card, model).expect("enumeration")
     }
 
+    /// An incoming particle with no parton density on a proton beam is refused
+    /// before any subprocess is compiled, naming it: a lepton (`e+ e-` on an
+    /// explicit `lpp = 1` card, or `ta+ ta-`, which MadGraph's default card
+    /// leaves on proton beams) and a W.
+    #[test]
+    fn an_untabulated_beam_parton_is_refused() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse("1 = lpp1\n1 = lpp2\n").expect("card");
+        for (process, particle) in [
+            ("e+ e- > mu+ mu-", "e+"),
+            ("ta+ ta- > mu+ mu-", "ta+"),
+            ("w+ d > u g", "W+"),
+        ] {
+            match derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card) {
+                Err(ProtonError::UntabulatedParton { particle: p, .. }) => {
+                    assert_eq!(p, particle, "{process}")
+                }
+                Err(e) => panic!("{process}: {e}"),
+                Ok(_) => panic!("{process}: decomposed"),
+            }
+        }
+    }
+
     fn derive(process: &str, model: &UFOModel, evaluated: &EvaluatedModel) -> FlavorGroups {
         derive_flavor_groups(
             enumerate(process, model),
@@ -5525,6 +5631,37 @@ mod tests {
                     .any(|s| s.incoming == incoming && s.outgoing == outgoing)
             })
             .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
+    }
+
+    /// `p p > b b~` at `maxjetflavor = 4` with the b class uncut (`ptb = 0`,
+    /// `etab = -1`): nothing bounds `ŝ` from below, so `τ_min = 0`. The
+    /// integrand refuses it, naming both outgoing legs, rather than drawing a
+    /// point at `x = NaN`; a `ptb` cut gives the same card a floor.
+    #[test]
+    fn a_card_with_no_shat_floor_is_refused_naming_its_uncut_legs() {
+        let pdf = probe_pdf();
+        let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  -1.0 = etab\n");
+        let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let err = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+            .err()
+            .expect("a zero tau floor is refused");
+        assert!(
+            matches!(err, ProtonError::ZeroTauFloor { .. }),
+            "refused for the wrong reason: {err}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains("leg 3 (PDG 5)") && text.contains("leg 4 (PDG -5)"),
+            "{text}"
+        );
+
+        let (m, evaluated, card) = five_flavour_dijet("  20.0 = ptb\n  -1.0 = etab\n");
+        let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        assert!(ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).is_ok());
     }
 
     /// Two subprocesses that share a matrix element but not a cut filter are two
