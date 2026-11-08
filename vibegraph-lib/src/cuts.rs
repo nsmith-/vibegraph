@@ -3803,6 +3803,42 @@ mod tests {
         );
     }
 
+    /// A `cut_decays = F` exemption of a massless colourless leg that is a core
+    /// leg of a splitting is refused through the leg's own limits, not through
+    /// [`refuse_ir_unsafe_exemption`], which reads coloured legs only. On
+    /// `e+ e- > mu+ mu- a` with a synthetic forced line over the photon, the
+    /// exempt photon loses `dral` and `pta`, which leaves the `μ → μ γ`
+    /// collinear limit uncut; with one over the muon pair, the muons lose `drll`
+    /// and `dral`, which leaves the `γ* → μ⁺ μ⁻` limit uncut first. Each refusal
+    /// names `cut_decays`, and the same lines compile at `cut_decays = T`.
+    #[test]
+    fn an_exemption_of_a_massless_colourless_core_leg_is_refused() {
+        let (mut forced, legs) = stitched_subprocess("generate e+ e- > mu+ mu- a");
+        assert_eq!(forced.massless_coloured_core, 0);
+        for (slots, pair) in [(0b100u64, (0, 2, -13, 22)), (0b011, (0, 1, -13, 13))] {
+            forced.patterns = vec![vec![z_line(slots)]];
+            assert_eq!(forced.decay_products(), slots);
+            refuse_ir_unsafe_exemption(slots, &forced, &legs)
+                .expect("the coloured-leg guard does not see a photon or a lepton");
+            let err = Cuts::compile_with(&card("F = cut_decays\n"), &legs, &forced).unwrap_err();
+            let CutError::UncutCollinearSplitting {
+                a,
+                b,
+                pdg_a,
+                pdg_b,
+                ref regulator,
+            } = err
+            else {
+                panic!("exempting {slots:#b}: refused for the wrong reason: {err}");
+            };
+            assert_eq!((a, b, pdg_a, pdg_b), pair, "{err}");
+            assert!(regulator.starts_with("cut_decays = T"), "{err}");
+            eprintln!("e+ e- > mu+ mu- a exempting {slots:#b}: {err}");
+            Cuts::compile_with(&card("T = cut_decays\n"), &legs, &forced)
+                .unwrap_or_else(|e| panic!("exempting nothing at cut_decays = T: {e}"));
+        }
+    }
+
     /// `e+ e- > mu+ mu- a` has massless muons in the default SM: at `dral = 0`
     /// its `μ → μ γ` collinear limit is open and the card is refused, and at
     /// `pta = 0` the photon's soft limit is; the defaults (`dral = 0.4`,
