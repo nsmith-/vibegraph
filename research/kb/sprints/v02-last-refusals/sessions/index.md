@@ -13,4 +13,5 @@
 
 ## Session Report
 
+* [I-R2 report: zero τ floor refusal, mxx_only_part_antipart, worker-panic exit](I-R2-report.md) - ZeroTauFloor refuses a card with no ŝ floor before any point (MadGraph integrates it behind an implicit √ŝ ≥ 2 GeV); mxx_only_part_antipart's keys join pdg_cut with light codes refused; a worker panic exits 101 at once.
 * [I-Z1 report: release tooling for v0.2.0](I-Z1-report.md) - build.rs describes v* tags only; hyphenated tags publish as prereleases; notes come from docs/release-notes/<tag without suffix>.md and a missing, empty or TODO file fails; workspace 0.2.0; a release.yml dispatch ran green with publish skipped.
