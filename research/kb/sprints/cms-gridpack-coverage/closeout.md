@@ -114,13 +114,18 @@ gridpack's own PDF set and 5 seeds. σ/MG is the unweighted mean (seed sd, sem,
 | QCD-4Jets_HT-100to200 | 0.977 (0.020, 0.009, 0.44) | refused |
 | DarkPhoton MZd-40 | 0.985 (0.013, 0.006, 0.16) | panic |
 | DarkPhoton MZd-86 | 0.971 (0.040, 0.018, 2.44) | panic |
-| idm_dilepton_mH80 | 0.962 ± 0.019, seed 1 only; over the 600 s timeout | panic |
+| idm_dilepton_mH80 | 0.990 (0.019, 0.008, 0.95); over the 600 s timeout | panic |
 | GJ-2Jets-EWK ×2, VBFtoG ×2 | refused, `UncutPhotonSplitting` | 0.44–0.77 |
 
 Caveats:
 - **VBF_HH** is unbiased but still scatters at neval 1e4 (seed 5 alone is
   1.38): #95's mass split thins the per-group budget. At 1e5 it reads
   1.011 ± 0.008.
+- **idm** finishes in 1383–1442 s, over gpdb's 600 s timeout, so through gpdb
+  it still records as a timeout. Its row comes from direct runs of gpdb's
+  attempt-2 cards (`small_width_treatment` patched to 1e-6). It has no MadGraph
+  reference per multiplicity at its PDF yet: the 2→4 part is 0.008393 ±
+  0.000079 pb and the 2→6 part 0.000516 ± 0.000005 pb.
 - **DarkPhoton** runs only with a hand-trimmed param card. Through gpdb, its
   card is refused for a `chi` mass the model lacks; gpdb's fallback then drops
   the param card and the σ becomes meaningless.

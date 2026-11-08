@@ -199,3 +199,4 @@
   - `ckm-flavour-groups-near-degenerate-refused` narrowed to the unattributed 3.88e-8;
   - a `madgraph-defects.md` row for MadEvent's σ on an uncut collinear pole;
   - the sprint record written (closeout.md); the sprint marked inactive.
+* idm closing row (CERN host; direct runs of the gpdb attempt-2 cards on 11ecef79, lhaid 325500, no time limit, 5 seeds): σ/MG 0.990 (sd 0.019, sem 0.008, χ²/dof 0.95); per seed 0.962, 1.003, 0.979, 0.999, 1.006; 1383–1442 s each, over gpdb's 600 s timeout. 2→4 0.008393 ± 0.000079 pb, 2→6 0.000516 ± 0.000005 pb, with no MadGraph per-multiplicity reference at this PDF. Added to the record.
