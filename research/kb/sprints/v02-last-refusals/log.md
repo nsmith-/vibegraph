@@ -39,3 +39,4 @@
   - `exit(101)` skips destructors, so a buffered writer is not flushed on a panic; say so in the hook's doc.
   - The hook could emit ldjson's final error object.
 * I-R1 report recorded.
+* I-C2 addendum checked (249dd1a0, b2f3365d; both gate logs end EXIT 0). PR 2 opened as #113 (head 4ef935b8) after merging main. Its kb changes: the two closed items deleted, references to the retired row updated, and `ewk-lljj-row-needs-a-regulated-rebank` filed.
