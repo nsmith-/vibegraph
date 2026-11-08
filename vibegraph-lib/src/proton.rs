@@ -7230,13 +7230,16 @@ mod tests {
     fn a_point_with_a_massless_leg_at_rest_is_zeroed_and_counted() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
-        // No lepton cut, so the cuts cannot stand in for the guard: before it,
-        // the point reached the clustering, whose `l+ l-` measure is `ln(0/0)`.
+        // No single-lepton cut. The pair-mass minimum is there because the card
+        // is refused without a regulator on the `γ* → l+ l-` collinear limit; it
+        // would reject the `s = 0` point too, so the census, not σ, is what tells
+        // the guard apart from the cuts. Before the guard the point reached the
+        // clustering, whose `l+ l-` measure is `ln(0/0)`.
         let card = RunCard::parse(
             "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
              \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
              \x20 20.0 = ptj\n  0.0 = ptl\n  5.0 = etaj\n  -1 = etal\n\
-             \x20 0.0 = drll\n  0.0 = drjl\n  0.0 = mmll\n  4 = maxjetflavor\n",
+             \x20 0.0 = drll\n  0.0 = drjl\n  10.0 = mmll\n  4 = maxjetflavor\n",
         )
         .expect("run card");
         let groups =

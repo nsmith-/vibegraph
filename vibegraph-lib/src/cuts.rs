@@ -57,12 +57,24 @@
 //!   leave uncut a massless coloured leg descending from no forced line in some
 //!   diagram is refused ([`CutError::IrUnsafeExemption`]): that leg's collinear
 //!   region is divergent.
-//! - **Photon–parton collinear limit**: a card whose diagrams attach an outgoing
-//!   photon and an outgoing massless coloured particle to one vertex, and whose
-//!   cuts put no ΔR minimum between the two, is refused
-//!   ([`CutError::UncutPhotonSplitting`]): the `q → q γ` splitting is divergent
-//!   there, and photon isolation, the other regulator MadGraph has, is not
-//!   implemented.
+//! - **Massless soft and collinear limits**: a card whose diagrams reach a
+//!   [`MasslessLimit`] that its compiled cuts leave open is refused, because σ
+//!   diverges logarithmically there and a run reports how far its sampler
+//!   reached. A final-state splitting of two massless legs off a massless
+//!   propagator (`q → q g`, `g → g g`, `q → q γ`, `ℓ → ℓ γ`, `γ* → f f̄`) needs a
+//!   ΔR or invariant-mass minimum on the pair, which transverse-momentum cuts
+//!   cannot replace ([`CutError::UncutCollinearSplitting`], and
+//!   [`CutError::UncutPhotonSplitting`] for a photon and a parton, where photon
+//!   isolation, MadGraph's other regulator, is not implemented). A soft massless
+//!   vector boson needs its own `pT` or energy minimum, which a ΔR cut cannot
+//!   replace ([`CutError::UncutSoftEmission`]). An emission collinear with a
+//!   beam through a massless spacelike propagator needs the leg's `pT` minimum or
+//!   a rapidity maximum ([`CutError::UncutInitialCollinear`]), whatever the
+//!   exchanged line: through a t-channel photon off a massless quark it is the
+//!   equivalent-photon limit, whose `∫ dt/t` reaches `t = 0`. Partons above
+//!   `maxjetflavor` take the b-class cuts and are read
+//!   the same way. Only diagram-aware compilation ([`Cuts::compile_with`] with
+//!   [`ForcedResonances::of`]) sees the limits.
 //!
 //! - **HT** (`cuts.f:874-913`): `htj` is the scalar sum of the transverse
 //!   momenta of the jet-class legs, `iht` that sum plus the b-class legs, so
@@ -91,7 +103,7 @@
 
 use thiserror::Error;
 
-use crate::diagrams::diagram::{Diagram, LegIdx, OnShell, PropIdx, Ray, Vertex};
+use crate::diagrams::diagram::{Diagram, LegIdx, OnShell, PropIdx, Ray};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::runcard::{decay_cut_reset, param_default, ParamValue, RunCard};
@@ -151,11 +163,9 @@ pub struct ForcedResonances {
     /// The outgoing legs, bit `k` naming the `k`-th, that are massless and
     /// coloured and descend from no forced line in at least one diagram.
     massless_coloured_core: u64,
-    /// Pairs `(photon, parton)` of outgoing-leg positions, the `k`-th outgoing
-    /// leg named `k`, at which some diagram attaches an outgoing photon and an
-    /// outgoing massless coloured particle to one vertex: a `q → q γ` splitting,
-    /// whose propagator goes on shell as the two become collinear.
-    photon_splittings: Vec<(usize, usize)>,
+    /// The soft and collinear limits of massless legs that some diagram
+    /// reaches, each once, sorted.
+    massless_limits: Vec<MasslessLimit>,
 }
 
 impl ForcedResonances {
@@ -168,11 +178,11 @@ impl ForcedResonances {
     pub fn of(diagrams: &[Diagram], model: &EvaluatedModel) -> Self {
         let mut patterns: Vec<Vec<ForcedLine>> = Vec::new();
         let mut massless_coloured_core = 0u64;
-        let mut photon_splittings: Vec<(usize, usize)> = Vec::new();
+        let mut massless_limits: Vec<MasslessLimit> = Vec::new();
         for diagram in diagrams {
-            for pair in photon_parton_vertices(diagram, model) {
-                if !photon_splittings.contains(&pair) {
-                    photon_splittings.push(pair);
+            for limit in diagram_massless_limits(diagram, model) {
+                if !massless_limits.contains(&limit) {
+                    massless_limits.push(limit);
                 }
             }
             let mut lines: Vec<ForcedLine> = forced_lines(diagram, model);
@@ -195,11 +205,11 @@ impl ForcedResonances {
             let key = |p: &Vec<ForcedLine>| p.iter().map(|l| l.slots).collect::<Vec<_>>();
             key(a).cmp(&key(b))
         });
-        photon_splittings.sort_unstable();
+        massless_limits.sort_unstable();
         ForcedResonances {
             patterns,
             massless_coloured_core,
-            photon_splittings,
+            massless_limits,
         }
     }
 
@@ -238,77 +248,238 @@ fn massless_coloured_finals(diagram: &Diagram, model: &EvaluatedModel) -> u64 {
         .fold(0u64, |m, (k, _)| m | (1u64 << k))
 }
 
-/// The `(photon, parton)` outgoing-leg positions that `diagram` attaches to one
-/// vertex, the photon an outgoing `γ` and the parton an outgoing massless
-/// coloured particle ([`ForcedResonances::photon_splittings`]).
-fn photon_parton_vertices(diagram: &Diagram, model: &EvaluatedModel) -> Vec<(usize, usize)> {
+/// A soft or collinear limit of massless legs in which a propagator of a kept
+/// diagram goes on shell. The integrand grows without bound there, and σ
+/// diverges logarithmically unless a cut keeps every accepted point away from
+/// the limit. Outgoing legs are named by position among the final-state legs
+/// (the `k`-th is `k`), incoming legs by their index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MasslessLimit {
+    /// Massless outgoing legs `a < b` meet at a vertex whose third line is a
+    /// massless propagator: `q → q g`, `g → g g`, `g → q q̄`, `q → q γ`,
+    /// `ℓ → ℓ γ`, `γ* → f f̄`. The propagator goes as
+    /// `1/s_ab = 1/(2 pT_a pT_b (cosh Δy − cos Δφ))`, which vanishes as the two
+    /// become collinear whatever their transverse momenta, so only a cut on the
+    /// pair itself (a ΔR or invariant-mass minimum) regulates it.
+    FinalCollinear { a: usize, b: usize },
+    /// A massless outgoing leg meets massless incoming leg `beam` at a vertex
+    /// whose third line is a massless spacelike propagator: `t → 0` as the leg
+    /// becomes collinear with the beam. Its transverse-momentum minimum
+    /// regulates it, and so does a rapidity maximum at fixed ŝ (a leg at bounded
+    /// rapidity reaches `t → 0` only by becoming soft, which is integrable for a
+    /// fermion and is [`MasslessLimit::Soft`] for a vector boson).
+    InitialCollinear { beam: usize, leg: usize },
+    /// A massless outgoing vector boson leaves an external line through a
+    /// propagator of that line's mass, which goes as `1/(2p·k)` and diverges as
+    /// the boson's energy vanishes, at any angle. Its transverse-momentum or
+    /// energy minimum regulates it.
+    Soft { leg: usize },
+}
+
+/// The [`MasslessLimit`]s `diagram` reaches.
+///
+/// Only three-point vertices with one propagator and two external legs are
+/// read: a propagator between two vertices of that shape is the only line whose
+/// invariant is a function of two external momenta alone. A splitting of the
+/// whole final state of a 2 → 2 process is not a collinear limit (its
+/// invariant is ŝ), and neither is a soft boson whose only partner in the final
+/// state is massless (it drives ŝ to zero): both are limits of the ŝ floor.
+fn diagram_massless_limits(diagram: &Diagram, model: &EvaluatedModel) -> Vec<MasslessLimit> {
     let n_in = diagram.n_in;
-    let finals = |vertex: &Vertex| -> Vec<(usize, ParticleId)> {
-        vertex
-            .rays
-            .iter()
-            .filter_map(|ray| match ray {
-                Ray::Leg(LegIdx(i)) if *i >= n_in => Some((*i - n_in, diagram.legs[*i].particle)),
-                _ => None,
-            })
-            .collect()
-    };
-    let is_photon = |id: ParticleId| model.model().particle(id).pdg_code == 22;
-    let is_parton =
-        |id: ParticleId| model.model().particle(id).color.abs() != 1 && model.mass(id) == 0.0;
-    let mut pairs = Vec::new();
+    let n_final = diagram.legs.len() - n_in;
+    let particle = |i: usize| diagram.legs[i].particle;
+    let massless = |id: ParticleId| model.mass(id) == 0.0;
+    let is_vector = |id: ParticleId| model.model().particle(id).spin == 3;
+    let mut limits = Vec::new();
     for vertex in &diagram.vertices {
-        let legs = finals(vertex);
-        for &(photon, a) in &legs {
-            for &(parton, b) in &legs {
-                if is_photon(a) && is_parton(b) {
-                    pairs.push((photon, parton));
-                }
+        if vertex.rays.len() != 3 {
+            continue;
+        }
+        let mut external: Vec<usize> = Vec::new();
+        let mut props: Vec<ParticleId> = Vec::new();
+        for ray in &vertex.rays {
+            match *ray {
+                Ray::Leg(LegIdx(i)) => external.push(i),
+                Ray::Prop { prop, .. } => props.push(diagram.props[prop.0].particle),
+            }
+        }
+        let (&[prop], &[x, y]) = (props.as_slice(), external.as_slice()) else {
+            continue;
+        };
+        let all_massless = massless(prop) && massless(particle(x)) && massless(particle(y));
+        match (x >= n_in, y >= n_in) {
+            (true, true) if n_final >= 3 && all_massless => {
+                let (a, b) = (x.min(y) - n_in, x.max(y) - n_in);
+                limits.push(MasslessLimit::FinalCollinear { a, b });
+            }
+            (true, false) | (false, true) if all_massless => {
+                let (beam, out) = if x < n_in { (x, y) } else { (y, x) };
+                limits.push(MasslessLimit::InitialCollinear {
+                    beam,
+                    leg: out - n_in,
+                });
+            }
+            _ => {}
+        }
+        for (k, emitter) in [(x, y), (y, x)] {
+            if k < n_in || !massless(particle(k)) || !is_vector(particle(k)) {
+                continue;
+            }
+            if model.mass(prop) != model.mass(particle(emitter)) {
+                continue;
+            }
+            let lone_massless_partner = n_final == 2
+                && (n_in..diagram.legs.len())
+                    .filter(|&i| i != k)
+                    .all(|i| massless(particle(i)));
+            if !lone_massless_partner {
+                limits.push(MasslessLimit::Soft { leg: k - n_in });
             }
         }
     }
-    pairs
+    limits
 }
 
-/// Refuse a card whose cuts leave a photon's collinear splitting off a massless
-/// coloured parton uncut ([`ForcedResonances::photon_splittings`]).
+/// Whether the compiled cuts keep every accepted point away from `limit`.
 ///
-/// In `q → q γ` the propagator goes as `1/s_qγ`, and `s_qγ ≈ pT_q pT_γ ΔR²`
-/// vanishes in the collinear limit whatever the two transverse momenta are, so
-/// σ diverges logarithmically in `ΔR` unless a cut keeps `ΔR` away from zero.
-/// Two regulate it in MadGraph: the pair's ΔR minimum (`draj` for a jet-class
-/// parton, `drab` for a b-class one), and Frixione photon isolation
-/// (`cuts.f:1104-1222`, on when `ptgmin ≠ 0`), which caps the parton `pT` inside
-/// `ΔR ≤ R0gamma` by `epsgamma·pT_γ·((1 − cos ΔR)/(1 − cos R0gamma))^xn`, a cap
-/// that closes at `ΔR → 0` for `xn > 0`. Isolation is not implemented here and
-/// a card turning it on is refused before this check ([`detect_unimplemented`]),
-/// so the pair cut is the only regulator to look for. A pair the compiled
-/// filter does not cut at all (an uncut decay product, a leg above the class
-/// mass threshold) is uncut here too.
+/// `infos` are the final-state legs in order, `single` and `pairs` the compiled
+/// single-leg and pair cuts, `legs` every external leg. A leg the filter does
+/// not cut at all (an uncut decay product, a leg in no class) regulates
+/// nothing.
+fn limit_regulated(
+    limit: MasslessLimit,
+    infos: &[LegInfo],
+    single: &[SingleLegCut],
+    pairs: &[PairCut],
+    legs: &[ExternalLeg],
+) -> bool {
+    let single_of = |k: usize| single.iter().find(|s| s.idx == infos[k].idx);
+    let pair_of = |i: usize, j: usize| {
+        pairs
+            .iter()
+            .find(move |pc| (pc.i, pc.j) == (i, j) || (pc.i, pc.j) == (j, i))
+    };
+    match limit {
+        MasslessLimit::FinalCollinear { a, b } => pair_of(infos[a].idx, infos[b].idx)
+            .is_some_and(|pc| pc.dr2_min > 0.0 || pc.m2_min > 0.0),
+        MasslessLimit::InitialCollinear { leg, .. } => {
+            single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.eta_max >= 0.0)
+        }
+        MasslessLimit::Soft { leg } => {
+            let idx = infos[leg].idx;
+            single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.e_min > 0.0)
+                || pairs
+                    .iter()
+                    .filter(|pc| pc.i == idx || pc.j == idx)
+                    .any(|pc| {
+                        let partner = if pc.i == idx { pc.j } else { pc.i };
+                        pc.m2_min > legs[partner].mass * legs[partner].mass
+                    })
+        }
+    }
+}
+
+/// Refuse a card whose compiled cuts leave one of `forced`'s
+/// [`MasslessLimit`]s uncut.
 ///
 /// The run would otherwise report a number set by how far its sampler happens
 /// to reach into the logarithm, growing with the budget. MadGraph returns such a
-/// number too, its own phase space's effective cutoff.
-fn refuse_uncut_photon_splitting(
+/// number too, its own phase space's effective cutoff. Frixione photon
+/// isolation (`cuts.f:1104-1222`), which would regulate a photon's collinear
+/// limit with a parton, is refused before this check ([`detect_unimplemented`]),
+/// and so is `ptheavy`; MLM's `xqcut` reaches the filter as the `ptj` and `mmjj`
+/// it rewrites.
+fn refuse_unregulated_limits(
     forced: &ForcedResonances,
-    finals: &[usize],
+    infos: &[LegInfo],
+    single: &[SingleLegCut],
     pairs: &[PairCut],
     legs: &[ExternalLeg],
 ) -> Result<(), CutError> {
-    for &(photon, parton) in &forced.photon_splittings {
-        let (i, j) = (finals[photon], finals[parton]);
-        let cut = pairs
-            .iter()
-            .any(|pc| ((pc.i, pc.j) == (i, j) || (pc.i, pc.j) == (j, i)) && pc.dr2_min > 0.0);
-        if !cut {
-            return Err(CutError::UncutPhotonSplitting {
-                photon,
-                parton,
-                pdg: legs[j].pdg,
-            });
-        }
+    match forced
+        .massless_limits
+        .iter()
+        .find(|&&limit| !limit_regulated(limit, infos, single, pairs, legs))
+    {
+        Some(&limit) => Err(unregulated_limit_error(limit, infos, legs)),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// The refusal of an uncut `limit`, naming its legs and the run-card cuts that
+/// would regulate it.
+fn unregulated_limit_error(
+    limit: MasslessLimit,
+    infos: &[LegInfo],
+    legs: &[ExternalLeg],
+) -> CutError {
+    let decay_note = |k: usize| {
+        infos[k]
+            .uncut_decay
+            .then_some("cut_decays = T (cut_decays = F leaves this decay product uncut)")
+    };
+    let single_regulator = |k: usize, pt_or: &str| -> String {
+        if let Some(note) = decay_note(k) {
+            return note.to_string();
+        }
+        match infos[k].letter {
+            Some(l) => {
+                let c = letter_char(l);
+                format!("pt{c} > 0 or {pt_or}{c}")
+            }
+            None => "no run-card cut, since the leg is in no cut class".to_string(),
+        }
+    };
+    match limit {
+        MasslessLimit::FinalCollinear { a, b } => {
+            let (la, lb) = (infos[a].letter, infos[b].letter);
+            let parton = |l: Option<Letter>| matches!(l, Some(Letter::Jet | Letter::B));
+            if la == Some(Letter::Photon) && parton(lb) || lb == Some(Letter::Photon) && parton(la)
+            {
+                let (photon, parton) = if la == Some(Letter::Photon) {
+                    (a, b)
+                } else {
+                    (b, a)
+                };
+                return CutError::UncutPhotonSplitting {
+                    photon,
+                    parton,
+                    pdg: infos[parton].pdg,
+                };
+            }
+            let regulator = match (decay_note(a).or(decay_note(b)), la.zip(lb)) {
+                (Some(note), _) => note.to_string(),
+                (None, Some((x, y))) => {
+                    let tag = pair_tag(x, y).unwrap_or_default();
+                    if x == y {
+                        format!("dr{tag} > 0 or mm{tag} > 0")
+                    } else {
+                        format!("dr{tag} > 0")
+                    }
+                }
+                (None, None) => "no run-card cut, since a leg is in no cut class".to_string(),
+            };
+            CutError::UncutCollinearSplitting {
+                a,
+                b,
+                pdg_a: infos[a].pdg,
+                pdg_b: infos[b].pdg,
+                regulator,
+            }
+        }
+        MasslessLimit::InitialCollinear { beam, leg } => CutError::UncutInitialCollinear {
+            beam,
+            beam_pdg: legs[beam].pdg,
+            leg,
+            pdg: infos[leg].pdg,
+            regulator: single_regulator(leg, "a rapidity maximum eta"),
+        },
+        MasslessLimit::Soft { leg } => CutError::UncutSoftEmission {
+            leg,
+            pdg: infos[leg].pdg,
+            regulator: single_regulator(leg, "e"),
+        },
+    }
 }
 
 /// Refuse a `cut_decays` exemption, `uncut` naming the exempt outgoing legs,
@@ -435,6 +606,46 @@ pub enum CutError {
         photon: usize,
         parton: usize,
         pdg: i32,
+    },
+    #[error(
+        "final-state legs {a} (PDG {pdg_a}) and {b} (PDG {pdg_b}) split off one massless \
+         propagator in a kept diagram, and the run card leaves their collinear limit uncut: the \
+         propagator diverges as the two become collinear whatever their transverse momenta, σ \
+         diverges logarithmically, and any cross section reported is set by how far the sampler \
+         reaches into it; regulate it with {regulator}"
+    )]
+    UncutCollinearSplitting {
+        a: usize,
+        b: usize,
+        pdg_a: i32,
+        pdg_b: i32,
+        regulator: String,
+    },
+    #[error(
+        "final-state leg {leg} (PDG {pdg}) leaves incoming leg {beam} (PDG {beam_pdg}) through a \
+         massless spacelike propagator in a kept diagram, and the run card leaves its collinear \
+         limit with the beam uncut: the propagator diverges as the leg becomes collinear with \
+         the beam, σ diverges logarithmically, and any cross section reported is set by how far \
+         the sampler reaches into it; regulate it with {regulator}"
+    )]
+    UncutInitialCollinear {
+        beam: usize,
+        beam_pdg: i32,
+        leg: usize,
+        pdg: i32,
+        regulator: String,
+    },
+    #[error(
+        "final-state massless vector boson (outgoing leg {leg}, PDG {pdg}) is emitted off an \
+         external line in a kept diagram, and the run card leaves its soft limit uncut: the \
+         emitting propagator diverges as the boson's energy vanishes, σ diverges \
+         logarithmically, and any cross section reported is set by how far the sampler reaches \
+         into it; regulate it with {regulator}"
+    )]
+    UncutSoftEmission {
+        leg: usize,
+        pdg: i32,
+        regulator: String,
     },
 }
 
@@ -1109,7 +1320,7 @@ impl Cuts {
 
         let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
-        refuse_uncut_photon_splitting(forced, &finals, &pairs, legs)?;
+        refuse_unregulated_limits(forced, &infos, &single, &pairs, legs)?;
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
 
@@ -3138,7 +3349,7 @@ mod tests {
         ForcedResonances {
             patterns,
             massless_coloured_core: 0,
-            photon_splittings: Vec::new(),
+            massless_limits: Vec::new(),
         }
     }
 
@@ -3410,10 +3621,18 @@ mod tests {
     /// The stitched diagrams of one proc-card line's single subprocess under
     /// the default SM, with its external legs.
     fn stitched_subprocess(text: &str) -> (ForcedResonances, Vec<ExternalLeg>) {
+        stitched_subprocess_in(text, crate::ufo::sm::SMRestrict::Default)
+    }
+
+    /// [`stitched_subprocess`] under the SM restriction `restrict`.
+    fn stitched_subprocess_in(
+        text: &str,
+        restrict: crate::ufo::sm::SMRestrict,
+    ) -> (ForcedResonances, Vec<ExternalLeg>) {
         use crate::diagrams::diagram::antiparticle;
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use crate::ufo::sm::{sm_model, SMRestrict};
-        let model = sm_model(SMRestrict::Default);
+        use crate::ufo::sm::sm_model;
+        let model = sm_model(restrict);
         let evaluated = EvaluatedModel::from_model(model.clone());
         let card = parse_proc_card(text, &ParsingOptions::default()).unwrap();
         let sets = generate_from_proc_card(&card, &model).unwrap();
@@ -3478,16 +3697,27 @@ mod tests {
     /// regulates it and compiles. A card that turns isolation on is refused
     /// earlier, as an unimplemented cut, not as this.
     ///
-    /// Kept narrow: a photon that meets no final-state quark at a vertex is not
-    /// refused at `draj = 0` — off a lepton line (`e+ e- > mu+ mu- a`), with a
-    /// gluon as the only parton (`u u~ > a g`), or beside quarks that come from a
-    /// decay the photon is not part of (`u u~ > z a, z > d d~`).
+    /// A photon that meets no final-state quark at a vertex is not refused as
+    /// this at `draj = 0`: with a gluon as the only parton (`u u~ > a g`), or
+    /// beside quarks that come from a decay the photon is not part of
+    /// (`u u~ > z a, z > d d~`).
     #[test]
     fn an_uncut_photon_quark_splitting_is_refused() {
         let (forced, legs) = stitched_subprocess("generate u d > a u d");
-        let mut pairs = forced.photon_splittings.clone();
-        pairs.sort_unstable();
-        assert_eq!(pairs, [(0, 1), (0, 2)], "the photon meets both quarks");
+        let photon_pairs: Vec<MasslessLimit> = forced
+            .massless_limits
+            .iter()
+            .copied()
+            .filter(|l| matches!(l, MasslessLimit::FinalCollinear { a: 0, .. }))
+            .collect();
+        assert_eq!(
+            photon_pairs,
+            [
+                MasslessLimit::FinalCollinear { a: 0, b: 1 },
+                MasslessLimit::FinalCollinear { a: 0, b: 2 }
+            ],
+            "the photon meets both quarks"
+        );
         let err = Cuts::compile_with(&card("0 = draj\n"), &legs, &forced).unwrap_err();
         let CutError::UncutPhotonSplitting {
             photon,
@@ -3508,16 +3738,254 @@ mod tests {
             "{isolated:?}"
         );
 
-        for text in [
-            "generate e+ e- > mu+ mu- a",
-            "generate u u~ > a g",
-            "generate u u~ > z a, z > d d~",
-        ] {
+        for text in ["generate u u~ > a g", "generate u u~ > z a, z > d d~"] {
             let (forced, legs) = stitched_subprocess(text);
-            assert!(forced.photon_splittings.is_empty(), "{text}");
-            Cuts::compile_with(&card("0 = draj\n0 = dral\n"), &legs, &forced)
+            Cuts::compile_with(&card("0 = draj\n"), &legs, &forced)
                 .unwrap_or_else(|e| panic!("{text}: {e}"));
         }
+    }
+
+    /// `u u~ > d d~ g` splits `g* → d d̄` and `q → q g` in the final state. At
+    /// `drjj = 0` with the default `ptj = 20` the collinear limits are open,
+    /// because a transverse-momentum cut does not keep two legs apart, and the
+    /// card is refused naming the pair and its cuts; a `ΔR` or a mass minimum
+    /// on the pair compiles, and so does `xqcut`, which reaches the filter as
+    /// `mmjj = xqcut`. `g g > g g g` (`g → g g`) is refused the same way.
+    #[test]
+    fn an_uncut_final_state_parton_splitting_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate u u~ > d d~ g");
+        let err = Cuts::compile_with(&card("0 = drjj\n"), &legs, &forced).unwrap_err();
+        let CutError::UncutCollinearSplitting {
+            a,
+            b,
+            pdg_a,
+            pdg_b,
+            ref regulator,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((a, b, pdg_a, pdg_b), (0, 1, 1, -1), "{err}");
+        assert_eq!(regulator, "drjj > 0 or mmjj > 0");
+        eprintln!("u u~ > d d~ g at drjj = 0: {err}");
+        for regulated in ["", "0.1 = drjj\n", "0 = drjj\n5 = mmjj\n", "30 = xqcut\n"] {
+            Cuts::compile_with(&card(regulated), &legs, &forced)
+                .unwrap_or_else(|e| panic!("{regulated:?}: {e}"));
+        }
+
+        let (forced, legs) = stitched_subprocess("generate g g > g g g");
+        let err = Cuts::compile_with(&card("0 = drjj\n"), &legs, &forced).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CutError::UncutCollinearSplitting {
+                    pdg_a: 21,
+                    pdg_b: 21,
+                    ..
+                }
+            ),
+            "{err}"
+        );
+        Cuts::compile_with(&card(""), &legs, &forced).expect("drjj = 0.4 regulates g → g g");
+    }
+
+    /// A gluon off a quark line is soft-divergent at any angle: `u u~ > d d~ g`
+    /// at `ptj = 0` keeps `drjj = 0.4` and `etaj = 5`, which regulate its
+    /// collinear limits, and is refused for the soft one; an energy minimum
+    /// regulates it. `u u~ > z g` (the gluon's only partner massive) is
+    /// refused the same way.
+    #[test]
+    fn an_uncut_soft_gluon_is_refused() {
+        for (text, leg) in [("generate u u~ > d d~ g", 2), ("generate u u~ > z g", 1)] {
+            let (forced, legs) = stitched_subprocess(text);
+            let err = Cuts::compile_with(&card("0 = ptj\n"), &legs, &forced).unwrap_err();
+            let CutError::UncutSoftEmission {
+                leg: got,
+                pdg,
+                ref regulator,
+            } = err
+            else {
+                panic!("{text}: refused for the wrong reason: {err}");
+            };
+            assert_eq!((got, pdg), (leg, 21), "{text}");
+            assert_eq!(regulator, "ptj > 0 or ej");
+            eprintln!("{text} at ptj = 0: {err}");
+            Cuts::compile_with(&card("0 = ptj\n1 = ej\n"), &legs, &forced)
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+        }
+    }
+
+    /// `g u > z u` emits the quark off the incoming gluon through a quark
+    /// propagator: at `ptj = 0` and no rapidity cut (`etaj = -1`) its collinear
+    /// limit with the beam is open and the card is refused. A rapidity maximum
+    /// alone regulates it: at bounded rapidity the quark reaches the limit only
+    /// by becoming soft, which a fermion does integrably.
+    #[test]
+    fn an_uncut_initial_state_splitting_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate g u > z u");
+        let err = Cuts::compile_with(&card("0 = ptj\n-1 = etaj\n"), &legs, &forced).unwrap_err();
+        let CutError::UncutInitialCollinear {
+            beam,
+            beam_pdg,
+            leg,
+            pdg,
+            ref regulator,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((beam, beam_pdg, leg, pdg), (0, 21, 1, 2), "{err}");
+        assert_eq!(regulator, "ptj > 0 or a rapidity maximum etaj");
+        eprintln!("g u > z u at ptj = 0, etaj = -1: {err}");
+        Cuts::compile_with(&card("0 = ptj\n"), &legs, &forced).expect("etaj = 5 regulates it");
+        Cuts::compile_with(&card("-1 = etaj\n"), &legs, &forced).expect("ptj = 20 regulates it");
+    }
+
+    /// The initial-state limit through an exchanged massless vector boson, the
+    /// equivalent-photon limit, is refused like any other: `u d > e+ e- u d
+    /// QCD=0` on the cuts of the electroweak `p p > e+ e- j j` card (`ptj = ptl =
+    /// 0`, no rapidity or ΔR cut, `mmjj = 4`, `mmll = 50`) emits each outgoing
+    /// quark off its beam through a t-channel photon, whose `1/t` pole no cut of
+    /// that card keeps away. A rapidity maximum regulates it; with `mmll = 0` the
+    /// card is refused first for its `γ* → e+ e-` splitting.
+    #[test]
+    fn the_equivalent_photon_limit_is_refused() {
+        let ewk = |mmll: f64, etaj: f64| {
+            format!(
+                "0 = ptj\n0 = ptl\n{etaj} = etaj\n-1 = etal\n0 = drjj\n0 = drll\n0 = drjl\n\
+                 4 = mmjj\n{mmll} = mmll\n5 = maxjetflavor\n"
+            )
+        };
+        let (forced, legs) = stitched_subprocess("generate u d > e+ e- u d QCD=0");
+        let err = Cuts::compile_with(&card(&ewk(50.0, -1.0)), &legs, &forced).unwrap_err();
+        let CutError::UncutInitialCollinear {
+            beam,
+            beam_pdg,
+            leg,
+            pdg,
+            ref regulator,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((beam, beam_pdg, leg, pdg), (0, 2, 2, 2), "{err}");
+        assert_eq!(regulator, "ptj > 0 or a rapidity maximum etaj");
+        eprintln!("u d > e+ e- u d QCD=0 on the electroweak card: {err}");
+        Cuts::compile_with(&card(&ewk(50.0, 5.0)), &legs, &forced)
+            .expect("etaj = 5 regulates the beam-collinear limits");
+        let err = Cuts::compile_with(&card(&ewk(0.0, 5.0)), &legs, &forced)
+            .expect_err("γ* → e+ e- at mmll = drll = 0 is refused");
+        assert!(
+            matches!(
+                err,
+                CutError::UncutCollinearSplitting {
+                    pdg_a: -11,
+                    pdg_b: 11,
+                    ..
+                }
+            ),
+            "{err}"
+        );
+    }
+
+    /// A `cut_decays = F` exemption of a massless colourless leg that is a core
+    /// leg of a splitting is refused through the leg's own limits, not through
+    /// [`refuse_ir_unsafe_exemption`], which reads coloured legs only. On
+    /// `e+ e- > mu+ mu- a` with a synthetic forced line over the photon, the
+    /// exempt photon loses `dral` and `pta`, which leaves the `μ → μ γ`
+    /// collinear limit uncut; with one over the muon pair, the muons lose `drll`
+    /// and `dral`, which leaves the `γ* → μ⁺ μ⁻` limit uncut first. Each refusal
+    /// names `cut_decays`, and the same lines compile at `cut_decays = T`.
+    #[test]
+    fn an_exemption_of_a_massless_colourless_core_leg_is_refused() {
+        let (mut forced, legs) = stitched_subprocess("generate e+ e- > mu+ mu- a");
+        assert_eq!(forced.massless_coloured_core, 0);
+        for (slots, pair) in [(0b100u64, (0, 2, -13, 22)), (0b011, (0, 1, -13, 13))] {
+            forced.patterns = vec![vec![z_line(slots)]];
+            assert_eq!(forced.decay_products(), slots);
+            refuse_ir_unsafe_exemption(slots, &forced, &legs)
+                .expect("the coloured-leg guard does not see a photon or a lepton");
+            let err = Cuts::compile_with(&card("F = cut_decays\n"), &legs, &forced).unwrap_err();
+            let CutError::UncutCollinearSplitting {
+                a,
+                b,
+                pdg_a,
+                pdg_b,
+                ref regulator,
+            } = err
+            else {
+                panic!("exempting {slots:#b}: refused for the wrong reason: {err}");
+            };
+            assert_eq!((a, b, pdg_a, pdg_b), pair, "{err}");
+            assert!(regulator.starts_with("cut_decays = T"), "{err}");
+            eprintln!("e+ e- > mu+ mu- a exempting {slots:#b}: {err}");
+            Cuts::compile_with(&card("T = cut_decays\n"), &legs, &forced)
+                .unwrap_or_else(|e| panic!("exempting nothing at cut_decays = T: {e}"));
+        }
+    }
+
+    /// `e+ e- > mu+ mu- a` has massless muons in the default SM: at `dral = 0`
+    /// its `μ → μ γ` collinear limit is open and the card is refused, and at
+    /// `pta = 0` the photon's soft limit is; the defaults (`dral = 0.4`,
+    /// `pta = 10`) regulate both.
+    #[test]
+    fn an_uncut_lepton_photon_splitting_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate e+ e- > mu+ mu- a");
+        let err = Cuts::compile_with(&card("0 = dral\n"), &legs, &forced).unwrap_err();
+        let CutError::UncutCollinearSplitting {
+            a,
+            b,
+            pdg_a,
+            pdg_b,
+            ref regulator,
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((a, b, pdg_a, pdg_b), (0, 2, -13, 22), "{err}");
+        assert_eq!(regulator, "dral > 0");
+        eprintln!("e+ e- > mu+ mu- a at dral = 0: {err}");
+        let err = Cuts::compile_with(&card("0 = pta\n"), &legs, &forced).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CutError::UncutSoftEmission {
+                    leg: 2,
+                    pdg: 22,
+                    ..
+                }
+            ),
+            "{err}"
+        );
+        Cuts::compile_with(&card(""), &legs, &forced).expect("the defaults regulate both");
+    }
+
+    /// Under `sm-no_b_mass` with `maxjetflavor = 4` the massless b is in the b
+    /// class, whose separations default to zero: `g g > b b~ g` is refused for
+    /// its `g* → b b̄` splitting, naming the b-class cuts. At
+    /// `maxjetflavor = 5` the b is a jet and the jet defaults regulate it; with
+    /// a massive b (the default SM) there is no collinear limit to cut.
+    #[test]
+    fn an_uncut_splitting_above_maxjetflavor_is_refused() {
+        use crate::ufo::sm::SMRestrict;
+        let (forced, legs) = stitched_subprocess_in("generate g g > b b~ g", SMRestrict::NoBMass);
+        let err = Cuts::compile_with(&card(""), &legs, &forced).unwrap_err();
+        let CutError::UncutCollinearSplitting {
+            pdg_a,
+            pdg_b,
+            ref regulator,
+            ..
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((pdg_a, pdg_b), (5, -5), "{err}");
+        assert_eq!(regulator, "drbb > 0 or mmbb > 0");
+        eprintln!("g g > b b~ g, massless b, maxjetflavor = 4: {err}");
+        Cuts::compile_with(&card("5 = maxjetflavor\n"), &legs, &forced)
+            .expect("the b is a jet at maxjetflavor = 5");
+        let (forced, legs) = stitched_subprocess("generate g g > b b~ g");
+        Cuts::compile_with(&card(""), &legs, &forced).expect("a massive b has no collinear limit");
     }
 
     // ── HT ──────────────────────────────────────────────────────────────
@@ -3666,7 +4134,7 @@ mod tests {
                 width: 2.0,
             }]],
             massless_coloured_core: 0,
-            photon_splittings: Vec::new(),
+            massless_limits: Vec::new(),
         };
         // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
         let half = 40.2;
