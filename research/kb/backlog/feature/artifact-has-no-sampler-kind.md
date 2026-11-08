@@ -5,13 +5,13 @@ description: "ChannelGrid::grid is a bare bincode VegasGrid with no kind tag, so
 area: feature
 state: open
 priority: medium
-closes_when: "ChannelGrid carries a kind-tagged trained sampler state; the run records any per-role bin-width override, keyed by role name; the artifact is written at the next free version (after 17), per the artifact-versioning concept; generate rebuilds the sampler from the artifact's kind and refuses an unknown kind and a kind/ndim mismatch, naming the field; a VEGAS-only, window-free artifact replays to the same LHE at a fixed seed as before the change; round-trip and refusal tests."
+closes_when: "ChannelGrid carries a kind-tagged trained sampler state; the run records any per-role bin-width override, keyed by role name; the artifact is written at the next free version (after 21), per the artifact-versioning concept; generate rebuilds the sampler from the artifact's kind and refuses an unknown kind and a kind/ndim mismatch, naming the field; a VEGAS-only, window-free artifact replays to the same LHE at a fixed seed as before the change; round-trip and refusal tests."
 blocked_by: [sampler-hardwired-to-vegas-grid]
 opened: 2026-10-17
 tags: [artifact, sampler, serialisation, versioning, refactor]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 ---
-`artifact::ChannelGrid::grid` (`artifact.rs:288`) is a `VegasGrid`, encoded by
+`artifact::ChannelGrid::grid` (`artifact.rs:336`) is a `VegasGrid`, encoded by
 bincode, which is not self-describing: a reader has to know the type it is
 decoding, and nothing in the file names it. A trained FOAM tree, tree ensemble
 or flow cannot be banked, and a build that does not know a kind cannot refuse it
@@ -26,9 +26,9 @@ other than the trained ones. Adaptation settings other than the VEGAS
 `GridRule` stay out.
 
 **Versioning** follows [artifact versioning](../../pipeline/artifact-format-versioning.md):
-every artifact is written at the current version (17 on 2026-11-03), and
+every artifact is written at the current version (21 on 2026-11-08), and
 `version_for` is gone. This item takes the next free version at merge. A
-version-17 file may upgrade to the VEGAS kind, or the floor may rise; the item
+version-21 file may upgrade to the VEGAS kind, or the floor may rise; the item
 decides and says why. Byte identity of the file no longer holds across the
 step; the inertness check is replay: the same LHE from the same artifact
 content and seed.

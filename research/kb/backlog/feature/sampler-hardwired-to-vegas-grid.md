@@ -30,11 +30,11 @@ Move `GridRule`, damping and `nbins` into a VEGAS config, warm-up and
 combination into `budget.rs`, and drop `grid_rule()` from `ChannelIntegrand`. A
 uniform, non-adapting implementor proves the trait is not VEGAS-shaped.
 `generate`'s heavy-weight log reads `VegasGrid::jacobian_factors`
-(`generate.rs:1119`): the frozen trait offers per-coordinate weight factors as
+(`generate.rs:1124`): the frozen trait offers per-coordinate weight factors as
 an optional diagnostic. The artifact keeps `VegasGrid`; tagging it is
 [artifact-has-no-sampler-kind](artifact-has-no-sampler-kind.md).
 
-**The uniform.** The draw uses `rng.random::<f64>()` (`vegas.rs:799`), not the
+**The uniform.** The draw uses `rng.random::<f64>()` (`vegas.rs:817`), not the
 lane-exact `u64_to_uniform` (`phasespace/rng.rs:51-55`); both compute
 `(bits >> 11) / 2^53`. Switching to `u64_to_uniform` is pinned equal on every
 draw by a test here, so the lane-generic draw inherits it.
@@ -50,4 +50,4 @@ byte identity, not statistics ([no-change claims](../../validation/no-change-cla
 report diff. That leaves the σ calibrations PR #45 re-records untouched.
 
 **Sequencing.** The refactor starts from the library driver
-(`vibegraph-lib/src/generate.rs`); line numbers are at `86b8e5c`.
+(`vibegraph-lib/src/generate.rs`); line numbers are at `d87ad3a`.

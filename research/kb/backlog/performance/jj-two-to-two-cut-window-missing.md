@@ -22,5 +22,6 @@ of the row's rejections. At fixed `ŝ` the accepted region is exact:
 
 Under [the joint seam design](../../phase-space/sampler-and-map-seams.md) (D1)
 the map owns the window: relative coordinates, the window's width in the map's
-weight, and `density_at` recomputing it at a foreign point. It is the first
+weight, and `density_at` recomputing it at a foreign point. The `|y| < η_max` bound is a window on the outer map, which
+`channel_map_digest` does not cover: it needs its own record (design D7). It is the first
 window to build: exact, clean oracle, M5 ceiling 1.30×.

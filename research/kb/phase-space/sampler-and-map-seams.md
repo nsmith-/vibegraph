@@ -19,8 +19,8 @@ measured:
 Designed with the user on 2026-10-22, from M1's measurements[^m1] and the two
 drafts it answers: the [sampler seam](importance-sampler-seam.md) and
 [multi-tier VEGAS](multi-tier-vegas-and-cut-edges.md). Where this concept and
-either draft disagree, this concept holds. Code is cited at `86b8e5c` (main
-on 2026-11-03) unless a line says otherwise; the measurements name their own
+either draft disagree, this concept holds. Code is cited at `d87ad3a` (main
+on 2026-11-08) unless a line says otherwise; the measurements name their own
 commits.
 
 ## Decisions
@@ -66,7 +66,7 @@ and the scale-configuration draw:
    cut-accepted region. A window narrows a coordinate's range from the
    coordinates drawn before it, and the window's width enters the map's own
    weight. `windowed`, `draw_lo` and `apply_fiducial_t_max`
-   (`diagram_channel.rs:2141`, `:2155`, `:2789`) already do this.
+   (`diagram_channel.rs:2146`, `:2160`, `:2803`) already do this.
 3. At a foreign point, `density_at` recomputes every window from that point's
    own earlier coordinates. `Σ αⱼ gⱼ` therefore stays defined, and the
    walk–density reciprocity test (`WALK_DENSITY_TOL`,
@@ -159,7 +159,7 @@ freeze, serialise, and a uniform second implementor. Agreed with the user on
   order. A tier's shared part would need the same operation.
 - **Per-coordinate weight factors, optional.** `generate`'s heavy-weight log
   splits a trial's `1/p` into one factor per coordinate
-  (`VegasGrid::jacobian_factors`, `generate.rs:1119`). The frozen trait offers
+  (`VegasGrid::jacobian_factors`, `generate.rs:1124`). The frozen trait offers
   that as an optional diagnostic; a kind without a per-coordinate factorisation
   (a flow) returns none.
 - **No product sampler type.** D3 leaves it without a user; the roles and merge
@@ -195,9 +195,18 @@ the variance is evaluated on the odd-indexed draws. The arms:
 Each arm is applied to `τ`, to `y`, or to both. The row figure is
 `Σ_j Var_j/N_j` at the production allocation. Five seeds,
 `20261020`–`20261024`. The trained σ̂ reproduce M1's seed for seed. The
-replay was re-run on the tree rebased onto `86b8e5c` (after PRs #75, #81, #83
-and #84 changed the budget, the spine maps and the α floor): all 900 `REPLAY`
-records are identical to the first run's.
+replay was re-run twice on rebased trees:
+
+- on `86b8e5c` (after PRs #75, #81, #83 and #84 changed the budget, the spine
+  maps and the α floor), all 900 `REPLAY` records are identical to the first
+  run's;
+- on `d87ad3a` (after the sprint G and H changes to the proton integrand and
+  its allocation), the records differ: the starved channels' share moved, for
+  example `N_tot/N_j` 135 for ℓℓj channel 4. The reading does not. A shared `τ`
+  costs the starved γ* channels 1.30–1.42× variance (ℓℓj 1.30 ± 0.11 to
+  1.39 ± 0.06, MLM 1.34 ± 0.08 to 1.42 ± 0.07), jj's s-channel stays neutral
+  (1.03 ± 0.06), and no row's `shared/own` leaves its seed spread (0.987 ±
+  0.037 to 1.003 ± 0.031).
 
 Variance ratios, mean ± sd over five seeds. The row columns are `Σ_j Var_j/N_j`
 of `shared` over `own`, the like-for-like effect of sharing. The starved columns
@@ -331,7 +340,7 @@ name), and the decay request verbatim with its mode.
 
 **What guards the coordinate layout.** Since version 17 the artifact records
 `channel_map_digest`, a SHA-256 over every channel's `DiagramChannel::map_key`
-(`artifact.rs:381-403`), and `generate` refuses a mismatch with the maps it
+(`artifact.rs:465-487`), and `generate` refuses a mismatch with the maps it
 rebuilds (`generate.rs` `check_channel_maps`). A map key encodes the map's
 parameters (topology, poles, floors, transfer bounds), so:
 
@@ -341,6 +350,13 @@ parameters (topology, poles, floors, transfer bounds), so:
   moves the digest, and a change to how a map with an unchanged key draws (for
   example a reordered coordinate) needs a version bump, by the versioning rule
   that introduced the digest.
+- **the digest does not cover the outer `(τ, y)` map.** Version 21 shows it:
+  bounding `τ` by a forced whole-state line's `bwcutoff` window left the keys,
+  dimensions and channel maps unchanged, so it needed a version bump. That
+  bound is itself a map-owned window on an outer coordinate, the D1 pattern
+  already in production. A cut-aware window on `τ` or `y` (the `pp_to_jj`
+  bound `|y| < η_max`) therefore needs an outer-map record of its own: a
+  `MapChoices` field, or an outer key folded into the digest.
 
 **What `generate` refuses**, naming the field each time:
 
@@ -357,14 +373,19 @@ The kind comes from the artifact, never from a flag.
 Sprint D's [integrate/generate split](../pipeline/integrate-generate-split.md)
 landed as PR #69 (version 13, gridpack `generate`) and PR #60 (version 14, the
 PDF from the run card, with [run inputs](../pipeline/run-inputs-in-the-artifact.md)).
-Three more steps followed (`artifact.rs:22-58`):
+Seven more steps followed (`artifact.rs:22-84`):
 
 - **15** (PR #83): the systematics request, typed;
 - **16** (PR #84): the pair order among the map choices, and the α floor;
 - **17** (PR #81): peripheral channels on the t-channel spine, and
-  `channel_map_digest`.
+  `channel_map_digest`;
+- **18** (PR #88): the param card's decay tables;
+- **19** (PR #90): `μ_F` and the iteration χ²/dof as `Option<f64>`;
+- **20** (PR #99): the per-multiplicity totals;
+- **21** (PR #89): the `τ` draw bounded by a forced whole-state line's
+  `bwcutoff` window.
 
-`FORMAT_VERSION` and `OLDEST_READABLE_VERSION` are both 17. What this design
+`FORMAT_VERSION` and `OLDEST_READABLE_VERSION` are both 21. What this design
 rests on:
 
 - **Every artifact is written at the current version.** `version_for` and the
@@ -378,9 +399,9 @@ rests on:
 
 So:
 
-- Each field above lands as one version step, from 18 on, taking the next free
+- Each field above lands as one version step, from 22 on, taking the next free
   number at merge.
-- A version-17 file holds only VEGAS grids, so under rule 5 ("upgrade only what
+- A version-21 file holds only VEGAS grids, so under rule 5 ("upgrade only what
   the old file knows") it can upgrade to the VEGAS kind. Whether to keep that
   reader or raise the floor is that PR's call.
 - A VEGAS-only, window-free artifact is checked for identical replay, the same

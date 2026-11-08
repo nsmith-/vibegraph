@@ -46,7 +46,7 @@ the pinned commits, by research agents, with the cited lines spot-checked;
     (`vegas.rs` `draw_into`);
   - the map's windows: `windowed` branches on `l < h`, `outside_window` returns
     a `bool`, and a two-interval window chooses per point
-    (`diagram_channel.rs:2141-2175` at `86b8e5c`);
+    (`diagram_channel.rs:2146-2180` at `d87ad3a`);
   - cuts, with an early exit once every lane has failed;
   - kT clustering (`coupling/cluster/kt.rs`);
   - the PDF grid lookup, a search.
@@ -222,8 +222,8 @@ What that means for our clustering, 2–8 partons per point:
 
 - [code] Our clustering diverges less than FlashJet's. In a batch of one
   process, `n` is the same on every lane, the loop runs a fixed `n − 2` steps
-  (`kt.rs:674`), and every lane visits the same pairs in the same order
-  (`kt.rs:592-593`).
+  (`kt.rs:683`), and every lane visits the same pairs in the same order
+  (`kt.rs:598-599`).
 - [inferred] **One lane per event**, the torch shape. FlashJet's GPU shape (one
   event per program, particles across lanes, at least 16 wide) would leave most
   lanes idle at 2–8 partons.
@@ -232,13 +232,13 @@ What that means for our clustering, 2–8 partons per point:
   The strict `<` keeps "first minimiser in visit order" (`kt.rs:16-18`)
   bit-for-bit at `f64`, with no cross-lane reduction.
 - [inferred] **Fixed slots and an alive mask** replace the left shift of
-  `lines` (`kt.rs:776-779`). They must keep the visit order; a test has to pin
+  `lines` (`kt.rs:785-788`). They must keep the visit order; a test has to pin
   that, because the code tests positions (`iwin < 3`).
 - **Per-lane graph narrowing** has no FlashJet counterpart. [code] Like
   MadGraph's `cluster.f`, a pair is admissible only if some diagram of the
   process still contains a line with that leg set. `graphs`, the diagrams
   consistent with every merge so far, is narrowed after each winning merge
-  (`kt.rs:684-694`). The narrowing is an intersection of sorted lists of
+  (`kt.rs:693-703`). The narrowing is an intersection of sorted lists of
   diagram indices (`MergeTable::narrow`, `graph.rs:159`), and the table
   `id_cl` maps a leg set to its diagrams (`graph.rs:96-98`). Lanes that merged
   different pairs hold different lists, so the next step's admissibility
