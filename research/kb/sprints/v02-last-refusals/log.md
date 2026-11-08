@@ -13,3 +13,12 @@
   - The vibegraph manager reviews and merges PRs 1 and 2; the user reviews PR 3.
 * I-R1 and I-R2 dispatched (feature-dev, Opus) on `sprinti-runcard` and `sprinti-r2`. I-Z1 dispatched (feature-dev, Sonnet) on `sprinti-release`, with the version bump folded in.
 * `send_message` to the vibegraph manager fails (`elevated_session_untrusted_device`). Messages go through the user.
+* The vibegraph manager relayed the CERN host's spacelike reference, on `p p > a j j QCD=0 QED=3 $ t t~` (loop_sm-ckm_no_b_mass, GJ-2Jets-EWK_Bin-PTG-40, lhaid 315200, pta 40, draj 0.4). MadGraph 3.7.1 gives 54.27 ± 0.11 pb at ptj 0.1 and 53.48 ± 0.12 pb at ptj 1. vibegraph's ratio to it over 5 seeds:
+
+  | Build | ptj 0.1 | ptj 1 |
+  |---|---|---|
+  | stock, neval 2e5 | 1.000 ± 0.006 (χ²/dof 2.05) | 0.992 ± 0.006 |
+  | smallest-threshold floor, neval 2e5 | 0.995 ± 0.003 | 0.995 ± 0.002 |
+  | stock, neval 2e4 | 0.995 ± 0.024 (χ²/dof 3.9) | 0.973 ± 0.007 (χ²/dof 0.45) |
+
+  The largest-threshold floor removes no visible σ at convergence. It costs variance: stock's per-seed errors are 2–3× larger and heavy-tailed. Sprint H's +6% was a low-budget sampling deficit. The manager recommends dropping the item from sprint I and asked to pause it until the user decides. I-S1 had not been dispatched; it is on hold.

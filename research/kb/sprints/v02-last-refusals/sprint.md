@@ -70,7 +70,7 @@ recorded; the CERN host's CMS campaign rerun (bar: ≥ 66 ok, no panics, against
 | [I-R1](sessions/I-R1.md) | feature-dev | 1 | – | The absent-card defaults (both `create_default_for_process` items) and the untabulated-parton refusal. |
 | [I-R2](sessions/I-R2.md) | feature-dev | 1 | – | The zero τ floor refusal, `mxx_only_part_antipart`, the worker-panic exit. |
 | [I-C2](sessions/I-C2.md) | validation-dev | 2 | – | The uncut-collinear guards. |
-| [I-S1](sessions/I-S1.md) | validation-dev | 2 | the host's reference for its gate | The per-rung spacelike bound. |
+| [I-S1](sessions/I-S1.md) | validation-dev | 2 | on hold: the user's decision | The per-rung spacelike bound. The host's reference shows no σ bias at convergence (log, 2026-11-08). |
 | [I-C1](sessions/I-C1.md) | validation-dev | 2 | I-C2 | The `cut_decays` window rule and the restated exemption guard. |
 | [I-Z1](sessions/I-Z1.md) | feature-dev (Sonnet) | 3 | – | Release tooling: `v*` tags, prereleases, committed notes, the version bump. |
 | I-Z | manager | 3 | PRs 1–2 merged | Release notes content, `validate-deep`, the CMS rerun request, the record. |
