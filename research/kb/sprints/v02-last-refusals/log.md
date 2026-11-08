@@ -41,3 +41,4 @@
 * I-R1 report recorded.
 * I-C2 addendum checked (249dd1a0, b2f3365d; both gate logs end EXIT 0). PR 2 opened as #113 (head 4ef935b8) after merging main. Its kb changes: the two closed items deleted, references to the retired row updated, and `ewk-lljj-row-needs-a-regulated-rebank` filed.
 * Release notes drafted (`docs/release-notes/v0.2.0.md`; `scripts/release-check.sh` accepts v0.2.0-rc1 and v0.2.0). I-Z1's Found on the `release.yml` comment is moot: the comment already names `ring`.
+* The user asked to run `validate-deep` and the CERN rerun in parallel, once the manager has merged #111 and #113. A synthetic RC branch (`sprinti-rc`) and its run were started, then withdrawn on the user's follow-up (wait for the merges); nothing ran past the build.
