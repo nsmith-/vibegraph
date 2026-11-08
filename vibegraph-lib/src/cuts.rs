@@ -63,7 +63,8 @@
 //!   reached. A final-state splitting of two massless legs off a massless
 //!   propagator (`q → q g`, `g → g g`, `q → q γ`, `ℓ → ℓ γ`, `γ* → f f̄`) needs a
 //!   ΔR or invariant-mass minimum on the pair, which transverse-momentum cuts
-//!   cannot replace ([`CutError::UncutCollinearSplitting`], and
+//!   cannot replace, or for two jets split off a coloured line MLM's `xqcut`
+//!   clustering veto ([`CutError::UncutCollinearSplitting`], and
 //!   [`CutError::UncutPhotonSplitting`] for a photon and a parton, where photon
 //!   isolation, MadGraph's other regulator, is not implemented). A soft massless
 //!   vector boson needs its own `pT` or energy minimum, which a ΔR cut cannot
@@ -258,8 +259,12 @@ pub enum MasslessLimit {
     /// `ℓ → ℓ γ`, `γ* → f f̄`. The propagator goes as
     /// `1/s_ab = 1/(2 pT_a pT_b (cosh Δy − cos Δφ))`, which vanishes as the two
     /// become collinear whatever their transverse momenta, so only a cut on the
-    /// pair itself (a ΔR or invariant-mass minimum) regulates it.
-    FinalCollinear { a: usize, b: usize },
+    /// pair itself (a ΔR or invariant-mass minimum) regulates it, or, for two
+    /// jets split off a coloured propagator, MLM's `xqcut` clustering veto
+    /// ([`kt_veto_regulates`]). `coloured` says whether the propagator carries
+    /// colour; a pair that one diagram splits off a coloured line and another
+    /// off a colourless one is two limits.
+    FinalCollinear { a: usize, b: usize, coloured: bool },
     /// A massless outgoing leg meets massless incoming leg `beam` at a vertex
     /// whose third line is a massless spacelike propagator: `t → 0` as the leg
     /// becomes collinear with the beam. Its transverse-momentum minimum
@@ -308,7 +313,8 @@ fn diagram_massless_limits(diagram: &Diagram, model: &EvaluatedModel) -> Vec<Mas
         match (x >= n_in, y >= n_in) {
             (true, true) if n_final >= 3 && all_massless => {
                 let (a, b) = (x.min(y) - n_in, x.max(y) - n_in);
-                limits.push(MasslessLimit::FinalCollinear { a, b });
+                let coloured = model.model().particle(prop).color.abs() != 1;
+                limits.push(MasslessLimit::FinalCollinear { a, b, coloured });
             }
             (true, false) | (false, true) if all_massless => {
                 let (beam, out) = if x < n_in { (x, y) } else { (y, x) };
@@ -338,7 +344,49 @@ fn diagram_massless_limits(diagram: &Diagram, model: &EvaluatedModel) -> Vec<Mas
     limits
 }
 
-/// Whether the compiled cuts keep every accepted point away from `limit`.
+/// Whether a run on `rc` applies MLM's `xqcut` clustering veto to every event:
+/// `xqcut > 0` on two hadron beams, whatever `ickkw`.
+///
+/// MadEvent runs `setclscales` on every event (`update_scale_coupling_vec`,
+/// `reweight.f:1907`, under matching also from `rewgt`), and it fails an event
+/// whose clustering merges an external final-state jet (`iqjets > 0`) at
+/// `√pt2ijcl < xqcut` (`reweight.f:1063-1077`); `setclscales.rs` vetoes the
+/// same. A card that sets `xqcut` on a fixed-energy beam is refused by the scale
+/// prescription.
+fn kt_veto_applies(rc: &RunCard) -> bool {
+    rc.float("xqcut") > 0.0 && rc.lpp1 != 0 && rc.lpp2 != 0
+}
+
+/// Whether MLM's clustering veto, where it applies ([`kt_veto_applies`]), keeps
+/// every accepted point away from `limit`.
+///
+/// Only a final-state splitting of two jet-class legs off a coloured propagator
+/// qualifies. The integrand clusters each event in a configuration it draws
+/// from `AMP2` (or the propagator products at `sde_strategy = 2`). In a
+/// configuration whose diagram splits the pair at one vertex, the pair's kT
+/// measure vanishes in the collinear limit while the others stay finite, so it
+/// is merged first, at a jet vertex (QCD mother and daughters, a jet daughter
+/// and a jet mother) that tags its jet daughters, and `√pt2 < xqcut` fails the
+/// event; the first merge is never one whose `pt2` a transverse-mass override
+/// replaces. A configuration without that vertex clusters the pair elsewhere
+/// and keeps the event, but its share of the draw vanishes with the pair's
+/// invariant as fast as `|M|²` grows, which leaves that region integrable.
+/// `hadronic`'s `the_xqcut_veto_fails_every_event_near_a_coloured_jet_splitting`
+/// pins the per-configuration behaviour on `g* → q q̄`, `q → q g` and `g → g g`.
+///
+/// The veto does not reach a pair split off a colourless line (`γ* → q q̄` is
+/// not a jet vertex), a b-class or other non-jet leg, a photon or a lepton, or a
+/// decay product `cut_decays = F` exempts. Beam-collinear and soft limits need
+/// no clause: an `xqcut` card that compiles has `ptj = xqcut` (the run card
+/// refuses every other resolved jet threshold), which regulates both.
+fn kt_veto_regulates(limit: MasslessLimit, infos: &[LegInfo]) -> bool {
+    let jet = |k: usize| infos[k].letter == Some(Letter::Jet) && !infos[k].uncut_decay;
+    matches!(limit, MasslessLimit::FinalCollinear { a, b, coloured: true } if jet(a) && jet(b))
+}
+
+/// Whether the compiled cuts keep every accepted point away from `limit`, or,
+/// with `kt_veto` set ([`kt_veto_applies`]), MLM's clustering veto does
+/// ([`kt_veto_regulates`]).
 ///
 /// `infos` are the final-state legs in order, `single` and `pairs` the compiled
 /// single-leg and pair cuts, `legs` every external leg. A leg the filter does
@@ -350,7 +398,11 @@ fn limit_regulated(
     single: &[SingleLegCut],
     pairs: &[PairCut],
     legs: &[ExternalLeg],
+    kt_veto: bool,
 ) -> bool {
+    if kt_veto && kt_veto_regulates(limit, infos) {
+        return true;
+    }
     let single_of = |k: usize| single.iter().find(|s| s.idx == infos[k].idx);
     let pair_of = |i: usize, j: usize| {
         pairs
@@ -358,7 +410,7 @@ fn limit_regulated(
             .find(move |pc| (pc.i, pc.j) == (i, j) || (pc.i, pc.j) == (j, i))
     };
     match limit {
-        MasslessLimit::FinalCollinear { a, b } => pair_of(infos[a].idx, infos[b].idx)
+        MasslessLimit::FinalCollinear { a, b, .. } => pair_of(infos[a].idx, infos[b].idx)
             .is_some_and(|pc| pc.dr2_min > 0.0 || pc.m2_min > 0.0),
         MasslessLimit::InitialCollinear { leg, .. } => {
             single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.eta_max >= 0.0)
@@ -385,19 +437,22 @@ fn limit_regulated(
 /// number too, its own phase space's effective cutoff. Frixione photon
 /// isolation (`cuts.f:1104-1222`), which would regulate a photon's collinear
 /// limit with a parton, is refused before this check ([`detect_unimplemented`]),
-/// and so is `ptheavy`; MLM's `xqcut` reaches the filter as the `ptj` and `mmjj`
-/// it rewrites.
+/// and so is `ptheavy`. MLM's `xqcut` regulates in two ways: through the `ptj`
+/// and `mmjj` it rewrites, which reach the compiled cuts, and through its
+/// per-event clustering veto, which `kt_veto` says applies
+/// ([`kt_veto_applies`], [`kt_veto_regulates`]).
 fn refuse_unregulated_limits(
     forced: &ForcedResonances,
     infos: &[LegInfo],
     single: &[SingleLegCut],
     pairs: &[PairCut],
     legs: &[ExternalLeg],
+    kt_veto: bool,
 ) -> Result<(), CutError> {
     match forced
         .massless_limits
         .iter()
-        .find(|&&limit| !limit_regulated(limit, infos, single, pairs, legs))
+        .find(|&&limit| !limit_regulated(limit, infos, single, pairs, legs, kt_veto))
     {
         Some(&limit) => Err(unregulated_limit_error(limit, infos, legs)),
         None => Ok(()),
@@ -429,7 +484,7 @@ fn unregulated_limit_error(
         }
     };
     match limit {
-        MasslessLimit::FinalCollinear { a, b } => {
+        MasslessLimit::FinalCollinear { a, b, coloured } => {
             let (la, lb) = (infos[a].letter, infos[b].letter);
             let parton = |l: Option<Letter>| matches!(l, Some(Letter::Jet | Letter::B));
             if la == Some(Letter::Photon) && parton(lb) || lb == Some(Letter::Photon) && parton(la)
@@ -449,7 +504,9 @@ fn unregulated_limit_error(
                 (Some(note), _) => note.to_string(),
                 (None, Some((x, y))) => {
                     let tag = pair_tag(x, y).unwrap_or_default();
-                    if x == y {
+                    if x == Letter::Jet && y == Letter::Jet && coloured {
+                        format!("dr{tag} > 0, mm{tag} > 0 or xqcut > 0")
+                    } else if x == y {
                         format!("dr{tag} > 0 or mm{tag} > 0")
                     } else {
                         format!("dr{tag} > 0")
@@ -1241,7 +1298,7 @@ impl Cuts {
 
         let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
-        refuse_unregulated_limits(forced, &infos, &single, &pairs, legs)?;
+        refuse_unregulated_limits(forced, &infos, &single, &pairs, legs, kt_veto_applies(rc))?;
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
 
@@ -3628,8 +3685,16 @@ mod tests {
         assert_eq!(
             photon_pairs,
             [
-                MasslessLimit::FinalCollinear { a: 0, b: 1 },
-                MasslessLimit::FinalCollinear { a: 0, b: 2 }
+                MasslessLimit::FinalCollinear {
+                    a: 0,
+                    b: 1,
+                    coloured: true
+                },
+                MasslessLimit::FinalCollinear {
+                    a: 0,
+                    b: 2,
+                    coloured: true
+                }
             ],
             "the photon meets both quarks"
         );
@@ -3681,7 +3746,7 @@ mod tests {
             panic!("refused for the wrong reason: {err}");
         };
         assert_eq!((a, b, pdg_a, pdg_b), (0, 1, 1, -1), "{err}");
-        assert_eq!(regulator, "drjj > 0 or mmjj > 0");
+        assert_eq!(regulator, "drjj > 0, mmjj > 0 or xqcut > 0");
         eprintln!("u u~ > d d~ g at drjj = 0: {err}");
         for regulated in ["", "0.1 = drjj\n", "0 = drjj\n5 = mmjj\n", "30 = xqcut\n"] {
             Cuts::compile_with(&card(regulated), &legs, &forced)
@@ -3754,6 +3819,86 @@ mod tests {
         eprintln!("g u > z u at ptj = 0, etaj = -1: {err}");
         Cuts::compile_with(&card("0 = ptj\n"), &legs, &forced).expect("etaj = 5 regulates it");
         Cuts::compile_with(&card("-1 = etaj\n"), &legs, &forced).expect("ptj = 20 regulates it");
+    }
+
+    /// MLM's per-event clustering veto regulates a coloured splitting of two
+    /// jets: on `auto_ptj_mjj = F`, where the run card leaves `ptj = xqcut` and
+    /// zeroes `drjj` and `mmjj` stays at the card's `0`, `u u~ > e+ e- d d~`
+    /// (`g* → d d̄`), `u g > e+ e- u g` (`q → q g`) and `u u~ > g g g`
+    /// (`g → g g`) compile at `xqcut = 20`, and the same cuts without `xqcut` are
+    /// refused, naming it. Such a card's jet threshold cannot sit below `xqcut`:
+    /// the run card refuses `ptj = 0` there.
+    #[test]
+    fn the_xqcut_veto_regulates_a_coloured_jet_splitting() {
+        let matched = "20 = xqcut\nFalse = auto_ptj_mjj\n20 = ptj\n0 = mmjj\n0 = drjj\n";
+        let rc = card(matched);
+        assert!(kt_veto_applies(&rc));
+        assert_eq!(
+            (rc.float("ptj"), rc.float("mmjj"), rc.float("drjj")),
+            (20.0, 0.0, 0.0)
+        );
+        assert!(RunCard::parse("20 = xqcut\nFalse = auto_ptj_mjj\n0 = ptj\n").is_err());
+        let unmatched = card("20 = ptj\n0 = mmjj\n0 = drjj\n");
+        assert!(!kt_veto_applies(&unmatched));
+        for text in [
+            "generate u u~ > e+ e- d d~",
+            "generate u g > e+ e- u g",
+            "generate u u~ > g g g",
+        ] {
+            let (forced, legs) = stitched_subprocess(text);
+            Cuts::compile_with(&rc, &legs, &forced)
+                .unwrap_or_else(|e| panic!("{text} at xqcut = 20: {e}"));
+            let err = Cuts::compile_with(&unmatched, &legs, &forced).unwrap_err();
+            let CutError::UncutCollinearSplitting { ref regulator, .. } = err else {
+                panic!("{text}: refused for the wrong reason: {err}");
+            };
+            assert_eq!(regulator, "drjj > 0, mmjj > 0 or xqcut > 0", "{text}");
+        }
+    }
+
+    /// The clustering veto does not reach a photon: `q → q γ` is not a jet
+    /// vertex, so `u d > a u d` at `draj = 0` is refused on the matched card
+    /// that regulates its jets, and so is a `γ* → q q̄` splitting, which is not
+    /// one either (`u u~ > e+ e- d d~ QED=4` at `mmjj = drjj = 0`).
+    #[test]
+    fn the_xqcut_veto_leaves_photon_and_colourless_splittings_to_their_cuts() {
+        let matched = "20 = xqcut\nFalse = auto_ptj_mjj\n20 = ptj\n0 = mmjj\n0 = drjj\n";
+        let (forced, legs) = stitched_subprocess("generate u d > a u d");
+        let err =
+            Cuts::compile_with(&card(&format!("{matched}0 = draj\n")), &legs, &forced).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CutError::UncutPhotonSplitting {
+                    photon: 0,
+                    parton: 1,
+                    pdg: 2
+                }
+            ),
+            "{err}"
+        );
+        Cuts::compile_with(&card(matched), &legs, &forced).expect("draj = 0.4 regulates it");
+
+        let (forced, legs) = stitched_subprocess("generate u u~ > e+ e- d d~ QED=4");
+        assert!(forced
+            .massless_limits
+            .contains(&MasslessLimit::FinalCollinear {
+                a: 2,
+                b: 3,
+                coloured: false
+            }));
+        let err = Cuts::compile_with(&card(matched), &legs, &forced).unwrap_err();
+        let CutError::UncutCollinearSplitting {
+            a,
+            b,
+            ref regulator,
+            ..
+        } = err
+        else {
+            panic!("refused for the wrong reason: {err}");
+        };
+        assert_eq!((a, b), (2, 3), "{err}");
+        assert_eq!(regulator, "drjj > 0 or mmjj > 0");
     }
 
     /// The initial-state limit through an exchanged massless vector boson, the

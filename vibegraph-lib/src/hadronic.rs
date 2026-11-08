@@ -3362,6 +3362,7 @@ mod tests {
         eprintln!("{refused}");
     }
     use crate::budget::sequential_channel_reference;
+    use crate::diagrams::diagram::{LegIdx, Ray};
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::runcard::RunCard;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -4226,6 +4227,152 @@ mod tests {
         // same thing on both sides.
         integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C6);
         assert_eq!(integ.channel_count(), n_channels);
+    }
+
+    /// The final legs of a point with outgoing legs `pair` collinear (`pT = 30`
+    /// each, `ΔR = sep`, at zero rapidity) and every other leg balancing them in
+    /// the partonic centre of mass: one massless leg opposite the pair, or two
+    /// back to back in the rest frame of what the pair leaves. Returns the beams
+    /// and the outgoing momenta.
+    fn collinear_point(
+        n_out: usize,
+        pair: (usize, usize),
+        sep: f64,
+    ) -> ([[f64; 4]; 2], Vec<[f64; 4]>) {
+        let jet = |phi: f64| [30.0, 30.0 * phi.cos(), 30.0 * phi.sin(), 0.0];
+        let (j1, j2) = (jet(0.3), jet(0.3 + sep));
+        let jv = [j1[1] + j2[1], j1[2] + j2[2], j1[3] + j2[3]];
+        let jmag = (jv[0] * jv[0] + jv[1] * jv[1] + jv[2] * jv[2]).sqrt();
+        let rest: Vec<[f64; 4]> = match n_out {
+            3 => vec![[jmag, -jv[0], -jv[1], -jv[2]]],
+            4 => {
+                let q = [150.0, -jv[0], -jv[1], -jv[2]];
+                let m = (q[0] * q[0] - jmag * jmag).sqrt();
+                let b = [q[1] / q[0], q[2] / q[0], q[3] / q[0]];
+                let g = q[0] / m;
+                let b2 = b[0] * b[0] + b[1] * b[1] + b[2] * b[2];
+                let boost = |k: [f64; 4]| {
+                    let bp = b[0] * k[1] + b[1] * k[2] + b[2] * k[3];
+                    let f = (g - 1.0) * bp / b2 + g * k[0];
+                    [
+                        g * (k[0] + bp),
+                        k[1] + f * b[0],
+                        k[2] + f * b[1],
+                        k[3] + f * b[2],
+                    ]
+                };
+                let h = m / 2.0;
+                let (c, s) = (0.6f64, 0.8f64);
+                vec![
+                    boost([h, h * c, 0.0, h * s]),
+                    boost([h, -h * c, 0.0, -h * s]),
+                ]
+            }
+            _ => unreachable!("three or four outgoing legs"),
+        };
+        let mut out = Vec::with_capacity(n_out);
+        let mut others = rest.into_iter();
+        for k in 0..n_out {
+            out.push(if k == pair.0 {
+                j1
+            } else if k == pair.1 {
+                j2
+            } else {
+                others.next().expect("enough balancing legs")
+            });
+        }
+        let e: f64 = out.iter().map(|p| p[0]).sum::<f64>() / 2.0;
+        ([[e, 0.0, 0.0, e], [e, 0.0, 0.0, -e]], out)
+    }
+
+    /// MLM's `xqcut` veto is what lets the cut compilation accept a matched card
+    /// with no jet–jet separation or mass cut (`cuts::kt_veto_regulates`), so this
+    /// pins it per event on `auto_ptj_mjj = F`, `xqcut = ptj = 20`,
+    /// `mmjj = drjj = 0`. Two jets `ΔR = 0.05` apart at `pT = 30` (kT about
+    /// 1.5 GeV) are vetoed in every configuration whose diagram splits them off
+    /// a coloured line at one vertex (`g* → q q̄`, `q → q g`, `g → g g`), and in
+    /// no configuration once they are `ΔR = 2` apart.
+    ///
+    /// A configuration whose diagram has no such vertex clusters the pair
+    /// elsewhere and does not veto; the integrand draws the configuration it
+    /// clusters with from `AMP2`, whose share for those configurations vanishes
+    /// with the pair's invariant as fast as `|M|²` grows, so they leave the limit
+    /// integrable. A photon collinear with a quark is vetoed in no
+    /// configuration: `q → q γ` is not a jet vertex, so that limit stays with
+    /// `draj`.
+    #[test]
+    fn the_xqcut_veto_fails_every_event_near_a_coloured_jet_splitting() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let card = RunCard::parse(
+            "0 = ickkw\n20 = xqcut\nFalse = auto_ptj_mjj\n20 = ptj\n0 = mmjj\n0 = drjj\n",
+        )
+        .unwrap();
+        let cases: [(&str, (usize, usize), bool); 4] = [
+            ("u u~ > e+ e- d d~", (2, 3), true),
+            ("u g > e+ e- u g", (2, 3), true),
+            ("u u~ > g g g", (0, 1), true),
+            ("u u~ > a u u~", (0, 1), false),
+        ];
+        for (process, pair, jets) in cases {
+            let proc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+            let sets = generate_from_proc_card(&proc, &m).unwrap();
+            let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+            let diagrams: Vec<Diagram> = sets
+                .iter()
+                .flat_map(|s| s.diagrams.iter().cloned())
+                .collect();
+            let source = compile_scale_source(
+                &[(&evals[0], &diagrams)],
+                &m,
+                &evaluated,
+                &card,
+                None,
+                false,
+                ClosedForms::Refuse,
+            )
+            .expect("the prescription compiles");
+            let n_in = evals[0].n_in();
+            let n_out = evals[0].external_particles().len() - n_in;
+            let reps = channel_diagrams(&diagrams, &evaluated);
+            assert_eq!(reps.len(), evals[0].n_configs(), "{process}");
+            let (a, b) = (pair.0 + n_in, pair.1 + n_in);
+            let mut splitting_configs = 0;
+            for (channel, diagram) in reps.iter().enumerate() {
+                let splits = diagram.vertices.iter().any(|v| {
+                    let legs: Vec<usize> = v
+                        .rays
+                        .iter()
+                        .filter_map(|r| match r {
+                            Ray::Leg(LegIdx(i)) => Some(*i),
+                            _ => None,
+                        })
+                        .collect();
+                    legs.contains(&a) && legs.contains(&b)
+                });
+                splitting_configs += usize::from(splits);
+                let at = SampledChannel::sole(channel);
+                let (incoming, near) = collinear_point(n_out, pair, 0.05);
+                let got = source.point_scales(incoming, &near, at);
+                let vetoed = got == Ok(PointScales::Vetoed(ScaleVeto::JetCut));
+                if !jets {
+                    assert!(!vetoed, "{process}, configuration {channel}: {got:?}");
+                } else if splits {
+                    assert!(vetoed, "{process}, configuration {channel}: {got:?}");
+                }
+                let (incoming, apart) = collinear_point(n_out, pair, 2.0);
+                let got = source.point_scales(incoming, &apart, at);
+                assert!(
+                    matches!(got, Ok(PointScales::Scales(_))),
+                    "{process}, configuration {channel}, the pair 2 apart: {got:?}"
+                );
+            }
+            assert!(
+                splitting_configs > 0,
+                "{process}: no configuration splits the pair"
+            );
+        }
     }
 
     /// The evaluator's `AMP2` configuration order and the channel forests' agree,
