@@ -24,10 +24,15 @@
 //! draw, and weighs the point by the density of every channel, so its groups must
 //! share their outgoing masses. A multiplicity whose subprocesses differ in them
 //! is therefore split further, one part per set of outgoing masses
-//! ([`split_by_outgoing_masses`]). MadGraph separates them the same way: its
+//! ([`split_by_external_masses`]). MadGraph separates them the same way: its
 //! subprocess-group class (`group_subprocs.py`, `find_process_classes`) carries
 //! every leg's mass, so such subprocesses never share a `P` directory, and each
 //! directory is integrated over its own channels.
+//!
+//! The incoming masses split a multiplicity the same way. A massive parton in
+//! the proton (`b` at `MB`, `c` at `MC`) sits on its mass shell in the partonic
+//! frame and changes the flux and the threshold, all of which a
+//! [`ProtonIntegrand`] shares across its groups.
 
 use crate::artifact::{ChannelKey, ChannelSampler};
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
@@ -35,11 +40,12 @@ use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
 };
 use crate::hadronic::{combine_channels, ChannelIntegration};
-use crate::onshell::{group_vetoes, subprocess_markings, OnShellVeto};
+use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
-    derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonEvent, ProtonIntegrand,
+    derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonError, ProtonEvent,
+    ProtonIntegrand,
 };
 use crate::runcard::RunCard;
 use crate::support::PointCensus;
@@ -90,14 +96,19 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
     parts.into_iter().map(|(_, part)| part).collect()
 }
 
-/// Split one multiplicity's subprocesses by their outgoing pole masses: one part
-/// per multiset of masses, in the order the enumeration first reaches each, every
-/// part keeping the enumeration's own order.
+/// Split one multiplicity's subprocesses by their external pole masses: one part
+/// per pair of incoming masses and multiset of outgoing ones, in the order the
+/// enumeration first reaches each, every part keeping the enumeration's own
+/// order.
 ///
-/// The key is the multiset rather than the masses in leg order, because two lines
-/// listing the same final state in different orders (`p p > w+ j` and
+/// The outgoing key is the multiset rather than the masses in leg order, because
+/// two lines listing the same final state in different orders (`p p > w+ j` and
 /// `add process p p > j w-`) are one phase space once their legs are paired by
-/// content, which [`derive_flavor_groups`] does.
+/// content, which [`derive_flavor_groups`] does. The incoming key is the pair in
+/// beam order, since the partonic-frame beams, the flux and the threshold are
+/// functions of it: a massive `b` or `c` in the proton puts `b b~ > l+ l-` in a
+/// part of its own, apart from `u u~ > l+ l-`, as MadGraph puts it in a `P`
+/// directory of its own.
 ///
 /// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
 /// compares them: two subprocesses share a part only when every outgoing mass is
@@ -106,17 +117,20 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// does not know keys as NaN, apart from every mass the model has, for the
 /// decomposition to refuse by name, and an empty part comes back whole, as one
 /// part, for the same reason.
-pub(crate) fn split_by_outgoing_masses(
+pub(crate) fn split_by_external_masses(
     part: Vec<DiagramSet>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Vec<DiagramSet>> {
+    let mass = |name: &String| {
+        model
+            .particle_id(name)
+            .map_or(f64::NAN, |id| evaluated.mass(id))
+    };
     let key = |set: &DiagramSet| {
-        mass_multiset(set.particles_out.iter().map(|name| {
-            model
-                .particle_id(name)
-                .map_or(f64::NAN, |id| evaluated.mass(id))
-        }))
+        let mut k: Vec<u64> = set.particles_in.iter().map(|n| mass(n).to_bits()).collect();
+        k.extend(mass_multiset(set.particles_out.iter().map(mass)));
+        k
     };
     if part.is_empty() {
         return vec![part];
@@ -134,7 +148,7 @@ pub(crate) fn split_by_outgoing_masses(
 
 /// A proton-beam card's flavour decomposition, one per phase space: per
 /// final-state multiplicity in increasing order ([`split_by_multiplicity`]), and
-/// within one, per set of outgoing masses ([`split_by_outgoing_masses`]), each
+/// within one, per set of outgoing masses ([`split_by_external_masses`]), each
 /// with its groups' on-shell vetoes.
 pub struct MultiplicityGroups {
     pub groups: Vec<FlavorGroups>,
@@ -143,6 +157,12 @@ pub struct MultiplicityGroups {
 
 /// Enumerate the card and decompose each of its phase spaces — a final-state
 /// multiplicity and a set of outgoing masses — into flavour groups.
+///
+/// A phase space of single-particle final states (`p p > z`) has no map to
+/// integrate it ([`ProtonError::OneBodyFinalState`]) and refuses the card, unless
+/// the cuts zero every one of its subprocesses outright: then it contributes
+/// nothing, as in MadGraph, and is left out of the sum with a warning. A card
+/// left with no phase space at all is refused.
 pub fn multiplicity_groups(
     parsed: &SupportedCard,
     model: &UFOModel,
@@ -153,29 +173,51 @@ pub fn multiplicity_groups(
     let sets = generate_from_proc_card_in(parsed, model, enumeration)
         .map_err(|e| format!("failed to enumerate process: {e}"))?;
     let forbidden = forbidden_onshell_ids(parsed, model).map_err(|e| e.to_string())?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
     };
+    let mut dropped_one_body: Option<String> = None;
     for multiplicity in split_by_multiplicity(sets, rc) {
-        let parts = split_by_outgoing_masses(multiplicity, model, evaluated);
+        let parts = split_by_external_masses(multiplicity, model, evaluated);
         if parts.len() > 1 {
             tracing::info!(
-                "the {}-leg final states have {} different sets of outgoing masses; each is \
+                "the {}-leg final states have {} different sets of external masses; each is \
                  integrated over channels of its own and the cross sections are summed",
                 parts[0][0].particles_out.len(),
                 parts.len()
             );
         }
         for part in parts {
-            let groups = derive_flavor_groups(part, model, evaluated, rc)
-                .map_err(|e| format!("failed to decompose into flavour groups: {e}"))?;
-            let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-                .map_err(|e| e.to_string())?;
+            let groups = match derive_flavor_groups(part, model, evaluated, rc) {
+                Ok(groups) => groups,
+                Err(ProtonError::OneBodyFinalState {
+                    process,
+                    cut_to_zero: true,
+                }) => {
+                    tracing::warn!(
+                        "{process} and the other single-particle final states of its phase \
+                         space contribute nothing: the outgoing particle has zero transverse \
+                         momentum and the run card's pT minimum on it rejects every such \
+                         point, as it does in MadGraph; the part is left out of the sum"
+                    );
+                    dropped_one_body.get_or_insert(process);
+                    continue;
+                }
+                Err(e) => return Err(format!("failed to decompose into flavour groups: {e}")),
+            };
+            let vetoes =
+                group_vetoes(&groups, &forbidden, evaluated, rc).map_err(|e| e.to_string())?;
             out.groups.push(groups);
             out.vetoes.push(vetoes);
         }
+    }
+    if let (true, Some(process)) = (out.groups.is_empty(), dropped_one_body) {
+        return Err(format!(
+            "every final state of the card is a single particle the run card's pT minimum cuts \
+             to zero ({process} is one), so the cross section it asks for is zero by \
+             construction"
+        ));
     }
     Ok(out)
 }
@@ -226,6 +268,25 @@ pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
     Ok(())
 }
 
+/// Refuse a subprocess with a single outgoing particle on a path that has one
+/// phase space: fixed-energy beams and decays. At fixed `√s` a `2 → 1` is a
+/// `δ(s − M²)` in the beam energy, and the flat and diagram maps both draw at
+/// least two outgoing momenta.
+pub fn refuse_one_body_final_state(sets: &[DiagramSet]) -> Result<(), String> {
+    match sets
+        .iter()
+        .find(|s| !s.diagrams.is_empty() && s.particles_out.len() < 2)
+    {
+        Some(set) => Err(format!(
+            "{} -> {} has a single outgoing particle, whose phase space is a one-body δ(s − M²); \
+             vibegraph has no one-body phase space to integrate it over",
+            set.particles_in.join(" "),
+            set.particles_out.join(" ")
+        )),
+        None => Ok(()),
+    }
+}
+
 /// Refuse, on fixed-energy beams, two subprocesses that are one initial state in
 /// its two beam orderings (`e+ e- > mu+ mu-` with `add process e- e+ > mu- mu+`).
 ///
@@ -266,9 +327,11 @@ pub fn refuse_exchanged_beam_orderings(sets: &[DiagramSet]) -> Result<(), String
 ///
 /// The choices are one per run, and an artifact banks one. The only choice the
 /// rule reads off the shape is the `τ` map, which keeps the log map wherever any
-/// part carries a resonance spanning its whole final state: a Drell–Yan part
-/// keeps the map its peak needs, and the parts above it, which would take
-/// `1/τ²` alone, take the log map with it.
+/// part carries a resonance spanning its whole final state, and takes the
+/// Breit–Wigner mixture wherever such a resonance is narrow in some part: a
+/// Drell–Yan part keeps the map its peak needs, and the parts above it, which
+/// would take `1/τ²` alone, take that map with it. Under the mixture, a part
+/// with no whole-state pole in its range draws on the log map.
 pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessShape {
     shapes
         .into_iter()
@@ -277,6 +340,8 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
             max_rungs: acc.max_rungs.max(s.max_rungs),
             resonant_pair_splits: acc.resonant_pair_splits + s.resonant_pair_splits,
             whole_state_resonance: acc.whole_state_resonance || s.whole_state_resonance,
+            narrow_whole_state_resonance: acc.narrow_whole_state_resonance
+                || s.narrow_whole_state_resonance,
         })
 }
 
@@ -309,7 +374,7 @@ impl<'a> MultiplicitySum<'a> {
     /// # Panics
     ///
     /// If there is no part, if the parts are out of multiplicity order, if two
-    /// parts share both a multiplicity and a set of outgoing masses, or if the
+    /// parts share a multiplicity and every external mass, or if the
     /// parts were built under different maps — the artifact banks one set of
     /// choices, and a replay rebuilds every part under it.
     pub fn new(parts: Vec<ProtonIntegrand<'a>>) -> Self {
@@ -317,7 +382,7 @@ impl<'a> MultiplicitySum<'a> {
         for (i, a) in parts.iter().enumerate() {
             for b in &parts[i + 1..] {
                 assert!(
-                    sorted_final_masses(a) != sorted_final_masses(b),
+                    external_mass_key(a) != external_mass_key(b),
                     "the parts are one per phase space"
                 );
             }
@@ -722,13 +787,17 @@ fn final_state_count(part: &ProtonIntegrand<'_>) -> usize {
     part.groups().groups()[0].final_masses().len()
 }
 
-/// A part's outgoing pole masses as a multiset, the key it was split off by.
-fn sorted_final_masses(part: &ProtonIntegrand<'_>) -> Vec<u64> {
-    mass_multiset(part.groups().groups()[0].final_masses())
+/// A part's incoming pole masses in beam order and its outgoing ones as a
+/// multiset, the key it was split off by.
+fn external_mass_key(part: &ProtonIntegrand<'_>) -> Vec<u64> {
+    let groups = part.groups();
+    let mut key: Vec<u64> = groups.initial_masses().map(f64::to_bits).to_vec();
+    key.extend(mass_multiset(groups.groups()[0].final_masses()));
+    key
 }
 
 /// Outgoing masses as a multiset, compared exactly: each mass's bit pattern,
-/// sorted ([`split_by_outgoing_masses`]).
+/// sorted ([`split_by_external_masses`]).
 fn mass_multiset(masses: impl IntoIterator<Item = f64>) -> Vec<u64> {
     let mut bits: Vec<u64> = masses.into_iter().map(f64::to_bits).collect();
     bits.sort_unstable();
@@ -775,7 +844,7 @@ mod tests {
     use crate::helas::eval::BoundAmplitude;
     use crate::pdf::grid::SubGrid;
     use crate::pdf::PdfMember;
-    use crate::phasespace::maps::MapOptions;
+    use crate::phasespace::maps::{MapOptions, TauMap};
     use crate::phasespace::rng::SubStream;
     use crate::proton::{derive_flavor_groups, FlavorGroups, ProtonBeams, ProtonError};
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -786,6 +855,23 @@ mod tests {
 
     const SQRT_S_HAD: f64 = 13000.0;
     const MU_F: f64 = 91.188;
+
+    /// A narrow whole-state resonance in any part puts the whole card on the
+    /// Breit–Wigner mixture: the union keeps that flag as it keeps the wider one.
+    #[test]
+    fn the_union_of_shapes_keeps_a_part_s_narrow_resonance() {
+        let narrow = ProcessShape {
+            whole_state_resonance: true,
+            narrow_whole_state_resonance: true,
+            ..ProcessShape::default()
+        };
+        let union = union_shape([ProcessShape::default(), narrow, ProcessShape::default()]);
+        assert!(union.whole_state_resonance && union.narrow_whole_state_resonance);
+        assert_eq!(
+            MapOptions::default().resolve(&union).tau,
+            TauMap::BreitWigner
+        );
+    }
 
     /// Drell–Yan with no jet and with one: two multiplicities whose channels are
     /// over `2 + 2` and `2 + 5` coordinates.
@@ -1113,6 +1199,140 @@ mod tests {
             matches!(refused, Err(ProtonError::UnequalFinalMasses { .. })),
             "an unsplit mixed-mass multiplicity must be refused"
         );
+    }
+
+    /// `p p > z` and `p p > z j`: one multiplicity whose phase space is the
+    /// one-body `δ(ŝ − M²)`, which no map here integrates, beside one that is
+    /// integrated.
+    const ONE_BODY_AND_JET: &str = "generate p p > z\nadd process p p > z j\n";
+
+    fn one_body_groups(card_text: &str, run_card: &RunCard) -> Result<MultiplicityGroups, String> {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let parsed = parse_proc_card(card_text, &ParsingOptions::default()).expect("proc card");
+        multiplicity_groups(
+            &parsed,
+            &model,
+            &evaluated,
+            run_card,
+            EnumerationPool::Serial,
+        )
+    }
+
+    /// [`card`] with a `pT` minimum on the `Z` alone.
+    fn z_pt_card(pt_min: f64) -> RunCard {
+        RunCard::parse(&format!(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 20.0 = ptj\n  5.0 = etaj\n  4 = maxjetflavor\n\
+             \x20 {{'23': {pt_min}}} = pt_min_pdg\n"
+        ))
+        .expect("run card")
+    }
+
+    /// A single outgoing particle is refused by name before the grouping probe
+    /// draws anything: RAMBO, which the probe draws outgoing momenta with, has
+    /// nothing to draw for one particle, and before the refusal existed it
+    /// panicked there. With no cut on the particle the refusal stands for the
+    /// whole card, since its one-body part would contribute.
+    #[test]
+    fn a_single_outgoing_particle_is_refused_before_the_probe() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let refused = derive_flavor_groups(
+            enumerate("generate p p > z\n", &model),
+            &model,
+            &evaluated,
+            &card(),
+        );
+        match refused {
+            Err(ProtonError::OneBodyFinalState {
+                cut_to_zero: false, ..
+            }) => {}
+            Err(e) => panic!("refused for the wrong reason: {e}"),
+            Ok(_) => panic!("a 2 -> 1 decomposition must be refused"),
+        }
+        match one_body_groups(ONE_BODY_AND_JET, &card()) {
+            Err(e) => {
+                assert!(e.contains("single outgoing particle"), "{e}");
+                eprintln!("p p > z, add process p p > z j: {e}");
+            }
+            Ok(_) => panic!("an uncut one-body part refuses the card"),
+        }
+    }
+
+    /// A `pT` minimum on the lone particle zeroes the one-body part outright —
+    /// at collinear beams it has `pT = 0` exactly — so the part contributes
+    /// nothing, as in MadGraph (`pt_min_pdg` on a lone `zp`), and the card keeps
+    /// its other multiplicities. A card that is nothing but such a part is
+    /// refused: its cross section is zero by construction.
+    #[test]
+    fn a_one_body_part_the_cuts_zero_is_left_out_of_the_sum() {
+        let MultiplicityGroups { groups, .. } = one_body_groups(ONE_BODY_AND_JET, &z_pt_card(10.0))
+            .expect("the cut-to-zero one-body part is dropped");
+        assert!(!groups.is_empty());
+        for part in &groups {
+            for g in part.groups() {
+                assert_eq!(g.final_masses().len(), 2, "only the z j part is kept");
+            }
+        }
+        match one_body_groups("generate p p > z\n", &z_pt_card(10.0)) {
+            Err(e) => assert!(e.contains("zero by construction"), "{e}"),
+            Ok(_) => panic!("a card of nothing but a cut-to-zero part is refused"),
+        }
+        // `pT > 0` is no cut on a `pT = 0` particle only when the minimum is zero.
+        assert!(one_body_groups(ONE_BODY_AND_JET, &z_pt_card(0.0)).is_err());
+    }
+
+    /// The paths with one phase space (fixed-energy beams, decays) refuse a
+    /// single outgoing particle by name, where they too would otherwise reach
+    /// RAMBO with one momentum to draw.
+    #[test]
+    fn fixed_energy_refuses_a_single_outgoing_particle() {
+        let model = sm_model(SMRestrict::Default);
+        let sets = enumerate("generate e+ e- > z\n", &model);
+        let e = refuse_one_body_final_state(&sets).expect_err("e+ e- > z is refused");
+        assert!(e.contains("single outgoing particle"), "{e}");
+        assert!(
+            refuse_one_body_final_state(&enumerate("generate e+ e- > mu+ mu-\n", &model)).is_ok()
+        );
+    }
+
+    /// A five-flavour proton with the default Standard Model's `MB = 4.7`: the
+    /// `b b~` initial states sit on their own mass shell, so they come back as a
+    /// decomposition of their own, apart from the massless quarks, as MadGraph
+    /// gives them a `P` directory of their own.
+    #[test]
+    fn massive_incoming_partons_split_into_a_decomposition_of_their_own() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let mb = evaluated.mass(model.particle_id("b").expect("b"));
+        assert!(mb > 4.0, "the default Standard Model's b is massive: {mb}");
+        let parsed = parse_proc_card(
+            "define p = g u c d s b u~ c~ d~ s~ b~\ngenerate p p > mu+ mu-\n",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let MultiplicityGroups { groups, .. } = multiplicity_groups(
+            &parsed,
+            &model,
+            &evaluated,
+            &card(),
+            EnumerationPool::Serial,
+        )
+        .expect("a five-flavour card with a massive b decomposes");
+        let masses: Vec<[f64; 2]> = groups.iter().map(FlavorGroups::initial_masses).collect();
+        assert_eq!(
+            masses,
+            [[0.0, 0.0], [mb, mb]],
+            "one part per pair of incoming masses"
+        );
+        for g in groups[1].groups() {
+            for m in g.members() {
+                assert_eq!(m.incoming.map(i32::abs), [5, 5], "{:?}", m.incoming);
+            }
+        }
     }
 
     /// Two parts of one phase space (one multiplicity, one set of outgoing masses)

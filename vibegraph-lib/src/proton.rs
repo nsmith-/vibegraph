@@ -18,14 +18,28 @@
 //! several partonic energies. Nothing is hand-listed: the coupling classes
 //! (up-type vs down-type), the generation copies (`u`/`c`, `d`/`s`), the lepton
 //! flavours (`e`/`mu`) and the separation of `q g` from `q̄ g` all fall out of
-//! the measurement. Grouping is refused unless the members also share the
-//! *outgoing pole masses* (so one phase-space map serves the group; a card whose
-//! subprocesses differ in them is split into one decomposition per set of masses
-//! before it gets here, by [`crate::multiplicity::split_by_outgoing_masses`]), an equal
-//! [`Cuts`] filter (so one cut indicator does) and an equal colour basis (so an
-//! event's colour flow can be read off the representative), and unless distinct
-//! groups separate by more than [`GROUP_SEPARATION_MIN`] — a partition resting
-//! on a knife edge is a measurement that failed, not a decomposition.
+//! the measurement. A subprocess joins a group only if it also shares the
+//! group's colour bookkeeping — a pairing of its flows with the representative's,
+//! under which the two colour-factor matrices agree entry by entry — so an
+//! event's colour flow can be read off the representative. A charge-conjugate
+//! pair such as `u d > d g u` with `u~ d~ > d~ g u~` sorts the same flows into
+//! different orders and shares a group through that pairing. One that matches a
+//! group's `|M|²` but whose flows cannot be paired (a member carrying extra
+//! diagrams whose couplings vanish at the evaluated card, say) starts a group of
+//! its own, and so does one whose [`Cuts`] filter differs from the group's: a
+//! group carries one cut indicator, and every group its own
+//! ([`ProtonIntegrand`]). At `maxjetflavor = 4` with a massless b, `g g > g u u~`
+//! and `g g > g b b~` share a matrix element, but the b legs are cut with the
+//! b-class thresholds, so the two are two groups. Two subprocesses whose traces
+//! separate by more than the tolerance, however little, are two groups: a
+//! charge-conjugate pair whose `|M|²` differ through the W width, as
+//! `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7` under the CKM restriction, is
+//! a physical distinction, and a split costs one more evaluation per point where
+//! a merge of distinct functions would be an error. Grouping is refused unless the
+//! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
+//! the decomposition; a card whose subprocesses differ in them is split into one
+//! decomposition per set of masses before it gets here, by
+//! [`crate::multiplicity::split_by_external_masses`]).
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
 //! global phase, and it would not move if two members' colour bases differed by a
@@ -37,26 +51,36 @@
 //! Diagram enumeration emits **one ordering per unordered initial state**: `g u`
 //! is generated, `u g` is not. Both are physical — the parton distributions of
 //! the two beams are evaluated at different momentum fractions — so the missing
-//! ordering must be restored, and it is not free. The identity is
+//! ordering must be restored. It is restored as MadEvent restores it
+//! (`IMIRROR = 2` in `super_auto_dsig_group_v4.inc`): every leg of the sampled
+//! configuration `(x₁, x₂, q)` is rotated by π about the x axis,
 //!
 //! ```text
-//! |M_{b a}(p₁, p₂, q)|² = |M_{a b}(p₁, p₂, R q)|²,   R: (E, pₓ, p_y, p_z) ↦ (E, pₓ, −p_y, −p_z)
+//! R: (E, pₓ, p_y, p_z) ↦ (E, pₓ, −p_y, −p_z),
 //! ```
 //!
-//! `R` is the rotation by π about the x axis, which maps a partonic-CM beam
-//! momentum onto the other beam's (`R p₁ = p₂`); rotating the mirrored
-//! configuration by it puts the beams back where the amplitude expects them and
-//! leaves the outgoing legs reflected. So a group contributes
+//! which carries the representative's first parton onto the `−z` beam and its
+//! second onto the `+z` one. The rotated configuration is the event of the
+//! exchanged ordering: beam 1 carries `b` at the sampled `x₂`, beam 2 carries `a`
+//! at the sampled `x₁`, and the outgoing legs are `R q`. Its matrix element is the
+//! sampled one, `|M_{b a}(R q)|² = |M_{a b}(q)|²` by rotation invariance, so a
+//! group contributes
 //!
 //! ```text
-//! xf_a(x₁)·xf_b(x₂)·|M(q)|²  +  xf_b(x₁)·xf_a(x₂)·|M(R q)|²
+//! xf_a(x₁, μ_F1)·xf_b(x₂, μ_F2)·|M(q)|²·Θ(q)  +  xf_a(x₁, μ_F1)·xf_b(x₂, μ_F2)·|M(q)|²·Θ(R q)
 //! ```
 //!
-//! under one cut indicator: `R` is an argument to the matrix element, not a
-//! change to the event, whose final state stays `q`. [`FlavorGroup::mirror_into`]
-//! builds the reflected argument and [`FlavorGroup::luminosity`] returns the two
-//! sums. An initial state with `a == b` has only one ordering and contributes no
-//! mirror term.
+//! for a mirrored member, with one matrix element per point. The mirror term's
+//! densities are the beams' exchanged — `a`'s read from beam 2, `b`'s from beam
+//! 1 — at each parton's own sampled fraction and factorisation scale, which is
+//! MadEvent's `PDG2PDF(LPP(IB(1)), a, IB(1), XBK(IB(1)), Q2FACT(1))` after it
+//! exchanges `XBK` and `IB`; both beams are protons, so the two terms read the
+//! same numbers. The term peaks where the direct one does, which is where the
+//! group's own channels sample. Each term is cut on its own event's lab frame
+//! (`Θ(R q)` boosted at the exchanged fractions), which at equal beam energies is
+//! the direct lab frame rotated. [`exchange_into`] builds the exchanged event and
+//! [`FlavorGroup::luminosity`] returns the two sums. An initial state with
+//! `a == b` has only one ordering and contributes no mirror term.
 //!
 //! # Identical outgoing particles
 //!
@@ -105,8 +129,8 @@ use crate::hadronic::{
     components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
     ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
-    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
-    VEGAS_ALPHA_MAPPED,
+    RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto, SubprocessProto,
+    SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -116,8 +140,11 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
-use crate::phasespace::diagram_channel::MapIdentity;
-use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
+use crate::phasespace::beams;
+use crate::phasespace::diagram_channel::{DiagramChannel, MapIdentity};
+use crate::phasespace::maps::{
+    pole_in_tau, ChannelBounds, MapChoices, MapOptions, ProcessShape, TauMap, UnionBounds,
+};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     floored_alphas, identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap,
@@ -135,23 +162,24 @@ type V = LorentzVector<f64>;
 
 /// Relative agreement at which two subprocesses' `|M|²` count as one group's.
 ///
-/// Members of a group are the *same* arithmetic on differently-labelled legs, so
-/// the observed agreement is exact (measured: bit-for-bit over every `p p → ℓℓj`
-/// group). The bound is loose against that and still eleven orders below the
-/// closest measured separation between distinct groups.
-pub(crate) const GROUP_REL_TOL: f64 = 1e-10;
-
-/// Minimum relative separation between two distinct groups at their best-separated
-/// probe point.
+/// Two subprocesses with one matrix element need not be one arithmetic: two
+/// flavour assignments related by a relabelling, or by charge conjugation,
+/// compile to programs that reach the same value through other couplings and
+/// in another order. Their traces then differ by rounding, amplified by the
+/// gauge cancellations of an electroweak amplitude. The worst such separation
+/// measured is `1.48e-10` (it is `3.9e-11` on another machine: last-ulp
+/// arithmetic), on `d c~ > w- z s d~` against `s u~ > w- z d s~`
+/// under the five-flavour CKM restriction, and it is rounding: evaluated in `f32` the same pair separates
+/// `2.3e8` times further, which a coupling difference would not. The bound sits
+/// a factor 6.8 above it. The closest separation measured that does not grow
+/// with the precision is `1.2e-7` (`u b~ > a u b~` against its conjugate with
+/// the CKM phase at zero), a factor 120 above the bound.
 ///
-/// Without it a partition could be produced by two subprocesses landing either
-/// side of [`GROUP_REL_TOL`] by rounding, which is not a physical distinction.
-/// It is a floor and not evidence of a margin: the margin is measured instead by
-/// `group_members_agree_where_the_partition_was_not_measured`, where the closest
-/// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
-/// fitted on — six orders above this floor, and asserted there to stay above
-/// `0.1`.
-pub(crate) const GROUP_SEPARATION_MIN: f64 = 1e-6;
+/// A pair separated by more than the bound is two groups, each evaluated with
+/// its own compiled amplitude, which is right whether or not the separation is
+/// physical. Rounding that crosses the bound therefore costs one evaluation per
+/// point, not a wrong cross section.
+pub(crate) const GROUP_REL_TOL: f64 = 1e-9;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
 const PROBE_POINTS_PER_ENERGY: usize = 4;
@@ -235,8 +263,9 @@ pub enum BeamOrdering {
     /// the shared matrix element is evaluated at the point as drawn.
     Direct,
     /// The exchanged ordering: beam 1 carries [`Subprocess::incoming`]`[1]`, and
-    /// the shared matrix element is evaluated at the rotated argument
-    /// ([`FlavorGroup::mirror_into`]).
+    /// the event is the sampled one rotated by π about the x axis with its beams
+    /// exchanged ([`exchange_into`]), at which the shared matrix element takes the
+    /// value it takes at the point as drawn.
     Exchanged,
 }
 
@@ -317,6 +346,40 @@ pub(crate) fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [F
     rows
 }
 
+/// The exchanged beam ordering's event built from the sampled one, in physical
+/// leg order: every leg rotated by π about the x axis, `(E, pₓ, p_y, p_z) ↦
+/// (E, pₓ, −p_y, −p_z)`, and the two beams exchanged, so that `out[0]` is the
+/// sampled second beam rotated onto `+z` and `out[1]` the sampled first beam
+/// rotated onto `−z`. Physical leg `i` is the representative's leg
+/// `order[i]` of [`FlavorGroup::event_legs`].
+///
+/// The rotation is proper, so every invariant of the sampled configuration —
+/// its `|M|²`, each diagram's and each colour flow's squared amplitude, every
+/// helicity — is the rotated event's. `momenta` is in any frame whose z axis is
+/// the beam axis; `out` is overwritten and may be a reused buffer.
+pub fn exchange_into(momenta: &[V], out: &mut Vec<V>) {
+    let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+    out.clear();
+    out.push(rotate(&momenta[1]));
+    out.push(rotate(&momenta[0]));
+    out.extend(momenta[2..].iter().map(rotate));
+}
+
+/// The scales of the exchanged ordering's event, from the ones the sampled
+/// configuration was evaluated at: the same renormalisation scale and clustering,
+/// with the two factorisation scales exchanged into physical beam order.
+///
+/// A factorisation scale belongs to a parton, not to a beam: MadEvent reads
+/// `Q2FACT(1)` for the representative's first parton in either ordering, and
+/// under `IMIRROR = 2` that parton rides beam 2.
+pub(crate) fn exchanged_scales(scales: EventScales) -> EventScales {
+    EventScales {
+        mu_f: [scales.mu_f[1], scales.mu_f[0]],
+        mu_f_record: [scales.mu_f_record[1], scales.mu_f_record[0]],
+        ..scales
+    }
+}
+
 impl FlavorGroup {
     /// The compiled, helicity-pruned amplitude every member shares.
     pub fn evaluator(&self) -> &AmplitudeEvaluator {
@@ -373,32 +436,22 @@ impl FlavorGroup {
         self.members.iter().any(Subprocess::has_mirror)
     }
 
-    /// The argument the shared `|M|²` takes for the mirrored beam ordering:
-    /// the beams untouched, the outgoing legs rotated by π about the x axis.
-    ///
-    /// The rotation maps each beam momentum onto the other's, so evaluating the
-    /// group's amplitude here is evaluating the subprocess with its two incoming
-    /// flavours exchanged. `out` is overwritten and may be a reused buffer.
-    pub fn mirror_into(&self, momenta: &[V], out: &mut Vec<V>) {
-        out.clear();
-        out.extend_from_slice(&momenta[..self.n_in()]);
-        out.extend(
-            momenta[self.n_in()..]
-                .iter()
-                .map(|p| V::new(p.e(), p.px(), -p.py(), -p.pz())),
-        );
-    }
-
     /// Summed `x·f` luminosity of the group, as `[direct, mirror]`:
     ///
     /// ```text
-    /// direct = Σ_members xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// mirror = Σ_members xf_b(x₁, μ_F1) · xf_a(x₂, μ_F2)     (mirrored members only)
+    /// direct = Σ_members xf_a^(beam 1)(x₁, μ_F1) · xf_b^(beam 2)(x₂, μ_F2)
+    /// mirror = Σ_members xf_a^(beam 2)(x₁, μ_F1) · xf_b^(beam 1)(x₂, μ_F2)   (mirrored members only)
     /// ```
     ///
-    /// `direct` weights `|M(q)|²` and `mirror` weights `|M(R q)|²`
-    /// ([`mirror_into`](Self::mirror_into)). `mu_f` is per beam in beam order,
-    /// since MadGraph's `q2fact(1)` and `q2fact(2)` need not coincide.
+    /// at the sampled fractions, with `a` and `b` the member's incoming partons in
+    /// enumerated order. Both weight the matrix element at the sampled point,
+    /// `|M(q)|²`: the mirror term is the event rotated by π about the x axis
+    /// ([`exchange_into`]), where `a` rides beam 2 at `x₁` and `b` beam 1 at `x₂`,
+    /// as MadEvent evaluates `IMIRROR = 2`. `mu_f` is per parton in the
+    /// representative's leg order — `μ_F1` is `a`'s scale in both orderings, as
+    /// MadEvent's `Q2FACT(1)` is — since `q2fact(1)` and `q2fact(2)` need not
+    /// coincide. Both beams are protons, so a mirrored member contributes the same
+    /// number to both sums.
     ///
     /// A member without a mirrored ordering ([`Subprocess::has_mirror`]) — its
     /// beams carry the same parton, or the card generated it in one ordering —
@@ -467,8 +520,12 @@ impl FlavorGroup {
 
     /// One member's `[direct, mirror]` luminosity — the share that decides which
     /// concrete flavour an accepted event of this group is labelled with — off the
-    /// two beam flavour rows: two array reads per ordering, at slots resolved when
-    /// the group was built.
+    /// two flavour rows at the sampled `(x₁, μ_F1)` and `(x₂, μ_F2)`: two array
+    /// reads, at slots resolved when the group was built.
+    ///
+    /// The mirror term reads `a` at `x₁` and `b` at `x₂` as the direct one does
+    /// ([`luminosity`](Self::luminosity)); only the beams those densities belong
+    /// to are exchanged, and at proton–proton beams that is the same row.
     pub(crate) fn member_luminosity_rows(
         &self,
         member: usize,
@@ -478,8 +535,21 @@ impl FlavorGroup {
         let m = self.member_slots[member];
         let [a, b] = m.slots;
         let direct = f1[a] * f2[b];
-        let mirror = if m.mirrored { f1[b] * f2[a] } else { 0.0 };
+        let mirror = if m.mirrored { direct } else { 0.0 };
         [direct, mirror]
+    }
+
+    /// The members' matched reweighting factors under the exchanged ordering,
+    /// from their direct ones: a mirrored member's is its direct factor, since
+    /// the exchanged event clusters as the sampled one with every parton at its
+    /// own fraction; a member without a mirrored ordering carries no luminosity
+    /// there and takes `1`.
+    pub(crate) fn mirrored_rewgts(&self, direct: &[f64]) -> Vec<f64> {
+        direct
+            .iter()
+            .zip(&self.member_slots)
+            .map(|(&f, m)| if m.mirrored { f } else { 1.0 })
+            .collect()
     }
 
     /// The external legs one member carries under one beam ordering, as an event
@@ -487,14 +557,13 @@ impl FlavorGroup {
     /// first), and the permutation `order[physical] = representative` that carries
     /// the shared amplitude's per-leg data onto those legs.
     ///
-    /// Under [`BeamOrdering::Exchanged`] the two beams trade places. The mirrored
-    /// term evaluates the shared amplitude at the rotated argument
-    /// ([`mirror_into`](Self::mirror_into)), and that rotation maps each beam
-    /// momentum onto the other's, so everything the representative says about its
-    /// leg 0 — colour lines, helicity, mass — describes the event's *second* beam.
-    /// The rotation is a proper one, so a helicity is carried across unchanged.
-    /// The outgoing legs are untouched: the mirror is an argument to the matrix
-    /// element, not a second final state.
+    /// Under [`BeamOrdering::Exchanged`] the two beams trade places. The exchanged
+    /// event is the sampled configuration rotated by π about the x axis
+    /// ([`exchange_into`]), which carries the representative's leg 0 onto the
+    /// `−z` beam, so everything the representative says about its leg 0 — colour
+    /// lines, helicity, mass — describes the event's *second* beam. The rotation
+    /// is a proper one, so a helicity is carried across unchanged, and it keeps
+    /// each outgoing leg in its place.
     pub fn event_legs(&self, member: usize, ordering: BeamOrdering) -> (Vec<i32>, Vec<usize>) {
         let m = &self.members[member];
         let mut order: Vec<usize> = (0..self.legs.len()).collect();
@@ -545,6 +614,13 @@ impl FlavorGroups {
         &self.groups
     }
 
+    /// The pole masses of the two incoming legs in beam order, which every group
+    /// shares ([`derive_flavor_groups`] refuses a decomposition where they differ).
+    pub fn initial_masses(&self) -> [f64; 2] {
+        let legs = &self.groups[0].legs;
+        [legs[0].mass, legs[1].mass]
+    }
+
     /// Total number of concrete subprocesses summed, over all groups — the count
     /// the enumeration produced.
     pub fn subprocess_count(&self) -> usize {
@@ -562,50 +638,40 @@ pub enum ProtonError {
     NoSubprocess,
     #[error("subprocess {process} has {n_in} incoming legs; a beam decomposition needs 2")]
     NotTwoIncoming { process: String, n_in: usize },
+    /// A `2 → 1` subprocess. Its phase space is the one-body `δ(ŝ − M²)`, which
+    /// fixes `τ = M²/s` and leaves only the rapidity to integrate; no phase-space
+    /// map here integrates it.
+    ///
+    /// `cut_to_zero` records that the run card's cuts reject every point the
+    /// subprocess could reach anyway: its single outgoing particle has zero
+    /// transverse momentum, and a positive `pT` minimum on it rejects that
+    /// ([`Cuts::rejects_zero_transverse_momentum`]). Such a subprocess contributes
+    /// exactly nothing, as it does in MadGraph, and a caller summing
+    /// multiplicities may drop it ([`crate::multiplicity::multiplicity_groups`]).
     #[error(
-        "subprocess {process} has an incoming leg of mass {mass} GeV; a parton distribution \
-         supplies massless partons and the probe puts the beams on the light cone"
+        "subprocess {process} has a single outgoing particle, whose phase space is the one-body \
+         δ(ŝ − M²); vibegraph has no one-body phase space to integrate it over"
     )]
-    MassiveInitialState { process: String, mass: f64 },
+    OneBodyFinalState { process: String, cut_to_zero: bool },
+    /// The decomposition was handed subprocesses whose incoming legs carry
+    /// different pole masses. The incoming masses fix the partonic-frame beams,
+    /// the flux and the threshold every group of one decomposition shares, so
+    /// the subprocesses are split by incoming masses before they are decomposed
+    /// ([`crate::multiplicity::split_by_external_masses`]).
+    #[error(
+        "subprocesses {a} and {b} have different incoming masses, so no single partonic frame \
+         covers the sum; split them by incoming masses first"
+    )]
+    UnequalInitialMasses { a: String, b: String },
     /// The decomposition was handed subprocesses on two phase spaces. Every group
     /// of one decomposition is evaluated at every point its channels draw, so the
     /// subprocesses are split by outgoing masses before they are decomposed
-    /// ([`crate::multiplicity::split_by_outgoing_masses`]).
+    /// ([`crate::multiplicity::split_by_external_masses`]).
     #[error(
         "subprocesses {a} and {b} have different outgoing masses, so no single phase-space map \
          covers the sum; split them by outgoing masses first"
     )]
     UnequalFinalMasses { a: String, b: String },
-    #[error(
-        "subprocesses {a} and {b} share a matrix element but compile to different cut filters, \
-         so no single cut indicator covers the sum"
-    )]
-    CutIndicatorDiffers { a: String, b: String },
-    #[error(
-        "subprocesses {a} and {b} share a matrix element but not a colour basis, so the flow an \
-         event of {b} is labelled with cannot be read off {a}"
-    )]
-    ColorStructureDiffers { a: String, b: String },
-    #[error(
-        "subprocesses {a} and {b} share a matrix element, but their colour flows cannot be paired \
-         up: {reason}. An event of {b} is labelled with a flow drawn in {a}'s indexing, so without \
-         that pairing the label would be a guess"
-    )]
-    ColorFlowPairing {
-        a: String,
-        b: String,
-        reason: String,
-    },
-    #[error(
-        "the groups represented by {a} and {b} separate by only {rel:.3e} at their best-separated \
-         probe point; a partition that close is rounding, not a coupling distinction"
-    )]
-    DegenerateGroups { a: String, b: String, rel: f64 },
-    #[error(
-        "groups {a} and {b} compile to different cut filters, so the sum has no single phase-space \
-         indicator; a process whose groups are cut differently needs one indicator per group"
-    )]
-    GroupCutsDiffer { a: usize, b: usize },
     #[error(
         "{amps} bound amplitudes were supplied for {groups} flavour groups, in an order that must \
          match one for one"
@@ -635,8 +701,15 @@ pub enum ProtonError {
 ///
 /// Rungs that collide after the threshold clamp collapse to one, so a heavy final
 /// state costs fewer points rather than repeating a point.
-fn probe_energies(final_masses: &[f64], resonance: Option<f64>) -> Vec<f64> {
-    let threshold: f64 = final_masses.iter().sum();
+fn probe_energies(
+    initial_masses: [f64; 2],
+    final_masses: &[f64],
+    resonance: Option<f64>,
+) -> Vec<f64> {
+    let threshold: f64 = final_masses
+        .iter()
+        .sum::<f64>()
+        .max(initial_masses[0] + initial_masses[1]);
     let base = threshold.max(100.0);
     let floor = 1.2 * threshold;
     let mut rungs: Vec<f64> = [
@@ -655,11 +728,43 @@ fn probe_energies(final_masses: &[f64], resonance: Option<f64>) -> Vec<f64> {
     rungs
 }
 
-/// Partonic-CM probe points: massless beams along ±z and a flat RAMBO draw over
-/// the outgoing legs, at each of [`probe_energies`].
-fn probe_momenta(final_masses: &[f64], resonance: Option<f64>, seed: u64) -> Vec<Vec<V>> {
+/// Whether an outgoing momentum is one a configuration can carry weight at:
+/// finite in every component, with positive energy. A massless leg drawn at
+/// zero momentum fails it, and so does any momentum a singular boost left
+/// non-finite.
+fn physical_outgoing(p: &V) -> bool {
+    p.e() > 0.0
+        && [p.e(), p.px(), p.py(), p.pz()]
+            .iter()
+            .all(|c| c.is_finite())
+}
+
+/// The two incoming partons in the partonic centre of mass at `sqrt_shat`, beam 1
+/// along `+z`, each on its own mass shell: MadEvent's
+/// `mom2cx(√ŝ, m₁, m₂, 1, 0, p₁, p₂)` (`genps.f`), with
+/// `E₁ = (ŝ + m₁² − m₂²)/(2√ŝ)` and `|p| = λ^{1/2}(ŝ, m₁², m₂²)/(2√ŝ)`.
+///
+/// Two massless partons come out as `(√ŝ/2)(1, 0, 0, ±1)`, the value the massive
+/// formula rounds to, written directly so the light-cone case is exact.
+pub(crate) fn partonic_beams(sqrt_shat: f64, masses: [f64; 2]) -> [V; 2] {
+    if masses == [0.0, 0.0] {
+        let e = sqrt_shat / 2.0;
+        return [V::new(e, 0.0, 0.0, e), V::new(e, 0.0, 0.0, -e)];
+    }
+    beams::beam_momenta(sqrt_shat, masses[0], masses[1])
+}
+
+/// Partonic-CM probe points: the beams along ±z on their own mass shells
+/// ([`partonic_beams`]) and a flat RAMBO draw over the outgoing legs, at each of
+/// [`probe_energies`].
+fn probe_momenta(
+    initial_masses: [f64; 2],
+    final_masses: &[f64],
+    resonance: Option<f64>,
+    seed: u64,
+) -> Vec<Vec<V>> {
     let mut points = Vec::new();
-    for (i, sqrt_s) in probe_energies(final_masses, resonance)
+    for (i, sqrt_s) in probe_energies(initial_masses, final_masses, resonance)
         .into_iter()
         .enumerate()
     {
@@ -668,8 +773,7 @@ fn probe_momenta(final_masses: &[f64], resonance: Option<f64>, seed: u64) -> Vec
         for _ in 0..PROBE_POINTS_PER_ENERGY {
             let u = stream.uniforms::<f64>(rambo.ndim());
             let drawn = rambo.sample(&u);
-            let e = sqrt_s / 2.0;
-            let mut momenta = vec![V::new(e, 0.0, 0.0, e), V::new(e, 0.0, 0.0, -e)];
+            let mut momenta = partonic_beams(sqrt_s, initial_masses).to_vec();
             momenta.extend(drawn.momenta.iter().cloned());
             points.push(momenta);
         }
@@ -721,12 +825,14 @@ fn report_alpha_spread(variance_shares: &[f64], alphas: &[f64]) {
 
 /// What the map rule reads off the channels [`ProtonIntegrand`] builds for
 /// `groups` at collider energy `sqrt_s_had`: every group's channel diagrams, under
-/// the first group's cuts, which every group shares.
+/// the bounds every group's cuts share ([`UnionBounds`]), as the channels are
+/// built.
 pub fn process_shape(
     groups: &FlavorGroups,
     model: &EvaluatedModel,
     sqrt_s_had: f64,
 ) -> ProcessShape {
+    let (filters, _) = distinct_filters(groups);
     ProcessShape::of(
         groups
             .groups()
@@ -734,8 +840,27 @@ pub fn process_shape(
             .flat_map(|g| channel_diagrams(g.diagrams(), model)),
         model,
         sqrt_s_had,
-        groups.groups()[0].cuts(),
+        &UnionBounds(&filters),
     )
+}
+
+/// The distinct cut filters of `groups`, in order of first appearance, and per
+/// group the index of its own filter among them. Groups of one filter share its
+/// evaluation at every point; most cards have one filter for all of them.
+fn distinct_filters(groups: &FlavorGroups) -> (Vec<&Cuts>, Vec<usize>) {
+    let mut filters: Vec<&Cuts> = Vec::new();
+    let group_filter = groups
+        .groups()
+        .iter()
+        .map(|g| match filters.iter().position(|&c| c == g.cuts()) {
+            Some(k) => k,
+            None => {
+                filters.push(g.cuts());
+                filters.len() - 1
+            }
+        })
+        .collect();
+    (filters, group_filter)
 }
 
 /// Partition a hadronic enumeration into flavour groups.
@@ -765,6 +890,7 @@ pub fn derive_flavor_groups(
         .collect();
 
     let mut compiled = Vec::with_capacity(sets.len());
+    let mut one_body: Option<(String, bool)> = None;
     for (set, process) in sets.iter().zip(&labels) {
         progress::step(
             progress::stage::COMPILE,
@@ -779,15 +905,25 @@ pub fn derive_flavor_groups(
             });
         }
         let legs = process_external_legs(&evaluator, model, evaluated);
-        if let Some(leg) = legs[..2].iter().find(|l| l.mass != 0.0) {
-            return Err(ProtonError::MassiveInitialState {
-                process: process.clone(),
-                mass: leg.mass,
-            });
-        }
         let cuts =
             Cuts::compile_with(card, &legs, &ForcedResonances::of(&set.diagrams, evaluated))?;
+        if legs.len() < 4 {
+            let cut_to_zero = cuts.rejects_zero_transverse_momentum();
+            one_body = Some(match one_body {
+                Some((first, all)) => (first, all && cut_to_zero),
+                None => (process.clone(), cut_to_zero),
+            });
+        }
         compiled.push((evaluator, legs, cuts));
+    }
+    // Refused before the probe below, which draws the outgoing momenta with RAMBO
+    // and has nothing to draw for one particle. Every subprocess is read first, so
+    // `cut_to_zero` holds of all of them and not only of the first.
+    if let Some((process, cut_to_zero)) = one_body {
+        return Err(ProtonError::OneBodyFinalState {
+            process,
+            cut_to_zero,
+        });
     }
     refuse_polarized_frame(card, compiled.iter().map(|(e, ..)| e), model)?;
     progress::step(
@@ -796,8 +932,15 @@ pub fn derive_flavor_groups(
         Some(sets.len() as u64),
     );
 
+    let initial_masses = [compiled[0].1[0].mass, compiled[0].1[1].mass];
     let final_masses: Vec<f64> = compiled[0].1[2..].iter().map(|l| l.mass).collect();
     for (i, (_, legs, _)) in compiled.iter().enumerate().skip(1) {
+        if [legs[0].mass, legs[1].mass] != initial_masses {
+            return Err(ProtonError::UnequalInitialMasses {
+                a: labels[0].clone(),
+                b: labels[i].clone(),
+            });
+        }
         let masses: Vec<f64> = legs[2..].iter().map(|l| l.mass).collect();
         if masses != final_masses {
             return Err(ProtonError::UnequalFinalMasses {
@@ -808,6 +951,7 @@ pub fn derive_flavor_groups(
     }
 
     let points = probe_momenta(
+        initial_masses,
         &final_masses,
         s_channel_resonance(model, evaluated),
         PROBE_SEED,
@@ -826,99 +970,84 @@ pub fn derive_flavor_groups(
 
     // Members of a group share the representative's initial-state average and
     // its per-leg helicity sums, so a polarized subprocess only ever joins one
-    // polarized the same way, whatever its probe trace.
-    let mut partition: Vec<Vec<usize>> = Vec::new();
+    // polarized the same way, whatever its probe trace. They also share its
+    // colour bookkeeping (see `colour_pairing`) and its cut filter, so a
+    // subprocess whose basis cannot be paired with a group's, or whose cuts
+    // differ from it, starts a group of its own: it is compiled already, and a
+    // separate group costs one more evaluation per point, not a refusal. Each
+    // entry carries the member's flow permutation into its head's indexing.
+    let mut partition: Vec<Vec<(usize, Vec<usize>)>> = Vec::new();
     for i in 0..compiled.len() {
-        match partition.iter_mut().find(|g| {
-            compiled[g[0]].0.polarizations() == compiled[i].0.polarizations()
-                && worst_rel(&traces[g[0]], &traces[i]) < GROUP_REL_TOL
-        }) {
-            Some(group) => group.push(i),
-            None => partition.push(vec![i]),
-        }
-    }
-
-    for (a, ga) in partition.iter().enumerate() {
-        for gb in &partition[a + 1..] {
-            if compiled[ga[0]].0.polarizations() != compiled[gb[0]].0.polarizations() {
-                continue;
+        let joined = partition.iter_mut().find_map(|g| {
+            let head = g[0].0;
+            if compiled[head].0.polarizations() != compiled[i].0.polarizations()
+                || worst_rel(&traces[head], &traces[i]) >= GROUP_REL_TOL
+            {
+                return None;
             }
-            let rel = worst_rel(&traces[ga[0]], &traces[gb[0]]);
-            if rel <= GROUP_SEPARATION_MIN {
-                return Err(ProtonError::DegenerateGroups {
-                    a: labels[ga[0]].clone(),
-                    b: labels[gb[0]].clone(),
-                    rel,
-                });
+            if compiled[head].2 != compiled[i].2 {
+                tracing::debug!(
+                    "{} shares the matrix element of {} but not its cut filter; grouped \
+                     separately",
+                    labels[i],
+                    labels[head]
+                );
+                return None;
             }
+            match colour_pairing(&compiled[head].0, &compiled[i].0) {
+                Ok(pi) => Some((g, pi)),
+                Err(reason) => {
+                    tracing::debug!(
+                        "{} shares the matrix element of {} but not its colour bookkeeping \
+                         ({reason}); grouped separately",
+                        labels[i],
+                        labels[head]
+                    );
+                    None
+                }
+            }
+        });
+        match joined {
+            Some((group, pi)) => group.push((i, pi)),
+            None => partition.push(vec![(i, (0..compiled[i].0.n_flows()).collect())]),
         }
     }
 
     let mut sets: Vec<Option<DiagramSet>> = sets.into_iter().map(Some).collect();
     let mut compiled: Vec<Option<_>> = compiled.into_iter().map(Some).collect();
     let mut groups = Vec::with_capacity(partition.len());
-    for indices in &partition {
-        let head = indices[0];
-        let (head_eval, _, head_cuts) = compiled[head].as_ref().expect("group head unclaimed");
-        for &i in &indices[1..] {
-            let (member_eval, _, member_cuts) = compiled[i].as_ref().expect("member unclaimed");
-            if member_cuts != head_cuts {
-                return Err(ProtonError::CutIndicatorDiffers {
-                    a: labels[head].clone(),
-                    b: labels[i].clone(),
-                });
-            }
-            // An event's flow is drawn in the representative's indexing, and each
-            // member's own table is reindexed into it below. That reindexing needs a
-            // bijection between the two bases, which needs them to have the same
-            // number of flows and the same colour-factor matrix. `|M|²` on its own
-            // does not imply either: it is a sum over the basis and would not move
-            // if two members' bases differed by a relabelling.
-            if member_eval.n_flows() != head_eval.n_flows()
-                || member_eval.cf_matrix() != head_eval.cf_matrix()
-            {
-                return Err(ProtonError::ColorStructureDiffers {
-                    a: labels[head].clone(),
-                    b: labels[i].clone(),
-                });
-            }
-        }
-        let members = indices
+    for entries in &partition {
+        let head = entries[0].0;
+        debug_assert!(
+            entries[1..]
+                .iter()
+                .all(|&(i, _)| compiled[i].as_ref().map(|c| &c.2)
+                    == compiled[head].as_ref().map(|c| &c.2)),
+            "a member joined a group whose cut filter it does not share"
+        );
+        let indices: Vec<usize> = entries.iter().map(|&(i, _)| i).collect();
+        // The representative's entry carries the identity: its table *is* the one
+        // an event was drawn from, so there is no correspondence to establish and
+        // the fingerprint was not consulted for it. Every other member's
+        // permutation is the pairing it joined the group on.
+        let members: Vec<Subprocess> = entries
             .iter()
-            .map(|&i| {
+            .map(|(i, flow_permutation)| {
+                let i = *i;
                 let (evaluator, legs, _) = compiled[i].as_ref().expect("member unclaimed");
-                // The representative is a member of its own group, and there its
-                // table *is* the one an event was drawn from, so there is no
-                // correspondence to establish and the fingerprint is not consulted.
-                // The condition is an identity of objects — the same compiled
-                // subprocess — not an equality of process strings, leg reps or
-                // fingerprints, which is what keeps this a scoping of the question
-                // rather than an answer to it. Between two distinct subprocesses the
-                // refusal below stands unconditionally.
-                let flow_permutation = if i == head {
-                    (0..evaluator.n_flows()).collect()
-                } else {
-                    flow_permutation(head_eval, evaluator).map_err(|reason| {
-                        ProtonError::ColorFlowPairing {
-                            a: labels[head].clone(),
-                            b: labels[i].clone(),
-                            reason,
-                        }
-                    })?
-                };
                 // The member's own table, put into the representative's flow
                 // indexing once, so no consumer downstream has to know about the
                 // permutation.
-                let own = evaluator.color_flow_tags();
-                let flows = own
-                    .reindexed(&flow_permutation)
+                let flows = evaluator
+                    .color_flow_tags()
+                    .reindexed(flow_permutation)
                     .expect("flow_permutation is a permutation of this basis");
                 debug_assert!(
                     !sets[i].as_ref().expect("member unclaimed").mirrored
                         || legs[0].pdg != legs[1].pdg,
                     "a mirrored subprocess has two different beam partons"
                 );
-                Ok(Subprocess {
+                Subprocess {
                     mirrored: sets[i].as_ref().expect("member unclaimed").mirrored,
                     process: processes[i],
                     incoming: [legs[0].pdg, legs[1].pdg],
@@ -926,10 +1055,10 @@ pub fn derive_flavor_groups(
                     outgoing_polarizations: evaluator.polarizations()[2..].to_vec(),
                     colors: evaluator.external_colors().iter().map(|l| l.rep).collect(),
                     flows,
-                    flow_permutation,
-                })
+                    flow_permutation: flow_permutation.clone(),
+                }
             })
-            .collect::<Result<Vec<_>, ProtonError>>()?;
+            .collect();
         let member_sets = indices
             .iter()
             .map(|&i| sets[i].clone().expect("member unclaimed"))
@@ -1026,6 +1155,54 @@ fn content_ordered(
         .collect()
 }
 
+/// Whether `member` can share `representative`'s colour bookkeeping, and if so the
+/// permutation that reindexes its flows into the representative's
+/// ([`flow_permutation`]).
+///
+/// An event's flow is drawn in the representative's indexing, off the
+/// representative's `JAMP2`, and each member's own table is reindexed into it. That
+/// needs a bijection between the two bases under which they are the same colour
+/// algebra: flow `f` of the representative and flow `π(f)` of the member built from
+/// the same contributions, and `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly.
+/// `|M|²` on its own implies neither: it is a sum over the basis and would not move
+/// if two members' bases differed by a relabelling.
+///
+/// `π` comes from the fingerprints alone, and the colour-factor matrix only confirms
+/// it. A permutation found by matching the matrices would not be unique: the CF
+/// matrix of `u u > g g u u` has sixteen automorphisms, and all but one of them would
+/// pass this check while labelling the member's events with the wrong flows. The
+/// matrices are compared under `π` and never in their own orders, because two bases
+/// holding the same flows sort them differently: a charge-conjugate pair's matrices
+/// disagree entry by entry until they are reindexed.
+fn colour_pairing(
+    representative: &AmplitudeEvaluator,
+    member: &AmplitudeEvaluator,
+) -> Result<Vec<usize>, String> {
+    if member.n_flows() != representative.n_flows() {
+        return Err(format!(
+            "{} flows against {}",
+            representative.n_flows(),
+            member.n_flows()
+        ));
+    }
+    let pi = flow_permutation(representative, member)?;
+    let n = pi.len();
+    let (ours, theirs) = (representative.cf_matrix(), member.cf_matrix());
+    for i in 0..n {
+        for j in 0..n {
+            if ours[i * n + j] != theirs[pi[i] * n + pi[j]] {
+                return Err(format!(
+                    "the colour-factor matrices differ under the flow pairing, at flows {} \
+                     and {} of the representative",
+                    i + 1,
+                    j + 1
+                ));
+            }
+        }
+    }
+    Ok(pi)
+}
+
 /// Pair up two subprocesses' colour flows: `π[f]` is the flow of `member`'s basis
 /// built from the same contributions as flow `f` of `representative`'s.
 ///
@@ -1039,8 +1216,9 @@ fn content_ordered(
 ///
 /// **Ambiguity is refused, never broken.** If either basis has two flows with equal
 /// fingerprints, or no bijection exists, or more than one does, this returns an error
-/// and the group is refused at setup. A wrong `π` is a silently wrong colour label on
-/// every event of that member; a refusal is loud and cheap.
+/// and the member is not admitted to the representative's group. A wrong `π` is a
+/// silently wrong colour label on every event of that member; a group of its own is
+/// one more evaluation per point.
 fn flow_permutation(
     representative: &AmplitudeEvaluator,
     member: &AmplitudeEvaluator,
@@ -1090,6 +1268,184 @@ fn flow_permutation(
     Ok(pi)
 }
 
+/// One Breit–Wigner component of [`TauMixture`]: MadEvent's
+/// `transpole(pole, width)` in `τ`, `τ = τ₀ + w tan z` with `z` flat over the
+/// arctangents of the range's ends, so its density is
+/// `w/((τ − τ₀)² + w²)/(z_hi − z_lo)` on `[τ_min, τ_max]`.
+#[derive(Clone, Copy, Debug)]
+struct TauPole {
+    mass: f64,
+    width: f64,
+    /// `M²/s`.
+    tau0: f64,
+    /// `MΓ/s`.
+    w: f64,
+    z_lo: f64,
+    z_hi: f64,
+    /// The share of the `(group, diagram)` channels that carry this pole.
+    weight: f64,
+}
+
+impl TauPole {
+    fn density(&self, tau: f64) -> f64 {
+        let d = tau - self.tau0;
+        self.w / (d * d + self.w * self.w) / (self.z_hi - self.z_lo)
+    }
+}
+
+/// The `τ` density of [`TauMap::BreitWigner`]: the mean, over the
+/// `(group, diagram)` channels, of the density MadEvent maps each channel's `τ`
+/// with — a Breit–Wigner at the channel's whole-state pole where it has one in
+/// range, the logarithmic map elsewhere.
+///
+/// The draw splits the unit coordinate into one segment per component, sized by
+/// its weight, and maps the segment's own uniform through that component; the
+/// Jacobian is the reciprocal of the whole mixture's density at the drawn `τ`, so
+/// a point reached through any component carries the same weight. VEGAS adapts
+/// on the coordinate as it does on any other, and so moves points between the
+/// components.
+#[derive(Clone, Debug)]
+struct TauMixture {
+    /// The share of the channels without a pole in range: the log map's weight.
+    log_weight: f64,
+    poles: Vec<TauPole>,
+    tau_min: f64,
+    tau_max: f64,
+    /// `ln(τ_max/τ_min)`, the log component's normalisation.
+    ln_range: f64,
+}
+
+/// `τ_min^(1−v) τ_max^v`: the logarithmic map's draw over `[τ_min, τ_max]`.
+fn log_tau(tau_min: f64, tau_max: f64, v: f64) -> f64 {
+    tau_min.powf(1.0 - v) * tau_max.powf(v)
+}
+
+impl TauMixture {
+    /// The mixture for `groups`' channel diagrams over `[tau_min, tau_max]` at
+    /// hadronic invariant `s`, or `None` where no channel's whole-state pole lies
+    /// strictly inside the range.
+    fn of(
+        groups: &FlavorGroups,
+        model: &EvaluatedModel,
+        s: f64,
+        tau_min: f64,
+        tau_max: f64,
+    ) -> Option<Self> {
+        let mut log_count = 0usize;
+        let mut counts: Vec<((f64, f64), usize)> = Vec::new();
+        for g in groups.groups() {
+            for d in channel_diagrams(g.diagrams(), model) {
+                let pole = DiagramChannel::<f64>::whole_state_resonance(d, model)
+                    .filter(|&(m, _)| pole_in_tau(m, s, tau_min, tau_max));
+                match pole {
+                    Some(key) => match counts.iter_mut().find(|(k, _)| *k == key) {
+                        Some((_, n)) => *n += 1,
+                        None => counts.push((key, 1)),
+                    },
+                    None => log_count += 1,
+                }
+            }
+        }
+        Self::from_counts(log_count, counts, s, tau_min, tau_max)
+    }
+
+    /// The mixture of `log_count` log-map channels and, for each `(M, Γ)` pole,
+    /// its count of channels, over `[tau_min, tau_max]` at hadronic invariant
+    /// `s`; `None` without a pole.
+    fn from_counts(
+        log_count: usize,
+        counts: Vec<((f64, f64), usize)>,
+        s: f64,
+        tau_min: f64,
+        tau_max: f64,
+    ) -> Option<Self> {
+        if counts.is_empty() {
+            return None;
+        }
+        let total = (log_count + counts.iter().map(|(_, n)| n).sum::<usize>()) as f64;
+        let poles = counts
+            .into_iter()
+            .map(|((mass, width), n)| {
+                let tau0 = mass * mass / s;
+                let w = mass * width / s;
+                TauPole {
+                    mass,
+                    width,
+                    tau0,
+                    w,
+                    z_lo: ((tau_min - tau0) / w).atan(),
+                    z_hi: ((tau_max - tau0) / w).atan(),
+                    weight: n as f64 / total,
+                }
+            })
+            .collect();
+        Some(TauMixture {
+            log_weight: log_count as f64 / total,
+            poles,
+            tau_min,
+            tau_max,
+            ln_range: (tau_max / tau_min).ln(),
+        })
+    }
+
+    /// `τ` at the unit coordinate `u0`, and `(dτ/du)/τ` there.
+    fn draw(&self, u0: f64) -> (f64, f64) {
+        let tau = if u0 < self.log_weight {
+            log_tau(self.tau_min, self.tau_max, u0 / self.log_weight)
+        } else {
+            // The last pole takes whatever rounding leaves above the summed weights.
+            let last = self.poles.len() - 1;
+            let mut start = self.log_weight;
+            let mut k = last;
+            for (i, p) in self.poles.iter().enumerate() {
+                if u0 < start + p.weight {
+                    k = i;
+                    break;
+                }
+                start += p.weight;
+            }
+            let pole = &self.poles[k];
+            if k == last {
+                start = 1.0 - pole.weight;
+            }
+            let v = ((u0 - start) / pole.weight).clamp(0.0, 1.0);
+            let z = pole.z_lo + v * (pole.z_hi - pole.z_lo);
+            (pole.tau0 + pole.w * z.tan()).clamp(self.tau_min, self.tau_max)
+        };
+        (tau, 1.0 / (tau * self.density(tau)))
+    }
+
+    /// The mixture's density in `τ`.
+    fn density(&self, tau: f64) -> f64 {
+        self.log_weight / (tau * self.ln_range)
+            + self
+                .poles
+                .iter()
+                .map(|p| p.weight * p.density(tau))
+                .sum::<f64>()
+    }
+
+    /// One line naming each component and its weight.
+    fn describe(&self, s: f64) -> String {
+        let poles: Vec<String> = self
+            .poles
+            .iter()
+            .map(|p| {
+                format!(
+                    "Breit-Wigner at M = {} GeV, width {} GeV ({:.3})",
+                    p.mass, p.width, p.weight
+                )
+            })
+            .collect();
+        format!(
+            "log ({:.3}), {} over sqrt(s) {:.4e} GeV",
+            self.log_weight,
+            poles.join(", "),
+            s.sqrt()
+        )
+    }
+}
+
 /// Unit-hypercube coordinates the `(τ, y)` outer map consumes. They are *prepended*
 /// to each channel's own coordinates, so a channel grid is over
 /// `OUTER_NDIM + channel_ndim`.
@@ -1133,16 +1489,19 @@ pub struct ProtonEvent {
     /// [`value_in_channel`](ProtonIntegrand::value_in_channel) returns at the same
     /// coordinates.
     pub weight: f64,
-    /// Beam momentum fractions `(x₁, x₂)`.
+    /// Beam momentum fractions `(x₁, x₂)` of the sampled configuration: the
+    /// representative's first parton at `x₁`, its second at `x₂`, in either beam
+    /// ordering.
     pub x: [f64; 2],
     /// Per flavour group, the scales its two beam orderings' terms were evaluated
-    /// at, `[direct, mirrored]`, each with its factorisation scales in physical
-    /// beam order; `None` where that term's factorisation scale fell below the
-    /// floor and it carries no weight, or where the group has no mirrored
-    /// ordering. Every entry is the same where the prescription does not read an
-    /// integration configuration; under the clustering each term's scale is
-    /// clustered in its own group's configurations, at the momenta its own
-    /// matrix element is evaluated at.
+    /// at, `[direct, mirrored]`, each with its factorisation scales in that
+    /// ordering's physical beam order; `None` where that term's factorisation
+    /// scale fell below the floor, where its event fails the group's cuts, or
+    /// where the group has no mirrored ordering. Every group's entry is the same
+    /// where the prescription does not read an integration configuration; under
+    /// the clustering each group's scale is clustered in its own configurations,
+    /// at the sampled momenta. The two orderings of a group share the clustering
+    /// and differ only in which beam each factorisation scale is reported on.
     pub group_scales: Vec<[Option<EventScales>; 2]>,
     /// Per flavour group and beam ordering, `[direct, mirrored]`, the matched
     /// reweighting factor (`rewgt`) of each member of the group, in member order;
@@ -1158,9 +1517,12 @@ pub struct ProtonEvent {
     /// clustering `rewgt` read, from which the drawn member's `<mgrwt>` record
     /// is taken; `None` without matching and where the term carries no weight.
     pub(crate) group_histories: Vec<[Option<RewgtHistory>; 2]>,
-    /// Lab-frame external momenta, beams first — what the event record reports.
+    /// Lab-frame external momenta of the sampled configuration, beams first —
+    /// what the event record reports under the direct ordering
+    /// ([`ProtonIntegrand::record_momenta`] gives either ordering's).
     pub lab: Vec<V>,
-    /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
+    /// Partonic-CM external momenta of the sampled configuration, beams first —
+    /// the frame `|M|²` is taken in, in both orderings.
     pub cm: Vec<V>,
 }
 
@@ -1203,18 +1565,33 @@ pub struct ProtonSelection {
     /// `SCALUP` and the argument of its `AQCDUP`.
     pub scales: EventScales,
     /// Under matching, what the record reads of the drawn term's clustering,
-    /// in the group representative's leg order with the drawn ordering's beams
-    /// in place (the clustering of a mirrored term sees its own first parton on
-    /// the first beam); `None` without matching.
+    /// in the group representative's leg order (its first parton on clustering
+    /// beam 0, which is physical beam 2 under the exchanged ordering); `None`
+    /// without matching.
     pub record: Option<MatchedRecord>,
     /// Under matching, the drawn member's reweighting under the drawn
     /// ordering, factor by factor, in clustering order; `None` without it.
     pub rewgt: Option<Rewgt>,
-    /// The drawn group's `|M|²` under the drawn ordering, as this integrand
+    /// The drawn group's `|M|²` at the sampled point, as this integrand
     /// evaluated it for the point's value, at the term's own coupling: what any
     /// other evaluation of the event's member at the model's own parameters, at
-    /// the same momenta and ordering, must reproduce.
+    /// the same momenta, must reproduce. Under the exchanged ordering it is also
+    /// the member's mirrored subprocess at the written (rotated) event.
     pub m2: f64,
+}
+
+/// One accepted point's terms per flavour group
+/// ([`ProtonIntegrand::ordering_contributions`]).
+struct OrderingTerms {
+    /// Per group, `[direct, mirrored]`, the matrix element each ordering's term
+    /// read, zero where the term carries no luminosity.
+    m2: Vec<[f64; 2]>,
+    /// Per group, its whole term of the point's value.
+    terms: Vec<f64>,
+    /// Per group, `[direct, mirrored]`, that term split by ordering.
+    split: Vec<[f64; 2]>,
+    /// Per group, the density rows each ordering's term read.
+    rows: Vec<[[FlavorRow; 2]; 2]>,
 }
 
 /// What one point's multichannel weight is made of
@@ -1314,17 +1691,48 @@ pub struct OuterPoint {
 /// # Master formula
 ///
 /// ```text
-/// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) |M_g(q)|²
-///                               + L_g^mirror(x₁,x₂,μF) |M_g(Rq)|² ] · Θ_cuts(q) / (2ŝ)
+/// σ = ∫ dτ dy dΦ_n  Σ_g avg_g · [ L_g^direct(x₁,x₂,μF) Θ_g(q)
+///                               + L_g^mirror(x₁,x₂,μF) Θ_g(R q) ] · |M_g(q)|² / F
 /// ```
+///
+/// with `F = 2λ^{1/2}(ŝ, m₁², m₂²)` the Møller flux of the incoming partons at
+/// their pole masses, `2ŝ` when both are massless, and `ŝ = x₁x₂s` from the
+/// massless convolution whatever the masses, as in MadEvent (`genps.f`). A
+/// massive parton sits on its mass shell in the partonic frame
+/// ([`partonic_beams`]), and a point below `√ŝ = m₁ + m₂` carries no weight.
 ///
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
-/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R` the mirror map
-/// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
-/// unreflected final state: the mirror is an argument to the matrix element, not a
-/// second event.
+/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R q` the exchanged
+/// ordering's event, the sampled one rotated by π about the x axis with its beams
+/// exchanged ([`exchange_into`]). Both terms weight the matrix element at the
+/// sampled point, as MadEvent's `IMIRROR = 2` does, so the mirror term peaks
+/// where the direct one does and the group's own channels sample both. Each group
+/// carries its own filter ([`FlavorGroup::cuts`]), read on each term's own event
+/// in the lab frame: `Θ_g(q)` at the sampled fractions, `Θ_g(R q)` with `x₁` and
+/// `x₂` on the exchanged beams. At equal beam energies the second is the first
+/// rotated, and the two differ only for a cut that tells `+z` from `−z`.
+///
+/// # Groups cut apart
+///
+/// Groups whose subprocesses classify their legs differently, or force different
+/// decay-chain lines, compile to different filters, and each term is cut by its
+/// own, as MadEvent cuts each subprocess directory with its own `passcuts` and
+/// adds their cross sections. A point is integrated wherever some group's filter
+/// accepts it, and the event it writes is drawn among the groups whose filters
+/// do: a rejecting group's scales are recorded as absent, which is how
+/// [`select_event`](Self::select_event) reads a term that carries no weight.
+/// The channels of every group are pooled into one mixture, and every channel is
+/// built under the bounds that hold over the union of the groups' accepted
+/// regions, the weakest of each floor ([`UnionBounds`]), with the `τ` range the
+/// hull of the groups' ranges. A channel built under one group's tighter floors
+/// would keep a positive density below them, where another group's term is not
+/// zero, and the mixture would overstate its own density there and read σ low
+/// (`g g > z j j, z > j j` at `cut_decays = F`, whose same-flavour groups cut all
+/// four quarks and whose others cut only the two not from the `Z`, by 4%).
+/// Groups that share one filter, which on most cards is all of them, share its
+/// evaluation at every point.
 ///
 /// Each group's term is taken at **that group's own scales**: `L_g` at its `μF`,
 /// `|M_g|²` at `αs` of its `μR`. They are the same numbers for every group under a
@@ -1366,8 +1774,13 @@ pub struct ProtonIntegrand<'a> {
     groups: &'a FlavorGroups,
     subs: Vec<SubprocessProto<'a>>,
     pdf: &'a PdfMember,
-    /// The one cut filter every group compiles to.
-    cuts: &'a Cuts,
+    /// The distinct cut filters of the groups, in order of first appearance.
+    filters: Vec<&'a Cuts>,
+    /// Per flavour group, the index into `filters` of the group's own filter.
+    group_filter: Vec<usize>,
+    /// Per filter, whether some group cut by it has a mirrored ordering, so that
+    /// the exchanged event is cut at all.
+    filter_mirrored: Vec<bool>,
     combiner: ScaledMultiChannel<f64>,
     /// Per sampling channel, the first `(group, diagram)` pair its map was built
     /// from — the channel's name.
@@ -1385,9 +1798,19 @@ pub struct ProtonIntegrand<'a> {
     /// Total hadronic invariant `s = 4E₁E₂` (head-on beams).
     s_had: f64,
     beams: ProtonBeams,
+    /// The incoming partons' pole masses in beam order
+    /// ([`FlavorGroups::initial_masses`]).
+    initial_masses: [f64; 2],
     /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
-    ln_inv_tau_min: f64,
+    /// Upper support of the `τ` map: one, or below it where the decay-chain
+    /// windows bound `ŝ` ([`Cuts::shat_max`]).
+    tau_max: f64,
+    /// `ln(τ_max/τ_min)`, the logarithmic map's `(dτ/du)/τ`.
+    ln_tau_range: f64,
+    /// The Breit–Wigner components of [`TauMap::BreitWigner`], `None` under any
+    /// other map and where no whole-state pole lies inside `[τ_min, τ_max]`.
+    tau_mixture: Option<TauMixture>,
     /// The maps this integrand was built under, every choice settled.
     maps: MapChoices,
     /// The `(2π)^{4−3n}` measure factor.
@@ -1453,7 +1876,9 @@ struct ProtonScratch<'a> {
     scale_buf: RefCell<Vec<[f64; 4]>>,
     cm_buf: RefCell<Vec<V>>,
     lab_buf: RefCell<Vec<V>>,
-    mirror_buf: RefCell<Vec<V>>,
+    /// The exchanged ordering's event in the frame the cuts read
+    /// ([`ProtonIntegrand::exchanged_lab_into`]).
+    exchanged_lab_buf: RefCell<Vec<V>>,
     /// The last `(μR, αs(μR))` pair, so a repeated scale does not repeat the
     /// coupling lookup.
     last_coupling: Cell<(f64, f64)>,
@@ -1477,13 +1902,10 @@ struct ProtonScratch<'a> {
     /// This thread's count of the points it evaluated
     /// ([`ProtonIntegrand::census`]).
     census: CensusCell,
-    /// The configuration MadEvent cuts a point's mirrored term on, and which of
-    /// `[direct, mirrored]` passed the cuts, under
-    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] only.
-    #[cfg(any(test, feature = "extended-validation"))]
-    madevent_lab_buf: RefCell<Vec<V>>,
-    #[cfg(any(test, feature = "extended-validation"))]
-    ordering_passes: Cell<[bool; 2]>,
+    /// Per cut filter ([`ProtonIntegrand::filters`]), which of the point's
+    /// `[direct, mirrored]` events it passes: the sampled one, and the exchanged
+    /// one where the filter cuts a mirrored group (`false` elsewhere).
+    filter_passes: RefCell<Vec<[bool; 2]>>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1503,15 +1925,16 @@ impl<'a> ProtonIntegrand<'a> {
     ///   prescription by [`use_run_card_scales`](Self::use_run_card_scales).
     ///
     /// Every group's diagrams contribute a channel and all of them are pooled into
-    /// one mixture, so a peak one group's own diagrams do not cover — the mirrored
-    /// `g q` configuration above all — is still covered by another group's.
+    /// one mixture. A group's mirror term weights the matrix element at the
+    /// sampled point, so the group's own channels cover both of its orderings.
     /// Diagrams whose maps are the same function
     /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)),
     /// within a group or across groups, share one channel at their summed
     /// selection weight: a point's value does not depend on which of them drew it.
     ///
     /// The peripheral channels are regulated at [`Cuts::spacelike_floor`], the scale
-    /// the process's own transverse-momentum cuts imply: it bounds each rung's
+    /// the process's own transverse-momentum cuts imply (the weakest of the groups'
+    /// where their cuts differ): it bounds each rung's
     /// transfer and sets its pole floor. A run with no such cut gets a spine on the
     /// default pole floor and an unbounded transfer.
     pub fn new(
@@ -1627,11 +2050,21 @@ impl<'a> ProtonIntegrand<'a> {
                 return Err(ProtonError::AmplitudeMismatch { index: i });
             }
         }
-        let cuts = groups.groups()[0].cuts();
-        for (i, g) in groups.groups().iter().enumerate().skip(1) {
-            if g.cuts() != cuts {
-                return Err(ProtonError::GroupCutsDiffer { a: 0, b: i });
-            }
+        let (filters, group_filter) = distinct_filters(groups);
+        let mut filter_mirrored = vec![false; filters.len()];
+        for (g, &k) in groups.groups().iter().zip(&group_filter) {
+            filter_mirrored[k] |= g.has_mirror();
+        }
+        // Every channel is shaped by bounds that hold wherever some group's cuts
+        // accept, since a channel's density below its floors is positive and is
+        // read against every group's term ([`ChannelBounds`]).
+        let bounds = UnionBounds(&filters);
+        if filters.len() > 1 {
+            tracing::info!(
+                "{} flavour groups are cut by {} distinct filters, each group by its own",
+                groups.groups().len(),
+                filters.len()
+            );
         }
 
         let sqrt_s_had = beams.sqrt_s();
@@ -1659,7 +2092,7 @@ impl<'a> ProtonIntegrand<'a> {
                 // The baked-in energy is unread through `ScaledChannel`, which takes
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
-                let channel = maps.channel(d, model, sqrt_s_had, cuts);
+                let channel = maps.channel(d, model, sqrt_s_had, &bounds);
                 let channel = if bound_transfer {
                     channel
                 } else {
@@ -1715,12 +2148,28 @@ impl<'a> ProtonIntegrand<'a> {
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
-        let tau_min = cuts.shat_min() / s_had;
+        // The cuts and any whole-state decay window bound τ (`tau_range`), and
+        // the map covers every group's range; the incoming partons' masses raise
+        // its floor to their production threshold.
+        let initial_masses = groups.initial_masses();
+        let threshold = initial_masses[0] + initial_masses[1];
+        let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
+        let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+        let tau_max = cut_tau_max.max(tau_min);
+        let tau_mixture = match maps.tau {
+            TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
+            TauMap::Log | TauMap::InverseSquare => None,
+        };
+        if let Some(mix) = &tau_mixture {
+            tracing::info!("tau: {}", mix.describe(s_had));
+        }
         Ok(ProtonIntegrand {
             subs: amps.iter().map(SubprocessProto::fixed).collect(),
             groups,
             pdf,
-            cuts,
+            filter_mirrored,
+            filters,
+            group_filter,
             combiner,
             channel_ids,
             channel_members,
@@ -1728,8 +2177,11 @@ impl<'a> ProtonIntegrand<'a> {
             channel_map_keys,
             s_had,
             beams,
+            initial_masses,
             tau_min,
-            ln_inv_tau_min: (1.0 / tau_min).ln(),
+            tau_max,
+            ln_tau_range: (tau_max / tau_min).ln(),
+            tau_mixture,
             maps,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
@@ -1778,7 +2230,7 @@ impl<'a> ProtonIntegrand<'a> {
                 scale_buf: RefCell::new(Vec::with_capacity(n_out)),
                 cm_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-                mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
+                exchanged_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
@@ -1787,10 +2239,7 @@ impl<'a> ProtonIntegrand<'a> {
                 group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
                 census: CensusCell::default(),
-                #[cfg(any(test, feature = "extended-validation"))]
-                madevent_lab_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
-                #[cfg(any(test, feature = "extended-validation"))]
-                ordering_passes: Cell::new([true, true]),
+                filter_passes: RefCell::new(vec![[true, true]; self.filters.len()]),
             }
         })
     }
@@ -1953,22 +2402,32 @@ impl<'a> ProtonIntegrand<'a> {
         Ok(report)
     }
 
-    /// Resolve the scale on the first cut-passing point of a fixed pseudo-random
-    /// draw, so a refusal that would otherwise surface mid-integration surfaces at
+    /// Resolve the scale on the cut-passing points of a fixed pseudo-random draw,
+    /// so a refusal that would otherwise surface mid-integration surfaces at
     /// setup.
-    /// A point below the factorisation floor is not a refusal — it is one ordinary
-    /// zero-weight point — so the probe steps over it and keeps drawing. Only the
-    /// degenerate case is reported: cut-passing points exist and *every* one of
-    /// them was vetoed, which makes the cross section zero by construction and is
-    /// worth saying before the integration spends anything on it. A run whose
-    /// support is partly below the floor integrates normally, as it does in
-    /// MadGraph.
+    ///
+    /// A vetoed point is not a refusal — it is one ordinary zero-weight point, as
+    /// `reweight.f` treats it — so the probe steps over it and keeps drawing, and
+    /// stops at the first point that resolves a scale. The one degenerate case it
+    /// reports ([`ScaleProbeTally`]) is the factorisation floor's: enough
+    /// cut-passing points fell below the floor and none resolved a scale, so the
+    /// card's scale prescription puts its support below the densities' fitted
+    /// range and the cross section is zero by construction. MadGraph has no such setup step and would integrate the
+    /// card to zero; the refusal says why before anything is spent. Every other
+    /// outcome lets the integration run and decide: a point vetoed by `xqcut` or
+    /// on degenerate momenta says nothing about the floor, and fewer floor
+    /// vetoes than the minimum is too little evidence to refuse on.
+    ///
+    /// The draws go round the sampling channels in turn, so one channel whose
+    /// region the cuts or the matching mostly reject cannot stand for the card.
     fn probe_scale(&self, source: &EventScaleSource) -> Result<(), ProtonError> {
         use rand::Rng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SCALE_PROBE_SEED);
         let ndim = self.channel_grid_ndim();
-        let mut any_passed_cuts = false;
-        for _ in 0..SCALE_PROBE_DRAWS {
+        let n_channels = self.channel_ids.len();
+        let mut tally = ScaleProbeTally::default();
+        for draw in 0..SCALE_PROBE_DRAWS {
+            let channel = draw % n_channels;
             let u: Vec<f64> = (0..ndim).map(|_| rng.random::<f64>()).collect();
             // The probe asks whether any accepted point clears the floor, not how the
             // run samples. The logarithmic `τ` spreads its draws over the whole `ŝ`
@@ -1977,26 +2436,24 @@ impl<'a> ProtonIntegrand<'a> {
             let m = self.map_point_with(TauMap::Log, &u);
             let pt = self
                 .combiner
-                .draw_in_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
+                .draw_in_channel_at(channel, m.sqrt_shat, &u[OUTER_NDIM..]);
+            if !pt.momenta.iter().all(physical_outgoing) {
+                continue;
+            }
             let sc = self.scratch();
             self.build_frames(sc, &m, &pt.momenta);
             let lab = sc.lab_buf.borrow();
-            if self.cuts.pass(&lab) {
-                any_passed_cuts = true;
+            if self.filters.iter().any(|c| c.pass(&lab)) {
                 let resolved = self
-                    .scales_of(sc, source, &lab, self.sampled_channel(0))
+                    .scales_of(sc, source, &lab, self.sampled_channel(channel))
                     .map_err(HadronicError::from)?;
-                if let PointScales::Scales(_) = resolved {
-                    return Ok(());
+                match resolved {
+                    PointScales::Scales(_) => return Ok(()),
+                    PointScales::Vetoed(veto) => tally.record(veto),
                 }
             }
         }
-        if any_passed_cuts {
-            return Err(HadronicError::FactorisationScaleBelowFloor.into());
-        }
-        // No draw passed the cuts, which says something about the cuts and
-        // nothing about the scale.
-        Ok(())
+        Ok(tally.verdict()?)
     }
 
     /// Lower support `ŝ_min/s` of the logarithmic τ map.
@@ -2004,11 +2461,17 @@ impl<'a> ProtonIntegrand<'a> {
         self.tau_min
     }
 
-    /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
-    /// the process's own cuts.
+    /// The spacelike-pole floor (GeV²) the peripheral channels were built with,
+    /// the weakest of the groups' own cuts imply.
     #[cfg(test)]
     pub(crate) fn spacelike_floor(&self) -> f64 {
-        self.cuts.spacelike_floor()
+        UnionBounds(&self.filters).spacelike_floor()
+    }
+
+    /// Whether some group's cuts accept the lab-frame momenta `lab`.
+    #[cfg(test)]
+    pub(crate) fn any_group_passes(&self, lab: &[V]) -> bool {
+        self.filters.iter().any(|c| c.pass(lab))
     }
 
     /// What the rule-based composition chose for each sampling channel, in channel
@@ -2151,21 +2614,29 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
     ///
-    /// `τ` is drawn over `[τ_min, 1]` by the banked [`TauMap`]: the logarithmic
-    /// `τ = τ_min^(1−u)` with `dτ/du = τ ln(1/τ_min)`, or the inverse-square
-    /// `τ = 1/(1/τ_min − u(1/τ_min − 1))` with `dτ/du = τ²(1/τ_min − 1)`. Either
-    /// measure carries one power of `τ` that the `1/(x₁x₂)` of the luminosity
-    /// cancels (the type's doc), so what enters the Jacobian is `(dτ/du)/τ`.
+    /// `τ` is drawn over `[τ_min, τ_max]` ([`tau_range`](crate::phasespace::maps::tau_range)) by the banked
+    /// [`TauMap`]: the logarithmic `τ = τ_min^(1−u) τ_max^u` with
+    /// `dτ/du = τ ln(τ_max/τ_min)`; the inverse-square
+    /// `τ = 1/(1/τ_min − u(1/τ_min − 1/τ_max))` with
+    /// `dτ/du = τ²(1/τ_min − 1/τ_max)`; or the Breit–Wigner mixture
+    /// ([`TauMixture`]), whose `(dτ/du)/τ` is `1/(τ p(τ))` at the mixture's
+    /// density `p`, and which is the logarithmic map where it has no pole in
+    /// range. Every measure carries one power of `τ` that the `1/(x₁x₂)` of the
+    /// luminosity cancels (the type's doc), so what enters the Jacobian is
+    /// `(dτ/du)/τ`.
     fn map_point(&self, u: &[f64]) -> OuterPoint {
         self.map_point_with(self.maps.tau, u)
     }
 
     /// [`map_point`](Self::map_point) under a named `τ` map rather than the run's.
     fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
-        let (tau, dtau_du_over_tau) = match tau_map {
-            TauMap::Log => (self.tau_min.powf(1.0 - u[0]), self.ln_inv_tau_min),
-            TauMap::InverseSquare => {
-                let k = 1.0 / self.tau_min - 1.0;
+        let (tau, dtau_du_over_tau) = match (tau_map, &self.tau_mixture) {
+            (TauMap::BreitWigner, Some(mix)) => mix.draw(u[0]),
+            (TauMap::Log | TauMap::BreitWigner, _) => {
+                (log_tau(self.tau_min, self.tau_max, u[0]), self.ln_tau_range)
+            }
+            (TauMap::InverseSquare, _) => {
+                let k = 1.0 / self.tau_min - 1.0 / self.tau_max;
                 let tau = 1.0 / (1.0 / self.tau_min - u[0] * k);
                 (tau, tau * k)
             }
@@ -2183,12 +2654,16 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// Fill the partonic-CM and lab-frame external momenta of one point: beams first,
     /// then the outgoing legs.
+    ///
+    /// The partonic-CM beams are on their own mass shells ([`partonic_beams`]).
+    /// The lab frame is reached by MadEvent's `cm_rap`, the rapidity of the
+    /// massless convolution's `x₁P₁ + x₂P₂`, as `passcuts` reads it: massless
+    /// beams are then exactly `xᵢPᵢ`, and massive ones are their partonic-CM
+    /// momenta boosted by it, at `ŝ = x₁x₂s` either way.
     fn build_frames(&self, sc: &ProtonScratch<'a>, m: &OuterPoint, out: &[V]) {
-        let e_cm = m.sqrt_shat / 2.0;
         let mut cm = sc.cm_buf.borrow_mut();
         cm.clear();
-        cm.push(V::new(e_cm, 0.0, 0.0, e_cm));
-        cm.push(V::new(e_cm, 0.0, 0.0, -e_cm));
+        cm.extend(partonic_beams(m.sqrt_shat, self.initial_masses));
         cm.extend_from_slice(out);
 
         // The partonic system's lab velocity is `tanh` of MadGraph's
@@ -2199,9 +2674,30 @@ impl<'a> ProtonIntegrand<'a> {
         let beta = (m.x1 - r * m.x2) / (m.x1 + r * m.x2);
         let mut lab = sc.lab_buf.borrow_mut();
         lab.clear();
-        lab.push(V::new(m.x1 * e1, 0.0, 0.0, m.x1 * e1));
-        lab.push(V::new(m.x2 * e2, 0.0, 0.0, -m.x2 * e2));
+        if self.initial_masses == [0.0, 0.0] {
+            lab.push(V::new(m.x1 * e1, 0.0, 0.0, m.x1 * e1));
+            lab.push(V::new(m.x2 * e2, 0.0, 0.0, -m.x2 * e2));
+        } else {
+            lab.extend(cm[..2].iter().map(|p| boost_z(*p, beta)));
+        }
         lab.extend(out.iter().map(|p| boost_z(*p, beta)));
+    }
+
+    /// `1/F`, the inverse Møller flux of the two incoming partons at `√ŝ`:
+    /// `1/(2λ^{1/2}(ŝ, m₁², m₂²))` (`genps.f`), which is `1/(2ŝ)` for massless
+    /// partons. `None` below the incoming threshold `√ŝ ≤ m₁ + m₂`, where
+    /// MadEvent's `one_tree` rejects the point (`jac = −5`) before any weight is
+    /// formed.
+    fn inverse_flux(&self, sqrt_shat: f64) -> Option<f64> {
+        let s = sqrt_shat * sqrt_shat;
+        let [m1, m2] = self.initial_masses;
+        if m1 == 0.0 && m2 == 0.0 {
+            return Some(1.0 / (2.0 * s));
+        }
+        if !(sqrt_shat > m1 + m2) {
+            return None;
+        }
+        Some(1.0 / (2.0 * beams::kallen(s, m1 * m1, m2 * m2).sqrt()))
     }
 
     /// The integrand at one point with the phase-space map's own weight left out:
@@ -2219,11 +2715,26 @@ impl<'a> ProtonIntegrand<'a> {
         channel: usize,
         scale_u: &[f64],
     ) -> f64 {
+        // Below the incoming threshold the point carries no weight before any
+        // cut is read, as MadEvent's `one_tree` rejects it; the census counts it
+        // with the points the cuts reject.
+        let Some(flux) = self.inverse_flux(m.sqrt_shat) else {
+            sc.census.rejected();
+            return 0.0;
+        };
+        // A channel map that draws an invariant at its degenerate edge (a massless
+        // pair at `s = 0`) builds its daughters at zero momentum, or, through a
+        // singular boost, non-finite. The point lies on the boundary of phase space
+        // and carries no weight there, but neither the cuts nor the scale
+        // clustering read such momenta meaningfully, so it is zeroed before either.
+        if !out.iter().all(physical_outgoing) {
+            sc.census.degenerate();
+            sc.census.rejected();
+            return 0.0;
+        }
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
-        let passes = self.cuts.pass(&sc.lab_buf.borrow());
-        #[cfg(any(test, feature = "extended-validation"))]
-        let passes = self.cut_orderings_as_madevent(sc, m, out, passes);
+        let passes = self.cut_point(sc, m, &cm);
         if !passes {
             sc.census.rejected();
             return 0.0;
@@ -2236,7 +2747,6 @@ impl<'a> ProtonIntegrand<'a> {
         let value = if acc == 0.0 {
             0.0
         } else {
-            let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
             m.jac * flux * self.lips_2pi * acc
         };
         sc.census.passed(value);
@@ -2256,58 +2766,97 @@ impl<'a> ProtonIntegrand<'a> {
     /// afterwards (`super_auto_dsig_group_v4.inc:815-829`), and the `PASSCUTS`
     /// call there (`:835`) is commented out. A mirrored event is therefore cut
     /// on the configuration it was sampled from, not on the one it is written
-    /// as. Here the mirrored term at `(x₁, x₂, q)` is the event MadEvent samples
-    /// at `(x₂, x₁, R q)`, `R` the rotation by π about x, so that is the
-    /// configuration its cut reads, boosted at its own `cm_rap`. At equal beams
+    /// as: here, the mirror term takes the direct term's cut. At equal beams
     /// the two coincide; at `E₁ ≠ E₂` they differ by `ln(E₁/E₂)` in every
     /// rapidity.
     ///
-    /// Cross section only: drawing an event from the integrand panics, as does
-    /// a scale prescription that clusters each term on its own.
+    /// Cross section only: drawing an event from the integrand panics.
     #[cfg(any(test, feature = "extended-validation"))]
     pub fn emulate_madevent_mirrored_cut(&mut self) {
         self.madevent_mirrored_cut = true;
     }
 
-    /// Whether a point passes the cuts in either ordering under
-    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut),
-    /// recording which ordering passed; `lab_passes` alone without it.
-    #[cfg(any(test, feature = "extended-validation"))]
-    fn cut_orderings_as_madevent(
-        &self,
-        sc: &ProtonScratch<'a>,
-        m: &OuterPoint,
-        out: &[V],
-        lab_passes: bool,
-    ) -> bool {
-        if !self.madevent_mirrored_cut {
-            return lab_passes;
+    /// Evaluate every distinct cut filter on the point in the frame buffers,
+    /// recording in the scratch which filters pass each ordering's event, and
+    /// whether any does: a point is integrated wherever some group's cuts accept
+    /// it, and each group's term carries its own filter's indicator on its own
+    /// event. The exchanged event ([`exchanged_lab_into`](Self::exchanged_lab_into))
+    /// is cut only by a filter some mirrored group reads.
+    fn cut_point(&self, sc: &ProtonScratch<'a>, m: &OuterPoint, cm: &[V]) -> bool {
+        let lab = sc.lab_buf.borrow();
+        let mut exchanged = sc.exchanged_lab_buf.borrow_mut();
+        let mut built = false;
+        let mut passes = sc.filter_passes.borrow_mut();
+        let mut any = false;
+        for (k, (p, cuts)) in passes.iter_mut().zip(&self.filters).enumerate() {
+            let direct = cuts.pass(&lab);
+            let mirrored = self.filter_mirrored[k]
+                && if self.cuts_exchanged_as_sampled() {
+                    direct
+                } else {
+                    if !built {
+                        self.exchanged_lab_into([m.x1, m.x2], cm, &mut exchanged);
+                        built = true;
+                    }
+                    cuts.pass(&exchanged)
+                };
+            *p = [direct, mirrored];
+            any |= direct || mirrored;
         }
-        let [e1, e2] = self.beams.energies();
-        let r = e2 / e1;
-        let beta = (m.x2 - r * m.x1) / (m.x2 + r * m.x1);
-        let mut sampled = sc.madevent_lab_buf.borrow_mut();
-        sampled.clear();
-        sampled.push(V::new(m.x2 * e1, 0.0, 0.0, m.x2 * e1));
-        sampled.push(V::new(m.x1 * e2, 0.0, 0.0, -m.x1 * e2));
-        sampled.extend(
-            out.iter()
-                .map(|p| boost_z(V::new(p.e(), p.px(), -p.py(), -p.pz()), beta)),
-        );
-        let mirrored = self.cuts.pass(&sampled);
-        sc.ordering_passes.set([lab_passes, mirrored]);
-        lab_passes || mirrored
+        any
     }
 
-    /// `[direct, mirrored]` with the ordering whose cut failed zeroed, under
-    /// [`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut);
-    /// unchanged without it.
+    /// Whether the exchanged ordering is cut on the sampled configuration rather
+    /// than on its own event ([`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut)).
     #[cfg(any(test, feature = "extended-validation"))]
-    fn madevent_cut_luminosities(&self, sc: &ProtonScratch<'a>, lumi: [f64; 2]) -> [f64; 2] {
-        if !self.madevent_mirrored_cut {
-            return lumi;
+    fn cuts_exchanged_as_sampled(&self) -> bool {
+        self.madevent_mirrored_cut
+    }
+
+    /// Whether the exchanged ordering is cut on the sampled configuration rather
+    /// than on its own event: never, outside the test-side emulation.
+    #[cfg(not(any(test, feature = "extended-validation")))]
+    fn cuts_exchanged_as_sampled(&self) -> bool {
+        false
+    }
+
+    /// The exchanged ordering's event ([`exchange_into`]) in the frame the cuts
+    /// read, from the sampled fractions `x` and partonic-CM momenta `cm`: the
+    /// partonic configuration rotated with its beams exchanged, boosted at
+    /// MadEvent's `cm_rap` for beam 1 carrying `x₂` and beam 2 carrying `x₁`,
+    /// `½ ln(x₂E₁/(x₁E₂))`. Massless beams are then exactly `x₂P₁` and `x₁P₂`.
+    /// At equal beam energies this is the sampled lab frame rotated.
+    fn exchanged_lab_into(&self, x: [f64; 2], cm: &[V], out: &mut Vec<V>) {
+        let [e1, e2] = self.beams.energies();
+        let r = e2 / e1;
+        let beta = (x[1] - r * x[0]) / (x[1] + r * x[0]);
+        exchange_into(cm, out);
+        for p in out.iter_mut() {
+            *p = boost_z(*p, beta);
         }
-        let passes = sc.ordering_passes.get();
+        if self.initial_masses == [0.0, 0.0] {
+            out[0] = V::new(x[1] * e1, 0.0, 0.0, x[1] * e1);
+            out[1] = V::new(x[0] * e2, 0.0, 0.0, -x[0] * e2);
+        }
+    }
+
+    /// Whether group `gi`'s cuts accept the point last cut, in either beam
+    /// ordering ([`cut_point`](Self::cut_point)).
+    fn group_passes(&self, sc: &ProtonScratch<'a>, gi: usize) -> bool {
+        let [direct, mirrored] = self.group_cut(sc, gi);
+        direct || mirrored
+    }
+
+    /// Group `gi`'s cut indicator on each ordering's event, `[direct, mirrored]`,
+    /// at the point last cut.
+    fn group_cut(&self, sc: &ProtonScratch<'a>, gi: usize) -> [bool; 2] {
+        sc.filter_passes.borrow()[self.group_filter[gi]]
+    }
+
+    /// Group `gi`'s `[direct, mirrored]` luminosities with the ordering whose
+    /// event its cuts reject zeroed.
+    fn cut_luminosities(&self, sc: &ProtonScratch<'a>, gi: usize, lumi: [f64; 2]) -> [f64; 2] {
+        let passes = self.group_cut(sc, gi);
         [0, 1].map(|o| if passes[o] { lumi[o] } else { 0.0 })
     }
 
@@ -2331,7 +2880,18 @@ impl<'a> ProtonIntegrand<'a> {
         {
             let mut out = sc.group_scales.borrow_mut();
             out.clear();
-            out.resize(n_groups, [scales, scales]);
+            // An ordering whose event the group's cuts reject carries no weight
+            // here. The exchanged event's scales are the sampled ones with the
+            // beams' factorisation scales exchanged: MadEvent evaluates the
+            // prescription once, on the sampled momenta, and reads `Q2FACT(1)`
+            // for the representative's first parton in either ordering.
+            out.extend((0..n_groups).map(|gi| {
+                let [direct, mirrored] = self.group_cut(sc, gi);
+                [
+                    scales.filter(|_| direct),
+                    scales.filter(|_| mirrored).map(exchanged_scales),
+                ]
+            }));
             let mut factors = sc.group_rewgt.borrow_mut();
             factors.clear();
             factors.resize(n_groups, [None, None]);
@@ -2353,9 +2913,10 @@ impl<'a> ProtonIntegrand<'a> {
         let [f1, f2] = beam_rows(self.pdf, m.x1, m.x2, scales.mu_f);
 
         let mut acc = 0.0;
-        let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            acc += self.group_term(sc, gi, g, sub, cm, &mut mirror, &f1, &f2);
+            if self.group_passes(sc, gi) {
+                acc += self.group_term(sc, gi, g, sub, cm, &f1, &f2);
+            }
         }
         acc
     }
@@ -2369,19 +2930,18 @@ impl<'a> ProtonIntegrand<'a> {
     /// evaluated at. Here every group is summed at every point, so every group
     /// draws its own configuration from the one trailing uniform, clusters in it,
     /// and has its parton densities read at its own `μF` and its coupling moved to
-    /// its own `μR`. A group's mirrored term is a different physical event — the
-    /// same momenta with the beams' partons exchanged — and MadEvent clusters it
-    /// as that event: the configuration is drawn from `AMP2` at the mirrored
-    /// argument `Rq` and clustered at `Rq` too, where the representative's first
-    /// parton is on the first beam again. Both terms cluster in the partonic CM
-    /// ([`term_at`](Self::term_at)). The draws share the uniform, which correlates
-    /// them without changing any one term's distribution, and the sum is linear in
-    /// each term.
+    /// its own `μR`. Both of a group's terms take that one clustering: MadEvent's
+    /// `update_scale_coupling` clusters the sampled `PP` in either ordering, and
+    /// the exchanged event is that configuration rotated, at which every `AMP2_c`
+    /// and every clustering measure is the sampled one. Its factorisation scales
+    /// stay with their partons, so per physical beam they come out exchanged
+    /// ([`exchanged_scales`]). The clustering reads the partonic CM
+    /// ([`term_at`](Self::term_at)).
     ///
-    /// The sampling channel reaches only the direct terms of the groups whose
-    /// diagrams it was built from, and only as the draw's fallback where `AMP2`
-    /// carries no probability, where that group's own diagram of the channel is
-    /// kept; every other term falls back to its group's first configuration.
+    /// The sampling channel reaches only the groups whose diagrams it was built
+    /// from, and only as the draw's fallback where `AMP2` carries no probability,
+    /// where that group's own diagram of the channel is kept; every other group
+    /// falls back to its first configuration.
     fn per_group_sum(
         &self,
         sc: &ProtonScratch<'a>,
@@ -2393,11 +2953,6 @@ impl<'a> ProtonIntegrand<'a> {
         let &[v] = scale_u else {
             panic!("a configuration-drawing prescription takes one trailing uniform")
         };
-        #[cfg(any(test, feature = "extended-validation"))]
-        assert!(
-            !self.madevent_mirrored_cut,
-            "MadEvent's mirrored-ordering cut is emulated on a shared-scale sum only"
-        );
         let mut out = sc.group_scales.borrow_mut();
         out.clear();
         let mut factors = sc.group_rewgt.borrow_mut();
@@ -2416,8 +2971,18 @@ impl<'a> ProtonIntegrand<'a> {
             }
         };
         let mut acc = 0.0;
-        let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
+            // A group whose cuts reject the point carries no weight and is not
+            // clustered there.
+            if !self.group_passes(sc, gi) {
+                out.push([None, None]);
+                records.push([None, None]);
+                histories.push([None, None]);
+                factors.push([None, None]);
+                continue;
+            }
+            let [cut_direct, cut_mirrored] = self.group_cut(sc, gi);
+            let mirrored = cut_mirrored && g.has_mirror();
             let fallback = SampledChannel {
                 group: gi,
                 channel: self.channel_members[channel]
@@ -2425,91 +2990,69 @@ impl<'a> ProtonIntegrand<'a> {
                     .find(|id| id.group == gi)
                     .map_or(0, |id| id.channel),
             };
-            let direct = {
-                let drawn = self.scale_channel(sc, cm, fallback, v);
-                self.term_at(sc, cm, drawn)
-            };
-            let mirrored = if g.has_mirror() {
-                g.mirror_into(cm, &mut mirror);
-                let drawn = self.scale_channel(
-                    sc,
-                    &mirror,
-                    SampledChannel {
-                        group: gi,
-                        channel: 0,
-                    },
-                    v,
-                );
-                // Clustered with the beams exchanged, so its per-beam
-                // factorisation scales come back in that order.
-                self.term_at(sc, &mirror, drawn)
-                    .map(|(s, history, record)| {
-                        (
-                            EventScales {
-                                mu_f: [s.mu_f[1], s.mu_f[0]],
-                                mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
-                                ..s
-                            },
-                            history,
-                            record,
-                        )
-                    })
-            } else {
-                None
-            };
-            // The matched reweighting of each member, per ordering. The mirrored
-            // clustering puts the representative's first parton on its first
-            // beam, which is the physical second one.
-            let direct_rewgt = direct.as_ref().and_then(|(_, history, _)| {
-                history
-                    .as_ref()
-                    .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2], BeamOrdering::Direct))
-            });
-            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history, _)| {
-                history
-                    .as_ref()
-                    .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
-            });
-            let (direct, direct_history, direct_record) =
-                direct.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
-            let (mirrored, mirrored_history, mirrored_record) =
-                mirrored.map_or((None, None, None), |(s, h, r)| (Some(s), h, r));
-            out.push([direct, mirrored]);
-            records.push([direct_record, mirrored_record]);
-            histories.push([direct_history, mirrored_history]);
+            let drawn = self.scale_channel(sc, cm, fallback, v);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
+            let Some((scales, history, record)) = self.term_at(sc, cm, drawn) else {
+                out.push([None, None]);
+                records.push([None, None]);
+                histories.push([None, None]);
+                factors.push([None, None]);
+                continue;
+            };
+            // The matched reweighting of each member. The exchanged event's
+            // clustering is the sampled one with every parton at its own
+            // fraction, so a mirrored member's factor is its direct one.
+            let direct_rewgt = history
+                .as_ref()
+                .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2]));
+            let mirrored_rewgt = direct_rewgt
+                .as_ref()
+                .filter(|_| mirrored)
+                .map(|direct| g.mirrored_rewgts(direct));
+            let f = rows_at(scales.mu_f);
+            let lumi = [
+                if cut_direct {
+                    term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref())
+                } else {
+                    0.0
+                },
+                if mirrored {
+                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref())
+                } else {
+                    0.0
+                },
+            ];
             let mut term = 0.0;
-            if let Some(scales) = direct {
-                let f = rows_at(scales.mu_f);
-                let lumi = term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref());
-                if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
-                }
+            if lumi != [0.0, 0.0] {
+                self.apply_scale_to(sc, sub, scales.mu_r);
+                term = (lumi[0] + lumi[1]) * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
             }
-            if let Some(scales) = mirrored {
-                let f = rows_at(scales.mu_f);
-                let lumi =
-                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref());
-                if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
-                }
-            }
-            factors.push([direct_rewgt, mirrored_rewgt]);
+            out.push([
+                cut_direct.then_some(scales),
+                mirrored.then_some(exchanged_scales(scales)),
+            ]);
+            records.push([
+                record.clone().filter(|_| cut_direct),
+                record.filter(|_| mirrored),
+            ]);
+            histories.push([
+                history.clone().filter(|_| cut_direct),
+                history.filter(|_| mirrored),
+            ]);
+            factors.push([direct_rewgt.filter(|_| cut_direct), mirrored_rewgt]);
             acc += g.spin_color_average() * term;
         }
         acc
     }
 
-    /// Each member's matched reweighting factor for one beam ordering of group
-    /// `gi`, from the clustering that ordering's term was scaled in.
+    /// Each member's matched reweighting factor in group `gi`, from the
+    /// clustering the group's scale was taken in, at the momentum fractions `x`
+    /// of the representative's two partons.
     ///
     /// `rewgt` reads the flavours of the one combination MadEvent drew for the
     /// point; here every member carries its own factor, weighted by its own
-    /// luminosity, which is that draw's expectation. A member with no mirrored
-    /// ordering carries no luminosity there and takes `1` unread.
+    /// luminosity, which is that draw's expectation.
     ///
     /// # Panics
     ///
@@ -2521,14 +3064,10 @@ impl<'a> ProtonIntegrand<'a> {
         g: &FlavorGroup,
         history: &RewgtHistory,
         x: [f64; 2],
-        ordering: BeamOrdering,
     ) -> Vec<f64> {
         let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
         (0..g.members().len())
             .map(|i| {
-                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
-                    return 1.0;
-                }
                 self.member_rewgt(gi, g, i, history, x, &mut flavours)
                     .weight
             })
@@ -2587,8 +3126,9 @@ impl<'a> ProtonIntegrand<'a> {
         .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
     }
 
-    /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
-    /// coupling its amplitudes are bound at and the density rows given.
+    /// One group's `avg_g · (L_g^direct Θ(q) + L_g^mirror Θ(R q)) · |M_g(q)|²` at
+    /// the coupling its amplitudes are bound at and the density rows given: one
+    /// matrix element for both orderings.
     #[allow(clippy::too_many_arguments)]
     fn group_term(
         &self,
@@ -2597,24 +3137,16 @@ impl<'a> ProtonIntegrand<'a> {
         g: &FlavorGroup,
         sub: &BoundSubprocess<'a>,
         cm: &[V],
-        mirror: &mut Vec<V>,
         f1: &FlavorRow,
         f2: &FlavorRow,
     ) -> f64 {
-        let [direct, reflected] = g.symmetry_weighted_luminosity_rows(f1, f2);
-        #[cfg(any(test, feature = "extended-validation"))]
-        let [direct, reflected] = self.madevent_cut_luminosities(sc, [direct, reflected]);
-        let mut term = 0.0;
-        if direct != 0.0 {
-            term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
+        let lumi = g.symmetry_weighted_luminosity_rows(f1, f2);
+        let [direct, mirrored] = self.cut_luminosities(sc, gi, lumi);
+        let luminosity = direct + mirrored;
+        if luminosity == 0.0 {
+            return 0.0;
         }
-        // Zero for a group whose beams carry one parton ([`FlavorGroup::has_mirror`]),
-        // so such a group costs one matrix element per point rather than two.
-        if reflected != 0.0 {
-            g.mirror_into(cm, mirror);
-            term += reflected * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, mirror);
-        }
-        g.spin_color_average() * term
+        g.spin_color_average() * (luminosity * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm))
     }
 
     /// Which of a group's channels names the integration configuration its scale
@@ -2629,10 +3161,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// history. `fallback` names the group and the channel kept where no
     /// configuration carries probability.
     ///
-    /// `cm` is the ordering being evaluated. A group with a mirror is asked twice
-    /// per point, at the direct momenta and at the mirrored ones, with the same
-    /// `v`: each ordering's scale is clustered in a configuration drawn from that
-    /// ordering's own amplitudes.
+    /// `cm` is the sampled configuration; the exchanged ordering's event is its
+    /// rotation, at which every `AMP2_c` is the same, so one draw serves both.
     fn scale_channel(
         &self,
         sc: &ProtonScratch<'a>,
@@ -2716,7 +3246,12 @@ impl<'a> ProtonIntegrand<'a> {
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
             PointScales::Scales(scales) => Some(scales),
-            PointScales::Vetoed => None,
+            PointScales::Vetoed(veto) => {
+                if veto == ScaleVeto::Degenerate {
+                    sc.census.degenerate();
+                }
+                None
+            }
         }
     }
 
@@ -2725,8 +3260,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// matrix element is evaluated at, beams first.
     ///
     /// The frame is MadEvent's: `update_scale_coupling` clusters the `PP` that
-    /// `DSIGPROC` evaluates, and that is the partonic CM, mirrored for an
-    /// `IMIRROR = 2` term. The clustering is not invariant under the
+    /// `DSIGPROC` receives, the sampled partonic CM, in either beam ordering. The
+    /// clustering is not invariant under the
     /// longitudinal boost to the lab: `cluster.f` breaks the tie between the two
     /// beams of an initial-state merge on the sign of the merged leg's `p_z`, and
     /// its massive-pair measure reads pseudorapidities.
@@ -2749,7 +3284,12 @@ impl<'a> ProtonIntegrand<'a> {
                 rewgt,
                 record,
             } => Some((scales, rewgt, record)),
-            PointHistory::Vetoed => None,
+            PointHistory::Vetoed(veto) => {
+                if veto == ScaleVeto::Degenerate {
+                    sc.census.degenerate();
+                }
+                None
+            }
         }
     }
 
@@ -2884,6 +3424,70 @@ impl<'a> ProtonIntegrand<'a> {
         })
     }
 
+    /// The laboratory momenta an accepted event's record carries under `ordering`,
+    /// beams first, in physical beam order.
+    ///
+    /// Under [`BeamOrdering::Exchanged`] the event is the sampled configuration
+    /// rotated by π about the x axis with its beams exchanged ([`exchange_into`]),
+    /// beam 1 carrying the member's second parton at the sampled `x₂` and beam 2
+    /// its first at `x₁`, as MadEvent writes an `IMIRROR = 2` event. Everything
+    /// below reads that event's partonic momenta and fractions.
+    ///
+    /// With massless partons this is the event's lab frame as the cuts read it:
+    /// beams `xᵢPᵢ`, the outgoing legs boosted by `cm_rap` (for the direct
+    /// ordering, [`ProtonEvent::lab`]).
+    ///
+    /// With a massive parton it is the frame MadEvent's `write_leshouche` writes
+    /// (`unwgt.f`), which is a different boost from the one its cuts read. The
+    /// beams are put on their own mass shells in the partonic CM, and one beam is
+    /// chosen as the anchor: beam 1 when its parton is massless,
+    /// beam 2 otherwise. The boost along `z` is the one that takes the anchor's
+    /// `E*/xᵢ` to its beam energy `Eᵢ`, so the anchor's lab energy is `xᵢEᵢ`
+    /// while the other beam's is whatever its mass shell and the boost leave
+    /// it. MadEvent falls back to the `cm_rap` boost wherever that puts either
+    /// beam above its beam energy, and so does this. Unlike MadEvent, whose
+    /// anchor boost takes the anchor and its beam at the proton mass, this keeps
+    /// them massless, as [`ProtonBeams`] does: the two boosts differ at
+    /// `O(m_p²x²/E*²)`, which is largest where the anchor's `E*/x` falls far
+    /// below its beam energy. MadEvent's massless-parton record takes the same
+    /// anchored boost, so the light-cone record above differs from it at the
+    /// same order.
+    pub fn record_momenta(&self, event: &ProtonEvent, ordering: BeamOrdering) -> Vec<V> {
+        let massless = self.initial_masses == [0.0, 0.0];
+        if ordering == BeamOrdering::Direct && massless {
+            return event.lab.clone();
+        }
+        let mut cm = Vec::with_capacity(event.cm.len());
+        if massless {
+            self.exchanged_lab_into(event.x, &event.cm, &mut cm);
+            return cm;
+        }
+        let [m1, m2] = self.initial_masses;
+        let (x, beam1_mass) = match ordering {
+            BeamOrdering::Direct => {
+                cm.extend_from_slice(&event.cm);
+                (event.x, m1)
+            }
+            BeamOrdering::Exchanged => {
+                exchange_into(&event.cm, &mut cm);
+                ([event.x[1], event.x[0]], m2)
+            }
+        };
+        let incoming = [cm[0], cm[1]];
+        let energies = self.beams.energies();
+        let anchor = usize::from(beam1_mass != 0.0);
+        let r = energies[anchor] * x[anchor] / incoming[anchor].e();
+        let along = if anchor == 0 { 1.0 } else { -1.0 };
+        let mut beta = along * (r * r - 1.0) / (r * r + 1.0);
+        let over_beam = |b: f64| (0..2).any(|i| boost_z(incoming[i], b).e() > energies[i]);
+        if over_beam(beta) {
+            let [e1, e2] = energies;
+            let rr = e2 / e1;
+            beta = (x[0] - rr * x[1]) / (x[0] + rr * x[1]);
+        }
+        cm.iter().map(|p| boost_z(*p, beta)).collect()
+    }
+
     /// A point's weight taken apart into the factors it is a product of: the
     /// channel term's value `αⱼ f/g`, the selection weight `αⱼ`, and every
     /// channel's own density `gₖ` at the point, from which `g = Σₖ αₖ gₖ` and the
@@ -2909,45 +3513,15 @@ impl<'a> ProtonIntegrand<'a> {
         })
     }
 
-    /// Fill in an accepted event's discrete labels: which flavour group produced
-    /// it, which concrete flavour assignment inside that group, which way round the
-    /// beams carry it, which helicity combination and which colour flow.
-    ///
-    /// The five uniforms are consumed in that order. The draws are nested rather
-    /// than independent, and each is proportional to the term of the point's own
-    /// value that the label names:
-    ///
-    /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`, with
-    ///   the two luminosities symmetry-weighted as in the cross section and each
-    ///   group's term at its own scales ([`ProtonEvent::group_scales`]), which
-    ///   become the selection's;
-    /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q or Rq)|²`,
-    ///   which at fixed ordering is the member's share of the group's summed
-    ///   parton luminosity at this event's `(x₁, x₂)`, times its own
-    ///   identical-particle factor — the whole of what distinguishes one member of a
-    ///   group from another, since they share the matrix element exactly;
-    /// * the helicity `∝ |M_c|²`, then the colour flow through
-    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
-    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
-    ///   admitted set — all evaluated at the argument the drawn ordering implies,
-    ///   as on a fixed-beam run.
-    ///
-    /// All of them are selections, not sampling channels: the cross section sums
-    /// over every one, and this reads accumulators that sum already contains. A
-    /// caller may skip it entirely and integrate the same number.
-    ///
-    /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+    /// Each flavour group's share of an accepted point's value, per beam ordering:
+    /// the terms [`select_event`](Self::select_event) draws the group and the
+    /// ordering from, each read at the coupling and densities its term of the
+    /// point's value was taken at.
+    fn ordering_terms(&self, event: &ProtonEvent) -> OrderingTerms {
         let sc = self.scratch();
-        let mut mirror = Vec::with_capacity(event.cm.len());
-        assert_eq!(
-            event.group_scales.len(),
-            sc.subs.len(),
-            "an event carries one scale entry per flavour group"
-        );
-
         let mut m2 = Vec::with_capacity(sc.subs.len());
         let mut terms = Vec::with_capacity(sc.subs.len());
+        let mut split = Vec::with_capacity(sc.subs.len());
         // Per group, the density rows each ordering's term read.
         let mut group_rows: Vec<[[FlavorRow; 2]; 2]> = Vec::with_capacity(sc.subs.len());
         let mut last: Option<([f64; 2], [FlavorRow; 2])> = None;
@@ -2968,9 +3542,11 @@ impl<'a> ProtonIntegrand<'a> {
             let mut term_m2 = [0.0; 2];
             let mut rows = [no_rows; 2];
             let mut term = 0.0;
+            let mut lumis = [0.0; 2];
             if let Some(scales) = direct_scales {
                 rows[0] = rows_at(scales.mu_f);
                 let lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
+                lumis[0] = lumi;
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term_m2[0] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm);
@@ -2978,19 +3554,91 @@ impl<'a> ProtonIntegrand<'a> {
                 term += lumi * term_m2[0];
             }
             if let Some(scales) = mirrored_scales {
-                rows[1] = rows_at(scales.mu_f);
+                // The densities are read per parton, in the representative's leg
+                // order, which the exchanged scales hold in physical beam order.
+                rows[1] = rows_at(exchanged_scales(scales).mu_f);
                 let lumi = term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
+                lumis[1] = lumi;
                 if lumi != 0.0 {
-                    self.apply_scale_to(sc, sub, scales.mu_r);
-                    g.mirror_into(&event.cm, &mut mirror);
-                    term_m2[1] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
+                    // The sampled point's matrix element, at the same coupling.
+                    let shared =
+                        direct_scales.filter(|d| d.mu_r == scales.mu_r && term_m2[0] != 0.0);
+                    term_m2[1] = if shared.is_some() {
+                        term_m2[0]
+                    } else {
+                        self.apply_scale_to(sc, sub, scales.mu_r);
+                        vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm)
+                    };
                 }
                 term += lumi * term_m2[1];
             }
             m2.push(term_m2);
             group_rows.push(rows);
             terms.push(g.spin_color_average() * term);
+            split.push([0, 1].map(|o| g.spin_color_average() * (lumis[o] * term_m2[o])));
         }
+        OrderingTerms {
+            m2,
+            terms,
+            split,
+            rows: group_rows,
+        }
+    }
+
+    /// Per flavour group, `[direct, mirrored]`, the two orderings' terms of an
+    /// accepted point's value, `avg_g · L_g^o · |M_g(q)|²` with each ordering's
+    /// cut and scales: what a mirror term contributes against its direct term
+    /// at this point. A symmetric proton–proton process gives a mirrored member
+    /// equal terms in both orderings at every point.
+    pub fn ordering_contributions(&self, event: &ProtonEvent) -> Vec<[f64; 2]> {
+        self.ordering_terms(event).split
+    }
+
+    /// Fill in an accepted event's discrete labels: which flavour group produced
+    /// it, which concrete flavour assignment inside that group, which way round the
+    /// beams carry it, which helicity combination and which colour flow.
+    ///
+    /// The five uniforms are consumed in that order. The draws are nested rather
+    /// than independent, and each is proportional to the term of the point's own
+    /// value that the label names:
+    ///
+    /// * the group `∝ avg_g · (L_g^direct + L_g^mirror) · |M_g(q)|²`, each ordering
+    ///   cut on its own event, with the two luminosities symmetry-weighted as in
+    ///   the cross section and each group's term at its own scales
+    ///   ([`ProtonEvent::group_scales`]), which become the selection's;
+    /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q)|²`,
+    ///   the member's share of the group's summed parton luminosity at this
+    ///   event's `(x₁, x₂)`, times its own identical-particle factor — the whole of
+    ///   what distinguishes one member of a group from another, since they share
+    ///   the matrix element exactly. A mirrored member's two orderings carry the
+    ///   same share, so the beams are exchanged on half of its events;
+    /// * the helicity `∝ |M_c|²`, then the colour flow through
+    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
+    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
+    ///   admitted set — all evaluated at the sampled point, as on a fixed-beam
+    ///   run. The exchanged event is its rotation, at which every one of them is
+    ///   the same, and its helicities are relabelled onto the physical legs
+    ///   ([`FlavorGroup::event_legs`]).
+    ///
+    /// All of them are selections, not sampling channels: the cross section sums
+    /// over every one, and this reads accumulators that sum already contains. A
+    /// caller may skip it entirely and integrate the same number.
+    ///
+    /// `None` when the point carries no weight, where no label is defined.
+    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+        let sc = self.scratch();
+        assert_eq!(
+            event.group_scales.len(),
+            sc.subs.len(),
+            "an event carries one scale entry per flavour group"
+        );
+
+        let OrderingTerms {
+            m2,
+            terms,
+            rows: group_rows,
+            ..
+        } = self.ordering_terms(event);
         let group = select_index(&terms, u[0])?;
         let g = &self.groups.groups()[group];
         let [direct_rows, mirrored_rows] = group_rows[group];
@@ -3029,13 +3677,9 @@ impl<'a> ProtonIntegrand<'a> {
             },
         );
 
-        let argument = match ordering {
-            BeamOrdering::Direct => &event.cm,
-            BeamOrdering::Exchanged => {
-                g.mirror_into(&event.cm, &mut mirror);
-                &mirror
-            }
-        };
+        // Both orderings' labels are read at the sampled point: the exchanged
+        // event is its rotation, which no diagonal sees.
+        let argument = &event.cm;
         let scales = event.group_scales[group][ordering_slot(ordering)]
             .expect("a drawn ordering carries weight");
         let sub = &sc.subs[group];
@@ -3075,11 +3719,9 @@ impl<'a> ProtonIntegrand<'a> {
             .get(group)
             .and_then(|h| h[slot].as_ref())
             .map(|history| {
-                let x = match ordering {
-                    BeamOrdering::Direct => event.x,
-                    BeamOrdering::Exchanged => [event.x[1], event.x[0]],
-                };
-                self.member_rewgt(group, g, member, history, x, &mut Vec::new())
+                // The clustering's beams are the representative's partons, at
+                // their sampled fractions in either ordering.
+                self.member_rewgt(group, g, member, history, event.x, &mut Vec::new())
             });
 
         Some(ProtonSelection {
@@ -3396,7 +4038,7 @@ mod tests {
     use crate::phasespace::DiagramChannel;
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::vegas::VegasGrid;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
     /// An integrand under the maps every banked row was integrated under, for the
@@ -3491,6 +4133,308 @@ mod tests {
                 "{map:?}: {mean} ± {err} against the exact {exact}"
             );
         }
+    }
+
+    /// A decay chain that forces a line carrying the whole final state confines
+    /// both `τ` maps to that line's window, `√ŝ ∈ (M − 15Γ, M + 15Γ)` at the
+    /// default `bwcutoff`, and each still integrates `∫ τ^p dτ/τ` over the
+    /// narrowed range. Unbounded, the draw would reach `√s`, and a point above the
+    /// window would carry no weight.
+    #[test]
+    fn a_whole_state_window_bounds_both_tau_maps() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive_flavor_groups(
+            enumerate("p p > z, z > e+ e-", &m),
+            &m,
+            &evaluated,
+            &RunCard::default(),
+        )
+        .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let z = m.particle_id("Z").expect("Z");
+        let (mz, wz) = (evaluated.mass(z), evaluated.width(z));
+        let s_had = SQRT_S_HAD * SQRT_S_HAD;
+        let (lo, hi) = (mz - 15.0 * wz, mz + 15.0 * wz);
+        let (tau_min, tau_max) = (integ.tau_min, integ.tau_max);
+        assert!(
+            (tau_min * s_had / (lo * lo) - 1.0).abs() < 1e-12,
+            "{tau_min}"
+        );
+        assert!(
+            (tau_max * s_had / (hi * hi) - 1.0).abs() < 1e-12,
+            "{tau_max}"
+        );
+        let p = -0.5f64;
+        let exact = (tau_max.powf(p) - tau_min.powf(p)) / p;
+        for map in [TauMap::Log, TauMap::InverseSquare] {
+            for edge in [0.0, 1.0] {
+                let pt = integ.map_point_with(map, &[edge, 0.5]);
+                let bound = if edge == 0.0 { lo } else { hi };
+                assert!((pt.sqrt_shat / bound - 1.0).abs() < 1e-12, "{map:?} {edge}");
+            }
+            let mut stream = SubStream::from_stream(0x7A0_3333, 5);
+            let n = 200_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let pt = integ.map_point_with(map, &stream.uniforms::<f64>(2));
+                assert!(pt.sqrt_shat >= lo * (1.0 - 1e-12) && pt.sqrt_shat <= hi * (1.0 + 1e-12));
+                let tau = pt.x1 * pt.x2;
+                let v = pt.jac / (-tau.ln()) * tau.powf(p);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{map:?}: {mean} ± {err} against the exact {exact}"
+            );
+        }
+    }
+
+    /// The Breit–Wigner `τ` mixture carries the Jacobian of its own density. On
+    /// Drell–Yan, whose `γ` and `Z` channels give the log map and the `Z` pole one
+    /// half each, the flat average of the outer weight reproduces both
+    /// `∫ τ^(−1/2) dτ/τ`, which the log component carries, and the `Z`'s own
+    /// Lorentzian in `τ`, which the pole component carries.
+    /// A component missing from the density, or a segment mapped through the
+    /// wrong component, misses either by many standard errors.
+    #[test]
+    fn the_breit_wigner_tau_mixture_integrates_known_functions() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = ProtonIntegrand::new_with_maps(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            BEAMS,
+            MU_F,
+            MapOptions {
+                tau: Some(TauMap::BreitWigner),
+                ..MapOptions::fixed(MapChoices::LEGACY)
+            },
+        )
+        .expect("integrand");
+        let mix = integ.tau_mixture.clone().expect("the Z pole is in range");
+        let z = m.particle_id("Z").expect("Z");
+        let (mz, wz) = (evaluated.mass(z), evaluated.width(z));
+        assert_eq!(mix.poles.len(), 1);
+        let pole = mix.poles[0];
+        assert_eq!((pole.mass, pole.width), (mz, wz));
+        assert!((mix.log_weight - 0.5).abs() < 1e-15 && (pole.weight - 0.5).abs() < 1e-15);
+        let (tau_min, tau_max) = (integ.tau_min, integ.tau_max);
+        for (edge, want) in [(0.0, tau_min), (1.0, tau_max)] {
+            let pt = integ.map_point_with(TauMap::BreitWigner, &[edge, 0.5]);
+            assert!(((pt.x1 * pt.x2) / want - 1.0).abs() < 1e-9, "{edge}");
+        }
+        let p = -0.5f64;
+        let power = (tau_max.powf(p) - tau_min.powf(p)) / p;
+        let lorentzian = pole.z_hi - pole.z_lo;
+        // The last entry bounds the relative error. The pole half of the draws
+        // carries the Lorentzian at a near-constant weight and the log half almost
+        // none of it, so its error is the binomial `1/√n` of that split; without
+        // the pole component it would be an order of magnitude larger.
+        /// A name, the exact integral, the integrand and the relative error bound.
+        type Target<'f> = (&'f str, f64, &'f dyn Fn(f64) -> f64, f64);
+        let targets: [Target; 2] = [
+            ("tau^-1/2", power, &|tau: f64| tau.powf(p), 5e-3),
+            (
+                "Z Lorentzian",
+                lorentzian,
+                &|tau: f64| tau * pole.w / ((tau - pole.tau0).powi(2) + pole.w * pole.w),
+                3e-3,
+            ),
+        ];
+        for (name, exact, h, precision) in targets {
+            let mut stream = SubStream::from_stream(0x7A0_4444, 5);
+            let n = 400_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let pt = integ.map_point_with(TauMap::BreitWigner, &stream.uniforms::<f64>(2));
+                let tau = pt.x1 * pt.x2;
+                assert!(tau >= tau_min * (1.0 - 1e-12) && tau <= tau_max * (1.0 + 1e-12));
+                let v = pt.jac / (-tau.ln()) * h(tau);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
+            eprintln!("{name}: {mean:.8} ± {err:.1e} against {exact:.8}");
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{name}: {mean} ± {err} against the exact {exact}"
+            );
+            assert!(err < precision * exact, "{name}: error {err} on {exact}");
+        }
+    }
+
+    /// A mixture of the log map and three poles, built from channel counts 1, 1,
+    /// 1 and 2, over a range whose ceiling cuts into the upper pole's line. Each
+    /// component's segment of the unit coordinate draws that component's own
+    /// distribution, so the drawn `τ` follows the weighted sum of the
+    /// components' distribution functions; and the returned `(dτ/du)/τ` is
+    /// `1/(τ p)` at the summed density `p`, so each component's own normalised
+    /// density integrates to one under it. Both are read off the components'
+    /// definitions, not off the mixture. The draw runs on a midpoint grid of the
+    /// unit coordinate, so both checks are deterministic: a count of grid points
+    /// below `τ` is off by under one per segment, and each integral by under one
+    /// grid step of its largest value, `1/c` for the smallest weight `c`, per
+    /// segment edge.
+    #[test]
+    fn a_three_pole_tau_mixture_draws_its_density_over_a_bounded_range() {
+        let (s, tau_min, tau_max) = (1e8f64, 1e-4f64, 1e-2f64);
+        // Poles at `τ₀` = 1e-3, 3e-3 and 8e-3 with `MΓ/s` = 5e-5, 1.5e-4 and
+        // 4e-4: the ceiling sits five half-widths above the upper one, and the
+        // middle pole's segment starts neither at the log map's end nor at the
+        // last pole's.
+        let line = |tau0: f64, w: f64| {
+            let mass = (tau0 * s).sqrt();
+            (mass, w * s / mass)
+        };
+        let (a, m, b) = (line(1e-3, 5e-5), line(3e-3, 1.5e-4), line(8e-3, 4e-4));
+        let mix = TauMixture::from_counts(1, vec![(a, 1), (m, 1), (b, 2)], s, tau_min, tau_max)
+            .expect("every pole is in range");
+        let weights: Vec<f64> = mix.poles.iter().map(|p| p.weight).collect();
+        let fifth = 1.0 / 5.0;
+        assert_eq!(
+            (mix.log_weight, weights),
+            (fifth, vec![fifth, fifth, 2.0 / 5.0])
+        );
+
+        let ln_range = (tau_max / tau_min).ln();
+        // A component's distribution function and density at `τ`.
+        let log = move |tau: f64| ((tau / tau_min).ln() / ln_range, 1.0 / (tau * ln_range));
+        let breit_wigner = |(mass, width): (f64, f64)| {
+            let (tau0, w) = (mass * mass / s, mass * width / s);
+            let lo = ((tau_min - tau0) / w).atan();
+            let norm = ((tau_max - tau0) / w).atan() - lo;
+            move |tau: f64| {
+                (
+                    (((tau - tau0) / w).atan() - lo) / norm,
+                    w / ((tau - tau0).powi(2) + w * w) / norm,
+                )
+            }
+        };
+        let (bw_a, bw_m, bw_b) = (breit_wigner(a), breit_wigner(m), breit_wigner(b));
+        /// A name, the weight, and the distribution function and density at `τ`.
+        type Component<'f> = (&'f str, f64, &'f dyn Fn(f64) -> (f64, f64));
+        let components: [Component; 4] = [
+            ("log", fifth, &log),
+            ("pole a", fifth, &bw_a),
+            ("pole m", fifth, &bw_m),
+            ("pole b", 2.0 / 5.0, &bw_b),
+        ];
+
+        assert_eq!(mix.draw(0.0).0, tau_min);
+        assert!((mix.draw(1.0).0 / tau_max - 1.0).abs() < 1e-9);
+        let n = 400_000;
+        let draws: Vec<(f64, f64)> = (0..n)
+            .map(|i| mix.draw((i as f64 + 0.5) / n as f64))
+            .collect();
+        assert!(draws
+            .iter()
+            .all(|&(tau, _)| (tau_min..=tau_max).contains(&tau)));
+
+        let count_bound = components.len() as f64 / n as f64;
+        for t in [
+            1.5e-4, 5e-4, 9.5e-4, 1e-3, 1.05e-3, 2.8e-3, 3e-3, 3.3e-3, 7.6e-3, 8e-3, 8.8e-3, 9.9e-3,
+        ] {
+            let below = draws.iter().filter(|&&(tau, _)| tau <= t).count() as f64 / n as f64;
+            let want: f64 = components.iter().map(|(_, c, f)| c * f(t).0).sum();
+            assert!(
+                (below - want).abs() < count_bound,
+                "P(τ ≤ {t}): drawn {below}, the components' {want}"
+            );
+        }
+        let integral_bound = components.len() as f64 / fifth / n as f64;
+        for (name, _, f) in components {
+            let integral = draws
+                .iter()
+                .map(|&(tau, jac)| f(tau).1 * tau * jac)
+                .sum::<f64>()
+                / n as f64;
+            eprintln!("{name}: ∫ p dτ = {integral:.9}");
+            assert!(
+                (integral - 1.0).abs() < integral_bound,
+                "{name}: ∫ p dτ = {integral} under the mixture's weight"
+            );
+        }
+    }
+
+    /// `breit-wigner` with no whole-state pole inside the range is the log map,
+    /// point for point: Drell–Yan above `m_ll > 150 GeV` puts the `Z` pole below
+    /// `τ_min`, so the mixture has no Breit–Wigner component.
+    #[test]
+    fn the_breit_wigner_map_without_a_pole_in_range_is_the_log_map() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  150.0 = mmll\n",
+        )
+        .expect("run card");
+        let groups = derive_flavor_groups(enumerate("p p > e+ e-", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = ProtonIntegrand::new_with_maps(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            BEAMS,
+            MU_F,
+            MapOptions {
+                tau: Some(TauMap::BreitWigner),
+                ..MapOptions::fixed(MapChoices::LEGACY)
+            },
+        )
+        .expect("integrand");
+        assert!(integ.tau_mixture.is_none());
+        let mut stream = SubStream::from_stream(0x7A0_5555, 5);
+        for _ in 0..1000 {
+            let u = stream.uniforms::<f64>(2);
+            let (bw, log) = (
+                integ.map_point_with(TauMap::BreitWigner, &u),
+                integ.map_point_with(TauMap::Log, &u),
+            );
+            let bits = |p: &OuterPoint| [p.x1, p.x2, p.sqrt_shat, p.jac].map(f64::to_bits);
+            assert_eq!(bits(&bw), bits(&log), "{u:?}");
+        }
+    }
+
+    /// The rule judges a whole-state resonance's narrowness over the range the
+    /// `τ` map draws, which a decay chain's window bounds. At `Γ_Z` = 0.1 GeV the
+    /// `Z` of `p p > e+ e-` above `m_ll > 50 GeV` holds about 2e-4 of the log
+    /// map's unit interval and takes the Breit–Wigner mixture; `p p > z, z > e+ e-`
+    /// confines the draw to the `Z`'s ±15Γ window, where it holds about 3e-2,
+    /// and keeps the log map, as card 048's chain does.
+    #[test]
+    fn the_tau_rule_reads_the_range_a_decay_window_bounds() {
+        let m = model();
+        let card: crate::ufo::slha::ParamCard = "DECAY 23 0.1\n".parse().expect("param card");
+        let evaluated = EvaluatedModel::from_model_card(m.clone(), &card).expect("the card binds");
+        let shape = |process: &str, card: &RunCard| {
+            let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, card)
+                .expect("flavour groups");
+            process_shape(&groups, &evaluated, SQRT_S_HAD)
+        };
+        let open = shape("p p > e+ e-", &llj_card());
+        let chain = shape("p p > z, z > e+ e-", &RunCard::default());
+        assert!(open.whole_state_resonance && open.narrow_whole_state_resonance);
+        assert!(chain.whole_state_resonance && !chain.narrow_whole_state_resonance);
+        let rule = MapOptions::default();
+        assert_eq!(rule.resolve(&open).tau, TauMap::BreitWigner);
+        assert_eq!(rule.resolve(&chain).tau, TauMap::Log);
     }
 
     /// The multi-subprocess hadronic process the grouping rule is measured on:
@@ -3632,7 +4576,7 @@ mod tests {
 
         // A massless final state: five distinct rungs over two decades, one of
         // them the pole and one of them below the electroweak scale.
-        let massless = probe_energies(&[0.0, 0.0, 0.0], Some(m_z));
+        let massless = probe_energies([0.0, 0.0], &[0.0, 0.0, 0.0], Some(m_z));
         assert_eq!(massless.len(), 5);
         assert!(massless[0] < 91.0, "no rung below the electroweak scale");
         assert!(
@@ -3647,7 +4591,7 @@ mod tests {
         // A heavy final state: every rung sits above its threshold, and the ones
         // that would not collapse onto the floor instead of repeating a point.
         let m_t = evaluated.mass(m.particle_id("t").expect("t in the SM"));
-        let heavy = probe_energies(&[m_t, m_t], Some(m_z));
+        let heavy = probe_energies([0.0, 0.0], &[m_t, m_t], Some(m_z));
         assert!(
             heavy.iter().all(|&e| e > 2.0 * m_t),
             "a rung below the t t~ threshold: {heavy:?}"
@@ -3755,7 +4699,9 @@ mod tests {
         assert_eq!(t.len(), 4, "u u~, c c~, d d~, s s~, each once");
         for ([a, b], mirrored, l) in t {
             assert!(mirrored, "{a} {b}");
-            assert_eq!(l, [lumi(a, b), lumi(b, a)], "{a} {b}");
+            // The exchanged event reads each parton at its own fraction, on the
+            // other beam: the direct product again.
+            assert_eq!(l, [lumi(a, b), lumi(a, b)], "{a} {b}");
         }
     }
 
@@ -3828,14 +4774,95 @@ mod tests {
         );
     }
 
-    /// The mirror identity `|M_{b a}(q)|² = |M_{a b}(R q)|²`, against explicitly
-    /// enumerated mirrored subprocesses.
+    /// A subprocess two decay assignments reach (`g g > u u~ c c~` from
+    /// `g g > z j j, z > j j`) is two members, one per assignment, each in the group
+    /// whose `|M|²` is its own at points the partition was not measured on. The
+    /// two assignments' `|M|²` agree, each in its own leg order, only through a
+    /// flavour symmetry (u ↔ c here), and then they share a group with two luminosity
+    /// terms, as MadGraph's one matrix element with two PDF terms does.
+    #[test]
+    fn each_decay_assignment_of_one_subprocess_is_a_member() {
+        const CHAIN: &str = "g g > z j j, z > j j";
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive(CHAIN, &m, &evaluated);
+        let points = fresh_points(&groups.groups()[0].final_masses());
+        let representatives: Vec<Vec<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| m2_trace(g.evaluator(), &evaluated, &points))
+            .collect();
+
+        let sets: Vec<DiagramSet> = enumerate(CHAIN, &m)
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        assert_eq!(sets.len(), 16);
+        assert_eq!(groups.subprocess_count(), sets.len());
+        let mut placed: BTreeMap<(Vec<i32>, Vec<i32>), Vec<usize>> = BTreeMap::new();
+        for set in &sets {
+            let evaluator = compile_class(set, &m, &evaluated).expect("subprocess compiles");
+            let legs = process_external_legs(&evaluator, &m, &evaluated);
+            let incoming = [legs[0].pdg, legs[1].pdg];
+            let outgoing: Vec<i32> = legs[2..].iter().map(|l| l.pdg).collect();
+            let trace = m2_trace(&evaluator, &evaluated, &points);
+            let hits: Vec<usize> = (0..groups.groups().len())
+                .filter(|&i| worst_rel(&representatives[i], &trace) < 1e-12)
+                .collect();
+            assert_eq!(
+                hits.len(),
+                1,
+                "{} matches {} groups",
+                label(set),
+                hits.len()
+            );
+            let group = &groups.groups()[hits[0]];
+            assert_eq!(
+                group
+                    .members()
+                    .iter()
+                    .filter(|s| s.incoming == incoming && s.outgoing == outgoing)
+                    .count(),
+                1,
+                "{} is not a member of the group it agrees with",
+                label(set)
+            );
+            let mut content = outgoing.clone();
+            content.sort_unstable();
+            placed
+                .entry((incoming.to_vec(), content))
+                .or_default()
+                .push(hits[0]);
+        }
+        let shared: Vec<_> = placed.iter().filter(|(_, g)| g.len() > 1).collect();
+        assert_eq!(shared.len(), 6, "{placed:?}");
+        for (content, in_groups) in &shared {
+            assert_eq!(in_groups.len(), 2, "{content:?}");
+            eprintln!("{content:?}: assignments in groups {in_groups:?}");
+        }
+
+        // Every member carries its own luminosity: at unit parton densities each
+        // is one term, so the groups' terms add up to one per subprocess.
+        let ones: FlavorRow = [1.0; FLAVOR_SLOTS];
+        let terms: f64 = groups
+            .groups()
+            .iter()
+            .map(|g| g.luminosity_rows(&ones, &ones)[0])
+            .sum();
+        assert_eq!(terms, sets.len() as f64);
+    }
+
+    /// The mirror identity `|M_{b a}(E)|² = |M_{a b}(q)|²`, with `E` the exchanged
+    /// event the integrand writes ([`exchange_into`]: the sampled point rotated by
+    /// π about the x axis, beams exchanged), against explicitly enumerated
+    /// mirrored subprocesses.
     ///
     /// This is the term the enumeration does not produce: only one ordering of
     /// each unordered initial state exists, and its parton luminosity is not the
-    /// other's. The identity control is the load-bearing half — evaluating the
-    /// representative at the *unreflected* point is what dropping the mirror
-    /// amounts to, and it has to be wrong by enough to be seen.
+    /// other's. The identity control is the load-bearing half — the mirrored
+    /// subprocess at the sampled momenta with only the beams' flavours exchanged
+    /// is what writing the exchanged event *unrotated* would amount to, and it
+    /// has to be wrong by enough to be seen.
     ///
     /// How much is enough is a function of `s-hat`, not a constant, and it is not
     /// a statement about the *weakest* point: the visibility vanishes wherever
@@ -3864,13 +4891,14 @@ mod tests {
             let mirror_bound = BoundAmplitude::<f64>::bind(mirror_eval, &evaluated);
             let mut mirror_scratch = mirror_bound.scratch_space();
 
-            let mut reflected = Vec::new();
+            let mut exchanged = Vec::new();
             for k in &points {
-                let target = mirror_bound.eval_m2(k, &mut mirror_scratch);
+                let target = bound.eval_m2(k, &mut scratch);
                 let rel = |x: f64| (x - target).abs() / target.abs().max(f64::MIN_POSITIVE);
 
-                g.mirror_into(k, &mut reflected);
-                worst_mirror = worst_mirror.max(rel(bound.eval_m2(&reflected, &mut scratch)));
+                exchange_into(k, &mut exchanged);
+                worst_mirror =
+                    worst_mirror.max(rel(mirror_bound.eval_m2(&exchanged, &mut mirror_scratch)));
 
                 let py_flipped: Vec<V> = k
                     .iter()
@@ -3901,8 +4929,8 @@ mod tests {
         // evaluates *one* program at both arguments.
         assert!(
             worst_mirror < 1e-11,
-            "the reflected representative disagrees with the mirrored subprocess by \
-             {worst_mirror:.3e}"
+            "the mirrored subprocess at the exchanged event disagrees with the sampled \
+             point's matrix element by {worst_mirror:.3e}"
         );
         assert!(
             worst_py < 1e-12,
@@ -3910,8 +4938,9 @@ mod tests {
              in the mirror map is pinned after all and this test's blind spot is misstated"
         );
 
-        // What a dropped mirror would cost, as a function of s-hat rather than as
-        // one number: at each rung, nine draws in ten move by more than the floor.
+        // What an unrotated exchanged event would cost, as a function of s-hat
+        // rather than as one number: at each rung, nine draws in ten move by more
+        // than the floor.
         let masses = groups.groups()[0].final_masses();
         for sqrt_s in [25.0f64, 65.0, 150.0, 400.0, 1200.0] {
             let rels = mirror_visibility(&evaluated, &pairs, &masses, sqrt_s, 32, 0x0FF5_E7ED);
@@ -3925,9 +4954,136 @@ mod tests {
             assert!(
                 p10 > floor,
                 "at sqrt(s-hat) = {sqrt_s} nine draws in ten move |M|² by only {p10:.3e}, under \
-                 the measured floor {floor:.3e}; a dropped mirror would not be visible there"
+                 the measured floor {floor:.3e}; an unrotated exchanged event would not be \
+                 visible there"
             );
         }
+    }
+
+    /// Each ordering's term of an accepted point is the physical term of the event
+    /// that ordering writes, assembled from parts that share no code with the
+    /// integrand's: the member's densities read straight from the parton
+    /// distribution at the partons' own fractions and beams, the mirrored
+    /// subprocess compiled from **its own** proc card evaluated at the exchanged
+    /// event ([`exchange_into`]), and the group's filter applied to the lab-frame
+    /// record of that event ([`ProtonIntegrand::record_momenta`]). Between beams of
+    /// 6500 and 4000 GeV, so the two orderings' events are boosted differently.
+    ///
+    /// Proton–proton symmetry then makes a mirrored member's two terms equal
+    /// wherever both events pass the cuts: the exact-symmetry gate. MadEvent's
+    /// `IMIRROR = 2` meets it point by point, which is why its mirror term is
+    /// sampled where its direct term is. The construction that kept the beams
+    /// and rotated only the outgoing legs met it in expectation only, reading
+    /// `f_b(x₁)·f_a(x₂)·|M(p₁, p₂, R q)|²` at the point: the known-wrong reading,
+    /// asserted to be rejected at most points so the gate can tell the two apart.
+    ///
+    /// What it cannot see: anything the integrand and this oracle share — the
+    /// cut filter, the representative's compiled amplitude for the direct term,
+    /// and the scales, which are fixed here (the clustered scales of the two
+    /// orderings are pinned by `matched_terms_carry_each_member_s_own_reweighting`).
+    #[test]
+    fn each_ordering_carries_the_term_of_the_event_it_writes() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let (groups, _) = llj_setup(&m, &evaluated);
+        let pdf = beam_asymmetric_pdf();
+        let amps = bind_all(&groups, &evaluated);
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        let pairs = mirror_pairs(&m, &evaluated, &groups);
+        let q2 = MU_F * MU_F;
+        let xf = |pdg: i32, x: f64| pdf.xfx_q2(pdg, x, q2);
+        let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(f64::MIN_POSITIVE);
+
+        let events = find_events(&integ, 0x0E1D_E0A2, |_| true, 300);
+        let (mut worst, mut worst_symmetry) = (0.0f64, 0.0f64);
+        let (mut mirrored_terms, mut symmetric, mut one_sided, mut old_rejected) = (0, 0, 0, 0);
+        let mut exchanged = Vec::new();
+        for event in &events {
+            let split = integ.ordering_contributions(event);
+            let [x1, x2] = event.x;
+            let lab = integ.record_momenta(event, BeamOrdering::Direct);
+            let written = integ.record_momenta(event, BeamOrdering::Exchanged);
+            assert!(rel(written[0].e(), x2 * e1) < 1e-12, "beam 1 carries x₂");
+            assert!(rel(written[1].e(), x1 * e2) < 1e-12, "beam 2 carries x₁");
+            exchange_into(&event.cm, &mut exchanged);
+            for (gi, (g, mirror_eval)) in pairs.iter().enumerate() {
+                let rep = BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated);
+                let mirror = BoundAmplitude::<f64>::bind(mirror_eval, &evaluated);
+                let m2 = rep.eval_m2(&event.cm, &mut rep.scratch_space());
+                let m2_written = mirror.eval_m2(&exchanged, &mut mirror.scratch_space());
+                let cut = [g.cuts().pass(&lab), g.cuts().pass(&written)];
+                let (mut direct, mut mirrored, mut old) = (0.0, 0.0, 0.0);
+                for member in g.members() {
+                    let [a, b] = member.incoming;
+                    let s = member.symmetry_factor() * g.spin_color_average();
+                    direct += s * xf(a, x1) * xf(b, x2) * m2;
+                    if member.has_mirror() {
+                        // Beam 1 carries `b` at x₂, beam 2 carries `a` at x₁.
+                        mirrored += s * xf(b, x2) * xf(a, x1) * m2_written;
+                        let mut kept = event.cm[..2].to_vec();
+                        kept.extend(
+                            event.cm[2..]
+                                .iter()
+                                .map(|p| V::new(p.e(), p.px(), -p.py(), -p.pz())),
+                        );
+                        old += s
+                            * xf(b, x1)
+                            * xf(a, x2)
+                            * rep.eval_m2(&kept, &mut rep.scratch_space());
+                    }
+                }
+                let want = [
+                    if cut[0] { direct } else { 0.0 },
+                    if cut[1] { mirrored } else { 0.0 },
+                ];
+                for o in 0..2 {
+                    worst = worst.max(rel(split[gi][o], want[o]));
+                }
+                if mirrored != 0.0 && cut[1] {
+                    mirrored_terms += 1;
+                    old_rejected += usize::from(rel(old, mirrored) > 1e-3);
+                }
+                if cut == [true, true]
+                    && g.has_mirror()
+                    && g.members().iter().all(Subprocess::has_mirror)
+                {
+                    symmetric += 1;
+                    worst_symmetry = worst_symmetry.max(rel(split[gi][0], split[gi][1]));
+                }
+                one_sided += usize::from(g.has_mirror() && cut[0] != cut[1]);
+            }
+        }
+        eprintln!(
+            "ordering terms: worst {worst:.2e} against the written events' own terms; \
+             {symmetric} fully mirrored group terms symmetric to {worst_symmetry:.2e}; \
+             {one_sided} cut on one ordering only; the beams-kept reading rejected on \
+             {old_rejected} of {mirrored_terms} mirrored terms"
+        );
+        assert!(
+            worst < 1e-10,
+            "an ordering's term is off its event's by {worst:.2e}"
+        );
+        assert!(
+            worst_symmetry < 1e-12,
+            "a mirrored group's two orderings differ by {worst_symmetry:.2e}"
+        );
+        assert!(symmetric > 100, "{symmetric} symmetric terms compared");
+        assert!(one_sided > 0, "no point separates the two orderings' cuts");
+        assert!(
+            old_rejected * 10 > mirrored_terms * 9,
+            "the beams-kept reading agrees with the written event's term on {} of \
+             {mirrored_terms} points, so this gate could not reject it",
+            mirrored_terms - old_rejected
+        );
     }
 
     /// Every group paired with the compiled matrix element of its mirrored beam
@@ -3966,9 +5122,9 @@ mod tests {
     }
 
     /// How far `|M|²` moves when the mirrored ordering's matrix element is
-    /// replaced by the representative's at the *unreflected* point — what
-    /// dropping the mirror term amounts to — over `npts` RAMBO draws at
-    /// `sqrt_s`, for every group. Returned sorted.
+    /// replaced by the representative's at the *unrotated* point — what writing
+    /// the exchanged event without its rotation amounts to — over `npts` RAMBO
+    /// draws at `sqrt_s`, for every group. Returned sorted.
     fn mirror_visibility(
         evaluated: &EvaluatedModel,
         pairs: &[(&FlavorGroup, AmplitudeEvaluator)],
@@ -4111,7 +5267,7 @@ mod tests {
             BoundAmplitude::<f64>::bind(&b, &evaluated),
         );
         let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
-        for point in probe_momenta(&[mw, 0.0], None, 7) {
+        for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
             let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
             assert!((ma / mb - 1.0).abs() < 1e-12, "{ma} against {mb}");
         }
@@ -4172,8 +5328,11 @@ mod tests {
     }
 
     /// The flavour partition of `p p > e+ e-` lands on the two Z/gamma* coupling
-    /// classes — up-type `{u, c}` and down-type `{d, s}` — and each group's two
-    /// beam orderings sum to that class's parton luminosity.
+    /// classes — up-type `{u, c}` and down-type `{d, s}`. Each group's direct
+    /// luminosity is the class's `q(x₁)q̄(x₂)`, its mirror term reads each parton
+    /// at its own fraction on the other beam and so is the same number, and the
+    /// direct luminosities at `(x₁, x₂)` and `(x₂, x₁)` sum to the class's
+    /// unordered pair.
     #[test]
     fn drell_yan_classes_and_their_two_orderings_are_reproduced() {
         let m = model();
@@ -4197,25 +5356,32 @@ mod tests {
                 "classes: {quarks:?}"
             );
 
-            let expected: f64 = quarks
-                .iter()
-                .map(|&q| {
-                    pdf.xfx_q2(q, x1, q2[0]) * pdf.xfx_q2(-q, x2, q2[1])
-                        + pdf.xfx_q2(-q, x1, q2[0]) * pdf.xfx_q2(q, x2, q2[1])
-                })
-                .sum();
+            let ordered = |xa: f64, xb: f64| -> f64 {
+                quarks
+                    .iter()
+                    .map(|&q| pdf.xfx_q2(q, xa, q2[0]) * pdf.xfx_q2(-q, xb, q2[1]))
+                    .sum()
+            };
             let [direct, mirror] = g.luminosity(&pdf, x1, x2, mu_f);
-            let rel = (direct + mirror - expected).abs() / expected;
+            let rel = (direct - ordered(x1, x2)).abs() / direct;
             assert!(rel < 1e-14, "class luminosity off by {rel:.3e}");
+            assert_eq!(
+                mirror, direct,
+                "the mirror term's partons left their fractions"
+            );
+            let swapped = g.luminosity(&pdf, x2, x1, mu_f)[0];
+            let pair = ordered(x1, x2) + ordered(x2, x1);
+            assert!((direct + swapped - pair).abs() / pair < 1e-14);
             assert!(
-                (direct - mirror).abs() / direct > 1e-3,
-                "the two orderings coincide here, so this test cannot see a dropped one"
+                (direct - swapped).abs() / direct > 1e-3,
+                "the two fractions read alike here, so this test cannot see them exchanged"
             );
         }
     }
 
     /// A `g g` initial state is one ordering, not two: its mirror carries no
-    /// luminosity, while a `q q̄` group's does and differs from the direct term.
+    /// luminosity, while a `q q̄` group's carries the direct term's, its partons at
+    /// their own fractions, which the fractions exchanged would not reproduce.
     #[test]
     fn an_identical_parton_initial_state_carries_a_single_ordering() {
         let m = model();
@@ -4242,7 +5408,9 @@ mod tests {
                 // coupling structure, so all four flavours are one group.
                 assert_eq!(g.members().len(), 4);
                 assert!(g.has_mirror());
-                assert!(mirror > 0.0 && (direct - mirror).abs() / direct > 1e-3);
+                assert!(mirror > 0.0 && mirror == direct);
+                let swapped = g.luminosity(&pdf, x2, x1, mu_f)[0];
+                assert!((direct - swapped).abs() / direct > 1e-3);
                 assert!((g.spin_color_average() - 1.0 / 36.0).abs() < 1e-15);
             }
         }
@@ -4322,6 +5490,226 @@ mod tests {
         assert_eq!(
             light, bottom_as_jet,
             "the difference is the jet classification, not the leg's mass"
+        );
+    }
+
+    /// Five-flavour `p p > j j` at `maxjetflavor = 4`: a massless b is cut with
+    /// `ptb`, `etab`, `drbb` and `drbj`, which `b_cuts` sets, and a light jet
+    /// with `ptj = 20`, `etaj = 5`, `drjj = 0.4`.
+    fn five_flavour_dijet(b_cuts: &str) -> (Arc<UFOModel>, EvaluatedModel, RunCard) {
+        let m = sm_model(SMRestrict::NoBMass);
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(&format!(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 -1 = dynamical_scale_choice\n  4 = maxjetflavor\n\
+             \x20 20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n{b_cuts}"
+        ))
+        .expect("run card");
+        (m, evaluated, card)
+    }
+
+    const B_CUTS_APART: &str = "  30.0 = ptb\n  2.5 = etab\n  0.4 = drbb\n  0.4 = drbj\n";
+    const B_CUTS_AS_JETS: &str = "  20.0 = ptb\n  5.0 = etab\n  0.4 = drbb\n  0.4 = drbj\n";
+
+    /// The index of the group whose members include the subprocess
+    /// `incoming > outgoing`.
+    fn group_of(groups: &FlavorGroups, incoming: [i32; 2], outgoing: &[i32]) -> usize {
+        groups
+            .groups()
+            .iter()
+            .position(|g| {
+                g.members()
+                    .iter()
+                    .any(|s| s.incoming == incoming && s.outgoing == outgoing)
+            })
+            .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
+    }
+
+    /// Two subprocesses that share a matrix element but not a cut filter are two
+    /// groups, each carrying its own filter, and the decomposition no longer
+    /// refuses them. Under b cuts equal to the jet cuts the filters agree, and the
+    /// b subprocesses stay in the light-quark groups, as they do at
+    /// `maxjetflavor = 5`.
+    #[test]
+    fn subprocesses_cut_differently_are_grouped_apart() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let groups = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("a cut difference splits groups rather than refusing them");
+        let light = group_of(&groups, [21, 21], &[2, -2]);
+        let bottom = group_of(&groups, [21, 21], &[5, -5]);
+        assert_ne!(light, bottom, "g g > u u~ and g g > b b~ share a group");
+        let (gl, gb) = (&groups.groups()[light], &groups.groups()[bottom]);
+        assert_ne!(gl.cuts(), gb.cuts());
+        let points = fresh_points(&gl.final_masses());
+        let rel = worst_rel(
+            &m2_trace(gl.evaluator(), &evaluated, &points),
+            &m2_trace(gb.evaluator(), &evaluated, &points),
+        );
+        assert!(
+            rel < GROUP_REL_TOL,
+            "the two groups' |M|² differ by {rel:e}"
+        );
+        // No group mixes a b with a light quark in one outgoing slot.
+        for g in groups.groups() {
+            let pattern = |s: &Subprocess| -> Vec<bool> {
+                s.outgoing.iter().map(|&c| c.abs() == 5).collect()
+            };
+            let head = pattern(&g.members()[0]);
+            assert!(g.members().iter().all(|s| pattern(s) == head));
+        }
+
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_AS_JETS);
+        let same = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        assert_eq!(
+            group_of(&same, [21, 21], &[2, -2]),
+            group_of(&same, [21, 21], &[5, -5]),
+            "equal filters split a group"
+        );
+        assert!(same.groups().len() < groups.groups().len());
+    }
+
+    /// Every channel of a decomposition whose groups are cut by different filters
+    /// is built under the weakest of their bounds, not under its own group's: a
+    /// channel's density stays positive below the floors it was built with, and
+    /// there another group's term is not zero. The b groups' `ptb = 30` gives
+    /// their own channels a spacelike floor of 900 GeV² against the light groups'
+    /// 400, so building them under their own cuts would give different maps.
+    #[test]
+    fn channels_are_built_under_bounds_every_group_shares() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let groups = derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        let (filters, _) = distinct_filters(&groups);
+        assert!(filters.len() > 1);
+        let keys = |own: bool| -> BTreeSet<String> {
+            groups
+                .groups()
+                .iter()
+                .flat_map(|g| {
+                    channel_diagrams(g.diagrams(), &evaluated)
+                        .into_iter()
+                        .map(move |d| (g, d))
+                })
+                .map(|(g, d)| {
+                    let channel = if own {
+                        integ.maps().channel(d, &evaluated, SQRT_S_HAD, g.cuts())
+                    } else {
+                        integ
+                            .maps()
+                            .channel(d, &evaluated, SQRT_S_HAD, &UnionBounds(&filters))
+                    };
+                    channel.map_key()
+                })
+                .collect()
+        };
+        let built: BTreeSet<String> = integ.channel_map_keys().iter().cloned().collect();
+        assert_eq!(built, keys(false));
+        assert_ne!(
+            built,
+            keys(true),
+            "every group's own cuts build the same maps"
+        );
+    }
+
+    /// Each group's term carries its own group's cut indicator. At a dijet point
+    /// both of whose partons have `20 < pT < 30` GeV, the light-jet groups' cuts
+    /// accept and the b groups' (`ptb = 30`) reject: the point's value is the
+    /// light groups' terms alone, which a decomposition holding only the light
+    /// groups reproduces, no b group records a scale, and the event's draw never
+    /// lands on one. Above 30 GeV both kinds contribute.
+    #[test]
+    fn a_point_carries_the_terms_of_the_groups_whose_cuts_accept_it() {
+        let (m, evaluated, card) = five_flavour_dijet(B_CUTS_APART);
+        let derive = || {
+            derive_flavor_groups(enumerate("p p > j j", &m), &m, &evaluated, &card)
+                .expect("flavour groups")
+        };
+        let full = derive();
+        let outgoing_b = |g: &FlavorGroup| g.members()[0].outgoing.iter().any(|c| c.abs() == 5);
+        let mut light = derive();
+        light.groups.retain(|g| !outgoing_b(g));
+        let mut bottom = derive();
+        bottom.groups.retain(outgoing_b);
+        assert!(!light.groups().is_empty() && !bottom.groups().is_empty());
+
+        let pdf = probe_pdf();
+        let full_amps = bind_all(&full, &evaluated);
+        let light_amps = bind_all(&light, &evaluated);
+        let bottom_amps = bind_all(&bottom, &evaluated);
+        let integrand = |g, a| ProtonIntegrand::new(g, a, &evaluated, &pdf, BEAMS, MU_F).unwrap();
+        let full_integ = integrand(&full, &full_amps);
+        let light_integ = integrand(&light, &light_amps);
+        let bottom_integ = integrand(&bottom, &bottom_amps);
+
+        // Back to back in the partonic centre of mass at zero rapidity, so the
+        // lab frame is the partonic one; |y| stays below `etab`.
+        let sqrt_shat = 100.0;
+        let tau = sqrt_shat * sqrt_shat / (SQRT_S_HAD * SQRT_S_HAD);
+        let point = OuterPoint {
+            x1: tau.sqrt(),
+            x2: tau.sqrt(),
+            sqrt_shat,
+            jac: 1.0,
+        };
+        let dijet = |pt: f64| {
+            let e = sqrt_shat / 2.0;
+            let pz = (e * e - pt * pt).sqrt();
+            vec![V::new(e, pt, 0.0, pz), V::new(e, -pt, 0.0, -pz)]
+        };
+        let shape = |integ: &ProtonIntegrand<'_>, out: &[V]| {
+            integ.shape(integ.scratch(), &point, out, 0, &[])
+        };
+
+        let between = dijet(25.0);
+        let value = shape(&full_integ, &between);
+        let light_value = shape(&light_integ, &between);
+        assert!(value > 0.0);
+        assert_eq!(shape(&bottom_integ, &between), 0.0);
+        assert!(
+            (value - light_value).abs() <= 1e-12 * value,
+            "the point carries {value:e}, the light groups alone {light_value:e}"
+        );
+        let sc = full_integ.scratch();
+        let event = ProtonEvent {
+            weight: value,
+            x: [point.x1, point.x2],
+            group_scales: sc.group_scales.borrow().clone(),
+            group_rewgt: sc.group_rewgt.borrow().clone(),
+            group_records: sc.group_records.borrow().clone(),
+            group_histories: sc.group_histories.borrow().clone(),
+            lab: sc.lab_buf.borrow().clone(),
+            cm: sc.cm_buf.borrow().clone(),
+        };
+        for (g, scales) in full.groups().iter().zip(&event.group_scales) {
+            assert_eq!(
+                outgoing_b(g),
+                scales.iter().all(Option::is_none),
+                "a group records a scale exactly where its cuts accept the point"
+            );
+        }
+        let mut stream = SubStream::from_stream(0x00B0_C075, 1);
+        for _ in 0..200 {
+            let u = stream.uniforms::<f64>(5);
+            let drawn = full_integ
+                .select_event(&event, [u[0], u[1], u[2], u[3], u[4]])
+                .expect("the point carries weight");
+            assert!(!outgoing_b(&full.groups()[drawn.group]));
+        }
+
+        let above = dijet(40.0);
+        let value = shape(&full_integ, &above);
+        let parts = shape(&light_integ, &above) + shape(&bottom_integ, &above);
+        assert!(shape(&bottom_integ, &above) > 0.0);
+        assert!(
+            (value - parts).abs() <= 1e-12 * value,
+            "the point carries {value:e}, its groups {parts:e}"
         );
     }
 
@@ -4737,11 +6125,13 @@ mod tests {
     ///
     /// The oracle re-derives the `(τ, y)` map, both frames, the flux and the `2π`
     /// measure, and — decisively — takes the mirrored beam ordering from an
-    /// **explicitly enumerated** `b a > …` subprocess evaluated at the *unreflected*
-    /// point, with each member's `x·f` product formed directly from the parton
-    /// distribution. So it shares neither [`FlavorGroup::luminosity`] nor
-    /// [`FlavorGroup::mirror_into`] with the integrand: a dropped or mis-argued mirror
-    /// term, a swapped beam ordering, or a lost spin/colour average all move it.
+    /// **explicitly enumerated** `b a > …` subprocess evaluated at the event that
+    /// ordering writes (every leg rotated by π about the x axis, the beams
+    /// exchanged, built here by hand), cut on that event's own lab frame, with each
+    /// member's `x·f` product formed directly from the parton distribution at its
+    /// partons' own fractions. So it shares neither [`FlavorGroup::luminosity`] nor
+    /// [`exchange_into`] with the integrand: a dropped or mis-argued mirror term, a
+    /// swapped beam ordering, or a lost spin/colour average all move it.
     ///
     /// What it cannot see: the phase-space weight, which it takes from its own copy of
     /// the same channel construction, and anything the cut filter and the parton
@@ -4832,7 +6222,17 @@ mod tests {
             ];
             lab.extend(point.momenta.iter().map(|p| boost_z(*p, beta)));
 
-            let expected = if !cuts.pass(&lab) {
+            // The exchanged event: every leg rotated by π about the x axis, the
+            // beams exchanged, beam 1 carrying `b` at `x₂` and beam 2 `a` at `x₁`.
+            let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+            let swap = |k: &[V]| {
+                let mut out = vec![rotate(&k[1]), rotate(&k[0])];
+                out.extend(k[2..].iter().map(rotate));
+                out
+            };
+            let (cm_x, lab_x) = (swap(&cm), swap(&lab));
+            let pass = [cuts.pass(&lab), cuts.pass(&lab_x)];
+            let expected = if pass == [false, false] {
                 rejected += 1;
                 0.0
             } else {
@@ -4841,13 +6241,15 @@ mod tests {
                     let mut scratch = direct_bound[gi].scratch_space();
                     let m2_direct = direct_bound[gi].eval_m2(&cm, &mut scratch);
                     let mut mirror_scratch = mirror_bound[gi].scratch_space();
-                    let m2_mirror = mirror_bound[gi].eval_m2(&cm, &mut mirror_scratch);
+                    let m2_mirror = mirror_bound[gi].eval_m2(&cm_x, &mut mirror_scratch);
                     let mut term = 0.0;
                     for s in g.members() {
                         let [a, b] = s.incoming;
-                        term += pdf.xfx_q2(a, x1, q2[0]) * pdf.xfx_q2(b, x2, q2[1]) * m2_direct;
-                        if a != b {
-                            let w = pdf.xfx_q2(b, x1, q2[0]) * pdf.xfx_q2(a, x2, q2[1]);
+                        if pass[0] {
+                            term += pdf.xfx_q2(a, x1, q2[0]) * pdf.xfx_q2(b, x2, q2[1]) * m2_direct;
+                        }
+                        if s.has_mirror() && pass[1] {
+                            let w = pdf.xfx_q2(b, x2, q2[1]) * pdf.xfx_q2(a, x1, q2[0]);
                             term += w * m2_mirror;
                             mirror_weight = mirror_weight
                                 .max(w * m2_mirror / (term).abs().max(f64::MIN_POSITIVE));
@@ -4962,13 +6364,21 @@ mod tests {
             if !cuts.pass(&lab) || beta.abs() < 0.1 {
                 continue;
             }
+            // The mirrored ordering's event is the point rotated by π about the x
+            // axis with its beams exchanged: `u~` on beam 1 at `x₂`, `u` on beam 2
+            // at `x₁`. The rotation is proper, so it keeps the Z's helicity.
+            let exchange = |frame: &[V]| {
+                let mut out = Vec::new();
+                exchange_into(frame, &mut out);
+                out
+            };
             let assemble = |frame: &[V], sd: &mut _, sm: &mut _| {
                 let (d, r) = (
                     direct.eval_m2(frame, sd),
-                    mirror_unpruned.eval_m2(frame, sm),
+                    mirror_unpruned.eval_m2(&exchange(frame), sm),
                 );
                 let term = pdf.xfx_q2(2, x1, q2[0]) * pdf.xfx_q2(-2, x2, q2[1]) * d
-                    + pdf.xfx_q2(-2, x1, q2[0]) * pdf.xfx_q2(2, x2, q2[1]) * r;
+                    + pdf.xfx_q2(-2, x2, q2[1]) * pdf.xfx_q2(2, x1, q2[0]) * r;
                 let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
                 jac * flux * lips_2pi * g.spin_color_average() * term * point.weight
             };
@@ -5053,6 +6463,373 @@ mod tests {
             ProtonIntegrand::new(&groups, short, &evaluated, &pdf, BEAMS, MU_F),
             Err(ProtonError::AmplitudeCount { amps: 2, groups: 6 })
         ));
+    }
+
+    /// A charge-conjugate pair with one `|M|²` shares one group, its member's flows
+    /// reindexed by the fingerprint pairing.
+    ///
+    /// Each subprocess of the pair sorts the same flows into a different order, so
+    /// their colour-factor matrices differ entry by entry in their own orders (the
+    /// premise, asserted first) and agree only under `π`. The decomposition must
+    /// hold both in one group, and the member's reindexed table must be the
+    /// representative's table with both slots of every leg exchanged, flow by
+    /// flow: the full-conjugation rule, derived without the fingerprints. The
+    /// member's `JAMP2`, read at points the partition was not fitted on, must be
+    /// the representative's under `π`. On the twelve-flow pair `π` is also pinned
+    /// to its value; that is the one assertion an automorphism of the CF matrix
+    /// cannot satisfy in its place, though the conjugation check fails first.
+    ///
+    /// What it cannot see: a pairing error inside a degenerate `JAMP2` block that
+    /// the conjugation rule also misses, which full conjugates cannot have; and the
+    /// crossing class, which no slot operation relates (the `p p > j j` tests).
+    #[test]
+    fn a_conjugate_pair_shares_one_group_under_the_flow_permutation() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        for (card, n_out, pinned) in [
+            ("u d > d g u\nadd process u~ d~ > d~ g u~", 3, None),
+            (
+                "u u > g g u u\nadd process u~ u~ > g g u~ u~",
+                4,
+                Some([7, 3, 5, 1, 8, 10, 9, 11, 6, 2, 4, 0]),
+            ),
+        ] {
+            let sets = enumerate(card, &m);
+            assert_eq!(sets.len(), 2, "{card}");
+            let a = compile_class(&sets[0], &m, &evaluated).expect("compile");
+            let b = compile_class(&sets[1], &m, &evaluated).expect("compile");
+            assert_eq!(a.n_flows(), b.n_flows(), "{card}");
+            assert_ne!(
+                a.cf_matrix(),
+                b.cf_matrix(),
+                "{card}: the orders must differ"
+            );
+
+            let groups = derive_flavor_groups(sets, &m, &evaluated, &RunCard::default())
+                .expect("a conjugate pair is one group");
+            assert_eq!(groups.groups().len(), 1, "{card}");
+            assert_eq!(groups.subprocess_count(), 2, "{card}");
+            let group = &groups.groups()[0];
+            let rep = group.evaluator();
+            let n = rep.n_flows();
+            let [head, member] = group.members() else {
+                panic!("{card}: two members");
+            };
+            assert_eq!(head.flow_permutation, (0..n).collect::<Vec<_>>());
+            assert!(member.incoming.iter().all(|&p| p < 0), "{card}");
+            let pi = &member.flow_permutation;
+
+            let conjugate = rep.color_flow_tags().conjugated();
+            for f in 0..n {
+                assert_eq!(
+                    connectivity(member.flows.flow(f)),
+                    connectivity(conjugate.flow(f)),
+                    "{card}: flow {f} of the member is not the conjugate of the representative's"
+                );
+            }
+
+            let own = compile_class(group.member_diagram_set(1), &m, &evaluated).expect("compile");
+            for i in 0..n {
+                for j in 0..n {
+                    assert_eq!(
+                        rep.cf_matrix()[i * n + j],
+                        own.cf_matrix()[pi[i] * n + pi[j]]
+                    );
+                }
+            }
+            let ra = BoundAmplitude::<f64>::bind(rep, &evaluated);
+            let rb = BoundAmplitude::<f64>::bind(&own, &evaluated);
+            let (mut sa, mut sb) = (ra.scratch_space(), rb.scratch_space());
+            let mut worst = 0.0f64;
+            for k in fresh_points(&vec![0.0; n_out]) {
+                let (mut ja, mut jb) = (vec![0.0; n], vec![0.0; n]);
+                ra.eval_jamp2(&k, &mut sa, &mut ja);
+                rb.eval_jamp2(&k, &mut sb, &mut jb);
+                let scale = ja.iter().sum::<f64>().max(f64::MIN_POSITIVE);
+                for f in 0..n {
+                    worst = worst.max((ja[f] - jb[pi[f]]).abs() / scale);
+                }
+            }
+            assert!(
+                worst < 1e-12,
+                "{card}: JAMP2 under pi differs by {worst:.2e}"
+            );
+            if let Some(pinned) = pinned {
+                assert_eq!(pi[..], pinned[..], "{card}");
+            }
+        }
+    }
+
+    /// A subprocess whose `|M|²` matches a group's but whose flows cannot be paired
+    /// with the representative's is a group of its own, not a refusal.
+    ///
+    /// At the default restriction the b Yukawa is a live parameter, so
+    /// `b b > b b QED=2` compiles Higgs exchanges that `d d > d d QED=2` lacks. With
+    /// the card setting the b mass and Yukawa to zero, the two `|M|²` agree on every
+    /// probe point, and the bases have the same flows, CF matrix and line routing,
+    /// but the b flows carry the extra (zero-valued) diagrams, so no fingerprint
+    /// pairing exists. The premise is asserted first. Each group is its own
+    /// representative under the identity, and the two traces agree at points the
+    /// partition was not fitted on.
+    ///
+    /// What it cannot see: whether such a pair would be better served by pruning
+    /// the zero-valued diagrams and grouping it, which is a question about the
+    /// card, not the colour bookkeeping.
+    #[test]
+    fn a_pair_whose_flows_cannot_be_paired_is_grouped_apart() {
+        const PAIR: &str = "d d > d d QED=2\nadd process b b > b b QED=2";
+        let m = model();
+        let card: crate::ufo::slha::ParamCard = "BLOCK MASS\n  5 0.0\nBLOCK YUKAWA\n  5 0.0\n"
+            .parse()
+            .expect("param card");
+        let evaluated =
+            EvaluatedModel::from_model_card(m.clone(), &card).expect("a card without Auto widths");
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+
+        let sets = enumerate(PAIR, &m);
+        assert_eq!(sets.len(), 2);
+        let a = compile_class(&sets[0], &m, &evaluated).expect("compile");
+        let b = compile_class(&sets[1], &m, &evaluated).expect("compile");
+        assert_eq!(a.n_flows(), b.n_flows());
+        assert_eq!(a.cf_matrix(), b.cf_matrix());
+        assert!(a.n_diagrams() < b.n_diagrams());
+        assert!(flow_permutation(&a, &b).is_err());
+        let points = probe_momenta(
+            [0.0, 0.0],
+            &[0.0; 2],
+            s_channel_resonance(&m, &evaluated),
+            PROBE_SEED,
+        );
+        let trace = |e: &AmplitudeEvaluator, points: &[Vec<V>]| -> Vec<f64> {
+            let bound = BoundAmplitude::<f64>::bind(e, &evaluated);
+            let mut scratch = bound.scratch_space();
+            points
+                .iter()
+                .map(|k| bound.eval_m2(k, &mut scratch))
+                .collect()
+        };
+        assert!(worst_rel(&trace(&a, &points), &trace(&b, &points)) < GROUP_REL_TOL);
+
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card)
+            .expect("a colour split is not a refusal");
+        assert_eq!(groups.groups().len(), 2);
+        assert_eq!(groups.subprocess_count(), 2);
+        let mut labels = Vec::new();
+        for group in groups.groups() {
+            let [member] = group.members() else {
+                panic!("a colour-split group holds its representative alone");
+            };
+            let identity: Vec<usize> = (0..group.evaluator().n_flows()).collect();
+            assert_eq!(member.flow_permutation, identity);
+            labels.push(group.diagram_set().label());
+        }
+        labels.sort();
+        assert_eq!(labels, ["b b > b b", "d d > d d"]);
+
+        let fresh = fresh_points(&[0.0; 2]);
+        let [ga, gb] = groups.groups() else {
+            unreachable!()
+        };
+        assert!(
+            worst_rel(
+                &trace(ga.evaluator(), &fresh),
+                &trace(gb.evaluator(), &fresh)
+            ) < GROUP_REL_TOL
+        );
+    }
+
+    /// `|M|²` of every compiled subprocess of `sets` at `points`, evaluated in
+    /// scalar precision `F`, after the slot ordering `derive_flavor_groups` gives
+    /// them, so a trace here is the one the partition reads.
+    fn content_traces<F: crate::helas::repr::Real + num_traits::FromPrimitive>(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+        run_card: &RunCard,
+        points: &[Vec<V>],
+    ) -> Vec<Vec<f64>> {
+        let at = |x: f64| F::from_f64(x).expect("an f64 converts");
+        content_ordered(sets.to_vec(), m, evaluated, run_card)
+            .expect("content order")
+            .iter()
+            .map(|set| {
+                let evaluator = compile_class(set, m, evaluated).expect("compile");
+                let bound = BoundAmplitude::<F>::bind(&evaluator, evaluated);
+                let mut scratch = bound.scratch_space();
+                points
+                    .iter()
+                    .map(|k| {
+                        let k: Vec<LorentzVector<F>> = k
+                            .iter()
+                            .map(|p| {
+                                LorentzVector::new(at(p.e()), at(p.px()), at(p.py()), at(p.pz()))
+                            })
+                            .collect();
+                        bound
+                            .eval_m2(&k, &mut scratch)
+                            .to_f64()
+                            .expect("an F converts")
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// The probe points `derive_flavor_groups` reads for massless partons and the
+    /// final masses of `sets`' first subprocess.
+    fn partition_points(
+        sets: &[DiagramSet],
+        m: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Vec<Vec<V>> {
+        let evaluator = compile_class(&sets[0], m, evaluated).expect("compile");
+        let legs = process_external_legs(&evaluator, m, evaluated);
+        let final_masses: Vec<f64> = legs[2..].iter().map(|l| l.mass).collect();
+        probe_momenta(
+            [legs[0].mass, legs[1].mass],
+            &final_masses,
+            s_channel_resonance(m, evaluated),
+            PROBE_SEED,
+        )
+    }
+
+    /// Two subprocesses whose traces differ by rounding share one group.
+    ///
+    /// `d c~ > w- z s d~` and `s u~ > w- z d s~` under the five-flavour CKM
+    /// restriction are one matrix element computed through differently signed
+    /// couplings, and the gauge cancellations of W Z scattering amplify the
+    /// rounding of that arithmetic to around `1e-10`. The premise is asserted
+    /// first: the separation is below [`GROUP_REL_TOL`], and in `f32` it grows by
+    /// more than a factor `1e6`, which a coupling difference would not. The CMS
+    /// survey's `VBS_WPMZTo4Q` card was refused on a pair separated by this same
+    /// rounding, `1.5e-10`. Its size is last-ulp arithmetic and differs between
+    /// machines (`1.48e-10` on one, `3.9e-11` on CI), so the test does not pin it
+    /// above the old bound; the headroom assertion checks the margin instead.
+    ///
+    /// What it cannot see: a physical difference smaller than the rounding, which
+    /// the group then sums under one member's `|M|²`, an error below
+    /// [`GROUP_REL_TOL`] on that member at the probe points.
+    #[test]
+    fn a_pair_separated_by_rounding_shares_one_group() {
+        const PAIR: &str = "d c~ > w- z s d~ QCD=0\nadd process s u~ > w- z d s~ QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let sets = enumerate(PAIR, &m);
+        assert_eq!(sets.len(), 2);
+        let points = partition_points(&sets, &m, &evaluated);
+        let [a, b] = &content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points)[..] else {
+            unreachable!()
+        };
+        let [a32, b32] = &content_traces::<f32>(&sets, &m, &evaluated, &run_card, &points)[..]
+        else {
+            unreachable!()
+        };
+        let (rel, rel32) = (worst_rel(a, b), worst_rel(a32, b32));
+        eprintln!("f64 separation {rel:.3e}, f32 separation {rel32:.3e}");
+        assert!(
+            rel < GROUP_REL_TOL / 4.0,
+            "{rel:.3e} leaves under 4x headroom"
+        );
+        assert!(rel32 > 1e6 * rel, "{rel32:.3e} against {rel:.3e}");
+
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+        let [group] = groups.groups() else {
+            panic!("{} groups", groups.groups().len());
+        };
+        assert_eq!(group.members().len(), 2);
+    }
+
+    /// `(E, pₓ, p_y, p_z) ↦ (E, −pₓ, p_y, p_z)`: parity followed by the rotation by
+    /// π about the x axis, so the beams stay on the z axis.
+    fn mirror_x(points: &[Vec<V>]) -> Vec<Vec<V>> {
+        points
+            .iter()
+            .map(|k| {
+                k.iter()
+                    .map(|p| V::new(p.e(), -p.px(), p.py(), p.pz()))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A charge-conjugate pair whose `|M|²` differ through the W width is two
+    /// groups, not a refusal.
+    ///
+    /// Under the five-flavour CKM restriction `u b~ > a u b~` and `u~ b > a u~ b`
+    /// separate by `9.1e-7` at the probe points; the CMS survey's γ + 2 jets EWK
+    /// cards were refused on it. The split is not CP violation. Under CP the
+    /// conjugate's `|M|²` at `p` is the subprocess's at the reflected `M p`
+    /// ([`mirror_x`]), and that agreement holds to rounding on every card here,
+    /// the CKM phase included. The two differ at the same `p` by twice the part
+    /// of `|M|²` odd under the reflection, a Levi-Civita contraction of the
+    /// momenta that needs an absorptive phase, here the W width:
+    ///
+    /// | card | at `p` | conjugate at `M p` |
+    /// |---|---|---|
+    /// | the restriction's | split, `9.1e-7` | rounding |
+    /// | CKM phase `η = 0` | split, `1.2e-7` | rounding |
+    /// | `η = 0`, `ρ` raised to keep `\|V_ub\|` | split, as the restriction's | rounding |
+    /// | W width `0` | rounding: one group | rounding |
+    ///
+    /// The phase moves the split only through `|V_ub|`, which the W exchange
+    /// carries; the W width alone removes it.
+    ///
+    /// What it cannot see: a reflection-odd part whose absorptive phase comes
+    /// from another width than the W's, which no card here switches off.
+    #[test]
+    fn a_conjugate_pair_split_by_the_w_width_is_two_groups() {
+        const PAIR: &str = "u b~ > a u b~ QCD=0\nadd process u~ b > a u~ b QCD=0";
+        let m = sm_model(SMRestrict::CkmNoBMass);
+        let mut run_card = RunCard::default();
+        run_card.maxjetflavor = 5;
+        let rounding = 1e-12;
+        // `ρ² + η²` of the restriction's `ρ = 0.132`, `η = 0.341`.
+        let rho_at_eta_zero = (0.132f64.powi(2) + 0.341f64.powi(2)).sqrt();
+        let cards = [
+            String::new(),
+            "BLOCK WOLFENSTEIN\n  4 0.0\n".to_string(),
+            format!("BLOCK WOLFENSTEIN\n  3 {rho_at_eta_zero}\n  4 0.0\n"),
+            "DECAY 24 0.0\n".to_string(),
+        ];
+        let mut split = Vec::new();
+        for card in &cards {
+            let evaluated = if card.is_empty() {
+                EvaluatedModel::from_model(m.clone())
+            } else {
+                let card: crate::ufo::slha::ParamCard = card.parse().expect("param card");
+                EvaluatedModel::from_model_card(m.clone(), &card).expect("evaluated card")
+            };
+            let sets = enumerate(PAIR, &m);
+            assert_eq!(sets.len(), 2);
+            let points = partition_points(&sets, &m, &evaluated);
+            let at = content_traces::<f64>(&sets, &m, &evaluated, &run_card, &points);
+            let reflected =
+                content_traces::<f64>(&sets, &m, &evaluated, &run_card, &mirror_x(&points));
+            let at_p = worst_rel(&at[0], &at[1]);
+            let at_mp = worst_rel(&at[0], &reflected[1]);
+            eprintln!("{card:?}: at p {at_p:.3e}, conjugate at M p {at_mp:.3e}");
+            assert!(at_mp < rounding, "{card:?}: CP fails by {at_mp:.3e}");
+
+            let groups =
+                derive_flavor_groups(sets, &m, &evaluated, &run_card).expect("flavour groups");
+            assert_eq!(groups.subprocess_count(), 2);
+            let expected = if at_p < GROUP_REL_TOL { 1 } else { 2 };
+            assert_eq!(groups.groups().len(), expected, "{card:?}");
+            split.push(at_p);
+        }
+        let [restriction, eta_zero, vub_kept, no_width] = split[..] else {
+            unreachable!()
+        };
+        assert!(restriction > 100.0 * GROUP_REL_TOL, "{restriction:.3e}");
+        assert!(eta_zero > 100.0 * GROUP_REL_TOL && eta_zero < 0.5 * restriction);
+        assert!(
+            (vub_kept / restriction - 1.0).abs() < 1e-2,
+            "{vub_kept:.3e}"
+        );
+        assert!(no_width < rounding, "{no_width:.3e}");
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,
@@ -5163,11 +6940,10 @@ mod tests {
     }
 
     /// Under matching every term of a point carries each member's own `rewgt`,
-    /// computed from the clustering its ordering was scaled in, with the
-    /// ordering's own beam momentum fractions: `[x₁, x₂]` for the direct term and
-    /// `[x₂, x₁]` for the mirrored one, whose clustering has the
-    /// representative's first parton on its first beam. Without matching no
-    /// term carries one.
+    /// computed from the clustering of the sampled point with the
+    /// representative's partons at their sampled fractions `[x₁, x₂]`, in both
+    /// orderings: the exchanged event is the sampled one rotated, and each parton
+    /// keeps its fraction. Without matching no term carries one.
     #[test]
     fn matched_terms_carry_each_member_s_own_reweighting() {
         let m = model();
@@ -5221,31 +6997,19 @@ mod tests {
                         // The clustering the term was scaled in, drawn and
                         // clustered again from the event's own momenta.
                         let sc = integ.scratch();
-                        let (argument, fallback, x) = match ordering {
-                            BeamOrdering::Direct => (
-                                event.cm.clone(),
-                                SampledChannel {
-                                    group: gi,
-                                    channel: integ.channel_members()[channel]
-                                        .iter()
-                                        .find(|id| id.group == gi)
-                                        .map_or(0, |id| id.channel),
-                                },
-                                event.x,
-                            ),
-                            BeamOrdering::Exchanged => {
-                                let mut cm = Vec::new();
-                                g.mirror_into(&event.cm, &mut cm);
-                                (
-                                    cm,
-                                    SampledChannel {
-                                        group: gi,
-                                        channel: 0,
-                                    },
-                                    [event.x[1], event.x[0]],
-                                )
-                            }
-                        };
+                        // Both orderings cluster the sampled point, with the
+                        // representative's partons at their sampled fractions.
+                        let (argument, fallback, x) = (
+                            event.cm.clone(),
+                            SampledChannel {
+                                group: gi,
+                                channel: integ.channel_members()[channel]
+                                    .iter()
+                                    .find(|id| id.group == gi)
+                                    .map_or(0, |id| id.channel),
+                            },
+                            event.x,
+                        );
                         let drawn = integ.scale_channel(sc, &argument, fallback, v);
                         let (_, history, _) = integ.term_at(sc, &argument, drawn).expect("scaled");
                         let history = history.expect("matched");
@@ -5315,13 +7079,63 @@ mod tests {
     /// initial-state merge by the sign of the gluon's `p_z`, so clustering the lab
     /// momenta there moves the gluon's scale onto the other beam: both
     /// assertions fail on such an integrand. Under matching, MadEvent's rule on
-    /// the CM momenta gives beam 1 the gluon's `p_T` and beam 2 the hard scale,
-    /// for the direct term and for the mirrored one, whose clustering sees the
-    /// same physical event rotated and is reported in physical beam order.
+    /// the CM momenta gives the representative's first parton the gluon's `p_T`
+    /// and its second the hard scale, in both orderings: the exchanged event is
+    /// the sampled one rotated, so its gluon follows the first parton onto the
+    /// `−z` beam, and its scales are reported in physical beam order — the
+    /// gluon's on beam 2, as MadEvent's `Q2FACT(1)` rides beam 2 under
+    /// `IMIRROR = 2`.
     ///
     /// What it cannot see: a frame that differs from the partonic CM by a
     /// rotation about the beam axis, or by a boost that flips no sign at this
     /// point; and the configuration draw, whose `AMP2` already reads the CM.
+    #[test]
+    fn a_point_with_a_massless_leg_at_rest_is_zeroed_and_counted() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        // No lepton cut, so the cuts cannot stand in for the guard: before it,
+        // the point reached the clustering, whose `l+ l-` measure is `ln(0/0)`.
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  0.0 = ptl\n  5.0 = etaj\n  -1 = etal\n\
+             \x20 0.0 = drll\n  0.0 = drjl\n  0.0 = mmll\n  4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        let groups =
+            derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card).expect("groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&probe_alpha_s()))
+            .expect("the clustered prescription compiles");
+        let sqrt_shat = 300.0_f64;
+        let point = OuterPoint {
+            x1: sqrt_shat / SQRT_S_HAD,
+            x2: sqrt_shat / SQRT_S_HAD,
+            sqrt_shat,
+            jac: 1.0,
+        };
+        // The two leptons at an `s = 0` edge of their pair invariant, with the
+        // gluon taking the energy; and the same with a non-finite boost.
+        let e = 0.5 * sqrt_shat;
+        let zero = V::new(0.0, 0.0, 0.0, 0.0);
+        let at_rest = [zero, zero, V::new(e, 0.0, e * 0.6, e * 0.8)];
+        let nan = V::new(f64::NAN, 0.0, 0.0, 0.0);
+        let non_finite = [nan, zero, V::new(e, 0.0, e * 0.6, e * 0.8)];
+        integ.clear_census();
+        for out in [at_rest, non_finite] {
+            let sc = integ.scratch();
+            assert_eq!(integ.shape(sc, &point, &out, 0, &[0.5]), 0.0);
+        }
+        let census = integ.census();
+        assert_eq!(census.evaluated, 2);
+        assert_eq!(census.passed_cuts, 0);
+        assert_eq!(census.degenerate, 2, "{census:?}");
+    }
+
     #[test]
     fn clustered_scales_are_read_in_the_partonic_centre_of_mass() {
         let m = model();
@@ -5392,13 +7206,16 @@ mod tests {
                         let Some(scales) = scales else {
                             continue;
                         };
+                        // The beam the representative's first parton rides.
+                        let (gluon, hard) = if slot == 0 { (0, 1) } else { (1, 0) };
                         assert!(
-                            (scales.mu_f[0] - pt_g).abs() < 1e-9 * pt_g,
-                            "group {gi} ordering {slot}: beam 1 carries the gluon's scale, \
+                            (scales.mu_f[gluon] - pt_g).abs() < 1e-9 * pt_g,
+                            "group {gi} ordering {slot}: beam {} carries the gluon's scale, \
                              got {:?}",
+                            gluon + 1,
                             scales.mu_f
                         );
-                        assert!(scales.mu_f[1] > 2.0 * pt_g, "{:?}", scales.mu_f);
+                        assert!(scales.mu_f[hard] > 2.0 * pt_g, "{:?}", scales.mu_f);
                         checked += 1;
                     }
                 }
@@ -5702,10 +7519,10 @@ mod tests {
     }
 
     /// A card whose support is *entirely* below the floor is refused at setup
-    /// rather than integrated to zero. The scale probe already draws 64 points to
-    /// surface a refusal before the integration starts; it now steps over vetoed
-    /// draws instead of reporting the first one, so a partly vetoed card passes
-    /// it and an entirely vetoed one does not.
+    /// rather than integrated to zero. The scale probe draws 64 points to surface
+    /// a refusal before the integration starts, and steps over vetoed draws
+    /// instead of reporting the first one, so a partly vetoed card passes it and
+    /// an entirely vetoed one does not.
     ///
     /// This is deliberately not a per-event counter: a partly vetoed run is
     /// legitimate physics with a correct cross section, so only the degenerate
@@ -5728,7 +7545,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ProtonError::Hadronic(HadronicError::FactorisationScaleBelowFloor)
+                ProtonError::Hadronic(HadronicError::FactorisationScaleBelowFloor { .. })
             ),
             "refused for the wrong reason: {err}"
         );
@@ -6407,13 +8224,13 @@ mod tests {
             assert!((into - outof).abs() < 1e-12 * sqrt_shat, "component {c}");
         }
         assert!(
-            !unequal.cuts.pass(&lab),
+            !unequal.filters[0].pass(&lab),
             "a lepton at lab rapidity {} passed etal = 2.5",
             rapidity(fwd)
         );
         let lab_even = lab_frame(&even, &point, &out);
         assert!(
-            even.cuts.pass(&lab_even),
+            even.filters[0].pass(&lab_even),
             "the configuration at rest fails a cut"
         );
 
@@ -6437,21 +8254,23 @@ mod tests {
     }
 
     /// Exchanging the two beams' energies is a reflection `z → −z` of the whole
-    /// collision, so at unequal energies the integrand at `(x₁, x₂, q)` equals the
-    /// integrand with the energies exchanged at `(x₂, x₁, Rq)`, `R` the rotation by
-    /// π about the x axis: each beam ordering's term of one becomes the other
-    /// ordering's term of the other, and a symmetric lab cut sees reflected
-    /// momenta.
+    /// collision, and under it each beam ordering's event at a point becomes the
+    /// other ordering's event at the *same* point: the direct event of
+    /// `(x₁, x₂, q)` between beams `E₁ × E₂` is the exchanged event of
+    /// `(x₁, x₂, q)` between `E₂ × E₁` rotated by π about the x axis, and the
+    /// other way round, with the parton luminosity and the matrix element
+    /// unchanged. So at unequal energies the integrand at a point equals the
+    /// integrand with the energies exchanged at the same point.
     ///
-    /// The mirrored ordering's term is what this pins at a point: it is a
-    /// different physical event from the direct one (the beams' partons
-    /// exchanged), and its lab-frame cut has to be the one that event's own
-    /// momenta pass. A mirrored term cut in any other frame — the one MadEvent
-    /// cuts in, at `cm_rap` with the beam energies exchanged, among them — breaks
-    /// the symmetry at points near the `etal` edge. Blind to anything symmetric
-    /// under the reflection: a boost of the wrong sign in both orderings, or
-    /// partons placed on the wrong beam in both, pass; the boost's direction is
-    /// [`unequal_beams_place_and_boost_the_partons_as_madgraph_does`]'s.
+    /// The mirrored ordering's term is what this pins: its event is a different
+    /// physical event from the direct one (the beams' partons exchanged, each at
+    /// its own fraction), and its lab-frame cut has to be the one that event's
+    /// own momenta pass. A mirrored term cut in any other frame — the sampled
+    /// one, which is where MadEvent cuts it, among them — breaks the identity at
+    /// points near the `etal` edge, which the sweep counts. Blind to anything
+    /// symmetric under the reflection: a boost of the wrong sign in both
+    /// orderings, or partons placed on the wrong beam in both, pass; the boost's
+    /// direction is [`unequal_beams_place_and_boost_the_partons_as_madgraph_does`]'s.
     #[test]
     fn exchanging_unequal_beam_energies_reflects_the_integrand() {
         let m = model();
@@ -6483,7 +8302,6 @@ mod tests {
         let backward = build(4000.0, 6500.0);
         assert_eq!(forward.point_ndim(), forward.channel_grid_ndim());
 
-        let reflect = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
         let mut stream = SubStream::from_stream(0x00BE_A352, 3);
         let (mut nonzero, mut one_sided) = (0, 0);
         for trial in 0..20_000 {
@@ -6494,33 +8312,28 @@ mod tests {
                 forward
                     .combiner
                     .draw_in_channel_at(channel, point.sqrt_shat, &u[OUTER_NDIM..]);
-            let mirrored = OuterPoint {
-                x1: point.x2,
-                x2: point.x1,
-                ..point
-            };
-            let reflected: Vec<V> = drawn.momenta.iter().map(reflect).collect();
             let a = forward.shape(forward.scratch(), &point, &drawn.momenta, channel, &[]);
-            let b = backward.shape(backward.scratch(), &mirrored, &reflected, channel, &[]);
+            let b = backward.shape(backward.scratch(), &point, &drawn.momenta, channel, &[]);
             assert!(
                 (a - b).abs() <= 1e-12 * a.abs().max(b.abs()),
                 "trial {trial}: {a:e} with beams 6500 x 4000, {b:e} exchanged"
             );
             nonzero += usize::from(a != 0.0);
-            // A point whose lab frame at the other beams' boost fails the cuts
-            // is one where a mirrored term cut in that frame would be lost.
-            let lab = lab_frame(&forward, &point, &drawn.momenta);
-            let other_beta =
-                (point.x1 - point.x2 * 6500.0 / 4000.0) / (point.x1 + point.x2 * 6500.0 / 4000.0);
-            let mut other = lab[..2].to_vec();
-            other.extend(drawn.momenta.iter().map(|p| boost_z(*p, other_beta)));
-            one_sided += usize::from(forward.cuts.pass(&lab) != forward.cuts.pass(&other));
+            // A point whose two orderings' events disagree on the cuts is one where
+            // a mirrored term cut on the sampled event would be wrong.
+            let sc = forward.scratch();
+            let lab = sc.lab_buf.borrow().clone();
+            let cm = sc.cm_buf.borrow().clone();
+            let mut exchanged = Vec::new();
+            forward.exchanged_lab_into([point.x1, point.x2], &cm, &mut exchanged);
+            one_sided +=
+                usize::from(forward.filters[0].pass(&lab) != forward.filters[0].pass(&exchanged));
         }
-        eprintln!("{nonzero} weighted points, {one_sided} between the two frames' cuts");
+        eprintln!("{nonzero} weighted points, {one_sided} between the two orderings' cuts");
         assert!(nonzero > 5_000, "{nonzero} points carry weight");
         assert!(
             one_sided > 500,
-            "{one_sided} points sit between the two frames' cuts"
+            "{one_sided} points sit between the two orderings' cuts"
         );
     }
 
@@ -6563,8 +8376,9 @@ mod tests {
     /// The beam-exchange test above cannot see this: cutting both orderings in the
     /// partonic CM is symmetric under the reflection it checks. Here
     /// `x₁ = x₂` at `6500 × 4000` boosts the system by `½ ln(13/8)`, carrying the
-    /// first lepton from `y = 2.4` to `2.64`; the mirrored ordering's physical event
-    /// has the same lab momenta and fails with it. Control: the same
+    /// first lepton from `y = 2.4` to `2.64`; the mirrored ordering's event, the
+    /// configuration rotated with its leptons at `∓2.4`, is boosted the same way
+    /// at `x₁ = x₂` and fails with it. Control: the same
     /// configuration between beams of equal energy at the same `√s` is at rest,
     /// passes, and carries weight, so the zero is the cut's.
     #[test]
@@ -6599,12 +8413,12 @@ mod tests {
             jac: 1.0,
         };
         assert!(
-            unequal.cuts.pass(&cm_frame(&point, &out)),
+            unequal.filters[0].pass(&cm_frame(&point, &out)),
             "the configuration fails a cut in the partonic CM"
         );
         let lab = lab_frame(&unequal, &point, &out);
         assert!(
-            !unequal.cuts.pass(&lab),
+            !unequal.filters[0].pass(&lab),
             "the boosted lepton at y = {} passes etal",
             rapidity(&lab[2])
         );
@@ -6614,19 +8428,19 @@ mod tests {
         assert_eq!(boosted, 0.0, "a lab-frame failure carries weight");
     }
 
-    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] cuts the mirrored term at
-    /// `(x₁, x₂, q)` on the configuration MadEvent sampled it from, `(x₂, x₁, Rq)`
-    /// at that configuration's `cm_rap`, and leaves the direct term on the lab
-    /// frame.
+    /// Each ordering's term is cut on its own event, and
+    /// [`ProtonIntegrand::emulate_madevent_mirrored_cut`] cuts the mirrored term on
+    /// the sampled configuration instead, where MadEvent cuts it.
     ///
     /// Two points at `x₁/x₂ = (E₁/E₂)^±1` with the leptons at partonic
-    /// `y = ±2.4`. At `x₁/x₂ = E₁/E₂` the lab frame moves the
-    /// pair by `ln(E₁/E₂) = 0.486`, past `etal`, while MadEvent's sampled
-    /// configuration is at rest: only the emulated mirrored term survives. At
-    /// `x₁/x₂ = E₂/E₁` the lab frame is at rest and MadEvent's configuration
-    /// moves by `0.486`: the emulation keeps the direct term alone, below the
-    /// unemulated value. Control: at equal beams the emulation is bit-identical
-    /// over a sweep of production points, as MadEvent's two frames coincide there.
+    /// `y = ±2.4`. At `x₁/x₂ = E₁/E₂` the sampled lab frame moves the pair by
+    /// `ln(E₁/E₂) = 0.486`, past `etal`, while the exchanged event (beam 1 at
+    /// `x₂`, beam 2 at `x₁`) is at rest: only the mirrored term survives, and the
+    /// emulation loses it. At `x₁/x₂ = E₂/E₁` the sampled frame is at rest and the
+    /// exchanged event moves by `0.486`: the direct term survives alone, and the
+    /// emulation keeps the mirrored term with it. Control: at equal beams the
+    /// emulation is bit-identical over a sweep of production points, as the two
+    /// events are one another's rotation there.
     #[test]
     fn the_emulated_madevent_mirrored_cut_reads_the_sampled_configuration() {
         let m = model();
@@ -6668,22 +8482,26 @@ mod tests {
         };
 
         let forward = at(6500.0 / 4000.0);
-        assert!(!plain.cuts.pass(&lab_frame(&plain, &forward, &out)));
-        assert_eq!(value(&plain, &forward), 0.0);
-        let mirrored_only = value(&emulated, &forward);
+        assert!(!plain.filters[0].pass(&lab_frame(&plain, &forward, &out)));
+        let mirrored_only = value(&plain, &forward);
         assert!(
             mirrored_only > 0.0,
-            "the mirrored term MadEvent keeps is lost: {mirrored_only:e}"
+            "the mirrored term, whose event is at rest, is lost: {mirrored_only:e}"
+        );
+        assert_eq!(
+            value(&emulated, &forward),
+            0.0,
+            "MadEvent cuts it on the sampled frame"
         );
 
         let backward = at(4000.0 / 6500.0);
-        assert!(plain.cuts.pass(&lab_frame(&plain, &backward, &out)));
-        let both = value(&plain, &backward);
-        let direct_only = value(&emulated, &backward);
+        assert!(plain.filters[0].pass(&lab_frame(&plain, &backward, &out)));
+        let direct_only = value(&plain, &backward);
+        let both = value(&emulated, &backward);
         assert!(
             direct_only > 0.0 && direct_only < both * (1.0 - 1e-6),
-            "the emulation kept {direct_only:e} of {both:e}: the mirrored term MadEvent \
-             drops survived, or the direct term went with it"
+            "the plain integrand kept {direct_only:e} of the emulation's {both:e}: the \
+             mirrored term whose event fails the cuts survived, or the direct term went with it"
         );
 
         let (even, even_emulated) = (build(6500.0, 6500.0, false), build(6500.0, 6500.0, true));
@@ -6798,8 +8616,12 @@ mod tests {
     /// rule's own and carry no Monte Carlo error: the only residual is the sweep's
     /// grid, and every margin below is quoted in units of it.
     ///
-    /// What it cannot see: which of `x₁`, `x₂` belongs to which beam is pinned only as
-    /// far as the probe distribution separates them, so the margin against the
+    /// Under the exchanged ordering the member's partons keep their sampled fractions
+    /// (`a` at `x₁`, `b` at `x₂`, on exchanged beams), so its share is the direct
+    /// one; the assignment ruled out is the one that reads `a` at `x₂`.
+    ///
+    /// What it cannot see: which of `x₁`, `x₂` belongs to which parton is pinned only
+    /// as far as the probe distribution separates them, so the margin against the
     /// exchanged assignment is measured and asserted rather than assumed. It also says
     /// nothing about *realised* frequencies over a generated sample against MadGraph's
     /// — that is the deferred validation pass's content.
@@ -6874,8 +8696,8 @@ mod tests {
                 }
 
                 // The luminosity share, formed from the parton distribution directly,
-                // and the same shares with the two beams exchanged — the assignment
-                // this test has to be able to rule out.
+                // and the same shares with the two fractions exchanged — the
+                // assignment this test has to be able to rule out.
                 let share = |swapped: bool, ordering: usize| -> Vec<f64> {
                     let (xa, xb) = if swapped {
                         (event.x[1], event.x[0])
@@ -6885,12 +8707,8 @@ mod tests {
                     g.members()
                         .iter()
                         .map(|s| {
-                            let [a, b] = if ordering == 0 {
-                                s.incoming
-                            } else {
-                                [s.incoming[1], s.incoming[0]]
-                            };
-                            if ordering == 1 && s.incoming[0] == s.incoming[1] {
+                            let [a, b] = s.incoming;
+                            if ordering == 1 && !s.has_mirror() {
                                 return 0.0;
                             }
                             pdf.xfx_q2(a, xa, q2[0]) * pdf.xfx_q2(b, xb, q2[1])
@@ -6957,8 +8775,9 @@ mod tests {
     /// two incoming legs traded, and nothing else moved.
     ///
     /// The claim is that the mirror identity extends from `|M|²` to the accumulators an
-    /// event record is filled from: the rotation `R` maps each beam momentum onto the
-    /// other's, so the representative's leg 0 describes the event's *second* beam.
+    /// event record is filled from: the exchanged event is the sampled one rotated by
+    /// `R` ([`exchange_into`]), which carries the representative's leg 0 onto the
+    /// `−z` beam, so that leg describes the event's *second* beam.
     /// That is a convention claim about helicity labels and colour lines, which no
     /// cross-section-level check can see, so it is pinned against the mirrored
     /// subprocess compiled from **its own** proc card.
@@ -7032,18 +8851,20 @@ mod tests {
                 flows += 1;
             }
 
-            let mut reflected = Vec::new();
+            // The representative at the sampled point, where the integrand reads
+            // the labels; the mirrored subprocess at the exchanged event it writes.
+            let mut exchanged = Vec::new();
             for k in &points {
-                g.mirror_into(k, &mut reflected);
+                exchange_into(k, &mut exchanged);
                 let mut rep_hel = vec![0.0; g.evaluator().helicities().len()];
                 let mut rep_jamp = vec![0.0; g.evaluator().n_flows()];
-                rep.eval_hel_m2(&reflected, &mut rep_scratch, &mut rep_hel);
-                rep.eval_jamp2(&reflected, &mut rep_scratch, &mut rep_jamp);
+                rep.eval_hel_m2(k, &mut rep_scratch, &mut rep_hel);
+                rep.eval_jamp2(k, &mut rep_scratch, &mut rep_jamp);
 
                 let mut mirror_hel = vec![0.0; mirror_eval.helicities().len()];
                 let mut mirror_jamp = vec![0.0; mirror_eval.n_flows()];
-                mirror.eval_hel_m2(k, &mut mirror_scratch, &mut mirror_hel);
-                mirror.eval_jamp2(k, &mut mirror_scratch, &mut mirror_jamp);
+                mirror.eval_hel_m2(&exchanged, &mut mirror_scratch, &mut mirror_hel);
+                mirror.eval_jamp2(&exchanged, &mut mirror_scratch, &mut mirror_jamp);
 
                 let scale: f64 = mirror_hel.iter().sum();
                 for (c, combination) in g.evaluator().helicities().iter().enumerate() {
@@ -7581,6 +9402,346 @@ mod tests {
             }
         }
         lines.into_values().collect()
+    }
+
+    /// A Drell-Yan card with a massive parton on both beams, `mmll` keeping the
+    /// partonic energy above the lepton-pair floor.
+    fn massive_parton_card() -> RunCard {
+        RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  4000.0 = ebeam2\n\
+             \x20 True = fixed_ren_scale\n  True = fixed_fac_scale1\n  True = fixed_fac_scale2\n\
+             \x20 91.188 = scale\n  91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n\
+             \x20 0.0 = ptl\n  -1.0 = etal\n  0.0 = drll\n  12.0 = mmll\n",
+        )
+        .expect("run card")
+    }
+
+    /// MadGraph's `LAMBDA` (`genps.f`), in its own expanded form, so the flux is
+    /// checked against the reference's arithmetic rather than this crate's.
+    fn madgraph_lambda(s: f64, ma2: f64, mb2: f64) -> f64 {
+        s * s + ma2 * ma2 + mb2 * mb2 - 2.0 * s * ma2 - 2.0 * ma2 * mb2 - 2.0 * s * mb2
+    }
+
+    /// `b b~ > mu+ mu-` with the default Standard Model's `MB = 4.7`: in the
+    /// partonic CM each beam is on its own mass shell, they sum to `(√ŝ, 0, 0, 0)`
+    /// at `ŝ = x₁x₂s`, the flux is MadGraph's `1/(2√λ(ŝ, m₁², m₂²))`, and below
+    /// `√ŝ = 2MB` the point carries no flux at all. The lab frame the cuts read
+    /// is the partonic one boosted by `cm_rap`, so its beams keep their masses
+    /// and their sum keeps `√ŝ` at MadGraph's rapidity.
+    #[test]
+    fn massive_partons_sit_on_their_mass_shells_with_madgraphs_flux() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mb = evaluated.mass(m.particle_id("b").expect("b"));
+        assert_eq!(mb, 4.7, "the default Standard Model's b mass");
+        let groups = derive_flavor_groups(
+            enumerate("b b~ > mu+ mu-", &m),
+            &m,
+            &evaluated,
+            &massive_parton_card(),
+        )
+        .expect("a massive-parton subprocess decomposes");
+        assert_eq!(groups.initial_masses(), [mb, mb]);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        assert!(
+            (integ.tau_min() * integ.s_had - 144.0).abs() < 1e-9,
+            "the mmll floor, above 2 MB, sets the support: {}",
+            integ.tau_min() * integ.s_had
+        );
+
+        for (x1, x2) in [(0.01, 0.002), (3e-4, 0.4), (0.05, 0.05)] {
+            let sqrt_shat = (x1 * x2 * integ.s_had).sqrt();
+            let s = sqrt_shat * sqrt_shat;
+            let point = OuterPoint {
+                x1,
+                x2,
+                sqrt_shat,
+                jac: 1.0,
+            };
+            let out = vec![
+                V::new(sqrt_shat / 2.0, sqrt_shat / 2.0, 0.0, 0.0),
+                V::new(sqrt_shat / 2.0, -sqrt_shat / 2.0, 0.0, 0.0),
+            ];
+            let sc = integ.scratch();
+            integ.build_frames(sc, &point, &out);
+            let cm = sc.cm_buf.borrow().clone();
+            let lab = sc.lab_buf.borrow().clone();
+            for (p, sign) in cm[..2].iter().zip([1.0, -1.0]) {
+                assert!(
+                    (p.m2() / (mb * mb) - 1.0).abs() < 1e-10,
+                    "on shell: m² = {} at √ŝ = {sqrt_shat}",
+                    p.m2()
+                );
+                assert!(p.pz() * sign > 0.0 && p.px() == 0.0 && p.py() == 0.0);
+            }
+            let total = cm[0] + cm[1];
+            assert!((total.e() - sqrt_shat).abs() < 1e-12 * sqrt_shat);
+            assert!(total.pz().abs() < 1e-12 * sqrt_shat);
+            assert!((cm[0].e() - sqrt_shat / 2.0).abs() < 1e-12 * sqrt_shat);
+
+            let flux = integ.inverse_flux(sqrt_shat).expect("above threshold");
+            let want = 1.0 / (2.0 * madgraph_lambda(s, mb * mb, mb * mb).sqrt());
+            assert!(
+                (flux / want - 1.0).abs() < 1e-12,
+                "flux {flux:e} against MadGraph's {want:e}"
+            );
+            assert!(
+                (flux * 2.0 * s - 1.0).abs() > 1e-6,
+                "the massive flux is not the massless 1/(2ŝ) at √ŝ = {sqrt_shat}"
+            );
+
+            let cm_rap = 0.5 * (x1 * e1 / (x2 * e2)).ln();
+            let lab_total = lab[0] + lab[1];
+            assert!((lab_total.m2() / s - 1.0).abs() < 1e-10);
+            assert!((rapidity(&lab_total) - cm_rap).abs() < 1e-10);
+            for p in &lab[..2] {
+                assert!((p.m2() / (mb * mb) - 1.0).abs() < 1e-6, "lab m² {}", p.m2());
+            }
+        }
+        assert_eq!(integ.inverse_flux(2.0 * mb), None, "at threshold");
+        assert_eq!(integ.inverse_flux(9.0), None, "below threshold");
+        assert!(integ.inverse_flux(9.5).is_some());
+    }
+
+    /// The event record of a massive-parton event is MadEvent's `write_leshouche`
+    /// frame: anchored on beam 2 when beam 1's parton is massive, so beam 2's
+    /// parton has lab energy `x₂E₂`, every leg keeps its mass, and the record
+    /// conserves momentum. Beam 1 anchors when its parton is massless, which
+    /// under the exchanged ordering of `g b` is the other way round: there the
+    /// gluon rides beam 2 at its sampled `x₁`, as MadEvent writes an
+    /// `IMIRROR = 2` event, and the outgoing legs are the sampled ones rotated
+    /// by π about the x axis.
+    #[test]
+    fn a_massive_parton_record_is_anchored_where_madevent_anchors_it() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mb = evaluated.mass(m.particle_id("b").expect("b"));
+        let groups = derive_flavor_groups(
+            enumerate("g b > b a", &m),
+            &m,
+            &evaluated,
+            &massive_parton_card(),
+        )
+        .expect("a massive-parton subprocess decomposes");
+        assert_eq!(groups.initial_masses(), [0.0, mb]);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+        let (x1, x2) = (0.02, 0.003);
+        let sqrt_shat = (x1 * x2 * integ.s_had).sqrt();
+        let point = OuterPoint {
+            x1,
+            x2,
+            sqrt_shat,
+            jac: 1.0,
+        };
+        let k = 0.4 * sqrt_shat;
+        let eb = (k * k + mb * mb).sqrt();
+        let out = vec![
+            V::new(eb, k * 0.6, 0.0, k * 0.8),
+            V::new(sqrt_shat - eb, -k * 0.6, 0.0, -k * 0.8),
+        ];
+        let sc = integ.scratch();
+        integ.build_frames(sc, &point, &out);
+        let event = ProtonEvent {
+            weight: 1.0,
+            x: [x1, x2],
+            group_scales: Vec::new(),
+            group_rewgt: Vec::new(),
+            group_records: Vec::new(),
+            group_histories: Vec::new(),
+            lab: sc.lab_buf.borrow().clone(),
+            cm: sc.cm_buf.borrow().clone(),
+        };
+        let conserved = |rec: &[V]| {
+            let into = rec[0] + rec[1];
+            let outof = rec[2] + rec[3];
+            for c in 0..4 {
+                let (a, b) = (components(&into)[c], components(&outof)[c]);
+                assert!(
+                    (a - b).abs() < 1e-9 * sqrt_shat,
+                    "component {c}: {a} vs {b}"
+                );
+            }
+        };
+
+        let direct = integ.record_momenta(&event, BeamOrdering::Direct);
+        assert!(
+            (direct[0].e() / (x1 * e1) - 1.0).abs() < 1e-12,
+            "massless beam 1 anchors"
+        );
+        assert!(direct[0].m2().abs() < 1e-6 * sqrt_shat * sqrt_shat);
+        assert!((direct[1].m2() / (mb * mb) - 1.0).abs() < 1e-6);
+        assert!(
+            (direct[1].e() / (x2 * e2) - 1.0).abs() > 1e-5,
+            "the massive parton is not at x₂E₂: {} against {}",
+            direct[1].e(),
+            x2 * e2
+        );
+        conserved(&direct);
+
+        let exchanged = integ.record_momenta(&event, BeamOrdering::Exchanged);
+        assert!(
+            (exchanged[1].e() / (x1 * e2) - 1.0).abs() < 1e-12,
+            "massless beam 2 anchors, at the gluon's own fraction"
+        );
+        // Rotated, then boosted along z: every outgoing rapidity is the sampled
+        // partonic one reversed, plus one common shift.
+        let shifts: Vec<f64> = exchanged[2..]
+            .iter()
+            .zip(&event.cm[2..])
+            .map(|(p, q)| {
+                assert_eq!(p.px(), q.px(), "the rotation keeps p_x");
+                rapidity(p) + rapidity(q)
+            })
+            .collect();
+        assert!((shifts[0] - shifts[1]).abs() < 1e-10, "{shifts:?}");
+        assert!(
+            (exchanged[0].m2() / (mb * mb) - 1.0).abs() < 1e-6,
+            "b on beam 1"
+        );
+        assert!(exchanged[1].m2().abs() < 1e-6 * sqrt_shat * sqrt_shat);
+        assert!(exchanged[0].pz() > 0.0 && exchanged[1].pz() < 0.0);
+        conserved(&exchanged);
+    }
+
+    /// The matrix element at massive incoming momenta, helicity by helicity,
+    /// against MadGraph's standalone `SMATRIXHEL` (its `IDEN` and
+    /// `HELAVGFACTOR` taken back out, so each entry is one helicity's
+    /// colour-summed `|M|²`) at the
+    /// same partonic-CM points: the beams built by `mom2cx` at `MB = 4.7` and at
+    /// `sm-c_mass`'s `MC = 1.55`, the outgoing pair by `mom2cx` at three angles,
+    /// from just above threshold to far above it. `g b > z b` puts a massive and
+    /// a massless parton on the beams.
+    ///
+    /// Per-helicity `|M|²` is colour-summed and blind to a global phase per
+    /// helicity; the per-diagram and per-flow complex values at massive incoming
+    /// spinors are the banked amplitude tables' (`bbx_to_h_identity`,
+    /// `tata_to_ttx_tensor4f`, `bbx_to_ccx_emmm_qcd0`).
+    #[test]
+    fn massive_incoming_helicity_amplitudes_match_madgraph_standalone() {
+        let tables: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/data/massive_incoming_standalone.json"
+        ))
+        .expect("standalone table");
+        let mut checked = 0;
+        for (name, table) in tables.as_object().expect("rows") {
+            let model = match table["model"].as_str() {
+                Some("sm") => sm_model(SMRestrict::Default),
+                Some("sm-c_mass") => sm_model(SMRestrict::CMass),
+                other => panic!("model {other:?}"),
+            };
+            let evaluated = EvaluatedModel::from_model(model.clone());
+            let process = table["process"].as_str().expect("process");
+            let sets: Vec<DiagramSet> = enumerate(process, &model)
+                .into_iter()
+                .filter(|s| !s.diagrams.is_empty())
+                .collect();
+            assert_eq!(sets.len(), 1, "{name}: one subprocess");
+            let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).expect("compile");
+            let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
+            let mut scratch = bound.scratch_space();
+            let mg_hels: Vec<Vec<i64>> = table["helicities"]
+                .as_array()
+                .expect("helicities")
+                .iter()
+                .map(|h| {
+                    h.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.as_i64().unwrap())
+                        .collect()
+                })
+                .collect();
+            let slot: Vec<usize> = evaluator
+                .helicities()
+                .iter()
+                .map(|h| {
+                    let h: Vec<i64> = h.iter().map(|&x| i64::from(x)).collect();
+                    mg_hels
+                        .iter()
+                        .position(|g| *g == h)
+                        .expect("a MadGraph helicity")
+                })
+                .collect();
+            let mut hel_m2 = vec![0.0; evaluator.helicities().len()];
+            let mut worst = 0.0f64;
+            for point in table["points"].as_array().expect("points") {
+                let momenta: Vec<V> = point["momenta"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| {
+                        let c: Vec<f64> = p
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|x| x.as_f64().unwrap())
+                            .collect();
+                        V::new(c[0], c[1], c[2], c[3])
+                    })
+                    .collect();
+                let mg_hel: Vec<f64> = point["hel_m2"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_f64().unwrap())
+                    .collect();
+                let mg_total = point["m2"].as_f64().unwrap();
+                bound.eval_hel_m2(&momenta, &mut scratch, &mut hel_m2);
+                let total = bound.eval_m2(&momenta, &mut scratch);
+                worst = worst.max((total / mg_total - 1.0).abs());
+                let scale = mg_hel.iter().copied().fold(0.0, f64::max);
+                for (c, &i) in slot.iter().enumerate() {
+                    worst = worst.max((hel_m2[c] - mg_hel[i]).abs() / scale);
+                }
+                let covered: f64 = slot.iter().map(|&i| mg_hel[i]).sum();
+                assert!(
+                    (covered / mg_total - 1.0).abs() < 1e-12,
+                    "{name}: a MadGraph helicity this evaluator lacks carries weight"
+                );
+                checked += 1;
+            }
+            eprintln!("{name}: worst relative deviation {worst:.2e}");
+            assert!(worst < 1e-10, "{name}: {worst:e}");
+        }
+        assert_eq!(checked, 30);
+    }
+
+    /// Subprocesses whose incoming masses differ cannot share one decomposition:
+    /// its groups share the partonic-frame beams, the flux and the threshold.
+    #[test]
+    fn unequal_incoming_masses_are_refused_in_one_decomposition() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut sets = enumerate("u u~ > mu+ mu-", &m);
+        sets.extend(enumerate("b b~ > mu+ mu-", &m));
+        let refused = derive_flavor_groups(sets, &m, &evaluated, &massive_parton_card());
+        assert!(
+            matches!(refused, Err(ProtonError::UnequalInitialMasses { .. })),
+            "{:?}",
+            refused.err()
+        );
     }
 }
 

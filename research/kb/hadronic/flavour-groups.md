@@ -1,7 +1,7 @@
 ---
 type: Algorithm
 title: Flavour groups derived from measured |M|² equality
-description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses, cuts and colour basis, with a minimum cross-group separation."
+description: "Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and a cut filter equal to the representative's and a colour basis that pairs with its own under the fingerprint permutation; a subprocess with a different cut filter or an unpaired colour basis forms a group of its own; groups that do not merge stay separate."
 status: draft
 tags: [hadronic, flavour-groups, proton, probe, colour]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -54,27 +54,55 @@ measurement.[^n24-p2]
 
    with `base = max(Σ m_out, 100 GeV)`, every rung raised to at least `1.2 × Σ m_out`, and
    rungs that collide after the clamp collapsed to one.[^derive]
-4. Two subprocesses join a group when they are polarized alike and their whole probe
-   trace agrees to `GROUP_REL_TOL = 1e-10`.
-5. Refuse the partition if two distinct groups separate by no more than
-   `GROUP_SEPARATION_MIN = 1e-6` at their best-separated probe point (`DegenerateGroups`).
-   A partition made by two traces landing either side of the tolerance by rounding is a
-   failed measurement, not a decomposition.
-6. Within each group, refuse a member whose compiled `Cuts` differ from the
-   representative's (`CutIndicatorDiffers`; `Cuts: PartialEq` is equality of the
-   *filter*, since PDG codes are consumed by `compile`), or whose colour basis differs
-   in `n_flows` or `cf_matrix` (`ColorStructureDiffers`).
-7. Pair each member's colour flows with the representative's (`flow_permutation`),
-   refusing when no bijection exists (`ColorFlowPairing`). The member's own `ICOLUP`
-   table is reindexed into the representative's flow indexing once, so a flow drawn on
-   the representative labels any member's event.
+4. A subprocess joins the first group whose representative it is polarized alike with,
+   whose whole probe trace it matches to `GROUP_REL_TOL = 1e-9`, whose compiled cut
+   filter it equals (`Cuts` equality), **and** whose colour bookkeeping it shares (`colour_pairing`): an equal `n_flows`, a pairing `π` of its
+   flows with the representative's (`flow_permutation`, the unique fingerprint
+   bijection), and `CF_rep[i][j] = CF_member[π(i)][π(j)]` exactly. `π` comes from the
+   fingerprints and the CF matrix only confirms it; a permutation found from the CF
+   matrix would not be unique, since the 12-flow `u u > g g u u` matrix has 16
+   automorphisms and only one of them labels the member's events right. The matrices
+   are never compared in their own orders: a charge-conjugate pair (`u d > d g u` with
+   `u~ d~ > d~ g u~`, `u u > g g u u` with `u~ u~ > g g u~ u~`) sorts the same flows
+   into different orders, so its matrices differ entry by entry until reindexed, and it
+   shares one group through `π`. A subprocess that matches a group's `|M|²` but whose
+   cut filter differs, or whose flows cannot be paired, is compiled already, so it
+   starts a group of its own instead of refusing the card: one more evaluation per
+   point. Cut filters differ when subprocesses class their legs differently (`g g > u u~`
+   against `g g > b b~` at `maxjetflavor = 4` with b cuts apart from the jet cuts) or
+   force different decay-chain lines; the groups then carry the distinct filters, which
+   [the integrand](proton-integrand.md) applies one per group. MadGraph's grouped
+   P directories instead require every matrix element of a directory to compile to the
+   same cuts and refuse the card otherwise (`setcuts.f`); vibegraph does not reproduce
+   that refusal, and on a card MadGraph accepts, each subprocess is cut by its own
+   classes as there. The SM instance is
+   `d d > d d QED=2` with `b b > b b QED=2` at a card setting the b mass and Yukawa to
+   zero under the default restriction: equal `|M|²`, but the b flows carry Higgs
+   exchanges of zero value, so their fingerprints have no counterpart.
+5. Groups that do not merge stay separate groups, whatever their separation: each is
+   evaluated with its own compiled amplitude and luminosity, so the sum over groups is
+   right however close two groups' `|M|²` are. The tolerance is set from a measurement
+   (sprint H, H-N1): the worst separation between members that differ only by rounding,
+   found by re-evaluating in `f32`, is 1.48e-10 (`d c~ > W- Z s d~` with `s u~ > W- Z d s~`),
+   6.8× below the bound; the closest physical pair is 1.18e-7, 120× above it. The γ+jets
+   pair `u b~ > a …` with its conjugate separates by 9.08e-7 at the same momenta. CP holds
+   (the conjugate at reflected momenta agrees to 3e-16), and the split is the
+   reflection-odd ε-tensor part of `|M|²`, whose absorptive phase comes from the W width.
+   It vanishes at `Γ_W = 0`, not at a zero CKM phase.
+
+Every subprocess still belongs to exactly one group, so the luminosity sum counts each
+once; a cut or colour split only moves a subprocess from one group's member list to a group
+of its own. The CF condition under `π` admits every join the raw-order comparison
+admitted (`π` is unique, and a pair equal in raw order is equal under it whenever the
+fingerprints pair the flows), so the partition of a card that grouped before is
+unchanged.
 
 ## Why `|M|²` equality is not enough
 
 `|M|²` is a sum. It is blind to a global phase, and it would not move if two members'
 colour bases differed by a relabelling. So equal `|M|²` does not license reusing one
-member's colour flow, cuts or phase-space map for another, and steps 2, 6 and 7 require
-each of those separately.[^n24-rule] The extra requirements are pinned against cases
+member's colour flow, cuts or phase-space map for another, and steps 2, 4, 6 and 7
+require each of those separately.[^n24-rule] The extra requirements are pinned against cases
 where they differ, so they are not vacuous guards:
 
 - `a_group_sharing_one_cut_filter_is_a_real_requirement`: a `pdg = 5` leg compiles to a
@@ -83,6 +111,28 @@ where they differ, so they are not vacuous guards:
   `p p → t t̄ QED=0`, where both groups have `n_flows = 2` and only the CF matrix
   separates them (`an_identical_parton_initial_state_carries_a_single_ordering`). It
   does not fire inside any group there, where members differ by generation label alone.
+- `a_conjugate_pair_shares_one_group_under_the_flow_permutation`: on `u d > d g u` and
+  on `u u > g g u u`, each with its conjugate, the raw CF matrices differ and the card
+  is one group. The member's reindexed table is the representative's with both slots
+  of every leg exchanged (the full-conjugation rule, derived without fingerprints),
+  its `JAMP2` is the representative's under `π`, and on the 12-flow pair `π` is pinned
+  to `[7,3,5,1,8,10,9,11,6,2,4,0]`.
+- `a_pair_whose_flows_cannot_be_paired_is_grouped_apart`: the `d d > d d` /
+  `b b > b b` pair above decomposes into two groups of one, each its own
+  representative under the identity.
+
+MadGraph keeps a conjugate pair as two matrix elements. Generating `uu dd > dd g uu`
+(with `uu = u u~`, `dd = d d~`) puts all four flavour assignments in one `P*` directory,
+so they share integration channels, but each keeps its own `matrix*.f`, its own CF
+matrix and its own `leshouche.inc` rows: `u d > d g u` and `u~ d~ > d~ g u~` carry CF
+rows `12,8,0,8` and `12,8,8,0` (MadGraph's packed upper triangle), two matrices
+related by a relabelling of the flows. MadGraph maps no colour flow between them; an
+event takes its flow from its own matrix element's `JAMP2` and its own table. One
+flavour group corresponds to one MadGraph matrix element, so holding a conjugate pair
+in one group goes a step past MadGraph. It is sound because `|M|²`, the CF matrix and
+every per-flow `JAMP2` agree under `π`, and the event colour labels a group writes for
+the member are the ones MadGraph's own table gives
+([events/per-member-colour-flow-tables](../events/per-member-colour-flow-tables.md)).
 
 Members of a group share a matrix element but need not share colour reps: a quark and
 an antiquark can share `|M|²`, mass list, cut filter and CF matrix while routing colour

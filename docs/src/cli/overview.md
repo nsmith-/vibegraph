@@ -1,6 +1,6 @@
 # Command line
 
-The `vibegraph` binary has three commands. Two of them are the generator, and
+The `vibegraph` binary has four commands. Two of them are the generator, and
 the split between them mirrors MadEvent's survey-and-refine phase followed
 by its event-generation phase:
 
@@ -16,9 +16,11 @@ by its event-generation phase:
 
 The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
-references.
+references. The fourth, **`vibegraph inspect`**, prints the results a saved
+`grid.bin.zst` records (σ, its error, χ²/dof, the factorization scale, each
+multiplicity's and each channel's share) without re-running anything.
 
-A fourth, `vibegraph enumerate`, is planned: it will take a process card
+A fifth, `vibegraph enumerate`, is planned: it will take a process card
 and report every diagram that contributes, as drawings, a summary page and
 a binary artifact `integrate` can take instead of enumerating again, so
 that a user can check that a card means the process they intended and
@@ -56,7 +58,10 @@ that turns on fixed-energy partonic beams:
 
 With no run card at all, a process runs at MadGraph's defaults: 13 TeV
 protons, the default jet and lepton cuts, and the default kT-clustered
-dynamical scale. One default departs from MadGraph's card: the parton
+dynamical scale. As in the card MadGraph's `output` writes for the process,
+`maxjetflavor` is 5 when some subprocess has an incoming b (a five-flavour
+model such as `sm-no_b_mass`), so its b quarks take the jet cuts; it stays 4
+otherwise. One default departs from MadGraph's card: the parton
 densities. MadGraph's template says `pdlabel = nn23lo1`, its own built-in
 parameterisation; vibegraph reads densities only from LHAPDF6 grids, so its
 default is `pdlabel = lhapdf` at `lhaid = 247000`, `NNPDF23_lo_as_0130_qed`,
@@ -185,7 +190,11 @@ the whole amplitude, so it cannot bound an interference term.
 ## Watching a run
 
 Standard output carries the result and nothing else, at every verbosity:
-the `σ = … pb` line, the path written, the `check-events` report.
+the `σ` line, the path written, the `check-events` report. The cross section
+and its error are printed under the one SI-prefixed barn unit σ's magnitude
+picks, the error to two significant figures and σ to the same decimal place:
+`σ = 8.6812 ± 0.0023 ab`, `σ = 1.23457 ± 0.00012 pb`. The per-multiplicity
+lines of a mixed-multiplicity card follow the same rule.
 Everything the run has to say about itself goes to standard error, at a
 level chosen by `-v`/`-q`/`--log-level`, with `--log-file` recording
 everything at `trace` regardless, and `RUST_LOG` as the per-module override.
@@ -200,6 +209,61 @@ can move in either direction. Arrow keys change the visible level and
 module scope; `q` or `^C` asks for a graceful stop, which finishes the
 iteration, banks what completed, and writes a usable artifact. A second
 press quits at once.
+
+## Output modes
+
+A run picks one output mode, which formats its log lines, its progress and
+its result or refusal together:
+
+| mode | when | log | progress | result or refusal |
+|---|---|---|---|---|
+| plain | not a terminal, or `--no-tui` | text lines on standard error | not shown | text lines |
+| rich | a terminal on both streams, or `--tui` | the pane's scrollback | the status pane | text lines, after the pane comes down |
+| ldjson | `--output-ldjson` | one object per event | one object per event | one final object |
+
+`--output-ldjson` is for a program reading the run. Standard output then
+carries one JSON object per line and nothing else, in the order the run
+produced them; the status pane is never drawn, and `--tui` with it is a
+usage error. Every object has a `kind` and a `schema_version` (currently
+`1`); a reader refuses a version it does not know. A new field can appear in
+any object without a version bump, so a reader ignores fields it does not
+know; removing, renaming or re-meaning a field, or changing the list of error
+kinds, bumps the version.
+
+- `log`: an event at the visible level, as `tracing-subscriber`'s JSON
+  formatter writes it: `timestamp`, `level`, `target`, the event's `fields`
+  (its text is `fields.message`) and, inside a stage, the `span` it ran in.
+- `progress`: a progress measurement, at any level, in the same layout. Its
+  `fields` are the progress stream's own: `stage`, `done`, `total` when the
+  stage knows it, and the stage's extras. The VEGAS stage's running `sigma`
+  and `err` are in the integrand's natural units (GeV⁻² for a cross section,
+  GeV for a width).
+- `result`: the command's final object. `integrate`'s carries `process`,
+  `model` (`label`, `digest`), `observable` and `unit` (`pb`, or `GeV` for a
+  decay's width), `sigma`, `sigma_err`, `chi2_per_dof` (`null` over fewer than
+  two iterations), `mu_f` (tagged by `type`: `no_densities`, `constant` with
+  `gev`, `per_beam` with two, `per_event` with the `dynamical_scale_choice`),
+  `seed`, `multiplicities` (each final-state phase space of a proton run:
+  `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
+  `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
+  path and its `format_version`. `inspect --output-ldjson` prints the same
+  object for a saved artifact. `generate`'s carries `events_written`,
+  `events_drawn`, the `output` file, the `artifact` it read, the sample's own
+  `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
+  `integration_sigma_err`, and the `pull` between them.
+- `refusal`: in place of a result, `error_kind` and `message`. A refused
+  run writes no artifact, so this is its only record.
+
+Values are at full precision in base units: picobarns and GeV, never an SI
+prefix. The `error_kind` is one of a fixed list, which only a schema version
+bump changes: `usage` (the flags), `card` (a proc, run or param card),
+`model`, `process` (enumeration, compilation, or a process shape the
+integrator refuses), `pdf` (the parton densities), `network` (a download
+refused or failed), `support` (an integration whose points do not support a
+result), `artifact` (a saved artifact unreadable or inconsistent), `io`
+(another file or directory), and `run` (anything else that failed once the
+inputs were accepted). `check-events` prints a report for a person and
+refuses `--output-ldjson`.
 
 ## Parallelism
 

@@ -67,7 +67,7 @@ EXTRACT_EXCLUDES = ["*.pyc", "*.pyo", "*__pycache__*", "*.pkl", "mgbasedir/Templ
 
 # --- database ----------------------------------------------------------------
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def connect(path):

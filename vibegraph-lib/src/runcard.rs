@@ -751,6 +751,43 @@ impl RunCard {
         card
     }
 
+    /// MadGraph's out-of-the-box run card for a scattering process whose
+    /// generated subprocesses have the incoming PDG ids `incoming`, as its
+    /// `output` writes `Cards/run_card.dat`: the LO defaults with
+    /// `maxjetflavor` set by `banner.py`'s `create_default_for_process`
+    /// (`banner.py:4806-4810`).
+    ///
+    /// When any incoming parton is a quark up to b, a gluon or a photon,
+    /// `maxjetflavor` becomes the heaviest incoming quark flavour, at least 4:
+    /// 5 when a massless b is in the proton and some subprocess starts from it.
+    ///
+    /// `create_default_for_process` sets `asrwgtflavor` to the same value, but
+    /// only in memory: `asrwgtflavor` is a hidden parameter, the assignment does
+    /// not mark it user-set, so the written card has no line for it
+    /// (`RunCard.write` writes the hidden parameters in `user_set`,
+    /// `banner.py:3015`) and the card MadEvent reads back at `launch` holds the
+    /// template's 5 whatever the beams.
+    pub fn scattering_default(incoming: impl IntoIterator<Item = i64>) -> Self {
+        let incoming: BTreeSet<i64> = incoming.into_iter().collect();
+        let card = Self::default();
+        if !incoming
+            .iter()
+            .any(|&id| matches!(id.abs(), 1..=5 | 21 | 22))
+        {
+            return card;
+        }
+        let flavour = incoming
+            .iter()
+            .map(|id| id.abs())
+            .filter(|&id| id < 7)
+            .fold(4, i64::max);
+        let mut values = card.values;
+        values.insert("maxjetflavor".to_string(), ParamValue::Int(flavour));
+        let mut card = Self::from_values(values).expect("the process defaults are self-consistent");
+        card.written.insert("systematics_arguments".to_string());
+        card
+    }
+
     /// This card as MadEvent runs it for the decay of a particle of pole mass
     /// `mass` (`setcuts.f`, the `nincoming = 1` branch).
     ///

@@ -3,7 +3,7 @@ type: Sprint
 title: "Sprint H: CMS gridpack coverage"
 description: "Lift the cheapest refusals of the 200-gridpack CMS survey (#71, campaign main-23d3a76-200-pc): colour-basis splits, near-degenerate groups, xpt* ≤ 0, pt_min_pdg, decay-chain duplicate subprocesses and massive incoming partons, each validated against MadGraph."
 status: draft
-active: true
+active: false
 tags: [cms, gridpacks, coverage, flavour-groups, cuts, decay-chains, proton, sprint-h]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 sources:

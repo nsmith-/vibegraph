@@ -33,23 +33,24 @@ use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{
     channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, MovedParam,
-    PdfInput, RunInputs, FORMAT_VERSION,
+    MultiplicityTotal, PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
+use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
+    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, EnumerationPool,
+    ParsingOptions, SupportedCard,
 };
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
-    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
-    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
+    refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
@@ -66,14 +67,18 @@ use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
-use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
+use vibegraph::vegas::{BinWeight, Chi2PerDof, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
 use crate::assets;
-use crate::error::{err, CliError};
+use crate::error::{err, pdf_error_kind, CliError, ErrorKind};
 use crate::network::NetworkPolicy;
+use crate::output::{
+    self, ChannelKeyObject, ChannelResult, IntegrateResult, ModelRef, MuF, MultiplicityResult,
+};
 use crate::parallel::ParallelArgs;
+use crate::si::{fmt_si_measured, GEV, PICOBARN};
 use crate::tui;
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
@@ -175,13 +180,17 @@ pub(crate) enum SplitAngleArg {
 /// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is MadEvent's rule.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum TauMapArg {
-    /// `inverse-square`, or `log` where a resonance spans the whole final state.
+    /// `inverse-square`, `log` where a resonance spans the whole final state, and
+    /// `breit-wigner` where that resonance is too narrow for the log map.
     Auto,
     /// Density `∝ 1/τ` above the cut-implied `τ_min`.
     Log,
     /// Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance
     /// spanning the whole final state.
     InverseSquare,
+    /// The channel average of MadEvent's per-channel maps: a Breit–Wigner at each
+    /// channel's whole-state pole, the log map on channels without one.
+    BreitWigner,
 }
 
 /// The order a peripheral chain draws its rungs in ([`RungOrder`]); `auto` is
@@ -229,7 +238,10 @@ pub(crate) struct MapArgs {
     /// spans the whole final state, and `log` where one does. `inverse-square`
     /// measures better where it applies (0.77× the evaluations on `p p > j j`,
     /// 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the
-    /// resonance's peak sits in the `τ` draw.
+    /// resonance's peak sits in the `τ` draw. Where that peak is narrower than
+    /// one draw in a thousand of the log map, `auto` is `breit-wigner`: each
+    /// channel with a whole-state pole in range draws `τ` on that pole's
+    /// Breit–Wigner, as MadEvent does, and the others on the log map.
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
     pub(crate) tau: TauMapArg,
 
@@ -265,6 +277,7 @@ impl MapArgs {
                 TauMapArg::Auto => None,
                 TauMapArg::Log => Some(TauMap::Log),
                 TauMapArg::InverseSquare => Some(TauMap::InverseSquare),
+                TauMapArg::BreitWigner => Some(TauMap::BreitWigner),
             },
             rung_order: match self.rung_order {
                 RungOrderArg::Auto => None,
@@ -367,9 +380,12 @@ impl GridRuleArgs {
     pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
         if let Some(k) = self.max_bin_width.0 {
             if !(k > 1.0 && k.is_finite()) {
-                return Err(err(format!(
+                return Err(err(
+                    ErrorKind::Usage,
+                    format!(
                     "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
-                )));
+                ),
+                ));
             }
         }
         Ok(GridRule {
@@ -389,7 +405,9 @@ pub(crate) struct IntegrateArgs {
     /// `generate`); `-` reads the card from stdin.
     pub(crate) proc_card: PathBuf,
 
-    /// MadGraph `run_card.dat`; absent → MadGraph LO defaults.
+    /// MadGraph `run_card.dat`; absent → the card MadGraph's `output` writes
+    /// for the process: the LO defaults, with every cut removed for a decay and
+    /// `maxjetflavor` raised to 5 when a subprocess has an incoming b.
     #[arg(long)]
     pub(crate) run_card: Option<PathBuf>,
 
@@ -518,7 +536,7 @@ pub(crate) fn forbidden_onshell(
     parsed: &SupportedCard,
     model: &UFOModel,
 ) -> Result<Vec<i64>, CliError> {
-    forbidden_onshell_ids(parsed, model).map_err(|e| err(e.to_string()))
+    forbidden_onshell_ids(parsed, model).map_err(|e| err(ErrorKind::Card, e.to_string()))
 }
 
 impl IntegrateArgs {
@@ -542,10 +560,13 @@ impl IntegrateArgs {
             });
         }
         if !(self.target_rel > 0.0 && self.target_rel < 1.0) {
-            return Err(err(format!(
-                "--target-rel must be a relative uncertainty in (0, 1); got {}",
-                self.target_rel
-            )));
+            return Err(err(
+                ErrorKind::Usage,
+                format!(
+                    "--target-rel must be a relative uncertainty in (0, 1); got {}",
+                    self.target_rel
+                ),
+            ));
         }
         Ok(Budget::Target {
             target_rel: self.target_rel,
@@ -559,22 +580,27 @@ impl IntegrateArgs {
 
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
-/// removed. A card that activates a cut no stage applies is refused here, ahead
+/// removed and for a scattering process takes `maxjetflavor` from the incoming
+/// partons of its subprocesses ([`GlobalConfig::load_run_card`]). A card that activates a cut no stage applies is refused here, ahead
 /// of every stage that costs anything.
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
+    model: &UFOModel,
+    pool: EnumerationPool,
 ) -> Result<RunCard, CliError> {
-    let card = if parsed.is_decay() {
-        config.load_decay_run_card()
-    } else {
-        config.load_run_card()
-    };
-    let rc = card.map_err(|e| match &config.run_card_path {
-        Some(path) => err(format!("cannot load the run card {}: {e}", path.display())),
-        None => err(format!("cannot build the default run card: {e}")),
+    let loaded = config.load_run_card(parsed, model, pool);
+    let rc = loaded.map_err(|e| match &config.run_card_path {
+        Some(path) => err(
+            ErrorKind::Card,
+            format!("cannot load the run card {}: {e}", path.display()),
+        ),
+        None => err(
+            ErrorKind::Card,
+            format!("cannot build the default run card: {e}"),
+        ),
     })?;
-    detect_unimplemented(&rc).map_err(|e| err(e.to_string()))?;
+    detect_unimplemented(&rc).map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     Ok(rc)
 }
 
@@ -582,7 +608,7 @@ pub(crate) fn load_run_card(
 /// line itself on a one-line card, every line with its process number otherwise.
 pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError> {
     match parsed.processes.as_slice() {
-        [] => Err(err("proc card has no process")),
+        [] => Err(err(ErrorKind::Card, "proc card has no process")),
         [spec] => Ok(format!("{spec}")),
         // Every line, with its process number: the lines are what the artifact's
         // cross section sums, and the numbers are what the event file's `<init>`
@@ -602,14 +628,92 @@ pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError>
     }
 }
 
-/// The factorization scale the run artifact records: the run card's constant when
-/// it fixes one on both beams, and `0` when the scale is chosen per event and no
-/// single number describes the run.
-fn recorded_mu_f(report: &RunningCouplingReport) -> f64 {
-    match report.constant_scales {
-        Some(scales) if scales.mu_f[0] == scales.mu_f[1] => scales.mu_f[0],
-        _ => 0.0,
+/// The factorization scale a run read its parton densities at, as the summary
+/// names it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum FactorizationScale {
+    /// The beams read no parton densities: fixed-energy beams, or a decay.
+    NoDensities,
+    /// The run card's constant, the same on both beams.
+    Constant(f64),
+    /// A constant on each beam, the two different.
+    PerBeam([f64; 2]),
+    /// Read off each event, on one beam or both, under the run card's
+    /// `dynamical_scale_choice`.
+    PerEvent { choice: i64 },
+}
+
+impl FactorizationScale {
+    /// The scale a run card's prescription reads the densities at. A beam's
+    /// fixed scale holds on every event whatever the renormalisation scale or
+    /// the clustering does, so the constant cases are read from the fixed
+    /// flags alone.
+    fn of(card: &RunCard) -> Result<Self, CliError> {
+        let choice = ScaleChoice::from_run_card_for(card, ClosedForms::Honour)
+            .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
+        Ok(match choice.fixed_factorisation_scales() {
+            [Some(a), Some(b)] if a == b => FactorizationScale::Constant(a),
+            [Some(a), Some(b)] => FactorizationScale::PerBeam([a, b]),
+            _ => FactorizationScale::PerEvent {
+                choice: choice.choice().as_i64(),
+            },
+        })
     }
+
+    /// The scale a saved run read its densities at, from the inputs and run
+    /// card it records: none where it read no density, and otherwise what
+    /// [`FactorizationScale::of`] makes of its card, as the run itself did.
+    pub(crate) fn recorded_in(artifact: &IntegrateArtifact) -> Result<Self, CliError> {
+        match artifact.inputs.pdf {
+            PdfInput::None => Ok(FactorizationScale::NoDensities),
+            PdfInput::Lhapdf { .. } => Self::of(&artifact.run_card),
+        }
+    }
+
+    /// What the artifact records: the constant where one describes the whole
+    /// run, and `None` where none does.
+    fn recorded(self) -> Option<f64> {
+        match self {
+            FactorizationScale::Constant(mu) => Some(mu),
+            _ => None,
+        }
+    }
+
+    fn object(self) -> MuF {
+        match self {
+            FactorizationScale::NoDensities => MuF::NoDensities,
+            FactorizationScale::Constant(gev) => MuF::Constant { gev },
+            FactorizationScale::PerBeam(gev) => MuF::PerBeam { gev },
+            FactorizationScale::PerEvent { choice } => MuF::PerEvent {
+                dynamical_scale_choice: choice,
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for FactorizationScale {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FactorizationScale::NoDensities => f.write_str("no parton densities"),
+            FactorizationScale::Constant(mu) => write!(f, "μF = {mu} GeV"),
+            FactorizationScale::PerBeam([a, b]) => write!(f, "μF = {a} GeV, {b} GeV by beam"),
+            FactorizationScale::PerEvent { choice } => {
+                write!(f, "μF dynamical, choice {choice}")
+            }
+        }
+    }
+}
+
+/// `value ± error` of `observable` in its reported unit (pb, or GeV for a
+/// width), printed by [`fmt_si_measured`] under one SI-prefixed barn or
+/// electronvolt unit: a 9e-6 pb cross section is `8.6812 ± 0.0023 ab`, a
+/// 2e-7 GeV width `200.1 ± 1.2 eV`.
+pub(crate) fn measurement(observable: Observable, value: f64, error: f64) -> String {
+    let (base, unit) = match observable {
+        Observable::CrossSection => (PICOBARN, "b"),
+        Observable::PartialWidth => (GEV, "eV"),
+    };
+    fmt_si_measured(value * base, error * base, unit)
 }
 
 /// The metadata printed and banked for a completed run, independent of beam mode.
@@ -619,7 +723,7 @@ struct RunOutput {
     observable: Observable,
     /// The parton densities the run read.
     pdf: PdfInput,
-    mu_f: f64,
+    mu_f: FactorizationScale,
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
     channels: Vec<ChannelGrid>,
@@ -635,6 +739,8 @@ struct RunOutput {
     convergence: ConvergenceReport,
     /// The integrand's own count over the integration's points.
     census: PointCensus,
+    /// Each final-state phase space's total, at proton beams.
+    multiplicities: Vec<MultiplicityTotal>,
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
@@ -660,14 +766,19 @@ fn bank_channel(
 }
 
 pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), CliError> {
-    args.parallel.install().map_err(err)?;
+    args.parallel
+        .install()
+        .map_err(|e| err(ErrorKind::Usage, e))?;
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
     if !args.force && out_path.exists() {
-        return Err(err(format!(
-            "{} already exists (pass --force to overwrite)",
-            out_path.display()
-        )));
+        return Err(err(
+            ErrorKind::Io,
+            format!(
+                "{} already exists (pass --force to overwrite)",
+                out_path.display()
+            ),
+        ));
     }
 
     let grid_rule = args.grid.rule()?;
@@ -684,20 +795,20 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             parsed.model.as_ref(),
             args.ufo_dir.as_deref(),
         )
-        .map_err(err)?,
+        .map_err(|e| err(ErrorKind::Model, e))?,
         restrict_path_override: None,
         run_card_path: args.run_card.clone(),
     };
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
-        .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let card = load_run_card(&config, &parsed)?;
+        .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
+    let card = load_run_card(&config, &parsed, &model, args.parallel.enumeration())?;
     let split = if parsed.is_decay() {
         card.split_decay()
     } else {
         card.split()
     };
-    let (rc, generate_settings) = split.map_err(|e| err(e.to_string()))?;
+    let (rc, generate_settings) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     let seed = rc.integration_seed(args.seed);
     tui::state::describe_model(
         &model_id.label(),
@@ -706,7 +817,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         model.vertices.len(),
         model.couplings.len(),
     );
-    tui::state::describe_process(&process);
+    tui::state::describe_process(&process, observable_of(&parsed));
 
     let (evaluated, moved) = bind_param_card(args.param_card.as_deref(), &model)?;
 
@@ -741,6 +852,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     // reading downstream as a completed one.
     if output.convergence.kept_iterations == 0 {
         return Err(err(
+            ErrorKind::Support,
             "stopped before any iteration was kept: nothing was measured, and no artifact \
              was written",
         ));
@@ -755,9 +867,19 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         output.census.passed_cuts,
         output.census.evaluated,
     );
+    if output.census.degenerate > 0 {
+        warn!(
+            "{} of {} integration points were zeroed as degenerate (an outgoing momentum with no \
+             energy or not finite, or a scale clustering with a non-finite measure): points on \
+             the boundary of phase space, reached through rounding; a share beyond a handful \
+             points at a map that draws outside its range",
+            output.census.degenerate, output.census.evaluated,
+        );
+    }
     // A cross section no point carries, or only a handful do, is not a result:
     // refused before it is printed or banked, so nothing downstream reads it.
-    check_support(conv, output.census).map_err(|e| err(format!("{e}; no artifact was written")))?;
+    check_support(conv, output.census)
+        .map_err(|e| err(ErrorKind::Support, format!("{e}; no artifact was written")))?;
 
     let observable = output.observable;
     let sigma_pb = output.result.integral * observable.per_natural_unit();
@@ -783,7 +905,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             {
                 info!("PDF set:  {set} (member {member}, lhaid {lhaid})");
             }
-            info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+            info!("√s:       {} GeV,  {}", output.sqrt_s, output.mu_f);
         }
         Observable::PartialWidth => {
             info!(
@@ -794,7 +916,10 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
-        conv.points, conv.iterations, seed, output.result.chi2_per_dof
+        conv.points,
+        conv.iterations,
+        seed,
+        Chi2PerDof(output.result.chi2_per_dof)
     );
     if output.channels.len() > 1 {
         let total_neval: usize = output.channels.iter().map(|c| c.neval).sum();
@@ -844,17 +969,14 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         );
     }
     // The command's result, and the reason `stdout` carries nothing else: a
-    // caller pipes this to read the cross section, at any verbosity.
-    // A partial width spans many decades — `h > e+ e- mu+ mu-` is `2e-7` GeV —
-    // so it is printed to six significant figures rather than six decimals.
-    match observable {
-        Observable::CrossSection => {
-            tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"))
-        }
-        Observable::PartialWidth => {
-            tui::result_line(format_args!("Γ = {sigma_pb:.6e} ± {sigma_err_pb:.6e} GeV"))
-        }
-    }
+    // caller pipes this to read the cross section, at any verbosity. A cross
+    // section or a partial width spans many decades — `h > e+ e- mu+ mu-` is
+    // `2e-7` GeV — so its digits are set by its error, not by a decimal count.
+    output::text_line(format_args!(
+        "{} = {}",
+        observable.symbol(),
+        measurement(observable, sigma_pb, sigma_err_pb)
+    ));
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
@@ -866,7 +988,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             params: moved,
             decays: evaluated.decay_tables().to_vec(),
         },
-        mu_f: output.mu_f,
+        mu_f: output.mu_f.recorded(),
         sqrt_s_had: output.sqrt_s,
         neval: args.neval,
         niter: output.convergence.iterations,
@@ -877,6 +999,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         sigma_pb,
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
+        multiplicities: output.multiplicities,
         maps: output.maps,
         grid_rule: Some(output.grid_rule),
         channel_map_digest: output.channel_map_digest,
@@ -884,17 +1007,120 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
-        err(format!(
-            "cannot create output directory {}: {e}",
-            args.out.display()
-        ))
+        err(
+            ErrorKind::Io,
+            format!("cannot create output directory {}: {e}", args.out.display()),
+        )
     })?;
     artifact
         .write_to_path(&out_path, args.force)
-        .map_err(|e| err(e.to_string()))?;
-    tui::result_line(format_args!("wrote {}", out_path.display()));
+        .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
+    output::text_line(format_args!("wrote {}", out_path.display()));
+    output::result(&result_object(&artifact, &out_path, observable)?);
 
     Ok(())
+}
+
+/// What a saved integration of `observable` measured, as the `result` object
+/// `integrate` emits for the artifact it wrote at `path` and `inspect` emits for
+/// the one it reads there.
+pub(crate) fn result_object(
+    artifact: &IntegrateArtifact,
+    path: &Path,
+    observable: Observable,
+) -> Result<IntegrateResult, CliError> {
+    Ok(IntegrateResult {
+        process: artifact.process.clone(),
+        model: ModelRef {
+            label: artifact.model.label(),
+            digest: artifact.model.digest.clone(),
+        },
+        observable: observable.into(),
+        unit: observable.unit(),
+        sigma: artifact.sigma_pb,
+        sigma_err: artifact.sigma_err_pb,
+        chi2_per_dof: artifact.chi2_per_dof,
+        mu_f: FactorizationScale::recorded_in(artifact)?.object(),
+        seed: artifact.seed,
+        multiplicities: artifact
+            .multiplicities
+            .iter()
+            .map(|m| MultiplicityResult {
+                final_state: m.final_state,
+                process_ids: m.process_ids.clone(),
+                final_masses: m.final_masses.clone(),
+                channels: m.channels,
+                sigma: m.sigma_pb,
+                sigma_err: m.sigma_err_pb,
+                chi2_per_dof: m.chi2_per_dof,
+            })
+            .collect(),
+        channels: artifact
+            .channels
+            .iter()
+            .map(|c| ChannelResult {
+                key: channel_key_object(c.key),
+                alpha: c.alpha,
+                neval: c.neval,
+                sigma: c.sigma_pb,
+                sigma_err: c.sigma_err_pb,
+                chi2_per_dof: c.chi2_per_dof,
+            })
+            .collect(),
+        artifact: path.display().to_string(),
+        format_version: artifact.format_version,
+    })
+}
+
+/// What a card's integral measures: a decay's partial width, or a cross
+/// section.
+pub(crate) fn observable_of(parsed: &SupportedCard) -> Observable {
+    if parsed.is_decay() {
+        Observable::PartialWidth
+    } else {
+        Observable::CrossSection
+    }
+}
+
+/// What a saved run's integral measures, as the proc card it records says.
+pub(crate) fn recorded_observable(artifact: &IntegrateArtifact) -> Result<Observable, CliError> {
+    let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
+        err(
+            ErrorKind::Artifact,
+            format!("cannot parse the proc card the artifact records: {e}"),
+        )
+    })?;
+    Ok(observable_of(&parsed))
+}
+
+fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
+    match key {
+        ChannelKey::Whole => ChannelKeyObject::Whole,
+        ChannelKey::Channel { channel } => ChannelKeyObject::Channel { channel },
+        ChannelKey::GroupChannel { group, channel } => {
+            ChannelKeyObject::GroupChannel { group, channel }
+        }
+        ChannelKey::MultiplicityChannel {
+            final_state,
+            group,
+            channel,
+        } => ChannelKeyObject::MultiplicityChannel {
+            final_state,
+            group,
+            channel,
+        },
+        ChannelKey::MergedChannel {
+            final_state,
+            group,
+            channel,
+            pairs,
+        } => ChannelKeyObject::MergedChannel {
+            final_state,
+            group,
+            channel,
+            pairs,
+        },
+    }
 }
 
 /// The model evaluated at `--param-card`, and the parameters the card moved off
@@ -906,18 +1132,22 @@ fn bind_param_card(
     model: &Arc<UFOModel>,
 ) -> Result<(EvaluatedModel, Vec<MovedParam>), CliError> {
     let Some(path) = path else {
-        let bound = bind_card(model.clone(), &ParamCard::default())
-            .map_err(|e| err(format!("the model's default parameters: {e}")))?;
+        let bound = bind_card(model.clone(), &ParamCard::default()).map_err(|e| {
+            err(
+                ErrorKind::Model,
+                format!("the model's default parameters: {e}"),
+            )
+        })?;
         return Ok((bound.evaluated, bound.moved));
     };
     let card = ParamCard::from_file(path).map_err(|e| {
-        err(format!(
-            "cannot read the param card {}: {e}",
-            path.display()
-        ))
+        err(
+            ErrorKind::Card,
+            format!("cannot read the param card {}: {e}", path.display()),
+        )
     })?;
-    let bound =
-        bind_card(model.clone(), &card).map_err(|e| err(format!("{}: {e}", path.display())))?;
+    let bound = bind_card(model.clone(), &card)
+        .map_err(|e| err(ErrorKind::Card, format!("{}: {e}", path.display())))?;
     for ignored in &bound.ignored {
         warn!(
             "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
@@ -950,7 +1180,7 @@ fn integrate_proton(
     let tiers = assets::pdf_tiers();
     let fetch = assets::pdf_fetch(network);
     let loaded = load_for_run_card(rc, &tiers, &fetch)
-        .map_err(|e| err(e.to_string()))?
+        .map_err(|e| err(pdf_error_kind(&e), e.to_string()))?
         .expect("a proton-beam card reads a density or is refused");
     let LoadedPdf {
         set,
@@ -1020,10 +1250,14 @@ fn integrate_hadronic(
 
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
-            .map_err(err)?;
+            .map_err(|e| err(ErrorKind::Process, e))?;
     if let Some(request) = systematics {
-        refuse_single_particle_et(request, &groups)
-            .map_err(|e| err(format!("systematics request refused at integrate: {e}")))?;
+        refuse_single_particle_et(request, &groups).map_err(|e| {
+            err(
+                ErrorKind::Card,
+                format!("systematics request refused at integrate: {e}"),
+            )
+        })?;
     }
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
@@ -1037,7 +1271,6 @@ fn integrate_hadronic(
     let maps = multiplicity_maps(&groups, evaluated, sqrt_s_had, args.maps.options());
 
     let mut parts = Vec::with_capacity(groups.len());
-    let mut scale_report = None;
     for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
         let mut integ = ProtonIntegrand::new_with_maps(
             part_groups,
@@ -1048,23 +1281,26 @@ fn integrate_hadronic(
             rc.dsqrt_q2fact1,
             maps,
         )
-        .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+        .map_err(|e| {
+            err(
+                ErrorKind::Process,
+                format!("failed to build the hadronic integrand: {e}"),
+            )
+        })?;
         integ.use_onshell_veto(part_vetoes, evaluated);
         // Both scales and the strong coupling come from the run card; the coupling
         // is the PDF member's own tabulation, which is what the densities were
         // fitted with.
-        let report = integ
+        integ
             .use_run_card_scales(
                 model,
                 evaluated,
                 rc,
                 Some(pdf.alpha_s_info().unwrap_or(&set.info.alpha_s)),
             )
-            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-        scale_report.get_or_insert(report);
+            .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
         parts.push(integ);
     }
-    let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
     integ.set_grid_rule(args.grid.rule()?);
     integ.set_alpha_floor(args.alpha_floor.0);
@@ -1078,8 +1314,9 @@ fn integrate_hadronic(
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
     let census = integ.census();
-    if groups.len() > 1 {
-        report_multiplicities(&integ, &groups, &per_channel, convergence.iterations);
+    let multiplicities = multiplicity_totals(&integ, &groups, &per_channel, convergence.iterations);
+    if multiplicities.len() > 1 {
+        report_multiplicities(&multiplicities);
     }
     let channels = integ
         .channel_keys()
@@ -1092,7 +1329,7 @@ fn integrate_hadronic(
         process,
         observable: Observable::CrossSection,
         pdf: pdf_input,
-        mu_f: recorded_mu_f(&scale_report),
+        mu_f: FactorizationScale::of(rc)?,
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
@@ -1102,36 +1339,51 @@ fn integrate_hadronic(
         result,
         convergence,
         census,
+        multiplicities,
     })
 }
 
 /// Each part's own cross section, from its channels' terms.
-fn report_multiplicities(
+fn multiplicity_totals(
     integ: &MultiplicitySum<'_>,
     groups: &[FlavorGroups],
     per_channel: &[ChannelIntegration],
     niter: usize,
-) {
+) -> Vec<MultiplicityTotal> {
     let unit = Observable::CrossSection.per_natural_unit();
-    for (k, part) in integ.part_results(per_channel, niter).iter().enumerate() {
-        let ids: Vec<String> = part_process_ids(&groups[k])
-            .iter()
-            .map(|id| format!("@{id}"))
-            .collect();
-        let masses: Vec<String> = groups[k].groups()[0]
-            .final_masses()
-            .iter()
-            .map(|m| format!("{m}"))
-            .collect();
-        info!(
-            "{} outgoing legs ({}; masses {} GeV): σ = {:.6} ± {:.6} pb over {} channels",
-            integ.final_state_count(k),
-            ids.join(" "),
-            masses.join(", "),
-            part.integral * unit,
-            part.std_dev * unit,
-            integ.offsets()[k + 1] - integ.offsets()[k],
-        );
+    integ
+        .part_results(per_channel, niter)
+        .iter()
+        .enumerate()
+        .map(|(k, part)| MultiplicityTotal {
+            final_state: integ.final_state_count(k),
+            process_ids: part_process_ids(&groups[k]),
+            final_masses: groups[k].groups()[0].final_masses(),
+            channels: integ.offsets()[k + 1] - integ.offsets()[k],
+            sigma_pb: part.integral * unit,
+            sigma_err_pb: part.std_dev * unit,
+            chi2_per_dof: part.chi2_per_dof,
+        })
+        .collect()
+}
+
+/// The line `integrate` reports a part's total on, and `inspect` repeats.
+pub(crate) fn multiplicity_line(part: &MultiplicityTotal) -> String {
+    let ids: Vec<String> = part.process_ids.iter().map(|id| format!("@{id}")).collect();
+    let masses: Vec<String> = part.final_masses.iter().map(|m| format!("{m}")).collect();
+    format!(
+        "{} outgoing legs ({}; masses {} GeV): σ = {} over {} channels",
+        part.final_state,
+        ids.join(" "),
+        masses.join(", "),
+        measurement(Observable::CrossSection, part.sigma_pb, part.sigma_err_pb),
+        part.channels,
+    )
+}
+
+fn report_multiplicities(parts: &[MultiplicityTotal]) {
+    for part in parts {
+        info!("{}", multiplicity_line(part));
     }
 }
 
@@ -1152,12 +1404,22 @@ fn integrate_fixed_energy(
     process: String,
     seed: u64,
 ) -> Result<RunOutput, CliError> {
-    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    refuse_mixed_multiplicity(&sets).map_err(err)?;
-    refuse_exchanged_beam_orderings(&sets).map_err(err)?;
-    let evals = compile_subprocesses(&sets, model, evaluated)
-        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let sets =
+        generate_from_proc_card_in(parsed, model, args.parallel.enumeration()).map_err(|e| {
+            err(
+                ErrorKind::Process,
+                format!("failed to enumerate process: {e}"),
+            )
+        })?;
+    refuse_mixed_multiplicity(&sets).map_err(|e| err(ErrorKind::Process, e))?;
+    refuse_one_body_final_state(&sets).map_err(|e| err(ErrorKind::Process, e))?;
+    refuse_exchanged_beam_orderings(&sets).map_err(|e| err(ErrorKind::Process, e))?;
+    let evals = compile_subprocesses(&sets, model, evaluated).map_err(|e| {
+        err(
+            ErrorKind::Process,
+            format!("failed to compile subprocesses: {e}"),
+        )
+    })?;
     let vetoes = subprocess_vetoes(
         &sets,
         &evals,
@@ -1165,8 +1427,9 @@ fn integrate_fixed_energy(
         evaluated,
         rc,
     )
-    .map_err(|e| err(e.to_string()))?;
-    refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
+    .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
+    refuse_polarized_frame(rc, &evals, model)
+        .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
     let bounds: Vec<_> = evals
         .iter()
         .map(|e| BoundAmplitude::<f64>::bind(e, evaluated))
@@ -1174,14 +1437,15 @@ fn integrate_fixed_energy(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
-    let initial = InitialState::from_run_card(rc, &legs).map_err(|e| err(e.to_string()))?;
+    let initial =
+        InitialState::from_run_card(rc, &legs).map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     let sqrt_s = initial.sqrt_s();
     let diagrams: Vec<_> = sets
         .iter()
         .flat_map(|s| s.diagrams.iter().cloned())
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
-        .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+        .map_err(|e| err(ErrorKind::Card, format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
@@ -1199,7 +1463,7 @@ fn integrate_fixed_energy(
     // integration will.
     integ
         .use_running_coupling(&diagrams, model, evaluated, rc)
-        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+        .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
     let n_survey = survey_points(args.neval);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
@@ -1216,7 +1480,7 @@ fn integrate_fixed_energy(
         observable: initial.observable(),
         pdf: PdfInput::None,
         // No parton distributions, so no factorisation scale enters the integral.
-        mu_f: 0.0,
+        mu_f: FactorizationScale::NoDensities,
         sqrt_s,
         channels: per_channel
             .iter()
@@ -1238,6 +1502,7 @@ fn integrate_fixed_energy(
         result,
         convergence,
         census,
+        multiplicities: Vec::new(),
     })
 }
 
@@ -1246,6 +1511,87 @@ mod tests {
     use super::*;
     use clap::Args;
     use vibegraph::runcard::DEFAULT_INTEGRATION_SEED;
+
+    /// A cross section in pb is printed under a barn prefix and a width in GeV
+    /// under an electronvolt one, each aligned to its error.
+    #[test]
+    fn a_measurement_is_printed_in_its_observables_prefixed_unit() {
+        for (observable, value, error, printed) in [
+            (
+                Observable::CrossSection,
+                8.681_234_567e-6,
+                2.345e-9,
+                "8.6812 ± 0.0023 ab",
+            ),
+            (Observable::CrossSection, 802.94, 3.11, "802.9 ± 3.1 pb"),
+            (
+                Observable::PartialWidth,
+                2.001_23e-7,
+                1.234e-9,
+                "200.1 ± 1.2 eV",
+            ),
+            (
+                Observable::PartialWidth,
+                2.495_23,
+                0.001_23,
+                "2.4952 ± 0.0012 GeV",
+            ),
+        ] {
+            assert_eq!(
+                measurement(observable, value, error),
+                printed,
+                "{value} ± {error} {}",
+                observable.unit()
+            );
+        }
+    }
+
+    fn scale_of(card: &str) -> FactorizationScale {
+        FactorizationScale::of(&RunCard::parse(card).expect("the card parses"))
+            .expect("the prescription compiles")
+    }
+
+    /// The factorization scale is read from the fixed flags alone: a fixed μF
+    /// is the run's constant whatever μR does, and a per-event or per-beam one
+    /// is recorded as no constant at all.
+    #[test]
+    fn the_factorization_scale_is_named_by_its_fixed_flags() {
+        let fixed = "True = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+                     91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n";
+        assert_eq!(scale_of(fixed), FactorizationScale::Constant(91.188));
+        assert_eq!(scale_of(fixed).recorded(), Some(91.188));
+        assert_eq!(scale_of(fixed).to_string(), "μF = 91.188 GeV");
+
+        let running_ren = fixed.replace("True = fixed_ren_scale", "False = fixed_ren_scale");
+        assert_eq!(scale_of(&running_ren), FactorizationScale::Constant(91.188));
+
+        let per_beam = fixed.replace("91.188 = dsqrt_q2fact2", "50 = dsqrt_q2fact2");
+        assert_eq!(
+            scale_of(&per_beam),
+            FactorizationScale::PerBeam([91.188, 50.0])
+        );
+        assert_eq!(scale_of(&per_beam).recorded(), None);
+        assert_eq!(
+            scale_of(&per_beam).to_string(),
+            "μF = 91.188 GeV, 50 GeV by beam"
+        );
+
+        let dynamical = "False = fixed_ren_scale\nFalse = fixed_fac_scale\n\
+                         -1 = dynamical_scale_choice\n";
+        assert_eq!(
+            scale_of(dynamical),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+        assert_eq!(scale_of(dynamical).recorded(), None);
+        assert_eq!(scale_of(dynamical).to_string(), "μF dynamical, choice -1");
+        let one_beam = format!("{dynamical}True = fixed_fac_scale1\n30 = dsqrt_q2fact1\n");
+        assert_eq!(
+            scale_of(&one_beam),
+            FactorizationScale::PerEvent { choice: -1 }
+        );
+
+        assert_eq!(FactorizationScale::NoDensities.recorded(), None);
+    }
 
     /// `--seed`'s help spells the default seed out, since a doc comment cannot
     /// name a constant; this keeps the two equal.

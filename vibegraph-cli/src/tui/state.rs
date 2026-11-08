@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
-use vibegraph::phasespace::GEV2_TO_PB;
+use vibegraph::hadronic::Observable;
 
 use crate::logging::{LogLevel, Scope};
 
@@ -39,13 +39,17 @@ pub(crate) struct UiState {
     pub(crate) done: u64,
     /// Absent while the reporting stage does not know its own extent.
     pub(crate) total: Option<u64>,
-    /// The running cross section in picobarns, absent until an iteration has
-    /// produced one.
-    pub(crate) sigma_pb: Option<f64>,
-    pub(crate) err_pb: f64,
-    /// χ² per degree of freedom over the iterations combined so far; `0` until
-    /// there are two of them.
-    pub(crate) chi2: f64,
+    /// The running integral in the observable's reported unit — picobarns for a
+    /// cross section, GeV for a width — absent until an iteration has produced
+    /// one.
+    pub(crate) estimate: Option<f64>,
+    pub(crate) estimate_err: f64,
+    /// What the integral measures, as the command described it; `None` before
+    /// it has, which reads as a cross section.
+    pub(crate) observable: Option<Observable>,
+    /// χ² per degree of freedom over the iterations combined so far; absent
+    /// until there are two of them.
+    pub(crate) chi2: Option<f64>,
     pub(crate) ns_per_eval: Option<f64>,
     pub(crate) model: Option<ModelBrief>,
     pub(crate) process: Option<String>,
@@ -117,6 +121,14 @@ impl Visit for Fields {
     fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
 }
 
+impl UiState {
+    /// What the running integral measures: the observable the command
+    /// described, and a cross section before it has described one.
+    pub(crate) fn observable(&self) -> Observable {
+        self.observable.unwrap_or(Observable::CrossSection)
+    }
+}
+
 impl Fields {
     fn fold_into(self, state: &mut UiState) {
         if let Some(stage) = self.stage {
@@ -126,10 +138,13 @@ impl Fields {
         state.total = self.total;
         // The estimate is zero through the warm-up iterations that produce no
         // result, and a zero σ with a zero error would read as a measurement.
+        // The progress stream carries the integrand's natural units (GeV⁻² for a
+        // cross section, GeV for a width); the state holds the reported ones.
         if let Some(sigma) = self.sigma.filter(|s| *s != 0.0) {
-            state.sigma_pb = Some(sigma * GEV2_TO_PB);
-            state.err_pb = self.err.unwrap_or(0.0) * GEV2_TO_PB;
-            state.chi2 = self.chi2.unwrap_or(0.0);
+            let unit = state.observable().per_natural_unit();
+            state.estimate = Some(sigma * unit);
+            state.estimate_err = self.err.unwrap_or(0.0) * unit;
+            state.chi2 = self.chi2;
         }
         if let Some(ns) = self.ns_per_eval {
             state.ns_per_eval = Some(ns);
@@ -201,9 +216,13 @@ pub(crate) fn describe_model(
     });
 }
 
-/// The process being integrated, as the proc card spells it.
-pub(crate) fn describe_process(process: &str) {
-    update(|state| state.process = Some(process.to_string()));
+/// The process being integrated, as the proc card spells it, and what its
+/// integral measures.
+pub(crate) fn describe_process(process: &str, observable: Observable) {
+    update(|state| {
+        state.process = Some(process.to_string());
+        state.observable = Some(observable);
+    });
 }
 
 /// How many phase-space channels the integration was built over.
@@ -224,13 +243,19 @@ mod tests {
 
     use tracing_subscriber::layer::{Layer, SubscriberExt};
     use tracing_subscriber::Registry;
+    use vibegraph::hadronic::Observable;
     use vibegraph::phasespace::GEV2_TO_PB;
     use vibegraph::progress;
 
     /// Emit through the library's own progress functions with nothing but the
     /// display's layer listening, and hand back what the display learned.
     fn folded(emit: impl FnOnce()) -> UiState {
-        let state = Arc::new(Mutex::new(UiState::default()));
+        folded_from(UiState::default(), emit)
+    }
+
+    /// [`folded`], into a state the command has already described.
+    fn folded_from(start: UiState, emit: impl FnOnce()) -> UiState {
+        let state = Arc::new(Mutex::new(start));
         let subscriber =
             Registry::default().with(ProgressLayer::new(Arc::clone(&state)).with_filter(
                 tracing_subscriber::filter::filter_fn(|meta| meta.target() == progress::TARGET),
@@ -274,23 +299,47 @@ mod tests {
     /// conversion belongs on the ingestion side so exactly one place performs it.
     #[test]
     fn the_cross_section_is_converted_out_of_inverse_gev_squared() {
-        let state = folded(|| progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, 1.02));
-        let sigma = state.sigma_pb.expect("a cross section");
+        let state = folded(|| progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, Some(1.02)));
+        let sigma = state.estimate.expect("a cross section");
         assert!(
             (sigma - 2.0e-6 * GEV2_TO_PB).abs() < 1e-9 * sigma.abs(),
             "{sigma}"
         );
-        assert!((state.err_pb - 8.0e-9 * GEV2_TO_PB).abs() < 1e-9 * state.err_pb.abs());
-        assert_eq!(state.chi2, 1.02);
+        assert!((state.estimate_err - 8.0e-9 * GEV2_TO_PB).abs() < 1e-9 * state.estimate_err.abs());
+        assert_eq!(state.chi2, Some(1.02));
+    }
+
+    /// A decay's integrand is in GeV already, which is the unit a width is
+    /// reported in: it is taken as it is, not converted as a cross section.
+    #[test]
+    fn a_width_is_taken_in_gev() {
+        let decay = UiState {
+            observable: Some(Observable::PartialWidth),
+            ..UiState::default()
+        };
+        let state = folded_from(decay, || {
+            progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, Some(1.02))
+        });
+        assert_eq!(state.estimate, Some(2.0e-6));
+        assert_eq!(state.estimate_err, 8.0e-9);
     }
 
     /// The warm-up iterations report a zero estimate. Showing it as "0 ± 0 pb"
     /// would state a measurement nobody made.
     #[test]
     fn a_warm_up_iteration_leaves_the_cross_section_unset() {
-        let state = folded(|| progress::vegas_iteration(1, Some(12), 0.0, 0.0, 0.0));
-        assert_eq!(state.sigma_pb, None);
+        let state = folded(|| progress::vegas_iteration(1, Some(12), 0.0, 0.0, None));
+        assert_eq!(state.estimate, None);
         assert_eq!(state.done, 1);
+    }
+
+    /// The first kept iteration carries an estimate but no χ²/dof, which the
+    /// state keeps absent rather than reading as zero.
+    #[test]
+    fn a_single_kept_iteration_leaves_the_chi2_unset() {
+        let state = folded(|| progress::vegas_iteration(3, Some(12), 2.0e-6, 8.0e-9, None));
+        assert!(state.estimate.is_some());
+        assert_eq!(state.chi2, None);
     }
 
     /// A result already shown is not erased by a later measurement that carries
@@ -298,10 +347,10 @@ mod tests {
     #[test]
     fn a_later_stage_does_not_erase_the_cross_section() {
         let state = folded(|| {
-            progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, 1.02);
+            progress::vegas_iteration(4, Some(12), 2.0e-6, 8.0e-9, Some(1.02));
             progress::unweighting(250, 1_000);
         });
-        assert!(state.sigma_pb.is_some());
+        assert!(state.estimate.is_some());
         assert_eq!(state.stage.as_deref(), Some("unweight"));
         assert_eq!(state.done, 250);
         assert_eq!(state.total, Some(1_000));

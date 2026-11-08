@@ -236,9 +236,11 @@ Other refusals:
   UFO `if configuration` branches (closed: refused by name at load),
   [fermion-number violation panics](../sprints/fnv-refusal/sprint.md) (closed: now refused),
   default particle names and `--modelname` (closed by [the default-particle-names sprint](../sprints/default-particle-names/sprint.md)).
-- Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
+- Triage: card 048's one-point σ (diagnosed and fixed by sprint G's [G-V1](../sprints/v02-diagnoses/sessions/G-V1-report.md): an unbounded τ draw at the decay window),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),
-  [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
+  duplicate subprocess across decay assignments (`decay-chain-duplicate-subprocess-vs-madgraph`, closed by
+  [the CMS gridpack coverage sprint](../sprints/cms-gridpack-coverage/sprint.md): each assignment is its own
+  subprocess, on one line or two, summed as MadGraph sums them).
 - Feature gaps: variation weights (`systematics-variation-weights-not-written`, since closed)
   and the silent drop of a systematics request (now a warning),
   `ckm_no_b_mass` (closed by [the ckm-no-b-mass sprint](../sprints/ckm-no-b-mass/sprint.md)),
@@ -247,6 +249,6 @@ Other refusals:
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
-  [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
+  massive incoming partons (`massive-incoming-partons-refused`, since closed),
   mixed outgoing masses in a group (`flavour-group-mixed-outgoing-masses-refused`, since closed),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

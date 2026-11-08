@@ -42,16 +42,31 @@ pub enum SplitAngle {
     SoftAll,
 }
 
-/// How a hadronic run draws `τ = ŝ/s` above the cut-implied `τ_min`.
+/// How a hadronic run draws `τ = ŝ/s` over `[τ_min, τ_max]`: from the
+/// cut-implied floor up to one, or to the ceiling a decay-chain window on the
+/// whole final state sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TauMap {
-    /// `τ = τ_min^(1−u)`, density `∝ 1/τ`: the rule's choice where a resonance
+    /// `τ = τ_min^(1−u) τ_max^u`, density `∝ 1/τ`: the rule's choice where a resonance
     /// spans the whole final state, and the map of every artifact written before
     /// the choices were banked.
     Log,
     /// Density `∝ 1/τ²`, MadEvent's `transpole(pole = −2)` for a hadronic run with
     /// no resonance spanning the whole final state.
     InverseSquare,
+    /// The channel-averaged density of MadEvent's per-channel `τ` maps: each
+    /// `(group, diagram)` channel whose diagram carries a finite-width resonance
+    /// spanning the whole final state, with its pole inside `[τ_min, τ_max]`,
+    /// contributes a Breit–Wigner in `τ` at that pole (MadEvent's
+    /// `transpole(pole = M²/s, width = MΓ/s)`, at the model's own width), and
+    /// every other channel contributes the [`TauMap::Log`] density. Each channel
+    /// weighs `1/N`. With no pole in range it is [`TauMap::Log`] bit for bit.
+    ///
+    /// The rule's choice where such a resonance is narrow
+    /// ([`ProcessShape::narrow_whole_state_resonance`]): a peak the log map gives
+    /// almost none of its unit interval, which a VEGAS grid on that coordinate
+    /// cannot find.
+    BreitWigner,
 }
 
 /// The order a peripheral chain's rungs are drawn in.
@@ -113,18 +128,149 @@ pub struct ProcessShape {
     /// Whether any channel's diagram carries a finite-width s-channel resonance
     /// spanning the whole final state, whose peak then sits in the `τ` draw.
     pub(crate) whole_state_resonance: bool,
+    /// Whether one of those resonances has its pole inside the `τ` range and a
+    /// peak narrower than [`NARROW_TAU_SHARE`] of the log map's unit interval
+    /// ([`narrow_in_tau`]).
+    pub(crate) narrow_whole_state_resonance: bool,
+}
+
+/// The share of the logarithmic `τ` map's unit interval below which a
+/// whole-state resonance's peak counts as narrow: there, fewer than one draw in a
+/// thousand lands within a width of the pole.
+///
+/// The measured rows bracket it. The `Z` of Drell–Yan sits at about `5e-3`
+/// (`2Γ/M = 0.055` over `ln(τ_max/τ_min) ≈ 11` at `m_ll > 50 GeV`, 13 TeV) and the
+/// log map resolves it, as it does a 1 MeV `Vz` at 3.5 TeV confined to its decay
+/// chain's `bwcutoff` window (about `1e-2` of the bounded range). The same `Vz`
+/// without the window, in `p p > h z`, sits at `7e-8`: under the log map five
+/// seeds at 100k × 8 scatter by 17% (147640 to 224658 pb), at in-run `χ²/dof` up
+/// to 52.
+pub(crate) const NARROW_TAU_SHARE: f64 = 1e-3;
+
+/// Whether a whole-state resonance of `mass` and `width` is narrow in the `τ`
+/// draw over `[tau_min, tau_max]` at hadronic invariant `s`: its pole `M²/s` lies
+/// strictly inside the range, and its peak's share of the logarithmic map's unit
+/// interval, `(2Γ/M)/ln(τ_max/τ_min)` to first order in `Γ/M`, is below
+/// [`NARROW_TAU_SHARE`]. A range with no positive floor has no log map and
+/// nothing is narrow in it.
+pub(crate) fn narrow_in_tau(mass: f64, width: f64, s: f64, tau_min: f64, tau_max: f64) -> bool {
+    tau_min > 0.0
+        && tau_max > tau_min
+        && pole_in_tau(mass, s, tau_min, tau_max)
+        && 2.0 * width / mass / (tau_max / tau_min).ln() < NARROW_TAU_SHARE
+}
+
+/// Whether a pole of `mass` lies strictly inside the `τ` range at hadronic
+/// invariant `s`: `τ_min < M²/s < τ_max`.
+pub(crate) fn pole_in_tau(mass: f64, s: f64, tau_min: f64, tau_max: f64) -> bool {
+    let pole = mass * mass / s;
+    pole > tau_min && pole < tau_max
+}
+
+/// The `[τ_min, τ_max]` a hadronic run's `τ` map draws over at hadronic
+/// invariant `s`: from the cut-implied `ŝ_min/s` up to one, or to `ŝ_max/s`
+/// where a decay-chain window on the whole final state bounds `ŝ`
+/// ([`Cuts::shat_max`]), and never below the floor. At `τ_max = 1` the bounded
+/// logarithmic and inverse-square maps are their unbounded forms bit for bit
+/// (`1^u = 1`, `1/1 = 1`).
+pub(crate) fn tau_range(cuts: &Cuts, s: f64) -> (f64, f64) {
+    let tau_min = cuts.shat_min() / s;
+    (tau_min, (cuts.shat_max() / s).min(1.0).max(tau_min))
+}
+
+/// What a channel and the `τ` range read off the cuts they are built under: the
+/// bounds that hold over the accepted region, which shape where a map puts its
+/// density.
+///
+/// Below a timelike or energy floor a channel keeps a positive density rather
+/// than an exact zero ([`DiagramChannel::with_timelike_floors`]), which is
+/// consistent only where every configuration below the floor carries integrand
+/// zero. A mixture whose terms are cut by different filters therefore builds
+/// every channel under bounds that hold over the union of the filters' accepted
+/// regions ([`UnionBounds`]), not under any one filter's.
+pub(crate) trait ChannelBounds {
+    /// [`Cuts::spacelike_floor`].
+    fn spacelike_floor(&self) -> f64;
+    /// [`Cuts::timelike_floor`].
+    fn timelike_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::energy_floor`].
+    fn energy_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::bwcutoff`].
+    fn bwcutoff(&self) -> f64;
+    /// [`tau_range`] at hadronic invariant `s`.
+    fn tau_range(&self, s: f64) -> (f64, f64);
+}
+
+impl ChannelBounds for Cuts {
+    fn spacelike_floor(&self) -> f64 {
+        Cuts::spacelike_floor(self)
+    }
+    fn timelike_floor(&self, slots: u64) -> f64 {
+        Cuts::timelike_floor(self, slots)
+    }
+    fn energy_floor(&self, slots: u64) -> f64 {
+        Cuts::energy_floor(self, slots)
+    }
+    fn bwcutoff(&self) -> f64 {
+        Cuts::bwcutoff(self)
+    }
+    fn tau_range(&self, s: f64) -> (f64, f64) {
+        tau_range(self, s)
+    }
+}
+
+/// The bounds holding over the union of several filters' accepted regions: each
+/// floor the weakest of the filters' and the `τ` range the hull of theirs. Over
+/// one filter these are that filter's bounds bit for bit.
+pub(crate) struct UnionBounds<'a>(pub(crate) &'a [&'a Cuts]);
+
+impl UnionBounds<'_> {
+    fn weakest(&self, bound: impl Fn(&Cuts) -> f64) -> f64 {
+        self.0
+            .iter()
+            .map(|&c| bound(c))
+            .reduce(f64::min)
+            .expect("bounds over at least one filter")
+    }
+}
+
+impl ChannelBounds for UnionBounds<'_> {
+    fn spacelike_floor(&self) -> f64 {
+        self.weakest(Cuts::spacelike_floor)
+    }
+    fn timelike_floor(&self, slots: u64) -> f64 {
+        self.weakest(|c| c.timelike_floor(slots))
+    }
+    fn energy_floor(&self, slots: u64) -> f64 {
+        self.weakest(|c| c.energy_floor(slots))
+    }
+    /// `bwcutoff` is the run card's, the same for every filter compiled from it.
+    fn bwcutoff(&self) -> f64 {
+        let bwcutoff = self.0[0].bwcutoff();
+        debug_assert!(self.0.iter().all(|c| c.bwcutoff() == bwcutoff));
+        bwcutoff
+    }
+    fn tau_range(&self, s: f64) -> (f64, f64) {
+        self.0
+            .iter()
+            .map(|c| tau_range(c, s))
+            .reduce(|(lo, hi), (l, h)| (lo.min(l), hi.max(h)))
+            .expect("bounds over at least one filter")
+    }
 }
 
 impl ProcessShape {
     /// Read the shape off the channels `diagrams` decompose into, built as
     /// [`MapChoices::channel`] builds them but before any map option is applied.
-    pub(crate) fn of<'d>(
+    pub(crate) fn of<'d, B: ChannelBounds + ?Sized>(
         diagrams: impl IntoIterator<Item = &'d Diagram>,
         model: &EvaluatedModel,
         sqrt_s: f64,
-        cuts: &Cuts,
+        cuts: &B,
     ) -> Self {
         let floor = cuts.spacelike_floor();
+        let s = sqrt_s * sqrt_s;
+        let (tau_min, tau_max) = cuts.tau_range(s);
         let mut shape = ProcessShape::default();
         for d in diagrams {
             let channel = DiagramChannel::<f64>::from_diagram_regulated(d, model, sqrt_s, floor);
@@ -133,8 +279,11 @@ impl ProcessShape {
                 channel.splits_selected(&DiagramChannel::<f64>::soft_emission_rule(emitters));
             shape.max_rungs = shape.max_rungs.max(channel.rung_count());
             shape.resonant_pair_splits += channel.resonant_pair_splits();
-            shape.whole_state_resonance |=
-                DiagramChannel::<f64>::has_whole_state_resonance(d, model);
+            if let Some((mass, width)) = DiagramChannel::<f64>::whole_state_resonance(d, model) {
+                shape.whole_state_resonance = true;
+                shape.narrow_whole_state_resonance |=
+                    narrow_in_tau(mass, width, s, tau_min, tau_max);
+            }
         }
         shape
     }
@@ -157,12 +306,12 @@ impl MapChoices {
     /// The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
-    pub(crate) fn channel(
+    pub(crate) fn channel<B: ChannelBounds + ?Sized>(
         &self,
         diagram: &Diagram,
         model: &EvaluatedModel,
         sqrt_s: f64,
-        cuts: &Cuts,
+        cuts: &B,
     ) -> DiagramChannel<f64> {
         let channel = DiagramChannel::<f64>::from_diagram_regulated(
             diagram,
@@ -260,7 +409,14 @@ impl MapOptions {
     ///   rule reads the whole process, not each channel as MadEvent does: one
     ///   diagram with a whole-state resonance keeps every channel on the log map,
     ///   so `p p > b b~ QCD=2`, whose electroweak diagrams carry `Z` and `h`
-    ///   propagators spanning the pair, stays on it.
+    ///   propagators spanning the pair, stays on it. Where such a peak is too
+    ///   narrow for the log map to find
+    ///   ([`ProcessShape::narrow_whole_state_resonance`], [`NARROW_TAU_SHARE`]),
+    ///   the rule takes [`TauMap::BreitWigner`]: `p p > h z` through a 1 MeV
+    ///   `Vz` at 3.5 TeV, at 100k × 8, scatters by 17% over five seeds under the
+    ///   log map; under the Breit–Wigner mixture 25 seeds read 185698 ± 23 pb at
+    ///   seed `χ²/dof` 0.78, 3.2e-4 below MadEvent 3.7.1, inside the bound its
+    ///   small-width treatment sets.
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
     /// * `pair_order`: [`PairOrder::Symmetric`]. The ordered draw leaves half of
@@ -282,7 +438,9 @@ impl MapOptions {
     pub fn resolve(&self, shape: &ProcessShape) -> MapChoices {
         MapChoices {
             split_angle: self.split_angle.unwrap_or(SplitAngle::SoftAll),
-            tau: self.tau.unwrap_or(if shape.whole_state_resonance {
+            tau: self.tau.unwrap_or(if shape.narrow_whole_state_resonance {
+                TauMap::BreitWigner
+            } else if shape.whole_state_resonance {
                 TauMap::Log
             } else {
                 TauMap::InverseSquare
@@ -311,6 +469,7 @@ impl TauMap {
         match self {
             TauMap::Log => "log",
             TauMap::InverseSquare => "inverse-square",
+            TauMap::BreitWigner => "breit-wigner",
         }
     }
 }
@@ -365,6 +524,7 @@ mod tests {
             max_rungs: 1,
             resonant_pair_splits: 3,
             whole_state_resonance: false,
+            narrow_whole_state_resonance: false,
         };
         assert_eq!(auto.resolve(&with), flipped);
     }
@@ -460,6 +620,94 @@ mod tests {
         assert!(four.1.resonant_pair_splits > 0);
     }
 
+    /// A narrow whole-state resonance takes the Breit–Wigner mixture, ahead of the
+    /// log map a wide one keeps, and a named choice still overrides it.
+    #[test]
+    fn a_narrow_whole_state_resonance_takes_the_breit_wigner_mixture() {
+        let narrow = ProcessShape {
+            whole_state_resonance: true,
+            narrow_whole_state_resonance: true,
+            ..ProcessShape::default()
+        };
+        assert_eq!(
+            MapOptions::default().resolve(&narrow).tau,
+            TauMap::BreitWigner
+        );
+        let asked = MapOptions {
+            tau: Some(TauMap::Log),
+            ..MapOptions::default()
+        };
+        assert_eq!(asked.resolve(&narrow).tau, TauMap::Log);
+        assert_eq!(TauMap::BreitWigner.name(), "breit-wigner");
+    }
+
+    /// The narrowness test reads the pole's position and the peak's share of the
+    /// log map's unit interval, on both sides of [`NARROW_TAU_SHARE`].
+    #[test]
+    fn narrowness_is_the_peak_s_share_of_the_log_map_inside_the_range() {
+        let s = 13000.0f64.powi(2);
+        let (tau_min, tau_max) = (50.0f64.powi(2) / s, 1.0);
+        let l = (tau_max / tau_min).ln();
+        // The Z of Drell–Yan: wide in the draw.
+        assert!(!narrow_in_tau(91.1876, 2.4952, s, tau_min, tau_max));
+        // Widths straddling the threshold at M = 3500 GeV.
+        let edge = NARROW_TAU_SHARE * l * 3500.0 / 2.0;
+        assert!(narrow_in_tau(3500.0, 0.99 * edge, s, tau_min, tau_max));
+        assert!(!narrow_in_tau(3500.0, 1.01 * edge, s, tau_min, tau_max));
+        assert!(narrow_in_tau(3500.0, 1e-3, s, tau_min, tau_max));
+        // A pole outside the range, below it or above it, is not in the draw.
+        assert!(!narrow_in_tau(40.0, 1e-3, s, tau_min, tau_max));
+        assert!(!narrow_in_tau(
+            3500.0,
+            1e-3,
+            s,
+            tau_min,
+            3000.0f64.powi(2) / s
+        ));
+        // No positive floor, no log map.
+        assert!(!narrow_in_tau(3500.0, 1e-3, s, 0.0, tau_max));
+    }
+
+    /// On a real process the rule reads the model's own width: Drell–Yan at the
+    /// Standard Model's `Γ_Z` keeps the log map, and the same process with a
+    /// 1 keV `Z` takes the Breit–Wigner mixture.
+    #[test]
+    fn the_rule_reads_the_width_of_a_real_resonance() {
+        use crate::cuts::{Cuts, ExternalLeg};
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::runcard::RunCard;
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let m = sm_model(SMRestrict::Default);
+        let card = parse_proc_card("generate u u~ > e+ e-", &ParsingOptions::default()).unwrap();
+        let diagrams: Vec<Diagram> = generate_from_proc_card(&card, &m)
+            .unwrap()
+            .into_iter()
+            .flat_map(|s| s.diagrams)
+            .collect();
+        let legs = [
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::incoming(-2, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+        ];
+        let rc = RunCard::parse("  50.0 = mmll\n").expect("run card");
+        let cuts = Cuts::compile(&rc, &legs).unwrap();
+        let shape_at = |ev: &EvaluatedModel| ProcessShape::of(&diagrams, ev, 13000.0, &cuts);
+        let wide = shape_at(&EvaluatedModel::from_model(m.clone()));
+        assert!(wide.whole_state_resonance && !wide.narrow_whole_state_resonance);
+        assert_eq!(MapOptions::default().resolve(&wide).tau, TauMap::Log);
+        let pc: ParamCard = "DECAY 23 1e-6\n".parse().unwrap();
+        let narrow =
+            shape_at(&EvaluatedModel::from_model_card(m.clone(), &pc).expect("the card binds"));
+        assert!(narrow.narrow_whole_state_resonance);
+        assert_eq!(
+            MapOptions::default().resolve(&narrow).tau,
+            TauMap::BreitWigner
+        );
+    }
+
     #[test]
     fn a_named_choice_overrides_the_rule_and_fixed_names_every_choice() {
         let shape = ProcessShape {
@@ -467,6 +715,7 @@ mod tests {
             max_rungs: 2,
             resonant_pair_splits: 1,
             whole_state_resonance: false,
+            narrow_whole_state_resonance: false,
         };
         let asked = MapOptions {
             split_angle: Some(SplitAngle::Isotropic),

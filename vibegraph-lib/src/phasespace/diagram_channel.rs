@@ -571,15 +571,19 @@ impl<F: Real> DiagramChannel<F> {
             .fold(0u64, |m, (slot, _)| m | (1u64 << slot))
     }
 
-    /// Whether `diagram` has a finite-width timelike propagator whose final-state
-    /// side is the whole final state — an s-channel resonance every outgoing leg
-    /// comes from, whose Breit–Wigner then shapes the distribution of `ŝ` itself.
-    pub(crate) fn has_whole_state_resonance(diagram: &Diagram, model: &EvaluatedModel) -> bool {
+    /// The mass and width of `diagram`'s finite-width timelike propagator whose
+    /// final-state side is the whole final state — an s-channel resonance every
+    /// outgoing leg comes from, whose Breit–Wigner then shapes the distribution of
+    /// `ŝ` itself — the first in propagator order, or `None` where it has none.
+    pub(crate) fn whole_state_resonance(
+        diagram: &Diagram,
+        model: &EvaluatedModel,
+    ) -> Option<(f64, f64)> {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
-        diagram.props.iter().any(|prop| {
+        diagram.props.iter().find_map(|prop| {
             if prop.is_spacelike(n_in) {
-                return false;
+                return None;
             }
             let beams = prop.momentum[..n_in].iter().filter(|&&c| c != 0).count();
             let finals = prop.momentum[n_in..n_ext]
@@ -589,7 +593,8 @@ impl<F: Real> DiagramChannel<F> {
             // The side away from the beams is the stored side when the stored
             // coefficients carry no beam, and its complement when they carry both.
             let whole = (beams == 0 && finals == n_ext - n_in) || (beams == n_in && finals == 0);
-            whole && model.mass(prop.particle) > 0.0 && model.width(prop.particle) > 0.0
+            let (mass, width) = (model.mass(prop.particle), model.width(prop.particle));
+            (whole && mass > 0.0 && width > 0.0).then_some((mass, width))
         })
     }
 
@@ -2178,22 +2183,31 @@ fn outside_window<F: Real>(lo: F, hi: F, narrowed: bool, s: F) -> bool {
 /// importance-sampling the `1/t` rise, and the leading fraction covers the
 /// remaining `[t_lo, t0]` linearly so the map still reaches the kinematic edge.
 /// With neither, the draw is flat.
+///
+/// The result is clamped to `[lo, hi]`. The Breit–Wigner and log maps reach
+/// their edges through `m² + mΓ·tan θ` and `m² + t`, which cancel to the edge
+/// only up to rounding in `m²`: at `x = 0` far below a pole the BW draw lands
+/// a few ulps of `m²` outside, `s < 0` for a massless pair. The clamp moves only
+/// such rounding excursions, onto the edge they were meant to reach, so
+/// [`invariant_measure`] — the map's analytic `ds/dx` — is unchanged at the
+/// precision either is computed to.
 fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
-    if let Some((m2, mg)) = bw_scale(res) {
+    let s = if let Some((m2, mg)) = bw_scale(res) {
         let theta_lo = ((lo - m2) / mg).atan();
         let theta_hi = ((hi - m2) / mg).atan();
         let theta = theta_lo + (theta_hi - theta_lo) * x;
-        return m2 + mg * theta.tan();
-    }
-    if let Some(m) = log_scale(lo, hi, res) {
-        return if m.frac > F::zero() && x < m.frac {
+        m2 + mg * theta.tan()
+    } else if let Some(m) = log_scale(lo, hi, res) {
+        if m.frac > F::zero() && x < m.frac {
             m.m2 + m.t_lo + (m.t0 - m.t_lo) * (x / m.frac)
         } else {
             let y = (x - m.frac) / (F::one() - m.frac);
             m.m2 + m.t0 * (m.t_hi / m.t0).powf(y)
-        };
-    }
-    lo + (hi - lo) * x
+        }
+    } else {
+        lo + (hi - lo) * x
+    };
+    s.max(lo).min(hi)
 }
 
 /// The invariant-draw measure `ds/dx` at the realised `s`, whose reciprocal is the
@@ -3127,6 +3141,59 @@ mod tests {
         momenta.iter().fold([F::zero(); 4], |a, p| {
             [a[0] + p.e(), a[1] + p.px(), a[2] + p.py(), a[3] + p.pz()]
         })
+    }
+
+    /// The invariant draw stays inside `[lo, hi]` at its edges. The Breit–Wigner
+    /// map's `m² + mΓ·tan θ` reaches an edge only up to rounding in `m²`, which
+    /// at `x = 0` far below a pole put `s` below `lo` (`s < 0` for a massless
+    /// pair) and at `x = 1` above `hi`: a pair with no momentum, or a sibling
+    /// with more than the parent has. The clamp moves `s` by no more than that
+    /// rounding, so the measure read at it is the edge's own.
+    #[test]
+    fn the_invariant_draw_stays_inside_its_range() {
+        let mut checked = 0;
+        for (m, w) in [
+            (91.1876, 2.4952),
+            (80.379, 2.085),
+            (160.0, 0.0025629705720000002),
+        ] {
+            let res = Some(Resonance { mass: m, width: w });
+            for lo in [0.0, 4.0 * 0.1057 * 0.1057, 4.0 * 1.777 * 1.777, 1.0, 100.0] {
+                for hi in [1e4, 1e6, 1.69e8] {
+                    for x in [0.0, 1e-300, 0.5, 1.0 - f64::EPSILON / 2.0, 1.0] {
+                        let s = draw_invariant(lo, hi, res, x);
+                        assert!(
+                            lo <= s && s <= hi,
+                            "m {m}, Γ {w}: x = {x} drew s = {s:e} outside [{lo}, {hi}]"
+                        );
+                        // The unclamped map value, and the measure there and at
+                        // the clamped one.
+                        let (m2, mg) = (m * m, m * w);
+                        let (t_lo, t_hi) = (((lo - m2) / mg).atan(), ((hi - m2) / mg).atan());
+                        let raw = m2 + mg * (t_lo + (t_hi - t_lo) * x).tan();
+                        // `ds/dx ∝ (s − m²)²/mΓ + mΓ`, so moving `s` by `δ` moves
+                        // it by at most `2δ/|s − m²|` relative: no more than the
+                        // rounding the clamp undoes. Near `θ = ±π/2` that is
+                        // `tan`'s, amplified by `1/cos²θ`: a 160 GeV line of
+                        // 2.6 MeV drawn up to `1.69·10⁸ GeV²` overshoots by about
+                        // `10⁻⁸` relative.
+                        let measure = |e: f64| invariant_measure(lo, hi, res, e);
+                        let rel = (measure(s) - measure(raw)).abs() / measure(raw);
+                        let bound = 2.0 * (s - raw).abs() / (raw - m2).abs() + 1e-15;
+                        assert!(
+                            rel <= bound,
+                            "the clamp moved the measure by {rel:e} > {bound:e}"
+                        );
+                        assert!(
+                            (s - raw).abs() <= 1e-6 * raw.abs().max(m2),
+                            "the clamp moved s from {raw:e} to {s:e}"
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 3 * 5 * 3 * 5);
     }
 
     /// Every channel emits on-shell, momentum-conserving points across seeds and
@@ -5093,7 +5160,7 @@ mod tests {
                 .unwrap()
                 .iter()
                 .flat_map(|s| s.diagrams.iter())
-                .any(|d| DiagramChannel::<f64>::has_whole_state_resonance(d, &ev))
+                .any(|d| DiagramChannel::<f64>::whole_state_resonance(d, &ev).is_some())
         };
         assert!(any("u u~ > e+ e-"));
         assert!(any("e+ e- > mu+ mu-"));

@@ -4,11 +4,11 @@
 
 ## Algorithm
 
-* [Flavour groups derived from measured |M|² equality](flavour-groups.md) - Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses, cuts and colour basis, with a minimum cross-group separation.
+* [Flavour groups derived from measured |M|² equality](flavour-groups.md) - Subprocesses are grouped by pointwise |M|² agreement at shared probe points, also requiring equal masses and a cut filter equal to the representative's and a colour basis that pairs with its own under the fingerprint permutation; a subprocess with a different cut filter or an unpaired colour basis forms a group of its own; groups that do not merge stay separate.
 
 ## Design
 
-* [The hadronic cross section and ProtonIntegrand](proton-integrand.md) - σ = ∫dτ dy dΦ Σ_g avg_g[L_d|M(q)|² + L_m|M(Rq)|²]Θ/(2ŝ): PDF convolution and averaging, (τ,y) outer map, pooled inner map, |M|² in the partonic CM with lab-frame cuts.
+* [The hadronic cross section and ProtonIntegrand](proton-integrand.md) - σ = ∫dτ dy dΦ Σ_g avg_g[L_d|M(q)|² + L_m|M(Rq)|²]Θ_g/(2ŝ), each group cut by its own filter: PDF convolution and averaging, (τ,y) outer map, pooled inner map, |M|² in the partonic CM with lab-frame cuts.
 
 ## Physics Convention
 

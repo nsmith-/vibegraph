@@ -108,8 +108,8 @@ use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{
-    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, IterationCombination,
-    VegasGrid, VegasResult,
+    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, Chi2PerDof,
+    IterationCombination, VegasGrid, VegasResult,
 };
 
 /// Floor on the points a channel gets through the cuts in one iteration.
@@ -837,7 +837,9 @@ where
             Some(total) => info!(
                 "iteration {iteration}: {:.6e} ± {:.6e} (χ²/dof {:.3}), {iteration_points} points \
                  at {ns_per_eval:.0} ns/eval",
-                total.integral, total.std_dev, total.chi2_per_dof
+                total.integral,
+                total.std_dev,
+                Chi2PerDof(total.chi2_per_dof)
             ),
             None => info!(
                 "iteration {iteration} (warm-up): {iteration_points} points at \
@@ -847,7 +849,7 @@ where
         let total = estimate.unwrap_or(VegasResult {
             integral: 0.0,
             std_dev: 0.0,
-            chi2_per_dof: 0.0,
+            chi2_per_dof: None,
         });
         let progress_total = budget.progress_total(iteration, warmup, scaled, iteration_bound);
         progress::vegas_iteration(
@@ -1167,16 +1169,16 @@ impl Budget {
 /// The combined estimate over every channel's kept iterations, as it stands.
 ///
 /// The same sum the run's own result is formed from: terms add, their variances
-/// add, and the reported χ²/dof is the mean of the channels' own.
+/// add, and the reported χ²/dof is the mean of the channels' own, undefined
+/// unless every channel's is.
 fn running_estimate(channels: &[ChannelHistory], combination: IterationCombination) -> VegasResult {
     let terms: Vec<VegasResult> = channels.iter().map(|c| c.combine(combination)).collect();
     let integral: f64 = terms.iter().map(|t| t.integral).sum();
     let variance: f64 = terms.iter().map(|t| t.std_dev * t.std_dev).sum();
-    let chi2_per_dof = if terms.is_empty() {
-        0.0
-    } else {
-        terms.iter().map(|t| t.chi2_per_dof).sum::<f64>() / terms.len() as f64
-    };
+    let chi2_per_dof = (!terms.is_empty())
+        .then(|| terms.iter().map(|t| t.chi2_per_dof).sum::<Option<f64>>())
+        .flatten()
+        .map(|sum| sum / terms.len() as f64);
     VegasResult {
         integral,
         std_dev: variance.sqrt(),
@@ -1631,7 +1633,10 @@ mod tests {
         let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
         let scale = h.stop_scale();
         assert!((scale - 7.0 / 3.0).abs() < 1e-12, "{scale}");
-        let chi2 = h.combine(IterationCombination::Unweighted).chi2_per_dof;
+        let chi2 = h
+            .combine(IterationCombination::Unweighted)
+            .chi2_per_dof
+            .expect("three kept iterations");
         assert!(
             (scale / chi2 - 1.0).abs() < 1e-12,
             "{scale} vs χ²/dof {chi2}"
@@ -1768,7 +1773,10 @@ mod tests {
         let mixed: Vec<(f64, f64)> = empty.iter().chain(&fired).copied().collect();
         let h = history(&mixed);
 
-        let reported = h.combine(IterationCombination::Unweighted).chi2_per_dof;
+        let reported = h
+            .combine(IterationCombination::Unweighted)
+            .chi2_per_dof
+            .expect("eight kept iterations");
         assert!(
             reported > 1.0e200 && reported.is_finite(),
             "the pathology this guards against did not reproduce: χ²/dof {reported}"
@@ -1796,6 +1804,7 @@ mod tests {
         }
         ChannelHistory::combine_kept(&informative, IterationCombination::Unweighted)
             .chi2_per_dof
+            .expect("two informative iterations or more")
             .max(1.0)
     }
 
@@ -1903,7 +1912,7 @@ mod tests {
         );
         let worst = per_channel
             .iter()
-            .map(|c| c.result.chi2_per_dof)
+            .filter_map(|c| c.result.chi2_per_dof)
             .fold(0.0_f64, f64::max);
         assert!(
             worst > 1.0e100,
@@ -2098,7 +2107,7 @@ mod tests {
                 // new), then rebuild the cache (healing it if it was already
                 // stamped). The primer carries `done = 0`, which no real
                 // iteration does, and is filtered out below.
-                crate::progress::vegas_iteration(0, None, 0.0, 0.0, 0.0);
+                crate::progress::vegas_iteration(0, None, 0.0, 0.0, None);
                 tracing::callsite::rebuild_interest_cache();
                 integrate_channels(
                     &integ,

@@ -2,6 +2,8 @@
 
 import os
 import sys
+import json
+import math
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -60,6 +62,23 @@ VG_OK = """\
  INFO VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = 0.000)
  INFO channels: 53 grids, 71429 evals in the last iteration, allocated by α
 σ = 0.001952 ± 0.000196 pb
+"""
+# The same run as integrate prints it now: σ to the digits its error supports,
+# each part with its outgoing masses (one of them two process numbers), and
+# χ²/dof undefined over the single iteration a --fixed-budget --niter 3 run keeps.
+VG_SIG_FIGS = """\
+ INFO 4 outgoing legs (@0; masses 0, 0, 1, 1 GeV): σ = 5.43e-4 ± 3.9e-5 pb over 5 channels
+ INFO 5 outgoing legs (@1 @2; masses 0, 0, 0, 1, 1 GeV): σ = 1.41e-3 ± 1.9e-4 pb over 48 channels
+ INFO √s:       13600 GeV,  μF dynamical, choice -1
+ INFO VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = n/a)
+σ = 1.952e-3 ± 2.0e-4 pb
+"""
+# The same run with σ under the SI-prefixed barn unit its magnitude picks.
+VG_SI_PREFIX = """\
+ INFO 4 outgoing legs (@0; masses 0, 0, 1, 1 GeV): σ = 543 ± 39 ab over 5 channels
+ INFO 5 outgoing legs (@1 @2; masses 0, 0, 0, 1, 1 GeV): σ = 1.41 ± 0.19 fb over 48 channels
+ INFO VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = n/a)
+σ = 1.95 ± 0.20 fb
 """
 VG_TRACE = """\
 2026-10-19T19:32:42.985233Z TRACE ufo_load: vibegraph::progress: stage="ufo_load" done=0 total=1
@@ -162,6 +181,44 @@ class Ufo(unittest.TestCase):
         self.assertEqual(P.model_identity({"a.py": "1", "b.py": "2"}), P.model_identity({"b.py": "2", "a.py": "1"}))
         self.assertNotEqual(P.model_identity({"a.py": "1"}), P.model_identity({"a.py": "2"}))
 
+# The VG_OK run under --output-ldjson, as the stream writes it: objects only,
+# the per-multiplicity totals and the model in the result object, the counts
+# in the log objects' messages.
+def _ld(kind, **fields):
+    return json.dumps(dict(fields, kind=kind, schema_version=1))
+
+
+def _log(message, level="INFO"):
+    return _ld("log", timestamp="2026-11-05T10:00:00.000000Z", level=level, target="vibegraph::x",
+               fields={"message": message})
+
+
+VG_LDJSON_OK = "\n".join([
+    _log("enumerate: enumerated 8 diagrams in 3 subprocess (0.004 s)"),
+    _ld("progress", timestamp="2026-11-05T10:00:01.000000Z", level="TRACE", target="vibegraph::progress",
+        fields={"stage": "vegas", "done": 1, "total": 3, "sigma": 5.0e-12, "err": 5.0e-13}),
+    _log("VEGAS:    183677 evals over 3 iters, seed 1 (χ²/dof = n/a)"),
+    _ld("result", process="p p > xd xd~ t t~", observable="cross_section", unit="pb",
+        model={"label": "DMsimp_s_spin0-default",
+               "digest": "1c5615f093eb3e4e2a2d7db83df7b57ca79f8c596c9f3342517572ef4b549ef4"},
+        sigma=0.0019521234567, sigma_err=0.000196, chi2_per_dof=None, mu_f={"type": "per_event",
+                                                                            "dynamical_scale_choice": -1},
+        seed=1, multiplicities=[
+            {"final_state": 4, "process_ids": [0], "final_masses": [0, 0, 1, 1], "channels": 5,
+             "sigma": 0.000543, "sigma_err": 0.000039, "chi2_per_dof": None},
+            {"final_state": 5, "process_ids": [1, 2], "final_masses": [0, 0, 0, 1, 1], "channels": 48,
+             "sigma": 0.00141, "sigma_err": 0.000192, "chi2_per_dof": None}],
+        channels=[{"key": {"type": "whole"}, "alpha": 1 / 53, "neval": 1, "sigma": 0, "sigma_err": 0,
+                   "chi2_per_dof": None}] * 53,
+        artifact="out/grid.bin.zst", format_version=20),
+]) + "\n"
+VG_LDJSON_REFUSED = "\n".join([
+    _log("'p p > wp+ > ta+ vt' selects diagrams by their s-channel propagators", level="WARN"),
+    _ld("refusal", error_kind="process",
+        message="failed to decompose into flavour groups: subprocesses u u > e+ e- u u and u u > ta+ ta- u u "
+                "have different outgoing masses, so no single phase-space map covers the sum"),
+]) + "\n"
+
 
 class VgOutput(unittest.TestCase):
     def test_ok(self):
@@ -173,6 +230,34 @@ class VgOutput(unittest.TestCase):
         self.assertEqual(r["vg_model_hash"][:8], "1c5615f0")
         self.assertAlmostEqual(r["stages"]["ufo_load"], 1.0)
         self.assertAlmostEqual(r["stages"]["compile"], 2.5)
+
+    def test_significant_figures_masses_and_an_undefined_chi2(self):
+        r = P.parse_vg_output(VG_SIG_FIGS, "", 0, False)
+        self.assertEqual((r["outcome"], r["sigma_pb"], r["err_pb"]), ("ok", 1.952e-3, 2.0e-4))
+        self.assertEqual((r["n_evals"], r["chi2_dof"]), (183677, None))
+        self.assertEqual(sorted((m["tag"], m["n_out"], m["sigma_pb"], m["err_pb"], m["n_channels"])
+                                for m in r["multiplicities"]),
+                         [(0, 4, 5.43e-4, 3.9e-5, 5), (1, 5, 1.41e-3, 1.9e-4, 48)])
+
+    def test_si_prefixed_units(self):
+        r = P.parse_vg_output(VG_SI_PREFIX, "", 0, False)
+        close = lambda a, b: math.isclose(a, b, rel_tol=1e-12)
+        self.assertTrue(close(r["sigma_pb"], 1.95e-3) and close(r["err_pb"], 2.0e-4), r)
+        parts = sorted((m["tag"], m["sigma_pb"], m["err_pb"]) for m in r["multiplicities"])
+        self.assertEqual([t for t, _, _ in parts], [0, 1])
+        for (_, s, e), (s0, e0) in zip(parts, [(5.43e-4, 3.9e-5), (1.41e-3, 1.9e-4)]):
+            self.assertTrue(close(s, s0) and close(e, e0), parts)
+        for unit, pb in [("zb", 1e-9), ("ab", 1e-6), ("fb", 1e-3), ("pb", 1.0), ("nb", 1e3),
+                         ("\u00b5b", 1e6), ("mb", 1e9), ("b", 1e12)]:
+            r = P.parse_vg_output("σ = 8.6812 ± 0.0023 %s\n" % unit, "", 0, False)
+            self.assertTrue(close(r["sigma_pb"], 8.6812 * pb) and close(r["err_pb"], 0.0023 * pb),
+                            (unit, r["sigma_pb"], r["err_pb"]))
+
+    def test_an_unknown_unit_is_not_read_as_pb(self):
+        text = (" INFO 4 outgoing legs (@0): σ = 5.43 ± 0.39 Xb over 5 channels\n"
+                "σ = 5.43 ± 0.39 Xb\n")
+        r = P.parse_vg_output(text, "", 0, False)
+        self.assertEqual((r["sigma_pb"], r["err_pb"], r["multiplicities"]), (None, None, []))
 
     def test_refused(self):
         r = P.parse_vg_output(VG_REFUSED, "", 1, False)
@@ -190,6 +275,63 @@ class VgOutput(unittest.TestCase):
             ["1354", "21", "0", "0"])])
         self.assertIn("run.rs:1354", r["error_text"])
         self.assertEqual(P.parse_vg_output("", "", None, True)["outcome"], "timeout")
+
+
+class VgLdjson(unittest.TestCase):
+    """The survey reads `--output-ldjson` from its objects, and an older
+    campaign's text output (above) from its summary lines."""
+
+    def test_ok(self):
+        r = P.parse_vg_output(VG_LDJSON_OK, VG_TRACE, 0, False)
+        self.assertEqual((r["outcome"], r["sigma_pb"], r["err_pb"]), ("ok", 0.0019521234567, 0.000196))
+        self.assertEqual((r["n_evals"], r["chi2_dof"], r["n_channels"]), (183677, None, 53))
+        self.assertEqual((r["n_diagrams"], r["n_subprocesses"]), (8, 3))
+        self.assertEqual(sorted((m["tag"], m["n_out"], m["sigma_pb"], m["err_pb"], m["n_channels"])
+                                for m in r["multiplicities"]),
+                         [(0, 4, 5.43e-4, 3.9e-5, 5), (1, 5, 1.41e-3, 1.92e-4, 48)])
+        self.assertEqual(r["vg_model_hash"][:8], "1c5615f0")
+        self.assertAlmostEqual(r["stages"]["compile"], 2.5)
+
+    def test_a_process_split_into_flavour_groups_records_one_row_per_tag(self):
+        group = '{"final_state": 5, "process_ids": [1, 2], "final_masses": [0, 0, 0, 1, 1], "channels": 48, ' \
+                '"sigma": 0.00141, "sigma_err": 0.000192, "chi2_per_dof": null}'
+        split = group.replace("48", "30").replace("0.00141", "0.001").replace("0.000192", "0.00012") + ", " + \
+            group.replace("48", "18").replace("0.00141", "0.00041").replace("0.000192", "0.00016")
+        r = P.parse_vg_output(VG_LDJSON_OK.replace(group, split), "", 0, False)
+        parts = sorted((m["tag"], m["n_out"], m["n_channels"]) for m in r["multiplicities"])
+        self.assertEqual(parts, [(0, 4, 5), (1, 5, 48)])
+        five = next(m for m in r["multiplicities"] if m["tag"] == 1)
+        self.assertTrue(math.isclose(five["sigma_pb"], 0.00141) and math.isclose(five["err_pb"], 0.0002), five)
+
+    def test_the_same_run_reads_alike_in_both_formats(self):
+        text, ld = P.parse_vg_output(VG_OK, "", 0, False), P.parse_vg_output(VG_LDJSON_OK, "", 0, False)
+        for key in ("outcome", "n_evals", "n_channels", "n_diagrams", "n_subprocesses", "vg_model_hash"):
+            self.assertEqual(text[key], ld[key], key)
+        self.assertEqual([(m["tag"], m["n_out"], m["n_channels"]) for m in text["multiplicities"]],
+                         [(m["tag"], m["n_out"], m["n_channels"]) for m in ld["multiplicities"]])
+
+    def test_refused(self):
+        r = P.parse_vg_output(VG_LDJSON_REFUSED, "", 1, False)
+        self.assertEqual((r["outcome"], r["error_kind"]), ("refused", "process"))
+        self.assertEqual(r["reasons"], [(
+            "failed to decompose into flavour groups: subprocesses {} and {} have different outgoing masses, "
+            "so no single phase-space map covers the sum", ["u u > e+ e- u u", "u u > ta+ ta- u u"])])
+        self.assertTrue(r["error_text"].startswith("failed to decompose"))
+
+    def test_a_panic_on_the_merged_stderr(self):
+        r = P.parse_vg_output(_log("model:    sm") + "\n" + VG_PANIC, "", 101, False)
+        self.assertEqual(r["outcome"], "panic")
+        self.assertIn("run.rs:1354", r["error_text"])
+
+    def test_an_unknown_schema_version_is_not_read(self):
+        text = VG_LDJSON_OK.replace('"schema_version": 1', '"schema_version": 2')
+        r = P.parse_vg_output(text, "", 0, False)
+        self.assertEqual((r["outcome"], r["sigma_pb"]), ("error", None))
+        self.assertIn("schema_version [2]", r["error_text"])
+
+    def test_a_width_is_not_read_as_a_cross_section(self):
+        text = VG_LDJSON_OK.replace('"unit": "pb"', '"unit": "GeV"')
+        self.assertIsNone(P.parse_vg_output(text, "", 0, False)["sigma_pb"])
 
 
 class Reasons(unittest.TestCase):
@@ -329,6 +471,33 @@ class Schema(unittest.TestCase):
                 db.execute("UPDATE vg_run SET outcome = 'error' WHERE run_id = ?", (refused,))
             db.execute("DELETE FROM vg_run WHERE run_id = ?", (ok,))
             self.assertEqual(db.execute("SELECT outcome, reason FROM comparison").fetchall(), [("refused", "x {}")])
+
+    def test_a_refusal_keeps_its_error_kind(self):
+        import sqlite3
+        import tempfile
+
+        import gpdb
+        parsed = P.parse_vg_output(VG_LDJSON_REFUSED, "", 1, False)
+        with tempfile.TemporaryDirectory() as d:
+            db = gpdb.connect(os.path.join(d, "t.sqlite"))
+            gid = db.execute("INSERT INTO gridpack (path, label) VALUES ('p', 'l')").lastrowid
+            bid = db.execute("INSERT INTO vg_build (version, binary_sha256) VALUES ('v', ?)", ("0" * 64,)).lastrowid
+            db.execute("INSERT INTO vg_campaign VALUES ('c', '{}', '2026-01-01T00:00:00')")
+
+            def run(attempt, outcome, kind):
+                return db.execute(
+                    "INSERT INTO vg_run (gridpack_id, build_id, campaign, attempt, patches, argv, started_at, "
+                    "exit_code, timed_out, outcome, sigma_pb, err_pb, error_kind) VALUES (?, ?, 'c', ?, '[]', "
+                    "'[]', '2026-01-01T00:00:00', ?, 0, ?, ?, ?, ?)",
+                    (gid, bid, attempt, int(outcome != "ok"), outcome,
+                     *((1.0, 0.1) if outcome == "ok" else (None, None)), kind)).lastrowid
+            run(1, parsed["outcome"], parsed["error_kind"])
+            self.assertEqual(db.execute("SELECT outcome, error_kind FROM comparison").fetchall(),
+                             [("refused", "process")])
+            with self.assertRaises(sqlite3.IntegrityError):  # not one of the CLI's kinds
+                run(2, "refused", "unknown")
+            with self.assertRaises(sqlite3.IntegrityError):  # only a refusal carries a kind
+                run(3, "ok", "run")
 
 
 if __name__ == "__main__":

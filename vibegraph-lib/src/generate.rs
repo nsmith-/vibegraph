@@ -42,7 +42,7 @@ use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
-    refuse_mixed_multiplicity, MultiplicityGroups, MultiplicitySum,
+    refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::subprocess_vetoes;
 use crate::pdf::{PdfMember, PdfSet};
@@ -55,7 +55,7 @@ use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
 use crate::systematics::request::{DynScale, VariationRequest};
 use crate::ufo::identity::ModelIdentity;
 use crate::ufo::{EvaluatedModel, UFOModel};
-use crate::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter};
+use crate::unweight::{MaxRule, NoUsableWeight, ScanBudget, UnweightStats, Unweighter};
 
 use source::{
     ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, RecordFill,
@@ -225,6 +225,9 @@ pub enum GenerateError {
         rebuilt: f64,
         beams: [f64; 2],
     },
+    /// The weight scan of the artifact's grids found no point carrying weight.
+    #[error(transparent)]
+    NoUsableWeight(#[from] NoUsableWeight),
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -385,6 +388,7 @@ fn generate_sample(
     let sets = generate_from_proc_card_in(parsed, model, options.enumeration)
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets).map_err(err)?;
+    refuse_one_body_final_state(&sets).map_err(err)?;
     refuse_exchanged_beam_orderings(&sets).map_err(err)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
@@ -508,7 +512,7 @@ fn generate_sample(
     let observable = initial.observable();
 
     let rule = options.max_rule;
-    let scan = Unweighter::scan_with(
+    let scan = Unweighter::try_scan_with(
         &integ,
         artifact
             .channels
@@ -516,7 +520,7 @@ fn generate_sample(
             .map(|c| (&c.grid, options.scan_points.draws_for(c.neval))),
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
-    );
+    )?;
     report_scan(
         &scan,
         artifact,
@@ -996,7 +1000,7 @@ fn generate_proton_sample(
         .then(|| RecordFill::new(&groups, model, pdf));
 
     let rule = options.max_rule;
-    let scan = Unweighter::scan_with(
+    let scan = Unweighter::try_scan_with(
         &integ,
         artifact
             .channels
@@ -1004,7 +1008,7 @@ fn generate_proton_sample(
             .map(|c| (&c.grid, options.scan_points.draws_for(c.neval))),
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
-    );
+    )?;
     report_scan(
         &scan,
         artifact,
@@ -1414,6 +1418,16 @@ fn check_alphas(alphas: &[f64]) -> Result<(), GenerateError> {
     Ok(())
 }
 
+/// The pull of a sample's own cross section `sample ± sample_err` against the
+/// integration `artifact` records: their difference over the two errors in
+/// quadrature.
+pub fn sample_pull(sample: f64, sample_err: f64, artifact: &IntegrateArtifact) -> f64 {
+    (sample - artifact.sigma_pb)
+        / sample_err
+            .hypot(artifact.sigma_err_pb)
+            .max(f64::MIN_POSITIVE)
+}
+
 fn report(
     artifact: &IntegrateArtifact,
     stats: &UnweightStats,
@@ -1446,11 +1460,7 @@ fn report(
         artifact.sigma_pb,
         artifact.sigma_err_pb,
         100.0 * (sample_sigma / artifact.sigma_pb - 1.0),
-        (sample_sigma - artifact.sigma_pb)
-            / summary
-                .sample_sigma_err_pb
-                .hypot(artifact.sigma_err_pb)
-                .max(f64::MIN_POSITIVE)
+        sample_pull(sample_sigma, summary.sample_sigma_err_pb, artifact)
     );
     info!(
         "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",
@@ -1750,7 +1760,7 @@ mod tests {
                 member: 0,
                 files: Vec::new(),
             }),
-            mu_f: 0.0,
+            mu_f: None,
             sqrt_s_had: 13000.0,
             neval: 1000,
             niter: 1,
@@ -1767,12 +1777,13 @@ mod tests {
                 grid: VegasGrid::new(4, 16, 1.5),
                 sigma_pb: 1.0,
                 sigma_err_pb: 0.01,
-                chi2_per_dof: 1.0,
+                chi2_per_dof: Some(1.0),
                 sampler: None,
             }],
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
-            chi2_per_dof: 1.0,
+            chi2_per_dof: Some(1.0),
+            multiplicities: Vec::new(),
             maps: MapChoices::LEGACY,
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: String::new(),
