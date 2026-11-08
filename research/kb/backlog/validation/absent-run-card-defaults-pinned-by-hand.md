@@ -25,6 +25,10 @@ Found by H-J1, which fixed the absent-card `maxjetflavor` rule.
   `p p > w+ w-` writes 1, as vibegraph's template; a card that gets 2 was not
   found. A census of MadGraph's written value over the survey's cards settles it.
 
-The two open differences H-J1 found are
-[absent-run-card-lepton-beams-panic](absent-run-card-lepton-beams-panic.md) and
-[absent-run-card-mixed-multiplicity-unmatched](absent-run-card-mixed-multiplicity-unmatched.md).
+Sprint I closed the two differences H-J1 found (the lepton beams and the
+mixed-multiplicity matching rule). It committed three written cards as test
+fixtures (`vibegraph-lib/tests/data/mg_default_run_cards/`: mixed
+multiplicity, `e+ e- > mu+ mu-`, and an `MLM`-limited SMEFT card) and pinned
+`sde_strategy` on eight processes against local MadGraph `output`. Still open:
+the dump script for the other process definitions, and the census over the
+survey's cards.

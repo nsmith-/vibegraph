@@ -73,6 +73,10 @@ const R_XPT: &str = "cuts::detect_unimplemented, which reads a value at or below
                      as every guarded MadGraph read does, and refuses a positive one";
 const R_PT_MIN_PDG: &str = "cuts::Cuts::compile's per-PDG single-leg block, and \
                             cuts::detect_unimplemented, which refuses the codes MadGraph refuses";
+const R_MXX_PART_ANTIPART: &str = "cuts::Cuts::compile's per-PDG single-leg block, which takes \
+                                   its codes into pdg_cut as banner.py:4711 does, and \
+                                   cuts::detect_unimplemented, which refuses the codes MadGraph \
+                                   refuses";
 const R_PTGMIN: &str = "cuts::detect_unimplemented, and cuts::Cuts::compile, which raises the \
                         photon pT threshold to it";
 const R_SDE_STRATEGY: &str = "hadronic::configurations_weighted_by_amp2, which \
@@ -141,8 +145,6 @@ const B_MLM: &str = "an MLM input MadEvent reads only on branches this crate nev
                      ptlund merging cuts, which are hard errors as unimplemented cuts";
 const B_ISOLATION: &str = "Frixione photon isolation, read by cuts.f only inside its ptgmin \
                            block; an active ptgmin is already a hard error";
-const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_pdg is already \
-                     a hard error";
 const B_ONIUM: &str = "a quarkonium cut MadGraph parses and never applies. banner.py:4318 and \
                        :4338 register ptonium and etaonium with legacy=True, which keeps them out \
                        of run_card.inc (include=False) and only warns when a card moves them; \
@@ -447,7 +449,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("eta_min_pdg",             Integrate, Consumed(R_UNIMPL)),
     ("eta_max_pdg",             Integrate, Consumed(R_UNIMPL)),
     ("mxx_min_pdg",             Integrate, Consumed(R_UNIMPL)),
-    ("mxx_only_part_antipart",  Integrate, IgnoredBenign(B_MXX)),
+    ("mxx_only_part_antipart",  Integrate, Consumed(R_MXX_PART_ANTIPART)),
 ];
 
 /// The parameters a generation reads, in [`super::PARAM_DEFAULTS`]'s order.

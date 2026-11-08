@@ -136,7 +136,28 @@ impl Command {
     }
 }
 
+/// End the process on the first panic, on whichever thread it happens.
+///
+/// A panic on a rayon worker is caught by the pool and re-raised only where the
+/// parallel region joins, and the region runs every one of its other tasks to
+/// completion first: rayon has no cancellation. A panic early in a long VEGAS
+/// iteration therefore printed its message and left the run computing the rest
+/// of that iteration before it unwound. Nothing in the command recovers from a
+/// panic, so there is nothing to wait for: the message is printed by the hook
+/// that was installed before this one, and the process exits with the status an
+/// unwound `main` would have (101).
+fn exit_on_panic() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        previous(info);
+        std::process::exit(101);
+    }));
+}
+
 fn main() -> ExitCode {
+    // Before the display starts, so its own hook runs first and gives the
+    // terminal back before the message is printed.
+    exit_on_panic();
     let cli = Cli::parse();
     // `check-events` prints a report a person reads; it has no result object
     // for the stream to carry.

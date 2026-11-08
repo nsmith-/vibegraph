@@ -78,7 +78,9 @@
 //!   exempts a decay product. Its `smin` term (`setcuts.f:678-690`) is not
 //!   reproduced: the ŝ floor here is derived from the thresholds, see
 //!   [`Cuts::shat_min`]. That term reads the wrong loop index and can raise
-//!   MadEvent's `τ` floor past the cuts on some cards, which are refused.
+//!   MadEvent's `τ` floor past the cuts on some cards, which are refused. The
+//!   codes `mxx_only_part_antipart` lists join the same list at `pT ≥ 0`
+//!   (`banner.py:4711`), so they too replace a listed leg's class cuts.
 //!
 //! Cut families implemented here: ŝ window, single-leg pT/E/η (classes
 //! j/b/a/l), the per-PDG pT minimum, pairwise ΔR and invariant mass, `ptll`,
@@ -410,8 +412,12 @@ pub enum CutError {
         value: String,
         default: String,
     },
-    #[error("run card's pt_min_pdg = {value} is refused: {reason}")]
-    PdgCutRefused { value: String, reason: String },
+    #[error("run card's {field} = {value} is refused: {reason}")]
+    PdgCutRefused {
+        field: &'static str,
+        value: String,
+        reason: String,
+    },
     #[error(
         "cut_decays = F would leave final-state leg {leg} (PDG {pdg}) uncut, but it is a \
          massless coloured core parton in a kept diagram: the exemption is IR-unsafe, its \
@@ -639,61 +645,92 @@ struct PdgPtMin {
 }
 
 impl PdgPtMin {
-    /// The card's `pt_min_pdg`, with MadGraph's refusals: a negative code
-    /// (`banner.py:4717`), more than 25 codes (`:4714`), and the light codes
-    /// MadGraph means to refuse ([`PDG_CUT_LIGHT`]). Code 0 is refused too: it
-    /// names no particle, and listed first it would read as the empty list
-    /// (`setcuts.f:318` tests `pdg_cut(1).ne.0`) and drop every other entry.
+    /// MadGraph's `pdg_cut` list as `banner.py:4708-4750` builds it from the
+    /// card: the codes of `pt_min_pdg` with their thresholds, and the codes
+    /// `mxx_only_part_antipart` lists, whatever value it gives them, at the
+    /// per-PDG defaults (`pT ≥ 0`). A listed leg's class cuts are replaced by
+    /// its per-PDG cuts either way (`setcuts.f:318-334`).
+    ///
+    /// Both fields share MadGraph's refusals: a negative code (`banner.py:4717`),
+    /// more than 25 codes in all (`:4714`), and the light codes MadGraph means to
+    /// refuse ([`PDG_CUT_LIGHT`]). Code 0 is refused too: it names no particle,
+    /// and listed first it would read as the empty list (`setcuts.f:318` tests
+    /// `pdg_cut(1).ne.0`) and drop every other entry. An `mxx_only_part_antipart`
+    /// with no `default` key that leaves a `pt_min_pdg` code without a value is
+    /// refused as `banner.py:4749` refuses it, and so is a value that is not a
+    /// boolean.
     fn from_card(rc: &RunCard) -> Result<Self, CutError> {
-        let text = match rc.get("pt_min_pdg") {
-            None => return Ok(Self::default()),
-            Some(v) => v.as_str().to_string(),
-        };
-        let refuse = |reason: String| CutError::PdgCutRefused {
-            value: format!("'{text}'"),
+        let mut entries: Vec<(u32, f64)> = Vec::new();
+        let pt_text = rc
+            .get("pt_min_pdg")
+            .map(|v| v.as_str().to_string())
+            .unwrap_or_default();
+        let refuse_pt = |reason: String| CutError::PdgCutRefused {
+            field: "pt_min_pdg",
+            value: format!("'{pt_text}'"),
             reason,
         };
-        let mut entries: Vec<(u32, f64)> = Vec::new();
-        for (key, value) in parse_pdg_dict(&text).map_err(refuse)? {
-            // `banner.py:4712` drops these two bookkeeping keys from the list.
-            if key == "__type__" || key == "default" {
+        for (key, value) in parse_pdg_dict(&pt_text).map_err(refuse_pt)? {
+            let Some(pdg) = pdg_cut_code(&key).map_err(refuse_pt)? else {
                 continue;
-            }
-            let pdg: i64 = key
-                .parse()
-                .map_err(|_| refuse(format!("'{key}' is not a PDG code")))?;
+            };
             let pt: f64 = value
                 .parse()
-                .map_err(|_| refuse(format!("'{value}' is not a number")))?;
-            if pdg < 0 {
-                return Err(refuse(format!(
-                    "PDG {pdg} is negative; MadGraph applies a per-PDG cut to particle and \
-                     antiparticle alike and refuses a negative code (banner.py:4717)"
-                )));
-            }
-            if pdg == 0 {
-                return Err(refuse("PDG 0 names no particle".to_string()));
-            }
-            let pdg =
-                u32::try_from(pdg).map_err(|_| refuse(format!("PDG {pdg} is out of range")))?;
-            if PDG_CUT_LIGHT.contains(&pdg) {
-                return Err(refuse(format!(
-                    "PDG {pdg} is a light quark, b, charged lepton, gluon or photon, whose class \
-                     cuts apply instead; banner.py:4722 means to refuse it, and its test never \
-                     fires because it compares string keys with integers"
-                )));
-            }
+                .map_err(|_| refuse_pt(format!("'{value}' is not a number")))?;
             match entries.iter_mut().find(|(p, _)| *p == pdg) {
                 Some(entry) => entry.1 = pt,
                 None => entries.push((pdg, pt)),
             }
         }
+
+        let mxx_text = rc
+            .get("mxx_only_part_antipart")
+            .map(|v| v.as_str().to_string())
+            .unwrap_or_default();
+        let refuse_mxx = |reason: String| CutError::PdgCutRefused {
+            field: "mxx_only_part_antipart",
+            value: format!("'{mxx_text}'"),
+            reason,
+        };
+        // A braced dict replaces MadGraph's `{'default': False}` outright; any
+        // other spelling adds one key to it (`banner.py:1218-1260`).
+        let replaces_default = mxx_text.trim().is_empty() || mxx_text.trim().starts_with('{');
+        let mut has_default = !replaces_default;
+        let mut mxx_codes: Vec<u32> = Vec::new();
+        for (key, value) in parse_pdg_dict(&mxx_text).map_err(refuse_mxx)? {
+            if !is_python_bool(&value) {
+                return Err(refuse_mxx(format!("'{value}' is not a boolean")));
+            }
+            if key == "default" {
+                has_default = true;
+            }
+            let Some(pdg) = pdg_cut_code(&key).map_err(refuse_mxx)? else {
+                continue;
+            };
+            mxx_codes.push(pdg);
+            if !entries.iter().any(|(p, _)| *p == pdg) {
+                entries.push((pdg, 0.0));
+            }
+        }
+        if !has_default {
+            if let Some((pdg, _)) = entries.iter().find(|(p, _)| !mxx_codes.contains(p)) {
+                return Err(refuse_mxx(format!(
+                    "it has no 'default' key and no value for PDG {pdg}, which pt_min_pdg \
+                     lists; MadGraph raises on that card (banner.py:4749)"
+                )));
+            }
+        }
+
         if entries.len() > PDG_CUT_MAX_ENTRIES {
-            return Err(refuse(format!(
-                "{} PDG codes are listed and MadGraph allows at most {PDG_CUT_MAX_ENTRIES} \
-                 (banner.py:4714)",
-                entries.len()
-            )));
+            return Err(CutError::PdgCutRefused {
+                field: "pt_min_pdg and mxx_only_part_antipart",
+                value: format!("'{pt_text}' and '{mxx_text}'"),
+                reason: format!(
+                    "{} PDG codes are listed and MadGraph allows at most \
+                     {PDG_CUT_MAX_ENTRIES} (banner.py:4714)",
+                    entries.len()
+                ),
+            });
         }
         Ok(Self { entries })
     }
@@ -725,6 +762,7 @@ impl PdgPtMin {
             return Ok(());
         };
         Err(CutError::PdgCutRefused {
+            field: "pt_min_pdg and mxx_only_part_antipart",
             value: format!("{:?}", self.entries),
             reason: format!(
                 "it lists {} codes and the outgoing PDG {} at or below 20 GeV, which \
@@ -745,6 +783,43 @@ impl PdgPtMin {
             .find(|(p, _)| *p == a)
             .map(|(_, pt)| *pt)
     }
+}
+
+/// A `pdg_cut` key as a code: `None` for the two bookkeeping keys
+/// `banner.py:4712` drops, otherwise the code or the reason MadGraph refuses it.
+fn pdg_cut_code(key: &str) -> Result<Option<u32>, String> {
+    if key == "__type__" || key == "default" {
+        return Ok(None);
+    }
+    let pdg: i64 = key
+        .parse()
+        .map_err(|_| format!("'{key}' is not a PDG code"))?;
+    if pdg < 0 {
+        return Err(format!(
+            "PDG {pdg} is negative; MadGraph applies a per-PDG cut to particle and \
+             antiparticle alike and refuses a negative code (banner.py:4717)"
+        ));
+    }
+    if pdg == 0 {
+        return Err("PDG 0 names no particle".to_string());
+    }
+    let pdg = u32::try_from(pdg).map_err(|_| format!("PDG {pdg} is out of range"))?;
+    if PDG_CUT_LIGHT.contains(&pdg) {
+        return Err(format!(
+            "PDG {pdg} is a light quark, b, charged lepton, gluon or photon, whose class \
+             cuts apply instead; banner.py:4722 means to refuse it, and its test never \
+             fires because it compares string keys with integers"
+        ));
+    }
+    Ok(Some(pdg))
+}
+
+/// The spellings `banner.py:1449-1455` reads as a boolean.
+fn is_python_bool(value: &str) -> bool {
+    matches!(
+        value.trim().to_lowercase().as_str(),
+        "0" | ".false." | "f" | "false" | "off" | "1" | ".true." | "t" | "true" | "on"
+    )
 }
 
 /// The `(key, value)` pairs of a dict-valued run-card entry, read as
@@ -864,6 +939,10 @@ fn single_leg_cuts(rc: &RunCard, infos: &[LegInfo], pdg: &PdgPtMin) -> Vec<Singl
     for info in infos {
         if !info.uncut_decay {
             if let Some(pt_min) = pdg.threshold(info.pdg) {
+                // At `pT ≥ 0` the listed leg is left with no single-leg cut at all.
+                if pt_min <= 0.0 {
+                    continue;
+                }
                 single.push(SingleLegCut {
                     idx: info.idx,
                     pt_min,
@@ -1086,6 +1165,12 @@ impl Cuts {
     #[cfg(test)]
     pub(crate) fn has_windows(&self) -> bool {
         !self.windows.is_empty()
+    }
+
+    /// Whether leg `idx` (a position in the leg list [`Cuts::compile`] was given)
+    /// carries a positive transverse-momentum minimum.
+    pub fn has_pt_floor(&self, idx: usize) -> bool {
+        self.single.iter().any(|c| c.idx == idx && c.pt_min > 0.0)
     }
 
     /// A conservative lower bound on ŝ implied by the active cuts, for a
@@ -3947,5 +4032,136 @@ mod tests {
             let rc = lhc(&format!("{allowed} = pt_min_pdg\n"));
             assert!(detect_unimplemented(&rc).is_ok(), "{allowed}");
         }
+    }
+
+    // ── mxx_only_part_antipart ─────────────────────────────────────────────
+
+    fn mxx(text: &str) -> RunCard {
+        lhc(&format!("{text} = mxx_only_part_antipart\n"))
+    }
+
+    /// MadGraph's own default lists no code and leaves every cut as it was.
+    #[test]
+    fn mxx_only_part_antipart_default_lists_no_code() {
+        for text in ["{'default': False}", "{'default': True}", "{default: F}"] {
+            assert_eq!(
+                PdgPtMin::from_card(&mxx(text)).unwrap().entries,
+                vec![],
+                "{text}"
+            );
+        }
+        assert_eq!(
+            Cuts::compile(&mxx("{'default': False}"), &dy_legs()).unwrap(),
+            Cuts::compile(&lhc(""), &dy_legs()).unwrap()
+        );
+    }
+
+    /// A light code would strip that class's cuts from the leg in MadEvent
+    /// (`setcuts.f:318-334`, reached because `banner.py:4722` compares string
+    /// keys with integers); it is refused, as on `pt_min_pdg`, whatever value
+    /// the key carries.
+    #[test]
+    fn mxx_only_part_antipart_refuses_a_light_code() {
+        for text in [
+            "{'default': False, 11: True}",
+            "{'default': False, 22: True}",
+            "{'default': False, 11: False}",
+            "11 : True",
+        ] {
+            let rc = mxx(text);
+            for result in [
+                detect_unimplemented(&rc),
+                Cuts::compile(&rc, &dy_legs()).map(|_| ()),
+            ] {
+                let err = result.expect_err(text);
+                assert!(
+                    matches!(
+                        err,
+                        CutError::PdgCutRefused {
+                            field: "mxx_only_part_antipart",
+                            ..
+                        }
+                    ),
+                    "{text}: {err}"
+                );
+                assert!(err.to_string().contains("mxx_only_part_antipart"), "{err}");
+            }
+        }
+    }
+
+    /// A heavy code joins `pdg_cut` at `pT ≥ 0`: no class cut reaches the leg,
+    /// so the compiled cuts are those of the default card.
+    #[test]
+    fn mxx_only_part_antipart_heavy_code_joins_pdg_cut_and_cuts_nothing() {
+        let rc = mxx("{'default': False, 23: True}");
+        assert_eq!(PdgPtMin::from_card(&rc).unwrap().entries, vec![(23, 0.0)]);
+        assert_eq!(
+            Cuts::compile(&rc, &zj_legs()).unwrap(),
+            Cuts::compile(&lhc(""), &zj_legs()).unwrap()
+        );
+        let both =
+            lhc("{23: 100} = pt_min_pdg\n{'default': False, 23: True} = mxx_only_part_antipart\n");
+        assert_eq!(
+            PdgPtMin::from_card(&both).unwrap().entries,
+            vec![(23, 100.0)]
+        );
+    }
+
+    /// The other refusals `pdg_cut` carries: a negative code, a non-boolean
+    /// value, more than 25 codes across both fields, the `setcuts.f:681`
+    /// overcount counted over both fields, and `banner.py:4749`'s missing
+    /// `default`.
+    #[test]
+    fn mxx_only_part_antipart_shares_pdg_cuts_refusals() {
+        for text in [
+            "{'default': False, -23: True}",
+            "{'default': False, 23: maybe}",
+        ] {
+            assert!(
+                matches!(
+                    detect_unimplemented(&mxx(text)),
+                    Err(CutError::PdgCutRefused { .. })
+                ),
+                "{text}"
+            );
+        }
+        let pt: Vec<String> = (0..13).map(|k| format!("{}: 10", 9000001 + k)).collect();
+        let part: Vec<String> = (13..26).map(|k| format!("{}: True", 9000001 + k)).collect();
+        let over = lhc(&format!(
+            "{{{}}} = pt_min_pdg\n{{'default': False, {}}} = mxx_only_part_antipart\n",
+            pt.join(", "),
+            part.join(", ")
+        ));
+        assert!(matches!(
+            detect_unimplemented(&over),
+            Err(CutError::PdgCutRefused { .. })
+        ));
+
+        let light = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(1023, 1.0),
+            ExternalLeg::outgoing(21, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+        ];
+        let three = lhc(
+            "{1023: 100} = pt_min_pdg\n{'default': False, 23: True, 24: True} = mxx_only_part_antipart\n",
+        );
+        assert!(matches!(
+            Cuts::compile(&three, &light),
+            Err(CutError::PdgCutRefused { .. })
+        ));
+
+        let no_default = lhc("{23: 100} = pt_min_pdg\n{24: True} = mxx_only_part_antipart\n");
+        assert!(matches!(
+            detect_unimplemented(&no_default),
+            Err(CutError::PdgCutRefused {
+                field: "mxx_only_part_antipart",
+                ..
+            })
+        ));
+        let covered = lhc("{23: 100} = pt_min_pdg\n{23: True} = mxx_only_part_antipart\n");
+        assert!(detect_unimplemented(&covered).is_ok());
+        assert!(detect_unimplemented(&mxx("{24: True}")).is_ok());
     }
 }

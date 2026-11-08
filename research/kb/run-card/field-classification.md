@@ -159,7 +159,8 @@ writer never emits both[^n29-c29].
 **Opaque defaults.** Every opaque field stores the default `banner.py`
 writes, so a card spelling out MadGraph's own default for a list or dict field
 reads as no override. The 35 banked cards that write `mxx_only_part_antipart`'s
-`{'default': False}` are the case that matters.
+`{'default': False}` are the case that matters: that field is consumed (its
+keys join the per-PDG cut list), and its default lists no code.
 `opaque_defaults_match_banner_py` holds the mismatch set empty, and
 `defaults_match_banner_py_dump` compares the opaque payloads per
 parameter[^n29-c25].
