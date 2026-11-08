@@ -10,3 +10,7 @@
 * [I-R2: refuse a zero τ floor, honour mxx_only_part_antipart, end the run on a worker panic](I-R2.md) - Three small refusal and robustness fixes: a card with no ŝ floor is refused before any point, mxx_only_part_antipart's keys enter the per-PDG cuts as in MadGraph (or it is refused off default), and a rayon worker panic ends the CLI promptly with its message.
 * [I-S1: bound each peripheral rung by the thresholds of the legs it can reach](I-S1.md) - Cuts::spacelike_floor caps every peripheral rung at the largest single-leg pT_min²; derive a provable bound per rung from its adjacent legs (or fall back to the smallest threshold), and gate p p > a j j at pta 40, ptj 0.1, draj 0.4 against the CERN host's MadGraph.
 * [I-Z1: release tooling for v0.2.0: version tags only, rc tags as prereleases, committed release notes, the version bump](I-Z1.md) - build.rs describes only v* tags; release.yml publishes hyphenated tags as prereleases and reads the notes from a committed file, failing without it; the workspace moves to 0.2.0; all proven by a manual release.yml run with no tag pushed.
+
+## Session Report
+
+* [I-Z1 report: release tooling for v0.2.0](I-Z1-report.md) - build.rs describes v* tags only; hyphenated tags publish as prereleases; notes come from docs/release-notes/<tag without suffix>.md and a missing, empty or TODO file fails; workspace 0.2.0; a release.yml dispatch ran green with publish skipped.
