@@ -23,8 +23,10 @@ done when:
 - every banked σ line is unchanged (bit for bit where the change cannot reach
   it, within error where it can);
 - on the release-candidate head, `validate-deep` has run and its rows are
-  recorded, and the CERN host's CMS campaign reads at least 66 ok and no panics
-  against `main-202a540-200-pc`.
+  recorded (`ladder-2to6` skipped, by the user's decision), and the CERN host's
+  refusal-only census on #113 shows no false refusal. The full CMS campaign
+  moves to after the v0.2.0 cut, at that revision, alongside the performance
+  benchmarking (the user, 2026-11-08).
 
 The user asked for as few PRs as possible: three.
 
