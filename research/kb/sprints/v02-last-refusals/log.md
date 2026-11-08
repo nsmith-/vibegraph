@@ -29,3 +29,8 @@
 * The container restarted. I-C2 had finished: the guards are on 83ec27d6 and 71b5302e, its report was recovered from its transcript, and its gates were green under option (b). Its pole probe shows `pp_to_epemjj_qcd0` diverges at tree level (|M|²·|t| constant over 8 decades of t); the ladder's plateau is the samplers' pole floor.
 * **Decision D1** (the user, 2026-11-08): option (a), so the guard refuses the equivalent-photon limit and the row is retired in PR 2 ([D1](decisions/D1-ewk-lljj-refused.md)). I-C2 resumed to flip the guard, retire the row and re-gate.
 * Disk: 8.5 GB free after the restart. The `sprinti-r1` target was removed, and the `sprinti-r2` worktree too (merged in #111).
+* I-C1 stopped before writing code: the window rule is IR-divergent through an exempt identical quark's beam-collinear limit in the other pairings (report recorded; the manager checked the probe log). **Decision D2** (the user, 2026-11-08): keep today's stricter, IR-safe rule for v0.2 ([D2](decisions/D2-cut-decays-keep-the-stricter-cut.md)).
+  - `cut-decays-identical-quarks-cut-a-stricter-observable` is rewritten toward the per-pairing route and released from the sprint.
+  - The "kinematic IR-safe fix" claim is corrected in `identical-particles-across-decays.md`, `madgraph-defects.md` and `madgraph-compat-sites-unconditional`.
+  - `release-scope.md` now lists the `cut_decays` deviation.
+* I-C2's re-sweep under D1: 61 accepted, `pp_to_epemjj_qcd0` refused with `UncutInitialCollinear` (subprocess `u u > e+ e- u u`).

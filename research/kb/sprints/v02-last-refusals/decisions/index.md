@@ -5,3 +5,4 @@
 ## Design Decision
 
 * [Sprint I: refuse the equivalent-photon limit, retiring pp_to_epemjj_qcd0](D1-ewk-lljj-refused.md) - D1: the initial-collinear guard covers emission through a massless vector exchange too, so the banked EWK e+ e- j j row at ptj = 0, divergent at tree level, is refused and retired.
+* [Sprint I: keep the stricter cut_decays rule for v0.2; the window rule is IR-divergent](D2-cut-decays-keep-the-stricter-cut.md) - D2: the kinematic window rule diverges on the every-pairing |M|² through an exempt quark's beam-collinear limit, so v0.2 keeps cutting every leg that is not a decay product in every pairing, the registered −26%/−6.8% deviation.

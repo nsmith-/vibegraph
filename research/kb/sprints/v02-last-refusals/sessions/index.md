@@ -13,6 +13,7 @@
 
 ## Session Report
 
+* [I-C1 report: the cut_decays window rule is not IR-safe on the every-pairing |M|²](I-C1-report.md) - Stopped before code: an exempt identical quark can go collinear with a beam while its pair stays on the pole, and the other pairings give |M|² ∝ 1/pT² (probe: |M|²·pT² constant to 1e-4; no pole for z > d d~). Led to D2.
 * [I-C2 report: refuse every uncut massless soft or collinear limit](I-C2-report.md) - Final-collinear, initial-collinear and soft limits that no compiled cut regulates are refused; all 62 seeded rows accepted under the equivalent-photon exemption; a pole probe shows pp_to_epemjj_qcd0 diverges at tree level (D1: refuse it).
 * [I-R2 report: zero τ floor refusal, mxx_only_part_antipart, worker-panic exit](I-R2-report.md) - ZeroTauFloor refuses a card with no ŝ floor before any point (MadGraph integrates it behind an implicit √ŝ ≥ 2 GeV); mxx_only_part_antipart's keys join pdg_cut with light codes refused; a worker panic exits 101 at once.
 * [I-Z1 report: release tooling for v0.2.0](I-Z1-report.md) - build.rs describes v* tags only; hyphenated tags publish as prereleases; notes come from docs/release-notes/<tag without suffix>.md and a missing, empty or TODO file fails; workspace 0.2.0; a release.yml dispatch ran green with publish skipped.

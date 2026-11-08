@@ -70,7 +70,7 @@ recorded; the CERN host's CMS campaign rerun (bar: ≥ 66 ok, no panics, against
 | [I-R2](sessions/I-R2.md) | feature-dev | 1 | – | The zero τ floor refusal, `mxx_only_part_antipart`, the worker-panic exit. |
 | [I-C2](sessions/I-C2.md) | validation-dev | 2 | – | The uncut-collinear guards. |
 | [I-S1](sessions/I-S1.md) | – | – | withdrawn | The spacelike floor left the sprint: the host's reference shows no σ bias at convergence, only seed spread (log, 2026-11-08). |
-| [I-C1](sessions/I-C1.md) | validation-dev | 2 | I-C2 | The `cut_decays` window rule and the restated exemption guard. |
+| [I-C1](sessions/I-C1.md) | validation-dev | 2 | I-C2 | Stopped: the window rule is IR-divergent; v0.2 keeps the stricter rule (D2). |
 | [I-Z1](sessions/I-Z1.md) | feature-dev (Sonnet) | 3 | – | Release tooling: `v*` tags, prereleases, committed notes, the version bump. |
 | I-Z | manager | 3 | PRs 1–2 merged | Release notes content, `validate-deep`, the CMS rerun request, the record. |
 

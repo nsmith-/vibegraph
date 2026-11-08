@@ -55,9 +55,10 @@ fix.
   −0.2 % for the pairing; −26 % / −6.8 % on this side's stricter cut on `g g > z u u~, z > u u~` /
   `g g > z j j, z > j j` at `cut_decays = F` (H-K1). Registered deviations
   (user, 2026-09-26 and 2026-11-06); their σ rows are informational, so no
-  gate moves. The default-path fix for the exemption, a kinematic window rule
-  (exempt the pairing whose pair mass is inside the forced window), is
-  tracked separately; this site is the exact single-pairing reproduction.
+  gate moves. A kinematic window rule (exempt the pairing whose pair mass is
+  inside the forced window) is IR-divergent on the every-pairing |M|² (sprint
+  I, I-C1), so this site's single-pairing |M|² is the only route to MadGraph's
+  number.
 
 - (e) the restriction's zero-coupling rule (`ufo/mod.rs` `is_zero_coupling`):
   on, MadGraph's `detect_identical_couplings` rule, |g| < 1e-13 is zero with a
