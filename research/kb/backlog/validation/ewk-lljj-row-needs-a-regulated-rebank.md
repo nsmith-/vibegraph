@@ -10,14 +10,12 @@ blocked_by: []
 opened: 2026-11-08
 tags: [validation, banked-rows, ewk, long-tier, ir-safety]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-08}
-sources:
-  - {id: d1, resource: "../../sprints/v02-last-refusals/decisions/D1-ewk-lljj-refused.md", title: "Sprint I D1"}
 ---
 Sprint I's initial-collinear guard refuses `pp_to_epemjj_qcd0`: with
 `ptj = 0` and `etaj = -1`, a quark leaving its beam through a t-channel photon
 has an uncut equivalent-photon pole (|M|²·|t| constant over 8 decades of t), so
 σ diverges logarithmically. The banked 0.36% agreement with MadGraph was two
-samplers' pole floors agreeing ([D1](../../sprints/v02-last-refusals/decisions/D1-ewk-lljj-refused.md)).
+samplers' pole floors agreeing (sprint I, decision D1, recorded with the sprint in `sprints/v02-last-refusals/`).
 The row, its long-tier gate (`validate_ewk_lljj_sigma`), its pixi task and its
 bank-script group were removed. Its seed record stays in refdata-13, unused.
 
