@@ -8,8 +8,14 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: per-channel, resource: "per-channel-vegas-grids.md", title: "One VEGAS grid per multichannel term"}
   - {id: seam, resource: "importance-sampler-seam.md", title: "A pluggable importance sampler (proposed)"}
-  - {id: coords-item, resource: "../backlog/performance/vegas-grid-coords-not-absolute.md", title: "VEGAS grid coordinates are relative to each point's window"}
+  - {id: design, resource: "sampler-and-map-seams.md", title: "The importance sampler and the phase-space map, designed together"}
 ---
+
+> **Settled by [the joint seam design](sampler-and-map-seams.md) (2026-10-22).**
+> Its decisions answer §6: the map owns windows (D in the map, relative
+> coordinates), B is refused, A1 is not built (variance replay), K is per
+> coordinate role. This draft stays as the derivation and option survey; where
+> they differ, the design holds.
 
 Draft for a design session. Code is cited at `origin/main` = `2ad97207` unless a
 line says otherwise. The paused absolute-coordinate work is cited at
