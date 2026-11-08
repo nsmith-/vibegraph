@@ -693,6 +693,20 @@ pub enum ProtonError {
          the luminosity of one group would weight another's matrix element"
     )]
     AmplitudeMismatch { index: usize },
+    /// No cut bounds `ŝ` from below: every outgoing leg is massless and no cut
+    /// keeps the partonic energy away from zero, so `τ_min = 0`. The `τ` map
+    /// divides by `ln(1/τ_min)` and the cross section is collinear-divergent
+    /// there; the card is refused before any point is drawn.
+    #[error(
+        "subprocess {process} has no lower bound on ŝ: the outgoing {legs} massless and \
+         uncut (no pT minimum, and no ŝ, invariant-mass or HT cut bounds the final state), so \
+         τ reaches 0 and the cross section diverges; give {them} a pT cut"
+    )]
+    ZeroTauFloor {
+        process: String,
+        legs: String,
+        them: &'static str,
+    },
 }
 
 /// Partonic energies the grouping probe measures at, spread over two decades so
@@ -808,6 +822,39 @@ fn worst_rel(a: &[f64], b: &[f64]) -> f64 {
 }
 
 /// `u u~ > e+ e- g`-style label for an enumerated subprocess.
+/// The refusal for a decomposition whose `τ` floor is zero, naming a group cut
+/// by a filter with no `ŝ` floor and that group's outgoing legs with no `pT`
+/// minimum.
+fn zero_tau_floor(groups: &FlavorGroups, filters: &[&Cuts], group_filter: &[usize]) -> ProtonError {
+    let all = groups.groups();
+    let g = all
+        .iter()
+        .zip(group_filter)
+        .position(|(_, &k)| !(filters[k].shat_min() > 0.0))
+        .unwrap_or(0);
+    let group = &all[g];
+    let cuts = filters[group_filter[g]];
+    let n_in = group.n_in();
+    let outgoing = &group.members()[0].outgoing;
+    let name = |k: usize| format!("leg {} (PDG {})", n_in + k + 1, outgoing[k]);
+    let mut uncut: Vec<String> = (0..outgoing.len())
+        .filter(|&k| !cuts.has_pt_floor(n_in + k))
+        .map(name)
+        .collect();
+    if uncut.is_empty() {
+        uncut = (0..outgoing.len()).map(name).collect();
+    }
+    let (legs, them) = match uncut.len() {
+        1 => (format!("{} is", uncut[0]), "it"),
+        _ => (format!("{} are", uncut.join(", ")), "them"),
+    };
+    ProtonError::ZeroTauFloor {
+        process: label(group.diagram_set()),
+        legs,
+        them,
+    }
+}
+
 fn label(set: &DiagramSet) -> String {
     set.label()
 }
@@ -2187,6 +2234,9 @@ impl<'a> ProtonIntegrand<'a> {
         let threshold = initial_masses[0] + initial_masses[1];
         let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
         let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+        if !(tau_min > 0.0) {
+            return Err(zero_tau_floor(groups, &filters, &group_filter));
+        }
         let tau_max = cut_tau_max.max(tau_min);
         let tau_mixture = match maps.tau {
             TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
@@ -5581,6 +5631,37 @@ mod tests {
                     .any(|s| s.incoming == incoming && s.outgoing == outgoing)
             })
             .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
+    }
+
+    /// `p p > b b~` at `maxjetflavor = 4` with the b class uncut (`ptb = 0`,
+    /// `etab = -1`): nothing bounds `ŝ` from below, so `τ_min = 0`. The
+    /// integrand refuses it, naming both outgoing legs, rather than drawing a
+    /// point at `x = NaN`; a `ptb` cut gives the same card a floor.
+    #[test]
+    fn a_card_with_no_shat_floor_is_refused_naming_its_uncut_legs() {
+        let pdf = probe_pdf();
+        let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  -1.0 = etab\n");
+        let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let err = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F)
+            .err()
+            .expect("a zero tau floor is refused");
+        assert!(
+            matches!(err, ProtonError::ZeroTauFloor { .. }),
+            "refused for the wrong reason: {err}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains("leg 3 (PDG 5)") && text.contains("leg 4 (PDG -5)"),
+            "{text}"
+        );
+
+        let (m, evaluated, card) = five_flavour_dijet("  20.0 = ptb\n  -1.0 = etab\n");
+        let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        assert!(ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).is_ok());
     }
 
     /// Two subprocesses that share a matrix element but not a cut filter are two
