@@ -216,7 +216,7 @@ Filed in four batches. All are on `sprinth-kb` (#102).
   - `madgraph-defects-rows-missing-from-sprint-h`
 - **The diagnosis round (15):**
   - high:
-    - `spacelike-floor-cuts-phase-space-below-the-largest-pt-threshold`, a silent bias of about 6% at `ptj 0.1`;
+    - `spacelike-floor-cuts-phase-space-below-the-largest-pt-threshold`, a silent bias of about 6% at `ptj 0.1` (a MadGraph reference later showed σ correct at convergence; it is now `spacelike-floor-largest-threshold-inflates-seed-spread`);
     - `one-body-final-state-phase-space-missing`, high by the user's decision;
     - `uncut-collinear-limits-beyond-photon-quark-unrefused`;
   - medium:
