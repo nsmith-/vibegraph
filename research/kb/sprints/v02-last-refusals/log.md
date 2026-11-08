@@ -34,3 +34,8 @@
   - The "kinematic IR-safe fix" claim is corrected in `identical-particles-across-decays.md`, `madgraph-defects.md` and `madgraph-compat-sites-unconditional`.
   - `release-scope.md` now lists the `cut_decays` deviation.
 * I-C2's re-sweep under D1: 61 accepted, `pp_to_epemjj_qcd0` refused with `UncutInitialCollinear` (subprocess `u u > e+ e- u u`).
+* The vibegraph manager reviewed #111 (head ac241ef7) with no blocking findings, and will merge on green CI. Its update-branch brought in main (#112). Points for the close-out:
+  - `lhaid 247000` and `nn23lo1` are the same set (NNPDF23_lo_as_0130_qed), so I-R1's σ comparison is like for like.
+  - `exit(101)` skips destructors, so a buffered writer is not flushed on a panic; say so in the hook's doc.
+  - The hook could emit ldjson's final error object.
+* I-R1 report recorded.
