@@ -1,7 +1,7 @@
 ---
 type: Sprint
 title: "Sprint I: v0.2 last refusals and fixes"
-description: "Close every remaining card surface that panics or answers silently wrong before v0.2.0: run-card defaults and refusals, the cut_decays window rule, uncut collinear limits, the spacelike floor; then the release preparation."
+description: "Close every remaining card surface that panics or answers silently wrong before v0.2.0: run-card defaults and refusals, the cut_decays window rule, uncut collinear limits; then the release preparation."
 status: draft
 active: true
 tags: [release, v0.2, run-card, defaults, cuts, ir-safety, decay-chains, phase-space, sprint-i]
@@ -51,7 +51,6 @@ seagull, `import model` options, coupling-order inference, the sampler seams
 | `uncut-collinear-limits-beyond-photon-quark-unrefused` | high | One refusal test per class (`q → q g`/`g → g g` at `ptj = 0`, `drjj = 0`, no `xqcut`; `ℓ → ℓ γ` at `dral = 0`; a parton above `maxjetflavor`), each failing before the change; every banked card still accepted and every banked σ line unchanged. |
 | `cut-decays-identical-quarks-cut-a-stricter-observable` | high | User decision: bring the window rule into v0.2. σ on `g g > z u u~, z > u u~` (MadGraph 7.211 ± 0.028 pb, one seed) and `g g > z j j, z > j j` (MadGraph 150.61, 5 seeds; vibegraph −6.8%) against local MadGraph at ≥ 5 seeds a side; bit for bit on cards with no identical particles across decays; a test that a soft quark is never exempted. |
 | `ir-unsafe-exemption-guard-sees-coloured-legs-only` | medium | Restated over the exempting pairing (H-C3 Found 1 and 2), with a test that exempts a massless colourless core leg and is refused. |
-| `spacelike-floor-cuts-phase-space-below-the-largest-pt-threshold` | high | User decision: the CERN host's MadGraph 3.7.1 σ on `p p > a j j` at `pta 40`, `ptj 0.1`, `draj 0.4` (and `ptj 1` as a control), with ≥ 5-seed vibegraph σ for stock and for the smallest-threshold build; a test that fails on the largest-threshold rule; banked lines bit for bit or within error. |
 
 ### PR 3: close-out and release preparation (`sprinti-plan`, this PR)
 
@@ -70,7 +69,7 @@ recorded; the CERN host's CMS campaign rerun (bar: ≥ 66 ok, no panics, against
 | [I-R1](sessions/I-R1.md) | feature-dev | 1 | – | The absent-card defaults (both `create_default_for_process` items) and the untabulated-parton refusal. |
 | [I-R2](sessions/I-R2.md) | feature-dev | 1 | – | The zero τ floor refusal, `mxx_only_part_antipart`, the worker-panic exit. |
 | [I-C2](sessions/I-C2.md) | validation-dev | 2 | – | The uncut-collinear guards. |
-| [I-S1](sessions/I-S1.md) | validation-dev | 2 | on hold: the user's decision | The per-rung spacelike bound. The host's reference shows no σ bias at convergence (log, 2026-11-08). |
+| [I-S1](sessions/I-S1.md) | – | – | withdrawn | The spacelike floor left the sprint: the host's reference shows no σ bias at convergence, only seed spread (log, 2026-11-08). |
 | [I-C1](sessions/I-C1.md) | validation-dev | 2 | I-C2 | The `cut_decays` window rule and the restated exemption guard. |
 | [I-Z1](sessions/I-Z1.md) | feature-dev (Sonnet) | 3 | – | Release tooling: `v*` tags, prereleases, committed notes, the version bump. |
 | I-Z | manager | 3 | PRs 1–2 merged | Release notes content, `validate-deep`, the CMS rerun request, the record. |
@@ -100,7 +99,7 @@ runs (seed sweeps, `validate.sh`, local MadGraph) go one at a time on this
 - **References.** Local MadGraph runs here (the pinned submodule's
   `bin/mg5_aMC`; gfortran installed; no LHAPDF, so `nn23lo1`, a +0.32% offset
   against LHAPDF 247000 on Drell-Yan, sprint H's H-D2). Only references for the
-  spacelike floor and the CMS campaign come from the CERN host.
+  spacelike floor (since withdrawn) and the CMS campaign come from the CERN host.
 - **`long-tier-gates-never-run-in-ci` is not claimed.** Its `closes_when` asks
   for a CI workflow; this sprint runs `validate-deep` by hand on the
   release-candidate head and records it.

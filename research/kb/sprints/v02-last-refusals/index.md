@@ -4,7 +4,7 @@
 
 ## Sprint
 
-* [Sprint I: v0.2 last refusals and fixes](sprint.md) - Close every remaining card surface that panics or answers silently wrong before v0.2.0: run-card defaults and refusals, the cut_decays window rule, uncut collinear limits, the spacelike floor; then the release preparation.
+* [Sprint I: v0.2 last refusals and fixes](sprint.md) - Close every remaining card surface that panics or answers silently wrong before v0.2.0: run-card defaults and refusals, the cut_decays window rule, uncut collinear limits; then the release preparation.
 
 ## Directories
 

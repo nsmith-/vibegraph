@@ -22,3 +22,4 @@
   | stock, neval 2e4 | 0.995 ± 0.024 (χ²/dof 3.9) | 0.973 ± 0.007 (χ²/dof 0.45) |
 
   The largest-threshold floor removes no visible σ at convergence. It costs variance: stock's per-seed errors are 2–3× larger and heavy-tailed. Sprint H's +6% was a low-budget sampling deficit. The manager recommends dropping the item from sprint I and asked to pause it until the user decides. I-S1 had not been dispatched; it is on hold.
+* The user agreed, relayed by the vibegraph manager: the spacelike floor is out of sprint I and v0.2. The item becomes `performance/spacelike-floor-largest-threshold-inflates-seed-spread` (medium), gated on seed spread at fixed neval, and moves on the vibegraph manager's kb branch. Its `Backlog:` line is dropped from #110, and I-S1 is withdrawn. PR 2 is the `cut_decays` window rule plus the collinear guards.
