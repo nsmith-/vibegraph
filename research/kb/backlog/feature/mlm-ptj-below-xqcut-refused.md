@@ -4,7 +4,7 @@ title: MLM cards with a resolved ptj below xqcut are refused
 description: With auto_ptj_mjj = F or ptj < 0, MadEvent's xqcut tau floor becomes a channel-dependent cut, and vibegraph refuses the card instead.
 area: feature
 state: open
-priority: low
+priority: medium
 closes_when: "A matched card with a resolved ptj < xqcut integrates with MadEvent's per-channel tau floor and matches MadEvent's sigma on a banked row."
 blocked_by: []
 opened: 2026-09-28

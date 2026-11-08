@@ -6,6 +6,10 @@
 
 * [Sprint H: CMS gridpack coverage](sprint.md) - Lift the cheapest refusals of the 200-gridpack CMS survey (#71, campaign main-23d3a76-200-pc): colour-basis splits, near-degenerate groups, xpt* ≤ 0, pt_min_pdg, decay-chain duplicate subprocesses and massive incoming partons, each validated against MadGraph.
 
+## Sprint Record
+
+* [Sprint H: CMS gridpack coverage](closeout.md) - CMS survey ok 34→66 of 199 (refused 139→93), then a diagnosis round: two silent wrong-σ bugs fixed (contact-vertex sign, mirror sampling), four guards, IR-divergent photon cards refused.
+
 ## Directories
 
 * [decisions](decisions/index.md)

@@ -156,9 +156,15 @@ orders. [^mg-orders]
 - **Duplicates.** MadGraph raises `Duplicate process … found` (L3378) only for identical
   amplitudes, process number included: `generate p p > e+ e-` plus
   `add process u u~ > e+ e-` generates `u u~ > e+ e-` twice (also under one `@1`), and
-  `--no_warning=duplicate` drops the second copy. Here any concrete subprocess reached from
-  two lines is refused (`DiagramError::DuplicateSubprocess`), flag or not, because both
-  would be added to σ. Lines that split a process by disjoint polarizations are accepted.
+  `--no_warning=duplicate` drops the second copy. Here a concrete subprocess that two lines
+  would count with the same diagrams is refused (`DiagramError::DuplicateSubprocess`), flag
+  or not, because both would be added to σ. Three cases are kept, as MadGraph keeps them:
+  lines that split a process by disjoint polarizations; the two beam orderings of one
+  initial state on two lines (`u u~ > e+ e-` and `u~ u > e+ e-`), each line's subprocess in
+  its own ordering; and decay-chain lines that reach one subprocess through different decay
+  assignments (`p p > w+ j j, w+ > j j` and `p p > w- j j, w- > j j` both reach
+  `g g > u d~ d u~`), which are separate subprocesses summed incoherently, as one line's
+  two assignments are ([decay chains](decay-chains.md)).
   `p p > w+ j` plus `add process p p > j w-` is not a duplicate: final states are grouped
   by content.
 - **Mixed multiplicities.** Lines with different final-state multiplicities are accepted
