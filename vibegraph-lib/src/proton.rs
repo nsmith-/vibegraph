@@ -5633,14 +5633,31 @@ mod tests {
             .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
     }
 
-    /// `p p > b b~` at `maxjetflavor = 4` with the b class uncut (`ptb = 0`,
-    /// `etab = -1`): nothing bounds `ŝ` from below, so `τ_min = 0`. The
-    /// integrand refuses it, naming both outgoing legs, rather than drawing a
-    /// point at `x = NaN`; a `ptb` cut gives the same card a floor.
+    /// `p p > b b~` at `maxjetflavor = 4` with no b transverse-momentum cut
+    /// (`ptb = 0`, `etab = 2.5`): nothing bounds `ŝ` from below, so
+    /// `τ_min = 0`. The integrand refuses it, naming both outgoing legs, rather
+    /// than drawing a point at `x = NaN`; a `ptb` cut gives the same card a
+    /// floor. The rapidity maximum is what lets the card reach this check: its
+    /// b quarks leave a gluon or b beam through a massless spacelike line, and
+    /// without `etab` (`-1`) the cut compilation refuses that beam-collinear
+    /// limit first. Two outgoing legs have no final-state splitting, and a
+    /// quark has no soft limit.
     #[test]
     fn a_card_with_no_shat_floor_is_refused_naming_its_uncut_legs() {
         let pdf = probe_pdf();
         let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  -1.0 = etab\n");
+        let err = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .err()
+            .expect("the uncut beam-collinear limit is refused");
+        assert!(
+            matches!(
+                err,
+                ProtonError::Cut(CutError::UncutInitialCollinear { pdg: 5 | -5, .. })
+            ),
+            "refused for the wrong reason: {err}"
+        );
+
+        let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  2.5 = etab\n");
         let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
