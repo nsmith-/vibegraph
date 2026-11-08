@@ -184,3 +184,18 @@
 * **H-G2 done** (3cb1ff64 fixes, 611b2389 a probe debug log, merges, 4ebe375c report; on main with #107 and #108). The manager checked the 11 commits (author, single trailer) and re-ran 4 of the new tests, which pass. G1: `ProtonError::OneBodyFinalState`; a one-body part the cuts zero is left out with a warning. G2: the `draw_invariant` clamp (it overshoots at both ends); degenerate points zeroed and counted; `ClusterFailure::NonFiniteMeasure`. G3: the probe cycles through channels and refuses only on ≥ 16/64 below-floor points; xqcut vetoes count for nothing (a refusal MadGraph lacks, kept so the cause is real). G4: `CutError::UncutPhotonSplitting`. Diagnosis cards now: TCP/VBF_HH ok, GJ/VBFtoG refused, DarkPhoton ×2 ok, idm ok, QCD-4Jets ok (local σ on lhaid 247000, so outcomes, not gates). Reported gates: 1986 passed; validate.sh exit 0, 2440 passed; bit-for-bit on 3 cards; 203 banked σ lines identical. Opened as #109. Found: no one-body phase space; a likely `unreachable!` on fixed-beam MLM with xqcut; other uncut collinear limits; idm 2→4 +1.0% (2.4σ, pre-existing); QCD-4Jets 2.19e8 against 1.643e8 (one seed, different PDF); the InertDoublet aS block. Process note: H-G2 used `pkill -f` once; nothing else was running.
 * The user approved #109; it merges on green CI.
 * #109 merged (11ecef79) on green CI at 4ebe375c (test; banked 20:59–22:19 UTC; all-pass), with no review threads. All three post-campaign fixes are on main: #107 082298c1, #108 5513bbfc, #109 11ecef79. The CERN host was asked for the closing rerun of the 11 diagnosis cards on 11ecef79 (5 seeds each, the gridpacks' PDFs, through gpdb), with QCD-4Jets (H-G2: +33% on one seed with another PDF) and idm under extra scrutiny.
+
+## 2026-11-08
+* **Closing rerun of the 11 diagnosis cards** (CERN host; main 11ecef79, gpdb campaigns main-11ecef7-diag-s1..s5, the campaign settings, each gridpack's own PDF, 5 seeds; σ/MG as unweighted mean (sd, sem, χ²/dof)):
+  - TCP_m50 0.993 (0.015, 0.007, 0.53); TCP_m55 1.022 (0.039, 0.018, 2.17);
+  - VBF_HH 1.116 (0.158, 0.071, 1.11; seed 5 alone 1.38, the mass split thinning the budget at 1e4);
+  - QCD-4Jets 0.977 (0.020, 0.009, 0.44; the +33% does not reproduce at the card's own PDF);
+  - DarkPhoton MZd-40 0.985 and MZd-86 0.971, with the param card's `chi` lines removed by hand (through gpdb the card is refused, and the fallback that drops the param card gives meaningless σ);
+  - idm 0.962 ± 0.019 on seed 1, over gpdb's 600 s timeout (seeds 2–5 pending);
+  - GJ/VBFtoG ×4 refused as `UncutPhotonSplitting`.
+* origin/main (#107–#109) merged into `sprinth-kb` (c8218760).
+* Close-out:
+  - the second Found triage filed 13 new items and extended `flavour-group-splits-not-recorded` (agent drafts; the manager checked the format and spot-checked the high item);
+  - `ckm-flavour-groups-near-degenerate-refused` narrowed to the unattributed 3.88e-8;
+  - a `madgraph-defects.md` row for MadEvent's σ on an uncut collinear pole;
+  - the sprint record written (closeout.md); the sprint marked inactive.

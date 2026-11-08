@@ -1,17 +1,17 @@
 ---
 type: Backlog Item
-title: "A run does not record which near-degenerate flavour groups it kept apart"
-description: "Since #103 a pair separating above GROUP_REL_TOL starts its own group with nothing in the log or ldjson naming the pair or its separation, so the CERN host could not report the CKM splits."
+title: "A run does not record its flavour groups: their members, their parts, or the splits that made them"
+description: "The ldjson names no group's subprocesses or part, its channel-key group index does not line up with result.multiplicities, and a near-degenerate split (#103) leaves no record of the pair."
 area: feature
 state: open
 priority: low
-closes_when: "A run records, for each flavour-group split decided by |M|² separation, the two subprocesses and their best-probe separation (in the log, and in the ldjson result or a debug object), with a test on a card that splits."
+closes_when: "The ldjson result carries one object per flavour group (its index as the channel keys use it, its part and multiplicity line, and its member subprocesses), and for each split decided by |M|² separation the two subprocesses and their best-probe separation (also in the log), with a test on a card that splits by mass and by separation."
 blocked_by: []
 opened: 2026-11-07
-tags: [flavour-groups, logging, ldjson, ckm, cms]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-11-07}
+tags: [flavour-groups, logging, ldjson, ckm, cms, diagnosis]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-08}
 sources:
-  - {id: log, resource: "../../sprints/cms-gridpack-coverage/log.md", title: "Sprint H log: #103 and the closing campaign"}
+  - {id: log, resource: "../../sprints/cms-gridpack-coverage/log.md", title: "Sprint H log: #103, the closing campaign, and VBF_HH's unnamed groups (2026-11-07)"}
   - {id: hn1, resource: "../../sprints/cms-gridpack-coverage/sessions/H-N1-report.md", title: "H-N1 Found 5: the CERN host should record each split"}
 ---
 H-N1 asked the closing campaign to record, for the survey's CKM cards, the pair
@@ -24,3 +24,12 @@ Recording it would have served
 [ckm-flavour-groups-near-degenerate-refused](../validation/ckm-flavour-groups-near-degenerate-refused.md)
 directly, and is the first thing to read on any CKM card whose σ disagrees with
 MadGraph after a split.
+
+The VBF_HH diagnosis hit the wider gap (2026-11-07 log). Per-channel spikes in
+groups 20, 11, 22 and 6 could not be named from campaign output. The ldjson
+channel key's `group` does not line up with `result.multiplicities`, and no
+map from group to subprocesses or part is written. That key counts a
+multiplicity's groups across its mass parts (`ChannelKey::MultiplicityChannel`,
+`artifact.rs`). The mismatch is the CERN host's reading. Naming the groups took
+a scratch instrumented build. One per-group record serves both needs: the
+split pair is an attribute of the groups it produced.
