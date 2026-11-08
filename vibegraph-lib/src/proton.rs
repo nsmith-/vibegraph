@@ -638,6 +638,17 @@ pub enum ProtonError {
     NoSubprocess,
     #[error("subprocess {process} has {n_in} incoming legs; a beam decomposition needs 2")]
     NotTwoIncoming { process: String, n_in: usize },
+    /// A subprocess whose incoming parton has no parton density: a hadron beam
+    /// carries quarks, gluons and the photon only.
+    #[error(
+        "subprocess {process} has the incoming particle {particle} (PDG {pdg}) on a proton beam, \
+         which carries no density for it; a lepton or other fixed-energy beam is lpp = 0"
+    )]
+    UntabulatedParton {
+        process: String,
+        particle: String,
+        pdg: i32,
+    },
     /// A `2 → 1` subprocess. Its phase space is the one-body `δ(ŝ − M²)`, which
     /// fixes `τ = M²/s` and leaves only the rapidity to integrate; no phase-space
     /// map here integrates it.
@@ -863,6 +874,28 @@ fn distinct_filters(groups: &FlavorGroups) -> (Vec<&Cuts>, Vec<usize>) {
     (filters, group_filter)
 }
 
+/// Refuse a subprocess with an incoming particle no parton density describes,
+/// before anything is compiled.
+fn refuse_untabulated_partons(sets: &[DiagramSet], model: &UFOModel) -> Result<(), ProtonError> {
+    for set in sets {
+        for name in &set.particles_in {
+            let id = model
+                .particle_id(name)
+                .expect("an enumerated leg is a model particle");
+            let pdg = model.particle(id).pdg_code;
+            let slot = i32::try_from(pdg).ok().and_then(flavor_slot);
+            if slot.is_none() {
+                return Err(ProtonError::UntabulatedParton {
+                    process: label(set),
+                    particle: name.clone(),
+                    pdg: i32::try_from(pdg).unwrap_or(i32::MAX),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Partition a hadronic enumeration into flavour groups.
 ///
 /// `sets` are the `DiagramSet`s of one proc card (empty ones ignored), `card` the
@@ -881,6 +914,7 @@ pub fn derive_flavor_groups(
     if sets.is_empty() {
         return Err(ProtonError::NoSubprocess);
     }
+    refuse_untabulated_partons(&sets, model)?;
 
     let sets = content_ordered(sets, model, evaluated, card)?;
     let labels: Vec<String> = sets.iter().map(label).collect();
@@ -1070,9 +1104,7 @@ pub fn derive_flavor_groups(
             .map(|m| {
                 let [a, b] = m.incoming;
                 let slot = |pdg: i32| {
-                    flavor_slot(pdg).unwrap_or_else(|| {
-                        panic!("initial-state parton {pdg} is not a tabulated parton density")
-                    })
+                    flavor_slot(pdg).expect("refuse_untabulated_partons admitted every beam parton")
                 };
                 BeamSlots {
                     slots: [slot(a), slot(b)],
@@ -4456,6 +4488,30 @@ mod tests {
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).expect("proc card");
         generate_from_proc_card(&card, model).expect("enumeration")
+    }
+
+    /// An incoming particle with no parton density on a proton beam is refused
+    /// before any subprocess is compiled, naming it: a lepton (`e+ e-` on an
+    /// explicit `lpp = 1` card, or `ta+ ta-`, which MadGraph's default card
+    /// leaves on proton beams) and a W.
+    #[test]
+    fn an_untabulated_beam_parton_is_refused() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse("1 = lpp1\n1 = lpp2\n").expect("card");
+        for (process, particle) in [
+            ("e+ e- > mu+ mu-", "e+"),
+            ("ta+ ta- > mu+ mu-", "ta+"),
+            ("w+ d > u g", "W+"),
+        ] {
+            match derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card) {
+                Err(ProtonError::UntabulatedParton { particle: p, .. }) => {
+                    assert_eq!(p, particle, "{process}")
+                }
+                Err(e) => panic!("{process}: {e}"),
+                Ok(_) => panic!("{process}: decomposed"),
+            }
+        }
     }
 
     fn derive(process: &str, model: &UFOModel, evaluated: &EvaluatedModel) -> FlavorGroups {
