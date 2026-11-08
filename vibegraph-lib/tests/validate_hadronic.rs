@@ -1216,9 +1216,12 @@ fn dilepton_lab(cm: &[V], x1: f64, x2: f64) -> Vec<V> {
 /// after integration, which is what the σ gates above are.
 ///
 /// It is also blind to anything the mirrored beam ordering does pointwise: the
-/// oracle sums both orderings' luminosities against a single `|M(q)|²`, which is
-/// right only once the polar angle is integrated over, so `lum` here is checked
-/// against the summed pair and `m2` against the unreflected argument.
+/// oracle's luminosity is the unordered pair `q(x₁)q̄(x₂) + q̄(x₁)q(x₂)` against a
+/// single `|M(q)|²`, which is right only once the polar angle is integrated over.
+/// `lum` here is therefore this crate's direct luminosity at `(x₁, x₂)` plus at
+/// `(x₂, x₁)`, which pins every density read, and the mirror term's luminosity
+/// is asserted equal to the direct one at the point, as the exchanged event
+/// reads each parton at its own fraction.
 #[test]
 fn pointwise_integrand_oracle() {
     let oracle_path = validation_dir().join("dy_integrand_oracle.json");
@@ -1319,9 +1322,10 @@ fn pointwise_integrand_oracle() {
         let lab = dilepton_lab(&cm, outer.x1, outer.x2);
 
         let lum = |gi: usize| {
-            let [direct, mirror] =
-                groups.groups()[gi].luminosity(&pdf, outer.x1, outer.x2, [MU_F, MU_F]);
-            direct + mirror
+            let g = &groups.groups()[gi];
+            let [direct, mirror] = g.luminosity(&pdf, outer.x1, outer.x2, [MU_F, MU_F]);
+            assert_eq!(mirror, direct, "group {gi}: the mirror term's luminosity");
+            direct + g.luminosity(&pdf, outer.x2, outer.x1, [MU_F, MU_F])[0]
         };
         let m2 = |gi: usize, scratch: &mut Vec<_>| amps[gi].eval_m2(&cm, &mut scratch[gi]);
 

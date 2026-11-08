@@ -437,7 +437,9 @@ impl<'s> RecordFill<'s> {
             i64::from(record.particles.get(physical[0])?.pdg),
             i64::from(record.particles.get(physical[1])?.pdg),
         ];
-        let x = physical.map(|b| event.x[b]);
+        // Clustering beam `j` is the representative's leg `j`, which sits at the
+        // sampled `x_j` in either ordering.
+        let x = event.x;
         let inputs = match (&selection.record, &selection.rewgt) {
             (Some(matched), Some(rewgt)) => RecordInputs {
                 n_qcd,
@@ -490,7 +492,6 @@ pub(super) struct ProtonSampleSource<'s, 'a> {
     /// part: `member_offset[part][group] + member`.
     reweighter: Option<Reweighter<'s>>,
     member_offset: Vec<Vec<usize>>,
-    mirrored: Vec<V>,
     pub(super) audit: ReweightAudit,
     /// Where the run writes `<mgrwt>` records, what they are filled from.
     records: Option<RecordFill<'s>>,
@@ -518,7 +519,6 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             tally: ResonanceTally::default(),
             reweighter,
             member_offset: member_offsets(integrand.parts().iter().map(ProtonIntegrand::groups)),
-            mirrored: Vec::new(),
             audit: ReweightAudit::default(),
             records,
         }
@@ -601,18 +601,11 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         };
         let mut reweights = Vec::new();
         if let Some(rw) = self.reweighter.as_mut() {
-            // The member's own amplitude, in the frame and leg order the group's
-            // was evaluated in for this ordering.
-            let group = &integrand.groups().groups()[selection.group];
-            let momenta = match selection.ordering {
-                BeamOrdering::Direct => &event.cm,
-                BeamOrdering::Exchanged => {
-                    group.mirror_into(&event.cm, &mut self.mirrored);
-                    &self.mirrored
-                }
-            };
+            // The member's own amplitude at the sampled point, in the
+            // representative's leg order, where the group's was evaluated in
+            // either ordering: the exchanged event is its rotation.
             let sub = self.member_offset[k][selection.group] + selection.member;
-            let m0 = rw.ratios(sub, momenta, Some(alpha_qcd), &mut reweights);
+            let m0 = rw.ratios(sub, &event.cm, Some(alpha_qcd), &mut reweights);
             self.audit.check(
                 (k, selection.ordering),
                 m0,

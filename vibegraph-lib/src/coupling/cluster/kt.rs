@@ -156,6 +156,12 @@ pub enum ClusterFailure {
     /// A mother the clustering built is not a line of any surviving channel,
     /// which `cluster.f:703` treats as a hard error.
     InvalidCombination,
+    /// An admissible pair's measure came out NaN or infinite, which the momenta
+    /// make so only when they are degenerate: a massless leg with no momentum
+    /// has pseudorapidity `ln(0/0)`. Comparing such a measure against the others
+    /// is meaningless (a NaN loses every comparison, so the pair would silently
+    /// drop out of the race), and the clustering refuses the event instead.
+    NonFiniteMeasure,
 }
 
 /// The run-card constants the clustering branches on.
@@ -629,6 +635,9 @@ pub(crate) fn cluster(
                     &mut zij,
                     &mut record,
                 );
+                if !pt2ij[idij as usize].is_finite() {
+                    return Err(ClusterFailure::NonFiniteMeasure);
+                }
                 if pt2ij[idij as usize] < min_pt2 {
                     min_pt2 = pt2ij[idij as usize];
                     winner = Some((j, i));
@@ -864,6 +873,9 @@ pub(crate) fn cluster(
                         &mut zij,
                         &mut record,
                     );
+                    if !pt2ij[idij as usize].is_finite() {
+                        return Err(ClusterFailure::NonFiniteMeasure);
+                    }
                     if pt2ij[idij as usize] < min_pt2 {
                         min_pt2 = pt2ij[idij as usize];
                         next = Some((j, i));
@@ -961,6 +973,38 @@ mod tests {
             external_pdg: vec![vec![-11, 11, -13, 13]],
             contributes: vec![vec![true]],
         }
+    }
+
+    /// A pair measured on degenerate momenta — two massless leptons at zero
+    /// momentum, the edge of their pair invariant — has a NaN measure (its
+    /// pseudorapidities are `ln(0/0)`). The clustering refuses the event by
+    /// that name; before it did, the NaN lost the comparison with every other
+    /// pair, and with no other admissible pair the event read as having none.
+    #[test]
+    fn a_non_finite_measure_refuses_the_event_by_name() {
+        let colors = ColorTable::new([(11, 1), (-11, 1), (13, 1), (-13, 1), (23, 1)], 4);
+        let settings = ClusterSettings {
+            hadronic: true,
+            ..ClusterSettings::default()
+        };
+        let e = 47.0;
+        let zero = [0.0; 4];
+        let p = [[e, 0.0, 0.0, e], [e, 0.0, 0.0, -e], zero, zero];
+        let set = z_channel(2.44, false);
+        let tables = set.merge_tables(1);
+        let channel = Channel {
+            set: &set,
+            table: &tables[0],
+            colors: &colors,
+            this_config: 1,
+            iproc: 1,
+        };
+        let (measure, _) = dj(&settings, &colors, &[0.0; 5], &[0.0; 5]);
+        assert!(measure.is_nan(), "{measure}");
+        assert_eq!(
+            cluster(&channel, &settings, &p, false, &[], false).map(|c| c.merges.len()),
+            Err(ClusterFailure::NonFiniteMeasure)
+        );
     }
 
     /// `cut_bw` flags a line inside `bwcutoff` widths of its pole only when it
