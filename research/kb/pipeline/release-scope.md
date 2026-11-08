@@ -126,6 +126,17 @@ without that overlap gate σ.[^n38-dec] The MadGraph-only study behind that
 figure lived outside the repository and is not recoverable. Note 38 §5 is the
 record of its numbers.
 
+The third is **`cut_decays = F` with identical particles across a decay**.
+MadEvent exempts its single pairing's decay products from the cuts. vibegraph
+keeps every pairing, so it exempts only a leg that is a decay product in every
+pairing. On `g g > z u u~, z > u u~` that cuts all four quarks: −26% against
+MadGraph, −6.8% on the whole `g g > z j j, z > j j` card. The deviation was
+registered in sprint H (D5) and kept for v0.2 (sprint I, D2). No kinematic
+exemption is IR-safe on an every-pairing |M|²: an exempt quark is a core quark
+of another pairing, so its beam-collinear limit diverges
+([identical particles across decays](../process/identical-particles-across-decays.md)).
+The route to MadGraph's number is a per-pairing |M|².
+
 The second is **MadEvent's small-width treatment**. Below `Γ = M·1e-6`
 MadEvent evaluates the propagator at the floored width and corrects the
 Breit–Wigner map's Jacobian by `fk_W/Γ`, so its σ is the narrow-width σ at the
