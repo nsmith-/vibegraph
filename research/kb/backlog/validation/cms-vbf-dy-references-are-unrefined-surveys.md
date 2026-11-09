@@ -19,7 +19,8 @@ channel holds 82% of the part, is still rising, and has χ²/dof 5.24.
 
 On DY MLL-50, vibegraph reads 1.020 ± 0.005 of that survey at 4× budget
 (sprint E, T-F2). Against a properly banked generic row of the same class
-(`pp_to_epemjj_qcd0`), vibegraph agrees at pull −0.92. So the CMS-card residual
+(`pp_to_epemjj_qcd0`, since retired: at `ptj = 0` it diverges at tree level,
+sprint I D1), vibegraph agreed at pull −0.92. So the CMS-card residual
 cannot be read until the references are converged. Each card's survey cost 2–4
 CPU hours, and a seeded bank with refine costs more. The cards need
 `loop_sm`/`ckm_no_b_mass`, their shipped `param_card.dat` and PDF 325300.

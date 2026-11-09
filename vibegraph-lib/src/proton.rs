@@ -5633,14 +5633,31 @@ mod tests {
             .unwrap_or_else(|| panic!("no group holds {incoming:?} > {outgoing:?}"))
     }
 
-    /// `p p > b b~` at `maxjetflavor = 4` with the b class uncut (`ptb = 0`,
-    /// `etab = -1`): nothing bounds `ŝ` from below, so `τ_min = 0`. The
-    /// integrand refuses it, naming both outgoing legs, rather than drawing a
-    /// point at `x = NaN`; a `ptb` cut gives the same card a floor.
+    /// `p p > b b~` at `maxjetflavor = 4` with no b transverse-momentum cut
+    /// (`ptb = 0`, `etab = 2.5`): nothing bounds `ŝ` from below, so
+    /// `τ_min = 0`. The integrand refuses it, naming both outgoing legs, rather
+    /// than drawing a point at `x = NaN`; a `ptb` cut gives the same card a
+    /// floor. The rapidity maximum is what lets the card reach this check: its
+    /// b quarks leave a gluon or b beam through a massless spacelike line, and
+    /// without `etab` (`-1`) the cut compilation refuses that beam-collinear
+    /// limit first. Two outgoing legs have no final-state splitting, and a
+    /// quark has no soft limit.
     #[test]
     fn a_card_with_no_shat_floor_is_refused_naming_its_uncut_legs() {
         let pdf = probe_pdf();
         let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  -1.0 = etab\n");
+        let err = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
+            .err()
+            .expect("the uncut beam-collinear limit is refused");
+        assert!(
+            matches!(
+                err,
+                ProtonError::Cut(CutError::UncutInitialCollinear { pdg: 5 | -5, .. })
+            ),
+            "refused for the wrong reason: {err}"
+        );
+
+        let (m, evaluated, card) = five_flavour_dijet("  0.0 = ptb\n  2.5 = etab\n");
         let groups = derive_flavor_groups(enumerate("p p > b b~", &m), &m, &evaluated, &card)
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
@@ -7230,13 +7247,16 @@ mod tests {
     fn a_point_with_a_massless_leg_at_rest_is_zeroed_and_counted() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
-        // No lepton cut, so the cuts cannot stand in for the guard: before it,
-        // the point reached the clustering, whose `l+ l-` measure is `ln(0/0)`.
+        // No single-lepton cut. The pair-mass minimum is there because the card
+        // is refused without a regulator on the `γ* → l+ l-` collinear limit; it
+        // would reject the `s = 0` point too, so the census, not σ, is what tells
+        // the guard apart from the cuts. Before the guard the point reached the
+        // clustering, whose `l+ l-` measure is `ln(0/0)`.
         let card = RunCard::parse(
             "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
              \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
              \x20 20.0 = ptj\n  0.0 = ptl\n  5.0 = etaj\n  -1 = etal\n\
-             \x20 0.0 = drll\n  0.0 = drjl\n  0.0 = mmll\n  4 = maxjetflavor\n",
+             \x20 0.0 = drll\n  0.0 = drjl\n  10.0 = mmll\n  4 = maxjetflavor\n",
         )
         .expect("run card");
         let groups =

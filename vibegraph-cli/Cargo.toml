@@ -92,9 +92,5 @@ name = "cli_reweight_proton"
 required-features = ["extended-validation"]
 
 [[test]]
-name = "validate_ewk_lljj_sigma"
-required-features = ["extended-validation"]
-
-[[test]]
 name = "validate_param_card_sigma"
 required-features = ["extended-validation"]
