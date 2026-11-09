@@ -105,9 +105,11 @@ runner, on `release: published` and on `workflow_dispatch` (input `tag`;
 empty means the latest release). `release.yml` dispatches it after publishing,
 because its own token's release event does not start workflows
 ([release binaries](release-binaries.md)). A `release` event runs the job only
-for a `v*` tag; dispatches and the weekly schedule always run. Each run first
+for a `v*` tag, a prerelease candidate (`v0.2.0-rc1`, published with
+`--prerelease`) included; dispatches and the weekly schedule always run. Each run first
 resolves one tag (the release's own, the dispatch input, or else
-`releases/latest`, which excludes prereleases), checks the repository out at
+`releases/latest`, which GitHub defines as the newest non-prerelease,
+non-draft release, so a candidate never becomes the weekly target), checks the repository out at
 that tag and passes it to the script as `--tag`, so the script always drives
 the binary it was released with.
 

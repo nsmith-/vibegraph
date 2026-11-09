@@ -15,6 +15,7 @@ sources:
   - {id: pr18-review, resource: "https://github.com/nsmith-/vibegraph/pull/18#discussion_r4233116250", title: "User review on PR #18: MadGraph's single pairing is an approximation"}
   - {id: mg-identical-factor, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4581", title: "MadGraph helas_objects.py identical_decay_chain_factor"}
   - {id: hk1, resource: "../sprints/cms-gridpack-coverage/sessions/H-K1-report.md", title: "Sprint H H-K1 report, §5b: σ at cut_decays = F on g g > z j j, z > j j"}
+  - {id: ic1, resource: "../sprints/v02-last-refusals/sessions/I-C1-report.md", title: "Sprint I I-C1 report: the window rule diverges through an exempt quark's beam-collinear limit"}
   - {id: hc2, resource: "../sprints/cms-gridpack-coverage/sessions/H-C2-report.md", title: "Sprint H H-C2 report: MadEvent's cut_decays exemption is IR-unsafe on an every-pairing |M|²"}
 measured:
   - {pr: 12, landed_in: 1539abc, command: "cli_decay_chain.rs, ten seeds at --target-rel 2e-3, against MadEvent 3.7.1 (decay_chain_sigma_reference.json)"}
@@ -60,11 +61,28 @@ card. [^hk1] The pairing interference MadGraph drops is the small part (the ~0.2
 and not the cause. The user registered it as a deviation of this side's cut on
 2026-11-06; σ on such cards is informational.
 
-The intended fix, tracked as its own item, is a kinematic rule: exempt the pairing whose
-pair invariant mass lies inside the forced window (|m − M| < bwcutoff·Γ, the one closest
-to the pole if several do). It is IR-safe, because a pair holding a soft quark has
-m → 0 and is never in the window, and it should match MadGraph up to the region where
-pairings overlap and interfere. Exempting configuration 1's legs on this side's
+A kinematic rule cannot fix it on this side's \|M\|². Exempting the pairing whose
+pair mass lies inside the forced window was tried in sprint I and is IR-divergent:
+an exempt quark can go collinear with a beam while its pair stays on the pole, and in
+the other kept pairings that quark is a core quark of a `g → q q̄` splitting, so the
+integrand grows as 1/pT² (|M|²·pT² constant to 1e-4 over two decades on
+`g g > z u u~, z > u u~`; no pole on `z > d d~`). [^ic1] Any rule that leaves an identical
+massless quark uncut has the same divergence; MadGraph is finite only because it keeps
+one pairing. The user kept the stricter, IR-safe cut for v0.2 (sprint I, D2).
+
+After v0.2 the two behaviours separate (sprint I, D3).
+- **By default,** every pairing is kept, and `cut_decays = F` is a
+  pairing-weighted cut, Σ_p w_p Θ_p \|M\|² with w_p = \|M_p\|²/Σ_q \|M_q\|²,
+  where Θ_p exempts pairing p's decay products. By Cauchy–Schwarz
+  (\|M\|² ≤ N Σ_q \|M_q\|²), each term is bounded by N Θ_p \|M_p\|². So σ is
+  finite wherever each pairing's own \|M_p\|² is: for two-body decays of a
+  massive resonance, but not for multi-body decays with massless products. There
+  the limit guard must run per pairing.
+- **With `--madgraph-compat`,** MadGraph's single pairing, factor and
+  exemption apply
+  ([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md),
+  site (d)).
+Exempting configuration 1's legs on this side's
 \|M\|² is not a fix: each is a massless core quark of another kept pairing, whose
 collinear region then goes uncut, and σ diverges logarithmically (the integrand grows
 as 1/pT² over three decades). [^hc2] `Cuts::compile_with` refuses any exemption that
@@ -132,3 +150,4 @@ unexplained; see the
 [^mg-identical-factor]: `madgraph/core/helas_objects.py` `identical_decay_chain_factor`, L4581.
 [^hk1]: Sprint H session H-K1 report, §5b: `sprints/cms-gridpack-coverage/sessions/H-K1-report.md`.
 [^hc2]: Sprint H session H-C2 report, §2–§3: `sprints/cms-gridpack-coverage/sessions/H-C2-report.md`.
+[^ic1]: Sprint I, I-C1 report §2 (the matrix-element probe).

@@ -3,17 +3,52 @@ name: release
 # Cuts precompiled binaries for a tagged version. `vibegraph --version` reports
 # the tag itself (vibegraph-cli/build.rs runs `git describe`), so the checkout
 # below needs full tag history rather than the default shallow clone.
+#
+# A tag with a hyphen (`v0.2.0-rc1`) is published as a prerelease, so it never
+# becomes the repository's "latest" release, which the weekly acceptance run
+# resolves. Release notes are read from `docs/release-notes/<tag without
+# suffix>.md` (scripts/release-check.sh); a missing file, or one still
+# containing TODO, fails the run before anything is built.
 on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag whose notes file the dry run reports on (informational)."
+        default: "v0.2.0-rc1"
 
 # The build jobs only read the checkout; `publish` raises what it needs.
 permissions:
   contents: read
 
 jobs:
+  # Validates the tag and its notes file. On a tag push a failure is fatal and
+  # stops the run before the build; on a dispatch the checker is exercised
+  # against fixtures (accept, missing file, TODO stub) and the real notes for
+  # the `tag` input are only reported.
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: release-check self-test
+        run: bash scripts/test-release-check.sh
+
+      - name: check tag and notes
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          ENFORCE: ${{ github.event_name == 'push' }}
+        run: |
+          if bash scripts/release-check.sh "$TAG"; then
+            exit 0
+          fi
+          if [ "$ENFORCE" = true ]; then
+            exit 1
+          fi
+          echo "dry run: $TAG would be refused by the publish job"
+
   build:
     strategy:
       fail-fast: false
@@ -143,7 +178,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [build, release-check]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     # `contents` to create the release, `actions` to dispatch acceptance at the
@@ -168,11 +203,20 @@ jobs:
       - name: create release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          set -euo pipefail
+          meta="$(bash scripts/release-check.sh "$TAG")"
+          notes="$(sed -n 's/^notes=//p' <<<"$meta")"
+          flags=()
+          if [ "$(sed -n 's/^prerelease=//p' <<<"$meta")" = true ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$TAG" \
             --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes \
+            --title "$TAG" \
+            --notes-file "$notes" \
+            "${flags[@]}" \
             dist/vibegraph-* dist/SHA256SUMS \
             LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES
 

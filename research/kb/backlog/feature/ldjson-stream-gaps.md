@@ -12,3 +12,8 @@ tags: [cli, ldjson, progress, sprint-g]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-05}
 ---
 G-F6 Found 3 and G-HY5 Found 4 ([G-F6](../../sprints/v02-output-modes/sessions/G-F6-report.md), [G-HY5](../../sprints/v02-output-modes/sessions/G-HY5-report.md)). The survey reads panics from stderr today.
+
+Since sprint I, a worker panic exits 101 at once through `exit_on_panic`
+(`vibegraph-cli/src/main.rs`). That hook is the natural place to emit the final
+error object. `process::exit` skips destructors, so a buffered LHE or artifact
+writer is not flushed on a panic: say so in the hook's doc comment.
