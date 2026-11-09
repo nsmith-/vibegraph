@@ -43,6 +43,8 @@ It adds three things:
 | Param card | **Locked in by the integration.** It defines the grid, so it is banked with the result and `generate` never takes one. |
 | Where the drawing patch lives | The **existing fork, [nsmith-/feyngraph](https://github.com/nsmith-/feyngraph)**. No upstream PR until the patch is approved. |
 | Where the ranking comes from | **`vibegraph inspect --ranking`**, since `inspect` is already the way to read an integration. |
+| `amplitude_probe` on a mismatch | **Refuse by default** (§5a). |
+| Flavour groups in `enumerate` | **No preview without cards.** Groups are reported only when `--run-card` or `--param-card` is given (§3). |
 
 ## 1. Drawing: why feyngraph needs a patch
 
@@ -160,9 +162,11 @@ compiled cut filters, and by shared colour bookkeeping. Before that,
 - the run card moves it too. `maxjetflavor` and the b cuts change the cut
   classes, so `g g > u u~` and `g g > b b~` can fall in different groups.
 
-`enumerate` banks neither card. With no cards it reports no groups. With them
-it reports a **preview**, computed by the same function `integrate` calls,
-with the defaults `integrate` would use for any card not given. The
+`enumerate` banks neither card, so with no cards it reports no groups: a
+grouping under default cards would read as the grouping, and a later
+integration under other cards would contradict it. Given either card, it
+reports a **preview**, computed by the same function `integrate` calls, with
+the defaults `integrate` would use for the card not given. The
 authoritative grouping is the one `integrate` banks, through
 `ChannelGrid::members`, and the ranking JSON reports that one. The preview
 costs a compile of every set, at most 1.7 s on the cards in §5.
@@ -415,24 +419,13 @@ Each session is one PR. They land in this order.
 6. **Ranking JSON.** `inspect --ranking`, its schema test, and the
    digest-pairing check.
 
-## Open questions
-
-- Should `amplitude_probe` refuse by default, as §5a proposes, or warn and
-  continue?
-- Should `enumerate` without cards preview the flavour groups under the
-  defaults, or report none (§3)?
-
 ## Found while designing
 
-- **A compiler panic.** `AmplitudeEvaluator::compile` panics on SMEFTsim
-  (`restrict_massless`) `u u~ > t t~ b b~ NP<=1`: index out of bounds at
-  `helas/eval/analysis.rs:603`, where `momentum_into` meets an `Op::Add` with
-  no operands. It is reached from `Folded::build` (`fold.rs:220`), so any
-  `integrate` run on that process fails the same way.
+- **A compiler panic**, filed as
+  [smeft-four-quark-compile-panics](../backlog/validation/smeft-four-quark-compile-panics.md).
 - **Stale concepts.** [The integrate artifact](integrate-artifact.md) and
-  [artifact format versioning](artifact-format-versioning.md) describe format
-  version 15, but `artifact.rs` is at 21, and neither covers the
-  `inputs.params`/`inputs.decays` param-card record.
+  [artifact format versioning](artifact-format-versioning.md) described format
+  version 15; both now describe version 21 and the param-card record.
 
 [^fg-diagram]: feyngraph `src/diagram/mod.rs`, `pub struct Diagram`, at the pinned revision.
 [^fg-draw]: feyngraph `src/drawing/mod.rs`, at the pinned revision.
