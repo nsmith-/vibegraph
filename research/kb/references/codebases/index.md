@@ -4,7 +4,7 @@
 
 ## Codebase Survey
 
-* [FeynGraph](feyngraph.md) - FeynGraph read at fd5aa83, the rev vibegraph builds against: layout, what its UFO parser keeps and drops, the two-stage generator, the Model builder, DiagramView and DiagramSelector.
+* [FeynGraph](feyngraph.md) - FeynGraph read at fd5aa83, the upstream rev vibegraph's fork pin is cut from: layout, what its UFO parser keeps and drops, the two-stage generator, the Model builder, DiagramView and DiagramSelector.
 * [MadEvent phase-space maps (genps/myamp/dsample/transpole)](madevent-phase-space-maps.md) - Every importance-sampling map MadEvent 3.7.1 applies, read at b7687064, beside vibegraph's: transpole, setgrid pre-warps, width floors, tstrategy, absolute grid coordinates, channel weights.
 * [MadGraph's LHE output path and format strings](madgraph-lhe-output.md) - How MadGraph 3.7.1 writes unweighted_events.lhe: Fortran first, then a Python pass that reformats only what it parses, so files arrive in two dialects; format strings, SCALUP, AQCDUP and status 2.
 * [MadGraph5_aMC@NLO (pinned v3.7.1)](madgraph5-amcnlo.md) - MG5aMC at b7687064 (v3.7.1): layout, UFO import and ALOHA, the SM UFO, process parser and diagram_generation objects, the HELAS library, and where LO kT clustering lives.

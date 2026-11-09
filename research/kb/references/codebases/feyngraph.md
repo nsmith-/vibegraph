@@ -1,7 +1,7 @@
 ---
 type: Codebase Survey
 title: FeynGraph
-description: "FeynGraph read at fd5aa83, the rev vibegraph builds against: layout, what its UFO parser keeps and drops, the two-stage generator, the Model builder, DiagramView and DiagramSelector."
+description: "FeynGraph read at fd5aa83, the upstream rev vibegraph's fork pin is cut from: layout, what its UFO parser keeps and drops, the two-stage generator, the Model builder, DiagramView and DiagramSelector."
 resource: "https://github.com/Jens-Braun/FeynGraph/tree/fd5aa8306746b432e098c40dcd96d7cb7ef20125"
 status: draft
 tags: [feyngraph, diagrams, ufo, rust, external-code]
@@ -18,7 +18,7 @@ sources:
   - {id: fg-diagram, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/mod.rs", title: "FeynGraph diagram/mod.rs at fd5aa83"}
   - {id: fg-filter, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/filter.rs", title: "FeynGraph diagram/filter.rs at fd5aa83"}
   - {id: topo-rs, resource: "vibegraph-lib/src/ufo/topo.rs", title: "build_feyngraph_model: vibegraph's UFO data into a feyngraph Model"}
-  - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L34", title: "feyngraph git dependency, rev fd5aa8306746"}
+  - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L34", title: "feyngraph git dependency, nsmith-/feyngraph rev 090b33335a9c"}
 ---
 
 FeynGraph (Jens Braun, MPL-2.0, Rust edition 2024, version `0.1.0-beta.5`) is a
@@ -31,10 +31,18 @@ concept describes FeynGraph itself.
 ## Which revision
 
 `vibegraph-lib/Cargo.toml` pins the git dependency at
-`fd5aa8306746b432e098c40dcd96d7cb7ef20125` (2026-08-06) with
-`default-features = false`[^cargo]. The `research/refs/feyngraph` submodule is
-pinned at the same `fd5aa83`, so the checked-out source is the one the build
-uses. Note 02 read `1dc4ea7` (2026-05-08)[^n02-fg]; `fd5aa83` is eight commits
+`090b33335a9cba4def634d21385e48a174ea6ad3` on the fork
+[nsmith-/feyngraph](https://github.com/nsmith-/feyngraph), branch
+`vibegraph-from-parts`, with `default-features = false`[^cargo]. The
+`research/refs/feyngraph` submodule is pinned at the same commit, so the
+checked-out source is the one the build uses. That commit is upstream
+`fd5aa8306746b432e098c40dcd96d7cb7ef20125` (2026-08-06) plus one patch,
+`Diagram::from_tree_parts` and `Diagram::view` (`src/diagram/parts.rs`), which
+rebuild a tree diagram from its legs, propagators and vertices so a diagram
+vibegraph has stored, relabelled or stitched can be drawn
+(the `vibegraph enumerate` design, nsmith-/vibegraph#114, §1). The
+patch touches nothing else, so everything below, read at `fd5aa83`, holds at
+the pin. It goes upstream only once approved. Note 02 read `1dc4ea7` (2026-05-08)[^n02-fg]; `fd5aa83` is eight commits
 later and this concept is read at `fd5aa83`. Between the two:
 
 - the drawing system was rewritten (SVG, TikZ and Typst backends);
