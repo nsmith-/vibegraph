@@ -18,7 +18,7 @@
 #                 (gen_mlm_references.sh's card).
 #        card     the same as mlm, for a row with no banked run of its own: a
 #                 script whose run card is committed beside it as
-#                 <row>_run_card.dat (pp_to_epemjj_qcd0).
+#                 <row>_run_card.dat.
 #        dy13     `generate p p > e+ e-` on dy13_default_run_card.dat or
 #                 dy13_mmll_run_card.dat or dy_beams_6500_4000_run_card.dat
 #                 (gen_hadronic_sigma.sh's): the references the pp_to_ll gate
@@ -117,7 +117,7 @@
 #
 # Usage: pixi run -e madgraph bank-seeded-sigma
 #   ROWS     rows or groups, space-separated (required): @fixed22 @fixed23
-#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj @all,
+#            @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @all,
 #            or row names (uu_tt is in no group)
 #   SEEDS    iseeds at the budget (default 20261101-20261105)
 #   SEEDS_4X iseeds at four times the budget (default 20261111 20261112)
@@ -192,10 +192,9 @@ group_rows() {
     @mlm-multi) echo pp_to_ttx_0j1j_mlm pp_to_ll_0j2j_mlm ;;
     @ee-mumua) echo ee_to_mumua ;;
     @long) echo uux_to_ccx_emmm_qcd0 bbx_to_ccx_emmm_qcd0 ;;
-    @ewk-lljj) echo pp_to_epemjj_qcd0 ;;
     @all)
       local g
-      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long @ewk-lljj; do
+      for g in @fixed22 @fixed23 @fixed24 @hadronic @llj-mlm @mlm-multi @ee-mumua @long; do
         group_rows "$g"
       done
       ;;
