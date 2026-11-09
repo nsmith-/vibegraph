@@ -23,7 +23,7 @@ wrong answer. It ran as three PRs, as the user asked.
 | PR | Change | Oracle (measured) |
 |---|---|---|
 | #111 (merged, 2803c0e9) | With no run card, the default card is the one MadGraph's `output` writes: MLM on mixed jet multiplicities, lepton beams, `sde_strategy`, and e p / neutrino / EVA beams then refused by name. Untabulated partons, a zero τ floor and light `mxx_only_part_antipart` codes refused. A worker panic exits 101 at once. | Every field of three MadGraph-written default cards compares equal. σ with no run card on `p p > e+ e-` + `add process … j`: vibegraph 1020.10 pb against MadGraph 1020.04 pb, 5 seeds a side, pull +0.06 (was +7.4%). A refusal test for each change, each failing before it. |
-| #113 (approved; merge pending) | Every massless soft, final-collinear or beam-collinear limit that no compiled cut (or MLM's xqcut veto, for coloured jet pairs) regulates is refused. `pp_to_epemjj_qcd0` retired (D1). | A sweep of all 62 seeded rows: 61 accepted, the retired row refused. 10 tests, each failing with its rule disabled. The pole probe for D1. The CERN host's refusal census on the CMS gridpacks found no new false refusal. |
+| #113 (merged, e378a0fa) | Every massless soft, final-collinear or beam-collinear limit that no compiled cut (or MLM's xqcut veto, for coloured jet pairs) regulates is refused. `pp_to_epemjj_qcd0` retired (D1). | A sweep of all 62 seeded rows: 61 accepted, the retired row refused. 10 tests, each failing with its rule disabled. The pole probe for D1. The CERN host's refusal census on 196 CMS gridpacks found no false refusal; three campaign-ok cards are newly and correctly refused (below). |
 | #110 | The plan and the record; release tooling (`v*`-only describe, hyphenated tags as prereleases, committed notes the publish job requires); version 0.2.0; release notes; D1–D3 and the kb corrections they imply. | A `release.yml` dispatch with publish skipped (run 42455545280); `release-check.sh` accepts v0.2.0-rc1 and v0.2.0. |
 
 ## Decisions (all the user's)
@@ -45,9 +45,40 @@ wrong answer. It ran as three PRs, as the user asked.
 - **The release gates:**
   - skip `ladder-2to6` (6–8 h here) for v0.2.0;
   - skip the full CMS rerun, because #113's census is the real-card check;
+    the later campaign's bar is "no unexplained ok → not-ok and no panics"
+    (above);
   - run the full campaign at the v0.2.0 revision with the performance
     benchmarks (`full-cms-campaign-after-v02-cut`);
   - drop the ignored probes the user judged largely defunct.
+
+## The refusal census on the CMS gridpacks
+
+The CERN host ran #113's guards on 4ef935b8 (before the xqcut fix) over 196
+cards, as compile-time verdicts, relayed by the vibegraph manager.
+
+- **No card moved between ok and refused** within the census's 120 s budget,
+  compared with main.
+- **Three campaign-ok cards are newly refused** against
+  `main-202a540-200-pc`. All are the D1 family (`ptj = 0`, `etaj = -1`) and
+  are refused with `UncutInitialCollinear`:
+
+  | Card | σ/MG in the campaign |
+  |---|---|
+  | DYto2L-2Jets-EWK MLL-50 | 0.950 |
+  | VBFto2L MLL-50 | 0.947 |
+  | VBFto2L MLL-4to50 | 1.108 |
+
+  Their campaign agreement with MadGraph was the samplers' pole floors (D1).
+- **Also refused, and not ok in the campaign:**
+  - the idm_dilepton cards (`UncutCollinearSplitting`, γ* → ℓℓ at
+    `drll = mmll = 0`);
+  - TTZ2b (g* → bb̄ in the five-flavour scheme).
+- **18 cards are undecided** (enumeration or compile timeouts, and one OOM).
+  The full campaign at the v0.2.0 revision covers them.
+- **The bar for that campaign** is no unexplained ok → not-ok and no panics,
+  not a raw count of 66. The campaign's 66 ok falls by at least these three
+  divergent cards, and by the four GJ/VBFtoG photon cards #109 already
+  refuses.
 
 ## validate-deep on the release candidate
 
@@ -72,8 +103,8 @@ Run on 2b26c109, #113's approved head containing main
   `absent-run-card-lepton-beams-panic`, `zero-shat-floor-panics-with-nan-x`,
   `mxx-only-part-antipart-silently-ignored` and
   `rayon-worker-panic-leaves-process-alive`;
-- by #113, when it merges: `uncut-collinear-limits-beyond-photon-quark-unrefused`
-  and `ir-unsafe-exemption-guard-sees-coloured-legs-only`.
+- by #113: `uncut-collinear-limits-beyond-photon-quark-unrefused` and
+  `ir-unsafe-exemption-guard-sees-coloured-legs-only`.
 
 **Released:**
 - `spacelike-floor-cuts-phase-space-below-the-largest-pt-threshold`, re-scoped
