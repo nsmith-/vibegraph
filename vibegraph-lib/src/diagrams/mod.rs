@@ -275,7 +275,9 @@ pub enum EnumerationPool {
 /// High-level entry point: expand and generate diagrams for every process of a
 /// checked card, on a single thread.
 ///
-/// Returns one `DiagramSet` per concrete particle assignment across all processes.
+/// Returns one `DiagramSet` per concrete particle assignment across all processes
+/// that has at least one diagram; an assignment the model gives no diagram is
+/// left out.
 pub fn generate_from_proc_card(
     proc_card: &SupportedCard,
     model: &UFOModel,
@@ -514,8 +516,12 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
         }
         sets.extend(process_sets);
     }
+    // A particle assignment with no diagram is not a subprocess: MadGraph
+    // generates no matrix element for it. The duplicate check above indexes
+    // `sets` by position, so the empty ones are dropped only once it is done.
+    sets.retain(|s| !s.diagrams.is_empty());
     let diagrams: usize = sets.iter().map(|s| s.diagrams.len()).sum();
-    let populated = sets.iter().filter(|s| !s.diagrams.is_empty()).count();
+    let populated = sets.len();
     info!(
         "enumerated {diagrams} diagrams in {populated} subprocess{} ({:.3} s)",
         if populated == 1 { "" } else { "es" },
@@ -1102,6 +1108,37 @@ fn report_vertex_assignments(subprocess: &str, diagrams: &[Diagram], model: &UFO
 mod tests {
     use super::*;
     use crate::ufo::sm::{sm_model, sm_parsed_model, SMRestrict};
+
+    /// Particle assignments the model gives no diagram are not returned. Under
+    /// `p p > e+ e- j` with `p = g u d u~ d~`, `g g > e+ e- g` and the quark pairs
+    /// that cannot annihilate (`u d > e+ e- d~`) have none. What is left is
+    /// MadGraph's subprocess list for the card: the four Compton channels and the
+    /// two annihilations, each standing for both beam orderings through
+    /// `mirrored`. The exact list is what fails if empty sets come back, since
+    /// every returned set would still be a valid one.
+    #[test]
+    fn assignments_without_diagrams_are_not_subprocesses() {
+        let card = parse_proc_card(
+            "define p = g u d u~ d~\ndefine j = p\ngenerate p p > e+ e- j",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let sets = generate_from_proc_card(&card, &sm_model(SMRestrict::Default)).unwrap();
+        assert!(sets.iter().all(|s| !s.diagrams.is_empty()));
+        let labels: Vec<String> = sets.iter().map(DiagramSet::label).collect();
+        assert_eq!(
+            labels,
+            [
+                "g u > e+ e- u",
+                "g d > e+ e- d",
+                "g u~ > e+ e- u~",
+                "g d~ > e+ e- d~",
+                "u u~ > e+ e- g",
+                "d d~ > e+ e- g",
+            ]
+        );
+        assert!(sets.iter().all(|s| s.mirrored), "{labels:?}");
+    }
 
     /// The model's `expansion_order` cap reaches diagram generation, and only
     /// through MadGraph's `0 < v < 99` window.
