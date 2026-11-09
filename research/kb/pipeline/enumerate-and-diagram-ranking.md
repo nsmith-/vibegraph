@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "vibegraph enumerate, the diagram artifact, and the diagram-importance ranking"
-description: "Design for vibegraph enumerate (diagram artifact, summary JSON, per-diagram SVG via an upstream feyngraph drawing API), integrate starting from a proc card or an enumerate run, a self-contained integrate artifact (model, param card, diagrams; no compiled program), and a ranking JSON pairing AMP2-share and density-share channel cross sections with the drawings."
+description: "Design for vibegraph enumerate (diagram artifact, summary JSON, per-diagram SVG via a feyngraph drawing API on the nsmith-/feyngraph fork), integrate starting from a proc card or an enumerate run, a self-contained integrate artifact (model, param card, diagrams; no compiled program), and a ranking JSON pairing AMP2-share and density-share channel cross sections with the drawings."
 status: draft
 tags: [cli, enumerate, diagrams, feyngraph, svg, artifact, ranking, multichannel, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-09}
@@ -41,8 +41,10 @@ It adds three things:
 | How enumerate and integrate outputs are joined | **Integrate banks the membership**: each channel's full list of diagrams, and each configuration's share. |
 | Diagram artifact | **In scope now.** Integrate starts from a proc card or from an enumerate run. |
 | Param card | **Locked in by the integration.** It defines the grid, so it is banked with the result and `generate` never takes one. |
+| Where the drawing patch lives | The **existing fork, [nsmith-/feyngraph](https://github.com/nsmith-/feyngraph)**. No upstream PR until the patch is approved. |
+| Where the ranking comes from | **`vibegraph inspect --ranking`**, since `inspect` is already the way to read an integration. |
 
-## 1. Drawing: why feyngraph needs an upstream change
+## 1. Drawing: why feyngraph needs a patch
 
 feyngraph can draw only a `DiagramView`. Every field of its `Diagram` is
 `pub(crate)` and there is no public constructor.[^fg-diagram] Its drawing module
@@ -58,7 +60,7 @@ Three classes of diagram therefore never have a view to draw:
 - **diagrams loaded from an artifact**, which is the whole point of the
   artifact.
 
-**The upstream change.** A public way to build a drawable diagram from parts:
+**The patch.** A public way to build a drawable diagram from parts:
 external legs (particle name, incoming or outgoing), internal propagators
 (particle, two vertex endpoints) and vertices, all against a feyngraph
 `Model`. One form is a `Diagram::from_parts(…) -> Result<Diagram, …>` that
@@ -73,8 +75,11 @@ conversion stays inside `diagrams/`, as the module boundary requires. Leg
 labels follow the vibegraph leg index, so an SVG drawn from a reordered or
 stitched diagram labels its legs as that diagram does.
 
-**Until upstream merges**, `Cargo.toml` pins a fork revision carrying the
-same patch. The pin is replaced by the upstream revision when it is released.
+**Where it lives.** The patch goes on a branch of
+[nsmith-/feyngraph](https://github.com/nsmith-/feyngraph) cut from the pinned
+upstream revision `fd5aa83`, so only the drawing change rides along.
+`vibegraph-lib/Cargo.toml` pins that branch's commit. An upstream PR is opened
+only after the patch is approved.
 
 ## 2. The diagram artifact (`diagrams.bin.zst`)
 
@@ -138,9 +143,29 @@ Under `--output-ldjson`, stdout carries the same summary as one result object.
   contact diagrams that carry no configuration. Grouping needs the rooted
   amplitudes, so `enumerate` runs the compile up to `Configurations::group`.
   That costs at most 0.65 s on every card measured (§5);
-- the flavour group the set belongs to. The hadronic grouping must be checked
-  first: if it depends on the run card, `enumerate` reports it only when given
-  `--run-card`.
+- with `--run-card` and/or `--param-card`, the flavour group each set would
+  join, labelled with the cards it was computed under.
+
+**Flavour groups need both cards.** `derive_flavor_groups(sets, model,
+evaluated, card)` (`proton.rs`;
+[flavour groups](../hadronic/flavour-groups.md)) groups subprocesses by
+measured |M|² equality at probe points under the *evaluated* model, by equal
+compiled cut filters, and by shared colour bookkeeping. Before that,
+`multiplicity_groups` splits the card's sets by multiplicity (under
+`ickkw = 0`) and by external masses. So:
+
+- the param card moves the partition. A b mass set to zero merges the b
+  subprocesses with the light ones, and masses decide the split by external
+  masses;
+- the run card moves it too. `maxjetflavor` and the b cuts change the cut
+  classes, so `g g > u u~` and `g g > b b~` can fall in different groups.
+
+`enumerate` banks neither card. With no cards it reports no groups. With them
+it reports a **preview**, computed by the same function `integrate` calls,
+with the defaults `integrate` would use for any card not given. The
+authoritative grouping is the one `integrate` banks, through
+`ChannelGrid::members`, and the ranking JSON reports that one. The preview
+costs a compile of every set, at most 1.7 s on the cards in §5.
 
 Per diagram: id, set, index, propagators (particle, on-shell forced or not),
 vertices (interaction names), coupling orders, configuration id or `null`,
@@ -248,13 +273,57 @@ Model sizes, as the bincode of the `ParsedModel` that would be embedded:
 - **What recompiling costs, and the guard.** If a compiler change moves |M|²,
   an old artifact's banked σ no longer describes the matrix element the events
   are drawn from. That is already true today, since `generate` recompiles. The
-  guard is `amplitude_probe`: |M|² at K = 4 fixed points per set, under the
-  banked card, compared on load at a relative tolerance of 1e-10. It is a
-  value check, so it ignores arena and ordering changes. Like
-  `channel_map_digest`, it refuses a stale artifact without a hand-written
-  version bump. Its tolerance follows the
-  [ULP rule](../../../AGENTS.md): far above last-ulp noise, far below any
-  convention or coupling error.
+  guard is `amplitude_probe` (next section).
+
+## 5a. What `amplitude_probe` guards that the format version does not
+
+The format version describes **the artifact's own encoding and the meaning of
+its fields**. It moves when `artifact.rs` changes shape, or when a field's
+meaning changes (rule 3 of
+[artifact format versioning](artifact-format-versioning.md)). What the banked
+`sigma_pb` *is a cross section of* lives outside the artifact: the model
+evaluated at the banked parameters, compiled by the running binary. Three
+kinds of change move it with no change to the artifact:
+
+1. **A compiler fix that changes |M|².** The
+   [amplitude-signs sprint](../sprints/amplitude-signs/closeout.md) (closed
+   2026-10-16) fixed a defect affecting every process whose leg 0 is a
+   colourless vector (22 processes; `wpwm_to_wpwmz_cw` moved from |M|² 2.79e1
+   to agreement with MadGraph). The version history in `artifact.rs` (14
+   through 21) records no bump for it, and none was due under the versioning
+   rules, because no field changed. An artifact integrated before that fix and
+   replayed after it writes the old σ as `XSECUP` on a sample drawn from the
+   new |M|².
+2. **A change to parameter evaluation or binding.** The model digest hashes
+   the restricted `ParsedModel`, and `inputs.params` records the moved inputs.
+   Neither covers the code that derives internal parameters and couplings
+   from them, or `bind_recorded`. A change there (a derived mass such as MW,
+   an input-scheme expression, a coupling rule) passes both checks.
+3. **Moving an artifact between binaries.** On a batch farm, `generate` runs
+   on a different build from `integrate`. Cases 1 and 2 then arise with no
+   change on the user's side at all.
+
+None of these can be caught by a version number unless every PR that touches
+the compiler or the binder bumps it by hand, which the amplitude-signs sprint
+shows is not done. `channel_map_digest` covers the same gap for the maps;
+`amplitude_probe` covers it for |M|².
+
+**What it does not cover:** a change to the grid, the maps or the sampling
+code (the format version and `channel_map_digest`), the PDF files (their
+checksums), or a change to |M|² away from the probe points. With
+K = 4 generic points per set, and a check that compares every helicity sum,
+a convention change that leaves all of them unmoved is unlikely but not
+excluded.
+
+**Cost and tolerance.** Four |M|² evaluations per set, on top of a compile
+that already runs. The relative tolerance of 1e-10 follows the ULP rule in
+AGENTS.md: about five orders of magnitude above last-ulp differences between
+system libms, and far below any convention or coupling error. A future
+reduced-precision evaluator would need its own tolerance, set from its
+measured error.
+
+**On a mismatch** `generate` refuses, names the set and the largest relative
+deviation, and gives the remedy: integrate again.
 
 ## 6. Importance: the AMP2 share and the density share
 
@@ -288,8 +357,9 @@ result.
 
 ## 7. The ranking JSON
 
-The ranking JSON is written by `vibegraph inspect --ranking <grid.bin.zst>`,
-a read of the artifact with nothing run again. The schema is versioned and
+The ranking JSON is written by `vibegraph inspect --ranking <grid.bin.zst>`.
+`inspect` already prints what an integration recorded without running
+anything again, and the ranking is another view of the same record. The schema is versioned and
 documented here; the page that renders it is designed separately.
 
 ```json
@@ -322,9 +392,10 @@ documented here; the page that renders it is designed separately.
 
 Each session is one PR. They land in this order.
 
-1. **Upstream feyngraph drawing API.** The PR to Jens-Braun/FeynGraph, and a
-   fork pin until it merges. Gate: a round-trip test that draws a view
-   directly and through `from_parts`, and requires byte-identical SVG.
+1. **feyngraph drawing API, on the fork.** A branch of nsmith-/feyngraph cut
+   from `fd5aa83`, and the pin in `vibegraph-lib/Cargo.toml`. Gate: a
+   round-trip test that draws a view directly and through `from_parts`, and
+   requires byte-identical SVG. No upstream PR until the patch is approved.
 2. **Diagram artifact and serde.** Serde on `Diagram` and its parts,
    `DiagramArtifact` v1 with the embedded model, `diagram_set_digest`, and the
    `-j 1`/`-j 4` determinism test. The refusal test writes a real old shape,
@@ -346,14 +417,10 @@ Each session is one PR. They land in this order.
 
 ## Open questions
 
-- Does the hadronic flavour grouping depend on the run card? If it does,
-  `diagrams.json` reports flavour groups only under `--run-card` (§3).
-- Where should the feyngraph fork live, and under which account, until
-  upstream merges?
-- Should the ranking come from `inspect --ranking`, as above, or from a
-  separate `vibegraph rank` command?
-- `amplitude_probe`: is K = 4 points per set at a relative tolerance of 1e-10
-  the right default, or should the probe be opt-in?
+- Should `amplitude_probe` refuse by default, as §5a proposes, or warn and
+  continue?
+- Should `enumerate` without cards preview the flavour groups under the
+  defaults, or report none (§3)?
 
 ## Found while designing
 
