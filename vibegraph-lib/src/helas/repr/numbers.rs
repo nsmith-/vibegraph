@@ -69,7 +69,7 @@ impl std::fmt::Display for Chirality {
 /// Corresponds to the HELAS `nsf` parameter (+1 for particle, −1 for
 /// antiparticle).  The signed momentum stored in
 /// [`DiracWf`](crate::helas::wavefn::DiracWf) is `p * nsf.sign()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Charge {
     /// Particle (e.g. e⁻, q): `nsf = +1`.
     Particle,

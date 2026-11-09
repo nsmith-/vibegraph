@@ -25,6 +25,7 @@ use std::collections::HashMap;
 
 use feyngraph::diagram::view::{DiagramView, LegView};
 use itertools::Either;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::helas::repr::numbers::Charge;
@@ -35,16 +36,16 @@ use crate::ufo::UFOModel;
 // ── Newtype indices ─────────────────────────────────────────────────────────────
 
 /// External leg, in `0..n_ext` with incoming legs first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LegIdx(pub usize);
 /// A vertex within one diagram.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VtxIdx(pub usize);
 /// An internal propagator within one diagram.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PropIdx(pub usize);
 /// The position of a ray within one vertex, in UFO interaction particle-slot order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RaySlot(pub(crate) usize);
 
 // ── Owned diagram ───────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ pub struct RaySlot(pub(crate) usize);
 /// `particle`/`charge` are as seen *from the attached vertex* (feyngraph's all-incoming
 /// convention: an outgoing leg carries its crossed antiparticle here). `incoming` is the
 /// momentum-flow direction — equivalently `leg_idx.0 < n_in`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Leg {
     pub particle: ParticleId,
     pub(crate) charge: Charge,
@@ -65,7 +66,7 @@ pub struct Leg {
 }
 
 /// An internal propagator. Momentum flows `endpoints[0] → endpoints[1]`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Prop {
     /// The particle flowing `endpoints[0] → endpoints[1]`, with the momentum: the particle
     /// of the interaction slot at `endpoints[1]`, whose particles are all read incoming.
@@ -91,7 +92,7 @@ pub struct Prop {
 /// MadGraph's third value, forbidden on shell (`False`, `gForceBW = 2`, an `$ A` line), is
 /// not recorded per propagator: the `$` veto is kept per subprocess by
 /// [`crate::onshell`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OnShell {
     /// No constraint (`None`): the line is whatever the amplitude makes it.
     #[default]
@@ -104,12 +105,14 @@ pub enum OnShell {
 /// A node of a process line's decay chain: `0` is the core, and the decays are numbered
 /// from `1` in the order they are written, a decay's own decays straight after it
 /// (`p p > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~`: `t` 1, `w+` 2, `t~` 3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub(crate) struct ChainNode(pub(crate) usize);
 
 /// Where one decay of a stitched diagram hangs: the chain node whose enumeration it came
 /// from, and the propagator its decaying particle became.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct DecayOrigin {
     pub(crate) node: ChainNode,
     pub(crate) prop: PropIdx,
@@ -118,7 +121,7 @@ pub(crate) struct DecayOrigin {
 /// Where a diagram came from on the proc card.
 ///
 /// Bookkeeping, not part of the graph: [`CanonicalDiagram`] equality ignores it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Provenance {
     /// MadGraph's process number of the card line (`@N`, or its position among the
     /// process lines).
@@ -140,7 +143,7 @@ impl Prop {
 }
 
 /// A directed half-edge attached to a vertex, in UFO particle-slot order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Ray {
     /// An external leg.
     Leg(LegIdx),
@@ -150,7 +153,7 @@ pub enum Ray {
 }
 
 /// An internal vertex: its UFO interaction and its rays in interaction-slot order.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {
     pub(crate) interaction: VertexId,
     /// Which of the interaction's fermion-flow groups
@@ -163,7 +166,7 @@ pub struct Vertex {
 }
 
 /// A single UFO-resolved, convention-baked Feynman diagram.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Diagram {
     /// External legs, indexed by [`LegIdx`]; incoming first.
     pub legs: Vec<Leg>,

@@ -1,7 +1,7 @@
 //! Global configuration: resolves a proc-card `import model` directive to a
 //! loaded [`UFOModel`].
 //!
-//! For the Standard Model this returns the interned [`sm_model`] (no filesystem
+//! For the Standard Model this returns the interned [`sm_model`](crate::ufo::sm::sm_model) (no filesystem
 //! access); for other models it falls back to reading a UFO directory under
 //! [`GlobalConfig::ufo_search_path`]. Choosing that directory (`--ufo-dir`, the
 //! environment, the `~/.vibegraph` cache) is the caller's job; a UFO model is
@@ -25,7 +25,8 @@ use crate::progress;
 use crate::runcard::process_defaults::ProcessFacts;
 use crate::runcard::{RunCard, RunCardError};
 use crate::ufo::identity::ModelIdentity;
-use crate::ufo::sm::{sm_model, SMRestrict};
+use crate::ufo::loaded::LoadedModel;
+use crate::ufo::sm::SMRestrict;
 use crate::ufo::{UFOModel, UfoError};
 
 /// Report a resolved model and hand it straight back.
@@ -33,7 +34,8 @@ use crate::ufo::{UFOModel, UfoError};
 /// The digest rides on the headline because it is the only part of the report a
 /// second run can compare: two models with the same label and different contents
 /// differ nowhere else in what is said about them.
-fn describe(model: Arc<UFOModel>, identity: ModelIdentity) -> (Arc<UFOModel>, ModelIdentity) {
+fn describe(loaded: LoadedModel) -> LoadedModel {
+    let (model, identity) = (&loaded.model, &loaded.identity);
     info!("model {} ({})", identity.label(), identity.digest);
     debug!(
         particles = model.particles.len(),
@@ -60,7 +62,7 @@ fn describe(model: Arc<UFOModel>, identity: ModelIdentity) -> (Arc<UFOModel>, Mo
         }
     }
     progress::step(progress::stage::UFO_LOAD, 1, Some(1));
-    (model, identity)
+    loaded
 }
 
 /// Coordinates model loading for the CLI: maps a parsed `import model` spec to a
@@ -90,20 +92,25 @@ impl GlobalConfig {
 
     /// Resolve an `import model` directive to a loaded model together with the
     /// [`ModelIdentity`] of the assets it was built from.
-    ///
-    /// Loading and identifying share this one resolution so the digest can never
-    /// describe a different model than the one returned.
     pub fn load_ufo_with_identity(
         &self,
         spec: &Option<ModelImport>,
     ) -> Result<(Arc<UFOModel>, ModelIdentity), UfoError> {
+        self.load_model(spec)
+            .map(|loaded| (loaded.model, loaded.identity))
+    }
+
+    /// Resolve an `import model` directive to a [`LoadedModel`]: the model, its
+    /// identity, the restricted parsed model both come from, and its particle
+    /// naming.
+    ///
+    /// Loading and identifying share this one resolution so the digest can never
+    /// describe a different model than the one returned.
+    pub fn load_model(&self, spec: &Option<ModelImport>) -> Result<LoadedModel, UfoError> {
         let _span = info_span!("ufo_load").entered();
         progress::step(progress::stage::UFO_LOAD, 0, Some(1));
         let Some(import) = spec else {
-            return Ok(describe(
-                sm_model(SMRestrict::Default),
-                ModelIdentity::interned_sm(SMRestrict::Default),
-            ));
+            return Ok(describe(LoadedModel::interned_sm(SMRestrict::Default)));
         };
 
         // The SM's particle names are MadGraph's defaults, so `--modelname`
@@ -120,10 +127,7 @@ impl GlobalConfig {
                             .join(", "),
                     }
                 })?;
-            return Ok(describe(
-                sm_model(restrict),
-                ModelIdentity::interned_sm(restrict),
-            ));
+            return Ok(describe(LoadedModel::interned_sm(restrict)));
         }
 
         // Non-SM model: read from the UFO search path.
@@ -135,11 +139,15 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        let (model, digest) =
-            UFOModel::load_with_digest(&dir, restrict.as_deref(), import.particle_naming)?;
         let label = import.restrict_variant.as_deref().unwrap_or("default");
-        let identity = ModelIdentity::from_loaded(&import.name, label, digest);
-        Ok(describe(model, identity))
+        let loaded = LoadedModel::from_dir(
+            &dir,
+            restrict.as_deref(),
+            import.particle_naming,
+            &import.name,
+            label,
+        )?;
+        Ok(describe(loaded))
     }
 
     /// Resolve the run card for the processes of `parsed`: parse
@@ -337,6 +345,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::runcard::ParamValue;
+    use crate::ufo::sm::sm_model;
 
     fn config() -> GlobalConfig {
         GlobalConfig {

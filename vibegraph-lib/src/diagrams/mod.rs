@@ -26,6 +26,7 @@
 //! ```
 
 pub(crate) mod alias;
+pub mod artifact;
 mod chain;
 pub mod check;
 pub mod diagram;
@@ -48,6 +49,7 @@ use std::time::Instant;
 use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
 use feyngraph::DiagramGenerator;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, info, info_span, trace, warn};
 
@@ -113,7 +115,7 @@ pub enum DiagramError {
 // ── Output type ───────────────────────────────────────────────────────────────
 
 /// One concrete particle assignment together with its generated diagrams.
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DiagramSet {
     pub particles_in: Vec<String>,
     pub particles_out: Vec<String>,

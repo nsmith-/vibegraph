@@ -604,28 +604,12 @@ pub(crate) fn load_run_card(
     Ok(rc)
 }
 
-/// The canonical string of the proc card's processes, for artifact metadata: the
-/// line itself on a one-line card, every line with its process number otherwise.
+/// The canonical string of the proc card's processes, for artifact metadata
+/// ([`SupportedCard::process_string`]).
 pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError> {
-    match parsed.processes.as_slice() {
-        [] => Err(err(ErrorKind::Card, "proc card has no process")),
-        [spec] => Ok(format!("{spec}")),
-        // Every line, with its process number: the lines are what the artifact's
-        // cross section sums, and the numbers are what the event file's `<init>`
-        // entries and `IDPRUP`s refer to.
-        many => Ok(many
-            .iter()
-            .map(|p| {
-                // A line with overall orders already spells its number before them.
-                if p.chain_orders.is_empty() {
-                    format!("{p} @{}", p.id)
-                } else {
-                    format!("{p}")
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("; ")),
-    }
+    parsed
+        .process_string()
+        .ok_or_else(|| err(ErrorKind::Card, "proc card has no process"))
 }
 
 /// The factorization scale a run read its parton densities at, as the summary

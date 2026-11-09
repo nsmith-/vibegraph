@@ -66,6 +66,32 @@ impl SupportedCard {
     pub fn is_decay(&self) -> bool {
         self.processes.first().is_some_and(|p| p.initial.len() == 1)
     }
+
+    /// The canonical string of the card's processes, as artifacts record it: the
+    /// line itself on a one-line card, every line with its process number
+    /// otherwise, joined by `; `. `None` for a card with no process.
+    pub fn process_string(&self) -> Option<String> {
+        match self.processes.as_slice() {
+            [] => None,
+            [spec] => Some(format!("{spec}")),
+            // Every line, with its process number: the lines are what an
+            // integration's cross section sums, and the numbers are what the
+            // event file's `<init>` entries and `IDPRUP`s refer to.
+            many => Some(
+                many.iter()
+                    .map(|p| {
+                        // A line with overall orders already spells its number before them.
+                        if p.chain_orders.is_empty() {
+                            format!("{p} @{}", p.id)
+                        } else {
+                            format!("{p}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ),
+        }
+    }
 }
 
 /// One process line of a [`SupportedCard`].
