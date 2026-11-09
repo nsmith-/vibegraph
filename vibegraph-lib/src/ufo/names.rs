@@ -18,13 +18,14 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// `input/particles_name_default.txt` of MadGraph5_aMC@NLO, byte for byte.
 const DEFAULT_NAMES_FILE: &str = include_str!("mg_input/particles_name_default.txt");
 
 /// Which names a model's particles answer to.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ParticleNaming {
     /// MadGraph's default names by PDG code, as `import model X` applies them.
     #[default]

@@ -6,6 +6,7 @@ pub(crate) mod color;
 pub(crate) mod couplings;
 pub(crate) mod expr;
 pub mod identity;
+pub mod loaded;
 pub mod lorentz;
 pub mod names;
 pub mod parameters;
@@ -19,8 +20,8 @@ pub(crate) mod weighted;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
-use identity::model_digest;
 use indexmap::IndexMap;
+use loaded::LoadedModel;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
 use parameters::{parse_parameters_with_variables, ParamNature, ParameterError, ParameterSet};
@@ -519,6 +520,49 @@ impl ParsedModel {
         Ok(())
     }
 
+    /// Parse the UFO directory `path` and apply its restriction.
+    ///
+    /// If `restrict_card` is `None`, `restrict_default.dat` in the directory is
+    /// used when present, and no restriction otherwise. A `param_<x>.dat` beside
+    /// the card is refused: MadGraph would take the defaults from it.
+    pub(crate) fn load_restricted(
+        path: &Path,
+        restrict_card: Option<&Path>,
+    ) -> Result<Self, UfoError> {
+        let mut parsed = ParsedModel::parse(path)?;
+
+        // Resolve the restrict card path: explicit, else restrict_default.dat if present.
+        let restrict_card_path = match restrict_card {
+            Some(path) => Some(path.to_path_buf()),
+            None => {
+                let default = path.join("restrict_default.dat");
+                default.exists().then_some(default)
+            }
+        };
+
+        // MadGraph's restriction takes the defaults from `param_<x>.dat` when
+        // it sits beside `restrict_<x>.dat` (`restrict_model`, `import_ufo.py`:
+        // the card's path with every `restrict` replaced by `param`).
+        if let Some(restrict_path) = &restrict_card_path {
+            let text = restrict_path.to_string_lossy();
+            let sibling = text.replace("restrict", "param");
+            if sibling != text && Path::new(&sibling).exists() {
+                return Err(UfoError::RestrictParamSibling { path: sibling });
+            }
+        }
+        if let Some(restrict_path) = restrict_card_path {
+            let card = ParamCard::from_file(&restrict_path).map_err(|e| UfoError::Io {
+                file: restrict_path.display().to_string(),
+                cause: std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("restrict card parse error: {}", e),
+                ),
+            })?;
+            parsed.apply_restriction(&card)?;
+        }
+        Ok(parsed)
+    }
+
     /// Apply a restrict card and build the feyngraph topology model.
     ///
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
@@ -588,68 +632,21 @@ impl UFOModel {
             .map(|(model, _)| model)
     }
 
-    /// [`load`](Self::load), also returning the [`model_digest`] of the restricted
+    /// [`load`](Self::load), also returning the [`model_digest`](identity::model_digest) of the restricted
     /// model it built, with the particle names `naming` gives (the model's name
     /// for MadGraph's renaming being the directory's base name).
     ///
-    /// Loading and identifying share this one path so the digest can never
-    /// describe a different model than the one returned. The digest does not
-    /// depend on the naming: it identifies the physics, which a name cannot
-    /// change.
+    /// Loading and identifying share one path ([`LoadedModel::from_dir`]) so the
+    /// digest can never describe a different model than the one returned. The
+    /// digest does not depend on the naming: it identifies the physics, which a
+    /// name cannot change.
     pub fn load_with_digest(
         path: &Path,
         restrict_card: Option<&Path>,
         naming: ParticleNaming,
     ) -> Result<(Arc<Self>, String), UfoError> {
-        let mut parsed = ParsedModel::parse(path)?;
-
-        // Resolve the restrict card path: explicit, else restrict_default.dat if present.
-        let restrict_card_path = match restrict_card {
-            Some(path) => Some(path.to_path_buf()),
-            None => {
-                let default = path.join("restrict_default.dat");
-                default.exists().then_some(default)
-            }
-        };
-
-        // MadGraph's restriction takes the defaults from `param_<x>.dat` when
-        // it sits beside `restrict_<x>.dat` (`restrict_model`, `import_ufo.py`:
-        // the card's path with every `restrict` replaced by `param`).
-        if let Some(restrict_path) = &restrict_card_path {
-            let text = restrict_path.to_string_lossy();
-            let sibling = text.replace("restrict", "param");
-            if sibling != text && Path::new(&sibling).exists() {
-                return Err(UfoError::RestrictParamSibling { path: sibling });
-            }
-        }
-        let card = match restrict_card_path {
-            Some(restrict_path) => {
-                Some(
-                    ParamCard::from_file(&restrict_path).map_err(|e| UfoError::Io {
-                        file: restrict_path.display().to_string(),
-                        cause: std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("restrict card parse error: {}", e),
-                        ),
-                    })?,
-                )
-            }
-            None => None,
-        };
-
-        if let Some(card) = card.as_ref() {
-            parsed.apply_restriction(card)?;
-        }
-        let digest = model_digest(&parsed);
-        // The restriction is already baked in, so `into_model` only builds topology.
-        let model_name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let model = parsed
-            .into_model(None)?
-            .with_particle_naming(naming, &model_name)?;
-        Ok((Arc::new(model), digest))
+        let loaded = LoadedModel::from_dir(path, restrict_card, naming, "", "")?;
+        Ok((loaded.model, loaded.identity.digest))
     }
 
     /// The model with its particles answering to the names `naming` gives;

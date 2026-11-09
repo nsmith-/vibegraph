@@ -12,7 +12,7 @@
 use std::sync::{Arc, OnceLock};
 
 use super::identity::model_digest;
-use super::names::ParticleNaming;
+use super::loaded::{build_restricted, ModelNaming};
 use super::slha::ParamCard;
 use super::{ParsedModel, UFOModel, UfoError};
 
@@ -114,13 +114,11 @@ impl SMRestrict {
 /// The compressed, serialized pre-restriction SM [`ParsedModel`] blob.
 static SM_PARSED_BLOB: &[u8] = include_bytes!("sm_assets/sm_parsed.bin.zst");
 
-/// The digest identifying an interned SM variant, computed once per variant.
-///
-/// Over the variant's *restricted* parsed model, so it separates two builds whose
-/// restrict cards were regenerated with different contents under the same name —
-/// while ignoring anything that does not survive parsing.
-pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
-    static CACHE: [OnceLock<String>; SMRestrict::ALL.len()] =
+/// An interned SM variant's restricted parsed model and its digest, computed
+/// once per variant. [`sm_digest`] and [`sm_model`] both read this one value, so
+/// the digest always describes the model that is built.
+fn sm_restricted(restrict: SMRestrict) -> &'static (Arc<ParsedModel>, String) {
+    static CACHE: [OnceLock<(Arc<ParsedModel>, String)>; SMRestrict::ALL.len()] =
         [const { OnceLock::new() }; SMRestrict::ALL.len()];
 
     CACHE[restrict.index()].get_or_init(|| {
@@ -132,8 +130,24 @@ pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
         parsed
             .apply_restriction(&card)
             .expect("apply interned SM restrict card");
-        model_digest(&parsed)
+        let digest = model_digest(&parsed);
+        (Arc::new(parsed), digest)
     })
+}
+
+/// The digest identifying an interned SM variant.
+///
+/// Over the variant's *restricted* parsed model, so it separates two builds whose
+/// restrict cards were regenerated with different contents under the same name —
+/// while ignoring anything that does not survive parsing.
+pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
+    &sm_restricted(restrict).1
+}
+
+/// An interned SM variant's parsed model with its restrict card applied: what
+/// [`sm_model`] is built from and [`sm_digest`] hashes.
+pub(crate) fn sm_restricted_parsed(restrict: SMRestrict) -> Arc<ParsedModel> {
+    sm_restricted(restrict).0.clone()
 }
 
 /// zstd + bincode (de)serialization of the pre-restriction parsed model.
@@ -177,14 +191,7 @@ pub fn sm_model(restrict: SMRestrict) -> Arc<UFOModel> {
 
     CACHE[restrict.index()]
         .get_or_init(|| {
-            let card: ParamCard = restrict
-                .restrict_card_text()
-                .parse()
-                .expect("parse interned SM restrict card");
-            let model = sm_parsed()
-                .clone()
-                .into_model(Some(&card))
-                .and_then(|m| m.with_particle_naming(ParticleNaming::MadGraphDefaults, "sm"))
+            let model = build_restricted(&sm_restricted(restrict).0, &ModelNaming::interned_sm())
                 .expect("build interned SM model");
             Arc::new(model)
         })
