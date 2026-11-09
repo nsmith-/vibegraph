@@ -6,6 +6,7 @@ closed: 2026-11-09
 status: draft
 tags: [release, v0.2, run-card, defaults, cuts, ir-safety, decay-chains, sprint, sprint-record, sprint-i]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-09}
+verified: [{by: "human:nsmith-", at: 2026-11-09}]
 sources:
   - {id: sprint, resource: "sprint.md", title: "Sprint overview"}
   - {id: log, resource: "log.md", title: "Sprint log"}
