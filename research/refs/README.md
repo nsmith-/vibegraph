@@ -8,7 +8,7 @@ Git submodules for upstream code we study or adapt from. Fetched papers live in 
 
 | Submodule | URL | Purpose |
 |---|---|---|
-| `refs/feyngraph` | https://github.com/nsmith-/feyngraph (fork of https://github.com/Jens-Braun/FeynGraph) | Rust Feynman diagram generator. Pinned at `090b33335a9cba4def634d21385e48a174ea6ad3` (branch `vibegraph-from-parts`: upstream `fd5aa83` plus `Diagram::from_tree_parts`), the `rev` `vibegraph-lib/Cargo.toml` builds against; bump the two together |
+| `refs/feyngraph` | https://github.com/nsmith-/feyngraph (fork of https://github.com/Jens-Braun/FeynGraph) | Rust Feynman diagram generator. Pinned at `16e0c0752f13166b46e19dcef3f32d700f3c5a4e` (branch `vibegraph-from-parts`: upstream `fd5aa83` plus `Diagram::from_tree_parts`), the `rev` `vibegraph-lib/Cargo.toml` builds against; bump the two together |
 | `refs/mg5amcnlo` | https://github.com/mg5amcnlo/mg5amcnlo | MadGraph5: HELAS routines, ALOHA code generation, SM UFO model |
 | `refs/sherpa` | https://gitlab.com/sherpa-team/sherpa | Sherpa MC: COMIX Berends-Giele ME generator + UFO loader |
 | `refs/powheg-box-v2` | https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2 | POWHEG-BOX-V2: NLO+PS Fortran framework (MINT, B-tilde, LHE output) |

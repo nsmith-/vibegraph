@@ -18,7 +18,7 @@ sources:
   - {id: fg-diagram, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/mod.rs", title: "FeynGraph diagram/mod.rs at fd5aa83"}
   - {id: fg-filter, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/filter.rs", title: "FeynGraph diagram/filter.rs at fd5aa83"}
   - {id: topo-rs, resource: "vibegraph-lib/src/ufo/topo.rs", title: "build_feyngraph_model: vibegraph's UFO data into a feyngraph Model"}
-  - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L34", title: "feyngraph git dependency, nsmith-/feyngraph rev 090b33335a9c"}
+  - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L34", title: "feyngraph git dependency, nsmith-/feyngraph rev 16e0c0735a9c"}
 ---
 
 FeynGraph (Jens Braun, MPL-2.0, Rust edition 2024, version `0.1.0-beta.5`) is a
@@ -31,7 +31,7 @@ concept describes FeynGraph itself.
 ## Which revision
 
 `vibegraph-lib/Cargo.toml` pins the git dependency at
-`090b33335a9cba4def634d21385e48a174ea6ad3` on the fork
+`16e0c0752f13166b46e19dcef3f32d700f3c5a4e` on the fork
 [nsmith-/feyngraph](https://github.com/nsmith-/feyngraph), branch
 `vibegraph-from-parts`, with `default-features = false`[^cargo]. The
 `research/refs/feyngraph` submodule is pinned at the same commit, so the
