@@ -4,7 +4,8 @@
 use std::path::PathBuf;
 
 use clap::Args;
-use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::artifact::{ConfigShare, IntegrateArtifact};
+use vibegraph::hadronic::Observable;
 use vibegraph::vegas::Chi2PerDof;
 
 use crate::error::{err, CliError, ErrorKind};
@@ -75,6 +76,9 @@ pub(crate) fn run(args: &InspectArgs) -> Result<(), CliError> {
             line(multiplicity_line(part));
         }
     }
+    for text in configuration_lines(&artifact, observable) {
+        line(text);
+    }
     for (j, c) in artifact.channels.iter().enumerate() {
         line(format!(
             "channel {j} ({:?}): α = {}, {} = {} (χ²/dof = {:.3})",
@@ -91,4 +95,61 @@ pub(crate) fn run(args: &InspectArgs) -> Result<(), CliError> {
         artifact.format_version
     ));
     Ok(())
+}
+
+/// The configuration shares, per integrated set in the artifact's order, each
+/// set's configurations by decreasing share with their diagrams and share of
+/// the run's total. A set's unattributed weight is listed only where it is not
+/// zero.
+fn configuration_lines(artifact: &IntegrateArtifact, observable: Observable) -> Vec<String> {
+    let mut sets: Vec<usize> = Vec::new();
+    for c in &artifact.configurations {
+        if !sets.contains(&c.set) {
+            sets.push(c.set);
+        }
+    }
+    let mut out = Vec::new();
+    for set in sets {
+        let mut shares: Vec<&ConfigShare> = artifact
+            .configurations
+            .iter()
+            .filter(|c| c.set == set && (c.configuration.is_some() || c.sigma != 0.0))
+            .collect();
+        shares.sort_by(|a, b| b.sigma.total_cmp(&a.sigma));
+        let label = artifact
+            .sets
+            .get(set)
+            .map(|s| s.label())
+            .unwrap_or_default();
+        let members = shares.first().map_or(1, |c| c.members.len());
+        out.push(if members > 1 {
+            format!("set {set} ({label}, a flavour group of {members} sets):")
+        } else {
+            format!("set {set} ({label}):")
+        });
+        for c in shares {
+            let name = match c.configuration {
+                Some(k) => format!(
+                    "config {k} (diagrams {})",
+                    c.diagrams
+                        .iter()
+                        .map(usize::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                None => "no configuration".to_string(),
+            };
+            let share = if artifact.sigma_pb != 0.0 {
+                100.0 * c.sigma / artifact.sigma_pb
+            } else {
+                0.0
+            };
+            out.push(format!(
+                "  {name}: {} = {} ({share:.2}% of the total)",
+                observable.symbol(),
+                measurement(observable, c.sigma, c.sigma_err)
+            ));
+        }
+    }
+    out
 }

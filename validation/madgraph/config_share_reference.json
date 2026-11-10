@@ -1,0 +1,993 @@
+{
+ "description": "MadEvent per-channel cross sections (SubProcesses/P*/G*/results.dat) per seed, one freshly generated process directory per seed, with each directory's subprocesses and channel propagators; written by gen_config_share.sh.",
+ "madgraph_version": "3.7.1",
+ "rows": {
+  "ee_ee": {
+   "process": "generate e+ e- > e+ e-",
+   "run_card": "config_share_ee_ee_run_card.dat",
+   "sde_strategy": 1,
+   "directories": {
+    "P1_ll_ll": {
+     "subprocesses": [
+      {
+       "ordering": "direct",
+       "process": "e+ e- > e+ e-"
+      }
+     ],
+     "channels": {
+      "1": [
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ]
+      ],
+      "2": [
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ]
+      ],
+      "3": [
+       [
+        [
+         2,
+         4
+        ],
+        "a",
+        "t"
+       ]
+      ]
+     },
+     "symfact": {
+      "1": 1,
+      "2": 1,
+      "3": 1
+     }
+    }
+   },
+   "runs": [
+    {
+     "iseed": 20261110,
+     "sigma_pb": 155.69,
+     "err_pb": 0.11851,
+     "wall_s": 12,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.23741,
+        0.00093241
+       ],
+       "G2": [
+        0.034228,
+        0.00014443
+       ],
+       "G3": [
+        155.42,
+        0.11851
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261111,
+     "sigma_pb": 155.79,
+     "err_pb": 0.12076,
+     "wall_s": 8,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.23777,
+        0.00067318
+       ],
+       "G2": [
+        0.034458,
+        9.4197e-05
+       ],
+       "G3": [
+        155.52,
+        0.12076
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261112,
+     "sigma_pb": 155.82,
+     "err_pb": 0.11318,
+     "wall_s": 10,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.23699,
+        0.0010246
+       ],
+       "G2": [
+        0.03434,
+        0.00010569
+       ],
+       "G3": [
+        155.55,
+        0.11318
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261113,
+     "sigma_pb": 155.99,
+     "err_pb": 0.1118,
+     "wall_s": 8,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.23841,
+        0.0011967
+       ],
+       "G2": [
+        0.034282,
+        0.00010166
+       ],
+       "G3": [
+        155.72,
+        0.11179
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261114,
+     "sigma_pb": 155.68,
+     "err_pb": 0.098916,
+     "wall_s": 9,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.23872,
+        0.00062812
+       ],
+       "G2": [
+        0.034393,
+        0.00010548
+       ],
+       "G3": [
+        155.41,
+        0.098914
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "ee_mumu": {
+   "process": "generate e+ e- > mu+ mu-",
+   "run_card": "config_share_ee_mumu_run_card.dat",
+   "sde_strategy": 1,
+   "directories": {
+    "P1_ll_ll": {
+     "subprocesses": [
+      {
+       "ordering": "direct",
+       "process": "e+ e- > mu+ mu-"
+      }
+     ],
+     "channels": {
+      "1": [
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ]
+      ],
+      "2": [
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ]
+      ]
+     },
+     "symfact": {
+      "1": 1,
+      "2": 1
+     }
+    }
+   },
+   "runs": [
+    {
+     "iseed": 20261110,
+     "sigma_pb": 0.41947,
+     "err_pb": 0.00017608,
+     "wall_s": 15,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.366,
+        0.00016103
+       ],
+       "G2": [
+        0.053472,
+        7.1229e-05
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261111,
+     "sigma_pb": 0.41948,
+     "err_pb": 0.00020704,
+     "wall_s": 9,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.36602,
+        0.00019489
+       ],
+       "G2": [
+        0.053461,
+        6.9876e-05
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261112,
+     "sigma_pb": 0.41939,
+     "err_pb": 0.00018838,
+     "wall_s": 8,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.36593,
+        0.00017279
+       ],
+       "G2": [
+        0.05346,
+        7.5044e-05
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261113,
+     "sigma_pb": 0.41937,
+     "err_pb": 0.00022333,
+     "wall_s": 9,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.36589,
+        0.00021149
+       ],
+       "G2": [
+        0.053476,
+        7.1752e-05
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261114,
+     "sigma_pb": 0.41979,
+     "err_pb": 0.00022045,
+     "wall_s": 10,
+     "channels": {
+      "P1_ll_ll": {
+       "G1": [
+        0.36622,
+        0.00020951
+       ],
+       "G2": [
+        0.053573,
+        6.8576e-05
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "ee_uuxg": {
+   "process": "generate e+ e- > u u~ g",
+   "run_card": "config_share_ee_uuxg_run_card.dat",
+   "sde_strategy": 1,
+   "directories": {
+    "P1_ll_qqg": {
+     "subprocesses": [
+      {
+       "ordering": "direct",
+       "process": "e+ e- > u u~ g"
+      }
+     ],
+     "channels": {
+      "1": [
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "a",
+        "s"
+       ],
+       [
+        [
+         3,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ],
+      "2": [
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "z",
+        "s"
+       ],
+       [
+        [
+         3,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ],
+      "3": [
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "a",
+        "s"
+       ],
+       [
+        [
+         4,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ],
+      "4": [
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "z",
+        "s"
+       ],
+       [
+        [
+         4,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ]
+     },
+     "symfact": {
+      "1": 1,
+      "2": 1,
+      "3": -1,
+      "4": -2
+     }
+    }
+   },
+   "runs": [
+    {
+     "iseed": 20261110,
+     "sigma_pb": 0.34351,
+     "err_pb": 0.00097219,
+     "wall_s": 18,
+     "channels": {
+      "P1_ll_qqg": {
+       "G1": [
+        0.24565,
+        0.00070693
+       ],
+       "G2": [
+        0.097859,
+        0.00066739
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261111,
+     "sigma_pb": 0.34677,
+     "err_pb": 0.0010951,
+     "wall_s": 13,
+     "channels": {
+      "P1_ll_qqg": {
+       "G1": [
+        0.24759,
+        0.00089658
+       ],
+       "G2": [
+        0.099185,
+        0.00062887
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261112,
+     "sigma_pb": 0.34516,
+     "err_pb": 0.0012054,
+     "wall_s": 12,
+     "channels": {
+      "P1_ll_qqg": {
+       "G1": [
+        0.24686,
+        0.0010476
+       ],
+       "G2": [
+        0.098299,
+        0.00059628
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261113,
+     "sigma_pb": 0.34362,
+     "err_pb": 0.0014196,
+     "wall_s": 10,
+     "channels": {
+      "P1_ll_qqg": {
+       "G1": [
+        0.24556,
+        0.0012686
+       ],
+       "G2": [
+        0.098055,
+        0.00063722
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261114,
+     "sigma_pb": 0.34594,
+     "err_pb": 0.0012941,
+     "wall_s": 14,
+     "channels": {
+      "P1_ll_qqg": {
+       "G1": [
+        0.2471,
+        0.0011221
+       ],
+       "G2": [
+        0.09884,
+        0.00064473
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "pp_eej": {
+   "process": "define p = g u c d s u~ c~ d~ s~;define j = p;generate p p > e+ e- j",
+   "run_card": "config_share_pp_eej_run_card.dat",
+   "sde_strategy": 1,
+   "directories": {
+    "P1_gq_llq": {
+     "subprocesses": [
+      {
+       "ordering": "direct",
+       "process": "g u > e+ e- u"
+      },
+      {
+       "ordering": "direct",
+       "process": "g c > e+ e- c"
+      },
+      {
+       "ordering": "mirror",
+       "process": "u g > e+ e- u"
+      },
+      {
+       "ordering": "mirror",
+       "process": "c g > e+ e- c"
+      },
+      {
+       "ordering": "direct",
+       "process": "g d > e+ e- d"
+      },
+      {
+       "ordering": "direct",
+       "process": "g s > e+ e- s"
+      },
+      {
+       "ordering": "mirror",
+       "process": "d g > e+ e- d"
+      },
+      {
+       "ordering": "mirror",
+       "process": "s g > e+ e- s"
+      },
+      {
+       "ordering": "direct",
+       "process": "g u~ > e+ e- u~"
+      },
+      {
+       "ordering": "direct",
+       "process": "g c~ > e+ e- c~"
+      },
+      {
+       "ordering": "mirror",
+       "process": "u~ g > e+ e- u~"
+      },
+      {
+       "ordering": "mirror",
+       "process": "c~ g > e+ e- c~"
+      },
+      {
+       "ordering": "direct",
+       "process": "g d~ > e+ e- d~"
+      },
+      {
+       "ordering": "direct",
+       "process": "g s~ > e+ e- s~"
+      },
+      {
+       "ordering": "mirror",
+       "process": "d~ g > e+ e- d~"
+      },
+      {
+       "ordering": "mirror",
+       "process": "s~ g > e+ e- s~"
+      }
+     ],
+     "channels": {
+      "1": [
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ],
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ],
+      "2": [
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ],
+       [
+        [
+         3,
+         4,
+         5
+        ],
+        "q",
+        "s"
+       ]
+      ],
+      "3": [
+       [
+        [
+         2,
+         3,
+         4
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ]
+      ],
+      "4": [
+       [
+        [
+         2,
+         3,
+         4
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ]
+      ]
+     },
+     "symfact": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1
+     }
+    },
+    "P1_qq_llg": {
+     "subprocesses": [
+      {
+       "ordering": "direct",
+       "process": "u u~ > e+ e- g"
+      },
+      {
+       "ordering": "direct",
+       "process": "c c~ > e+ e- g"
+      },
+      {
+       "ordering": "mirror",
+       "process": "u~ u > e+ e- g"
+      },
+      {
+       "ordering": "mirror",
+       "process": "c~ c > e+ e- g"
+      },
+      {
+       "ordering": "direct",
+       "process": "d d~ > e+ e- g"
+      },
+      {
+       "ordering": "direct",
+       "process": "s s~ > e+ e- g"
+      },
+      {
+       "ordering": "mirror",
+       "process": "d~ d > e+ e- g"
+      },
+      {
+       "ordering": "mirror",
+       "process": "s~ s > e+ e- g"
+      }
+     ],
+     "channels": {
+      "1": [
+       [
+        [
+         2,
+         3,
+         4
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ]
+      ],
+      "2": [
+       [
+        [
+         2,
+         3,
+         4
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ]
+      ],
+      "3": [
+       [
+        [
+         2,
+         5
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "a",
+        "s"
+       ]
+      ],
+      "4": [
+       [
+        [
+         2,
+         5
+        ],
+        "q",
+        "t"
+       ],
+       [
+        [
+         3,
+         4
+        ],
+        "z",
+        "s"
+       ]
+      ]
+     },
+     "symfact": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1
+     }
+    }
+   },
+   "runs": [
+    {
+     "iseed": 20261110,
+     "sigma_pb": 257.36,
+     "err_pb": 0.91936,
+     "wall_s": 33,
+     "channels": {
+      "P1_gq_llq": {
+       "G1": [
+        19.418,
+        0.25971
+       ],
+       "G2": [
+        30.233,
+        0.2608
+       ],
+       "G3": [
+        27.431,
+        0.35566
+       ],
+       "G4": [
+        115.48,
+        0.68241
+       ]
+      },
+      "P1_qq_llg": {
+       "G1": [
+        3.8117,
+        0.040184
+       ],
+       "G2": [
+        30.728,
+        0.23749
+       ],
+       "G3": [
+        3.4521,
+        0.035188
+       ],
+       "G4": [
+        26.806,
+        0.24151
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261111,
+     "sigma_pb": 258.83,
+     "err_pb": 0.90151,
+     "wall_s": 30,
+     "channels": {
+      "P1_gq_llq": {
+       "G1": [
+        19.87,
+        0.26674
+       ],
+       "G2": [
+        30.792,
+        0.26698
+       ],
+       "G3": [
+        27.685,
+        0.35791
+       ],
+       "G4": [
+        115.53,
+        0.64981
+       ]
+      },
+      "P1_qq_llg": {
+       "G1": [
+        3.8334,
+        0.058773
+       ],
+       "G2": [
+        30.7,
+        0.22531
+       ],
+       "G3": [
+        3.3808,
+        0.066828
+       ],
+       "G4": [
+        27.043,
+        0.24748
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261112,
+     "sigma_pb": 257.08,
+     "err_pb": 0.87127,
+     "wall_s": 31,
+     "channels": {
+      "P1_gq_llq": {
+       "G1": [
+        19.733,
+        0.26216
+       ],
+       "G2": [
+        30.284,
+        0.25988
+       ],
+       "G3": [
+        27.724,
+        0.36223
+       ],
+       "G4": [
+        115.34,
+        0.541
+       ]
+      },
+      "P1_qq_llg": {
+       "G1": [
+        3.8048,
+        0.05844
+       ],
+       "G2": [
+        30.687,
+        0.25848
+       ],
+       "G3": [
+        3.5829,
+        0.066153
+       ],
+       "G4": [
+        25.92,
+        0.35264
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261113,
+     "sigma_pb": 257.12,
+     "err_pb": 0.79495,
+     "wall_s": 31,
+     "channels": {
+      "P1_gq_llq": {
+       "G1": [
+        19.379,
+        0.25869
+       ],
+       "G2": [
+        30.368,
+        0.25784
+       ],
+       "G3": [
+        27.462,
+        0.3572
+       ],
+       "G4": [
+        115.45,
+        0.53314
+       ]
+      },
+      "P1_qq_llg": {
+       "G1": [
+        3.8471,
+        0.058917
+       ],
+       "G2": [
+        30.542,
+        0.26171
+       ],
+       "G3": [
+        3.4425,
+        0.05785
+       ],
+       "G4": [
+        26.634,
+        0.1068
+       ]
+      }
+     }
+    },
+    {
+     "iseed": 20261114,
+     "sigma_pb": 258.15,
+     "err_pb": 0.81263,
+     "wall_s": 31,
+     "channels": {
+      "P1_gq_llq": {
+       "G1": [
+        19.818,
+        0.26487
+       ],
+       "G2": [
+        30.456,
+        0.27219
+       ],
+       "G3": [
+        27.395,
+        0.35437
+       ],
+       "G4": [
+        115.45,
+        0.52982
+       ]
+      },
+      "P1_qq_llg": {
+       "G1": [
+        3.804,
+        0.056999
+       ],
+       "G2": [
+        30.916,
+        0.23737
+       ],
+       "G3": [
+        3.4043,
+        0.08763
+       ],
+       "G4": [
+        26.908,
+        0.20632
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}

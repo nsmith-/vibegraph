@@ -100,12 +100,19 @@ use crate::vegas::{GridRule, VegasGrid};
 /// longer reproduces the probe. A version-21 file has none of these fields; it
 /// could be replayed only through the UFO lookup and re-enumeration this build
 /// no longer has, and with no probe to tell whether the build computes the
-/// matrix element it was integrated with. [`OLDEST_READABLE_VERSION`] is this
-/// version.
-pub const FORMAT_VERSION: u32 = 22;
+/// matrix element it was integrated with.
+///
+/// `23` banks each configuration's share of the cross section
+/// ([`IntegrateArtifact::configurations`]) and every `(diagram set,
+/// configuration)` a channel serves ([`ChannelGrid::members`]). A version-22
+/// file has neither: its run accumulated no share, and the shares cannot be
+/// recovered from its grids without integrating again, so it is refused rather
+/// than read with an empty ranking that would look like a measured one.
+/// [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 23;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 22;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 23;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -408,6 +415,83 @@ pub struct ChannelGrid {
     /// What the rule-based composition chose for this channel, where the writer
     /// knew it.
     pub sampler: Option<ChannelSampler>,
+    /// Every `(diagram set, configuration)` this channel's map serves: one entry
+    /// per pair of a merged channel, and per member set of a flavour group, in
+    /// the order the channel's pairs were derived. Empty for a channel no
+    /// diagram built (flat phase space).
+    pub members: Vec<ChannelMember>,
+}
+
+/// A diagram set as one term of an integration reads it: the set at index
+/// `set` of [`IntegrateArtifact::sets`], its outgoing legs put in
+/// `final_order` (outgoing leg `i` of the term is outgoing leg
+/// `final_order[i]` of the enumerated set). Reordering keeps every diagram's
+/// index, so a diagram index of the term is one of the enumerated set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetRef {
+    pub set: usize,
+    pub final_order: Vec<usize>,
+}
+
+/// One `(diagram set, configuration)` pair a channel serves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelMember {
+    /// The set, as the integration reads it.
+    pub set: SetRef,
+    /// The set's diagrams that make up the configuration, in its own diagram
+    /// indexing. Empty where the set's own configurations could not be paired
+    /// with the integrated evaluator's.
+    pub diagrams: Vec<usize>,
+    /// The entry of [`IntegrateArtifact::configurations`] whose cross section
+    /// this pair's configuration is counted in, `None` where the channel's
+    /// diagrams carry no integration configuration of the evaluator (a
+    /// configuration whose diagrams the colour basis never references).
+    pub share: Option<usize>,
+}
+
+/// One integration configuration's share of the cross section: MadEvent's
+/// single-diagram-enhancement partition of the integrand.
+///
+/// At every point the integrated term of one evaluator (a fixed-energy
+/// subprocess, or a hadronic flavour group with every member's luminosity and
+/// both beam orderings) is divided over that evaluator's configurations in
+/// proportion to `w_c / Σ w`, with `w_c = AMP2_c` (the coherent squared sum of
+/// the configuration's diagram amplitudes, at the coupling the point's `|M|²`
+/// was evaluated at) under `sde_strategy = 1`, and `get_channel_cut`'s
+/// propagator product under `sde_strategy = 2`. This is the factor
+/// `matrix_madevent_group_v4.inc` multiplies MadEvent's channel `c` by, so
+/// [`sigma`](Self::sigma) is what MadEvent's `G` directory for the
+/// configuration integrates (summed with the configurations MadEvent folds into
+/// it by symmetry). It is accumulated from the points and weights the cross
+/// section is, during the iterations that enter it, and combined over them and
+/// over channels exactly as the cross section is, so the shares of a run sum to
+/// [`IntegrateArtifact::sigma_pb`] to rounding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConfigShare {
+    /// The set whose evaluator was integrated: a fixed-energy subprocess, or a
+    /// flavour group's representative.
+    pub set: usize,
+    /// The configuration's index among the evaluator's (the order `AMP2` takes),
+    /// or `None` for the evaluator's weight at points where no configuration
+    /// carried any (every enhancement weight zero), which contact diagrams alone
+    /// can give. Every evaluator banks one such entry.
+    pub configuration: Option<usize>,
+    /// The configuration's diagrams, in [`set`](Self::set)'s indexing; empty
+    /// for `configuration: None`.
+    pub diagrams: Vec<usize>,
+    /// The set's diagrams no configuration carries: contact diagrams, and
+    /// diagrams the colour basis never references. They enter every share
+    /// through `|M|²`.
+    pub contact_diagrams: Vec<usize>,
+    /// Every set whose term this share includes: the subprocess itself at fixed
+    /// energy, every member of the flavour group (the representative first) at
+    /// proton beams. A group's members share one matrix element and one
+    /// configuration partition, so the share is the group's, not split by
+    /// member.
+    pub members: Vec<SetRef>,
+    /// The share in the run's observable unit (pb, or GeV for a decay).
+    pub sigma: f64,
+    pub sigma_err: f64,
 }
 
 /// One final-state phase space's share of a proton-beam integration: the
@@ -552,6 +636,11 @@ pub struct IntegrateArtifact {
     /// points under the bound param card ([`crate::amplitude_probe`]). A
     /// generation recomputes every point and refuses a build that moved one.
     pub amplitude_probe: Vec<SetProbe>,
+    /// Every integrated evaluator's configuration shares ([`ConfigShare`]), in
+    /// evaluator order (subprocess or flavour group, part by part), each
+    /// evaluator's configurations in `AMP2` order followed by its unattributed
+    /// entry.
+    pub configurations: Vec<ConfigShare>,
 }
 
 /// SHA-256 over every channel's
@@ -698,6 +787,14 @@ mod tests {
             sigma_err_pb: 0.87,
             chi2_per_dof: Some(1.02),
             sampler: None,
+            members: vec![ChannelMember {
+                set: SetRef {
+                    set: 0,
+                    final_order: vec![0, 1],
+                },
+                diagrams: vec![0],
+                share: Some(0),
+            }],
         }
     }
 
@@ -757,12 +854,26 @@ mod tests {
             sets: Vec::new(),
             diagram_set_digest: diagram_set_digest(&[]),
             amplitude_probe: Vec::new(),
+            configurations: vec![ConfigShare {
+                set: 0,
+                configuration: Some(0),
+                diagrams: vec![0],
+                contact_diagrams: Vec::new(),
+                members: vec![SetRef {
+                    set: 0,
+                    final_order: vec![0, 1],
+                }],
+                sigma: 934.42,
+                sigma_err: 0.87,
+            }],
         }
     }
 
-    /// Version 21's real shape, field for field: this build's fields up to
+    /// Version 21's fields, in order: this build's fields up to
     /// [`IntegrateArtifact::channel_map_digest`], without the embedded model,
-    /// param card, diagram sets, their digest and the amplitude probe.
+    /// param card, diagram sets, their digest and the amplitude probe. Its
+    /// channels are this build's records, whose member lists version 21 did not
+    /// have; the tests built on it refuse by version before any channel is read.
     #[derive(Serialize)]
     struct V21Artifact<'a> {
         format_version: u32,
@@ -814,6 +925,152 @@ mod tests {
             channel_map_digest: &a.channel_map_digest,
         })
         .unwrap()
+    }
+
+    /// Version 22's channel record: this build's without
+    /// [`ChannelGrid::members`].
+    #[derive(Serialize)]
+    struct V22ChannelGrid<'a> {
+        key: ChannelKey,
+        alpha: f64,
+        neval: usize,
+        grid: &'a VegasGrid,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: Option<f64>,
+        sampler: &'a Option<ChannelSampler>,
+    }
+
+    /// Version 22's real shape, field for field: version 21's, then the
+    /// embedded model, the param card, the diagram sets, their digest and the
+    /// amplitude probe; its channels without members and no configuration
+    /// shares.
+    #[derive(Serialize)]
+    struct V22Artifact<'a> {
+        format_version: u32,
+        process: &'a String,
+        proc_card: &'a String,
+        model: &'a ModelIdentity,
+        inputs: &'a RunInputs,
+        mu_f: Option<f64>,
+        sqrt_s_had: f64,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        run_card: &'a RunCard,
+        generate: &'a GenerateSettings,
+        channels: Vec<V22ChannelGrid<'a>>,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: Option<f64>,
+        multiplicities: &'a Vec<MultiplicityTotal>,
+        maps: MapChoices,
+        grid_rule: Option<GridRule>,
+        alpha_floor: Option<f64>,
+        channel_map_digest: &'a String,
+        embedded: &'a EmbeddedModel,
+        param_card: &'a Option<String>,
+        sets: &'a Vec<DiagramSet>,
+        diagram_set_digest: &'a String,
+        amplitude_probe: &'a Vec<SetProbe>,
+    }
+
+    /// `a`'s values in version 22's shape, stamped 22.
+    fn v22_bytes(a: &IntegrateArtifact) -> Vec<u8> {
+        bincode::serialize(&V22Artifact {
+            format_version: 22,
+            process: &a.process,
+            proc_card: &a.proc_card,
+            model: &a.model,
+            inputs: &a.inputs,
+            mu_f: a.mu_f,
+            sqrt_s_had: a.sqrt_s_had,
+            neval: a.neval,
+            niter: a.niter,
+            seed: a.seed,
+            run_card: &a.run_card,
+            generate: &a.generate,
+            channels: a
+                .channels
+                .iter()
+                .map(|c| V22ChannelGrid {
+                    key: c.key,
+                    alpha: c.alpha,
+                    neval: c.neval,
+                    grid: &c.grid,
+                    sigma_pb: c.sigma_pb,
+                    sigma_err_pb: c.sigma_err_pb,
+                    chi2_per_dof: c.chi2_per_dof,
+                    sampler: &c.sampler,
+                })
+                .collect(),
+            sigma_pb: a.sigma_pb,
+            sigma_err_pb: a.sigma_err_pb,
+            chi2_per_dof: a.chi2_per_dof,
+            multiplicities: &a.multiplicities,
+            maps: a.maps,
+            grid_rule: a.grid_rule,
+            alpha_floor: a.alpha_floor,
+            channel_map_digest: &a.channel_map_digest,
+            embedded: &a.embedded,
+            param_card: &a.param_card,
+            sets: &a.sets,
+            diagram_set_digest: &a.diagram_set_digest,
+            amplitude_probe: &a.amplitude_probe,
+        })
+        .unwrap()
+    }
+
+    /// A version-22 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 22's real shape: this build's values with
+    /// no channel members and no configuration shares. Stamped with this
+    /// build's version it would misread the first channel's missing member
+    /// list out of the next channel's bytes; stamped 22 it is never decoded.
+    #[test]
+    fn a_version_22_artifact_is_refused() {
+        let a = sample_artifact();
+        assert!(!a.channels[0].members.is_empty() && !a.configurations.is_empty());
+        let raw = v22_bytes(&a);
+        let current = bincode::serialize(&a).unwrap();
+        assert_ne!(
+            current[4..],
+            raw[4..],
+            "version 22's shape is not this build's"
+        );
+
+        let dir = scratch_dir("v22");
+        let path = dir.join("v22.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-22 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 22,
+                    oldest: 23,
+                    expected: 23
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The configuration shares and every channel's members survive the round
+    /// trip.
+    #[test]
+    fn configuration_shares_and_channel_members_round_trip() {
+        let a = sample_artifact();
+        let dir = scratch_dir("shares");
+        let path = dir.join("shares.bin.zst");
+        a.write_to_path(&path, true).unwrap();
+        let b = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(b.configurations, a.configurations);
+        assert_eq!(b.channels[0].members, a.channels[0].members);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -969,6 +1226,16 @@ mod tests {
                     }],
                     spine_poles_gev2: vec![100.0, 25.0],
                 }),
+                members: (0..=j)
+                    .map(|k| ChannelMember {
+                        set: SetRef {
+                            set: j / 2,
+                            final_order: vec![1, 0],
+                        },
+                        diagrams: vec![k, k + 1],
+                        share: (k % 2 == 0).then_some(k),
+                    })
+                    .collect(),
             })
             .collect();
         assert!(artifact.sole_grid().is_none());
@@ -990,6 +1257,7 @@ mod tests {
             assert_eq!(rc.grid.ndim(), ac.grid.ndim(), "channel {j}");
             assert_eq!(rc.sigma_pb.to_bits(), ac.sigma_pb.to_bits(), "channel {j}");
             assert_eq!(rc.sampler, ac.sampler, "channel {j}");
+            assert_eq!(rc.members, ac.members, "channel {j}");
         }
 
         std::fs::remove_file(&path).ok();
@@ -1124,7 +1392,8 @@ mod tests {
     }
 
     /// A version-14 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode. Version 21 embeds
+    /// to re-integrate, however well its bytes would decode. Version 22 banks no
+    /// configuration share or channel membership; version 21 embeds
     /// no model, diagrams or amplitude probe to replay from; version 20 holds
     /// grids of a whole-state decay chain trained on a `τ` draw reaching
     /// `τ = 1`, which this build bounds by the chain's window; version 16 holds
@@ -1137,7 +1406,7 @@ mod tests {
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14, 15, 16, 17, 18, 19, 20, 21, FORMAT_VERSION + 1] {
+        for version in [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, FORMAT_VERSION + 1] {
             let path = stamped(&sample_artifact(), &dir, version);
             let err = IntegrateArtifact::read_from_path(&path).expect_err("another version");
             assert!(
@@ -1145,8 +1414,8 @@ mod tests {
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 22,
-                        expected: 22
+                        oldest: 23,
+                        expected: 23
                     } if found == version
                 ),
                 "{err}"
@@ -1186,8 +1455,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 16,
-                    oldest: 22,
-                    expected: 22
+                    oldest: 23,
+                    expected: 23
                 }
             ),
             "{err}"
@@ -1225,8 +1494,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 17,
-                    oldest: 22,
-                    expected: 22
+                    oldest: 23,
+                    expected: 23
                 }
             ),
             "{err}"
@@ -1321,14 +1590,15 @@ mod tests {
         current.chi2_per_dof = Some(0.0);
         for c in &mut current.channels {
             c.chi2_per_dof = Some(0.0);
+            c.members.clear();
         }
         current.multiplicities.clear();
         let tags = 2 + current.channels.len();
         assert_eq!(
             v21_bytes(&current, current.format_version).len(),
-            raw.len() + tags + EMPTY_VEC,
-            "the legacy shape differs from this one by exactly its Option tags and the \
-             multiplicities list"
+            raw.len() + tags + EMPTY_VEC * (1 + current.channels.len()),
+            "the legacy shape differs from this one by exactly its Option tags, the \
+             multiplicities list and the channels' member lists"
         );
 
         let dir = scratch_dir("v18");
@@ -1340,8 +1610,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 18,
-                    oldest: 22,
-                    expected: 22
+                    oldest: 23,
+                    expected: 23
                 }
             ),
             "{err}"
@@ -1428,8 +1698,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 19,
-                    oldest: 22,
-                    expected: 22
+                    oldest: 23,
+                    expected: 23
                 }
             ),
             "{err}"
@@ -1466,8 +1736,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 21,
-                    oldest: 22,
-                    expected: 22
+                    oldest: 23,
+                    expected: 23
                 }
             ),
             "{err}"

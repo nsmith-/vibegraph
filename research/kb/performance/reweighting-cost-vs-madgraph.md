@@ -40,7 +40,7 @@ areas come from `gen_reweight_oracle.py --check`, whose check passed: all 27 hyp
 the four rows agree with MadGraph per event to ≤ 1e-7. Both sides at `change helicity False`.
 MadGraph's side ran once (it does not depend on our binary). `generate` ran unpinned at its
 default thread count, so the musl assets' thread contention
-([backlog](../backlog/performance/musl-release-assets-anti-scale-with-threads.md)) may
+([musl allocator thread scaling](musl-allocator-thread-scaling.md); fixed after v0.2.0) may
 inflate our figures; it was not separated.
 
 Existing rows, cost per event (generate with the card minus without, median of 5; µs per

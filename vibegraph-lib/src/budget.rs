@@ -109,7 +109,7 @@ use crate::progress;
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{
     adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, Chi2PerDof,
-    IterationCombination, VegasGrid, VegasResult,
+    IterationCombination, VegasGrid, VegasResult, SHARE_TILE,
 };
 
 /// Floor on the points a channel gets through the cuts in one iteration.
@@ -441,6 +441,9 @@ struct ChannelHistory {
     kept_nonzero: u64,
     kept_sum: f64,
     kept_sum_sq: f64,
+    /// Per kept iteration, each share's `(integral, variance)`
+    /// ([`ChannelIntegrand::value_in_channel_shared`]).
+    kept_shares: Vec<Vec<(f64, f64)>>,
 }
 
 impl ChannelHistory {
@@ -457,6 +460,7 @@ impl ChannelHistory {
             kept_nonzero: 0,
             kept_sum: 0.0,
             kept_sum_sq: 0.0,
+            kept_shares: Vec::new(),
         }
     }
 
@@ -474,6 +478,7 @@ impl ChannelHistory {
             self.kept_nonzero += out.accepted as u64;
             self.kept_sum += out.integral * neval as f64;
             self.kept_sum_sq += out.sum_sq;
+            self.kept_shares.push(out.shares.clone());
         }
     }
 
@@ -513,6 +518,41 @@ impl ChannelHistory {
     /// number for all of its iterations and the weighted mean is the plain one.
     fn combine(&self, rule: IterationCombination) -> VegasResult {
         Self::combine_kept(&self.kept, rule)
+    }
+
+    /// Each share's term over the kept iterations, combined with the weights
+    /// [`combine`](Self::combine) gives the channel's own iterations, so the
+    /// shares' terms sum to the channel's term: equal weights under
+    /// [`IterationCombination::Unweighted`], the channel's `1/σᵢ²` under
+    /// [`IterationCombination::InverseVariance`]. A share's variance is
+    /// `Σ wᵢ² σ²ᵢ,c / (Σ wᵢ)²` over its own iterations' variances, which under
+    /// equal weights is the `Σσᵢ²/k²` the channel quotes. No χ²/dof is formed.
+    fn combine_shares(&self, rule: IterationCombination) -> Vec<VegasResult> {
+        let n_shares = self.kept_shares.first().map_or(0, Vec::len);
+        let weights: Vec<f64> = self
+            .kept
+            .iter()
+            .map(|&(_, v)| match rule {
+                IterationCombination::Unweighted => 1.0,
+                IterationCombination::InverseVariance => 1.0 / v.max(f64::MIN_POSITIVE),
+            })
+            .collect();
+        let total: f64 = weights.iter().sum();
+        (0..n_shares)
+            .map(|c| {
+                let (mut integral, mut variance) = (0.0, 0.0);
+                for (w, shares) in weights.iter().zip(&self.kept_shares) {
+                    let (i, v) = shares[c];
+                    integral += w * i;
+                    variance += w * w * v;
+                }
+                VegasResult {
+                    integral: integral / total,
+                    std_dev: variance.sqrt() / total,
+                    chi2_per_dof: None,
+                }
+            })
+            .collect()
     }
 
     /// [`ChannelHistory::combine`] over an arbitrary set of this channel's
@@ -569,9 +609,9 @@ fn pooled_scale(kept: &[(f64, f64)]) -> f64 {
 /// Points one rayon task evaluates before its results are reduced.
 ///
 /// `CHUNKS_PER_THREAD` several rather than one so a straggler costs a fraction of
-/// an iteration rather than all of it, and `MIN_CHUNK` so per-chunk setup (a
-/// generator seek, a substream, two small allocations) stays far below the cost
-/// of the points in it.
+/// an iteration rather than all of it, and at least one [`SHARE_TILE`] so
+/// per-chunk setup (a generator seek, a substream, a few small allocations)
+/// stays far below the cost of the points in it.
 ///
 /// The result is a scheduling knob only — [`adapt_blocks_iteration`] is
 /// bit-identical at any chunk size, which a run at `CHUNKS_PER_THREAD` 2, 8 and
@@ -580,12 +620,15 @@ fn pooled_scale(kept: &[(f64, f64)]) -> f64 {
 /// second knob of the same kind: on a 24-channel `p p > l+ l- j` iteration at 16
 /// threads the two differ by more than a factor ten in chunk count and by
 /// nothing that a contended host could resolve, so the simpler one stays.
+///
+/// A chunk is a whole number of tiles, the unit an integrand's shares are
+/// summed in, so the shares are as independent of the chunking as the rest.
 fn chunk_size(channel_neval: usize, threads: usize) -> usize {
-    const MIN_CHUNK: usize = 64;
     const CHUNKS_PER_THREAD: usize = 8;
     channel_neval
         .div_ceil(threads.max(1) * CHUNKS_PER_THREAD)
-        .max(MIN_CHUNK)
+        .max(1)
+        .next_multiple_of(SHARE_TILE)
 }
 
 /// Split `total` points across channels with per-point standard deviations
@@ -805,7 +848,10 @@ where
         let iteration_bound = budget.iteration_bound(iteration_points);
         let started = Instant::now();
 
-        let outcomes = draw_iteration(integrand, &grids, &plans, seed, &ndims, scale_ndim);
+        // A warm-up iteration's shares would be dropped by `record`, so they are
+        // not accumulated.
+        let keep = iteration >= warmup;
+        let outcomes = draw_iteration(integrand, &grids, &plans, seed, &ndims, scale_ndim, keep);
 
         // The coverage the iteration realised, which is what the floor is
         // denominated in. The first iteration is allocated before any acceptance
@@ -819,7 +865,7 @@ where
 
         for ((c, out), plan) in channels.iter_mut().zip(&outcomes).zip(&plans) {
             points += plan.neval as u64;
-            c.record(out, plan.neval, iteration >= warmup);
+            c.record(out, plan.neval, keep);
         }
 
         let ns_per_eval = started.elapsed().as_nanos() as f64 / iteration_points.max(1) as f64;
@@ -911,6 +957,7 @@ where
             neval: n_j,
             grid,
             result: c.combine(combination),
+            shares: c.combine_shares(combination),
         })
         .collect();
     let total = combine_channels(&per_channel, iteration);
@@ -1187,7 +1234,8 @@ fn running_estimate(channels: &[ChannelHistory], combination: IterationCombinati
 }
 
 /// Draw one iteration of every channel under `plans`, each point's trailing
-/// scale-draw uniforms appended to its grid coordinates.
+/// scale-draw uniforms appended to its grid coordinates, and the integrand's
+/// shares accumulated beside the values where `shares` is set.
 ///
 /// The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`; the scale
 /// draw's trailing uniforms come off a stream of its own, so the grid's sequence
@@ -1201,6 +1249,7 @@ fn draw_iteration<I>(
     seed: u64,
     ndims: &[usize],
     scale_ndim: usize,
+    shares: bool,
 ) -> Vec<BlockIteration>
 where
     I: ChannelIntegrand + Sync,
@@ -1209,6 +1258,7 @@ where
         grids,
         plans,
         seed,
+        if shares { integrand.share_count() } else { 0 },
         |j, first| {
             (
                 SubStream::new(
@@ -1219,10 +1269,14 @@ where
                 vec![0.0; ndims[j] + scale_ndim],
             )
         },
-        |j, (scale_draw, point), u| {
+        |j, (scale_draw, point), u, shares| {
             point[..ndims[j]].copy_from_slice(u);
             scale_draw.fill_uniforms(&mut point[ndims[j]..]);
-            integrand.value_in_channel(j, point)
+            if shares.is_empty() {
+                integrand.value_in_channel(j, point)
+            } else {
+                integrand.value_in_channel_shared(j, point, shares)
+            }
         },
     )
 }
@@ -1576,6 +1630,7 @@ mod tests {
             accepted: weights.iter().filter(|&&w| w != 0.0).count(),
             sum_sq: weights.iter().map(|w| w * w).sum(),
             hist: Vec::new(),
+            shares: Vec::new(),
         };
         let mut a = ChannelHistory::new(0.5);
         let mut b = ChannelHistory::new(0.5);
@@ -1670,6 +1725,7 @@ mod tests {
             accepted: neval,
             sum_sq: neval as f64 * (variance * (neval as f64 - 1.0) + integral * integral),
             hist: Vec::new(),
+            shares: Vec::new(),
         }
     }
 
