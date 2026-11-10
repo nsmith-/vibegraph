@@ -4,6 +4,7 @@
 
 ## Design
 
+* [diagrams.json: the summary vibegraph enumerate writes](diagrams-json.md) - Schema version 1 of diagrams.json: per subprocess its label, coupling-order histogram, integration configurations and contact diagrams, the optional flavour-group preview, and per diagram its propagators, vertices, orders, configuration and SVG drawing; how ids join it to the diagram artifact and the drawings.
 * [vibegraph enumerate, the diagram artifact, and the diagram-importance ranking](enumerate-and-diagram-ranking.md) - Design for vibegraph enumerate (diagram artifact, summary JSON, per-diagram SVG via a feyngraph drawing API on the nsmith-/feyngraph fork), integrate starting from a proc card or an enumerate run, a self-contained integrate artifact (model, param card, diagrams; no compiled program), and a ranking JSON pairing AMP2-share and density-share channel cross sections with the drawings.
 * [The integrate artifact and the compiled-program cache](integrate-artifact.md) - What vibegraph integrate persists (per-channel grids, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built.
 * [Integrate and generate split by data dependency](integrate-generate-split.md) - generate takes the artifact plus generate-time inputs only; the run card splits into integrate settings and generate settings, each run-card field classified; artifact version 13; the CLI and its migration; PR split.
