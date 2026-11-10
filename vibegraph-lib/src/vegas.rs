@@ -1163,7 +1163,7 @@ where
                 fvals.push(f(b, &mut state, &x, &mut parts) * wgt);
                 bins.extend(ks.iter().map(|&k| k as u16));
                 if n_shares > 0 {
-                    for (acc, &p) in tile.chunks_exact_mut(2).zip(&parts) {
+                    for (acc, &p) in tile.as_chunks_mut::<2>().0.iter_mut().zip(&parts) {
                         let w = p * wgt;
                         acc[0] += w;
                         acc[1] += w * w;
@@ -1221,7 +1221,9 @@ where
             sum_sq: sum2,
             hist: hist.finish(),
             shares: share_sums
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|s| moments(s[0], s[1], plan.neval))
                 .collect(),
         });
