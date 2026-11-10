@@ -5,7 +5,7 @@ description: "Time to 0.1% on σ and throughput against MadEvent predate the eva
 area: performance
 state: open
 priority: medium
-closes_when: "integration-vs-madgraph.md carries fresh time-to-0.1% and throughput tables at the v0.2.0 tag on the hosts of the MATRIX1 re-measurement (an x86 host and the M3 at least), over the five existing time-to-accuracy rows plus at least one MLM-matched multi-jet row and one 2→4 row, each with ≥3 seeds, MadGraph's version and flags recorded, and a wall-clock column at equal core count beside the cumulated_time one; README.md's time-to-accuracy and throughput sections quote the new tables."
+closes_when: "integration-vs-madgraph.md carries fresh time-to-0.1% and throughput tables on the x86 host at the v0.2.1 tag (the first release with the musl allocator fix) and on the M3 at v0.2.0 or later (the macOS build is unaffected by that fix), over the five existing time-to-accuracy rows plus at least one MLM-matched multi-jet row and one 2→4 row, each with ≥3 seeds, MadGraph's version and flags recorded, and a wall-clock column at equal core count beside the cumulated_time one; README.md's time-to-accuracy and throughput sections quote the new tables."
 blocked_by: []
 opened: 2026-11-04
 tags: [performance, madgraph-comparison, integration, time-to-accuracy, throughput, re-measure, user-requested]
@@ -37,3 +37,8 @@ Needs, beyond a re-run:
 
 **When (user, 2026-11-05).** Run after v0.2.0 is cut, at that tag, together with
 the other three comparisons, then update `README.md` from the results.
+
+**Plan (user, 2026-11-10).** The x86 v0.2.0 run (CERN Ice Lake VM, recorded in the
+measurement concept) timed the musl release assets, which carried the allocator's
+single-thread and thread-contention penalty. Rerun this comparison on the same host with
+the v0.2.1 assets, keep the M3 run on the macOS build, and only then quote it in the README.

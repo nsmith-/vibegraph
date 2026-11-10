@@ -5,7 +5,7 @@ description: "The 50–150× (polynomial up to 320×) reweighting figures are fr
 area: performance
 state: open
 priority: medium
-closes_when: "reweighting-cost-vs-madgraph.md carries a re-run of bench-reweight at the v0.2.0 tag on the hosts of the MATRIX1 re-measurement (an x86 host and the M3), including an operator-basis row: n SMEFT operators at NP=1, (n+1)(n+2)/2 hypotheses (n = 8 → 45), timed on both the exact and polynomial paths, with MadGraph measured at that H, not extrapolated, and README.md quotes the result with its host."
+closes_when: "reweighting-cost-vs-madgraph.md carries a re-run of bench-reweight on the x86 host at the v0.2.1 tag (the first release with the musl allocator fix) and on the M3 at v0.2.0 or later, including an operator-basis row: n SMEFT operators at NP=1, (n+1)(n+2)/2 hypotheses (n = 8 → 45), timed on both the exact and polynomial paths, with MadGraph measured at that H, not extrapolated, and README.md quotes the result with its host."
 blocked_by: []
 opened: 2026-11-04
 tags: [performance, madgraph-comparison, reweighting, re-measure, user-requested]
@@ -31,3 +31,8 @@ comparison. It needs the same treatment as the other comparisons:
 
 **When (user, 2026-11-05).** Run after v0.2.0 is cut, at that tag, together with
 the other three comparisons, then update `README.md` from the results.
+
+**Plan (user, 2026-11-10).** The x86 v0.2.0 run (CERN Ice Lake VM, recorded in the
+measurement concept) timed the musl release assets, which carried the allocator's
+single-thread and thread-contention penalty. Rerun this comparison on the same host with
+the v0.2.1 assets, keep the M3 run on the macOS build, and only then quote it in the README.
