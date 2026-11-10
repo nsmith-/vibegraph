@@ -120,7 +120,7 @@ sequence, starting at 1.
 
 ```
 vibegraph enumerate <proc_card> [--out DIR] [--force] [--ufo-dir DIR]
-                    [--svg all|none|first=N] [--svg-per-set N]
+                    [--svg all|none|first=N] [--run-card F] [--param-card F]
 ```
 
 It writes into `<out>/`, `.` by default, with no silent overwrite, as
@@ -130,9 +130,12 @@ integrate does:
 - `diagrams.json`, the summary (schema below);
 - `svg/<set-id>/<diagram-id>.svg`, one file per diagram. A large card such as
   `p p > e+ e- j j j` has 6,400 diagrams, so `--svg first=N` caps the count
-  per set and the summary records which diagrams were drawn.
+  per set (default 500) and the summary records which diagrams were drawn.
+  Drawing all 6,400 costs 4.3 s and 31 MB over `--svg none`.
 
-Under `--output-ldjson`, stdout carries the same summary as one result object.
+Under `--output-ldjson`, the result object nests the summary under `summary`
+beside the output paths, so the summary's own `schema_version` is not
+overwritten by the stream's.
 
 **`diagrams.json`** carries `schema_version`, `process`, `model`
 (label and digest), `diagram_set_digest`, and per set:
@@ -142,9 +145,8 @@ Under `--output-ldjson`, stdout carries the same summary as one result object.
 - coupling orders as a histogram (`{QCD: 2, QED: 2}` → count);
 - the integration configurations as `config_groups` forms them
   (`helas/eval/compile.rs`), each with its member diagram ids, plus the
-  contact diagrams that carry no configuration. Grouping needs the rooted
-  amplitudes, so `enumerate` runs the compile up to `Configurations::group`.
-  That costs at most 0.65 s on every card measured (§5);
+  contact diagrams that carry no configuration. `config_groups` works from
+  the diagrams and the model alone, so no compile is needed;
 - with `--run-card` and/or `--param-card`, the flavour group each set would
   join, labelled with the cards it was computed under.
 
@@ -345,17 +347,25 @@ summed over helicities, for each configuration c of each set. It is accumulated
 from the same points and weights as σ during the iterations that enter the
 result.
 
-- **Cost.** `AMP2_c` is already computed on every point: the configuration
-  amplitudes ride under the program's root (`amp_locs`). The cost is one ratio
-  and one accumulator per configuration per point, which the first session
-  measures.
+- **Cost.** The configuration amplitudes ride under the program's root
+  (`amp_locs`), but forming `AMP2_c` from them is an extra loop over every
+  helicity row's configuration amplitudes after the |M|² evaluation. Measured:
+  +3.6% CPU on `e+ e- > u u~ g` and +10.7% on `p p > e+ e- j`
+  (the configuration-share oracle measurement, nsmith-/vibegraph#124).
+- **Which partition.** MadEvent's `matrix_madevent_group_v4.inc` multiplies by
+  `AMP2_c/ΣAMP2` at `sde_strategy = 1` (where `GET_CHANNEL_CUT` is 1) and by
+  the channel-cut factors' share at strategy 2; σ_c follows the run's
+  strategy, reading `AMP2` at the coupling the point's own |M|² used.
 - **Two built-in checks.** The shares sum to σ (Σ_c σ_c = σ to rounding,
   because the weights partition unity), and their errors are evaluated from
   the same points.
 - **A per-configuration oracle against MadGraph.** MadEvent integrates each
   configuration in its own `G<n>` directory, and its `results.dat` records
-  that channel's σ, which is exactly σ_c. That is a finer check than the total
-  σ, as AGENTS.md asks.
+  that channel's σ. That is σ_c, except where MadEvent folds symmetric
+  configurations into one `G` (`symfact.dat` entries −1, −2), where it is
+  their sum, and on proton beams, where a `P` directory groups several of our
+  flavour groups and both beam orderings (`processes.dat` maps them). It is a
+  finer check than the total σ, as AGENTS.md asks.
 - **Contact diagrams** have no configuration. They are listed under their set
   as unranked, and they contribute to every σ_c through |M|².
 
@@ -393,6 +403,9 @@ documented here; the page that renders it is designed separately.
   `diagram_set_digest` values must refuse to pair them.
 
 ## 8. Sessions
+
+Sessions 1–5 are nsmith-/vibegraph#115 (with the re-pin in #117),
+#116, #120, #121 and #124, with #119 dropping empty diagram sets in between.
 
 Each session is one PR. They land in this order.
 
