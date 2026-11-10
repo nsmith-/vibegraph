@@ -141,3 +141,6 @@ and every channel term are bit-identical between the builds (`inspect
 whole tiles move no grid. The cost is the `AMP2` read per group per point
 (`filled_amp2` loops over every helicity row's configuration amplitudes) and
 the per-point share bookkeeping; it is paid on every integration.
+[Configuration-share cost](../performance/configuration-share-cost.md)
+profiles it and records what cut it to +5.7% (`pp_eej`) and +0.3%
+(`ee_uuxg`) instructions with every artifact byte unchanged.

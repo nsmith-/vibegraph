@@ -172,6 +172,9 @@ off the integration (`ShareSplit` is inactive until an integration asks).
 `adapt_blocks_iteration`'s `n_shares`), combined over the kept iterations
 with the weights the channel's own term uses (equal under the default
 unweighted rule) and summed over channels with errors in quadrature, as σ is.
+Warm-up iterations, whose shares would be dropped, accumulate none, and a
+point of value zero adds nothing to any share; what this costs is in
+[configuration-share cost](../performance/configuration-share-cost.md).
 They are summed in tiles of 256 points of a block's iteration and then tile by
 tile, which every chunk size respects (chunks are whole tiles), so the shares
 are as independent of the thread count as the grids. **Sum rule:** the shares
