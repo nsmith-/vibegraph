@@ -32,10 +32,13 @@ Two consequences, on a fixed-energy card with several subprocesses at
 - **Event generation** (on `main` before #124): the configuration and colour
   draw for an event of subprocess `k > 0` fills that subprocess's buffer with
   subprocess 0's channel cuts. `ChannelSet::channel_cuts` asserts the buffer
-  length, so a subprocess with a different configuration count panics; one
-  with the same count draws from the wrong forest silently. Kinematics and σ
-  are unaffected; the configuration (and so the colour flow and clustering
-  root) is not.
+  length, so a subprocess with a different configuration count should panic,
+  and one with the same count draws from the wrong forest silently. Kinematics
+  and σ are unaffected; the configuration (and so the colour flow and
+  clustering root) is not. This is read from the code, not reproduced: the
+  first card tried (`e+ e- > u u~` with `e+ e- > w+ w-`) is refused earlier
+  for differing external particles, and a reproducing card is part of closing
+  this item.
 
 Fixed-energy beams already require every subprocess to have the same ordered
 external particles (`HadronicError::InconsistentExternals`), so several
