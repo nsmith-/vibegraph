@@ -237,6 +237,9 @@ generate-decay-chain-events = "bash validation/madgraph/gen_decay_chain_events.s
 generate-onshell-veto = "bash validation/madgraph/gen_onshell_veto.sh"
 # MadEvent cross sections for `> A`, `$$ A` and polarized W rows, one run per seed
 generate-grammar-sigma = "bash validation/madgraph/gen_grammar_sigma.sh"
+# MadEvent per-channel (G-directory) cross sections and channel propagators for
+# the configuration-share oracle, one fresh process directory per seed
+generate-config-share = "bash validation/madgraph/gen_config_share.sh"
 # MLM-matched references (ickkw = 1 / xqcut): per-seed MadEvent runs of the five
 # MLM rows, the instrumented replay of each row's samples-grade run, and the
 # jet-memo / IPROC censuses. MLM_STAGE=runs|dumps|census runs one stage.

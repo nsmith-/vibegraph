@@ -154,6 +154,7 @@ pub(crate) fn ffv_vout_bare<F: Real>(
 }
 
 /// Continue a bare ket line by slashing with the vector polarisation, `ε̸ψ`.
+#[inline]
 pub(crate) fn off_shell_fin_bare<F: Real>(
     eps: &ComplexVector<F>,
     fi: &Bispinor<F, Ket>,
@@ -162,6 +163,7 @@ pub(crate) fn off_shell_fin_bare<F: Real>(
 }
 
 /// Continue a bare bra line by slashing with the vector polarisation, `ψ̄ε̸`.
+#[inline]
 pub(crate) fn off_shell_fout_bare<F: Real>(
     eps: &ComplexVector<F>,
     fo: &Bispinor<F, Bra>,

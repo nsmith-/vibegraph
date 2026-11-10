@@ -100,11 +100,15 @@ committed file or test consumes a banked integrate artifact: every test writes
 its own with `vibegraph integrate`. So raising the floor breaks only users'
 files, and they are told to regenerate.
 
-The integrate artifact's floor is its current version, 15. No file older
+The integrate artifact's floor is its current version, 23. No file older
 than 13 records a proc card, so `generate`, which takes none, has nothing to
 replay from one; 13 records no PDF checksums; 14 holds grids trained under
 channel maps that 15 builds differently for the same keys, and no channel-map
-digest that could tell. The `v3`–`v9` readers, `version_for` and the threshold constants
+digest that could tell; 21 embeds no model, diagrams or amplitude probe; 22
+banks no configuration share or channel membership, which only integrating
+again can measure, so reading it with empty shares would present a ranking
+that was never measured (`a_version_22_artifact_is_refused` writes its real
+shape). The `v3`–`v9` readers, `version_for` and the threshold constants
 went with the versions they served, so rules 5–7 have no live instance in it;
 the examples above are their history.
 

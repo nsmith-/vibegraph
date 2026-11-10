@@ -1777,6 +1777,7 @@ mod tests {
                 sigma_err_pb: 0.01,
                 chi2_per_dof: Some(1.0),
                 sampler: None,
+                members: Vec::new(),
             }],
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
@@ -1793,6 +1794,7 @@ mod tests {
             sets: Vec::new(),
             diagram_set_digest: crate::diagrams::artifact::diagram_set_digest(&[]),
             amplitude_probe: Vec::new(),
+            configurations: Vec::new(),
         }
     }
 

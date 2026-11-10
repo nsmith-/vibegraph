@@ -36,6 +36,7 @@
 ## Measurement
 
 * [The hosts behind the performance numbers](benchmark-hosts.md) - CPU, caches, measured clock, ISA, OS and toolchain of each benchmark host (M3 Max, Emerald Rapids VM, Cascade Lake VM, Ice Lake VM, Zen 4), and the M3 Max run-to-run noise floor.
+* [Cost of the configuration-share accounting](configuration-share-cost.md) - Where integrate's per-configuration AMP2 share accounting spent its time (the AMP2 read-out loop, warm-up iterations, rejected points, two slash kernels tipped out of line) and what removing it bought: p p > e+ e- j +11.6% → +5.7% instructions, e+ e- > u u~ g +3.6% → +0.3%, artifacts byte-identical.
 * [Where integrate and sample time goes, and per-point allocations](integrate-profiles.md) - samply profiles: evaluator 50–63% of self time, PDF interpolation 14–19% on hadronic paths, allocator 6–18%; the scale-draw cost and the per-event clustering allocations hoisted since.
 * [integrate thread scaling](integrate-thread-scaling.md) - Serial/parallel fit of integrate at -j 16 (Amdahl, not stalled threads), the serial floor's parts, and the digest-identical speedup measurements.
 * [Integration against MadGraph: throughput and time to accuracy](integration-vs-madgraph.md) - Time to 0.1% on σ and points per CPU-second against MadEvent. At v0.2.0 on an Ice Lake VM over 7 rows: 0.65× MadEvent's CPU at equal accuracy (0.60× at x86-64-v3), the MLM row 4× slower.

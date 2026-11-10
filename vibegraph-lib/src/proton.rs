@@ -119,10 +119,12 @@ use crate::coupling::cluster::graph::ChannelSet;
 use crate::coupling::cluster::rewgt::{rewgt, Rewgt, RewgtHistory};
 use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
+use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, mask_zeroed, vetoed_m2, vetoed_of, zeroed_diagonals, BoundVetoed, VetoedAmplitudes,
+    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
+    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
@@ -277,6 +279,10 @@ pub struct FlavorGroup {
     /// `|M|²` at the card's parameters, which is what grouped them; at other
     /// parameters each is its own process again.
     member_sets: Vec<DiagramSet>,
+    /// Per member, parallel to `members`: the order its enumerated outgoing legs
+    /// were put in ([`DiagramSet::with_final_order`]), the identity where they
+    /// were left as enumerated.
+    member_orders: Vec<Vec<usize>>,
     evaluator: AmplitudeEvaluator,
     legs: Vec<ExternalLeg>,
     cuts: Cuts,
@@ -401,6 +407,46 @@ impl FlavorGroup {
     /// The representative subprocess's enumerated particle names.
     pub fn diagram_set(&self) -> &DiagramSet {
         &self.representative
+    }
+
+    /// Each member as an index into the enumeration `sets` it was derived from
+    /// and the order its outgoing legs were put in, members in order (the
+    /// representative first): the enumerated set which, reordered, is the
+    /// member's diagram set, compared by [`diagram_set_digest`].
+    ///
+    /// # Errors
+    ///
+    /// Naming the member, where no set of `sets` reorders to it.
+    pub fn member_origins(
+        &self,
+        sets: &[DiagramSet],
+        model: &UFOModel,
+    ) -> Result<Vec<crate::artifact::SetRef>, String> {
+        self.member_sets
+            .iter()
+            .zip(&self.member_orders)
+            .map(|(member, order)| {
+                let want = diagram_set_digest(std::slice::from_ref(member));
+                sets.iter()
+                    .position(|set| {
+                        set.particles_in == member.particles_in
+                            && set.diagrams.len() == member.diagrams.len()
+                            && set
+                                .with_final_order(order, model)
+                                .is_some_and(|r| diagram_set_digest(&[r]) == want)
+                    })
+                    .map(|set| crate::artifact::SetRef {
+                        set,
+                        final_order: order.clone(),
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "no enumerated set reorders to the group member {}",
+                            label(member)
+                        )
+                    })
+            })
+            .collect()
     }
 
     /// The cut filter every member compiles to.
@@ -963,7 +1009,10 @@ pub fn derive_flavor_groups(
     }
     refuse_untabulated_partons(&sets, model)?;
 
-    let sets = content_ordered(sets, model, evaluated, card)?;
+    let (sets, final_orders): (Vec<DiagramSet>, Vec<Vec<usize>>) =
+        content_ordered(sets, model, evaluated, card)?
+            .into_iter()
+            .unzip();
     let labels: Vec<String> = sets.iter().map(label).collect();
     let processes: Vec<u32> = sets
         .iter()
@@ -1144,6 +1193,7 @@ pub fn derive_flavor_groups(
             .iter()
             .map(|&i| sets[i].clone().expect("member unclaimed"))
             .collect();
+        let member_orders = indices.iter().map(|&i| final_orders[i].clone()).collect();
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
         let member_slots = members
@@ -1162,6 +1212,7 @@ pub fn derive_flavor_groups(
         groups.push(FlavorGroup {
             representative: sets[head].take().expect("group head unclaimed"),
             member_sets,
+            member_orders,
             evaluator,
             legs,
             cuts,
@@ -1192,7 +1243,7 @@ fn content_ordered(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
-) -> Result<Vec<DiagramSet>, ProtonError> {
+) -> Result<Vec<(DiagramSet, Vec<usize>)>, ProtonError> {
     let maxjetflavor = card.maxjetflavor;
     let keys = |set: &DiagramSet| -> Vec<(u64, Option<char>)> {
         set.particles_out
@@ -1207,14 +1258,15 @@ fn content_ordered(
             .collect()
     };
     let Some(first) = sets.first() else {
-        return Ok(sets);
+        return Ok(Vec::new());
     };
     let reference = keys(first);
     sets.into_iter()
         .map(|set| {
             let own = keys(&set);
+            let identity: Vec<usize> = (0..set.particles_out.len()).collect();
             if own == reference || own.len() != reference.len() {
-                return Ok(set);
+                return Ok((set, identity));
             }
             let mut used = vec![false; own.len()];
             let mut order = Vec::with_capacity(own.len());
@@ -1224,12 +1276,13 @@ fn content_ordered(
                         used[j] = true;
                         order.push(j);
                     }
-                    None => return Ok(set),
+                    None => return Ok((set, identity)),
                 }
             }
-            Ok(set
+            let reordered = set
                 .with_final_order(&order, model)
-                .expect("a matching of every slot is a permutation"))
+                .expect("a matching of every slot is a permutation");
+            Ok((reordered, order))
         })
         .collect()
 }
@@ -1939,6 +1992,9 @@ pub struct ProtonIntegrand<'a> {
     /// ([`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut)).
     #[cfg(any(test, feature = "extended-validation"))]
     madevent_mirrored_cut: bool,
+    /// Per flavour group, its first part of a point's split over
+    /// configurations ([`ShareSplit`]), and the total last.
+    share_offsets: Vec<usize>,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1985,6 +2041,8 @@ struct ProtonScratch<'a> {
     /// `[direct, mirrored]` events it passes: the sampled one, and the exchanged
     /// one where the filter cuts a mirrored group (`false` elsewhere).
     filter_passes: RefCell<Vec<[bool; 2]>>,
+    /// This thread's split of a point's value over configurations.
+    shares: ShareSplit,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -2280,6 +2338,7 @@ impl<'a> ProtonIntegrand<'a> {
             resonances: &[],
             #[cfg(any(test, feature = "extended-validation"))]
             madevent_mirrored_cut: false,
+            share_offsets: share_offsets(groups.groups().iter().map(|g| g.evaluator().n_configs())),
         })
     }
 
@@ -2322,8 +2381,62 @@ impl<'a> ProtonIntegrand<'a> {
                 vetoed: bind_vetoes(&self.vetoes),
                 census: CensusCell::default(),
                 filter_passes: RefCell::new(vec![[true, true]; self.filters.len()]),
+                shares: ShareSplit::new(
+                    self.share_count(),
+                    self.groups
+                        .groups()
+                        .iter()
+                        .map(|g| g.evaluator().n_configs())
+                        .max()
+                        .unwrap_or(0),
+                ),
             }
         })
+    }
+
+    /// The parts [`value_in_channel_shared`](Self::value_in_channel_shared)
+    /// splits a value into: per flavour group, in group order, one per
+    /// integration configuration of the group's evaluator (the order `AMP2`
+    /// takes) and one for the weight no configuration carried.
+    pub fn share_count(&self) -> usize {
+        self.share_offsets.last().copied().unwrap_or(0)
+    }
+
+    /// Group `gi`'s first part in [`share_count`](Self::share_count)'s layout.
+    pub fn share_offset(&self, gi: usize) -> usize {
+        self.share_offsets[gi]
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel), its value split over the
+    /// configurations of every flavour group and added into `shares`
+    /// ([`share_count`](Self::share_count) long).
+    ///
+    /// Each group's term, both beam orderings and every member's luminosity in
+    /// it, is divided by MadEvent's enhancement weights of the group's matrix
+    /// element at the point ([`enhancement_weights`]): the factor a grouped
+    /// MadEvent channel multiplies each of its subprocesses' integrands by,
+    /// `AMP2(CONFSUB(IPROC, c)) / Σ AMP2` over the subprocess's own
+    /// configurations. The exchanged ordering's event is the sampled one
+    /// rotated, at which every weight is the same.
+    pub fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        let sc = self.scratch();
+        sc.shares.begin();
+        let value = self.value_in_channel(channel, u);
+        sc.shares.finish(value, shares);
+        value
+    }
+
+    /// Record group `gi`'s `term` at `cm` in the thread's [`ShareSplit`].
+    fn split_term(&self, sc: &ProtonScratch<'a>, gi: usize, cm: &[V], term: f64) {
+        let sub = &sc.subs[gi];
+        let n = self.groups.groups()[gi].evaluator().n_configs();
+        let cuts = self
+            .config_weights
+            .as_ref()
+            .map(|sets| (&sets[gi], self.s_had));
+        sc.shares.split(self.share_offsets[gi], n, term, |w| {
+            enhancement_weights(vetoed_of(&sc.vetoed, gi), sub, cm, cuts, w)
+        });
     }
 
     /// The points evaluated since the integrand was built or the census last
@@ -2997,7 +3110,11 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             if self.group_passes(sc, gi) {
-                acc += self.group_term(sc, gi, g, sub, cm, &f1, &f2);
+                let term = self.group_term(sc, gi, g, sub, cm, &f1, &f2);
+                if sc.shares.active() {
+                    self.split_term(sc, gi, cm, term);
+                }
+                acc += term;
             }
         }
         acc
@@ -3123,7 +3240,11 @@ impl<'a> ProtonIntegrand<'a> {
                 history.filter(|_| mirrored),
             ]);
             factors.push([direct_rewgt.filter(|_| cut_direct), mirrored_rewgt]);
-            acc += g.spin_color_average() * term;
+            let term = g.spin_color_average() * term;
+            if sc.shares.active() {
+                self.split_term(sc, gi, cm, term);
+            }
+            acc += term;
         }
         acc
     }
@@ -4102,6 +4223,14 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         ProtonIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn share_count(&self) -> usize {
+        ProtonIntegrand::share_count(self)
+    }
+
+    fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        ProtonIntegrand::value_in_channel_shared(self, channel, u, shares)
     }
 }
 
@@ -6807,7 +6936,7 @@ mod tests {
         content_ordered(sets.to_vec(), m, evaluated, run_card)
             .expect("content order")
             .iter()
-            .map(|set| {
+            .map(|(set, _)| {
                 let evaluator = compile_class(set, m, evaluated).expect("compile");
                 let bound = BoundAmplitude::<F>::bind(&evaluator, evaluated);
                 let mut scratch = bound.scratch_space();
@@ -6997,6 +7126,148 @@ mod tests {
     /// reference consumes each point by point exactly as a serial integrator
     /// would, written out rather than shared with the implementation so the two
     /// cannot drift together.
+    /// A hadronic point's value is split over every flavour group's
+    /// configurations by the group's own `AMP2` fractions, and an integration's
+    /// shares add up to its cross section; every member of every group is found
+    /// among the enumerated sets.
+    ///
+    /// On `p p > l+ l- j` at a clustered scale (each group draws its own
+    /// configuration), every configuration is `O(αs α²)`, so a group's fractions
+    /// read at the bound coupling are the ones its term was split by at the
+    /// event's. Pointwise the shares sum to the value and stand in each group in
+    /// the ratios of that group's `AMP2` at the point; over the integration they
+    /// sum to every channel's term and to σ, and no weight goes unattributed.
+    #[test]
+    fn hadronic_shares_follow_each_groups_amp2_and_sum_to_sigma() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 False = fixed_ren_scale\n  False = fixed_fac_scale1\n\
+             \x20 False = fixed_fac_scale2\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n",
+        )
+        .expect("dynamical run card");
+        let sets = enumerate(LLJ, &m);
+        let groups =
+            derive_flavor_groups(sets.clone(), &m, &evaluated, &card).expect("flavour groups");
+        for g in groups.groups() {
+            let origins = g
+                .member_origins(&sets, &m)
+                .expect("every member is enumerated");
+            assert_eq!(origins.len(), g.members().len());
+            for (o, member) in origins.iter().zip(0..) {
+                assert_eq!(
+                    sets[o.set]
+                        .with_final_order(&o.final_order, &m)
+                        .map(|r| r.label()),
+                    Some(g.member_diagram_set(member).label())
+                );
+            }
+        }
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+            .expect("the dynamical prescription compiles");
+        let n = integ.share_count();
+        let n_groups = groups.groups().len();
+        assert_eq!(
+            n,
+            groups
+                .groups()
+                .iter()
+                .map(|g| g.evaluator().n_configs() + 1)
+                .sum::<usize>()
+        );
+
+        let ndim = integ.point_ndim();
+        let mut s = SubStream::from_stream(0x5EED_5D, 4);
+        let mut checked = 0;
+        for i in 0..600 {
+            let u = s.uniforms::<f64>(ndim);
+            let channel = i % integ.channel_count();
+            let mut shares = vec![0.0; n];
+            let value = integ.value_in_channel_shared(channel, &u, &mut shares);
+            assert_eq!(
+                value.to_bits(),
+                integ.value_in_channel(channel, &u).to_bits()
+            );
+            if value == 0.0 {
+                continue;
+            }
+            let summed: f64 = shares.iter().sum();
+            assert!(
+                (summed - value).abs() <= 1e-12 * value.abs(),
+                "{summed} of {value}"
+            );
+            let cm = integ.scratch().cm_buf.borrow().clone();
+            for (gi, g) in groups.groups().iter().enumerate() {
+                let at = integ.share_offset(gi);
+                let k = g.evaluator().n_configs();
+                let part = &shares[at..at + k];
+                assert_eq!(shares[at + k], 0.0, "group {gi} left weight unattributed");
+                let group_total: f64 = part.iter().sum();
+                if group_total == 0.0 {
+                    continue;
+                }
+                let bound = BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated);
+                let mut scratch = bound.scratch_space();
+                let mut amp2 = vec![0.0; k];
+                bound.eval_amp2(&cm, &mut scratch, &mut amp2);
+                let amp2_total: f64 = amp2.iter().sum();
+                for c in 0..k {
+                    let want = group_total * amp2[c] / amp2_total;
+                    assert!(
+                        (part[c] - want).abs() <= 1e-11 * group_total,
+                        "group {gi} configuration {c}: {} against {want}",
+                        part[c]
+                    );
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked > 20, "{checked} points carried weight");
+
+        let (per_channel, total, _) = integ.adapt_grids_budget(
+            Budget::Fixed {
+                neval: 3000,
+                niter: 3,
+            },
+            BlockAllocation::ByAlpha,
+            0x5EED_5E,
+            &StopSignal::default(),
+        );
+        let mut summed = vec![0.0; n];
+        for c in &per_channel {
+            let own: f64 = c.shares.iter().map(|r| r.integral).sum();
+            assert!(
+                (own - c.result.integral).abs() <= 1e-12 * c.result.integral.abs(),
+                "{own:e} against {:e}",
+                c.result.integral
+            );
+            for (acc, r) in summed.iter_mut().zip(&c.shares) {
+                *acc += r.integral;
+            }
+        }
+        let sum: f64 = summed.iter().sum();
+        assert!((sum - total.integral).abs() <= 1e-12 * total.integral);
+        for gi in 0..n_groups {
+            let at = integ.share_offset(gi);
+            let k = groups.groups()[gi].evaluator().n_configs();
+            assert!(
+                summed[at..at + k].iter().sum::<f64>() > 0.0,
+                "group {gi} carries nothing"
+            );
+            assert_eq!(summed[at + k], 0.0);
+        }
+    }
+
     #[test]
     fn the_parallel_integration_reproduces_a_sequential_one() {
         let m = model();

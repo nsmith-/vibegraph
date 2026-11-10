@@ -218,6 +218,29 @@ pub(crate) struct ChannelResult {
     pub(crate) chi2_per_dof: Option<f64>,
 }
 
+/// One integration configuration's share of the integral
+/// ([`vibegraph::artifact::ConfigShare`]).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct ConfigurationResult {
+    /// The diagram set whose evaluator was integrated (a fixed-energy
+    /// subprocess, a flavour group's representative), by index and label.
+    pub(crate) set: usize,
+    pub(crate) label: String,
+    /// The configuration's index among the evaluator's, `null` for the weight
+    /// no configuration carried.
+    pub(crate) configuration: Option<usize>,
+    /// Its diagrams, and the set's diagrams no configuration carries, as
+    /// indices into the set.
+    pub(crate) diagrams: Vec<usize>,
+    pub(crate) contact_diagrams: Vec<usize>,
+    /// Every set the share includes, by index into the run's sets.
+    pub(crate) members: Vec<usize>,
+    pub(crate) sigma: f64,
+    pub(crate) sigma_err: f64,
+    /// `sigma` over the run's.
+    pub(crate) share: f64,
+}
+
 /// One final-state phase space's total, at proton beams.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub(crate) struct MultiplicityResult {
@@ -271,6 +294,8 @@ pub(crate) struct IntegrateResult {
     pub(crate) diagram_set_digest: String,
     /// Whether the run read a param card, whose text the artifact banks.
     pub(crate) param_card: bool,
+    /// Every configuration's share, in the artifact's order.
+    pub(crate) configurations: Vec<ConfigurationResult>,
 }
 
 /// `generate`'s final object.

@@ -3,6 +3,7 @@ pub mod artifact;
 pub mod budget;
 pub mod cache;
 pub mod config;
+pub mod config_share;
 pub mod coupling;
 pub mod cuts;
 pub mod diagrams;

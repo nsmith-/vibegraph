@@ -521,6 +521,37 @@ impl<'a> MultiplicitySum<'a> {
         self.parts[k].value_in_channel(j, self.part_point(k, u))
     }
 
+    /// The parts [`value_in_channel_shared`](Self::value_in_channel_shared)
+    /// splits a value into: every part's
+    /// [`ProtonIntegrand::share_count`], in part order.
+    pub fn share_count(&self) -> usize {
+        self.parts.iter().map(ProtonIntegrand::share_count).sum()
+    }
+
+    /// Part `k`'s first share in [`share_count`](Self::share_count)'s layout.
+    pub fn share_offset(&self, k: usize) -> usize {
+        self.parts[..k]
+            .iter()
+            .map(ProtonIntegrand::share_count)
+            .sum()
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel), split over the
+    /// configurations of the channel's own part
+    /// ([`ProtonIntegrand::value_in_channel_shared`]) into its slice of
+    /// `shares`.
+    pub(crate) fn value_in_channel_shared(
+        &self,
+        channel: usize,
+        u: &[f64],
+        shares: &mut [f64],
+    ) -> f64 {
+        let (k, j) = self.locate(channel);
+        let at = self.share_offset(k);
+        let n = self.parts[k].share_count();
+        self.parts[k].value_in_channel_shared(j, self.part_point(k, u), &mut shares[at..at + n])
+    }
+
     /// [`value_in_channel`](Self::value_in_channel) with the point kept, and the
     /// part it belongs to: [`ProtonIntegrand::event_in_channel`] of that part.
     pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<(usize, ProtonEvent)> {
@@ -790,6 +821,14 @@ impl ChannelIntegrand for MultiplicitySum<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         MultiplicitySum::value_in_channel(self, channel, u)
+    }
+
+    fn share_count(&self) -> usize {
+        MultiplicitySum::share_count(self)
+    }
+
+    fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        MultiplicitySum::value_in_channel_shared(self, channel, u, shares)
     }
 
     fn grid_rule(&self) -> GridRule {
