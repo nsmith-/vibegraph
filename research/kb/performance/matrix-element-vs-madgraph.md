@@ -1,12 +1,13 @@
 ---
 type: Measurement
 title: "Matrix element per point against MadGraph's MATRIX1"
-description: "ns per evaluation against MATRIX1 over 19 processes on M3 Max and Cascade Lake (geomean 0.87× on both), with the dated earlier points 1.24× (14 rows) and 0.98× it improved from."
+description: "ns per evaluation against MATRIX1 over 19 processes. At v0.2.0 on an Ice Lake VM: geomean 0.85× at default flags and 0.74× with both sides at x86-64-v3; earlier 0.87× (Cascade Lake, M3 Max)."
 status: draft
 tags: [performance, madgraph-comparison, matrix-element, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
+  - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake, family 6 model 106), 4-vCPU KVM guest, AlmaLinux 10.2, rustc 1.99.1, gfortran 14.4.0", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2), RUSTFLAGS unset or '-C target-cpu=x86-64-v3'; gen_amplitude.py ×3, median", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/phase1/{cfg1,cfg2} (driver logs, make_opts_flags.txt, f2py_effective_flags.txt, isa_check.txt)"}
   - {commit: cf8b2b7, pr: 8, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2); gen_amplitude.py ×3, median"}
   - {host: "Apple M3 Max (darwin), 2026-08-06, quiet host, MG side regenerated the same day", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh"}
   - {commit: 62d78e4, host: "Apple M3 Max, 2026-08-05", command: "scripts/mg_perf_compare.sh, after arm against before arm e951045, min over two alternating rounds"}
@@ -31,15 +32,64 @@ against MadGraph's standalone `MATRIX1` ns per evaluation from
 accuracy, which carry the phase-space map, VEGAS, cuts and clustering, are a different
 measurement: [integration against MadGraph](integration-vs-madgraph.md).
 
-**Headline: geomean 0.87× (ours/MadGraph) over 19 processes, on both an x86 host and the
-M3 Max.** Thirteen rows are faster than MATRIX1; the slow side is the colour-dense rows and
-`W⁺W⁻`. All figures predate the evaluator's constant collection and fused scaled sums,
-bare configuration amplitudes and real-pool folding (`fold.rs`).[^td6] Constant collection
-alone measured 1.00–1.11× faster at scalar width on the other bench rows and 1.21× on the
-2→6 under default codegen on an Emerald Rapids VM (more under `target-cpu=native`); the
-bare configuration amplitudes added a few percent, resolved only under `target-cpu=native`.
-The ratio on the current tree is therefore probably lower and has not been re-measured.
-See [constant collection](constant-collection-and-fused-sums.md).
+**Headline at v0.2.0 (Ice Lake VM): geomean 0.85× (ours/MadGraph) over 19 processes at
+default flags, and 0.74× with both sides compiled for x86-64-v3.** Fourteen rows are faster
+than MATRIX1 at default flags and sixteen at x86-64-v3; the slow side is still `uux_to_uux`,
+`gg_to_gg` and `ee_to_wpwm`. Ours is the scalar interpreter in both configurations, with no
+lane batching. The earlier tables (0.87× on Cascade Lake and the M3 Max) predate constant
+collection and fused scaled sums, bare configuration amplitudes and real-pool folding
+(`fold.rs`).[^td6] See [constant collection](constant-collection-and-fused-sums.md).
+
+## Ice Lake VM, v0.2.0 (`3cc7f9c2`, 2026-11-09)
+
+Both codes on one host in one sitting ([benchmark hosts](benchmark-hosts.md)), pinned to
+core 2. vibegraph: the glibc `cargo bench` build of `eval_strategies` at the tag, not the
+musl release asset; the mean of two runs, which agree to 2.1% (default) and 2.8% (v3) per
+row. MadGraph: the pinned submodule (3.7.1), the per-row median of three `gen_amplitude.py`
+runs, process directories launched with `--nb-core 4`.
+
+The two configurations:
+- **Default.** `RUSTFLAGS` unset. MadGraph with `global_flag = -O`, `aloha_flag` and
+  `matrix_flag` empty, set explicitly so MadGraph's `__debug__` path cannot add
+  `-fbounds-check`.
+- **x86-64-v3 on both sides.** `RUSTFLAGS="-C target-cpu=x86-64-v3"`. MadGraph with
+  `global_flag = '-O -march=x86-64-v3'` and `aloha_flag = -march=x86-64-v3`, and
+  `-march=x86-64-v3` in `build_amplitude.sh`'s `--f77flags`, with the environment's
+  `-march=nocona` removed from `FFLAGS` (see the trap below). Every compile line was
+  checked for the flag, and `objdump` found ymm instructions in every row's module and in
+  `libdhelas.a`.
+
+In both, MadGraph's `MATRIX1` itself is compiled by f2py at `-O3 -funroll-loops` (the
+harness's flags), while `libdhelas.a` and `libmodel.a` take the `make_opts` flags above:
+"MadGraph defaults" describes the libraries only.
+
+| process | default: MG ns | ours ns | ours/MG | v3: MG ns | ours ns | ours/MG |
+|---|--:|--:|--:|--:|--:|--:|
+| `ee_to_zh` | 424 | 418 | 0.99× | 411 | 354 | 0.86× |
+| `uux_to_uux` | 601 | 856 | 1.43× | 583 | 694 | 1.19× |
+| `pp_to_ll_qcd0` | 628 | 506 | 0.81× | 601 | 447 | 0.74× |
+| `ee_to_mumu` | 631 | 500 | 0.79× | 600 | 430 | 0.72× |
+| `ee_to_ttx` | 766 | 792 | 1.03× | 755 | 666 | 0.88× |
+| `gg_to_ttx` | 1 564 | 1 666 | 1.06× | 1 403 | 1 301 | 0.93× |
+| `ee_to_ee` | 1 677 | 1 359 | 0.81× | 1 601 | 1 097 | 0.69× |
+| `ee_to_wpwm` | 1 771 | 2 287 | 1.29× | 1 612 | 1 761 | 1.09× |
+| `ee_to_tatah` | 1 835 | 1 499 | 0.82× | 1 774 | 1 220 | 0.69× |
+| `gu_to_epemu` | 1 947 | 1 343 | 0.69× | 1 778 | 1 025 | 0.58× |
+| `uux_to_epemg` | 1 948 | 1 364 | 0.70× | 1 775 | 1 043 | 0.59× |
+| `ddx_to_epemg` | 1 955 | 1 368 | 0.70× | 1 777 | 1 044 | 0.59× |
+| `gux_to_epemux` | 1 962 | 1 340 | 0.68× | 1 776 | 1 052 | 0.59× |
+| `gg_to_gg` | 2 343 | 2 750 | 1.17× | 2 044 | 2 346 | 1.15× |
+| `ee_to_mumua` | 3 461 | 2 375 | 0.69× | 3 108 | 1 817 | 0.58× |
+| `ud_to_epemud_qcd0` | 14 737 | 9 453 | 0.64× | 12 884 | 7 291 | 0.57× |
+| `ee_to_mumu_tata_qcd0` | 14 892 | 9 999 | 0.67× | 13 263 | 7 864 | 0.59× |
+| `uux_to_ccx_emmm_qcd0` | 292 181 | 201 065 | 0.69× | 267 537 | 162 796 | 0.61× |
+| `bbx_to_ccx_emmm_qcd0` | 355 824 | 319 188 | 0.90× | 317 690 | 267 320 | 0.84× |
+
+**Default: geomean 0.85×, range 0.64×–1.43×, 5 rows above 1.0. x86-64-v3: geomean 0.74×,
+range 0.57×–1.19×, 3 rows above 1.0.** x86-64-v3 speeds ours up by 1.24× (geomean) and
+MadGraph by 1.08×. Against the Cascade Lake table (different host, ratios only),
+`gg_to_gg` moved from 1.37× to 1.17× and `bbx_to_ccx_emmm_qcd0` from 1.17× to 0.90×, while
+`uux_to_uux` moved the other way, 1.24× to 1.43×, which is not explained.
 
 ## Cascade Lake, `cf8b2b7` (2026-09-26)
 
@@ -126,8 +176,16 @@ which matched the sum of the individual changes' own measurements (−21.5% pred
   straight-line Fortran while ours is an interpreter, so the gap need not be constant across
   hosts. MG's side is a warm-up plus one batch, so ratio shifts under ~10% are noise.[^n15]
 - **Codegen fairness**: default codegen on both sides, or raise both together
-  (`RUSTFLAGS="-C target-cpu=native"` *and* `-march=native` in `build_amplitude.sh`'s
-  `--f77flags`), never one side only. The checked-in `mg_*.so` modules and `mg_timings.json`
+  (`RUSTFLAGS="-C target-cpu=…"` *and* the same `-march` in `build_amplitude.sh`'s
+  `--f77flags` and in the run card's `global_flag`/`aloha_flag`), never one side only.
+- **The pixi `madgraph` environment's `FFLAGS` overrides `--f77flags`.** It carries
+  `-march=nocona -mtune=haswell`, which f2py places after `--f77flags`; the last `-march`
+  wins, so a `-march` passed only through `--f77flags` silently does not reach
+  `MATRIX1`. `make_opts` shows nothing wrong. Check the "Fortran f77 compiler" line of the
+  build log, and the instruction set of the built module. A run that missed this
+  understated MadGraph's v3 speed by up to about 15% on the rows where `MATRIX1` dominates.
+- **Quote multi-word run-card flags**: an unquoted `set global_flag -O -march=…` makes
+  MadGraph lowercase `-O` to `-o`. The checked-in `mg_*.so` modules and `mg_timings.json`
   are host-specific; regenerate them on the host being measured.
 - **Correctness first**: `pixi run validate-amplitudes` (`tests/amplitude_oracle.rs`) before
   any timing claim.
