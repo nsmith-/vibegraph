@@ -1,3 +1,4 @@
+pub mod amplitude_probe;
 pub mod artifact;
 pub mod budget;
 pub mod cache;

@@ -296,6 +296,40 @@ pub fn generate_from_proc_card_in(
     model: &UFOModel,
     pool: EnumerationPool,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
+    enumerate_lines_in(proc_card, model, pool).map(|lines| lines.sets)
+}
+
+/// A card's diagram sets together with how many of them each process line
+/// produced.
+#[derive(Clone, Debug)]
+pub struct LineSets {
+    /// Every diagram set, as [`generate_from_proc_card_in`] returns them: line
+    /// by line, in card order, each line's in its own enumeration order.
+    pub sets: Vec<DiagramSet>,
+    /// The number of [`sets`](Self::sets) each process line produced, one entry
+    /// per line in card order; they sum to `sets.len()`.
+    pub per_line: Vec<usize>,
+}
+
+impl LineSets {
+    /// Each process line's sets, in card order.
+    pub fn lines(&self) -> impl Iterator<Item = &[DiagramSet]> {
+        let mut rest = self.sets.as_slice();
+        self.per_line.iter().map(move |&n| {
+            let (line, tail) = rest.split_at(n);
+            rest = tail;
+            line
+        })
+    }
+}
+
+/// [`generate_from_proc_card_in`], keeping which process line produced each
+/// set.
+pub fn enumerate_lines_in(
+    proc_card: &SupportedCard,
+    model: &UFOModel,
+    pool: EnumerationPool,
+) -> Result<LineSets, DiagramError> {
     match pool {
         EnumerationPool::Ambient => enumerate(proc_card, model),
         // A pool of its own rather than a serial code path: feyngraph's `par_iter`s
@@ -463,10 +497,11 @@ fn summed_states(
     Ok(out)
 }
 
-fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramSet>, DiagramError> {
+fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<LineSets, DiagramError> {
     let _span = info_span!("enumerate").entered();
     let started = Instant::now();
     let mut sets = Vec::new();
+    let mut per_line = Vec::with_capacity(proc_card.processes.len());
     // Every process line's subprocesses are summed into one cross section, so a
     // subprocess two lines both produce would be counted twice. MadGraph's own
     // duplicate check compares whole amplitudes, process number included, and
@@ -515,6 +550,12 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
             }
             earlier.push((index, sets.len() + offset));
         }
+        per_line.push(
+            process_sets
+                .iter()
+                .filter(|s| !s.diagrams.is_empty())
+                .count(),
+        );
         sets.extend(process_sets);
     }
     // A particle assignment with no diagram is not a subprocess: MadGraph
@@ -528,7 +569,7 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
         if populated == 1 { "" } else { "es" },
         started.elapsed().as_secs_f64()
     );
-    Ok(sets)
+    Ok(LineSets { sets, per_line })
 }
 
 /// A process with its names resolved against the model: the model particles

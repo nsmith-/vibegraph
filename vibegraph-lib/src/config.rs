@@ -16,7 +16,7 @@ use tracing::{debug, info, info_span, trace};
 
 use crate::diagrams::check::SupportedProcess;
 use crate::diagrams::{
-    generate_from_proc_card_in, DiagramError, DiagramSet, EnumerationPool, ModelImport,
+    generate_from_proc_card_in, DiagramError, DiagramSet, EnumerationPool, LineSets, ModelImport,
     SupportedCard,
 };
 use crate::helas::color::colorize::colorize_process;
@@ -156,27 +156,27 @@ impl GlobalConfig {
     ///
     /// For a `1 → n` decay that is [`RunCard::decay_default`] (every cut
     /// removed). For a scattering process it is [`RunCard::scattering_default`]
-    /// over what MadGraph reads off its matrix elements, which this reads off
-    /// an enumeration of each process line under `model` on `pool`
-    /// ([`process_facts`]): a subprocess with no diagram is not one MadGraph
-    /// generates, so it does not count.
-    pub fn load_run_card(
+    /// over what MadGraph reads off its matrix elements, which `facts` supplies
+    /// ([`process_facts`]). `facts` is called only for that last card, so a run
+    /// card or a decay costs nothing to supply facts for, and a card that is
+    /// refused is refused before they are computed.
+    pub fn load_run_card<E: From<LoadRunCardError>>(
         &self,
         parsed: &SupportedCard,
         model: &UFOModel,
-        pool: EnumerationPool,
-    ) -> Result<RunCard, LoadRunCardError> {
+        facts: impl FnOnce() -> Result<ProcessFacts, E>,
+    ) -> Result<RunCard, E> {
         if let Some(path) = &self.run_card_path {
-            return Ok(RunCard::parse_file(path)?);
+            return Ok(RunCard::parse_file(path).map_err(LoadRunCardError::from)?);
         }
         if parsed.is_decay() {
             return Ok(RunCard::decay_default());
         }
         if let Some(particle) = massless_coloured_scalar(model) {
-            return Err(LoadRunCardError::FixedScaleModel { particle });
+            return Err(LoadRunCardError::FixedScaleModel { particle }.into());
         }
-        let facts = process_facts(parsed, model, pool)?;
-        Ok(RunCard::scattering_default(&facts)?)
+        let facts = facts()?;
+        Ok(RunCard::scattering_default(&facts).map_err(LoadRunCardError::from)?)
     }
 }
 
@@ -185,14 +185,8 @@ impl GlobalConfig {
 pub enum LoadRunCardError {
     #[error(transparent)]
     Card(#[from] RunCardError),
-    /// The default card reads the generated subprocesses, and they could not be
-    /// generated.
-    #[error("cannot enumerate the processes the default card is built for: {0}")]
-    Process(#[from] DiagramError),
-    /// The default card reads the colour basis of every subprocess, and one
-    /// could not be built.
-    #[error("cannot build the colour basis the default card reads: {0}")]
-    Colour(#[from] ColorAlgebraError),
+    #[error(transparent)]
+    Facts(#[from] ProcessFactsError),
     /// A model with a massless coloured scalar. MadGraph marks it `fix_scale`
     /// (`import_ufo.py:576-579`): its default card fixes both scales and turns
     /// matching off, and `launch` refuses any card that runs a scale
@@ -206,6 +200,19 @@ pub enum LoadRunCardError {
     FixedScaleModel { particle: String },
 }
 
+/// Why [`process_facts`] could not read a card's processes.
+#[derive(Debug, Error)]
+pub enum ProcessFactsError {
+    /// The default card reads the generated subprocesses, and they could not be
+    /// generated.
+    #[error("cannot enumerate the processes the default card is built for: {0}")]
+    Process(#[from] DiagramError),
+    /// The default card reads the colour basis of every subprocess, and one
+    /// could not be built.
+    #[error("cannot build the colour basis the default card reads: {0}")]
+    Colour(#[from] ColorAlgebraError),
+}
+
 /// A massless coloured scalar of `model`, MadGraph's `colored_scalar`
 /// (`import_ufo.py:1330-1333`): spin 0, not a colour singlet, zero mass.
 fn massless_coloured_scalar(model: &UFOModel) -> Option<String> {
@@ -217,44 +224,46 @@ fn massless_coloured_scalar(model: &UFOModel) -> Option<String> {
 }
 
 /// What MadGraph's `create_default_for_process` reads off the processes of
-/// `parsed` ([`ProcessFacts`]), from each process line enumerated on its own:
-/// MadGraph's matrix elements are those subprocesses, and a decay-chain line's
-/// first process is its core, enumerated again without the decays.
-fn process_facts(
+/// `parsed` ([`ProcessFacts`]), given the card's enumeration `lines` under
+/// `model` ([`enumerate_lines_in`](crate::diagrams::enumerate_lines_in)).
+///
+/// MadGraph's matrix elements are the card's subprocesses, each line's in
+/// turn. A decay-chain line's first process is its core: its legs are read
+/// from the core enumerated again without the decays, on `pool`, which is the
+/// only enumeration done here. A card with no decay chain enumerates nothing.
+pub fn process_facts(
     parsed: &SupportedCard,
     model: &UFOModel,
+    lines: &LineSets,
     pool: EnumerationPool,
-) -> Result<ProcessFacts, LoadRunCardError> {
+) -> Result<ProcessFacts, ProcessFactsError> {
+    assert_eq!(
+        lines.per_line.len(),
+        parsed.processes.len(),
+        "one enumerated line per process line"
+    );
     let pdg = |name: &String| {
         let id = model
             .particle_id(name)
             .expect("an enumerated leg is a model particle");
         model.particle(id).pdg_code
     };
-    let enumerate = |process: SupportedProcess| -> Result<Vec<DiagramSet>, DiagramError> {
-        let card = SupportedCard {
-            model: parsed.model.clone(),
-            processes: vec![process],
-        };
-        Ok(generate_from_proc_card_in(&card, model, pool)?
-            .into_iter()
-            .filter(|set| !set.diagrams.is_empty())
-            .collect())
-    };
 
     let mut facts = ProcessFacts::default();
-    let mut sets = Vec::new();
-    for process in &parsed.processes {
-        let line = enumerate(process.clone())?;
+    for (process, line) in parsed.processes.iter().zip(lines.lines()) {
         let core = if process.decays.is_empty() {
             None
         } else {
-            Some(enumerate(SupportedProcess {
-                decays: Vec::new(),
-                ..process.clone()
-            })?)
+            let card = SupportedCard {
+                model: parsed.model.clone(),
+                processes: vec![SupportedProcess {
+                    decays: Vec::new(),
+                    ..process.clone()
+                }],
+            };
+            Some(generate_from_proc_card_in(&card, model, pool)?)
         };
-        for set in core.as_ref().unwrap_or(&line) {
+        for set in core.as_deref().unwrap_or(line) {
             facts.core_legs.push(
                 set.particles_in
                     .iter()
@@ -263,9 +272,9 @@ fn process_facts(
                     .collect(),
             );
         }
-        sets.extend(line);
     }
-    for set in &sets {
+    let sets = &lines.sets;
+    for set in sets {
         for (beam, name) in facts.beams.iter_mut().zip(&set.particles_in) {
             beam.insert(pdg(name));
         }
@@ -281,7 +290,7 @@ fn process_facts(
     coloured.dedup();
     facts.coloured_pdgs = coloured;
 
-    facts.non_qcd_gluon_emission = uses_non_qcd_gluon_emission(&sets, model);
+    facts.non_qcd_gluon_emission = uses_non_qcd_gluon_emission(sets, model);
     facts.onshell_veto = parsed
         .processes
         .iter()
@@ -290,7 +299,7 @@ fn process_facts(
         .processes
         .iter()
         .all(|p| p.orders.iter().any(|o| o.name == "QCD" && o.value == 0));
-    facts.qcd_free_single_color = qcd_free && single_color(&sets, model)?;
+    facts.qcd_free_single_color = qcd_free && single_color(sets, model)?;
     Ok(facts)
 }
 
@@ -404,12 +413,160 @@ mod tests {
         assert_ne!(default.digest, no_b.digest);
     }
 
+    /// [`process_facts`] of `parsed` over an enumeration made for them.
+    fn enumerated_facts(
+        parsed: &SupportedCard,
+        model: &UFOModel,
+    ) -> Result<ProcessFacts, LoadRunCardError> {
+        let lines = crate::diagrams::enumerate_lines_in(parsed, model, EnumerationPool::Serial)
+            .map_err(ProcessFactsError::from)?;
+        Ok(process_facts(
+            parsed,
+            model,
+            &lines,
+            EnumerationPool::Serial,
+        )?)
+    }
+
     /// The run card `cfg` resolves for `proc_card` under its own model.
     fn run_card_for(cfg: &GlobalConfig, proc_card: &str) -> RunCard {
         let parsed = crate::diagrams::parse_proc_card(proc_card, &Default::default()).unwrap();
         let model = cfg.load_ufo(&parsed.model).unwrap();
-        cfg.load_run_card(&parsed, &model, EnumerationPool::Serial)
+        cfg.load_run_card(&parsed, &model, || enumerated_facts(&parsed, &model))
             .unwrap()
+    }
+
+    /// The facts as MadGraph reads them, computed independently of
+    /// [`process_facts`]'s reuse of the card's enumeration: every process line
+    /// enumerated on its own card, and a decay-chain line's core again without
+    /// its decays.
+    fn per_line_facts(parsed: &SupportedCard, model: &UFOModel) -> ProcessFacts {
+        let pdg = |name: &String| model.particle(model.particle_id(name).unwrap()).pdg_code;
+        let enumerate = |process: SupportedProcess| {
+            let card = SupportedCard {
+                model: parsed.model.clone(),
+                processes: vec![process],
+            };
+            generate_from_proc_card_in(&card, model, EnumerationPool::Serial).unwrap()
+        };
+        let mut facts = ProcessFacts::default();
+        let mut sets = Vec::new();
+        for process in &parsed.processes {
+            let line = enumerate(process.clone());
+            let core = (!process.decays.is_empty()).then(|| {
+                enumerate(SupportedProcess {
+                    decays: Vec::new(),
+                    ..process.clone()
+                })
+            });
+            for set in core.as_ref().unwrap_or(&line) {
+                let legs = set.particles_in.iter().chain(&set.particles_out);
+                facts.core_legs.push(legs.map(pdg).collect());
+            }
+            sets.extend(line);
+        }
+        for set in &sets {
+            for (beam, name) in facts.beams.iter_mut().zip(&set.particles_in) {
+                beam.insert(pdg(name));
+            }
+        }
+        let mut coloured: Vec<i64> = model
+            .particles
+            .values()
+            .filter(|p| p.color > 1 && p.spin > 0)
+            .map(|p| p.pdg_code.abs())
+            .collect();
+        coloured.sort_unstable();
+        coloured.dedup();
+        facts.coloured_pdgs = coloured;
+        facts.non_qcd_gluon_emission = uses_non_qcd_gluon_emission(&sets, model);
+        facts.onshell_veto = parsed
+            .processes
+            .iter()
+            .any(|p| !p.forbidden_onshell_s_channels.is_empty());
+        let qcd_free = parsed
+            .processes
+            .iter()
+            .all(|p| p.orders.iter().any(|o| o.name == "QCD" && o.value == 0));
+        facts.qcd_free_single_color = qcd_free && single_color(&sets, model).unwrap();
+        facts
+    }
+
+    /// The default card is the same whether its facts are read off the card's
+    /// own enumeration, banked in a diagram artifact that is written and read
+    /// back, or computed line by line as MadGraph reads them: the facts compare
+    /// equal (core legs in order included) and so do the three `RunCard`s,
+    /// field by field. The cards cover a plain scattering line, lines sharing
+    /// a process number, a decay chain beside a plain line (so the core and
+    /// the line differ and the lines' slices must line up), a b-initiated
+    /// subprocess raising `maxjetflavor`, matching from mixed multiplicities,
+    /// a polarized line and a `QCD=0` line.
+    ///
+    /// Cannot detect an error the per-line reference shares (it reads the same
+    /// rules off the same subprocesses), nor a fact the default card does not
+    /// read.
+    #[test]
+    fn default_card_from_banked_facts_equals_the_enumerated_one() {
+        use crate::diagrams::artifact::DiagramArtifact;
+        use crate::ufo::loaded::LoadedModel;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cases = [
+            ("import model sm\ngenerate p p > e+ e-\n", None),
+            (
+                "import model sm\ngenerate p p > e+ e- @1\nadd process p p > e+ e- j @1\n\
+                 add process p p > mu+ mu- @1\n",
+                None,
+            ),
+            (
+                "import model sm\ngenerate p p > e+ e-\nadd process p p > z j, z > e+ e-\n",
+                None,
+            ),
+            (
+                "import model sm-no_b_mass\ngenerate p p > w+, w+ > e+ ve\n\
+                 add process b b~ > z, z > e+ e-\n",
+                Some(SMRestrict::NoBMass),
+            ),
+            ("import model sm\ngenerate e+ e- > w+{0} w-\n", None),
+            ("import model sm\ngenerate e+ e- > u u~ QCD=0\n", None),
+        ];
+        let mut saw = (false, false, false);
+        for (index, (text, restrict)) in cases.into_iter().enumerate() {
+            let parsed = crate::diagrams::parse_proc_card(text, &Default::default()).unwrap();
+            let loaded = LoadedModel::interned_sm(restrict.unwrap_or(SMRestrict::Default));
+            let model = &loaded.model;
+
+            let reference = per_line_facts(&parsed, model);
+            let enumerated = enumerated_facts(&parsed, model).unwrap();
+            assert_eq!(enumerated, reference, "{text}");
+
+            let path = dir.path().join(format!("{index}.bin.zst"));
+            DiagramArtifact::enumerate(text, &parsed, &loaded, EnumerationPool::Serial)
+                .unwrap()
+                .write_to_path(&path, false)
+                .unwrap();
+            let (artifact, _) = DiagramArtifact::read_from_path(&path).unwrap();
+            let banked = artifact.process_facts.expect("a scattering card");
+            assert_eq!(banked, reference, "{text}");
+
+            let cfg = config();
+            let from = |facts: ProcessFacts| {
+                cfg.load_run_card(&parsed, model, || Ok::<_, LoadRunCardError>(facts))
+                    .unwrap()
+            };
+            let card = from(reference.clone());
+            assert_eq!(from(enumerated), card, "{text}");
+            assert_eq!(from(banked), card, "{text}");
+            assert_eq!(
+                run_card_for(&cfg, text),
+                card,
+                "{text}: the whole default-card path"
+            );
+            saw.0 |= card.maxjetflavor == 5;
+            saw.1 |= card.int("ickkw") == 1;
+            saw.2 |= card.int("SDE_strategy") == 2;
+        }
+        assert_eq!(saw, (true, true, true), "every rule the cases target fired");
     }
 
     /// `(maxjetflavor, asrwgtflavor)` of a card.
@@ -633,7 +790,7 @@ mod tests {
         let parsed = crate::diagrams::parse_proc_card(proc_card, &Default::default()).unwrap();
         let cfg = config();
         let model = cfg.load_ufo(&parsed.model).unwrap();
-        cfg.load_run_card(&parsed, &model, EnumerationPool::Serial)
+        cfg.load_run_card(&parsed, &model, || enumerated_facts(&parsed, &model))
             .expect_err(proc_card)
             .to_string()
     }
