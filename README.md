@@ -295,31 +295,45 @@ as tracked rows, never as loosened tolerances.
 
 ## Performance
 
-Every ratio below compares both sides **on one host, in one sitting**:
-- **Host:** a 4-vCPU Intel Cascade Lake Xeon at 2.8 GHz.
-- **MadGraph:** the pinned 3.7.1, run through its own `launch`.
-- **Our side:** default x86-64 codegen.
+Every ratio below compares both sides **on one host, in one sitting**, at the
+v0.2.0 release:
+- **Host:** a 4-vCPU Intel Ice Lake Xeon (KVM guest).
+- **MadGraph:** the pinned 3.7.1, run through its own `launch`, with its
+  default compiler flags set explicitly.
+- **Our side:** the v0.2.0 release binaries, plain x86-64 and x86-64-v3.
 
-The full record, with every command, is
-[`research/kb/performance/integration-vs-madgraph.md`](research/kb/performance/integration-vs-madgraph.md) and
-[`research/kb/performance/matrix-element-vs-madgraph.md`](research/kb/performance/matrix-element-vs-madgraph.md).
-Figures that could not be re-measured there are marked as Apple M3 Max ones.
+The full record, with every command, is in
+[`research/kb/performance/`](research/kb/performance/index.md):
+[matrix element](research/kb/performance/matrix-element-vs-madgraph.md),
+[integration](research/kb/performance/integration-vs-madgraph.md),
+[reweighting](research/kb/performance/reweighting-cost-vs-madgraph.md) and
+[systematics](research/kb/performance/systematics-cost-vs-madgraph.md). An
+Apple M3 Max run of the same plan is in progress; figures marked M3 Max below
+are from earlier releases.
+
+All ratios are cost ratios, ours over MadGraph's, so **below 1.0× is faster
+than MadGraph**.
 
 ### The matrix element, per point
 
-Matrix-element evaluation runs at **0.67×–1.37×** the cost of MadGraph's
-generated, helicity-filtered Fortran (`matrix1_optim.f`). The **geometric mean
-is 0.87×** over the 19 processes `scripts/mg_perf_compare.sh` covers, 2→2
-through 2→6. It is a cost ratio, so below 1.0× is faster than MadGraph.
-- **Faster:** thirteen of the nineteen.
-- **Parity:** `e+ e- > t t~` at 0.99×.
-- **Slower:** the colour-dense rows, where colour-flow contraction dominates
-  (`g g > g g` 1.37×, `g g > t t~` 1.25×, `u u~ > u u~` 1.24×), plus
-  `e+ e- > W+ W-` at 1.29× and `b b~ > c c~ e+ e- mu+ mu-` at 1.17×.
+Our matrix element is evaluated by an interpreter: a helicity-amplitude program
+built from the UFO model when the process is loaded, with no code generation or
+compiler. Against MadGraph's generated, helicity-filtered Fortran
+(`matrix1_optim.f`), over the 19 processes `scripts/mg_perf_compare.sh` covers,
+2→2 through 2→6:
 
-The M3 Max reads the same 0.87× geomean over the same nineteen, so this ratio
-carries across hosts. Not bad for a runtime evaluator built at model-load time,
-against code MadGraph generates and compiles per process.
+| build, both sides | geometric mean | range | slower than MadGraph |
+|---|--:|--:|--:|
+| default x86-64 | **0.85×** | 0.64×–1.43× | 5 of 19 |
+| x86-64-v3 | **0.74×** | 0.57×–1.19× | 3 of 19 |
+
+- **Fastest relative to MadGraph:** the multi-leg rows. Three of the four 2→4
+  and 2→6 rows run at 0.57×–0.61× under x86-64-v3; `b b~ > c c~ e+ e- mu+ mu-`
+  is at 0.84×.
+- **Slower:** `u u~ > u u~` (1.43× / 1.19×), `e+ e- > W+ W-` (1.29× / 1.09×) and
+  `g g > g g` (1.17× / 1.15×), where colour-flow contraction dominates.
+- **x86-64-v3 helps us more than MadGraph**: 1.24× faster for us against 1.08×
+  for MadGraph. This is still one point at a time, with no SIMD batching.
 
 The starting point was 8.6×–110× slower: a general expression DAG walked per
 point. Four things closed the distance, all of it holding the ≤ 1e-12
@@ -329,8 +343,6 @@ matrix-element gate throughout:
 - reproducing MadGraph's own two layers of zero-filtering, whose survivor sets
   match bit for bit;
 - specialising the arithmetic itself.
-
-The full record lives in [`research/kb/performance/`](research/kb/performance/index.md).
 
 ### End to end: the integrand, not just the matrix element
 
@@ -355,75 +367,77 @@ The figures below are therefore the ones that describe running the generator.
 folds in variance as well as per-point cost: the closest thing here to "how
 long until I have the number".
 - **Our side is measured:** `vibegraph integrate --target-rel 0.001 -j 1`,
-  three seeds, wall time including model load and diagram enumeration.
+  three seeds, CPU time including model load and diagram enumeration.
 - **MadGraph's side is derived.** It takes the same host's MadEvent run of the
   same process, and scales its `<cumulated_time>` to the accuracy our run
   actually reached, by the 1/δ² Monte-Carlo law. So the whole extrapolation
   sits on its side and none on ours.
 - **Errors** are the χ²-scaled ones, which is the stricter reading.
 
-| process | channels | ours (CPU-s) | at δ | MadGraph, same δ | ratio |
-|---|--:|--:|--:|--:|--:|
-| `e+ e- > mu+ mu-` | 2 | 1.10 | 0.046% | 7.9 | 7.2× |
-| `p p > e+ e-` (dy13) | 4 | 9.43 | 0.097% | 33.1 | 3.5× |
-| `g g > g g` | 4 | 12.07 | 0.065% | 11.2 | 0.93× |
-| `p p > j j` | 19 | 53.40 | 0.099% | 60.6 | 1.13× |
-| `p p > l+ l- j` | 24 | 362.3 | 0.100% | 178.3 | 0.49× |
+| process | ours / MadGraph, plain | x86-64-v3 |
+|---|--:|--:|
+| `e+ e- > mu+ mu-` | 0.13× | 0.12× |
+| `p p > e+ e-` (dy13) | 0.16× | 0.15× |
+| `g g > g g` | 0.82× | 0.76× |
+| `p p > j j` | 0.89× | 0.84× |
+| `p p > l+ l- j` | 1.08× | 1.02× |
+| `u d > e+ e- u d` (2→4) | 0.73× | 0.62× |
+| `p p > e+ e-` + 0–2 jets, MLM | 4.04× | 3.94× |
 
-**Geometric mean 1.67× faster to a given accuracy** over the five rows, or
-2.27× over the first four. Both sit *below* the throughput ratio further down,
-and the gap is the point: a faster point is not a faster answer if it is a
-worse point.
+**Geometric mean 0.65× (0.60× at x86-64-v3): the same accuracy for about two
+thirds of MadEvent's CPU.** Without the MLM row it is 0.48× (0.44×). Every σ
+agrees with MadEvent's, the largest pull 1.46.
 
-These ratios are about half the M3 Max's (3.8× there). The evaluators did not
-change relative to each other, as the matrix-element ratio shows: both
-`MATRIX1` and our integrand run about 3× slower on this host. The difference
-is MadEvent's `<cumulated_time>`, the denominator here, which is only 1.1–1.6×
-higher. Most of it is per-job work other than the matrix element (`MATRIX1` is
-1.4 of `g g > g g`'s 10.2 CPU-s). The note gives the decomposition, and the
-reason the M3's hybrid cores may have inflated that denominator there.
+Three rows need a closer reading:
+- **`e+ e- > mu+ mu-` and `g g > g g` overshoot.** The default budget's minimum
+  of six iterations already takes them past 0.1%, so the table compares equal
+  accuracy at the δ actually reached. Measured to 0.1% with a smaller budget
+  (`--min-iters 0 --neval 30000`), they read 0.16×–0.19× and 0.85×–0.96×.
+- **`p p > l+ l- j` is phase-space map quality.** It draws 2.8× more points per
+  second than MadEvent but needs about nine times as many. That is the map at
+  the fiducial cut boundary, the next lever on this row.
+- **The MLM row is about 4× slower.** It needs 9–10× MadEvent's points at about
+  1.4× its cost per point, and iteration-to-iteration disagreement
+  (χ²/dof 1.5–1.8) raises the budget again. Merged multi-jet integration is the
+  clearest open performance gap.
 
-`p p > l+ l- j` is where the sampler shows:
-- It converges in 134–160 iterations on all three seeds, spending 17.0–19.2M
-  evaluations. Its χ²/dof prices real iteration-to-iteration disagreement into
-  the stop.
-- It needs about nine times the points MadGraph does for the same accuracy.
-  That is phase-space map quality at the fiducial cut boundary, the next lever
-  on this row.
-- The default `--max-iters 500` gives it headroom. The cap is a safety bound a
-  converging run never touches, so it costs the other rows nothing.
+**Integrand throughput.** The per-point half of the same comparison: our
+evaluations per single-core CPU-second against MadEvent's points per Fortran
+CPU-second. **We draw 3.5× more points per second** (3.7× at x86-64-v3,
+geometric mean over the seven rows). It ranges from 0.69× on the MLM row and
+1.1× on `p p > j j` to 28× on `e+ e- > mu+ mu-`. Bigger is faster here, the
+opposite direction to the cost ratios above.
 
-**Integrand throughput.** The per-point half of the same comparison: our points
-per single-threaded second against MadEvent's per Fortran CPU-second. That
-denominator deliberately leaves its job farm out.
+**Many weights: reweighting and systematics.** These are where the per-event
+cost of MadGraph's Python modules shows most. Both comparisons use the same
+events on both sides:
+- **Reweighting to an EFT operator basis** (8 SMEFTsim operators at NP=1, 45
+  hypotheses, 1000 `e+ e- > t t~` events): MadGraph's reweight module takes
+  71 s; vibegraph takes 0.40–0.47 s, or 0.21–0.29 s reading all 45 off nine
+  amplitude evaluations per event. That is **151×–335× faster**.
+- **Systematics weights** (20 000 `p p > l+ l- j` events): CMS's 926-weight PDF,
+  scale and αs request adds 48 s to `generate`, against 452 s for MadGraph's
+  `systematics.py` (**9.3×**, at 725 MiB against 3.0 GiB). A 9-point scale
+  request adds 0.70 s against 8.7 s (12×).
 
-We draw **3.97× more points per second, geometric mean over the 26 gated
-rows**. The range runs from 1.1× on `g g > g g` to 15.7× on the cheapest
-leptonic rows. `g g > g g` is a pure-gluon 2→2, with the densest colour algebra
-of any process here and no PDF work to win. Bigger is faster here, the opposite
-direction to the cost ratio above. (M3 Max: 8.76×, same shape, compressed here
-by the same denominator.)
-
-That throughput exceeds the time-to-accuracy figure means the sampler gives
-back part of what the evaluator wins, and it localises the remaining work.
-`p p > l+ l- j` draws 4.2× more points per second but needs about 8.9× more of
-them, which is the 0.49× in the table. Nothing there is wrong with the
-evaluator: points per second is structurally blind to map quality.
-
-Caveats on both:
+Caveats on all of these:
 - **Throughput is an integrand ratio, not a matrix-element one.** Our
   per-point work is not MadGraph's.
 - **MadEvent's point count may include its survey pass.** Whether its
   recorded count does was never established, which puts a systematic factor of
-  order unity on its column.
-- **The accuracy figure takes on the 1/δ² extrapolation.** It uses time and
-  error rather than point counts. The factor by which MadGraph's recorded time
-  was rescaled runs from ×0.28 (`p p > e+ e-`) and ×0.85 (`e+ e- > mu+ mu-`),
-  through ×1.1 (`g g > g g`) and ×4.8 (`p p > j j`), to ×11.1 on
-  `p p > l+ l- j`.
+  order unity on its throughput column.
 - **One asymmetry is left uncorrected, and it is against us.** MadGraph's
   `cumulated_time` excludes its `output` and `compile` stages, while our model
-  load and diagram enumeration sit inside our wall time.
+  load and diagram enumeration sit inside our time.
+- **The v0.2.0 Linux binaries run slower with more threads.** They are static
+  musl builds, and under several threads they contend on the allocator: at
+  `-j 4` they are slower than at `-j 1`. A glibc build of the same commit
+  scales normally. All single-core figures above use the release binaries,
+  which carry about 20% single-thread overhead against glibc as well; the fix
+  is tracked in the
+  [backlog](research/kb/backlog/performance/musl-release-assets-anti-scale-with-threads.md).
+  Until it lands, run the Linux binaries at `-j 1`, or build from source. The
+  macOS binaries are unaffected.
 
 **Parallel scaling** (Apple M3 Max). `vibegraph integrate -j 16` against
 `-j 1` gives **8.68×** on Drell–Yan and **9.48×** on `p p > l+ l- j`.

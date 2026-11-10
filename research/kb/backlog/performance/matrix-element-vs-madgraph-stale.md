@@ -39,11 +39,14 @@ MadGraph would set them, and our own release asset has an x86-64-v3 build.
 
 **One sitting for every MadGraph comparison.** This run fixes the commit and
 hosts that the end-to-end re-runs reuse:
-[integration](integration-vs-madgraph-stale.md),
-[reweighting](reweighting-vs-madgraph-stale.md) and
-[systematics](systematics-cost-vs-madgraph-unmeasured.md). It also closes
-[matrix1-ratio-unmeasured-since-constant-collection](matrix1-ratio-unmeasured-since-constant-collection.md).
+[integration](integration-vs-madgraph-stale.md) and
+[reweighting](reweighting-vs-madgraph-stale.md).
 The table compares the scalar interpreter with MATRIX1, so lanes stay out of
 it. If a bare-metal Zen 4 host is available, a
 third column there would add an AMD point. The VMs have shown ±35% drift across
 separate processes.
+
+**Status (2026-11-10).** The x86 half is done: both configurations on the CERN
+Ice Lake VM at v0.2.0 are in
+[matrix element against MadGraph](../../performance/matrix-element-vs-madgraph.md),
+and README.md quotes them. What remains is the M3 run at the same tag.
