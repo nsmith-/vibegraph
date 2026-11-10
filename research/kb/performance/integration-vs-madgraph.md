@@ -1,7 +1,7 @@
 ---
 type: Measurement
 title: "Integration against MadGraph: throughput and time to accuracy"
-description: "Time to 0.1% on σ and points per CPU-second against MadEvent. At v0.2.0 on an Ice Lake VM over 7 rows: 0.65× MadEvent's CPU at equal accuracy (0.60× at x86-64-v3), the MLM row 4× slower."
+description: "Time to 0.1% on σ and points per CPU-second against MadEvent. At v0.2.0 on an Ice Lake VM over 7 rows: 0.59× MadEvent's CPU at equal accuracy (0.56× at x86-64-v3), the MLM row 2.7× slower."
 status: draft
 tags: [performance, madgraph, integration, throughput, measurement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -35,9 +35,9 @@ the protocol rules are in
 
 ## v0.2.0, Ice Lake VM (`3cc7f9c2`, 2026-11-09/10)
 
-**Headline: over seven rows, vibegraph reaches the same accuracy in 0.65× MadEvent's CPU
-(geomean; 0.60× with the x86-64-v3 asset), or 0.48× / 0.44× without the MLM row, which is
-about 4× slower.** Integrand throughput is 3.5× MadEvent's points per CPU-second (3.7× at
+**Headline: over seven rows, vibegraph reaches the same accuracy in 0.59× MadEvent's CPU
+(geomean; 0.56× with the x86-64-v3 asset), or 0.46× / 0.43× without the MLM row, which is
+about 2.7× slower.** Integrand throughput is 3.5× MadEvent's points per CPU-second (3.7× at
 v3). Every σ agrees with MadEvent's (largest |pull| 1.46).
 
 Setup ([benchmark hosts](benchmark-hosts.md)):
@@ -45,46 +45,58 @@ Setup ([benchmark hosts](benchmark-hosts.md)):
   one core, seeds 20260719/20/21, binaries interleaved, timed with an `os.wait4` wrapper.
   Cards: `import model sm` plus the row's `generate` line; run cards are the banked ones.
 - **MadEvent.** One `time_stages.py` launch per row at `nb_core = 4`, `global_flag = -O`
-  set explicitly. CPU is `<cumulated_time>`, scaled by (δ_MG/δ)² to the δ each of our seeds
-  reached, with δ = err/σ of the last iteration line × √max(1, χ²/dof) (protocol §5).
+  set explicitly. CPU is `<cumulated_time>`, scaled by (δ_MG/δ)² to the δ each of our
+  seeds reached.
+- **δ is the consistency-scaled error the run prints and stops on**
+  ([protocol §5](end-to-end-timing-protocol.md)). It looks honest on every row: the
+  iteration-scatter χ²/dof is 0.55–1.41, and the seed sd of σ is 0.06–1.04 of the mean
+  quoted error. The first collation also widened δ by √(printed χ²/dof). That statistic
+  is a mean of per-channel χ²/dof and is inflated by heavy tails. It changed nothing beyond
+  noise where it is near 1, but on `ud_to_epemud_qcd0` (1.40) and `pp_to_ll_0j2j_mlm`
+  (1.5–1.8) it overstated δ. The "§5 χ²" column keeps those first readings.
 - **The musl assets anti-scale with threads**, so every multi-core figure below is a glibc
   `cargo build --release` of the same commit, labelled as such
   ([backlog](../backlog/performance/musl-release-assets-anti-scale-with-threads.md)). The
-  musl assets also carry about 20% single-thread overhead against glibc (measured on
-  `pp_to_jj` only), which every single-core ratio here includes.
+  musl assets also carry 15–20% single-thread overhead against glibc, which every
+  single-core ratio here includes.
 
-Time to accuracy, ours/MadEvent CPU at equal δ (mean over 3 seeds; below 1 is faster):
+Time to accuracy, ours/MadEvent CPU at equal δ (mean over 3 seeds, min–max in brackets;
+below 1 is faster):
 
-| row | plain | v3 | δ reached | pull range |
-|---|--:|--:|--:|--:|
-| `ee_to_mumu` | 0.13 | 0.12 | 0.042–0.051% | within 1.46 |
-| `dy13_default` | 0.16 | 0.15 | 0.094–0.099% | |
-| `gg_to_gg` | 0.82 | 0.76 | 0.062% | |
-| `pp_to_jj` | 0.89 | 0.84 | 0.088–0.102% | |
-| `pp_to_llj` | 1.08 | 1.02 | 0.096–0.101% | |
-| `ud_to_epemud_qcd0` (2→4) | 0.73 | 0.62 | 0.113–0.116% | +0.35 to +0.46 |
-| `pp_to_ll_0j2j_mlm` (MLM) | 4.04 | 3.94 | 0.116–0.127% | −0.68 to −1.22 |
+| row | plain | v3 | §5 χ² reading, plain / v3 | printed / scatter χ²/dof | pull range |
+|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 0.12 (0.11–0.15) | 0.12 (0.10–0.14) | 0.13 / 0.12 | 0.94 / 1.41 | within 1.46 |
+| `dy13_default` | 0.16 (0.15–0.18) | 0.15 (0.14–0.17) | 0.16 / 0.15 | 0.85 / 0.85 | |
+| `gg_to_gg` | 0.88 (0.84–0.92) | 0.81 (0.78–0.86) | 0.82 / 0.76 | 0.68 / 0.55 | |
+| `pp_to_jj` | 0.89 (0.85–0.92) | 0.85 (0.82–0.88) | 0.89 / 0.84 | 1.04 / 1.08 | |
+| `pp_to_llj` | 1.10 (1.07–1.12) | 1.04 (1.01–1.05) | 1.08 / 1.02 | 1.09 / 1.02 | |
+| `ud_to_epemud_qcd0` (2→4) | 0.55 (0.52–0.58) | 0.47 (0.44–0.49) | 0.73 / 0.62 | 1.40 / 0.88 | +0.35 to +0.46 |
+| `pp_to_ll_0j2j_mlm` (MLM) | 2.68 (2.55–2.83) | 2.70 (2.56–2.83) | 4.03 / 3.94 | 1.61 / 1.05 | −0.68 to −1.22 |
+
+The glibc build at `-j 4` (seed 20260719) reads 0.55 on `ud_to_epemud_qcd0` and 2.41 on
+the MLM row; the iteration-scatter χ²/dof of its MLM run, from a full trace, is 0.82.
 
 **Equal accuracy is not time to 0.1% on the cheap rows.** `ee_to_mumu` and `gg_to_gg` stop
 at the default budget's 6-iteration floor, already past the target, so the ratio compares
-equal accuracy at the δ actually reached. Measured time to 0.1% needs a smaller budget:
+equal accuracy at the δ actually reached. Measured time to 0.1% needs a smaller budget
+(row means, plain / v3):
 
 | row | `--min-iters 0` (default `--neval`) | `--min-iters 0 --neval 30000` (non-default) |
 |---|--:|--:|
-| `ee_to_mumu`, plain / v3 per seed | 0.16/0.15, 0.24/0.23, 0.16/0.15 (still overshoots) | 0.19/0.18, 0.19/0.18, 0.17/0.16 |
-| `gg_to_gg`, plain / v3 per seed | 1.40/1.29, 1.26/1.17, 0.95/0.89 | 0.93/0.88, 0.96/0.90, 0.92/0.85 |
+| `ee_to_mumu` | 0.22 / 0.21 (still overshoots) | 0.18 / 0.17 |
+| `gg_to_gg` | 1.23 / 1.14 (0.94–1.42 by seed) | 0.94 / 0.88 |
 
 So the default budget's floor, not the integrator, is what would put `gg_to_gg` above 1 on
-time to 0.1%. One `--min-iters 0` `gg_to_gg` seed finished with χ²/dof 0.046 over 4
-iterations; a χ²/dof that far below 1 is a warning sign, not investigated.
+time to 0.1%.
 
-**The MLM row** needs 9–10× MadEvent's points (5.2–6.1M against 577k) at about 1.4× its cost
-per point (165–176 µs against 121 µs), and χ²/dof 1.5–1.8 widens δ² by that factor again.
-71% of points pass the cuts; the effective sample is about 16% of kept points. It also shows
-22–40 s of system time single-threaded, which no other row does (not investigated). On this
-row the plain and v3 assets take different iteration paths from the same seed (inferred:
-last-ulp differences flipping a decision at a threshold). Its three pulls share one MadEvent
-run's error, so their common −2 pb offset (under one MadEvent σ) is not evidence of a bias.
+**The MLM row** is diagnosed in
+[MLM integration cost against MadEvent](mlm-integration-cost-vs-madevent.md). The 2.4× on
+the glibc build is almost all the two-jet part's cost per point: 485 µs against
+MadEvent's 104 µs, because every one of its 64 flavour groups is clustered and evaluated
+twice at every point. The single-threaded system time on this row (22–40 s) is the musl
+allocator; the glibc build shows 0.28 s. The plain and v3 assets take different iteration
+paths from one seed on this row (inferred: last-ulp differences flipping a decision at a
+threshold).
 
 Integrand throughput, points per CPU-second (ours: evaluations over single-core CPU, mean
 over seeds; MadEvent: `results.dat` points over `<cumulated_time>`, whose survey-pass

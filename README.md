@@ -372,34 +372,38 @@ long until I have the number".
   same process, and scales its `<cumulated_time>` to the accuracy our run
   actually reached, by the 1/δ² Monte-Carlo law. So the whole extrapolation
   sits on its side and none on ours.
-- **Errors** are the χ²-scaled ones, which is the stricter reading.
+- **Errors** are the ones each run stops on, which three seeds' spread and the
+  iterations' own scatter both confirm.
 
 | process | ours / MadGraph, plain | x86-64-v3 |
 |---|--:|--:|
-| `e+ e- > mu+ mu-` | 0.13× | 0.12× |
+| `e+ e- > mu+ mu-` | 0.12× | 0.12× |
 | `p p > e+ e-` (dy13) | 0.16× | 0.15× |
-| `g g > g g` | 0.82× | 0.76× |
-| `p p > j j` | 0.89× | 0.84× |
-| `p p > l+ l- j` | 1.08× | 1.02× |
-| `u d > e+ e- u d` (2→4) | 0.73× | 0.62× |
-| `p p > e+ e-` + 0–2 jets, MLM | 4.04× | 3.94× |
+| `g g > g g` | 0.88× | 0.81× |
+| `p p > j j` | 0.89× | 0.85× |
+| `p p > l+ l- j` | 1.10× | 1.04× |
+| `u d > e+ e- u d` (2→4) | 0.55× | 0.47× |
+| `p p > e+ e-` + 0–2 jets, MLM | 2.68× | 2.70× |
 
-**Geometric mean 0.65× (0.60× at x86-64-v3): the same accuracy for about two
-thirds of MadEvent's CPU.** Without the MLM row it is 0.48× (0.44×). Every σ
+**Geometric mean 0.59× (0.56× at x86-64-v3): the same accuracy for under two
+thirds of MadEvent's CPU.** Without the MLM row it is 0.46× (0.43×). Every σ
 agrees with MadEvent's, the largest pull 1.46.
 
 Three rows need a closer reading:
 - **`e+ e- > mu+ mu-` and `g g > g g` overshoot.** The default budget's minimum
   of six iterations already takes them past 0.1%, so the table compares equal
   accuracy at the δ actually reached. Measured to 0.1% with a smaller budget
-  (`--min-iters 0 --neval 30000`), they read 0.16×–0.19× and 0.85×–0.96×.
+  (`--min-iters 0 --neval 30000`), they read 0.18× and 0.94×.
 - **`p p > l+ l- j` is phase-space map quality.** It draws 2.8× more points per
   second than MadEvent but needs about nine times as many. That is the map at
   the fiducial cut boundary, the next lever on this row.
-- **The MLM row is about 4× slower.** It needs 9–10× MadEvent's points at about
-  1.4× its cost per point, and iteration-to-iteration disagreement
-  (χ²/dof 1.5–1.8) raises the budget again. Merged multi-jet integration is the
-  clearest open performance gap.
+- **The MLM row is 2.7× slower** (2.4× with a glibc build). Almost all of it is
+  the two-jet part's cost per point, 485 µs against MadEvent's 104 µs: every one
+  of its 64 flavour groups is clustered and evaluated twice at every point, where
+  MadEvent clusters once. The levers are estimated in
+  [the diagnosis](research/kb/performance/mlm-integration-cost-vs-madevent.md);
+  together they could bring the row near 1.2×. Merged multi-jet integration is
+  the clearest open performance gap.
 
 **Integrand throughput.** The per-point half of the same comparison: our
 evaluations per single-core CPU-second against MadEvent's points per Fortran

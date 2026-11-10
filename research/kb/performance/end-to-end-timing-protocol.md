@@ -156,11 +156,30 @@ vibegraph integrate <proc card> --run-card <run card> \
 
 MadGraph's side is its banked run's `<cumulated_time>` with that run's σ ± err
 from `SubProcesses/results.dat`, scaled by the 1/δ² law to the δ *our* run
-reached, which puts the whole extrapolation on MadGraph's side. δ is the
-χ²-scaled error (quoted error × √max(1, χ²/dof)). That is not the quantity
-`--target-rel` stops on: the stop sums each channel's variance widened by that
-channel's own `max(1, emp/quoted)` (`budget.rs`, `pooled_scale` and
-`scaled_rel`), so the δ a run reaches can sit off its stop threshold. Report seed spread; it follows the iteration count.
+reached, which puts the whole extrapolation on MadGraph's side.
+
+**δ is the consistency-scaled error the run itself prints and stops on**
+("consistency-scaled …%"): each channel's variance widened by that channel's
+own `max(1, emp/quoted)` (`budget.rs`, `pooled_scale` and `scaled_rel`).
+
+**Do not widen it again by the printed χ²/dof.** In target mode that χ²/dof is
+the mean of the channels' own χ²/dof, each formed against every iteration's own
+σᵢ. Heavy-tailed weights inflate it (`budget.rs` documents this), and it is not
+the iteration-to-iteration scatter of σ. On v0.2.0's `ud_to_epemud_qcd0` and
+`pp_to_ll_0j2j_mlm` it read 1.40 and 1.5–1.8, while the scatter of the
+iterations' σ gave 0.88 and 0.83–1.05. Widening by it overstated δ and
+pessimised those rows' ratios by 1.3–1.5×. An earlier revision of this protocol
+did exactly that ([integration against MadGraph](integration-vs-madgraph.md)
+records both readings for v0.2.0).
+
+Check that δ is honest on each row in two ways:
+- **Iteration scatter.** The iteration-scatter χ²/dof, reconstructed from the
+  cumulative lines (Iₖ = k·Mₖ − (k−1)·Mₖ₋₁, σₖ² = k²Qₖ² − (k−1)²Qₖ₋₁²) or read
+  from a `--log-file` trace, should be near 1.
+- **Seed spread.** The sd of σ over the seeds should not exceed the mean quoted
+  error.
+
+Report seed spread; it follows the iteration count.
 
 ## 6. Per-point cost rises as the grid learns
 

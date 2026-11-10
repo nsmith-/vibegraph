@@ -27,3 +27,12 @@ two `setclscales` calls, where the clustered history is common. Profile first to
 confirm which part dominates.
 
 Detail: [note 41 §4, M3 and "F-B Landed"](../../history/notes/41-mlm-feature-sprint-plan.md).
+
+**Measured at v0.2.0 (2026-11-10)** ([diagnosis](../../performance/mlm-integration-cost-vs-madevent.md)): the 0.48 ms is @2's cost
+alone (485 µs; the mixture averages 130–150 µs). Clustering (`setclscales` /
+`cluster_history`) is 50% of a @2 point, `kt::cluster` 26%, and about 18% of
+samples are allocator leaves, mostly in clustering: allocation-free scratch is
+estimated at @2 ×0.9. The per-group multiplier is
+[mlm-flavour-copy-groups-evaluated-separately](mlm-flavour-copy-groups-evaluated-separately.md);
+the table rebuild inside it is
+[mlm-walk-tree-pdg-table-rebuilt-per-point](mlm-walk-tree-pdg-table-rebuilt-per-point.md).
