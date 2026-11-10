@@ -498,8 +498,24 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         }
         let folded = self.eval.folded_hel();
         self.fill_for(folded, momenta, scratch);
+        self.filled_amp2(scratch, amp2);
+    }
 
-        let program = folded.program();
+    /// [`eval_amp2`](Self::eval_amp2) at the point `scratch` was last filled
+    /// at, read off the configuration amplitudes that fill left in it rather
+    /// than filling again: after [`eval_m2`](Self::eval_m2) at `p`, the `AMP2`
+    /// of `p` at the pools that evaluation ran with, at no second evaluation.
+    /// `amp2` is overwritten.
+    pub(crate) fn filled_amp2(&self, scratch: &ScratchSpace<F>, amp2: &mut [F]) {
+        assert_eq!(
+            amp2.len(),
+            self.eval.n_configs(),
+            "amp2 buffer must hold one entry per integration configuration"
+        );
+        for slot in amp2.iter_mut() {
+            *slot = F::zero();
+        }
+        let program = self.eval.folded_hel().program();
         let n = program.n_amps as usize;
         if n == 0 {
             return;

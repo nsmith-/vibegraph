@@ -464,6 +464,23 @@ impl AmplitudeEvaluator {
             .unwrap_or(&[])
     }
 
+    /// Each integration configuration's member diagrams, in `AMP2` order, as
+    /// indices into the diagram set the evaluator was compiled from: the
+    /// [`config_groups`] group's diagrams that carry an amplitude the colour
+    /// basis references.
+    pub fn config_members(&self) -> Vec<Vec<usize>> {
+        let mut at = 0;
+        self.config_spans
+            .iter()
+            .map(|&span| {
+                let mut members: Vec<usize> = self.config_amp_diagrams[at..at + span].to_vec();
+                members.dedup();
+                at += span;
+                members
+            })
+            .collect()
+    }
+
     /// The number of integration configurations — the length of an `AMP2` vector.
     pub fn n_configs(&self) -> usize {
         self.config_spans.len()
@@ -1017,9 +1034,9 @@ pub fn config_groups(diagrams: &[Diagram], model: &UFOModel) -> Vec<Vec<usize>> 
 
 /// One diagram's `IdentifyConfigTag`: per internal line, where it sits (its external
 /// bipartition, signed to a canonical direction) and what propagates on it.
-type ConfigTag = Vec<(Vec<i8>, i32, String, String)>;
+pub(crate) type ConfigTag = Vec<(Vec<i8>, i32, String, String)>;
 
-fn config_tag(diagram: &Diagram, model: &UFOModel) -> ConfigTag {
+pub(crate) fn config_tag(diagram: &Diagram, model: &UFOModel) -> ConfigTag {
     // `IdentifyConfigTag` substitutes the photon's mass and width for a `Z` or an
     // `H` on a line whose leg is initial-state — which, on a 2 → n tree, is exactly
     // a spacelike line. It is what makes a t-channel γ and a t-channel Z one

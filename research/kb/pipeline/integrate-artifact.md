@@ -1,7 +1,7 @@
 ---
 type: Design
 title: The integrate artifact and the compiled-program cache
-description: "What vibegraph integrate persists (per-channel grids, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built."
+description: "What vibegraph integrate persists (per-channel grids and their members, configuration shares, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built."
 status: draft
 tags: [artifact, integrate, generate, model-identity, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -24,7 +24,7 @@ and the matrix element at fixed points. So `vibegraph generate` needs no card,
 no UFO directory and no enumeration of its own, and can refuse a build or an
 asset that changed instead of silently sampling against the wrong grid. The
 type is `IntegrateArtifact` in `vibegraph-lib/src/artifact.rs`, at
-`FORMAT_VERSION = 22`, which is also the oldest version read.
+`FORMAT_VERSION = 23`, which is also the oldest version read.
 
 `integrate`'s positional input is a proc card or a diagram artifact
 (`diagrams.bin.zst`, written by `vibegraph enumerate`), told apart by content:
@@ -63,7 +63,7 @@ writing are in [generate](../events/generate.md).
 
 | Field | Meaning |
 |---|---|
-| `format_version` | `FORMAT_VERSION` (22); every artifact is written at the current version. |
+| `format_version` | `FORMAT_VERSION` (23); every artifact is written at the current version. |
 | `process` | The canonical process string, every process line with its number. |
 | `proc_card` | The proc card's text, verbatim, which `generate` re-parses. From a diagram artifact, the card that artifact records. |
 | `model` | `ModelIdentity { name, restrict, digest }`: the `import model` label and a SHA-256 of the restricted model. |
@@ -84,6 +84,7 @@ writing are in [generate](../events/generate.md).
 | `sets` | Every `DiagramSet` in enumeration order, which `generate` reads instead of enumerating. Since version 22. |
 | `diagram_set_digest` | SHA-256 over the bincode of `sets` (`diagrams::artifact::diagram_set_digest`), the function the diagram artifact uses, so an integration started from an enumerate run records that run's digest and one from a proc card records what `enumerate` would. Since version 22. |
 | `amplitude_probe` | Per set, in set order, four phase-space points (momenta banked) and the colour- and helicity-summed \|M\|² at each under the bound param card (`amplitude_probe`, below). Since version 22. |
+| `configurations` | `ConfigShare` per integration configuration of every integrated evaluator: its share of σ (below). Since version 23. |
 
 Each `ChannelGrid` holds:
 
@@ -94,7 +95,17 @@ Each `ChannelGrid` holds:
   composition chose. That is the map topology (`Timelike` or `Spine`), the
   resonance poles, the spacelike lines, and the spine's rung poles after the
   regulating floor. `None` means the writer predates the field, not "no
-  composition".
+  composition";
+- `members: Vec<ChannelMember>` (since version 23), every `(diagram set,
+  configuration)` the channel's map serves: per pair of a merged channel and
+  per member set of the pair's flavour group, the set as a `SetRef { set,
+  final_order }` (outgoing leg `i` of the integrated term is outgoing leg
+  `final_order[i]` of `sets[set]`; reordering keeps diagram indices), the
+  set's own diagrams that make up the configuration, and `share`, the index
+  of the `configurations` entry the configuration is counted in. A member's
+  diagrams are matched to the representative's configuration by
+  `config_groups` partition, else by `IdentifyConfigTag`; empty where neither
+  pairs them. A flat-RAMBO run's one channel has none.
 
 **Why the key exists.** A grid's coordinate count does not identify its channel
 space. A hadronic channel prepends `(τ, y)` to its own `3n − 4` coordinates, so
@@ -123,6 +134,59 @@ from `maps`, whatever today's `auto` rule would choose
 field reads back as `MapChoices::LEGACY` (isotropic, log, derived), the maps
 every such run used.[^n37-maps]
 
+## Configuration shares
+
+`configurations` holds, per integrated evaluator (each fixed-energy
+subprocess; each hadronic flavour group, part by part), one `ConfigShare` per
+integration configuration in `AMP2` order and one for weight no configuration
+carried (`configuration: None`). Each records the evaluator's `set` (a flavour
+group's representative), its `diagrams`, the set's `contact_diagrams` (in no
+configuration: contact diagrams and diagrams the colour basis never
+references; they enter every share through \|M\|²), `members` (every set the
+share includes: at proton beams every member of the group, so a share is the
+group's, both beam orderings and all members' luminosity, not split by
+member), `sigma` and `sigma_err` in the observable's unit.
+
+**The partition.** At every integration point each evaluator's term is
+divided over its configurations by `w_c / Σ w`, MadEvent's single-diagram
+enhancement factor (`matrix_madevent_group_v4.inc:214-228`,
+[MadEvent's single-diagram enhancement](../phase-space/madevent-single-diagram-enhancement.md)):
+
+| run card | `w_c` |
+|---|---|
+| `sde_strategy = 1` (`tmin_for_channel = −1`, the only value accepted) | `AMP2_c`, read off the evaluation the point's \|M\|² just ran (`BoundAmplitude::filled_amp2`), at the coupling it ran at |
+| `sde_strategy = 2` | `get_channel_cut`'s product (`ChannelSet::channel_cuts`) |
+
+`AMP2` at the evaluation's coupling is what MadEvent forms beside `ANS` from
+the same amplitudes; the per-event configuration *draw* uses the bound
+coupling instead, to stay a function of the momenta. The two differ only for a
+matrix element mixing orders in αs at a running scale. Where marked lines are
+zeroed by an on-shell veto (`$`), the whole amplitude's `AMP2` is masked as the
+draw masks it. A fixed-energy run of several subprocesses under
+`sde_strategy = 2` records every subprocess past the first as unattributed:
+the channel forests are derived for the first only. The split costs nothing
+off the integration (`ShareSplit` is inactive until an integration asks).
+
+**Accumulation.** The parts are integrated from the same weighted points as
+σ, per channel (`ChannelIntegrand::value_in_channel_shared`,
+`adapt_blocks_iteration`'s `n_shares`), combined over the kept iterations
+with the weights the channel's own term uses (equal under the default
+unweighted rule) and summed over channels with errors in quadrature, as σ is.
+They are summed in tiles of 256 points of a block's iteration and then tile by
+tile, which every chunk size respects (chunks are whole tiles), so the shares
+are as independent of the thread count as the grids. **Sum rule:** the shares
+of a run sum to `sigma_pb` to rounding; `integrate` warns otherwise.
+
+**Checks.** `hadronic::tests::configuration_shares_split_each_point_by_amp2_and_sum_to_sigma`
+(`g g → g g`: three configurations and the contact; each point's shares
+against `AMP2` recomputed independently, the sum rule per channel and over
+the run), `proton::tests::hadronic_shares_follow_each_groups_amp2_and_sum_to_sigma`,
+`enhancement_weights_are_read_at_the_evaluated_coupling` (`u u~ → u u~ QED<=2`,
+whose fractions move with αs), and the MadEvent oracle `cli_config_share`
+([configuration-share oracle](../validation/configuration-share-oracle.md)).
+The sum rule is blind to a share moved between two configurations; the oracle
+is what sees that.
+
 ## What `generate` checks before replaying
 
 `generate` takes no card, so nothing it is given can mismatch the record;
@@ -130,7 +194,7 @@ what it checks are the assets it reads again, the artifact's own integrity,
 and the build it runs on ([events/generate](../events/generate.md) lists the
 steps). `--ufo-dir` is refused: no UFO directory is read.
 
-1. **The version.** Below 22 is refused by `UnsupportedVersion`, which says
+1. **The version.** Below 23 is refused by `UnsupportedVersion`, which says
    to regenerate with `vibegraph integrate` (rules in
    [artifact format versioning](artifact-format-versioning.md)).
 2. **The embedded bytes** (on read, `IntegrateArtifact::read_hashed`). The
