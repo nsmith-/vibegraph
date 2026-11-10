@@ -1080,7 +1080,8 @@ pub(crate) const SHARE_TILE: usize = 256;
 /// another iteration follows and refines from [`BlockIteration::hist`].
 ///
 /// `n_shares` further sums run per block: `f` also fills a zeroed slice of
-/// `n_shares` parts of each point's value, and [`BlockIteration::shares`]
+/// `n_shares` parts of each point's value, leaving every part at zero where the
+/// value is zero, and [`BlockIteration::shares`]
 /// carries each part's estimate and variance from the same weighted points as
 /// the block's own. The parts never reach the grid, so they are summed apart
 /// from it, in an order no chunk size moves: per tile of [`SHARE_TILE`]
@@ -1159,14 +1160,25 @@ where
             let mut tiles = Vec::with_capacity(this_chunk.div_ceil(SHARE_TILE) * 2 * n_shares);
             for i in 0..this_chunk {
                 let wgt = grid.draw_point(&mut rng, &mut x, &mut ks);
-                parts.iter_mut().for_each(|p| *p = 0.0);
-                fvals.push(f(b, &mut state, &x, &mut parts) * wgt);
+                let value = f(b, &mut state, &x, &mut parts);
+                fvals.push(value * wgt);
                 bins.extend(ks.iter().map(|&k| k as u16));
                 if n_shares > 0 {
-                    for (acc, &p) in tile.as_chunks_mut::<2>().0.iter_mut().zip(&parts) {
-                        let w = p * wgt;
-                        acc[0] += w;
-                        acc[1] += w * w;
+                    // A tile sum starts at +0.0 and so never holds -0.0, which
+                    // makes adding a zero point's +0.0 parts an exact no-op:
+                    // skipping it moves no bit.
+                    if value != 0.0 {
+                        for (acc, p) in tile.as_chunks_mut::<2>().0.iter_mut().zip(&mut parts) {
+                            let w = *p * wgt;
+                            acc[0] += w;
+                            acc[1] += w * w;
+                            *p = 0.0;
+                        }
+                    } else {
+                        debug_assert!(
+                            parts.iter().all(|&p| p == 0.0),
+                            "a point of value zero wrote a share"
+                        );
                     }
                     if (i + 1) % SHARE_TILE == 0 || i + 1 == this_chunk {
                         tiles.extend_from_slice(&tile);
@@ -2383,14 +2395,12 @@ mod tests {
         );
     }
 
-    /// The block-split adaptation and the sequential one agree bit for bit under
-    /// every rule, as they do under the default: the rule changes what is
-    /// accumulated, never the order.
     /// A block's shares are summed in tiles independent of the chunking, so
     /// every chunk size and pool size gives the same bits; each share is the
     /// estimate of its own part of the integrand, and the parts' estimates sum
     /// to the block's to rounding. A tile summed in a chunk-dependent order would
-    /// differ in the last bits between the chunkings.
+    /// differ in the last bits between the chunkings. Points of value zero, which
+    /// add nothing to any tile, are part of the draw.
     #[test]
     fn block_shares_are_independent_of_the_chunking_and_sum_to_the_block() {
         let seed = 0x5EED_5A4E;
@@ -2401,7 +2411,11 @@ mod tests {
             chunk_size,
         };
         let grid = VegasGrid::new(2, 32, 1.5);
+        // A quarter of the square carries no weight, as a cut would leave it.
         let parts = |u: &[f64], out: &mut [f64]| {
+            if u[1] < 0.25 {
+                return 0.0;
+            }
             let w = (3.0 * u[0]).exp() * (0.2 + u[1]);
             let frac = [u[0] * u[0], 1.0 - u[0] * u[0], 0.0];
             for (o, f) in out.iter_mut().zip(frac) {
@@ -2443,6 +2457,9 @@ mod tests {
         }
     }
 
+    /// The block-split adaptation and the sequential one agree bit for bit under
+    /// every rule, as they do under the default: the rule changes what is
+    /// accumulated, never the order.
     #[test]
     fn test_adapt_blocks_iteration_matches_sequential_under_every_rule() {
         let seed = 0x5EED_B10D;

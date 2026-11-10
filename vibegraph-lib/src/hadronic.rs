@@ -1493,8 +1493,13 @@ pub(crate) fn enhancement_weights(
 ///
 /// Inactive until [`begin`](Self::begin), so a point evaluated for anything but
 /// an integration's shares pays nothing for it.
+///
+/// The parts are zero between points: [`finish`](Self::finish) clears what
+/// [`split`](Self::split) wrote, so a point that records no term (a rejected
+/// one) touches no part.
 pub(crate) struct ShareSplit {
     on: Cell<bool>,
+    written: Cell<bool>,
     parts: RefCell<Vec<f64>>,
     weights: RefCell<Vec<f64>>,
 }
@@ -1504,6 +1509,7 @@ impl ShareSplit {
     pub(crate) fn new(len: usize, widest: usize) -> Self {
         ShareSplit {
             on: Cell::new(false),
+            written: Cell::new(false),
             parts: RefCell::new(vec![0.0; len]),
             weights: RefCell::new(vec![0.0; widest]),
         }
@@ -1515,7 +1521,10 @@ impl ShareSplit {
 
     /// Start a point: every part at zero, terms recorded from now on.
     pub(crate) fn begin(&self) {
-        self.parts.borrow_mut().iter_mut().for_each(|p| *p = 0.0);
+        if self.written.replace(false) {
+            // Parts left by a point that never reached `finish`.
+            self.parts.borrow_mut().fill(0.0);
+        }
         self.on.set(true);
     }
 
@@ -1539,6 +1548,7 @@ impl ShareSplit {
         fill(w);
         let total: f64 = w.iter().sum();
         let mut parts = self.parts.borrow_mut();
+        self.written.set(true);
         if total > 0.0 && total.is_finite() {
             for (p, &wc) in parts[offset..offset + n_configs].iter_mut().zip(w.iter()) {
                 *p += term * (wc / total);
@@ -1553,19 +1563,22 @@ impl ShareSplit {
     /// to `value` whatever constant factors stand between the terms and it.
     pub(crate) fn finish(&self, value: f64, out: &mut [f64]) {
         self.on.set(false);
-        if value == 0.0 {
+        if !self.written.replace(false) {
+            debug_assert!(value == 0.0, "a point of value {value} recorded no term");
             return;
         }
-        let parts = self.parts.borrow();
-        let total: f64 = parts.iter().sum();
-        debug_assert!(total != 0.0, "a point of value {value} recorded no term");
-        if total == 0.0 {
-            return;
+        let mut parts = self.parts.borrow_mut();
+        if value != 0.0 {
+            let total: f64 = parts.iter().sum();
+            debug_assert!(total != 0.0, "a point of value {value} recorded no term");
+            if total != 0.0 {
+                let scale = value / total;
+                for (o, &p) in out.iter_mut().zip(parts.iter()) {
+                    *o += p * scale;
+                }
+            }
         }
-        let scale = value / total;
-        for (o, &p) in out.iter_mut().zip(parts.iter()) {
-            *o += p * scale;
-        }
+        parts.fill(0.0);
     }
 }
 

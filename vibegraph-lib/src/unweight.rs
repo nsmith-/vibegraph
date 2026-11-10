@@ -255,8 +255,9 @@ pub trait ChannelIntegrand {
 
     /// [`value_in_channel`](Self::value_in_channel), with the value split over
     /// [`share_count`](Self::share_count) parts added into `shares` (which the
-    /// caller zeroes): the parts sum to the value, to rounding. An integration
-    /// accumulates each part's integral from the same points as the value's.
+    /// caller zeroes): the parts sum to the value, to rounding, and a point of
+    /// value zero leaves every part at zero. An integration accumulates each
+    /// part's integral from the same points as the value's.
     fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
         let _ = shares;
         self.value_in_channel(channel, u)

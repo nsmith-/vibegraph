@@ -520,16 +520,20 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         if n == 0 {
             return;
         }
+        // One pass along each row, closing a configuration's coherent sum where
+        // its last amplitude sits. A configuration of no amplitude closes nowhere
+        // and keeps its zero, which adding the empty sum's `+0` would not change.
+        let ends = self.eval.config_ends();
+        debug_assert_eq!(ends.len(), n, "configuration spans cover the row");
         let rows = program.amp_locs.chunks_exact(n);
         for (row, weights) in rows.zip(program.amp_weights.chunks_exact(n)) {
-            let mut at = 0;
-            for (acc, &span) in amp2.iter_mut().zip(self.eval.config_amp_counts()) {
-                let mut coherent = C::new(F::zero(), F::zero());
-                for (&l, &w) in row[at..at + span].iter().zip(&weights[at..at + span]) {
-                    coherent = coherent + self.weighted(w, scratch.scalars[l as usize]);
+            let mut coherent = C::new(F::zero(), F::zero());
+            for ((&l, &w), &end) in row.iter().zip(weights).zip(ends) {
+                coherent = coherent + self.weighted(w, scratch.scalars[l as usize]);
+                if let Some(acc) = amp2.get_mut(end as usize) {
+                    *acc = *acc + coherent.norm_sqr();
+                    coherent = C::new(F::zero(), F::zero());
                 }
-                *acc = *acc + coherent.norm_sqr();
-                at += span;
             }
         }
     }
@@ -5468,6 +5472,54 @@ mod arena_reuse {
                 }
             }
         }
+    }
+
+    /// `AMP2` read along each row's configuration ends is, bit for bit, the sum
+    /// taken configuration by configuration over each one's slice of the row,
+    /// zeroed accumulator and coherent sum included: the two run the same
+    /// additions in the same order, which a regrouping of a configuration's
+    /// amplitudes, or a sum closed at the wrong position, would not.
+    #[test]
+    fn amp2_along_the_row_matches_the_sum_per_configuration() {
+        let mut multi = false;
+        for process in MG_VALIDATED_PROCESSES {
+            let (evals, evaluated) = compiled(process);
+            for eval in &evals {
+                let amp = BoundAmplitude::<f64>::bind(eval, &evaluated);
+                let spans = eval.config_amp_counts();
+                multi |= spans.iter().any(|&s| s > 1);
+                let program = eval.folded_hel().program();
+                let n = program.n_amps as usize;
+                assert_eq!(spans.iter().sum::<usize>(), n, "{process}: row width");
+                for p in points(eval.n_ext(), 3, 0x5EED_A2) {
+                    let mut sc = amp.scratch_space();
+                    let mut amp2 = vec![0.0; eval.n_configs()];
+                    amp.eval_amp2(&p, &mut sc, &mut amp2);
+                    let mut want = vec![0.0_f64; eval.n_configs()];
+                    let rows = program.amp_locs.chunks_exact(n);
+                    for (row, weights) in rows.zip(program.amp_weights.chunks_exact(n)) {
+                        let mut at = 0;
+                        for (acc, &span) in want.iter_mut().zip(spans) {
+                            let mut coherent = C::new(0.0, 0.0);
+                            for k in at..at + span {
+                                let a = sc.scalars[row[k] as usize];
+                                coherent += amp.weighted(weights[k], a);
+                            }
+                            *acc += coherent.norm_sqr();
+                            at += span;
+                        }
+                    }
+                    assert!(amp2.iter().any(|&a| a > 0.0), "{process}: AMP2 vanished");
+                    for (i, (a, b)) in amp2.iter().zip(&want).enumerate() {
+                        assert_eq!(a.to_bits(), b.to_bits(), "{process}: AMP2[{i}]");
+                    }
+                }
+            }
+        }
+        assert!(
+            multi,
+            "no process has a configuration of several amplitudes"
+        );
     }
 
     /// The three things that must retire a fill: a different point, a rewritten pool,

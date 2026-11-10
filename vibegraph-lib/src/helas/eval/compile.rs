@@ -105,6 +105,10 @@ pub struct AmplitudeEvaluator {
     /// entry per configuration; the sum is the width of the compiled program's
     /// configuration-amplitude row.
     config_spans: Vec<usize>,
+    /// Per position of the configuration-amplitude row, the configuration whose
+    /// last amplitude it is, or [`u32::MAX`] where the configuration goes on:
+    /// `config_spans` as the flat row's `AMP2` read-out walks it.
+    config_ends: Vec<u32>,
     /// Which colour flows each configuration admits — the union of its member
     /// diagrams' rows of [`Self::leading_color_flows`], configuration-major with
     /// `n_flows` entries each (MadGraph's `ICOLAMP` column).
@@ -170,6 +174,7 @@ impl AmplitudeEvaluator {
             amps: configs,
         } = Configurations::group(set, model, &evals);
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
+        let config_ends = config_ends(&config_spans);
         let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
         let folded = Folded::build(&symbolic);
         let program = folded.program();
@@ -212,6 +217,7 @@ impl AmplitudeEvaluator {
             leading_color_flows,
             config_amp_diagrams,
             config_spans,
+            config_ends,
             config_flows,
             pruned: false,
             zeroamp_nodes_before: 0,
@@ -492,6 +498,13 @@ impl AmplitudeEvaluator {
     /// returns its values in.
     pub fn config_amp_counts(&self) -> &[usize] {
         &self.config_spans
+    }
+
+    /// [`config_amp_counts`](Self::config_amp_counts) per amplitude: at each
+    /// position of the configuration-amplitude row, the configuration it closes,
+    /// or [`u32::MAX`] where the configuration goes on.
+    pub(super) fn config_ends(&self) -> &[u32] {
+        &self.config_ends
     }
 
     /// Whether [`prune_zero_helicities`](Self::prune_zero_helicities) has dropped
@@ -1030,6 +1043,19 @@ pub fn config_groups(diagrams: &[Diagram], model: &UFOModel) -> Vec<Vec<usize>> 
         }
     }
     groups
+}
+
+/// Per position of a row holding `spans[c]` amplitudes of each configuration
+/// `c` in turn, the configuration closed there, or [`u32::MAX`].
+fn config_ends(spans: &[usize]) -> Vec<u32> {
+    let mut ends = Vec::with_capacity(spans.iter().sum());
+    for (c, &span) in spans.iter().enumerate() {
+        if span > 0 {
+            ends.extend(std::iter::repeat_n(u32::MAX, span - 1));
+            ends.push(u32::try_from(c).expect("configuration index fits u32"));
+        }
+    }
+    ends
 }
 
 /// One diagram's `IdentifyConfigTag`: per internal line, where it sits (its external

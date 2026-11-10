@@ -848,7 +848,10 @@ where
         let iteration_bound = budget.iteration_bound(iteration_points);
         let started = Instant::now();
 
-        let outcomes = draw_iteration(integrand, &grids, &plans, seed, &ndims, scale_ndim);
+        // A warm-up iteration's shares would be dropped by `record`, so they are
+        // not accumulated.
+        let keep = iteration >= warmup;
+        let outcomes = draw_iteration(integrand, &grids, &plans, seed, &ndims, scale_ndim, keep);
 
         // The coverage the iteration realised, which is what the floor is
         // denominated in. The first iteration is allocated before any acceptance
@@ -862,7 +865,7 @@ where
 
         for ((c, out), plan) in channels.iter_mut().zip(&outcomes).zip(&plans) {
             points += plan.neval as u64;
-            c.record(out, plan.neval, iteration >= warmup);
+            c.record(out, plan.neval, keep);
         }
 
         let ns_per_eval = started.elapsed().as_nanos() as f64 / iteration_points.max(1) as f64;
@@ -1231,7 +1234,8 @@ fn running_estimate(channels: &[ChannelHistory], combination: IterationCombinati
 }
 
 /// Draw one iteration of every channel under `plans`, each point's trailing
-/// scale-draw uniforms appended to its grid coordinates.
+/// scale-draw uniforms appended to its grid coordinates, and the integrand's
+/// shares accumulated beside the values where `shares` is set.
 ///
 /// The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`; the scale
 /// draw's trailing uniforms come off a stream of its own, so the grid's sequence
@@ -1245,6 +1249,7 @@ fn draw_iteration<I>(
     seed: u64,
     ndims: &[usize],
     scale_ndim: usize,
+    shares: bool,
 ) -> Vec<BlockIteration>
 where
     I: ChannelIntegrand + Sync,
@@ -1253,7 +1258,7 @@ where
         grids,
         plans,
         seed,
-        integrand.share_count(),
+        if shares { integrand.share_count() } else { 0 },
         |j, first| {
             (
                 SubStream::new(
