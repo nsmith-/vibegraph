@@ -138,8 +138,10 @@ bits, which no allocator choice affects.
   inferred, not run.
 
 So musl with mimalloc is static and runs on any kernel. It is as fast as glibc
-at `-j 4` and faster at `-j 1`. It adds no C source that the binary did not
-already compile, because egglog's default features (which `vibegraph-lib` uses) build mimalloc. It keeps
+at `-j 4` and faster at `-j 1`. At the time of the measurement it added no C
+source the binary did not already compile, because egglog's default features
+built mimalloc; `vibegraph-lib` has since turned those off, so mimalloc is now
+compiled only for the musl CLI. It keeps
 the asset names. The binary grows by 179 KB (16,390,832 to 16,569,416 bytes);
 jemalloc adds 677 KB and a new C build.
 

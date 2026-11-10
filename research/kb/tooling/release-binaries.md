@@ -90,8 +90,8 @@ its bundled zstd via `cc` rather than linking a system `libzstd` (`pkg-config`
 is only an optional probe),[^n24-u1] and `ring`, the `rustls` crypto backend
 that `ureq` (the PDF fetch, `vibegraph-cli/src/fetch.rs`) pulls in, which
 builds its own C and assembly via `cc`. Neither links a system library, and
-there is no `openssl` or `native-tls`. `libmimalloc-sys` (through egglog, and
-the CLI's musl allocator below) is a third, also built via `cc`. So
+there is no `openssl` or `native-tls`. `libmimalloc-sys`, the CLI's musl allocator
+below, is a third, also built via `cc` (only on musl). So
 `x86_64-unknown-linux-musl` costs only `musl-tools` (`musl-gcc`) on the runner
 and yields one fully static binary that runs on any x86_64 Linux kernel, with no
 "which glibc does this distro ship" matrix. A new C dependency that links a
