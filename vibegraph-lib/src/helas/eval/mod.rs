@@ -120,6 +120,7 @@ pub mod op_census {
     pub use super::op::Op;
 }
 
+pub(crate) use compile::config_tag;
 pub use compile::{config_groups, AmplitudeEvaluator};
 pub use lane_field::{LaneField, Lanes, SupportedLanes};
 pub use rescale::ScaleAwareAmplitude;

@@ -1297,6 +1297,17 @@ impl<'a> BoundSubprocess<'a> {
         }
     }
 
+    /// The per-configuration `AMP2` at the point [`eval_m2`](Self::eval_m2)
+    /// last evaluated, at the coupling it ran at, read off that evaluation
+    /// ([`BoundAmplitude::filled_amp2`]) rather than repeating it.
+    pub(crate) fn filled_amp2(&self, amp2: &mut [f64]) {
+        let scratch = &self.scratch.borrow();
+        match &self.amp {
+            SubAmplitude::Fixed(amp) => amp.filled_amp2(scratch, amp2),
+            SubAmplitude::Running(amp) => amp.borrow().amplitude().filled_amp2(scratch, amp2),
+        }
+    }
+
     /// The per-combination `|M_c|²`, per-configuration `AMP2` and per-flow `JAMP2`
     /// diagonals at the current coupling — the three categorical weight vectors an
     /// event record's helicity, integration configuration and colour flow are drawn
@@ -1438,6 +1449,147 @@ pub(crate) fn mask_zeroed(
     }
     v.veto.mask(pattern, weights);
     true
+}
+
+/// MadEvent's single-diagram-enhancement weight of each of `main`'s
+/// configurations at `ext`, written into `out`, for a point whose `|M|²`
+/// [`vetoed_m2`] has just evaluated: the partition a configuration's share of
+/// the cross section is taken in.
+///
+/// Under `cuts` (`sde_strategy = 2`, [`compile_configuration_weights`]) it is
+/// `get_channel_cut`'s product of propagator denominators at total invariant
+/// `s_tot`. Otherwise it is `AMP2_c`, read off the evaluation `vetoed_m2` just
+/// ran, at the coupling that evaluation ran at, as `matrix_madevent_group_v4.inc`
+/// forms it beside `ANS` from the same amplitudes; where marked lines are zeroed
+/// at `ext`, the whole amplitude's `AMP2` with their configurations masked out,
+/// as the configuration draw masks it.
+pub(crate) fn enhancement_weights(
+    vetoed: Option<&BoundVetoed<'_>>,
+    main: &BoundSubprocess<'_>,
+    ext: &[V],
+    cuts: Option<(&ChannelSet, f64)>,
+    out: &mut [f64],
+) {
+    if let Some((set, s_tot)) = cuts {
+        let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
+        set.channel_cuts(&momenta, s_tot, out);
+        return;
+    }
+    if let Some(v) = vetoed {
+        let pattern = v.veto.pattern(ext);
+        if pattern != 0 {
+            main.eval_amp2(ext, out);
+            v.veto.mask(pattern, out);
+            return;
+        }
+    }
+    main.filled_amp2(out);
+}
+
+/// One thread's split of a point's value over the configurations of every
+/// subprocess an integrand sums: the parts each term was divided into, laid out
+/// per subprocess as its configurations followed by one slot for the weight no
+/// configuration carried.
+///
+/// Inactive until [`begin`](Self::begin), so a point evaluated for anything but
+/// an integration's shares pays nothing for it.
+///
+/// The parts are zero between points: [`finish`](Self::finish) clears what
+/// [`split`](Self::split) wrote, so a point that records no term (a rejected
+/// one) touches no part.
+pub(crate) struct ShareSplit {
+    on: Cell<bool>,
+    written: Cell<bool>,
+    parts: RefCell<Vec<f64>>,
+    weights: RefCell<Vec<f64>>,
+}
+
+impl ShareSplit {
+    /// `len` parts in all, and room for `widest` configuration weights.
+    pub(crate) fn new(len: usize, widest: usize) -> Self {
+        ShareSplit {
+            on: Cell::new(false),
+            written: Cell::new(false),
+            parts: RefCell::new(vec![0.0; len]),
+            weights: RefCell::new(vec![0.0; widest]),
+        }
+    }
+
+    pub(crate) fn active(&self) -> bool {
+        self.on.get()
+    }
+
+    /// Start a point: every part at zero, terms recorded from now on.
+    pub(crate) fn begin(&self) {
+        if self.written.replace(false) {
+            // Parts left by a point that never reached `finish`.
+            self.parts.borrow_mut().fill(0.0);
+        }
+        self.on.set(true);
+    }
+
+    /// Divide one subprocess's `term` over its `n_configs` configurations, in
+    /// proportion to the weights `fill` writes, into the parts from `offset`.
+    /// Where the weights carry nothing (every one zero, or not finite) the term
+    /// goes to the slot after the configurations, so the parts still sum to the
+    /// terms.
+    pub(crate) fn split(
+        &self,
+        offset: usize,
+        n_configs: usize,
+        term: f64,
+        fill: impl FnOnce(&mut [f64]),
+    ) {
+        if term == 0.0 {
+            return;
+        }
+        let mut weights = self.weights.borrow_mut();
+        let w = &mut weights[..n_configs];
+        fill(w);
+        let total: f64 = w.iter().sum();
+        let mut parts = self.parts.borrow_mut();
+        self.written.set(true);
+        if total > 0.0 && total.is_finite() {
+            for (p, &wc) in parts[offset..offset + n_configs].iter_mut().zip(w.iter()) {
+                *p += term * (wc / total);
+            }
+        } else {
+            parts[offset + n_configs] += term;
+        }
+    }
+
+    /// End a point whose value was `value`: add each part's share of it into
+    /// `out`, the parts scaled by `value` over their own sum, so the shares sum
+    /// to `value` whatever constant factors stand between the terms and it.
+    pub(crate) fn finish(&self, value: f64, out: &mut [f64]) {
+        self.on.set(false);
+        if !self.written.replace(false) {
+            debug_assert!(value == 0.0, "a point of value {value} recorded no term");
+            return;
+        }
+        let mut parts = self.parts.borrow_mut();
+        if value != 0.0 {
+            let total: f64 = parts.iter().sum();
+            debug_assert!(total != 0.0, "a point of value {value} recorded no term");
+            if total != 0.0 {
+                let scale = value / total;
+                for (o, &p) in out.iter_mut().zip(parts.iter()) {
+                    *o += p * scale;
+                }
+            }
+        }
+        parts.fill(0.0);
+    }
+}
+
+/// The layout [`ShareSplit`] reads: each subprocess's first part, for
+/// subprocesses of `n_configs` configurations each, and the total.
+pub(crate) fn share_offsets(n_configs: impl IntoIterator<Item = usize>) -> Vec<usize> {
+    let mut offsets = vec![0];
+    for n in n_configs {
+        offsets.push(offsets.last().copied().unwrap_or(0) + n + 1);
+    }
+    offsets
 }
 
 /// Where a marked line is zeroed at `ext`, the per-helicity `|M'_h|²` of the
@@ -1799,6 +1951,9 @@ pub struct FixedBeamIntegrand<'a> {
     resonances: &'a [SubprocessResonances],
     /// How a per-channel adaptation refines the channels' grids.
     grid_rule: GridRule,
+    /// Per subprocess, its first part of a point's split over configurations
+    /// ([`ShareSplit`]), and the total last.
+    share_offsets: Vec<usize>,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1827,6 +1982,8 @@ struct FixedBeamScratch<'a> {
     /// This thread's count of the points it evaluated
     /// ([`FixedBeamIntegrand::census`]).
     census: CensusCell,
+    /// This thread's split of a point's value over configurations.
+    shares: ShareSplit,
 }
 
 /// The phase-space map a [`FixedBeamIntegrand`] draws through.
@@ -1913,6 +2070,9 @@ pub struct ChannelIntegration {
     pub grid: VegasGrid,
     /// This term's integral and error, in natural units (GeV⁻²).
     pub result: VegasResult,
+    /// Per share of the integrand ([`ChannelIntegrand::share_count`]), its part
+    /// of this term, in the same units; empty for an integrand with none.
+    pub shares: Vec<VegasResult>,
 }
 
 /// The discrete labels an accepted event carries besides its momenta, drawn by
@@ -2041,6 +2201,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let n = final_masses.len();
         let sqrt_s = initial.sqrt_s();
         let unpolarized = amps.iter().all(|a| !a.evaluator().is_polarized());
+        let share_offsets = share_offsets(amps.iter().map(|a| a.evaluator().n_configs()));
         let subs = amps.into_iter().map(SubprocessProto::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
@@ -2072,6 +2233,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             vetoes: Vec::new(),
             resonances: &[],
             grid_rule: GridRule::default(),
+            share_offsets,
         }
     }
 
@@ -2212,7 +2374,46 @@ impl<'a> FixedBeamIntegrand<'a> {
             amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
             vetoed: bind_vetoes(&self.vetoes),
             census: CensusCell::default(),
+            shares: ShareSplit::new(
+                self.share_count(),
+                self.subs
+                    .iter()
+                    .map(|s| s.evaluator().n_configs())
+                    .max()
+                    .unwrap_or(0),
+            ),
         })
+    }
+
+    /// The parts [`value_in_channel_shared`](Self::value_in_channel_shared)
+    /// splits a value into: per subprocess, in subprocess order, one per
+    /// integration configuration of its evaluator (the order `AMP2` takes) and
+    /// one for the weight no configuration carried.
+    pub fn share_count(&self) -> usize {
+        self.share_offsets.last().copied().unwrap_or(0)
+    }
+
+    /// Subprocess `i`'s first part in [`share_count`](Self::share_count)'s
+    /// layout.
+    pub fn share_offset(&self, i: usize) -> usize {
+        self.share_offsets[i]
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel), its value split over the
+    /// configurations of every subprocess and added into `shares`
+    /// ([`share_count`](Self::share_count) long).
+    ///
+    /// Each subprocess's term `S |M|²` is divided by MadEvent's enhancement
+    /// weights at the point ([`enhancement_weights`]), `w_c / Σ_c w_c`: the
+    /// factor `matrix_madevent_group_v4.inc` multiplies channel `c`'s integrand
+    /// by. Over every configuration those factors sum to one, so the shares sum
+    /// to the value.
+    pub fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        let sc = self.scratch();
+        sc.shares.begin();
+        let value = self.value_in_channel(channel, u);
+        sc.shares.finish(value, shares);
+        value
     }
 
     /// The points [`value`](Self::value) and
@@ -2527,9 +2728,39 @@ impl<'a> FixedBeamIntegrand<'a> {
 
         let mut m2 = 0.0;
         for (i, sub) in sc.subs.iter().enumerate() {
-            m2 += sub.symmetry_factor() * vetoed_m2(vetoed_of(&sc.vetoed, i), sub, ext);
+            let term = sub.symmetry_factor() * vetoed_m2(vetoed_of(&sc.vetoed, i), sub, ext);
+            if sc.shares.active() {
+                self.split_term(sc, i, sub, ext, term);
+            }
+            m2 += term;
         }
         m2
+    }
+
+    /// Record subprocess `i`'s term at `ext` in the thread's [`ShareSplit`].
+    ///
+    /// The channel forests behind `sde_strategy = 2`'s weights are derived for
+    /// the first subprocess only, so under that strategy every other
+    /// subprocess's term is recorded as carried by no configuration.
+    fn split_term(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        i: usize,
+        sub: &BoundSubprocess<'a>,
+        ext: &[V],
+        term: f64,
+    ) {
+        let n = sub.evaluator().n_configs();
+        let offset = self.share_offsets[i];
+        match &self.config_weights {
+            Some(set) if i == 0 => sc.shares.split(offset, n, term, |w| {
+                enhancement_weights(None, sub, ext, Some((set, self.sqrt_s * self.sqrt_s)), w)
+            }),
+            Some(_) => sc.shares.split(offset, n, term, |w| w.fill(0.0)),
+            None => sc.shares.split(offset, n, term, |w| {
+                enhancement_weights(vetoed_of(&sc.vetoed, i), sub, ext, None, w)
+            }),
+        }
     }
 
     /// The integrand value at a VEGAS point `u ∈ [0,1]^ndim`, in natural units
@@ -3308,6 +3539,14 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         FixedBeamIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn share_count(&self) -> usize {
+        FixedBeamIntegrand::share_count(self)
+    }
+
+    fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        FixedBeamIntegrand::value_in_channel_shared(self, channel, u, shares)
     }
 
     fn grid_rule(&self) -> GridRule {
@@ -4227,6 +4466,186 @@ mod tests {
         // same thing on both sides.
         integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C6);
         assert_eq!(integ.channel_count(), n_channels);
+    }
+
+    /// A point's value is split over the integration configurations by MadEvent's
+    /// enhancement weight, `AMP2_c / Σ AMP2`, and an integration's shares add up to
+    /// its cross section.
+    ///
+    /// `g g → g g` at a running coupling: three configurations and the
+    /// four-gluon contact, which carries none but feeds `|M|²`. Pointwise, each
+    /// share is the value times the configuration's `AMP2` fraction recomputed
+    /// here from a separate evaluation at the bound coupling (every configuration
+    /// is `O(αs²)`, so the fraction does not move with the coupling), so a share
+    /// read off the wrong configuration, a configuration dropped or one counted
+    /// twice reads off by a whole fraction. Over the integration the shares sum
+    /// to every channel's term and to σ to rounding, and the slot for weight no
+    /// configuration carried stays empty.
+    #[test]
+    fn configuration_shares_split_each_point_by_amp2_and_sum_to_sigma() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n\
+             False = fixed_ren_scale\n  False = fixed_fac_scale1\n\
+             False = fixed_fac_scale2\n  -1 = dynamical_scale_choice\n\
+             4 = maxjetflavor\n  20.0 = ptj\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        assert_eq!(rep.n_configs(), 3);
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(500.0),
+            masses,
+            avg,
+        );
+        integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("the clustering scale compiles for g g > g g");
+        integ.use_multichannel(&diagrams, &evaluated, 2048, 2, 0x5EED_5A);
+        assert_eq!(
+            integ.share_count(),
+            4,
+            "three configurations and the unattributed slot"
+        );
+
+        let reference = BoundAmplitude::<f64>::bind(rep, &evaluated);
+        let mut scratch = reference.scratch_space();
+        let mut amp2 = vec![0.0; 3];
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_5B);
+        let mut checked = 0;
+        for i in 0..400 {
+            use rand::Rng;
+            let channel = i % integ.channel_count();
+            let u: Vec<f64> = (0..integ.point_ndim()).map(|_| rng.random()).collect();
+            let mut shares = vec![0.0; 4];
+            let value = integ.value_in_channel_shared(channel, &u, &mut shares);
+            assert_eq!(
+                value.to_bits(),
+                integ.value_in_channel(channel, &u).to_bits(),
+                "splitting a point moves its value"
+            );
+            if value == 0.0 {
+                assert!(shares.iter().all(|&s| s == 0.0));
+                continue;
+            }
+            let point = integ
+                .sampler
+                .draw_in_channel(channel, &u[..integ.channel_grid_ndim()]);
+            let ext = integ.externals(&point.momenta);
+            reference.eval_amp2(&ext, &mut scratch, &mut amp2);
+            let total: f64 = amp2.iter().sum();
+            for c in 0..3 {
+                let want = value * amp2[c] / total;
+                assert!(
+                    (shares[c] - want).abs() <= 1e-12 * value.abs(),
+                    "configuration {c}: share {} against {want} of {value}",
+                    shares[c]
+                );
+            }
+            assert_eq!(shares[3], 0.0);
+            checked += 1;
+        }
+        assert!(checked > 100, "{checked} points passed the cuts");
+
+        let (per_channel, total, _) = integ.adapt_grids_budget(
+            Budget::Fixed {
+                neval: 4000,
+                niter: 4,
+            },
+            BlockAllocation::ByAlpha,
+            0x5EED_5C,
+            &StopSignal::default(),
+        );
+        let mut summed = [0.0; 4];
+        for c in &per_channel {
+            assert_eq!(c.shares.len(), 4);
+            let own: f64 = c.shares.iter().map(|r| r.integral).sum();
+            assert!(
+                (own - c.result.integral).abs() <= 1e-12 * c.result.integral.abs(),
+                "a channel's shares sum to {own:e}, its term is {:e}",
+                c.result.integral
+            );
+            for (acc, r) in summed.iter_mut().zip(&c.shares) {
+                *acc += r.integral;
+            }
+        }
+        let sum: f64 = summed.iter().sum();
+        assert!(
+            (sum - total.integral).abs() <= 1e-12 * total.integral,
+            "the shares sum to {sum:e}, σ is {:e}",
+            total.integral
+        );
+        assert!(summed[..3].iter().all(|&s| s > 0.0), "{summed:?}");
+        assert_eq!(summed[3], 0.0);
+    }
+
+    /// The enhancement weights a share is split by are `AMP2` at the coupling the
+    /// point's `|M|²` ran at, as MadEvent forms both from one set of amplitudes,
+    /// and not at the bound one the configuration draw uses. `u u~ → u u~` with
+    /// `QED <= 2` has gluon (`O(αs)`) and photon/Z (`O(α)`) configurations, so its `AMP2`
+    /// fractions move with the coupling: at `αs = 0.3` the read-off weights are
+    /// the evaluation's own, bit for bit, and differ from those at the card's
+    /// coupling.
+    #[test]
+    fn enhancement_weights_are_read_at_the_evaluated_coupling() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card =
+            parse_proc_card("generate u u~ > u u~ QED<=2", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let rep = &evals[0];
+        let n = rep.n_configs();
+        assert!(n >= 2);
+        let bound = BoundAmplitude::<f64>::bind(rep, &evaluated);
+        let mut subs = vec![SubprocessProto::fixed(&bound)];
+        let awareness = make_subs_scale_aware(&mut subs, &evaluated);
+        assert!(awareness.depends_on_alpha_s);
+        let sub = subs[0].bind();
+        let ext = dilepton_cm(500.0, 0.3);
+
+        let mut at_card = vec![0.0; n];
+        sub.eval_m2(&ext);
+        enhancement_weights(None, &sub, &ext, None, &mut at_card);
+
+        sub.set_alpha_s(0.3);
+        sub.eval_m2(&ext);
+        let mut read = vec![0.0; n];
+        enhancement_weights(None, &sub, &ext, None, &mut read);
+        let mut evaluated_again = vec![0.0; n];
+        sub.eval_amp2(&ext, &mut evaluated_again);
+        assert_eq!(
+            read, evaluated_again,
+            "the weights are not the evaluation's own"
+        );
+
+        let fraction = |w: &[f64]| w[0] / w.iter().sum::<f64>();
+        assert!(
+            (fraction(&read) - fraction(&at_card)).abs() > 1e-3 * fraction(&at_card),
+            "the AMP2 fractions do not move with the coupling here, so the test sees nothing"
+        );
     }
 
     /// The final legs of a point with outgoing legs `pair` collinear (`pT = 30`

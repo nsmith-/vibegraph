@@ -33,10 +33,12 @@ use clap::Args;
 use tracing::{info, warn};
 use vibegraph::amplitude_probe;
 use vibegraph::artifact::{
-    channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, EmbeddedModel, IntegrateArtifact,
-    MovedParam, MultiplicityTotal, PdfInput, RunInputs, FORMAT_VERSION,
+    channel_map_digest, ChannelGrid, ChannelKey, ChannelMember, ChannelSampler, ConfigShare,
+    EmbeddedModel, IntegrateArtifact, MovedParam, MultiplicityTotal, PdfInput, RunInputs,
+    FORMAT_VERSION,
 };
 use vibegraph::config::{process_facts, GlobalConfig, LoadRunCardError};
+use vibegraph::config_share;
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact};
@@ -79,7 +81,8 @@ use crate::assets;
 use crate::error::{err, pdf_error_kind, CliError, ErrorKind};
 use crate::network::NetworkPolicy;
 use crate::output::{
-    self, ChannelKeyObject, ChannelResult, IntegrateResult, ModelRef, MuF, MultiplicityResult,
+    self, ChannelKeyObject, ChannelResult, ConfigurationResult, IntegrateResult, ModelRef, MuF,
+    MultiplicityResult,
 };
 use crate::parallel::ParallelArgs;
 use crate::si::{fmt_si_measured, GEV, PICOBARN};
@@ -876,6 +879,8 @@ struct RunOutput {
     census: PointCensus,
     /// Each final-state phase space's total, at proton beams.
     multiplicities: Vec<MultiplicityTotal>,
+    /// Every integrated evaluator's configuration shares.
+    configurations: Vec<ConfigShare>,
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
@@ -885,6 +890,7 @@ fn bank_channel(
     key: ChannelKey,
     c: &ChannelIntegration,
     sampler: Option<ChannelSampler>,
+    members: Vec<ChannelMember>,
     observable: Observable,
 ) -> ChannelGrid {
     let unit = observable.per_natural_unit();
@@ -897,6 +903,29 @@ fn bank_channel(
         sigma_err_pb: c.result.std_dev * unit,
         chi2_per_dof: c.result.chi2_per_dof,
         sampler,
+        members,
+    }
+}
+
+/// Report the configurations the cross section is spread over and check that
+/// their shares sum to it: the weights partition every point's value, so a
+/// difference past rounding is a configuration dropped or counted twice.
+fn report_configurations(configurations: &[ConfigShare], sigma: f64, observable: Observable) {
+    let summed: f64 = configurations.iter().map(|c| c.sigma).sum();
+    let carried = configurations
+        .iter()
+        .filter(|c| c.configuration.is_some() && c.sigma != 0.0)
+        .count();
+    info!(
+        "configs:  {} configurations carry the {} (`vibegraph inspect` lists them)",
+        carried,
+        observable.symbol(),
+    );
+    if (summed - sigma).abs() > 1e-9 * sigma.abs() {
+        warn!(
+            "the configuration shares sum to {summed:e}, the {} is {sigma:e}",
+            observable.symbol()
+        );
     }
 }
 
@@ -1142,6 +1171,8 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         measurement(observable, sigma_pb, sigma_err_pb)
     ));
 
+    report_configurations(&output.configurations, sigma_pb, observable);
+
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
         process: output.process,
@@ -1173,6 +1204,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         diagram_set_digest: diagram_set_digest(&sets),
         sets,
         amplitude_probe,
+        configurations: output.configurations,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -1240,6 +1272,29 @@ pub(crate) fn result_object(
         format_version: artifact.format_version,
         diagram_set_digest: artifact.diagram_set_digest.clone(),
         param_card: artifact.param_card.is_some(),
+        configurations: artifact
+            .configurations
+            .iter()
+            .map(|c| ConfigurationResult {
+                set: c.set,
+                label: artifact
+                    .sets
+                    .get(c.set)
+                    .map(DiagramSet::label)
+                    .unwrap_or_default(),
+                configuration: c.configuration,
+                diagrams: c.diagrams.clone(),
+                contact_diagrams: c.contact_diagrams.clone(),
+                members: c.members.iter().map(|m| m.set).collect(),
+                sigma: c.sigma,
+                sigma_err: c.sigma_err,
+                share: if artifact.sigma_pb != 0.0 {
+                    c.sigma / artifact.sigma_pb
+                } else {
+                    0.0
+                },
+            })
+            .collect(),
     })
 }
 
@@ -1503,12 +1558,24 @@ fn integrate_hadronic(
     if multiplicities.len() > 1 {
         report_multiplicities(&multiplicities);
     }
+    let (configurations, members) = config_share::hadronic(
+        sets,
+        &groups,
+        &integ,
+        model,
+        &per_channel,
+        Observable::CrossSection.per_natural_unit(),
+    )
+    .map_err(|e| err(ErrorKind::Process, e))?;
     let channels = integ
         .channel_keys()
         .into_iter()
         .zip(integ.channel_samplers())
         .zip(&per_channel)
-        .map(|((key, sampler), c)| bank_channel(key, c, Some(sampler), Observable::CrossSection))
+        .zip(members)
+        .map(|(((key, sampler), c), members)| {
+            bank_channel(key, c, Some(sampler), members, Observable::CrossSection)
+        })
         .collect();
     Ok(RunOutput {
         process,
@@ -1525,6 +1592,7 @@ fn integrate_hadronic(
         convergence,
         census,
         multiplicities,
+        configurations,
     })
 }
 
@@ -1655,6 +1723,13 @@ fn integrate_fixed_energy(
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
     let census = integ.census();
+    let (configurations, members) = config_share::fixed_energy(
+        sets,
+        &evals,
+        model,
+        &per_channel,
+        initial.observable().per_natural_unit(),
+    );
     Ok(RunOutput {
         process,
         observable: initial.observable(),
@@ -1664,12 +1739,14 @@ fn integrate_fixed_energy(
         sqrt_s,
         channels: per_channel
             .iter()
+            .zip(members)
             .enumerate()
-            .map(|(j, c)| {
+            .map(|(j, (c, members))| {
                 bank_channel(
                     ChannelKey::Channel { channel: j },
                     c,
                     integ.channel_samplers().get(j).cloned(),
+                    members,
                     initial.observable(),
                 )
             })
@@ -1683,6 +1760,7 @@ fn integrate_fixed_energy(
         convergence,
         census,
         multiplicities: Vec::new(),
+        configurations,
     })
 }
 
