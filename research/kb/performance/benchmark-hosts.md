@@ -1,7 +1,7 @@
 ---
 type: Measurement
 title: The hosts behind the performance numbers
-description: "CPU, caches, measured clock, ISA, OS and toolchain of each benchmark host (M3 Max, Emerald Rapids VM, Cascade Lake VM, Zen 4), and the M3 Max run-to-run noise floor."
+description: "CPU, caches, measured clock, ISA, OS and toolchain of each benchmark host (M3 Max, Emerald Rapids VM, Cascade Lake VM, Ice Lake VM, Zen 4), and the M3 Max run-to-run noise floor."
 status: draft
 tags: [performance, hosts, measurement-method, noise]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -43,6 +43,7 @@ on any of them is in [benchmarking the evaluator](../performance/microbenchmark-
 | **Emerald Rapids VM** | Intel Xeon family 6 model 207, 4-vCPU Firecracker microVM under KVM, 15 GiB; 48 KiB L1d and 2 MiB L2 per core, 260 MiB L3 | reports 2.1 GHz base; **measured 3.2 GHz** (dependent integer `add` chain, 3.16–3.32 G/s pinned to an idle core) | AVX-512 F/DQ/BW/VL, FP16, BF16, AMX; `target-cpu=native` resolves to `emeraldrapids`, whose LLVM tuning carries `prefer-256-bit` | Linux; `rustc 1.94.1` (x86 study), `1.97.0` (AOT study) | no PMU; shared with other sessions at times; separate-process runs spread up to ±35% |
 | **Cascade Lake VM** | Intel Xeon @ 2.80 GHz, family 6 model 85 stepping 7, 4-vCPU Firecracker VM, 15 GiB, 1 thread per core; 32 KiB L1d, 1 MiB L2 per core, 33 MiB L3 | 2.8 GHz | AVX-512 F/DQ/CD/BW/VL + VNNI | Linux; `rustc 1.98.1` (MadGraph comparison), `nightly-2026-09-24` (dispatch study) | no PMU; run-to-run drift 1–4% per cell; provisioned 2026-09-25 |
 | **Zen 4** (bare metal) | AMD EPYC 9534 "Genoa", family 25 model 17; 1 MiB L2 per core | boost 3.1–4.1 GHz across cells, governor `performance` | AVX-512, 512-bit ops executed as two passes | RHEL 9, kernel 5.14, perf 5.14 | the only host with `perf` top-down counters (the M3 Max's are read through Instruments' CPU Counters template); NMI watchdog holds one of six core counters |
+| **Ice Lake VM** (CERN) | Intel Xeon "Icelake", family 6 model 106, 4-vCPU KVM guest presented as 4 sockets × 1 core (no SMT exposed), 7 GB RAM, no swap | hypervisor reports 2.9 GHz; not measured | AVX-512 present; x86-64-v3 (AVX2, FMA, BMI2) used for the v3 legs | AlmaLinux 10.2, kernel 6.12.0; `rustc 1.99.1`; gfortran 14.4.0 (conda-forge, pixi `madgraph` env) | the v0.2.0 MadGraph comparisons (2026-11-09/10); quiet (load 0.09, negligible steal), `taskset` works; a global OOM killed a 4 GB job there once, so runs went under `MemoryMax` scopes |
 
 Sources: M3 Max[^n30-host][^tds-m3], Emerald Rapids[^aot-host][^roofline-host][^x86-avx512],
 Cascade Lake[^cl-host][^tds-hosts], Zen 4[^td-host].
