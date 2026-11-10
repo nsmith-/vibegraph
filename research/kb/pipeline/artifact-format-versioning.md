@@ -16,9 +16,9 @@ sources:
 ---
 vibegraph persists one artifact today, the `vibegraph integrate` grid file
 ([the integrate artifact](integrate-artifact.md)). A diagram artifact written
-by `vibegraph enumerate` and read by `integrate` is designed
-([enumerate design](enumerate-and-diagram-ranking.md)), with a version
-sequence of its own. The rules here apply to
+by a future `vibegraph enumerate` and read by `integrate` is planned
+([diagram-inspection-command-missing](../backlog/feature/diagram-inspection-command-missing.md)),
+and the compiled-program cache would be another. The rules here apply to
 every such file. Each artifact's own fields and history belong in its own
 concept.
 
@@ -43,7 +43,7 @@ concept.
    reaches silently. So `generate` refuses a `< 7` artifact only on a card that
    selects the clustering scale. Fixed-scale artifacts keep working.[^n29-b9]
    For the integrate artifact's channel maps, the check is automatic from
-   version 17: the artifact banks `channel_map_digest`, a SHA-256 over every
+   version 15: the artifact banks `channel_map_digest`, a SHA-256 over every
    channel's `DiagramChannel::map_key` in channel order, and `generate`
    refuses an artifact whose digest differs from the one its rebuilt channels
    give. A change to which map a channel gets (topology, poles, floors,
@@ -100,15 +100,11 @@ committed file or test consumes a banked integrate artifact: every test writes
 its own with `vibegraph integrate`. So raising the floor breaks only users'
 files, and they are told to regenerate.
 
-The integrate artifact's floor is its current version, 21. Versions 16, 18,
-19 and 20 each added or retyped a field (pair order and α floor; decay
-tables; `Option` scale and χ²/dof; per-multiplicity totals), so an older file
-does not decode into today's shape without a frozen reader. Versions 17 and
-21 changed what a stored grid means with no shape change: 17 moved peripheral
-channels onto t-channel spines, and 21 bounds the `τ` draw of a process whose
-decay chain forces a line carrying the whole final state. A file from before
-either would replay against maps it was not trained on. Each version's reason
-is in the `FORMAT_VERSION` doc comment. The `v3`–`v9` readers, `version_for` and the threshold constants
+The integrate artifact's floor is its current version, 15. No file older
+than 13 records a proc card, so `generate`, which takes none, has nothing to
+replay from one; 13 records no PDF checksums; 14 holds grids trained under
+channel maps that 15 builds differently for the same keys, and no channel-map
+digest that could tell. The `v3`–`v9` readers, `version_for` and the threshold constants
 went with the versions they served, so rules 5–7 have no live instance in it;
 the examples above are their history.
 

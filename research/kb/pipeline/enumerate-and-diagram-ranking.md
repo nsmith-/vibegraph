@@ -95,7 +95,7 @@ sequence, starting at 1.
 | `format_version` | Starts at 1. |
 | `proc_card` | The proc card's text, verbatim. |
 | `process` | The canonical process string. |
-| `model` | `ModelIdentity` (name, restriction, digest) **and the restricted `ParsedModel` itself.** |
+| `model`, `parsed_model`, `naming` | `ModelIdentity` (name, restriction, digest), **the restricted `ParsedModel` itself**, and the particle naming it was built under. (The integrate artifact carries the same model as one field, `embedded`.) |
 | `sets` | Every `DiagramSet` in enumeration order: particles, polarizations, `mirrored`, and the diagrams. |
 | `diagram_set_digest` | SHA-256 over the canonical bincode of `sets`. |
 
@@ -122,6 +122,10 @@ sequence, starting at 1.
 vibegraph enumerate <proc_card> [--out DIR] [--force] [--ufo-dir DIR]
                     [--svg all|none|first=N] [--run-card F] [--param-card F]
 ```
+
+The `diagrams.json` schema as built, with every field, is
+`pipeline/diagrams-json.md` (nsmith-/vibegraph#120); this section gives its
+shape and the reasons behind it.
 
 It writes into `<out>/`, `.` by default, with no silent overwrite, as
 integrate does:
@@ -217,7 +221,7 @@ encodings:
 - Lowered program: `instrs`, `dest`, `operands`, `mom_operands` and
   `amp_locs` only, so it is a lower bound.
 
-Compression would shrink every column, but would not change the 40–80× ratio
+Compression would shrink every column, but would not change the 6–77× ratio
 between the AST and the program.
 
 | Process | Sets | Diagrams | Enumerate | Diagrams (est.) | Compile → AST | Folded AST | Expand + lower | Lowered program |
@@ -258,7 +262,8 @@ Model sizes, as the bincode of the `ParsedModel` that would be embedded:
   survey has cards still enumerating after 900 s. The diagrams are also the
   smallest representation that carries all the information.
 - **Do not store the lowered program.**
-  - *Size:* it is 40–80× the folded AST, 48 MB for SMEFTsim
+  - *Size:* it is 6–77× the folded AST (≥ 38× on every card past a few
+    hundred diagrams), 48 MB for SMEFTsim
     `g g > t t~ g g` and 82 MB for `p p > e+ e- j j j`, before compression.
   - *Rebuild time:* at most 2.8 s on any card measured, against integrations
     of minutes or more.
@@ -271,7 +276,7 @@ Model sizes, as the bincode of the `ParsedModel` that would be embedded:
 - **Do not store the folded AST either.**
   - *Benefit:* it saves only the compile step, at most 0.65 s; expansion and
     lowering, the larger cost at the top of the table, still run on load.
-  - *Size:* it is 1–4× the diagrams.
+  - *Size:* it is 1–9× the diagrams (9.2× on `g g > g g g g`).
   - *Compatibility:* its node language (`op.rs`) changes whenever a kernel is
     fused or an op is added.
   - *Bugs:* a banked AST also keeps the compiler's bugs. Recompiling from the
@@ -349,12 +354,18 @@ result.
 
 - **Cost.** The configuration amplitudes ride under the program's root
   (`amp_locs`), but forming `AMP2_c` from them is an extra loop over every
-  helicity row's configuration amplitudes after the |M|² evaluation. Measured:
-  +3.6% CPU on `e+ e- > u u~ g` and +10.7% on `p p > e+ e- j`
-  (the configuration-share oracle measurement, nsmith-/vibegraph#124).
+  helicity row's configuration amplitudes after the |M|² evaluation. After a
+  performance pass (one loop along each row, warm-up iterations and zero-valued
+  points skipped), the measured cost is +0.3% of instructions on
+  `e+ e- > u u~ g` and +5.7% on `p p > e+ e- j`, from +3.6% and +11.6% before
+  it (`performance/configuration-share-cost.md`, nsmith-/vibegraph#124).
 - **Which partition.** MadEvent's `matrix_madevent_group_v4.inc` multiplies by
-  `AMP2_c/ΣAMP2` at `sde_strategy = 1` (where `GET_CHANNEL_CUT` is 1) and by
-  the channel-cut factors' share at strategy 2; σ_c follows the run's
+  `AMP2_c/ΣAMP2` at `sde_strategy = 1` and by
+  the channel-cut factors' share at strategy 2. At strategy 1 the template
+  multiplies each `AMP2` by `GET_CHANNEL_CUT`, which `genps.f:1878-1906`
+  makes 1 when `tmin_for_channel = −1` (the default, and the only value this
+  code accepts) or the configuration has fewer than two t-channel lines. σ_c
+  follows the run's
   strategy, reading `AMP2` at the coupling the point's own |M|² used.
 - **Two built-in checks.** The shares sum to σ (Σ_c σ_c = σ to rounding,
   because the weights partition unity), and their errors are evaluated from
@@ -371,17 +382,20 @@ result.
 
 ## 7. The ranking JSON
 
-The ranking JSON is written by `vibegraph inspect --ranking <grid.bin.zst>`.
-`inspect` already prints what an integration recorded without running
-anything again, and the ranking is another view of the same record. The schema is versioned and
-documented here; the page that renders it is designed separately.
+The ranking JSON is written by `vibegraph inspect --ranking <grid.bin.zst>
+[--diagrams <enumerate dir>]`. `inspect` already prints what an integration
+recorded without running anything again, and the ranking is another view of
+the same record. The page that renders it is designed separately. The schema
+as built, with every field, is `pipeline/ranking-json.md`
+(nsmith-/vibegraph#126); the sketch below shows its shape.
 
 ```json
 {
   "schema_version": 1,
   "process": "...", "model": {"label": "...", "digest": "..."},
-  "observable": "sigma", "unit": "pb", "sigma": 0.0, "sigma_err": 0.0,
-  "diagram_set_digest": "...",
+  "observable": "cross_section", "unit": "pb", "sigma": 0.0, "sigma_err": 0.0,
+  "diagram_set_digest": "...", "beams": "proton", "weight": "amp2",
+  "drawings": {"paired": true, "summary": "enum/diagrams.json"},
   "sets": [{"id": "s0", "label": "u u~ > e+ e- g", "mirrored": true, "diagrams": 16}],
   "configurations": [
     {"rank": 1, "id": "s0.c3", "set": "s0", "diagrams": ["s0.d5", "s0.d9"],
@@ -399,13 +413,19 @@ documented here; the page that renders it is designed separately.
 - `configurations` is sorted by `sigma` descending; `share` is `sigma / σ`.
 - Diagram ids are the SVG file stems, so a page loads
   `svg/<set>/<id>.svg` directly.
+- `inspect --ranking --diagrams` refuses a `diagrams.json` whose digest
+  differs, or whose configuration grouping differs from this build's (the
+  digest covers the diagrams, not the grouping code).
 - A page given `diagrams.json` and a ranking with different
   `diagram_set_digest` values must refuse to pair them.
 
 ## 8. Sessions
 
-Sessions 1–5 are nsmith-/vibegraph#115 (with the re-pin in #117),
-#116, #120, #121 and #124, with #119 dropping empty diagram sets in between.
+Sessions 1–6 are nsmith-/vibegraph#115 (with the re-pin in #117),
+#116, #120, #121, #124 and #126, with #119 dropping empty diagram sets in
+between. #121 also banks the process facts MadGraph's default run card reads,
+so `integrate` from a diagram artifact enumerates nothing; #124 carries the
+share-accounting performance pass.
 
 Each session is one PR. They land in this order.
 
@@ -437,8 +457,9 @@ Each session is one PR. They land in this order.
 - **A compiler panic**, filed as
   [smeft-four-quark-compile-panics](../backlog/validation/smeft-four-quark-compile-panics.md).
 - **Stale concepts.** [The integrate artifact](integrate-artifact.md) and
-  [artifact format versioning](artifact-format-versioning.md) described format
-  version 15; both now describe version 21 and the param-card record.
+  [artifact format versioning](artifact-format-versioning.md) describe format
+  version 15 while the code was at 21. They are brought up to date by the
+  PRs that move the format past it: #121 (version 22) and #124 (version 23).
 
 [^fg-diagram]: feyngraph `src/diagram/mod.rs`, `pub struct Diagram`, at the pinned revision.
 [^fg-draw]: feyngraph `src/drawing/mod.rs`, at the pinned revision.
