@@ -1,7 +1,7 @@
 ---
 type: Measurement
 title: "Integration against MadGraph: throughput and time to accuracy"
-description: "Integrand points per CPU-second and CPU seconds to 0.1% on σ against MadEvent on M3 Max and Cascade Lake, and why cumulated_time puts an O(1) factor into every such ratio."
+description: "Time to 0.1% on σ and points per CPU-second against MadEvent. At v0.2.0 on an Ice Lake VM over 7 rows: 0.65× MadEvent's CPU at equal accuracy (0.60× at x86-64-v3), the MLM row 4× slower."
 status: draft
 tags: [performance, madgraph, integration, throughput, measurement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -17,6 +17,7 @@ sources:
   - {id: cl-uncovered, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L215-L226", title: "Cascade Lake comparison §5 (not covered)"}
   - {id: integrate-cli, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/integrate.rs#L285-L335", title: "integrate CLI budget and convergence flags"}
 measured:
+  - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "taskset -c 2 <release asset> integrate <row>.proc --run-card <row>.run --target-rel 0.001 --seed {20260719,20260720,20260721} -j 1 --no-network --no-tui, timed with os.wait4; MadEvent via time_stages.py --nb-core 4", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/{phase2a,phase2b}/ (collated by tools/collate2a_fullprec.py, collate2a_addenda_fullprec.py, collate2b.py)"}
   - {host: "Apple M3 Max", command: "RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1 per-row validate_sigma / validate_hadronic"}
   - {commit: 098c9e2, host: "Apple M3 Max", command: "vibegraph integrate <proc card> --run-card <run card> --target-rel 0.001 --seed {20260719,20260720,20260721} -j 1"}
   - {commit: cf8b2b7, pr: 8, landed_in: 6e15ad3, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "taskset -c 2 vibegraph integrate … --target-rel 0.001 -j 1; per-row gates under RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1"}
@@ -32,6 +33,93 @@ measurement, in [matrix element against MadGraph](../performance/matrix-element-
 the protocol rules are in
 [the end-to-end timing protocol](../performance/end-to-end-timing-protocol.md).
 
+## v0.2.0, Ice Lake VM (`3cc7f9c2`, 2026-11-09/10)
+
+**Headline: over seven rows, vibegraph reaches the same accuracy in 0.65× MadEvent's CPU
+(geomean; 0.60× with the x86-64-v3 asset), or 0.48× / 0.44× without the MLM row, which is
+about 4× slower.** Integrand throughput is 3.5× MadEvent's points per CPU-second (3.7× at
+v3). Every σ agrees with MadEvent's (largest |pull| 1.46).
+
+Setup ([benchmark hosts](benchmark-hosts.md)):
+- **Ours.** Both musl release assets (plain and `-v3`), `--target-rel 0.001 -j 1` pinned to
+  one core, seeds 20260719/20/21, binaries interleaved, timed with an `os.wait4` wrapper.
+  Cards: `import model sm` plus the row's `generate` line; run cards are the banked ones.
+- **MadEvent.** One `time_stages.py` launch per row at `nb_core = 4`, `global_flag = -O`
+  set explicitly. CPU is `<cumulated_time>`, scaled by (δ_MG/δ)² to the δ each of our seeds
+  reached, with δ = err/σ of the last iteration line × √max(1, χ²/dof) (protocol §5).
+- **The musl assets anti-scale with threads**, so every multi-core figure below is a glibc
+  `cargo build --release` of the same commit, labelled as such
+  ([backlog](../backlog/performance/musl-release-assets-anti-scale-with-threads.md)). The
+  musl assets also carry about 20% single-thread overhead against glibc (measured on
+  `pp_to_jj` only), which every single-core ratio here includes.
+
+Time to accuracy, ours/MadEvent CPU at equal δ (mean over 3 seeds; below 1 is faster):
+
+| row | plain | v3 | δ reached | pull range |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 0.13 | 0.12 | 0.042–0.051% | within 1.46 |
+| `dy13_default` | 0.16 | 0.15 | 0.094–0.099% | |
+| `gg_to_gg` | 0.82 | 0.76 | 0.062% | |
+| `pp_to_jj` | 0.89 | 0.84 | 0.088–0.102% | |
+| `pp_to_llj` | 1.08 | 1.02 | 0.096–0.101% | |
+| `ud_to_epemud_qcd0` (2→4) | 0.73 | 0.62 | 0.113–0.116% | +0.35 to +0.46 |
+| `pp_to_ll_0j2j_mlm` (MLM) | 4.04 | 3.94 | 0.116–0.127% | −0.68 to −1.22 |
+
+**Equal accuracy is not time to 0.1% on the cheap rows.** `ee_to_mumu` and `gg_to_gg` stop
+at the default budget's 6-iteration floor, already past the target, so the ratio compares
+equal accuracy at the δ actually reached. Measured time to 0.1% needs a smaller budget:
+
+| row | `--min-iters 0` (default `--neval`) | `--min-iters 0 --neval 30000` (non-default) |
+|---|--:|--:|
+| `ee_to_mumu`, plain / v3 per seed | 0.16/0.15, 0.24/0.23, 0.16/0.15 (still overshoots) | 0.19/0.18, 0.19/0.18, 0.17/0.16 |
+| `gg_to_gg`, plain / v3 per seed | 1.40/1.29, 1.26/1.17, 0.95/0.89 | 0.93/0.88, 0.96/0.90, 0.92/0.85 |
+
+So the default budget's floor, not the integrator, is what would put `gg_to_gg` above 1 on
+time to 0.1%. One `--min-iters 0` `gg_to_gg` seed finished with χ²/dof 0.046 over 4
+iterations; a χ²/dof that far below 1 is a warning sign, not investigated.
+
+**The MLM row** needs 9–10× MadEvent's points (5.2–6.1M against 577k) at about 1.4× its cost
+per point (165–176 µs against 121 µs), and χ²/dof 1.5–1.8 widens δ² by that factor again.
+71% of points pass the cuts; the effective sample is about 16% of kept points. It also shows
+22–40 s of system time single-threaded, which no other row does (not investigated). On this
+row the plain and v3 assets take different iteration paths from the same seed (inferred:
+last-ulp differences flipping a decision at a threshold). Its three pulls share one MadEvent
+run's error, so their common −2 pb offset (under one MadEvent σ) is not evidence of a bias.
+
+Integrand throughput, points per CPU-second (ours: evaluations over single-core CPU, mean
+over seeds; MadEvent: `results.dat` points over `<cumulated_time>`, whose survey-pass
+question is open, below):
+
+| row | ours plain | ours v3 | MadEvent | ours/MG plain | v3 |
+|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 739 000 | 787 000 | 26 714 | 27.7× | 29.5× |
+| `dy13_default` | 353 000 | 383 000 | 26 597 | 13.3× | 14.4× |
+| `gg_to_gg` | 74 600 | 80 400 | 44 358 | 1.7× | 1.8× |
+| `pp_to_jj` | 21 100 | 22 100 | 18 786 | 1.1× | 1.2× |
+| `pp_to_llj` | 32 100 | 34 100 | 11 654 | 2.8× | 2.9× |
+| `ud_to_epemud_qcd0` | 74 200 | 87 600 | 16 414 | 4.5× | 5.3× |
+| `pp_to_ll_0j2j_mlm` | 5 670 | 5 920 | 8 244 | 0.69× | 0.72× |
+
+The two MLM and 2→4 throughput entries are seed 20260719 only.
+
+Wall clock at equal cores (4), glibc build at `-j 4` against MadEvent at `nb_core = 4`,
+seed 20260719:
+
+| row | ours wall | MadEvent integrate / total wall |
+|---|--:|--:|
+| `ee_to_mumu` | 0.43 s | 4.47 / 8.84 s |
+| `dy13_default` | 2.18 s | 27.2 / 71.8 s |
+| `gg_to_gg` | 3.92 s | 3.32 / 8.45 s |
+| `pp_to_jj` | 11.15 s | 28.7 / 44.9 s |
+| `pp_to_llj` | 43.24 s | 18.9 / 36.2 s |
+| `ud_to_epemud_qcd0` | 16.5 s | 5.1 / 12.3 s |
+| `pp_to_ll_0j2j_mlm` | 229.9 s | 78.3 / 90.1 s |
+
+MadEvent's wall is at its own δ (0.04–0.33%), ours at about 0.1%, so these are not equal
+accuracy; read them as what a user waits for with each code's defaults on four cores.
+
+## Earlier hosts: Cascade Lake VM and M3 Max
+
 Headline, geomeans:[^cl-summary]
 
 | | Cascade Lake VM | M3 Max |
@@ -45,7 +133,7 @@ halve. The evaluators are not the cause (below). Every figure here predates the
 evaluator's constant collection and fused scaled sums (2026-10-05), which sped
 the matrix element up by 1.01–1.55× in-process; none has been re-measured since.
 
-## Integrand throughput
+### Integrand throughput
 
 **Construction.** Our points are `seeds × neval × niter` VEGAS evaluations from
 each row's report record, over its single-thread `duration_s` (per-row protocol,
@@ -90,7 +178,7 @@ pure-gluon and colour-dense 2→2 rows sit at the floor. `gg_to_gg` is the floor
 everywhere: no PDF work to win back and the densest colour algebra in the census.
 Throughput is per point, so a budget change is invisible in it by construction.
 
-## Time to 0.1% on σ
+### Time to 0.1% on σ
 
 **Protocol.** Ours: `vibegraph integrate <proc card> --run-card <run card>
 --target-rel 0.001 --seed {20260719,20260720,20260721} -j 1`, wall clock over the
@@ -128,7 +216,7 @@ Seed spread follows the iteration count: 2% on `ee_to_mumu` and `gg_to_gg`, up
 to 17% on `pp_to_llj` and 26% on `dy13_default`. How `--target-rel` decides to
 stop is in [the convergence stop rule](../phase-space/convergence-stop-rule.md).
 
-## Why the ratios halve between hosts
+### Why the ratios halve between hosts
 
 MadGraph's `MATRIX1` is 3.02× slower on Cascade Lake than on the M3 Max,
 uniformly (2.75–3.33× per process), and ours slows by the same factor

@@ -1298,7 +1298,7 @@ fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
 /// the restricted defaults, and the card's text; the defaults, none moved and
 /// no text without a card. The defaults are bound like a card, so what binding
 /// refuses of them (a negative mass) is refused without a card too.
-fn bind_param_card(
+pub(crate) fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
 ) -> Result<(EvaluatedModel, Vec<MovedParam>, Option<String>), CliError> {

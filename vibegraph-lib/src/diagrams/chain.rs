@@ -248,26 +248,16 @@ fn chain_sets(
 /// overall orders. MadGraph removes a combined diagram exceeding any of them
 /// (`HelasMatrixElement.insert_decay_chains`, `helas_objects.py:3986`).
 fn within_orders(diagram: &Diagram, bounds: &[AmplitudeOrder], model: &UFOModel) -> bool {
-    let mut orders: HashMap<&str, i64> = HashMap::new();
-    for vertex in &diagram.vertices {
-        let def = model.vertex_def(vertex.interaction);
-        // A vertex carries one coupling-order tuple: the model splits a vertex
-        // whose couplings differ in their orders into one interaction per tuple.
-        if let Some(&coupling) = def.couplings.values().next() {
-            for (name, n) in &model.coupling_def(coupling).orders {
-                *orders.entry(name.as_str()).or_default() += *n as i64;
-            }
-        }
-    }
+    let orders = diagram.coupling_orders(model);
     let weighted: i64 = orders
         .iter()
-        .map(|(name, n)| n * model.order_hierarchy.get(*name).copied().unwrap_or(0) as i64)
+        .map(|(name, &n)| n as i64 * model.order_hierarchy.get(name).copied().unwrap_or(0) as i64)
         .sum();
     bounds.iter().all(|b| {
         let have = if b.name == "WEIGHTED" {
             weighted
         } else {
-            orders.get(b.name.as_str()).copied().unwrap_or(0)
+            orders.get(&b.name).map_or(0, |&n| n as i64)
         };
         have <= b.value
     })

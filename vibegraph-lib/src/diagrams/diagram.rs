@@ -21,7 +21,7 @@
 //! (`endpoints[1]` is momentum-in). This does **not** replace rooting — it makes the
 //! momentum-routing convention explicit data rather than something reconstructed later.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use feyngraph::diagram::view::{DiagramView, LegView};
 use itertools::Either;
@@ -163,6 +163,14 @@ pub struct Vertex {
     /// legs, and every Standard-Model vertex — has only group `0`.
     pub(crate) flow_group: usize,
     pub rays: Vec<Ray>,
+}
+
+impl Vertex {
+    /// The name of the UFO interaction this vertex binds (`V_12`), without the
+    /// fermion-flow group.
+    pub fn interaction_name<'m>(&self, model: &'m UFOModel) -> &'m str {
+        &model.vertex_def(self.interaction).name
+    }
 }
 
 /// A single UFO-resolved, convention-baked Feynman diagram.
@@ -400,6 +408,26 @@ impl Diagram {
     /// Number of external legs.
     pub fn n_ext(&self) -> usize {
         self.legs.len()
+    }
+
+    /// The diagram's coupling orders: per order name, the sum over its vertices of
+    /// the powers each vertex's interaction carries. An order no vertex carries is
+    /// absent rather than zero.
+    ///
+    /// A vertex carries one coupling-order tuple, read off any one of its couplings:
+    /// the model splits a vertex whose couplings differ in their orders into one
+    /// interaction per tuple.
+    pub fn coupling_orders(&self, model: &UFOModel) -> BTreeMap<String, usize> {
+        let mut orders = BTreeMap::new();
+        for vertex in &self.vertices {
+            let def = model.vertex_def(vertex.interaction);
+            if let Some(&coupling) = def.couplings.values().next() {
+                for (name, &n) in &model.coupling_def(coupling).orders {
+                    *orders.entry(name.clone()).or_default() += n;
+                }
+            }
+        }
+        orders
     }
 
     /// External leg by index.
