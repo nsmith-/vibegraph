@@ -63,11 +63,11 @@ Options:
 ```text
 Integrate the cross section of a process, saving the adapted VEGAS grids
 
-Usage: vibegraph integrate [OPTIONS] <PROC_CARD>
+Usage: vibegraph integrate [OPTIONS] <PROC_CARD|DIAGRAMS>
 
 Arguments:
-  <PROC_CARD>
-          Process card selecting the model and process (`import model` + `generate`); `-` reads the card from stdin
+  <PROC_CARD|DIAGRAMS>
+          Process card selecting the model and process (`import model` + `generate`), or a diagram artifact (`diagrams.bin.zst`) a `vibegraph enumerate` run wrote, told apart by content; `-` reads a proc card from stdin. From a diagram artifact the card and the restricted model are the ones it embeds, and nothing is enumerated again
 
 Options:
       --run-card <RUN_CARD>
@@ -88,7 +88,7 @@ Options:
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --ufo-dir <UFO_DIR>
-          Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
+          Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model, and refused with a diagram artifact, which embeds its model
 
       --neval <NEVAL>
           VEGAS evaluations per adaptation iteration.
@@ -304,9 +304,6 @@ Options:
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
-
-      --ufo-dir <UFO_DIR>
-          Directory containing the recorded proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model. The model found must be the one the artifact was integrated against
 
   -v, --verbose...
           Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all

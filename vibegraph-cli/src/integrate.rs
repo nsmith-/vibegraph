@@ -31,16 +31,18 @@ use std::sync::Arc;
 
 use clap::Args;
 use tracing::{info, warn};
+use vibegraph::amplitude_probe;
 use vibegraph::artifact::{
-    channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, MovedParam,
-    MultiplicityTotal, PdfInput, RunInputs, FORMAT_VERSION,
+    channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, EmbeddedModel, IntegrateArtifact,
+    MovedParam, MultiplicityTotal, PdfInput, RunInputs, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
+use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, EnumerationPool,
-    ParsingOptions, SupportedCard,
+    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, DiagramSet,
+    EnumerationPool, ParsingOptions, SupportedCard,
 };
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
@@ -49,7 +51,7 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
-    multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
+    multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::subprocess_vetoes;
@@ -64,6 +66,7 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::support::{check_support, PointCensus};
 use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_card;
+use vibegraph::ufo::loaded::LoadedModel;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
@@ -402,8 +405,12 @@ impl GridRuleArgs {
 #[derive(Args, Debug)]
 pub(crate) struct IntegrateArgs {
     /// Process card selecting the model and process (`import model` +
-    /// `generate`); `-` reads the card from stdin.
-    pub(crate) proc_card: PathBuf,
+    /// `generate`), or a diagram artifact (`diagrams.bin.zst`) a `vibegraph
+    /// enumerate` run wrote, told apart by content; `-` reads a proc card from
+    /// stdin. From a diagram artifact the card and the restricted model are the
+    /// ones it embeds, and nothing is enumerated again.
+    #[arg(value_name = "PROC_CARD|DIAGRAMS")]
+    pub(crate) input: PathBuf,
 
     /// MadGraph `run_card.dat`; absent → the card MadGraph's `output` writes
     /// for the process: the LO defaults, with every cut removed for a decay and
@@ -432,7 +439,8 @@ pub(crate) struct IntegrateArgs {
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
-    /// directory. Unused for the built-in Standard Model.
+    /// directory. Unused for the built-in Standard Model, and refused with a
+    /// diagram artifact, which embeds its model.
     #[arg(long)]
     pub(crate) ufo_dir: Option<PathBuf>,
 
@@ -604,6 +612,126 @@ pub(crate) fn load_run_card(
     Ok(rc)
 }
 
+/// The first bytes of every zstd frame, and so of every diagram artifact.
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+
+/// Whether `path` holds a diagram artifact rather than a proc card, read off its
+/// first four bytes: a proc card is text, and no text starts with the zstd
+/// magic. Stdin (`-`) is always a proc card.
+fn is_diagram_artifact(path: &Path) -> bool {
+    use std::io::Read;
+    if path == Path::new("-") {
+        return false;
+    }
+    let mut head = Vec::with_capacity(ZSTD_MAGIC.len());
+    // A file that cannot be opened is left to the proc-card reader, whose
+    // refusal names it as the proc card it most likely is.
+    let read = std::fs::File::open(path)
+        .and_then(|f| f.take(ZSTD_MAGIC.len() as u64).read_to_end(&mut head));
+    read.is_ok() && head == ZSTD_MAGIC
+}
+
+/// What an integration starts from: the proc card, the model it resolves to,
+/// and, from a diagram artifact, the sets it banks.
+struct Input {
+    parsed: SupportedCard,
+    /// The proc card's text, as given or as the diagram artifact records it.
+    proc_card: String,
+    loaded: LoadedModel,
+    /// The diagram artifact's sets; `None` from a proc card, which is enumerated
+    /// once its run card is settled.
+    sets: Option<Vec<DiagramSet>>,
+    config: GlobalConfig,
+}
+
+/// Read `args.input` as a proc card or a diagram artifact.
+///
+/// From a diagram artifact the model is the one it embeds, so `--ufo-dir` is
+/// refused rather than ignored, and the card it records must parse, in this
+/// build, to the process it records.
+fn read_input(args: &IntegrateArgs) -> Result<Input, CliError> {
+    let path = &args.input;
+    if !is_diagram_artifact(path) {
+        let (parsed, proc_card) = crate::read_proc_card_text(path, &ParsingOptions::default())?;
+        let config = GlobalConfig {
+            ufo_search_path: assets::resolve_ufo_search_path(
+                parsed.model.as_ref(),
+                args.ufo_dir.as_deref(),
+            )
+            .map_err(|e| err(ErrorKind::Model, e))?,
+            restrict_path_override: None,
+            run_card_path: args.run_card.clone(),
+        };
+        let loaded = config
+            .load_model(&parsed.model)
+            .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
+        return Ok(Input {
+            parsed,
+            proc_card,
+            loaded,
+            sets: None,
+            config,
+        });
+    }
+    if let Some(dir) = &args.ufo_dir {
+        return Err(err(
+            ErrorKind::Usage,
+            format!(
+                "--ufo-dir {} with the diagram artifact {}: the artifact embeds the restricted \
+                 model its diagrams were enumerated against, and no UFO directory is read; drop \
+                 --ufo-dir, or integrate the proc card itself to use another model",
+                dir.display(),
+                path.display()
+            ),
+        ));
+    }
+    let (artifact, loaded) = DiagramArtifact::read_from_path(path).map_err(|e| {
+        err(
+            ErrorKind::Artifact,
+            format!("cannot read the diagram artifact {}: {e}", path.display()),
+        )
+    })?;
+    let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
+        err(
+            ErrorKind::Artifact,
+            format!(
+                "cannot parse the proc card recorded in {}: {e}; enumerate it again",
+                path.display()
+            ),
+        )
+    })?;
+    let reparsed = process_string(&parsed)?;
+    if reparsed != artifact.process {
+        return Err(err(
+            ErrorKind::Artifact,
+            format!(
+                "the proc card recorded in {} parses to `{reparsed}`, but the artifact records \
+                 the process `{}`: this build reads the card differently from the one that \
+                 enumerated it; enumerate it again",
+                path.display(),
+                artifact.process
+            ),
+        ));
+    }
+    tracing::info!(
+        "diagrams: {} ({} sets, digest {})",
+        path.display(),
+        artifact.sets.len(),
+        artifact.diagram_set_digest
+    );
+    Ok(Input {
+        parsed,
+        proc_card: artifact.proc_card,
+        loaded,
+        sets: Some(artifact.sets),
+        config: GlobalConfig {
+            ufo_search_path: PathBuf::new(),
+            restrict_path_override: None,
+            run_card_path: args.run_card.clone(),
+        },
+    })
+}
+
 /// The canonical string of the proc card's processes, for artifact metadata
 /// ([`SupportedCard::process_string`]).
 pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError> {
@@ -770,22 +898,15 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         info!("VEGAS grid rule: {grid_rule:?}");
     }
 
-    let opts = ParsingOptions::default();
-    let (parsed, proc_card) = crate::read_proc_card_text(&args.proc_card, &opts)?;
+    let Input {
+        parsed,
+        proc_card,
+        loaded,
+        sets,
+        config,
+    } = read_input(args)?;
     let process = process_string(&parsed)?;
-
-    let config = GlobalConfig {
-        ufo_search_path: assets::resolve_ufo_search_path(
-            parsed.model.as_ref(),
-            args.ufo_dir.as_deref(),
-        )
-        .map_err(|e| err(ErrorKind::Model, e))?,
-        restrict_path_override: None,
-        run_card_path: args.run_card.clone(),
-    };
-    let (model, model_id) = config
-        .load_ufo_with_identity(&parsed.model)
-        .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
+    let (model, model_id) = (loaded.model.clone(), loaded.identity.clone());
     let card = load_run_card(&config, &parsed, &model, args.parallel.enumeration())?;
     let split = if parsed.is_decay() {
         card.split_decay()
@@ -803,15 +924,29 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     );
     tui::state::describe_process(&process, observable_of(&parsed));
 
-    let (evaluated, moved) = bind_param_card(args.param_card.as_deref(), &model)?;
+    let (evaluated, moved, param_card) = bind_param_card(args.param_card.as_deref(), &model)?;
+    let sets = match sets {
+        Some(sets) => sets,
+        None => generate_from_proc_card_in(&parsed, &model, args.parallel.enumeration()).map_err(
+            |e| {
+                err(
+                    ErrorKind::Process,
+                    format!("failed to enumerate process: {e}"),
+                )
+            },
+        )?,
+    };
+    let amplitude_probe = amplitude_probe::measure(&sets, &model, &evaluated)
+        .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
 
     let output = match rc.beam_mode() {
         _ if parsed.is_decay() => {
-            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
+            integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
         }
         BeamMode::Proton => integrate_proton(
             args,
             &parsed,
+            &sets,
             &model,
             &evaluated,
             &rc,
@@ -825,7 +960,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
                 .filter(|_| generate_settings.systematics.enabled),
         )?,
         BeamMode::FixedEnergy => {
-            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process, seed)?
+            integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
         }
     };
 
@@ -988,6 +1123,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         grid_rule: Some(output.grid_rule),
         channel_map_digest: output.channel_map_digest,
         alpha_floor: output.alpha_floor,
+        embedded: EmbeddedModel::of(&loaded),
+        param_card,
+        diagram_set_digest: diagram_set_digest(&sets),
+        sets,
+        amplitude_probe,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -1053,6 +1193,8 @@ pub(crate) fn result_object(
             .collect(),
         artifact: path.display().to_string(),
         format_version: artifact.format_version,
+        diagram_set_digest: artifact.diagram_set_digest.clone(),
+        param_card: artifact.param_card.is_some(),
     })
 }
 
@@ -1107,14 +1249,14 @@ fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
     }
 }
 
-/// The model evaluated at `--param-card`, and the parameters the card moved off
-/// the restricted defaults; the defaults, and none moved, without a card. The
-/// defaults are bound like a card, so what binding refuses of them (a negative
-/// mass) is refused without a card too.
+/// The model evaluated at `--param-card`, the parameters the card moved off
+/// the restricted defaults, and the card's text; the defaults, none moved and
+/// no text without a card. The defaults are bound like a card, so what binding
+/// refuses of them (a negative mass) is refused without a card too.
 fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
-) -> Result<(EvaluatedModel, Vec<MovedParam>), CliError> {
+) -> Result<(EvaluatedModel, Vec<MovedParam>, Option<String>), CliError> {
     let Some(path) = path else {
         let bound = bind_card(model.clone(), &ParamCard::default()).map_err(|e| {
             err(
@@ -1122,9 +1264,15 @@ fn bind_param_card(
                 format!("the model's default parameters: {e}"),
             )
         })?;
-        return Ok((bound.evaluated, bound.moved));
+        return Ok((bound.evaluated, bound.moved, None));
     };
-    let card = ParamCard::from_file(path).map_err(|e| {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        err(
+            ErrorKind::Card,
+            format!("cannot read the param card {}: {e}", path.display()),
+        )
+    })?;
+    let card: ParamCard = text.parse().map_err(|e| {
         err(
             ErrorKind::Card,
             format!("cannot read the param card {}: {e}", path.display()),
@@ -1144,7 +1292,7 @@ fn bind_param_card(
             ignored.computed,
         );
     }
-    Ok((bound.evaluated, bound.moved))
+    Ok((bound.evaluated, bound.moved, Some(text)))
 }
 
 /// Proton beams (`lpp = 1`): load the PDF set and integrate over the flavour
@@ -1153,6 +1301,7 @@ fn bind_param_card(
 fn integrate_proton(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
+    sets: &[DiagramSet],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -1177,6 +1326,7 @@ fn integrate_proton(
     integrate_hadronic(
         args,
         parsed,
+        sets,
         model,
         evaluated,
         rc,
@@ -1219,6 +1369,7 @@ pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
 fn integrate_hadronic(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
+    sets: &[DiagramSet],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -1232,9 +1383,14 @@ fn integrate_hadronic(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
-    let MultiplicityGroups { groups, vetoes } =
-        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())
-            .map_err(|e| err(ErrorKind::Process, e))?;
+    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of(
+        sets.to_vec(),
+        &forbidden_onshell(parsed, model)?,
+        model,
+        evaluated,
+        rc,
+    )
+    .map_err(|e| err(ErrorKind::Process, e))?;
     if let Some(request) = systematics {
         refuse_single_particle_et(request, &groups).map_err(|e| {
             err(
@@ -1379,33 +1535,28 @@ fn report_multiplicities(parts: &[MultiplicityTotal]) {
 /// converge (unbiased, same σ̂; flat RAMBO under-samples them).
 ///
 /// [`MultiChannel`]: vibegraph::phasespace::MultiChannel
+#[allow(clippy::too_many_arguments)]
 fn integrate_fixed_energy(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
+    sets: &[DiagramSet],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
     seed: u64,
 ) -> Result<RunOutput, CliError> {
-    let sets =
-        generate_from_proc_card_in(parsed, model, args.parallel.enumeration()).map_err(|e| {
-            err(
-                ErrorKind::Process,
-                format!("failed to enumerate process: {e}"),
-            )
-        })?;
-    refuse_mixed_multiplicity(&sets).map_err(|e| err(ErrorKind::Process, e))?;
-    refuse_one_body_final_state(&sets).map_err(|e| err(ErrorKind::Process, e))?;
-    refuse_exchanged_beam_orderings(&sets).map_err(|e| err(ErrorKind::Process, e))?;
-    let evals = compile_subprocesses(&sets, model, evaluated).map_err(|e| {
+    refuse_mixed_multiplicity(sets).map_err(|e| err(ErrorKind::Process, e))?;
+    refuse_one_body_final_state(sets).map_err(|e| err(ErrorKind::Process, e))?;
+    refuse_exchanged_beam_orderings(sets).map_err(|e| err(ErrorKind::Process, e))?;
+    let evals = compile_subprocesses(sets, model, evaluated).map_err(|e| {
         err(
             ErrorKind::Process,
             format!("failed to compile subprocesses: {e}"),
         )
     })?;
     let vetoes = subprocess_vetoes(
-        &sets,
+        sets,
         &evals,
         &forbidden_onshell(parsed, model)?,
         evaluated,

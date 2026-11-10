@@ -265,6 +265,11 @@ pub(crate) struct IntegrateResult {
     pub(crate) artifact: String,
     /// The artifact's format version.
     pub(crate) format_version: u32,
+    /// The SHA-256 of the diagram sets the run integrated: the digest a
+    /// `vibegraph enumerate` run of the same card records.
+    pub(crate) diagram_set_digest: String,
+    /// Whether the run read a param card, whose text the artifact banks.
+    pub(crate) param_card: bool,
 }
 
 /// `generate`'s final object.

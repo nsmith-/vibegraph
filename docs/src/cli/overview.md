@@ -11,8 +11,9 @@ by its event-generation phase:
    `--neval × --niter` under `--fixed-budget`.
 2. **`vibegraph generate`** reloads the artifact, unweights against the
    frozen grids by accept/reject, and writes a Les Houches event file. It
-   takes the artifact and no card: the cards `integrate` read are recorded in
-   it.
+   takes the artifact and no card: the cards `integrate` read, the model
+   itself and the diagrams are recorded in it, so a worker needs the binary,
+   the artifact and, at proton beams, the PDF set, and nothing else.
 
 The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
@@ -22,9 +23,11 @@ multiplicity's and each channel's share) without re-running anything.
 
 A fifth, `vibegraph enumerate`, is planned: it will take a process card
 and report every diagram that contributes, as drawings, a summary page and
-a binary artifact `integrate` can take instead of enumerating again, so
-that a user can check that a card means the process they intended and
-nothing more, the way MadGraph's `display diagrams` is used.
+a binary artifact (`diagrams.bin.zst`), so that a user can check that a card
+means the process they intended and nothing more, the way MadGraph's
+`display diagrams` is used. `integrate` already takes such an artifact in
+place of a proc card, told apart by content, and then enumerates nothing and
+reads no UFO directory: the card and the restricted model are the artifact's.
 
 The [command reference](reference.md) lists every option of each command;
 this page is about how they fit together. The physics behind each
@@ -181,9 +184,12 @@ printf 'import model SMEFTsim_topU3l_MwScheme_UFO-massless\ngenerate e+ e- > t t
   | vibegraph integrate - --ufo-dir validation/ufo --run-card run_card.dat --out ee_to_ttx_smeft/
 ```
 
-runs it out of a checkout. Every run records the model it was built from — name,
-restrict card and a digest of both — in its artifact, and `generate` refuses
-grids trained on a different one. Squared-order constraints (`NP^2==1`) are a
+runs it out of a checkout. Every run embeds the restricted model it was built
+from in its artifact, with its name, restrict card and digest, and `generate`
+rebuilds the model from those bytes: it takes no `--ufo-dir`. Each artifact
+also banks |M|² at a few fixed phase-space points per subprocess, and
+`generate` refuses a build that no longer reproduces them to 1e-10, since the
+banked cross section would then describe another matrix element. Squared-order constraints (`NP^2==1`) are a
 hard error: this generator selects diagrams by their coupling orders and squares
 the whole amplitude, so it cannot bound an interference term.
 
@@ -246,7 +252,9 @@ kinds, bumps the version.
   `seed`, `multiplicities` (each final-state phase space of a proton run:
   `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
-  path and its `format_version`. `inspect --output-ldjson` prints the same
+  path and its `format_version`, the `diagram_set_digest` of the diagrams it
+  integrated, and `param_card` (whether a param card's text is banked).
+  `inspect --output-ldjson` prints the same
   object for a saved artifact. `generate`'s carries `events_written`,
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
