@@ -90,12 +90,26 @@ its bundled zstd via `cc` rather than linking a system `libzstd` (`pkg-config`
 is only an optional probe),[^n24-u1] and `ring`, the `rustls` crypto backend
 that `ureq` (the PDF fetch, `vibegraph-cli/src/fetch.rs`) pulls in, which
 builds its own C and assembly via `cc`. Neither links a system library, and
-there is no `openssl` or `native-tls`. (`release.yml`'s comment still names
-`zstd-sys` as the only C dependency.) So `x86_64-unknown-linux-musl` costs only `musl-tools`
-(`musl-gcc`) on the runner and yields one fully static binary that runs on any
-x86_64 Linux kernel, with no "which glibc does this distro ship" matrix. A
-glibc floor would need an old runner or a manylinux-style container for no
-offsetting benefit. A new C dependency would reopen this.
+there is no `openssl` or `native-tls`. `libmimalloc-sys` (through egglog, and
+the CLI's musl allocator below) is a third, also built via `cc`. So
+`x86_64-unknown-linux-musl` costs only `musl-tools` (`musl-gcc`) on the runner
+and yields one fully static binary that runs on any x86_64 Linux kernel, with no
+"which glibc does this distro ship" matrix. A new C dependency that links a
+system library would reopen this.
+
+**The musl builds use mimalloc as the global allocator** (`vibegraph-cli`,
+`cfg(target_env = "musl")`). musl's own allocator takes a process-wide lock, so
+the v0.2.0 assets ran slower at `-j 4` than at `-j 1` and about 20–28% slower
+than glibc single-threaded. The measurements and the alternatives are in
+[musl allocator thread scaling](../performance/musl-allocator-thread-scaling.md).
+
+**The glibc floor was measured and rejected.**
+- `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17` builds on an ordinary
+  runner, needs at most `GLIBC_2.17`, and ran under CentOS 7's glibc. But it adds
+  zig to CI, compiles the C dependencies with `zig cc`, runs about 15% slower than
+  musl + mimalloc, and would rename the assets.
+- A native glibc build needs `GLIBC_2.39` and starts on none of EL7–EL9.
+- Static glibc still carries glibc's NSS loader.
 
 `release.yml` deliberately does not raise the codegen floor for the baseline
 assets; `ci.yml` builds its own tests with `-C target-cpu=x86-64-v3`, which is
