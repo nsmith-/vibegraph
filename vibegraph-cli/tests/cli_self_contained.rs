@@ -5,7 +5,8 @@
 //!
 //! * `integrate` tells a diagram artifact from a proc card by content, and both
 //!   give the same integrate artifact, byte for byte, at a pinned seed;
-//! * from a diagram artifact nothing is enumerated, and `--ufo-dir` is refused;
+//! * from a diagram artifact nothing is enumerated, with or without a run card,
+//!   and `--ufo-dir` is refused;
 //!   a proc card on stdin still integrates;
 //! * `generate` reads no UFO directory and enumerates nothing: a non-SM model
 //!   replays with its directory deleted and no search path set;
@@ -110,14 +111,15 @@ fn raw(path: &Path) -> Vec<u8> {
 
 /// The same card integrated from its text and from its diagram artifact, at one
 /// seed, writes the same integrate artifact byte for byte, with and without a
-/// run card. The artifact route enumerates nothing; the card route enumerates
-/// the card once.
+/// run card. The artifact route enumerates nothing, its default run card built
+/// from the facts the artifact banks; the card route enumerates the card once,
+/// its default run card read off that same enumeration.
 ///
-/// Byte equality covers every field, the diagram-set digest and the probe
-/// included, so no field legitimately differs. It cannot see a difference both
-/// routes share (both compile from the same sets in the same build), and with
-/// no run card both routes still build MadGraph's default card by enumerating
-/// each process line, which this test does not count.
+/// Byte equality covers every field, the diagram-set digest, the probe and the
+/// default run card included, so no field legitimately differs. It cannot see
+/// a difference both routes share (both compile from the same sets in the same
+/// build), and the card has no decay chain, so the core enumeration a
+/// decay-chain line adds is not counted here.
 #[test]
 fn a_proc_card_and_its_diagram_artifact_integrate_to_the_same_artifact() {
     let tmp = tempfile::tempdir().unwrap();
@@ -133,19 +135,17 @@ fn a_proc_card_and_its_diagram_artifact_integrate_to_the_same_artifact() {
         assert_ok(&a, "integrate from the proc card");
         let b = integrate(tmp.path(), &diagrams, &from_diagrams, extra);
         assert_ok(&b, "integrate from the diagram artifact");
-        if tag == "run" {
-            assert_eq!(
-                stderr_of(&a).matches(ENUMERATED).count(),
-                1,
-                "{}",
-                stderr_of(&a)
-            );
-            assert!(
-                !stderr_of(&b).contains(ENUMERATED),
-                "integrating a diagram artifact enumerated:\n{}",
-                stderr_of(&b)
-            );
-        }
+        assert_eq!(
+            stderr_of(&a).matches(ENUMERATED).count(),
+            1,
+            "{tag}: {}",
+            stderr_of(&a)
+        );
+        assert!(
+            !stderr_of(&b).contains(ENUMERATED),
+            "{tag}: integrating a diagram artifact enumerated:\n{}",
+            stderr_of(&b)
+        );
 
         let grid_a = from_card.join("grid.bin.zst");
         let grid_b = from_diagrams.join("grid.bin.zst");

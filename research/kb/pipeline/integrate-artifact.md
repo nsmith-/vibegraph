@@ -36,8 +36,14 @@ because no UFO directory is read. `--param-card` binds as from a proc card,
 under the restriction the embedded model fixes. Either way the card is
 enumerated at most once: the multiplicity and flavour grouping takes the sets
 already enumerated (`multiplicity_groups_of`). Building the default run card
-(no `--run-card`, a scattering card) still enumerates each process line on its
-own to read MadGraph's process facts (`GlobalConfig::load_run_card`).
+(no `--run-card`, a scattering card) reads MadGraph's process facts
+(`config::process_facts`): from a diagram artifact the facts it banks, so
+nothing is enumerated; from a proc card the card's own enumeration, split by
+process line (`diagrams::enumerate_lines_in`), plus each decay-chain line's
+core enumerated again without its decays, because MadGraph reads a decay
+chain's legs off the undecayed core. `GlobalConfig::load_run_card` asks for
+the facts only when it builds that card, so a `--run-card` run or a decay
+computes none.
 Its encoding and version rules are in
 [artifact format versioning](artifact-format-versioning.md). Replay and event
 writing are in [generate](../events/generate.md).

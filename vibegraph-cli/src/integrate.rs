@@ -36,13 +36,13 @@ use vibegraph::artifact::{
     channel_map_digest, ChannelGrid, ChannelKey, ChannelSampler, EmbeddedModel, IntegrateArtifact,
     MovedParam, MultiplicityTotal, PdfInput, RunInputs, FORMAT_VERSION,
 };
-use vibegraph::config::GlobalConfig;
+use vibegraph::config::{process_facts, GlobalConfig, LoadRunCardError};
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card, DiagramSet,
-    EnumerationPool, ParsingOptions, SupportedCard,
+    enumerate_lines_in, forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card,
+    DiagramSet, ParsingOptions, SupportedCard,
 };
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
@@ -62,6 +62,7 @@ use vibegraph::phasespace::maps::{
 };
 use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
+use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::support::{check_support, PointCensus};
 use vibegraph::systematics::request::VariationRequest;
@@ -589,27 +590,43 @@ impl IntegrateArgs {
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
 /// removed and for a scattering process takes `maxjetflavor` from the incoming
-/// partons of its subprocesses ([`GlobalConfig::load_run_card`]). A card that activates a cut no stage applies is refused here, ahead
-/// of every stage that costs anything.
+/// partons of its subprocesses ([`GlobalConfig::load_run_card`]), which
+/// `facts` supplies and is called for only then. A card that activates a cut
+/// no stage applies is refused here, ahead of every stage that costs anything.
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
     model: &UFOModel,
-    pool: EnumerationPool,
+    facts: impl FnOnce() -> Result<ProcessFacts, CliError>,
 ) -> Result<RunCard, CliError> {
-    let loaded = config.load_run_card(parsed, model, pool);
-    let rc = loaded.map_err(|e| match &config.run_card_path {
-        Some(path) => err(
+    /// A failure of the card itself, or one `facts` reported in its own terms.
+    enum Failure {
+        Load(LoadRunCardError),
+        Facts(CliError),
+    }
+    impl From<LoadRunCardError> for Failure {
+        fn from(e: LoadRunCardError) -> Self {
+            Failure::Load(e)
+        }
+    }
+    let loaded = config.load_run_card(parsed, model, || facts().map_err(Failure::Facts));
+    let rc = loaded.map_err(|failure| match (failure, &config.run_card_path) {
+        (Failure::Facts(e), _) => e,
+        (Failure::Load(e), Some(path)) => err(
             ErrorKind::Card,
             format!("cannot load the run card {}: {e}", path.display()),
         ),
-        None => err(
-            ErrorKind::Card,
-            format!("cannot build the default run card: {e}"),
-        ),
+        (Failure::Load(e), None) => default_card_error(e),
     })?;
     detect_unimplemented(&rc).map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     Ok(rc)
+}
+
+fn default_card_error(e: impl std::fmt::Display) -> CliError {
+    err(
+        ErrorKind::Card,
+        format!("cannot build the default run card: {e}"),
+    )
 }
 
 /// The first bytes of every zstd frame, and so of every diagram artifact.
@@ -639,8 +656,12 @@ struct Input {
     proc_card: String,
     loaded: LoadedModel,
     /// The diagram artifact's sets; `None` from a proc card, which is enumerated
-    /// once its run card is settled.
+    /// once, either for the default run card's facts or after a given run card
+    /// is read.
     sets: Option<Vec<DiagramSet>>,
+    /// The process facts the diagram artifact banks (`None` for a decay, and
+    /// from a proc card).
+    facts: Option<ProcessFacts>,
     config: GlobalConfig,
 }
 
@@ -670,6 +691,7 @@ fn read_input(args: &IntegrateArgs) -> Result<Input, CliError> {
             proc_card,
             loaded,
             sets: None,
+            facts: None,
             config,
         });
     }
@@ -724,6 +746,7 @@ fn read_input(args: &IntegrateArgs) -> Result<Input, CliError> {
         proc_card: artifact.proc_card,
         loaded,
         sets: Some(artifact.sets),
+        facts: artifact.process_facts,
         config: GlobalConfig {
             ufo_search_path: PathBuf::new(),
             restrict_path_override: None,
@@ -877,6 +900,13 @@ fn bank_channel(
     }
 }
 
+fn enumeration_error(e: impl std::fmt::Display) -> CliError {
+    err(
+        ErrorKind::Process,
+        format!("failed to enumerate process: {e}"),
+    )
+}
+
 pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     args.parallel
         .install()
@@ -903,11 +933,33 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         proc_card,
         loaded,
         sets,
+        facts,
         config,
     } = read_input(args)?;
     let process = process_string(&parsed)?;
     let (model, model_id) = (loaded.model.clone(), loaded.identity.clone());
-    let card = load_run_card(&config, &parsed, &model, args.parallel.enumeration())?;
+    let pool = args.parallel.enumeration();
+    // From a proc card, the default run card's facts are read off the card's
+    // own enumeration, which the run then integrates.
+    let mut enumerated = None;
+    let card = load_run_card(&config, &parsed, &model, || {
+        if sets.is_some() {
+            return facts.clone().ok_or_else(|| {
+                err(
+                    ErrorKind::Artifact,
+                    format!(
+                        "the diagram artifact {} records no process facts for a scattering \
+                         card; enumerate it again",
+                        args.input.display()
+                    ),
+                )
+            });
+        }
+        let lines = enumerate_lines_in(&parsed, &model, pool).map_err(enumeration_error)?;
+        let facts = process_facts(&parsed, &model, &lines, pool).map_err(default_card_error)?;
+        enumerated = Some(lines.sets);
+        Ok(facts)
+    })?;
     let split = if parsed.is_decay() {
         card.split_decay()
     } else {
@@ -925,16 +977,9 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     tui::state::describe_process(&process, observable_of(&parsed));
 
     let (evaluated, moved, param_card) = bind_param_card(args.param_card.as_deref(), &model)?;
-    let sets = match sets {
+    let sets = match sets.or(enumerated) {
         Some(sets) => sets,
-        None => generate_from_proc_card_in(&parsed, &model, args.parallel.enumeration()).map_err(
-            |e| {
-                err(
-                    ErrorKind::Process,
-                    format!("failed to enumerate process: {e}"),
-                )
-            },
-        )?,
+        None => generate_from_proc_card_in(&parsed, &model, pool).map_err(enumeration_error)?,
     };
     let amplitude_probe = amplitude_probe::measure(&sets, &model, &evaluated)
         .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
