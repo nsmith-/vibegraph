@@ -18,6 +18,7 @@ use vibegraph::diagrams::draw::DiagramDrawer;
 use vibegraph::diagrams::{DiagramSet, ParsingOptions};
 use vibegraph::helas::eval::config_groups;
 use vibegraph::multiplicity::multiplicity_groups;
+use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::BeamMode;
 use vibegraph::ufo::UFOModel;
 
@@ -409,15 +410,23 @@ fn flavour_preview(
     parsed: &vibegraph::diagrams::SupportedCard,
     model: &std::sync::Arc<UFOModel>,
     sets: &[DiagramSet],
+    facts: Option<&ProcessFacts>,
 ) -> Result<(FlavourPreview, Vec<Option<String>>), CliError> {
-    let card = load_run_card(config, parsed, model, args.parallel.enumeration())?;
+    let card = load_run_card(config, parsed, model, || {
+        facts.cloned().ok_or_else(|| {
+            err(
+                ErrorKind::Process,
+                "the enumeration banked no process facts to build the default run card from",
+            )
+        })
+    })?;
     let split = if parsed.is_decay() {
         card.split_decay()
     } else {
         card.split()
     };
     let (rc, _) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
-    let (evaluated, _) = bind_param_card(args.param_card.as_deref(), model)?;
+    let (evaluated, _, _) = bind_param_card(args.param_card.as_deref(), model)?;
     let mut preview = FlavourPreview {
         run_card: args.run_card.as_ref().map(|p| p.display().to_string()),
         param_card: args.param_card.as_ref().map(|p| p.display().to_string()),
@@ -517,6 +526,7 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             &parsed,
             model,
             &artifact.sets,
+            artifact.process_facts.as_ref(),
         )?)
     } else {
         None
