@@ -211,6 +211,20 @@ use the `claude` agent type with an explicit model override — never
   run, detach it entirely (Python `os.setsid()` double-fork; `setsid` the CLI is
   absent on macOS). An interrupted worktree `git submodule update` leaves partial
   state under `.git/worktrees/<wt>/modules/` — remove it before retrying.
+- **A detached run needs an early checkpoint, not just a finish line.** A
+  watcher that waits only for a "done" marker cannot tell a dead driver from a
+  slow one: a `set -u` abort three minutes in has sat unnoticed for hours. Give
+  every long run three things. (1) The driver writes a terminal marker on
+  *every* exit path (an `EXIT` trap: `DONE`, `STOP: <why>`, `FAILED rc=N line
+  L`) and its own PID (`echo $$ > driver.pid` from inside the script; a `pgrep`
+  afterwards can catch a transient subshell). (2) The watcher wakes on the
+  marker *or* on `! kill -0 <pid>`, never on the marker alone. (3) A first
+  watcher wakes when the first unit of work (one row, one seed, one config)
+  completes. Read that unit's real output then — the σ, the artifact, the
+  timing record, not just the exit code — and extrapolate the total cost from
+  it before leaving the rest to run. Exit 0 is not success: MadGraph's
+  `generate_events` returns 0 after an internal traceback, so check that the
+  expected outputs (`results.dat`, events, timings) exist.
 
 ## Knowledge Bundle
 
