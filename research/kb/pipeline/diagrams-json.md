@@ -22,7 +22,8 @@ sources:
 | `svg/<set>/<diagram>.svg` | One drawing per diagram, for the diagrams `--svg` selects. |
 
 The command and the ranking that pairs with it are designed in
-nsmith-/vibegraph#114.[^design-114] Without `--force` it refuses to write when
+nsmith-/vibegraph#114;[^design-114] the ranking's schema is
+[the ranking JSON](ranking-json.md). Without `--force` it refuses to write when
 any of the three paths exists, and it checks that before reading the card. With
 `--force` it first removes the drawings an earlier run wrote (every
 `svg/s<k>/s<k>.d<j>.svg`, then each directory left empty), so no drawing
@@ -52,7 +53,7 @@ without consulting the summary.
 | `schema_version` | integer | `1`. Adding a key keeps it; removing, renaming or re-meaning one bumps it. |
 | `process` | string | The card's canonical process string. |
 | `model` | object | `label` (`<name>-<restrict>`) and `digest`, the model digest the artifact records. |
-| `diagram_set_digest` | string | The artifact's digest of its sets. A file paired with another output (a ranking) is paired only when the two digests are equal. |
+| `diagram_set_digest` | string | The artifact's digest of its sets. A file paired with another output ([a ranking](ranking-json.md)) is paired only when the two digests are equal. |
 | `flavour_groups` | object | Present only when `--run-card` or `--param-card` was given (below). |
 | `sets` | array | One object per set, in id order. |
 
