@@ -1,4 +1,4 @@
-//! Worker-thread count for the commands that integrate.
+//! Worker-thread count for the commands that enumerate or integrate.
 //!
 //! The pool is built once, before any work starts, because rayon's global pool is
 //! immutable after its first use — which is why the flag is applied at the top of
@@ -28,7 +28,7 @@
 use clap::Args;
 use vibegraph::diagrams::EnumerationPool;
 
-/// The `-j/--parallel` flag, shared by every command that integrates.
+/// The `-j/--parallel` flag, shared by every command that enumerates or integrates.
 #[derive(Args, Debug, Clone, Copy)]
 pub(crate) struct ParallelArgs {
     /// Worker threads (default: one per core). Results do not depend on it: any

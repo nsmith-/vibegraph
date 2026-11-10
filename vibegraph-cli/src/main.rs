@@ -9,6 +9,7 @@ use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
 mod assets;
 mod check;
+mod enumerate;
 mod error;
 mod fetch;
 mod generate;
@@ -122,6 +123,9 @@ enum Command {
     CheckEvents(check::CheckArgs),
     /// Print the results a saved integration artifact records.
     Inspect(inspect::InspectArgs),
+    /// Enumerate a process's Feynman diagrams: the diagram artifact, a summary
+    /// JSON and one SVG drawing per diagram.
+    Enumerate(enumerate::EnumerateArgs),
 }
 
 impl Command {
@@ -131,7 +135,7 @@ impl Command {
     fn is_watchable(&self) -> bool {
         match self {
             Command::Integrate(_) | Command::Generate(_) => true,
-            Command::CheckEvents(_) | Command::Inspect(_) => false,
+            Command::Enumerate(_) | Command::CheckEvents(_) | Command::Inspect(_) => false,
         }
     }
 }
@@ -218,6 +222,7 @@ fn main() -> ExitCode {
     }
     let network = NetworkPolicy::from_env(cli.no_network, cli.yes);
     let result = match cli.command {
+        Command::Enumerate(args) => enumerate::run(&args),
         Command::Integrate(args) => integrate::run(&args, network),
         Command::Generate(args) => generate::run(&args, network),
         Command::CheckEvents(args) => check::run(&args),

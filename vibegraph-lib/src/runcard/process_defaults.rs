@@ -64,12 +64,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::{Deserialize, Serialize};
+
 use super::ParamValue;
 
 /// What `create_default_for_process` reads off a scattering process, as
 /// MadGraph's `output` hands it the process: one entry per generated matrix
 /// element with a diagram.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessFacts {
     /// The incoming PDG ids of every generated subprocess, by beam: the first
     /// incoming leg's on beam 1, the second's on beam 2.

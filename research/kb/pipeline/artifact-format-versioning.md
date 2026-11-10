@@ -108,6 +108,18 @@ digest that could tell. The `v3`–`v9` readers, `version_for` and the threshold
 went with the versions they served, so rules 5–7 have no live instance in it;
 the examples above are their history.
 
+The diagram artifact (`DiagramArtifact`, `diagrams/artifact.rs`) follows the
+same rules with a version sequence of its own. Its floor is its current
+version, 2. Version 2 added the process facts MadGraph's default run card
+reads (`ProcessFacts`), so `integrate` can build that card without
+enumerating. A version-1 file has none, and they cannot be recovered from its
+sets: a decay-chain line's facts come from its core, enumerated again without
+the decays, and the sets do not say which line produced them. Upgrading would
+mean enumerating, which is what the artifact exists to avoid, so version 1 is
+refused by name with the remedy, re-run `vibegraph enumerate`. Version 1 was
+the first, and was current only briefly. The refusal test writes version 1's
+real shape.
+
 The interned SM model blob (`ufo/sm_assets/sm_parsed.bin.zst`) is a build input,
 not a run artifact, and carries no version. It is regenerated from the pinned
 submodule by `gen_sm_blob`, and the test `interned_blob_matches_submodule_exactly`

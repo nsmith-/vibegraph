@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "generate: from an integrate artifact to an event file"
-description: "generate takes the artifact and no card, re-parses the recorded proc card, refuses a model whose digest moved, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics."
+description: "generate takes the artifact and no card, rebuilds the model and diagrams the artifact embeds, refuses a build whose |M|² no longer reproduces the banked probe, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics."
 status: draft
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [events, generate, cli, artifact, lhef]
@@ -21,8 +21,8 @@ sources:
 # generate: from an integrate artifact to an event file
 
 `vibegraph generate <artifact> --seed S [--nevents N] [-o events.lhe]
-[--strategy buffer|stochastic-rounding] [--event-norm …] [--reweight-card …]
-[--ufo-dir D]` (`vibegraph-cli/src/generate.rs`, sampling in
+[--strategy buffer|stochastic-rounding] [--event-norm …] [--reweight-card …]`
+(`vibegraph-cli/src/generate.rs`, sampling in
 `vibegraph-lib/src/generate.rs`) turns a finished `integrate` run into an
 unweighted Les Houches file. It covers fixed-energy partonic beams
 (`lpp = 0`), proton beams (`lpp = 1`, including `p p > e+ e-` through the
@@ -36,30 +36,38 @@ format and its versioning are [pipeline/integrate-artifact](../pipeline/integrat
 count, the seed, the output and weight-strategy options, the event
 normalisation and a reweight card
 ([integrate and generate split](../pipeline/integrate-generate-split.md)). A
-proc card, `--run-card`, `--pdf-set` or `--pdf-dir` is an argument error. The
-artifact banks the proc card's text, the process string, the model identity,
-the narrowed run card and the generation settings, but not the compiled
-amplitude, so the process is re-enumerated from the recorded proc card and the
-model and PDF set are read again as assets. Before anything is compiled:
+proc card, `--run-card`, `--pdf-set`, `--pdf-dir` or `--ufo-dir` is an argument
+error. The artifact banks the proc card's text, the process string, the
+restricted model itself, the param card, the enumerated diagram sets, the
+narrowed run card and the generation settings
+([the integrate artifact](../pipeline/integrate-artifact.md)). Nothing is
+enumerated and no UFO directory is read; only the PDF set is read again as an
+asset. Before anything is sampled:
 
-1. The artifact's version is checked against the floor (13).
+1. The artifact's version is checked against the floor (22). Reading it
+   recomputes the embedded model's digest and the diagram sets' digest and
+   refuses a mismatch with either recorded value.
 2. The recorded proc card is re-parsed, and its process string must equal the
    recorded `process`; a difference means this build parses the card
    differently, and is refused with "re-integrate"
    (`vibegraph::generate::check_process`).
-3. The model is resolved from the card's `import` through the UFO search path
-   (`--ufo-dir`, `$VIBEGRAPH_UFO_DIR`, the cache, the working directory) and its
-   digest compared with `model.digest` (`check_model`): `model {label} at {dir}
-   has digest {got}; the grid was integrated against {want}: its files changed
-   after vibegraph integrate ran; re-integrate, or restore them`. The interned
-   SM goes through the same check, at `(built in)`.
-4. On proton beams the recorded `pdf_set` is located by name through
+3. The model is rebuilt from the embedded restricted model and bound to the
+   recorded parameters (`ufo::bind::bind_recorded`).
+4. The amplitude probe is replayed (`check_amplitude_probe`): |M|² is
+   recomputed at every banked momentum configuration of every diagram set and
+   must reproduce the banked value to a relative 1e-10, or the artifact is
+   refused naming the set, the point and the deviation. This is what sees a
+   change to the compiler or to parameter evaluation between the build that
+   integrated and the build that generates, which no format version records
+   ([amplitude probe](../pipeline/integrate-artifact.md)).
+5. On proton beams the recorded PDF set is located by LHAPDF id through
    `$LHAPDF_DATA_PATH` (or `$LHAPATH`) and the cache
-   ([asset resolution](../tooling/asset-resolution.md)), and the recorded
-   `pdf_member` loaded.
-5. The reweight card is resolved against that model, with the forbidden
-   s-channels taken from the recorded proc card.
-6. The settings are the recorded `generate` block with `--nevents` and
+   ([asset resolution](../tooling/asset-resolution.md)), and every file it
+   reads is checked against its recorded SHA-256
+   ([run inputs](../pipeline/run-inputs-in-the-artifact.md)).
+6. The reweight card is resolved against the rebuilt model, with the
+   forbidden s-channels taken from the recorded proc card.
+7. The settings are the recorded `generate` block with `--nevents` and
    `--event-norm` applied. `--seed` has no default: a missing seed is refused,
    because jobs on one grid under one seed write the same events.
 
@@ -190,8 +198,8 @@ leg's `pz` by a GeV and requiring the rejection.
 
 ## Open edges
 
-- A worker needs the binary, the artifact, the PDF set and (for a non-SM
-  model) the UFO directory, and recompiles the program:
+- A worker needs the binary, the artifact and the PDF set, and recompiles the
+  program:
   [feature/generate-artifact-not-self-contained](../backlog/feature/generate-artifact-not-self-contained.md).
 - The graceful-stop key does nothing under `generate`:
   [feature/generate-has-no-graceful-stop](../backlog/feature/generate-has-no-graceful-stop.md).
