@@ -5,8 +5,8 @@
 //! at `validation/ufo/` is the one the validation ladder gates. What is pinned here
 //! is the part of that route no library test sees: that `import model <name>-<card>`
 //! resolves the restrict-card suffix against the model directory, that the artifact
-//! records *which* model it was built from, and that `generate` refuses the grids
-//! once the model's files have changed underneath them.
+//! records *which* model it was built from, and that `generate` replays the
+//! model the artifact embeds whatever happens to the directory afterwards.
 //!
 //! The cross section is a smoke check only. The number is gated statistically
 //! against MadGraph's banked run by `validate_sigma.rs`'s `ee_to_ttx_smeft` row, at
@@ -115,15 +115,17 @@ fn a_smeft_model_integrates_through_ufo_dir_and_records_its_identity() {
     );
 }
 
-/// `generate` re-reads the model the recorded proc card names and refuses it
-/// when its digest is not the artifact's: here the restrict card of a copy of
-/// the model, edited after `integrate` ran. The name, the directory and the
-/// `generate` line are unchanged, so only the digest can see it.
+/// `generate` reads the model the artifact embeds, not the UFO directory the
+/// integration read: a restrict card edited after `integrate` ran, and then the
+/// whole directory deleted, change nothing about the replay, and the replayed
+/// model is the one whose digest the artifact records (it is checked on read).
 ///
-/// The refusal is what is tested, and the matching run before the edit is its
-/// control: a check that refused everything would also refuse that.
+/// The control is the integration, which read the copy, so the copy is what
+/// a stale-directory replay would have read. Cannot detect a replay that read
+/// a directory this test leaves in place (the vendored model is never on the
+/// search path: no `--ufo-dir`, no `$VIBEGRAPH_UFO_DIR`, a fresh cache).
 #[test]
-fn a_restrict_card_edited_after_integrate_is_refused_by_digest() {
+fn generate_replays_the_embedded_model_whatever_happens_to_the_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let models = tmp.path().join("models");
     let model_dir = models.join(MODEL);
@@ -154,45 +156,44 @@ fn a_restrict_card_edited_after_integrate_is_refused_by_digest() {
         common::vibegraph(tmp.path(), tmp.path())
             .arg("generate")
             .arg(out.join("grid.bin.zst"))
-            .args(["--ufo-dir".as_ref(), models.as_os_str()])
             .args(["--nevents", "10", "--seed", "5"])
             .arg("-o")
             .arg(tmp.path().join(name))
             .output()
             .expect("spawn vibegraph")
     };
-    let matching = generate("matching.lhe");
-    assert!(
-        matching.status.success(),
-        "generate refused the unchanged model:\n{}",
-        common::stderr_of(&matching)
-    );
-
     std::fs::copy(
         model_dir.join("restrict_SMlimit_massless.dat"),
         model_dir.join("restrict_massless.dat"),
     )
     .unwrap();
-    let refused = generate("events.lhe");
+    let edited = generate("edited.lhe");
     assert!(
-        !refused.status.success(),
-        "generate accepted grids trained on the model before its restrict card changed"
+        edited.status.success(),
+        "generate read the edited directory:\n{}",
+        common::stderr_of(&edited)
     );
-    let stderr = common::stderr_of(&refused);
-    let want = format!(
-        "model {MODEL}-massless at {} has digest",
-        model_dir.display()
-    );
+    std::fs::remove_dir_all(&models).unwrap();
+    let deleted = generate("deleted.lhe");
     assert!(
-        stderr.contains(&want) && stderr.contains(&digest_of("massless")),
-        "the refusal must name the model, its directory and the recorded digest: {stderr}"
+        deleted.status.success(),
+        "generate needs the deleted directory:\n{}",
+        common::stderr_of(&deleted)
     );
-    assert!(
-        stderr.contains("its files changed after vibegraph integrate ran"),
-        "{stderr}"
+    let artifact = IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).unwrap();
+    assert_eq!(artifact.model.digest, digest_of("massless"));
+    assert_eq!(
+        artifact.loaded_model().unwrap().identity.digest,
+        digest_of("massless")
     );
-    assert!(
-        !tmp.path().join("events.lhe").exists(),
-        "a refused run wrote an event file anyway"
+    let events = |name: &str| {
+        let text = std::fs::read_to_string(tmp.path().join(name)).unwrap();
+        let at = text.find("<event>").expect("an event");
+        text[at..].to_string()
+    };
+    assert_eq!(
+        events("edited.lhe"),
+        events("deleted.lhe"),
+        "the two replays drew different samples"
     );
 }

@@ -336,7 +336,7 @@ pub enum BeamMode {
 /// A card as parsed holds every recognized parameter. [`RunCard::split`] narrows
 /// it to the parameters an integration reads, which is the card an integration
 /// artifact records and every later step reads back.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunCard {
     pub(crate) iseed: i64,
     pub lpp1: i64,

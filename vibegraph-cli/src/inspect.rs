@@ -44,6 +44,19 @@ pub(crate) fn run(args: &InspectArgs) -> Result<(), CliError> {
         object.model.label, object.model.digest
     ));
     line(format!(
+        "diagrams: {} sets ({})",
+        artifact.sets.len(),
+        artifact.diagram_set_digest
+    ));
+    line(format!(
+        "params:   {}",
+        if artifact.param_card.is_some() {
+            "param card banked"
+        } else {
+            "model defaults (no param card)"
+        }
+    ));
+    line(format!(
         "{} = {}",
         observable.symbol(),
         measurement(observable, artifact.sigma_pb, artifact.sigma_err_pb)

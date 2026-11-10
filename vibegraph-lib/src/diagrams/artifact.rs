@@ -11,6 +11,10 @@
 //! [`ModelIdentity`] it records, and the sets to the recorded
 //! [`diagram_set_digest`](DiagramArtifact::diagram_set_digest), so an edited or
 //! corrupted file is refused rather than silently describing other physics.
+//!
+//! Beside the sets it banks what MadGraph's default run card reads off the
+//! card's processes ([`ProcessFacts`]), so a run with no run card of its own
+//! builds that card from the artifact without enumerating anything.
 
 use std::io;
 use std::path::Path;
@@ -18,7 +22,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{generate_from_proc_card_in, DiagramError, DiagramSet, EnumerationPool, SupportedCard};
+use super::{enumerate_lines_in, DiagramError, DiagramSet, EnumerationPool, SupportedCard};
+use crate::config::{process_facts, ProcessFactsError};
+use crate::runcard::process_defaults::ProcessFacts;
 use crate::ufo::identity::{digest_bytes, model_digest, ModelIdentity};
 use crate::ufo::loaded::{LoadedModel, ModelNaming};
 use crate::ufo::{ParsedModel, UfoError};
@@ -28,10 +34,16 @@ use crate::ufo::{ParsedModel, UfoError};
 /// `1`: the proc card, the canonical process string, the model's identity, the
 /// restricted parsed model and its particle naming, the diagram sets in
 /// enumeration order, and the SHA-256 of the sets' bincode.
-pub const DIAGRAM_FORMAT_VERSION: u32 = 1;
+///
+/// `2`: adds the [`ProcessFacts`] of a scattering card, after the digest.
+pub const DIAGRAM_FORMAT_VERSION: u32 = 2;
 
 /// The oldest schema version [`DiagramArtifact::read_from_path`] decodes.
-pub const OLDEST_READABLE_DIAGRAM_VERSION: u32 = 1;
+///
+/// A version-1 file has no process facts, and they cannot be read off its sets
+/// alone (a decay-chain line's facts come from its core, enumerated without
+/// the decays), so it is refused with the remedy rather than read.
+pub const OLDEST_READABLE_DIAGRAM_VERSION: u32 = 2;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -86,6 +98,8 @@ pub enum DiagramArtifactError {
     NoProcess,
     #[error(transparent)]
     Enumerate(#[from] DiagramError),
+    #[error(transparent)]
+    Facts(#[from] ProcessFactsError),
 }
 
 /// SHA-256 (lowercase hex) over the bincode of `sets`, in the order given.
@@ -120,6 +134,11 @@ pub struct DiagramArtifact {
     pub sets: Vec<DiagramSet>,
     /// [`diagram_set_digest`] of [`sets`](Self::sets).
     pub diagram_set_digest: String,
+    /// What MadGraph's default run card reads off the card's processes
+    /// ([`process_facts`]), for a scattering card; `None` for a decay, whose
+    /// default card reads none. Not covered by
+    /// [`diagram_set_digest`](Self::diagram_set_digest).
+    pub process_facts: Option<ProcessFacts>,
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -130,7 +149,9 @@ struct VersionHeader {
 }
 
 impl DiagramArtifact {
-    /// Enumerate `card` against `model` on `pool` and record the result.
+    /// Enumerate `card` against `model` on `pool` and record the result, with
+    /// the card's [`process_facts`] for a scattering card (which enumerates
+    /// each decay-chain line's core again).
     ///
     /// `proc_card` is the text `card` was parsed from, and `model` the model its
     /// `import model` directive resolves to; both are recorded as given.
@@ -143,7 +164,13 @@ impl DiagramArtifact {
         let process = card
             .process_string()
             .ok_or(DiagramArtifactError::NoProcess)?;
-        let sets = generate_from_proc_card_in(card, &model.model, pool)?;
+        let lines = enumerate_lines_in(card, &model.model, pool)?;
+        let process_facts = if card.is_decay() {
+            None
+        } else {
+            Some(process_facts(card, &model.model, &lines, pool)?)
+        };
+        let sets = lines.sets;
         let diagram_set_digest = diagram_set_digest(&sets);
         Ok(DiagramArtifact {
             format_version: DIAGRAM_FORMAT_VERSION,
@@ -154,6 +181,7 @@ impl DiagramArtifact {
             naming: model.naming.clone(),
             sets,
             diagram_set_digest,
+            process_facts,
         })
     }
 
@@ -291,6 +319,8 @@ mod tests {
         assert_eq!(model.identity, original.identity);
         assert_eq!(read.naming, ModelNaming::interned_sm());
         assert_eq!(read.diagram_set_digest, artifact.diagram_set_digest);
+        assert!(artifact.process_facts.is_some());
+        assert_eq!(read.process_facts, artifact.process_facts);
         assert_eq!(diagram_set_digest(&read.sets), artifact.diagram_set_digest);
         // Structural equality independent of serde: the Debug rendering of every
         // field of every diagram.
@@ -395,10 +425,10 @@ mod tests {
     /// A payload whose header names a version outside the readable range is
     /// refused by name, with the range and the remedy, before its body is read.
     ///
-    /// Version 1 is the first, so there is no older real shape to write: both
-    /// payloads carry the current body under a foreign version number, which is
-    /// exactly what a positional misread would accept if the header were not
-    /// checked first.
+    /// Both payloads carry the current body under a foreign version number,
+    /// which is exactly what a positional misread would accept if the header
+    /// were not checked first; [`a_version_1_artifact_is_refused_by_name`]
+    /// writes the real older shape.
     #[test]
     fn foreign_versions_are_refused_by_name() {
         let dir = scratch();
@@ -425,7 +455,7 @@ mod tests {
                 "{err}"
             );
             let message = err.to_string();
-            assert!(message.contains("1..=1"), "{message}");
+            assert!(message.contains("2..=2"), "{message}");
             assert!(message.contains("vibegraph enumerate"), "{message}");
 
             assert!(matches!(
@@ -433,6 +463,71 @@ mod tests {
                 Err(DiagramArtifactError::UnwritableVersion { .. })
             ));
         }
+    }
+
+    /// The version-1 shape: every field of version 2 but the process facts.
+    #[derive(Serialize)]
+    struct DiagramArtifactV1<'a> {
+        format_version: u32,
+        proc_card: &'a str,
+        process: &'a str,
+        model: &'a ModelIdentity,
+        parsed_model: &'a ParsedModel,
+        naming: &'a ModelNaming,
+        sets: &'a [DiagramSet],
+        diagram_set_digest: &'a str,
+    }
+
+    /// A file in the real version-1 shape, with a model and sets that would pass
+    /// every check, is refused by its version, naming the version, the readable
+    /// range and the remedy.
+    ///
+    /// Cannot detect a version-1 file mislabelled with the current version
+    /// number; that one fails to decode, as any truncated body does.
+    #[test]
+    fn a_version_1_artifact_is_refused_by_name() {
+        let dir = scratch();
+        let path = dir.path().join("v1.bin.zst");
+        let artifact = enumerate(DECAY_CHAIN, EnumerationPool::Serial);
+        let v1 = DiagramArtifactV1 {
+            format_version: 1,
+            proc_card: &artifact.proc_card,
+            process: &artifact.process,
+            model: &artifact.model,
+            parsed_model: &artifact.parsed_model,
+            naming: &artifact.naming,
+            sets: &artifact.sets,
+            diagram_set_digest: &artifact.diagram_set_digest,
+        };
+        let raw = bincode::serialize(&v1).unwrap();
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = DiagramArtifact::read_from_path(&path)
+            .err()
+            .expect("a version-1 artifact must be refused");
+        assert!(
+            matches!(
+                err,
+                DiagramArtifactError::UnsupportedVersion {
+                    found: 1,
+                    oldest: 2,
+                    expected: 2
+                }
+            ),
+            "{err}"
+        );
+        let message = err.to_string();
+        assert!(message.contains("version 1"), "{message}");
+        assert!(message.contains("vibegraph enumerate"), "{message}");
+    }
+
+    /// A decay card banks no process facts, and a scattering card does.
+    #[test]
+    fn only_a_scattering_card_banks_process_facts() {
+        let decay = enumerate("generate z > e+ e-\n", EnumerationPool::Serial);
+        assert_eq!(decay.process_facts, None);
+        let scattering = enumerate(MULTI_SUBPROCESS, EnumerationPool::Serial);
+        let facts = scattering.process_facts.expect("a scattering card");
+        assert_eq!(facts.core_legs.len(), scattering.sets.len());
     }
 
     /// An artifact whose embedded model was altered (one external parameter's

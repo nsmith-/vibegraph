@@ -48,8 +48,14 @@ impl Integrated {
         IntegrateArtifact::read_from_path(&self.artifact).expect("reload artifact")
     }
 
-    fn bytes(&self) -> Vec<u8> {
-        std::fs::read(&self.artifact).unwrap()
+    /// Every field of the artifact but the param card's banked text, which
+    /// is the one field two cards of the same parameter point legitimately
+    /// differ in. `Debug` prints each float's shortest round-trip form, so
+    /// equal renderings are equal bits.
+    fn record(&self) -> String {
+        let mut artifact = self.read();
+        artifact.param_card = None;
+        format!("{artifact:?}")
     }
 }
 
@@ -147,8 +153,9 @@ fn from_init(text: &str) -> &str {
 }
 
 /// No card, an empty card and a card restating the defaults all record no
-/// parameter and write the same artifact, byte for byte; and the defaults card
-/// generates the same events.
+/// parameter and write the same artifact, field for field, but for the card's
+/// own text, which each banks verbatim; and the defaults card generates the
+/// same events.
 #[test]
 fn cards_at_the_defaults_record_nothing_and_write_the_same_artifact() {
     let none = default_run();
@@ -164,7 +171,11 @@ fn cards_at_the_defaults_record_nothing_and_write_the_same_artifact() {
         let run = integrate(name, Some(card));
         succeeded(&run);
         assert_eq!(run.read().inputs.params, Vec::<MovedParam>::new(), "{name}");
-        assert!(run.bytes() == none.bytes(), "{name}: the artifact differs");
+        assert_eq!(run.read().param_card.as_deref(), Some(card), "{name}");
+        assert!(
+            run.record() == none.record(),
+            "{name}: the artifact differs"
+        );
         let notices = common::stderr_of(&run.output);
         assert!(!notices.contains("ignored"), "{name}: {notices}");
     }
@@ -352,7 +363,7 @@ fn reweighting_takes_the_recorded_point_as_its_denominator() {
 
 /// A card value for the W mass, which the SM computes, is ignored with one
 /// warning naming the parameter, the card's value and the computed one; the
-/// run is the default run, byte for byte.
+/// run is the default run, field for field but for the banked card text.
 #[test]
 fn a_dependent_mass_is_ignored_with_a_warning() {
     let run = integrate("mw", Some("Block MASS\n 24 80.0 # MW\n"));
@@ -365,7 +376,7 @@ fn a_dependent_mass_is_ignored_with_a_warning() {
         "{}",
         warnings[0]
     );
-    assert!(run.bytes() == default_run().bytes());
+    assert!(run.record() == default_run().record());
 }
 
 /// Each card `integrate` refuses, by what its message says; none writes an

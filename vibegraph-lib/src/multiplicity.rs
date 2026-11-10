@@ -155,14 +155,8 @@ pub struct MultiplicityGroups {
     pub vetoes: Vec<Vec<Option<OnShellVeto>>>,
 }
 
-/// Enumerate the card and decompose each of its phase spaces — a final-state
-/// multiplicity and a set of outgoing masses — into flavour groups.
-///
-/// A phase space of single-particle final states (`p p > z`) has no map to
-/// integrate it ([`ProtonError::OneBodyFinalState`]) and refuses the card, unless
-/// the cuts zero every one of its subprocesses outright: then it contributes
-/// nothing, as in MadGraph, and is left out of the sum with a warning. A card
-/// left with no phase space at all is refused.
+/// Enumerate the card and decompose each of its phase spaces into flavour
+/// groups ([`multiplicity_groups_of`]).
 pub fn multiplicity_groups(
     parsed: &SupportedCard,
     model: &UFOModel,
@@ -173,6 +167,26 @@ pub fn multiplicity_groups(
     let sets = generate_from_proc_card_in(parsed, model, enumeration)
         .map_err(|e| format!("failed to enumerate process: {e}"))?;
     let forbidden = forbidden_onshell_ids(parsed, model).map_err(|e| e.to_string())?;
+    multiplicity_groups_of(sets, &forbidden, model, evaluated, rc)
+}
+
+/// Decompose each phase space of a card's enumerated `sets` — a final-state
+/// multiplicity and a set of outgoing masses — into flavour groups, with the
+/// on-shell vetoes of the card's `forbidden` s-channels (PDG codes,
+/// [`forbidden_onshell_ids`]).
+///
+/// A phase space of single-particle final states (`p p > z`) has no map to
+/// integrate it ([`ProtonError::OneBodyFinalState`]) and refuses the card, unless
+/// the cuts zero every one of its subprocesses outright: then it contributes
+/// nothing, as in MadGraph, and is left out of the sum with a warning. A card
+/// left with no phase space at all is refused.
+pub fn multiplicity_groups_of(
+    sets: Vec<DiagramSet>,
+    forbidden: &[i64],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+) -> Result<MultiplicityGroups, String> {
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
@@ -207,7 +221,7 @@ pub fn multiplicity_groups(
                 Err(e) => return Err(format!("failed to decompose into flavour groups: {e}")),
             };
             let vetoes =
-                group_vetoes(&groups, &forbidden, evaluated, rc).map_err(|e| e.to_string())?;
+                group_vetoes(&groups, forbidden, evaluated, rc).map_err(|e| e.to_string())?;
             out.groups.push(groups);
             out.vetoes.push(vetoes);
         }

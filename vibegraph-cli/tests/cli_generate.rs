@@ -686,10 +686,9 @@ fn a_recorded_proc_card_that_parses_to_another_process_is_refused() {
     assert!(stderr.contains("re-integrate"), "{stderr}");
 }
 
-/// The model the recorded proc card resolves to is checked by digest against
-/// the artifact's, the interned SM included. The artifact is `run()`'s own
-/// with only the recorded digest changed, so the digest is all that can refuse
-/// it.
+/// The embedded model is checked by digest against the recorded identity when
+/// the artifact is read. The artifact is `run()`'s own with only the recorded
+/// digest changed, so the digest is all that can refuse it.
 #[test]
 fn a_model_whose_digest_moved_is_refused() {
     let run = run();
@@ -701,10 +700,11 @@ fn a_model_whose_digest_moved_is_refused() {
     expect_refusal(
         out,
         "a model whose digest moved",
-        "model sm-default at (built in) has digest",
+        "the model embedded in the artifact digests to",
     );
     assert!(
-        stderr.contains("its files changed after vibegraph integrate ran"),
+        stderr.contains("records sm-default with digest")
+            && stderr.contains("regenerate it with `vibegraph integrate`"),
         "{stderr}"
     );
 }

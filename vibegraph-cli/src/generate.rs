@@ -3,13 +3,15 @@
 //!
 //! The grid artifact is the run, like a gridpack: it carries the trained
 //! per-channel VEGAS grids, the channel selection weights they were trained
-//! under, the proc card and run card the integration read, the PDF set it
-//! convolved with, and the identity of the model behind it. So `generate` takes
-//! no card: it re-parses the recorded proc card, re-reads the model and the PDF
-//! set as assets, and checks what it read against the artifact's record rather
-//! than trusting it — a recorded card that this build parses to another
-//! process, or a model whose files changed since the integration, would sample
-//! a plausible-looking wrong distribution, so each is refused.
+//! under, the proc card and run card the integration read, the restricted
+//! model itself, the diagram sets, and the PDF set it convolved with. So
+//! `generate` takes no card and no UFO directory: it re-parses the recorded
+//! proc card, rebuilds the model from the embedded bytes, reads the diagrams
+//! instead of enumerating, and reads only the PDF set as an asset. What it
+//! cannot take on trust it checks: a recorded card that this build parses to
+//! another process, or a build that no longer computes the matrix element the
+//! artifact banked at its amplitude probe points, would sample a
+//! plausible-looking wrong distribution, so each is refused.
 //!
 //! The parameter point is the artifact's too: `generate` takes no param card,
 //! and evaluates the model at the parameters `integrate --param-card` recorded
@@ -30,11 +32,10 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
-    check_collider_energy, check_model, check_process, generate, reads_parton_densities,
-    sample_pull, GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
+    check_collider_energy, check_process, generate, reads_parton_densities, sample_pull,
+    GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
 };
 use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
@@ -140,11 +141,9 @@ pub(crate) struct GenerateArgs {
     #[arg(long, value_enum)]
     pub(crate) event_norm: Option<EventNormArg>,
 
-    /// Directory containing the recorded proc card's UFO model directory;
-    /// defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the
-    /// current directory. Unused for the built-in Standard Model. The model
-    /// found must be the one the artifact was integrated against.
-    #[arg(long)]
+    /// Refused: the artifact embeds the model it was integrated against, and
+    /// `generate` reads no UFO directory.
+    #[arg(long, hide = true)]
     pub(crate) ufo_dir: Option<PathBuf>,
 
     /// Points the frozen `w_max` scan spends on *each* channel, or `share` to give
@@ -303,19 +302,6 @@ fn generation_seed(args: &GenerateArgs) -> Result<u64, CliError> {
     })
 }
 
-/// Where the model the recorded proc card names was read from, for a refusal
-/// to point at.
-fn model_location(parsed: &SupportedCard, config: &GlobalConfig) -> String {
-    match &parsed.model {
-        Some(import) if import.name != "sm" => config
-            .ufo_search_path
-            .join(&import.name)
-            .display()
-            .to_string(),
-        _ => "(built in)".to_string(),
-    }
-}
-
 /// The library's refusal, in this command's terms: a refusal a flag can fix
 /// names the flag.
 fn cli_error(e: GenerateError) -> CliError {
@@ -337,7 +323,7 @@ fn cli_error(e: GenerateError) -> CliError {
             ),
         ),
         e @ (GenerateError::ProcessReparsed { .. }
-        | GenerateError::ModelChanged { .. }
+        | GenerateError::AmplitudeProbe(_)
         | GenerateError::ColliderEnergyChanged { .. }) => err(ErrorKind::Artifact, e.to_string()),
         // The artifact is sound, and the scan this run drew missed its accepted
         // region: a run failure that a larger scan fixes.
@@ -348,6 +334,16 @@ fn cli_error(e: GenerateError) -> CliError {
 
 pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     let seed = generation_seed(args)?;
+    if let Some(dir) = &args.ufo_dir {
+        return Err(err(
+            ErrorKind::Usage,
+            format!(
+                "--ufo-dir {}: the artifact embeds the model it was integrated against, and \
+                 generate reads no UFO directory; drop --ufo-dir",
+                dir.display()
+            ),
+        ));
+    }
     args.parallel
         .install()
         .map_err(|e| err(ErrorKind::Usage, e))?;
@@ -392,19 +388,14 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     })?;
     check_process(&artifact, &process_string(&parsed)?).map_err(cli_error)?;
 
-    let config = GlobalConfig {
-        ufo_search_path: crate::assets::resolve_ufo_search_path(
-            parsed.model.as_ref(),
-            args.ufo_dir.as_deref(),
+    // The embedded model was checked against the recorded digest on read.
+    let loaded = artifact.loaded_model().map_err(|e| {
+        err(
+            ErrorKind::Artifact,
+            format!("cannot read {}: {e}", args.artifact.display()),
         )
-        .map_err(|e| err(ErrorKind::Model, e))?,
-        restrict_path_override: None,
-        run_card_path: None,
-    };
-    let (model, model_id) = config
-        .load_ufo_with_identity(&parsed.model)
-        .map_err(|e| err(ErrorKind::Model, format!("failed to load model: {e}")))?;
-    check_model(&artifact, &model_id, &model_location(&parsed, &config)).map_err(cli_error)?;
+    })?;
+    let (model, model_id) = (loaded.model.clone(), loaded.identity.clone());
     // The library refuses a stale collider energy too; checking it here does so
     // before the PDF set is read, which may mean a download.
     check_collider_energy(&artifact, &parsed).map_err(cli_error)?;
@@ -466,9 +457,8 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         ));
     }
 
-    // The parameter point the grid was trained at: the restricted defaults with
-    // the recorded moves applied. The digest check above has pinned the
-    // defaults, so this is the point the integration evaluated.
+    // The parameter point the grid was trained at: the embedded model's
+    // restricted defaults with the recorded moves applied.
     let evaluated = bind_recorded(
         model.clone(),
         &artifact.inputs.params,
@@ -529,7 +519,6 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         scan_points: args.scan_points,
         max_rule: max_rule(args),
         reweight,
-        enumeration: args.parallel.enumeration(),
         out: args.out.clone(),
         artifact_label: args.artifact.display().to_string(),
         on_scan: Some(&tui::state::note_unweighting_efficiency),
