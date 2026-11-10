@@ -1059,7 +1059,7 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 [[package]]
 name = "feyngraph"
 version = "0.1.0-beta.5"
-source = "git+https://github.com/nsmith-/feyngraph.git?rev=090b33335a9cba4def634d21385e48a174ea6ad3#090b33335a9cba4def634d21385e48a174ea6ad3"
+source = "git+https://github.com/nsmith-/feyngraph.git?rev=f15ceb3b23ed4e060568176a09c40f24060c333b#f15ceb3b23ed4e060568176a09c40f24060c333b"
 dependencies = [
  "either",
  "indexmap",
