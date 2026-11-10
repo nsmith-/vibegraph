@@ -1,6 +1,6 @@
 # Command line
 
-The `vibegraph` binary has four commands. Two of them are the generator, and
+The `vibegraph` binary has five commands. Two of them are the generator, and
 the split between them mirrors MadEvent's survey-and-refine phase followed
 by its event-generation phase:
 
@@ -20,15 +20,42 @@ references. The fourth, **`vibegraph inspect`**, prints the results a saved
 `grid.bin.zst` records (σ, its error, χ²/dof, the factorization scale, each
 multiplicity's and each channel's share) without re-running anything.
 
-A fifth, `vibegraph enumerate`, is planned: it will take a process card
-and report every diagram that contributes, as drawings, a summary page and
-a binary artifact `integrate` can take instead of enumerating again, so
-that a user can check that a card means the process they intended and
-nothing more, the way MadGraph's `display diagrams` is used.
+The fifth, **`vibegraph enumerate`**, takes a process card and reports every
+diagram that contributes, so that a user can check that a card means the
+process they intended and nothing more, the way MadGraph's `display diagrams`
+is used. It is described [below](#enumerating-diagrams).
 
 The [command reference](reference.md) lists every option of each command;
 this page is about how they fit together. The physics behind each
 step is the subject of the [guided tour](../guide/01-pipeline.md).
+
+## Enumerating diagrams
+
+```sh
+vibegraph enumerate proc_card.dat --out diagrams/
+```
+
+writes three things into `--out` (the current directory by default):
+
+- `diagrams.bin.zst`, the diagram artifact: the card, the restricted model it
+  was enumerated against, every subprocess's diagrams in enumeration order,
+  and a digest of them;
+- `diagrams.json`, a summary: per subprocess (`s0`, `s1`, … in enumeration
+  order) its label, diagram count, coupling-order histogram, integration
+  configurations (`c0`, `c1`, …, MadGraph's `AMP2` grouping) and the contact
+  diagrams that have none; per diagram (`s3.d17`) its propagators, vertices,
+  coupling orders, configuration and drawing;
+- `svg/<set>/<diagram>.svg`, one drawing per diagram, its external legs
+  labelled with their particle and their index in the subprocess. `--svg`
+  selects them: `all`, `none`, or `first=N` per subprocess (the default is
+  `first=500`, which draws every diagram of most cards; drawing costs about a
+  millisecond and 5 KB per diagram).
+
+It refuses to overwrite any of the three without `--force`, before reading the
+card. Given `--run-card` or `--param-card`, the summary also previews the
+flavour groups `integrate` would form under those cards (the one not given
+takes `integrate`'s default), and records which cards it used; without
+either, it reports no grouping, since the grouping depends on both cards.
 
 ## Cards
 
@@ -250,7 +277,10 @@ kinds, bumps the version.
   object for a saved artifact. `generate`'s carries `events_written`,
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
-  `integration_sigma_err`, and the `pull` between them.
+  `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries
+  the `artifact` and `summary_path` it wrote, the `svg_dir` (`null` when
+  nothing was drawn) and the number of `drawings`, and the whole of
+  `diagrams.json` under `summary`.
 - `refusal`: in place of a result, `error_kind` and `message`. A refused
   run writes no artifact, so this is its only record.
 

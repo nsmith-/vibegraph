@@ -30,6 +30,7 @@ pub mod artifact;
 mod chain;
 pub mod check;
 pub mod diagram;
+pub mod draw;
 pub mod parse;
 pub mod resolve;
 pub mod schannel;
