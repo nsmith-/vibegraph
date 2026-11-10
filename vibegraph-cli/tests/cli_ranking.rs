@@ -37,6 +37,7 @@ use serde_json::Value;
 const GLUON_CARD: &str = "import model sm\ngenerate g g > g g g\n";
 const OTHER_CARD: &str = "import model sm\ngenerate e+ e- > mu+ mu-\n";
 /// Light flavours that group pairwise (`u` with `c`, `d` with `s`).
+#[cfg(feature = "extended-validation")]
 const PROTON_CARD: &str =
     "import model sm\ndefine p = g u c d s u~ c~ d~ s~\ndefine j = p\ngenerate p p > e+ e- j\n";
 
@@ -503,7 +504,9 @@ fn the_ldjson_result_nests_the_ranking() {
 }
 
 /// At proton beams each ranked configuration is a flavour group's, and the
-/// groups are the ones `enumerate` previews under the same run card.
+/// groups are the ones `enumerate` previews under the same run card. It reads
+/// the NNPDF23 set, which only the extended-validation layer fetches.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn proton_beam_sets_carry_their_flavour_groups() {
     let run = Run::new();
