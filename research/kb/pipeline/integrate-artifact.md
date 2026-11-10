@@ -164,7 +164,9 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    naming the set, the point and the deviation, with the remedy to integrate
    again. It covers what no format version sees: a compiler fix that moves
    \|M\|², a change to parameter evaluation or binding, and replay on another
-   binary, none of which changes a field of the artifact.
+   binary, none of which changes a field of the artifact. It does not cover a
+   change to enumeration or to the conversion of feyngraph's diagrams, whose
+   output the artifact banks (blind spots below).
 
 ### The amplitude probe
 
