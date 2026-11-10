@@ -4,6 +4,7 @@
 
 ## Design
 
+* [diagrams.json: the summary vibegraph enumerate writes](diagrams-json.md) - Schema version 1 of diagrams.json: per subprocess its label, coupling-order histogram, integration configurations and contact diagrams, the optional flavour-group preview, and per diagram its propagators, vertices, orders, configuration and SVG drawing; how ids join it to the diagram artifact and the drawings.
 * [The integrate artifact and the compiled-program cache](integrate-artifact.md) - What vibegraph integrate persists (per-channel grids, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built.
 * [Integrate and generate split by data dependency](integrate-generate-split.md) - generate takes the artifact plus generate-time inputs only; the run card splits into integrate settings and generate settings, each run-card field classified; artifact version 13; the CLI and its migration; PR split.
 * [Release scope and the hard-error rule](release-scope.md) - How the release scope is enforced: every card surface vibegraph does not honour is refused at parse time, never silently accepted; where each refusal lives and how a feature leaves the list.

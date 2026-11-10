@@ -29,7 +29,8 @@
 //!   integrand's natural units (GeV⁻² for a cross section, GeV for a width).
 //! - **`result`**: the command's final object, once, after its output is
 //!   written: [`IntegrateResult`] for `integrate` and `inspect`,
-//!   [`GenerateResult`] for `generate`.
+//!   [`GenerateResult`] for `generate`, and for `enumerate` the paths it wrote
+//!   with the `diagrams.json` summary nested under `summary`.
 //! - **`refusal`**: in place of a result, once: [`Refusal`]. A refused run
 //!   writes no artifact, so this is the only record of why.
 //!
