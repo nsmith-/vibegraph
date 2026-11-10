@@ -31,7 +31,7 @@ num-traits = "0.2"
 rand = "0.9"
 rand_chacha = "0.9"
 rayon = "1"
-feyngraph = { git = "https://github.com/nsmith-/feyngraph.git", rev = "090b33335a9cba4def634d21385e48a174ea6ad3", default-features = false }
+feyngraph = { git = "https://github.com/nsmith-/feyngraph.git", rev = "f15ceb3b23ed4e060568176a09c40f24060c333b", default-features = false }
 indexmap = { version = "2.14.0", features = ["serde"] }
 num-complex = "0.4.6"
 num-rational = "0.4"
