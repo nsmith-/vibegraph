@@ -7,6 +7,12 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser, Subcommand};
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
+/// Only on musl, whose own allocator takes one process-wide lock per call: the
+/// glibc and macOS system allocators keep per-thread caches and scale already.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod assets;
 mod check;
 mod enumerate;
