@@ -3886,9 +3886,8 @@ mod tests {
                 .iter()
                 .map(|p| model.particle(p.particle).name.clone())
                 .collect();
-            let cand = flow_ordered_sign(d, &model);
             format!(
-                "sign={:+} candidate={cand:+} pairing={:+} line={:+} props=[{}] lines {}",
+                "sign={:+} pairing={:+} line={:+} props=[{}] lines {}",
                 d.sign,
                 d.fermion_pairing_sign(&model),
                 d.fermion_line_sign(&model),
@@ -3898,19 +3897,6 @@ mod tests {
         };
         println!("A = {}   B = {}   order {order:?}", sa.label(), sb.label());
         let quiet = std::env::var("VG_QUIET").is_ok();
-        for (tag, set) in [("A", &sa), ("B", &sb)] {
-            let ratios: std::collections::BTreeSet<i8> = (0..set.diagrams.len())
-                .map(|i| {
-                    let line = describe(set, i);
-                    let cand = line.contains("candidate=+1");
-                    set.diagrams[i].sign * if cand { 1 } else { -1 }
-                })
-                .collect();
-            println!(
-                "  {tag}: {} diagrams, candidate/sign over diagrams {ratios:?}",
-                set.diagrams.len()
-            );
-        }
         for (i, _) in sa.diagrams.iter().enumerate().filter(|_| !quiet) {
             println!("  A d{i}: {}", describe(&sa, i));
         }
@@ -3983,8 +3969,8 @@ mod tests {
     }
 
     /// One process line against the same line with its legs listed in another order,
-    /// evaluated at the same physical point: `|M|²` must agree, and for a colourless
-    /// process so must every helicity's `|M|²`. `incoming` and `outgoing` say where
+    /// evaluated at the same physical point: `|M|²` must agree, and so must every
+    /// helicity's colour-summed `|M|²`. `incoming` and `outgoing` say where
     /// each leg of `a` goes: leg `incoming[i]` of `a` is incoming leg `i` of `b`, and
     /// likewise for the outgoing legs.
     fn assert_relabelling_invariant(a: &str, incoming: &[usize], outgoing: &[usize]) {
@@ -4056,18 +4042,23 @@ mod tests {
             let (ma, mb) = (ba.eval_m2(&pa, &mut sa), bb.eval_m2(&pb, &mut sb));
             let rel = (ma - mb).abs() / ma;
             assert!(rel < 1e-12, "{a}: {ma:.12e}, {b}: {mb:.12e}, rel {rel:.3e}");
-            if eb.n_flows() == 1 {
-                for hb in eb.helicities() {
-                    let ja = ba.run_flows(&pa, &to_a(hb), &mut sa)[0];
-                    let jb = bb.run_flows(&pb, hb, &mut sb)[0];
-                    let d = (ja.norm_sqr() - jb.norm_sqr()).abs();
-                    assert!(
-                        d <= 1e-12 * ja.norm_sqr().max(f64::MIN_POSITIVE),
-                        "{a} against {b} at helicity {hb:?}: {:.12e} against {:.12e}",
-                        ja.norm_sqr(),
-                        jb.norm_sqr()
-                    );
-                }
+            let mut ha = vec![0.0; ea.helicities().len()];
+            let mut hb = vec![0.0; eb.helicities().len()];
+            ba.eval_hel_m2(&pa, &mut sa, &mut ha);
+            bb.eval_hel_m2(&pb, &mut sb, &mut hb);
+            for (vb, mb) in eb.helicities().iter().zip(&hb) {
+                let va = to_a(vb);
+                let k = ea
+                    .helicities()
+                    .iter()
+                    .position(|h| *h == va)
+                    .expect("the relabelled helicity combination");
+                let d = (ha[k] - mb).abs();
+                assert!(
+                    d <= 1e-12 * ma,
+                    "{a} at {va:?}: {:.12e}, {b} at {vb:?}: {mb:.12e}",
+                    ha[k]
+                );
             }
         }
     }
@@ -4080,7 +4071,6 @@ mod tests {
     /// state; and `t t~ b b~`'s (t t~)(b b~) pairing against the (t b~)(b t~) one a W
     /// joins.
     #[test]
-    #[ignore = "fails until the relative Fermi sign stops reading the leg order"]
     fn relative_fermi_signs_do_not_read_the_leg_order() {
         assert_relabelling_invariant("e+ e- > e+ e-", &[0, 1], &[1, 0]);
         assert_relabelling_invariant("e+ e- > e+ e-", &[1, 0], &[0, 1]);
@@ -4088,95 +4078,6 @@ mod tests {
         assert_relabelling_invariant("u u~ > u u~", &[0, 1], &[1, 0]);
         assert_relabelling_invariant("u u~ > e+ e- e+ e- QED<=4", &[0, 1], &[0, 1, 3, 2]);
         assert_relabelling_invariant("u u~ > t t~ b b~ QED<=2", &[0, 1], &[0, 1, 3, 2]);
-    }
-
-    /// The relative Fermi sign with every fermion line listed in a label-free order:
-    /// on a line with both ends on one side of the collision, the end that is an
-    /// antiparticle all-incoming first; on a mixed line, the incoming end first.
-    /// Times `(−1)^P` on every line with an initial-state end, as
-    /// `Diagram::fermion_line_sign` gives it.
-    fn flow_ordered_sign(
-        d: &crate::diagrams::diagram::Diagram,
-        model: &crate::ufo::UFOModel,
-    ) -> i8 {
-        let n_in = d.legs.iter().filter(|l| l.incoming).count();
-        let mut order = Vec::new();
-        let mut sign = 1i8;
-        for l in d.fermion_lines(model) {
-            let [a, b] = l.legs;
-            let mixed = (a.0 < n_in) != (b.0 < n_in);
-            let (first, second) = if mixed || d.legs[a.0].charge == Charge::Antiparticle {
-                (a.0, b.0)
-            } else {
-                (b.0, a.0)
-            };
-            order.extend([first, second]);
-            let crossed = a.0 >= n_in && b.0 >= n_in;
-            if !crossed && (l.vertices.len() - 1) % 2 == 1 {
-                sign = -sign;
-            }
-        }
-        let inversions = (0..order.len())
-            .flat_map(|i| (i + 1..order.len()).map(move |j| (i, j)))
-            .filter(|&(i, j)| order[i] > order[j])
-            .count();
-        if inversions % 2 == 1 {
-            -sign
-        } else {
-            sign
-        }
-    }
-
-    /// Per enumerated set of each process in `VG_CENSUS` (`;`-separated card lines),
-    /// whether `Diagram::sign` and [`flow_ordered_sign`] differ by one sign over all
-    /// its diagrams. A set where they do not is one whose relative signs depend on
-    /// the order its legs are listed in.
-    #[test]
-    #[ignore = "diagnostic census; needs VG_CENSUS"]
-    fn probe_label_dependent_sign_census() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        let model = sm_model(SMRestrict::Default);
-        let opts = ParsingOptions::default();
-        let spec = std::env::var("VG_CENSUS").expect("VG_CENSUS='<line>;<line>'");
-        for process in spec.split(';').map(str::trim).filter(|s| !s.is_empty()) {
-            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
-            let sets = generate_from_proc_card(&pc, &model).unwrap();
-            let mut bad = Vec::new();
-            let mut n_sets = 0;
-            for set in sets.iter().filter(|s| !s.diagrams.is_empty()) {
-                n_sets += 1;
-                let ratios: std::collections::BTreeSet<i8> = set
-                    .diagrams
-                    .iter()
-                    .map(|d| d.sign * flow_ordered_sign(d, &model))
-                    .collect();
-                if ratios.len() > 1 {
-                    let flipped = set
-                        .diagrams
-                        .iter()
-                        .filter(|d| {
-                            d.sign * flow_ordered_sign(d, &model) != *ratios.iter().next().unwrap()
-                        })
-                        .count();
-                    bad.push(format!(
-                        "{}{} ({}/{} diagrams)",
-                        set.label(),
-                        if set.mirrored { " [mirrored]" } else { "" },
-                        flipped,
-                        set.diagrams.len()
-                    ));
-                }
-            }
-            println!(
-                "CENSUS {process}: {n_sets} sets, {} label-dependent{}",
-                bad.len(),
-                if bad.is_empty() {
-                    String::new()
-                } else {
-                    format!(": {}", bad.join(", "))
-                }
-            );
-        }
     }
 
     /// Cross-check the production scalar bilinear (`scalar_bilinear_current` × scalar

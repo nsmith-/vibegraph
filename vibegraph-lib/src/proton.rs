@@ -5330,7 +5330,6 @@ mod tests {
     /// in. Controls: the distinct-flavour line, the same mirrored process with its
     /// outgoing legs listed the other way, and C-conjugate lines at one point.
     #[test]
-    #[ignore = "fails until the relative Fermi sign stops reading the leg order"]
     fn antiquark_first_line_with_its_flavour_in_the_final_state() {
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
