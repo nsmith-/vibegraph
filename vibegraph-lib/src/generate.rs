@@ -218,6 +218,18 @@ pub enum GenerateError {
     /// The weight scan of the artifact's grids found no point carrying weight.
     #[error(transparent)]
     NoUsableWeight(#[from] NoUsableWeight),
+    /// A reweight card on a process whose `cut_decays = F` exemption is
+    /// pairing-weighted: a reweighting ratio is taken on the whole `|M|²`, while
+    /// the event's weight also carries the pairing weight
+    /// `Σ_p |M_p|² / Σ_q |M_q|²`, which moves with the parameters reweighted.
+    #[error(
+        "'{process}' has identical particles in a decay in one pairing and in the core in \
+         another, so cut_decays = F weights each pairing's exemption by its share of |M|²; \
+         reweighting takes its ratios on the whole |M|² and would leave that pairing weight at \
+         the original parameters. Integrate with cut_decays = T, or generate without the \
+         reweight card"
+    )]
+    ReweightPairingWeighted { process: String },
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -225,6 +237,25 @@ pub enum GenerateError {
 
 fn err(msg: impl Into<String>) -> GenerateError {
     GenerateError::Other(msg.into())
+}
+
+/// Refuse a reweight card on a process one of whose cut filters is
+/// pairing-weighted ([`GenerateError::ReweightPairingWeighted`]); `filters`
+/// pairs each filter with the process line it is named by.
+fn refuse_reweighting_pairing_weights<'c>(
+    reweighting: bool,
+    filters: impl IntoIterator<Item = (&'c Cuts, String)>,
+) -> Result<(), GenerateError> {
+    if !reweighting {
+        return Ok(());
+    }
+    match filters
+        .into_iter()
+        .find(|(cuts, _)| cuts.is_pairing_weighted())
+    {
+        Some((_, process)) => Err(GenerateError::ReweightPairingWeighted { process }),
+        None => Ok(()),
+    }
 }
 
 /// Refuse an artifact whose recorded proc card no longer parses, in this build,
@@ -408,6 +439,7 @@ fn generate_sample(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    refuse_reweighting_pairing_weights(launches.is_some(), [(&cuts, artifact.process.clone())])?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
@@ -899,6 +931,13 @@ fn generate_proton_sample(
     )
     .map_err(err)?;
     refuse_rounding_on_mixed_multiplicity(options.strategy, groups.len())?;
+    refuse_reweighting_pairing_weights(
+        launches.is_some(),
+        groups
+            .iter()
+            .flat_map(FlavorGroups::groups)
+            .map(|g| (g.cuts(), artifact.process.clone())),
+    )?;
     let mut parts_records = Vec::with_capacity(groups.len());
     // Under matching every record lists the resonances the clustering found on
     // their Breit–Wigner, whatever the card's decays.
