@@ -423,4 +423,85 @@ mod tests {
             );
         }
     }
+    /// The weighted integrand is MadGraph's per-pairing exemption on the
+    /// incoherent sum, with the interference shared out in proportion:
+    /// `Σ_p w_p Θ_p |M|² = Σ_p Θ_p |M_p|² · |M|² / Σ_q |M_q|²`, the left side from
+    /// [`BoundPairings::weights`], the right from pairing amplitudes compiled
+    /// here from the diagrams that force each pairing's lines, at RAMBO points
+    /// whose filters accept some pairings and reject others.
+    #[test]
+    fn the_weighted_integrand_is_each_pairing_s_own_exemption_on_the_incoherent_sum() {
+        use crate::phasespace::channel::PhaseSpaceMap;
+        use crate::phasespace::rng::SubStream;
+        use crate::phasespace::RamboChannel;
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let rc = RunCard::parse("F = cut_decays\n20 = ptj\n2.5 = etaj\n0.4 = drjj\n").unwrap();
+        let p = probe("generate g g > z u u~, z > u u~", &model, &evaluated, &rc);
+        let split = p.split.as_ref().expect("pairing-weighted");
+        let forced = ForcedResonances::of(&p.set.diagrams, &evaluated);
+        let parts: Vec<(u64, AmplitudeEvaluator)> = forced
+            .pairings()
+            .iter()
+            .map(|pairing| {
+                let subset = DiagramSet {
+                    diagrams: p
+                        .set
+                        .diagrams
+                        .iter()
+                        .filter(|d| diagram_forced_lines(d, &evaluated) == pairing.lines())
+                        .cloned()
+                        .collect(),
+                    ..p.set.clone()
+                };
+                let bit = p.cuts.pairing_bit(pairing.products()).unwrap();
+                (bit, compile_class(&subset, &model, &evaluated).unwrap())
+            })
+            .collect();
+        let main = SubprocessProto::running(&p.eval, &evaluated).bind();
+        let weights = PairingAmplitudes::new(split, &evaluated).bind();
+        let rambo = RamboChannel::<f64>::new(250.0, vec![0.0; 4]);
+        let mut stream = SubStream::from_stream(0x1DE_7177, 3);
+        let (mut mixed, mut worst) = (0usize, 0.0f64);
+        for _ in 0..4000 {
+            let out = rambo.sample(&stream.uniforms::<f64>(rambo.ndim())).momenta;
+            let mut ext = vec![
+                V::new(125.0, 0.0, 0.0, 125.0),
+                V::new(125.0, 0.0, 0.0, -125.0),
+            ];
+            ext.extend(out);
+            let passed = p.cuts.pass_pairings(&ext);
+            if passed == 0 {
+                continue;
+            }
+            let m2 = main.eval_m2(&ext);
+            let lhs = weights.weights([passed], &main, &ext)[0] * m2;
+            let m2_p: Vec<(u64, f64)> = parts
+                .iter()
+                .map(|(bit, eval)| {
+                    (
+                        *bit,
+                        SubprocessProto::running(eval, &evaluated)
+                            .bind()
+                            .eval_m2(&ext),
+                    )
+                })
+                .collect();
+            let total: f64 = m2_p.iter().map(|(_, v)| v).sum();
+            let own: f64 = m2_p
+                .iter()
+                .filter(|(bit, _)| passed & bit != 0)
+                .map(|(_, v)| v)
+                .sum();
+            let rhs = own * m2 / total;
+            worst = worst.max((lhs - rhs).abs() / rhs.abs().max(f64::MIN_POSITIVE));
+            mixed += usize::from(own != total);
+        }
+        eprintln!("{mixed} points with a fractional weight; worst relative difference {worst:.2e}");
+        assert!(
+            mixed > 100,
+            "only {mixed} points accepted by some pairings and not others"
+        );
+        assert!(worst < 1e-12, "the two sides differ by {worst:.2e}");
+    }
 }
