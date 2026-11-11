@@ -133,8 +133,10 @@ not by feyngraph itself. It is a registered convention, checked per graph by
 ([four-fermion vertices](../amplitudes/four-fermion-vertices.md),
 [amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md)).
 
-There is no command to draw or summarise a card's diagrams before integrating
-([backlog](../backlog/feature/diagram-inspection-command-missing.md)).
+`vibegraph enumerate` draws and summarises a card's diagrams before
+integrating ([diagrams.json](../pipeline/diagrams-json.md)), and
+`vibegraph inspect --ranking` ranks an integration's configurations against
+those drawings ([the ranking JSON](../pipeline/ranking-json.md)).
 
 [^n01-sl]: Note 01, Stelzer and Long: topology generation by leg addition, particle insertion.
 [^n02-fg]: Note 02, FeynGraph Goal 2: the two-stage algorithm (read at FeynGraph `1dc4ea7`).

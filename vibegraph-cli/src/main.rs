@@ -25,6 +25,7 @@ mod logging;
 mod network;
 mod output;
 mod parallel;
+mod ranking;
 mod si;
 mod tui;
 
@@ -127,7 +128,8 @@ enum Command {
     Generate(generate::GenerateArgs),
     /// Read a Les Houches file back and check that it is internally consistent.
     CheckEvents(check::CheckArgs),
-    /// Print the results a saved integration artifact records.
+    /// Print the results a saved integration artifact records, or write its
+    /// configuration ranking as JSON.
     Inspect(inspect::InspectArgs),
     /// Enumerate a process's Feynman diagrams: the diagram artifact, a summary
     /// JSON and one SVG drawing per diagram.

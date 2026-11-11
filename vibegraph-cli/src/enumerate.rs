@@ -34,7 +34,7 @@ use crate::parallel::ParallelArgs;
 pub(crate) const SCHEMA_VERSION: u32 = 1;
 
 const ARTIFACT_FILENAME: &str = "diagrams.bin.zst";
-const SUMMARY_FILENAME: &str = "diagrams.json";
+pub(crate) const SUMMARY_FILENAME: &str = "diagrams.json";
 const SVG_DIRNAME: &str = "svg";
 
 /// Per-set cap on drawings when `--svg` is not given. Every set of the cards
@@ -225,16 +225,24 @@ struct FlavourGroupSummary {
     members: Vec<String>,
 }
 
-fn set_id(k: usize) -> String {
+/// A set's id: `s<k>`, `k` its index in enumeration order.
+pub(crate) fn set_id(k: usize) -> String {
     format!("s{k}")
 }
 
-fn diagram_id(k: usize, j: usize) -> String {
+/// A diagram's id: `s<k>.d<j>`, `j` its index within set `k`.
+pub(crate) fn diagram_id(k: usize, j: usize) -> String {
     format!("s{k}.d{j}")
 }
 
+/// A configuration's id within its set: `c<j>`, `j` its index among the set's
+/// [`config_groups`].
+pub(crate) fn configuration_id(c: usize) -> String {
+    format!("c{c}")
+}
+
 /// `svg/<set>/<diagram>.svg`, relative to the output directory.
-fn svg_path(k: usize, j: usize) -> String {
+pub(crate) fn svg_path(k: usize, j: usize) -> String {
     format!("{SVG_DIRNAME}/{}/{}.svg", set_id(k), diagram_id(k, j))
 }
 
@@ -344,7 +352,7 @@ fn summarize_set(
                 .map(|v| v.interaction_name(model).to_string())
                 .collect(),
             coupling_orders: orders.clone(),
-            configuration: configuration_of[j].map(|c| format!("c{c}")),
+            configuration: configuration_of[j].map(configuration_id),
             svg: (j < drawn).then(|| svg_path(k, j)),
         })
         .collect();
@@ -361,7 +369,7 @@ fn summarize_set(
             .iter()
             .enumerate()
             .map(|(c, group)| Configuration {
-                id: format!("c{c}"),
+                id: configuration_id(c),
                 diagrams: group.iter().map(|&j| diagram_id(k, j)).collect(),
             })
             .collect(),

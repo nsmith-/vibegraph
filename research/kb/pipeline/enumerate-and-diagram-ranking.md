@@ -16,9 +16,8 @@ measured:
 ---
 # `vibegraph enumerate`, the diagram artifact, and the diagram ranking
 
-This design closes
-[diagram-inspection-command-missing](../backlog/feature/diagram-inspection-command-missing.md)
-and takes the model, param-card and diagram parts of
+This design closes the backlog item `diagram-inspection-command-missing`
+(closed by nsmith-/vibegraph#126) and takes the model, param-card and diagram parts of
 [generate-artifact-not-self-contained](../backlog/feature/generate-artifact-not-self-contained.md).
 It adds three things:
 
