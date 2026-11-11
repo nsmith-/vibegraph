@@ -8,9 +8,10 @@ depends_on: []
 closes: [cut-decays-identical-quarks-cut-a-stricter-observable]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-11}
 ---
-**Not dispatched until the user answers the flag question in
-[the plan](../sprint.md) (PR 1).** This brief assumes option A: the weighted cut
-is the only behaviour, and no `--madgraph-compat` flag is built.
+**The user's decision (2026-11-11): option A.** The weighted cut is the only
+behaviour, and no `--madgraph-compat` flag is built. MadGraph's single pairing
+stays as site (d) of `madgraph-compat-sites-unconditional`. The MadGraph σ is
+recorded as an attributed difference, not a match.
 
 Read the item (`python3 scripts/kb.py backlog --item
 cut-decays-identical-quarks-cut-a-stricter-observable`),

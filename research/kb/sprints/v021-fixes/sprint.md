@@ -41,11 +41,12 @@ options; param cards with entries for absent particles; `running.py`; #125.
 |---|---|---|
 | `cut-decays-identical-quarks-cut-a-stricter-observable` | high | I-C1's probe (`ic1_window_probe.rs`) on the weighted integrand: w_p Θ_p \|M\|² ε² → 0 in its three configurations, and the unweighted control still constant. σ on `g g > z u u~, z > u u~` (MadGraph 7.211 pb) and on the full `g g > z j j, z > j j` card against local MadGraph, ≥ 5 seeds a side, unweighted mean, spread and χ²/dof read, with the difference attributed to the pairing, the interference and the exemption. Cards with no identical particles across decays stay bit for bit (every banked σ line, and a test). The guard runs per pairing with that pairing's exemptions, with a refusal test on a multi-body decay with massless products that fails before the change. |
 
-**Open question (asked 2026-11-11):** `--madgraph-compat` does not exist on
-`main`. The plan builds the weighted cut as the only behaviour (option A) and
-leaves MadGraph's single pairing as site (d) of
-`madgraph-compat-sites-unconditional`, unless the user decides to build the
-flag. J-W1 is not dispatched until the answer arrives.
+**Decided (the user, 2026-11-11): option A.** The weighted cut is the only
+behaviour; no `--madgraph-compat` flag is built in this sprint. MadGraph's
+single pairing stays as site (d) of `madgraph-compat-sites-unconditional`, and
+that item's text says so. The MadGraph σ on the two cards is recorded as an
+attributed difference, not a match, and `release-scope.md` and the
+registered-deviation text say the same.
 
 ### PR 2: refuse diagram artifacts from an older enumeration (`sprintj-stale-artifacts`)
 
@@ -87,7 +88,7 @@ is no unexplained ok → not-ok and no panics.
 
 | Session | Agent | PR | Depends on | Work |
 |---|---|---|---|---|
-| [J-W1](sessions/J-W1.md) | validation-dev (Opus) | 1 | the flag answer | The pairing-weighted cut, the per-pairing guard, the probe and the σ rows. |
+| [J-W1](sessions/J-W1.md) | validation-dev (Opus) | 1 | – | The pairing-weighted cut, the per-pairing guard, the probe and the σ rows. |
 | [J-A1](sessions/J-A1.md) | feature-dev (Opus) | 2 | – | The enumeration version, its known-answer test, the refusals. |
 | [J-E1](sessions/J-E1.md) | validation-dev (Opus) | 3 | – | The SMEFT compile panic. |
 | [J-E2](sessions/J-E2.md) | validation-dev (Sonnet) | 3 | – | The `sde_strategy = 2` reachability and fix or re-scope. |
@@ -101,7 +102,7 @@ the manager serialises them.
 ## What is known before the sprint (manager, 2026-11-11)
 
 - **No `--madgraph-compat` flag exists** (no CLI argument, no reference in the
-  code). See the open question above.
+  code). The user chose option A (above).
 - **Diagram artifacts** (`diagrams/artifact.rs`, format version 2) carry a
   schema version, the model digest and `diagram_set_digest`, but nothing that
   identifies the enumeration or conversion that produced the sets. The integrate
