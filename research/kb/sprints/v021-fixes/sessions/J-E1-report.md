@@ -189,9 +189,25 @@ not see them.
   output and never re-roots. It also cannot see rootings whose binding pattern
   `root_diagram` never produces.
 
-### Unchanged banked layer
+### The target integrates
 
-`validate.sh` results are recorded under "Gates" below.
+On the release build of `67de115`, the item's own reproducer (fixed 500 GeV
+beams, `restrict_massless`) runs to completion:
+
+```
+$ vibegraph integrate card.dat --run-card run_card.dat --ufo-dir validation/ufo \
+      --neval 1000 --fixed-budget --niter 1 --out <dir> --force          # rc=0
+ INFO enumerate: 2517 diagrams for u u~ > t t~ b b~
+ INFO compile: 6 colour flows, CF matrix 6×6 process=u u~ > t t~ b b~
+σ = 208.8 ± 2.8 fb
+ INFO configs:  92 configurations carry the σ
+```
+
+This σ is a record that the process runs, not a validated value. It is
+computed under the full card, whose amplitude carries both defects in the
+Found list (the dipoles and the cross-line W sign), and it is not compared to
+MadGraph. The SM-limit card had integrated to 142.3 ± 1.8 fb at the same
+budget, as the item records.
 
 ## Gates
 
@@ -213,6 +229,54 @@ The first workspace run failed `smeftsim::vendored_copy_matches_its_manifest`
 on a `__pycache__` that an aborted attempt of mine to import the UFO with the
 system Python had left in `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/`.
 Removing it, the rerun above is clean.
+
+### validate.sh
+
+`bash validation/validate.sh` ran on `67de115`, the merged head (this branch
+with J-E2's `origin/sprintj-sde`), so it covers J-E2's change as well. Run
+fully detached, it finished at 08:26 UTC:
+
+```
+76 rows × 4 categories = 304 cells: 218 measured in the layers this run drove
+(213 ✅, 5 ⚠️, 13 ⏳, 73 — / uncovered).
+[report] 76 rows x 4 categories: the measured cells are the declared cells
+!!! clippy failed on the extended-validation targets (exit 101)
+validate rc=101
+```
+
+Every gate cell passed; the test targets report 2526 passed, 0 failed,
+110 ignored. The five ⚠️ cells are main's five, the same rows and the same
+declared not-enforced cells:
+
+| row | cell |
+|---|---|
+| `gg_to_gg` | diagrams ⚠️ 4/6 |
+| `ee_to_wpwm_cw` | amplitudes ⚠️ max rel 1.63e-12 |
+| `gg_to_gg_cg` | diagrams ⚠️ 21/27 |
+| `ee_to_zh_smeft` | amplitudes ⚠️ max rel 6.00e-11 |
+| `ee_to_mumua` | samples ⚠️ KS p 9.3e-4 |
+
+The one failure was the script's first step, clippy over the
+extended-validation targets: an unused `diagrams` binding in
+`validate_samples.rs` (an error under `-D warnings`) and its twin in
+`validate_sigma.rs`. Both come from the merged per-subprocess forests change:
+the running coupling now reads `subprocess_diagrams(&sets)`, so the flattened
+lists beside it lost their last reader. The workspace clippy without features
+does not build those targets, which is why it passed. `72ad972` drops the two
+bindings. I re-ran only that step on the new head instead of the whole
+script:
+
+```
+$ cargo clippy --workspace --all-targets \
+      --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- -D warnings
+                                                 # on 72ad972: Finished, rc=0
+$ cargo fmt --all --check                        # rc=0
+$ cargo clippy --workspace --all-targets -- -D warnings   # rc=0
+$ python3 scripts/kb.py lint                     # 0 errors, 5 warnings (pre-existing)
+```
+
+That is the gate that failed. The commit deletes two dead `let`s in test targets, so it changes no
+compiled behaviour and no gate cell, and the cells above stand for it.
 
 ## Found
 
@@ -283,7 +347,15 @@ Removing it, the rerun above is clean.
    manager. The comparison is per flow and per helicity, the finest level the
    standalone gate exposes for a multi-flow process.
 
-4. **The brief's premise.** The item located the empty sum in
+4. **Re-check the target once both defects are fixed.**
+   `u u~ > t t~ b b~ NP<=1` under the full `restrict_massless` card integrates
+   now (σ = 208.8 ± 2.8 fb at 1000 × 1), but that value is not validated. Once
+   the cross-line W sign (Found 2) and the initial-state dipole (Found 1) are
+   fixed, `uux_to_ttxbbx_4f_nodipole` leaves `KNOWN_DISAGREEMENT`. That test
+   fails as soon as the row agrees. After that, a full-card standalone row and
+   a σ against MadGraph close the card.
+
+5. **The brief's premise.** The item located the empty sum in
    "`lower::lower_flows` / `lower::optimize`, or rooting". It came from
    colourisation, through `lower_vertex`, and a second, independent rooting
    defect sat behind it. The item read the trigger as "most likely the
