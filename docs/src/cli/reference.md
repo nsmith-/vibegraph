@@ -16,7 +16,7 @@ Commands:
   integrate     Integrate the cross section of a process, saving the adapted VEGAS grids
   generate      Generate an unweighted event sample from a saved grid, as a Les Houches file
   check-events  Read a Les Houches file back and check that it is internally consistent
-  inspect       Print the results a saved integration artifact records
+  inspect       Print the results a saved integration artifact records, or write its configuration ranking as JSON
   enumerate     Enumerate a process's Feynman diagrams: the diagram artifact, a summary JSON and one SVG drawing per diagram
   help          Print this message or the help of the given subcommand(s)
 
@@ -496,7 +496,7 @@ Options:
 ## `vibegraph inspect`
 
 ```text
-Print the results a saved integration artifact records
+Print the results a saved integration artifact records, or write its configuration ranking as JSON
 
 Usage: vibegraph inspect [OPTIONS] <ARTIFACT>
 
@@ -505,6 +505,15 @@ Arguments:
           The artifact `vibegraph integrate` wrote (`grid.bin.zst`)
 
 Options:
+      --ranking <FILE>
+          Write the ranking JSON to this file (`-` for stdout): the run's configurations by decreasing share of the observable, with the sampler's channels and the diagrams' drawings
+
+      --diagrams <DIR|FILE>
+          The `vibegraph enumerate` output directory (or its `diagrams.json`) to pair the ranking with. Refused unless it describes the diagram sets the integration did; the ranking then takes its drawing paths from it
+
+      --force
+          Overwrite an existing `--ranking` file
+
       --no-network
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 

@@ -1319,7 +1319,7 @@ pub(crate) fn recorded_observable(artifact: &IntegrateArtifact) -> Result<Observ
     Ok(observable_of(&parsed))
 }
 
-fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
+pub(crate) fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
     match key {
         ChannelKey::Whole => ChannelKeyObject::Whole,
         ChannelKey::Channel { channel } => ChannelKeyObject::Channel { channel },

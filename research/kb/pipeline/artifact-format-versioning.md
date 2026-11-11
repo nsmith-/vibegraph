@@ -14,11 +14,11 @@ sources:
   - {id: n24-fv4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1617-L1648", title: "Note 24: version dispatch, the fv3 reader and the refusal test"}
   - {id: n37-defects, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L542-L551", title: "Note 37 §6.5: two version-guard defects"}
 ---
-vibegraph persists one artifact today, the `vibegraph integrate` grid file
-([the integrate artifact](integrate-artifact.md)). A diagram artifact written
-by a future `vibegraph enumerate` and read by `integrate` is planned
-([diagram-inspection-command-missing](../backlog/feature/diagram-inspection-command-missing.md)),
-and the compiled-program cache would be another. The rules here apply to
+vibegraph persists two artifacts: the `vibegraph integrate` grid file
+([the integrate artifact](integrate-artifact.md)), and the diagram artifact
+`vibegraph enumerate` writes and `integrate` reads
+([diagrams.json](diagrams-json.md)). The compiled-program cache would be a
+third. The rules here apply to
 every such file. Each artifact's own fields and history belong in its own
 concept.
 
