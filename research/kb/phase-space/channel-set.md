@@ -164,10 +164,8 @@ A channel of several pairs is banked as
 (`artifact.rs:172`); every other channel keeps its key. The writer records the
 oldest format version that holds its keys, so an artifact with no merged
 channel is byte-for-byte what the previous version wrote.
-`IntegrateArtifact::refuse_unmerged_grids` (`artifact.rs:709`) refuses to replay
-an artifact from before merging on a process whose channels merge, naming both
-versions and the pair count; `generate` calls it before its key check. The
-version history is in `artifact.rs`'s `FORMAT_VERSION` doc comment and
+An artifact from before merging is below the readable floor and is refused by
+its version before any key is compared. The version history is in `artifact.rs`'s `FORMAT_VERSION` doc comment and
 [pipeline/artifact-format-versioning](../pipeline/artifact-format-versioning.md);
 the artifact itself is [pipeline/integrate-artifact](../pipeline/integrate-artifact.md).
 
