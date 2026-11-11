@@ -249,6 +249,16 @@ impl VertexInfo {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // An occurrence with no coupling would lower to an empty sum, which has no
+        // momentum or value to route; the color walk only pairs a vertex with color
+        // structures its flow group couples, so reaching this is a caller defect.
+        if terms.is_empty() {
+            return Err(RootLorentzError::UnsupportedVertex(format!(
+                "vertex '{}' has no coupling for color structure {color_idx} in \
+                 fermion-flow group {flow_group}",
+                vertex.name
+            )));
+        }
         Ok(VertexInfo { terms })
     }
 
