@@ -269,6 +269,24 @@ first. Every flipped row has `q q~` beams or `t t~`/`qt qt~` outgoing (in
 `ubx_to_epve`, `u b~` in and `e+ ve` out). Every unflipped row lists
 antiparticle first on both sides (`e+ e- > mu+ mu-`, `ta+ ta-`, bosons), has no
 fermions (`g g > h`), or has a mixed quark line beside `e+ e-` (`g u`, `g u~`).
+Row by row, against the rule. "Particle-first pairs" counts initial–initial
+and crossed pairs listed particle first, whose order the fix reverses:
+
+| row | listing | particle-first pairs | predicted | measured |
+|---|---|---|---|---|
+| ee_to_ttx, ee_to_ttx_dipole, ee_to_ttx_smeft, ee_to_ttx_smlimit, ee_to_tlt | `e+ e- > t t~` | 1 (`t t~`) | flip | flip |
+| ll_to_qqx_toy_dipole, _tensor, _yukawa | `lt~ lt > qt qt~ …` | 1 (`qt qt~`) | flip | flip |
+| tata_to_ttx_tensor4f | `ta+ ta- > t t~ a` | 1 | flip | flip |
+| uux_to_mumu, uux_to_epemg, uux_to_ztg, ddx_to_epemg, pp_to_ll_qcd0 | `q q~ > …` | 1 (beams) | flip | flip |
+| bbx_to_h_identity, bbx_to_tapta_ckm_no_b_mass | `b b~ > …` | 1 | flip | flip |
+| ubx_to_epve_ckm_no_b_mass | `u b~ > e+ ve` | 1 (beams) | flip | flip |
+| ee_to_ee, ee_to_mumu, ee_to_mumu_4f, _eml, _smlimit, ee_to_mumu_tata_qcd0, ee_to_mumua, ee_to_tatah | `e+ e- > ℓ+ ℓ- …` | 0 | keep | keep |
+| ee_to_wpwm, ee_to_wp0wm, ee_to_wp0wmt, ee_to_zh, ee_to_z0h, ee_to_zh_smeft | `e+ e- > bosons` | 0 | keep | keep |
+| gg_to_h_cpeven, gg_to_h_cpodd | no fermions | 0 | keep | keep |
+| gu_to_epemu, gux_to_epemux | mixed quark line, `e+ e-` | 0 | keep | keep |
+
+17 flip and 18 keep, all as predicted.
+
 An overall sign reaches nothing observable. It multiplies every diagram, and so
 every JAMP, of one set. |M|², per-helicity |M|², JAMP2 and the CF contraction,
 and AMP2 (configuration amplitudes carry no Fermi sign) are quadratic or moduli.
@@ -325,7 +343,7 @@ uxu_to_uux: G = -0.7660i, worst flow 4.851e-1, worst |M|² 4.132e-1        FAILE
 uux_to_ttxbbx_qed2: G = 0.0048+1.0225i, worst flow 2.005e-1, worst |M|² 2.916e-1   FAILED
 ```
 
-**`pixi run --skip-deps validate`**: VALIDATE-PLACEHOLDER
+**`pixi run --skip-deps validate`**: not yet run. It is queued for the heavy slot behind J-W1, J-E1 and J-D1. The driver is `jf1-validate.sh` (scratch): detached, own target dir, with a marker.
 
 ## What would falsify this
 
