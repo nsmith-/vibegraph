@@ -2876,10 +2876,6 @@ fn probe_scale_cost() {
             .map(|&id| evaluated.mass(id))
             .collect();
         let avg = initial_spin_color_average(rep, &model, &evaluated);
-        let diagrams: Vec<_> = sets
-            .iter()
-            .flat_map(|s| s.diagrams.iter().cloned())
-            .collect();
 
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();

@@ -1389,10 +1389,6 @@ fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
             .map(|&id| evaluated.mass(id))
             .collect();
         let spin_color_avg = initial_spin_color_average(rep, &model, &evaluated);
-        let diagrams: Vec<_> = sets
-            .iter()
-            .flat_map(|s| s.diagrams.iter().cloned())
-            .collect();
         let mut integ = FixedBeamIntegrand::new(
             bounds.iter().collect(),
             &cuts,
