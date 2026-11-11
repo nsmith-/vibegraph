@@ -388,7 +388,7 @@ ROWS = {
         # gluon emission in others, so the two readings of one chain meet in one sum.
         Row("bbx_to_epemg_cbb", "b b~ > e+ e- g NP<=1", (5, -5), (-11, 11, 21), 500.0, 3,
             5115, model=SMEFT, restrict="vg_cbB", bank_amps=True),
-        # Every third-generation quark dipole in both CP parities on `b b~ > t t~`:
+        # Every third-generation quark dipole on `b b~ > t t~` (the W ones CP-even):
         # the b line annihilates, the t line is crossed, and the t-channel W joins
         # the two on lines from an initial to a final state, with the one-chirality
         # chains FFV10 and FFV4 of O_tW and O_bW. Widths are zero for the spacelike W.

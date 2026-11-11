@@ -719,18 +719,7 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
-    ("bbx_to_epem_cbb", DIPOLE_REVERSED),
-    ("ttx_to_epem_ctb", DIPOLE_REVERSED),
-    ("bbx_to_epemg_cbb", DIPOLE_REVERSED),
-    ("bbx_to_ttx_tbdipole", DIPOLE_REVERSED),
-    ("tbx_to_vlep_tbdipole", DIPOLE_REVERSED),
-];
-
-const DIPOLE_REVERSED: &str = "a momentum-slashed dipole chain on a quark line read against the \
-     vertex's arrow, closed into the amplitude or into a vector current, takes the opposite \
-     sign to MadGraph's while the gauge coupling on the same line agrees: per graph the dipole \
-     graphs fit -G and every other graph G, at |r| = 1 to rounding";
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1148,7 +1137,7 @@ fn bbx_to_epemg_cbb() {
     check("bbx_to_epemg_cbb");
 }
 
-/// Every third-generation quark dipole in both CP parities on `b b~ > t t~`: the
+/// Every third-generation quark dipole on `b b~ > t t~`, the W ones CP-even: the
 /// neutral chains FFV9 and FFV2 on the annihilating b pair and on the crossed top pair,
 /// and the one-chirality W chains FFV10 and FFV4 on the t-channel lines from an
 /// initial b to a final t.
