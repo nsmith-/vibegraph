@@ -691,3 +691,72 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
         "{refusal}"
     );
 }
+
+/// `generate --reweight-card` on a card whose `cut_decays = F` exemption is
+/// pairing-weighted (identical quarks in the core and in the decay) is refused
+/// before any event is written: a reweighting ratio is taken on the whole
+/// `|M|²`, while the event's weight also carries the pairing weight, which moves
+/// with the parameters reweighted. Fixed-energy beams.
+#[test]
+fn cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate e+ e- > z u u~, z > u u~\n",
+    )
+    .unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        format!(
+            "{}  F = cut_decays\n  20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n",
+            fixed_beams(250.0, 250.0)
+        ),
+    )
+    .unwrap();
+    let integrate = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrate.status.success(),
+        "integrate failed:\n{}",
+        stderr_of(&integrate)
+    );
+
+    let rw_card = cwd.path().join("reweight_card.dat");
+    std::fs::write(&rw_card, "launch --rwgt_name=wz\n set DECAY 23 2.6\n").unwrap();
+    let lhe = cwd.path().join("events.lhe");
+    let generate = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("generate")
+        .arg(out.path().join("grid.bin.zst"))
+        .args(["--seed", "7", "--nevents", "50"])
+        .arg("--reweight-card")
+        .arg(&rw_card)
+        .arg("-o")
+        .arg(&lhe)
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = stderr_of(&generate);
+    assert!(
+        !generate.status.success(),
+        "reweighting a pairing-weighted card must be refused:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("pairing") && stderr.contains("cut_decays = T"),
+        "got:\n{stderr}"
+    );
+    assert!(!lhe.exists(), "no event file is written");
+}
