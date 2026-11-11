@@ -429,6 +429,16 @@ follows from `γ⁵ = P_R − P_L`, but no row re-roots a `γ⁵` chain on a rev
 and without the change, and SMEFTsim writes its W dipoles with projectors only. A
 chain with three or more gammas is not reached.
 
+**Clean re-run.** A scratch worktree shared this session's target directory, so
+the dev-profile results measured after it existed are suspect. On 02d8174, after
+`cargo clean --target-dir /home/user/cargo-target-jd1 -p vibegraph-lib -p vibegraph`
+(876 files, 856.8 MiB removed):
+
+- `cargo test -p vibegraph-lib --test standalone_jamps`: `66 passed; 0 failed`.
+- `cargo test --workspace --no-fail-fast`: 2081 passed, 0 failed, 26 ignored.
+
+The `release-debug` build of `validate.sh` is the definitive check.
+
 ## Found
 
 1. **The rooting-soundness sweep never roots a reversed multi-gamma chain both
