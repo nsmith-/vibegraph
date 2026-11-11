@@ -151,6 +151,9 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("bbx_to_epemg_cbb", &[0, 1, 2, 3, 4, 5, 6, 7]),
     ("vlep_to_tbx_ctwim", &[0, 1]),
     ("vlep_to_tbx_cbwim", &[1, 0]),
+    ("bg_to_twm_ctw", &[0, 1, 2, 3]),
+    ("gb_to_twm_cbw", &[0, 1, 2, 3]),
+    ("bxg_to_txwp_ctw", &[0, 1, 2, 3]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -721,7 +724,16 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
+    ("bg_to_twm_ctw", W_DIPOLE_FERMION_CURRENT),
+    ("gb_to_twm_cbw", W_DIPOLE_FERMION_CURRENT),
+    ("bxg_to_txwp_ctw", W_DIPOLE_FERMION_CURRENT),
+];
+
+const W_DIPOLE_FERMION_CURRENT: &str = "a one-chirality W dipole chain (FFV10, FFV4) whose \
+     vertex produces an off-shell quark current on a line read against the vertex's arrow \
+     does not match its MadGraph graph (overlap 1e-4 to 0.1), while the same graph agrees \
+     where the dipole closes the amplitude";
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1184,6 +1196,27 @@ fn ttx_to_gg_ctg() {
 #[test]
 fn gg_to_ttx_ctg() {
     check("gg_to_ttx_ctg");
+}
+
+/// tW production under O_tW: the dipole vertex on the line from the initial b to the
+/// final t produces the off-shell b (s-channel) or top (t-channel) current in some
+/// rootings and closes the amplitude in others; compared per MadGraph graph.
+#[test]
+fn bg_to_twm_ctw() {
+    check("bg_to_twm_ctw");
+}
+
+/// The same under O_bW with the beams in the other order, so the canonical root
+/// falls on the other vertex of each diagram.
+#[test]
+fn gb_to_twm_cbw() {
+    check("gb_to_twm_cbw");
+}
+
+/// The charge-conjugate tW channel under O_tW.
+#[test]
+fn bxg_to_txwp_ctw() {
+    check("bxg_to_txwp_ctw");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact

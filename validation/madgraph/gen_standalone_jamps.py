@@ -406,6 +406,18 @@ ROWS = {
             model=SMEFT, restrict="vg_ctWIm", bank_amps=True),
         Row("vlep_to_tbx_cbwim", "ve e+ > t b~ NP<=1", (12, -11), (6, -5), 800.0, 3, 5119,
             model=SMEFT, restrict="vg_cbWIm", bank_amps=True),
+        # tW production under the CP-even W dipoles. The b line runs from the
+        # initial b to the final t, against the W vertex's arrow, and the dipole
+        # vertex produces the off-shell b (s-channel) or top (t-channel) current in
+        # some rootings and closes the amplitude in others: both beam orders, so the
+        # canonical root falls on different vertices.
+        Row("bg_to_twm_ctw", "b g > t w- NP<=1 SMHLOOP=0", (5, 21), (6, -24), 800.0, 3, 5122,
+            model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
+        Row("gb_to_twm_cbw", "g b > t w- NP<=1 SMHLOOP=0", (21, 5), (6, -24), 800.0, 3, 5123,
+            model=SMEFT, restrict="vg_cbW", zero_widths=True, bank_amps=True),
+        # The charge-conjugate channel.
+        Row("bxg_to_txwp_ctw", "b~ g > t~ w+ NP<=1 SMHLOOP=0", (-5, 21), (-6, 24), 800.0, 3,
+            5124, model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
         # O_tG in both CP parities on an annihilating top pair: the two-gluon
         # contacts (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains with no
         # momentum, closed into the amplitude on a line read against the vertex's
