@@ -338,6 +338,68 @@ is ac74b42's.
 - **`cargo fmt --all --check`**, **`cargo clippy --workspace --all-targets -- -D warnings`**
   and **`python3 scripts/kb.py lint`** on the final head: see §7.
 
+## 5b. Reweighting refused on a weighted card (follow-up)
+
+The manager asked for this after reading Found 2 (old numbering). `generate
+--reweight-card` takes its ratios on the whole |M|². A weighted card's event
+also carries w = Σ_{p∈Θ}|M_p|²/Σ_q|M_q|², and w moves with the parameters
+reweighted. The ratios would therefore be silently wrong.
+
+`generate` now refuses the combination by name
+(`GenerateError::ReweightPairingWeighted`). The message names
+`cut_decays = T`, or dropping the reweight card, as the remedies. The check
+sits at both entry points, once the cuts are compiled and before the reweight
+plan or any event:
+- fixed beams: after `Cuts::compile_with`;
+- proton beams: after the flavour groups are derived.
+
+The tests came first, in their own commits (8a6b0c7, b2dfca8):
+- `cli_hard_errors::cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams`
+  (`g g > z u u~, z > u u~` on fixed gluon beams);
+- `cli_reweight_proton::reweighting_a_pairing_weighted_card_is_refused`
+  (proton beams, extended-validation).
+
+Each test asserts three things: the run fails, the message names the pairing
+weight and `cut_decays = T`, and no event file exists.
+
+```
+before (b2dfca8, refusal not yet applied):
+test cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams ... FAILED   (cli_hard_errors.rs:759, the message assertion)
+test reweighting_a_pairing_weighted_card_is_refused ... FAILED                      (cli_reweight_proton.rs:363: generate succeeded, reweighting silently)
+after (e77e08c):
+test cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams ... ok
+test reweighting_a_pairing_weighted_card_is_refused ... ok
+```
+
+How each test failed before the change:
+- **Proton.** It failed the way the hard-error rule forbids: `generate`
+  succeeded and wrote reweighted events.
+- **Fixed beams.** It failed on the message. `generate` did refuse, but through
+  the reweight audit, which found the card-point |M|² 19% off the integrand's on
+  21 of 50 events. The same happens at `cut_decays = T` (22 of 50, 17%), so it
+  is a pre-existing fixed-beam reweighting problem on identical-particle decay
+  chains, not this change (Found 6).
+- **Enumeration.** A lepton-collider version of the card
+  (`e+ e- > z u u~, z > u u~`) is refused at enumeration: a core Z is ambiguous
+  with the decay's. That is why the fixed-beam test uses gluon beams.
+
+**Systematics** is not refused. It forms no |M|² ratio: it rescales PDFs and
+α_s^n_qcd per event (`systematics/record.rs`). The pairing weight is a ratio of
+same-order |M_p|², so it does not move with the PDF, the scales or α_s. That
+holds as long as every pairing carries the same QCD order, which is also the
+assumption systematics already makes for |M|² as a whole.
+
+**Banked rows.** `validate.sh` was not re-run for this change, for three
+reasons:
+- the refusal only fires when reweighting is requested on a pairing-weighted
+  card;
+- no banked row is pairing-weighted (§5);
+- the banked reweighting rows (`cli_reweight_proton`'s two existing tests,
+  `validate_param_card_sigma`) are on cards without a varying exemption, so
+  their path is unchanged.
+
+The final-head gates are in §7.
+
 ## 6. Item and brief corrections
 
 - **The item's `closes_when`.** It reads "With --madgraph-compat off". Under
@@ -377,7 +439,25 @@ All commits are on `sprintj-weighted-cut` and pushed. Author
 - `ac74b42` test(pairing): the identity test, and the reproducer's removal.
 - `2449637` docs(kb): `release-scope.md`, the identical-particles concept,
   `madgraph-defects.md`, the indexes and this report as a draft.
-- The final commit fills in §5 and this section. The MadGraph run directories were then deleted, keeping each seed's `results.dat`, `vg_seed_result.txt`, event count and run card under `$S/jw1-mg-kept/`.
+- `775e4aa` docs: §5 gate results and this commit list.
+- `8a6b0c7`, `b2dfca8` test(cli): the two reweighting refusals, committed
+  before the fix and failing on it (§5b).
+- `e77e08c` fix(generate): refuse reweighting on a pairing-weighted card.
+- The final commit records §5b, Found 6 and the gates below.
+
+Gates on e77e08c, the last code change (`$S/jw1-final.sh`, `$S/jw1-final-status`):
+
+```
+HEAD e77e08c363e32ed65d5f9b9fad505d25bf2f9fa5
+FMT-EXIT 0             cargo fmt --all --check
+CLIPPY-EXIT 0          cargo clippy --workspace --all-targets -- -D warnings
+CLIPPY-EV-EXIT 0       the same with --features vibegraph/extended-validation,vibegraph-lib/extended-validation
+WORKSPACE-TEST-EXIT 0  cargo test --workspace --no-fail-fast: 61 targets, 2074 passed, 0 failed, 26 ignored
+KB-LINT-EXIT 0         python3 scripts/kb.py lint: 0 errors, 5 warnings
+```
+
+The validate.sh run of §5 is on 2449637. It was not re-run after e77e08c
+(§5b). The MadGraph run directories were then deleted, keeping each seed's `results.dat`, `vg_seed_result.txt`, event count and run card under `$S/jw1-mg-kept/`.
 
 Final-head checks, run before that commit:
 
@@ -418,7 +498,7 @@ files this session touched.
      - fixed-energy `e+ e- > e- e+`.
    - **To close it:** per-diagram dumps of `u~ u > u u~` against MadGraph
      standalone, then the fix. Making that row enforced also closes it.
-2. **Systematics and reweighting do not see the pairing weight.**
+2. **(Closed in this PR, §5b.) Systematics and reweighting do not see the pairing weight.**
    `reweight/engine.rs` forms new/old |M|² ratios on the whole |M|². On a
    weighted card the weight w = Σ_{p∈Θ}|M_p|²/Σ|M_q|² also depends on the
    parameters reweighted (couplings, masses), and that is not propagated. The
@@ -427,12 +507,16 @@ files this session touched.
    pairing-weighted cards.
 3. **The fixed-beam path reads one `ForcedResonances` over every subprocess's
    diagrams.** That predates this work (`integrate.rs`, `generate.rs`). On a
-   fixed-beam card mixing a same-flavour chain with distinct-flavour ones
-   (`e+ e- > z j j, z > j j`), the old intersection rule cut every leg of every
-   subprocess. It now goes weighted, and each subprocess's single pairing gets
-   its own exemption. That is MadGraph's behaviour on those subprocesses, but
-   it is a change on such cards, not measured here. To close it: one fixed-beam
-   σ row (`e+ e- > z j j, z > j j` at F) against MadGraph.
+   fixed-beam card mixing a same-flavour chain with distinct-flavour ones, the
+   old intersection rule cut every leg of every subprocess. It now goes
+   weighted, and each subprocess's single pairing gets its own exemption. That
+   is MadGraph's behaviour on those subprocesses, but it is an unmeasured change
+   on such cards.
+   - A lepton-collider core with the decay's quarks (`e+ e- > z u u~, z > u u~`)
+     is refused at enumeration as ambiguous (§5b). So this reaches only fixed
+     beams of partons, `g g > z j j, z > j j` at `lpp = 0`, and I did not check
+     how common such cards are.
+   - To close it: one such fixed-beam σ row against MadGraph.
 4. **Members of a flavour group share the representative's pairing
    amplitudes.** They are grouped on equal |M|² traces and equal filters, which
    include the exemptions, but the per-pairing |M_p|² of a member is not
@@ -441,3 +525,14 @@ files this session touched.
 5. **No budget rung on the weighted rows.** See §4. To close it: two seeds at
    `--target-rel 0.001` against the five at 0.003, if these rows are ever
    gated.
+6. **Fixed-beam reweighting of an identical-particle decay chain fails its own
+   audit.** On `g g > z u u~, z > u u~` at fixed energy, the reweighter's
+   card-point |M|² differs from the integrand's by up to 17–19% on 21–22 of 50
+   events, at `cut_decays = F` and at `T` alike. The audit then refuses the file
+   ("reweighting evaluated 22 of 50 events in another subprocess than the
+   integrand drew them in"). It is loud, not silent, but it names the wrong
+   cause. The likely cause is how the reweighter assigns the record's identical
+   quarks to legs on a decay-chain set. That was not diagnosed; the evidence is
+   the two generate logs (`$S/fb/`). To close it: per-event dumps of both
+   |M|²'s and the leg assignment, then the fix. Today the weighted case is
+   refused earlier by name (§5b).
