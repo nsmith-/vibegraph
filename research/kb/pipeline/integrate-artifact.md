@@ -224,20 +224,23 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    ray order, the Fermi sign, the symmetry factor and the provenance) and the
    diagram artifact's `ProcessFacts`. The known-answer test
    `enumeration_output_matches_the_pinned_version` pins, at the version, the
-   `diagram_set_digest` and the facts' digest of five cards: Bhabha
+   `diagram_set_digest` and the facts' digest of seven cards: Bhabha
    scattering (both Fermi signs), `e+ e- > z z, z > mu+ mu-` (a decay chain
    with identical fermions across its decays), `p p > z j, z > e+ e-`
    (several subprocesses, mirrored sets), `u u~ > z{0} g` (a polarized leg)
    and SMEFTsim's `e+ e- > e+ e- NP<=1` under `restrict_vg_c4l` (a
-   four-fermion contact vertex in both flow groups of one interaction). Any
+   four-fermion contact vertex in both flow groups of one interaction),
+   `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` (a nested decay) and
+   `e+ e- > mu+ mu- a $ z` (an on-shell s-channel veto). Any
    change to that output fails it with the digests to re-pin and the
    instruction to bump the version with them. Removing the line sign from
-   conversion (`diagram.rs`) moved three of the five digests, and removing
-   it from the stitched decay-chain diagrams (`chain.rs`) moved only the
-   `z z` card's. Every tree-level symmetry factor is 1 (each internal vertex
+   conversion (`diagram.rs`) moved three of the five digests then pinned,
+   and removing it from the stitched decay-chain diagrams (`chain.rs`)
+   moved only the `z z` card's, also with all seven pinned. Every tree-level
+   symmetry factor is 1 (each internal vertex
    of a tree is fixed by the external legs below it, so a graph automorphism
    fixing the legs is the identity), and the test asserts it.
-   **Blind spot:** a change that moves only cards outside the five passes
+   **Blind spot:** a change that moves only cards outside the seven passes
    the test, and an artifact from before it is then read without complaint.
 3. **The embedded bytes** (on read, `IntegrateArtifact::read_hashed`). The
    embedded model must digest to `model.digest` and the sets to

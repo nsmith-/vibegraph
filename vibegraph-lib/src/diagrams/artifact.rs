@@ -665,7 +665,9 @@ mod tests {
     /// (`z z`, both to `mu+ mu-`), a multi-subprocess decay chain with
     /// mirrored sets (`p p > z j`), a polarized leg, and a four-fermion
     /// contact vertex with two fermion-flow groups in one interaction
-    /// (SMEFTsim's four-lepton operators, `e+ e- > e+ e-`). Every tree-level
+    /// (SMEFTsim's four-lepton operators, `e+ e- > e+ e-`), a nested decay
+    /// (`t > w+ b, w+ > e+ ve`), and an on-shell s-channel veto (`$ z`). Every
+    /// tree-level
     /// symmetry factor is 1: each internal vertex of a tree is fixed by the
     /// external legs beneath it, so the only automorphism fixing the legs is
     /// the identity. The test asserts it, so a card reaching another factor
@@ -700,6 +702,18 @@ mod tests {
             "generate e+ e- > e+ e- NP<=1\n",
             "96a7f460f1649d30bf512e859f8c7eb78a211a713e3e924d8cd20f7137d66eb3",
             "cc16e6d7f5b40fa515d58e1d8b1447cc1de2bc5a3b289b644ef2662550a8b909",
+        ),
+        (
+            KnownModel::Sm,
+            "generate e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~\n",
+            "9088a370bbee74e2047309980bd1dec62063594415213018a1633076c1c0e86f",
+            "e32695af77e2374ac3e4ec3425ff4173dc589c3710efc035fefd46ab781fa366",
+        ),
+        (
+            KnownModel::Sm,
+            "generate e+ e- > mu+ mu- a $ z\n",
+            "44f701aef0e6a4edfa57095ada1bb4826a002d1aaa0b0b0552a41cf1bab87d4c",
+            "81ea234ccbc5b4c33146bd6c833adee75a2293f52c900a3fb8fa9842004492b5",
         ),
     ];
 
@@ -753,6 +767,8 @@ mod tests {
         let mut contact_flow_groups = std::collections::BTreeSet::new();
         let mut polarized = false;
         let mut mirrored = false;
+        let mut nested = false;
+        let mut vetoed = false;
         for &(known, card_text, sets_digest, facts_digest) in KNOWN_ANSWERS {
             let model = known.load();
             let card = parse_proc_card(card_text, &ParsingOptions::default()).unwrap();
@@ -767,6 +783,10 @@ mod tests {
                     artifact.diagram_set_digest
                 ));
             }
+            vetoed |= artifact
+                .process_facts
+                .as_ref()
+                .is_some_and(|f| f.onshell_veto);
             for set in &artifact.sets {
                 mirrored |= set.mirrored;
                 polarized |= set.polarizations.iter().any(Option::is_some);
@@ -778,6 +798,7 @@ mod tests {
                     assert_eq!(diagram.symmetry_factor, 1, "{card_text:?}");
                     signs.insert(diagram.sign);
                     stitched_identical |= repeated && diagram.provenance.decays.len() > 1;
+                    nested |= diagram.provenance.decays.len() > 2;
                     for vertex in &diagram.vertices {
                         let fermions = vertex
                             .rays
@@ -829,6 +850,8 @@ mod tests {
         );
         assert!(polarized, "the card set reaches a polarized leg");
         assert!(mirrored, "the card set reaches a mirrored set");
+        assert!(nested, "the card set reaches a nested decay");
+        assert!(vetoed, "the card set reaches an on-shell s-channel veto");
     }
 
     /// A decay card banks no process facts, and a scattering card does.

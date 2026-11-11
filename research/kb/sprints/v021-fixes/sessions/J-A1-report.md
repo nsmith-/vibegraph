@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "J-A1 report: diagram and integrate artifacts refuse another enumeration"
-description: "ENUMERATION_VERSION is recorded in both artifacts (diagram format 3, integrate format 24) and a mismatch is refused by name with the remedy. A known-answer test pins five cards' set and process-facts digests to it, and two sign mutations showed it fails on an unbumped change."
+description: "ENUMERATION_VERSION is recorded in both artifacts (diagram format 3, integrate format 24) and a mismatch is refused by name with the remedy. A known-answer test pins seven cards' set and process-facts digests to it, and two sign mutations showed it fails on an unbumped change."
 status: draft
 tags: [artifacts, enumeration, diagrams, hard-errors, release, sprint-j]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-11}
@@ -53,7 +53,7 @@ commit).
 - **The known-answer test.**
   `diagrams::artifact::tests::enumeration_output_matches_the_pinned_version`
   pins `(PINNED_ENUMERATION_VERSION, diagram_set_digest, process-facts
-  digest)` for five cards. Each card is enumerated through
+  digest)` for seven cards. Each card is enumerated through
   `DiagramArtifact::enumerate` (the artifact's own path) on the serial pool:
 
   | card | model | reaches |
@@ -63,21 +63,24 @@ commit).
   | `p p > z j, z > e+ e-` | SM default | several subprocesses, mirrored sets, decay chain |
   | `u u~ > z{0} g` | SM default | a polarized leg |
   | `e+ e- > e+ e- NP<=1` | vendored SMEFTsim, `restrict_vg_c4l` | Majorana-free four-fermion contact vertex, both flow groups of one interaction |
+  | `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` | SM default | a nested decay (three decay origins per diagram) |
+  | `e+ e- > mu+ mu- a $ z` | SM default | an on-shell s-channel veto (`ProcessFacts::onshell_veto`) |
 
   Besides the digests, the test asserts the set still reaches each feature:
   signs {−1, +1}, a stitched diagram with repeated outgoing particles and
   more than one decay origin, a vertex with four fermion rays in flow groups
-  {0, 1}, a polarized leg, a mirrored set, and every symmetry factor equal
-  to 1. On failure it prints each changed card's new digests and says to
+  {0, 1}, a polarized leg, a mirrored set, a diagram with more than two
+  decay origins, a card whose facts record the veto, and every symmetry
+  factor equal to 1. On failure it prints each changed card's new digests and says to
   bump `ENUMERATION_VERSION` and re-pin the table with
   `PINNED_ENUMERATION_VERSION` in the same change. If the version is bumped
   but the table is not re-pinned, the test fails on the version assertion.
-  It runs in 0.25–0.35 s (five separate-process runs: 0.35, 0.25, 0.26,
-  0.29, 0.26 s).
+  With all seven cards it runs in 0.22–0.33 s (five separate-process runs:
+  0.22, 0.33, 0.32, 0.28, 0.31 s).
 - **Docs.** The diagram artifact's module doc, `FORMAT_VERSION`'s
   version-24 entry, `integrate-artifact.md` and `artifact-format-versioning.md`.
   - `integrate-artifact.md`: a new check 2 for the enumeration version (the
-    later checks are renumbered), the five-card set with its residual blind
+    later checks are renumbered), the seven-card set with its residual blind
     spot, the field in the contents table, and version 23 → 24.
   - `artifact-format-versioning.md`: the floors 24 and 3, and how the
     enumeration version differs from a format version. The brief did not
@@ -158,6 +161,20 @@ chain card sees this one; `p p > z j, z > e+ e-` has line sign +1
 throughout. So a single card per feature matters, and dropping the `z z`
 card would have hidden this mutation.
 
+That run predates the nested-decay and veto cards. With all seven cards
+pinned, the same mutation gave the same output:
+
+```
+the enumeration output changed at ENUMERATION_VERSION 1:
+"generate e+ e- > z z, z > mu+ mu-\n" (Sm): sets ef004cb5771a2eab42f0541978ff79f5834dbb843c5231eb6d85da67ae12017d (pinned 99a0d99581dec0e63c7d08e0d26ef94ce8a89fe10d0bfc05dfaa6ab95abdee4a), facts 8e7ac86a… (pinned 8e7ac86a…)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1350 filtered out; finished in 0.42s
+```
+
+Neither new card moved. The nested chain's fermion lines are all distinct
+(`e+ ve`, `b`, `b~`), so every stitched diagram's line sign is +1, and the
+veto card has no decay chain. The `z z` card is still the only one in the set
+that sees a stitched line sign.
+
 **Determinism.** The KAT binary was run five times as separate processes
 (each with fresh `HashMap` random states), and all five passed.
 `digest_is_independent_of_the_enumeration_pool` (existing) covers 1 vs 4
@@ -168,7 +185,7 @@ depend on the platform, but **this was not measured off Linux x86-64**. CI
 runs only on `ubuntu-latest`, so a macOS developer would be the first to see
 a platform-dependent order.
 
-**Gates**, all run on the committed tree:
+**Gates.** First commit (`c203ce5`), all run on the committed tree:
 
 | command | result |
 |---|---|
@@ -176,6 +193,14 @@ a platform-dependent order.
 | `cargo clippy --workspace --all-targets -- -D warnings` | `Finished`, rc 0 |
 | `cargo test --workspace` | 58 `test result: ok` lines, 2072 passed, 0 failed, 26 ignored, rc 0 |
 | `python3 scripts/kb.py lint` | `1259 concepts, 434 backlog items; 0 errors, 5 warnings` (the five warnings were there before this change) |
+
+After adding the two cards: `cargo fmt --all --check` rc 0;
+`cargo clippy --workspace --all-targets -- -D warnings` `Finished`, rc 0;
+`cargo test -p vibegraph-lib --lib` `test result: ok. 1337 passed; 0 failed;
+14 ignored; 0 measured; 0 filtered out; finished in 71.81s`, rc 0;
+`python3 scripts/kb.py lint` `1259 concepts, 434 backlog items; 0 errors,
+5 warnings`. The workspace tests were not re-run, because only a test in
+the lib crate changed.
 
 `pixi run validate` was not run: no amplitude, colour, coupling or
 enumeration code changed. The only change near enumeration is a field
@@ -192,11 +217,13 @@ recorded beside its output.
   are the enumeration version. A field reordered elsewhere in the struct
   would not be modelled.
 - `enumeration_output_matches_the_pinned_version`: a change that moves only
-  cards outside the five. That is the residual blind spot named in
+  cards outside the seven. That is the residual blind spot named in
   `integrate-artifact.md`. Examples would be a Majorana diagram,
-  multi-jet colour-ordered enumeration at higher multiplicity, `$`/`/`
-  filters, coupling-order selection beyond `NP<=1`, three-body decay chains
-  and nested decays, and models other than SM-default and SMEFTsim-c4l. It
+  multi-jet enumeration at higher multiplicity, `/` filters and `$$`
+  s-channel requirements, coupling-order selection beyond `NP<=1`, and
+  models other than SM-default and SMEFTsim-c4l. The `$` card pins the
+  facts' veto flag, not a per-subprocess veto list, which the sets do not
+  hold. It
   also moves on a change to the interned SM blob or the vendored SMEFTsim,
   because particle and vertex ids are indices into the model. Bumping the
   version there is harmless, and the artifacts' model digest refuses those
@@ -226,8 +253,3 @@ recorded beside its output.
    version.** Both report `format_version` (`output.rs:290`,
    `inspect.rs:150`). To close it, add the field to the result schema
    (which bumps its own version) and to `inspect`'s header line.
-4. **Some KAT coverage is missing.** Majorana fermions are refused today
-   (`ConvertError::MajoranaFermion`), so nothing needs them yet. But nested
-   decays (`t > w+ b, w+ > e+ ve`) and an `$` veto card are reachable now
-   and are not in the set. To close it, add one nested-decay card and one
-   `$` card to `KNOWN_ANSWERS`, which costs about 50 ms each.
