@@ -127,7 +127,7 @@ use vibegraph::artifact::ChannelSampler;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     channel_diagrams, compile_subprocesses, initial_spin_color_average, process_external_legs,
-    FixedBeamIntegrand, FixedBeams,
+    subprocess_diagrams, FixedBeamIntegrand, FixedBeams,
 };
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -1126,7 +1126,7 @@ fn with_integrand_parts<R>(
     // diagrams, so a process needing the general kT clustering stops here rather than
     // integrating at a plausible wrong scale.
     let scale_report = integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
         .unwrap_or_else(|e| panic!("[{dir}] cannot run alpha_s to the run card's scale: {e}"));
     let expects_fallback = SCALE_FALLBACK_ROWS.contains(&dir);
     assert_eq!(
@@ -2888,7 +2888,7 @@ fn probe_scale_cost() {
         let plain = build();
         let mut scaled = build();
         scaled
-            .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
             .expect("scale prescription compiles");
 
         // The scale-aware integrand consumes trailing uniforms the fixed-coupling
@@ -2994,7 +2994,7 @@ fn probe_scale_draw_cost() {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
             let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
             integ
-                .use_running_coupling(&diagrams, &model, &evaluated, rc)
+                .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, rc)
                 .expect("scale prescription compiles");
             integ.use_multichannel(
                 &diagrams,
@@ -3095,7 +3095,7 @@ fn probe_event_readout_cost() {
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
         let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
         integ
-            .use_running_coupling(&diagrams, &model, &evaluated, &live)
+            .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &live)
             .expect("scale prescription compiles");
         integ.use_multichannel(
             &diagrams,
