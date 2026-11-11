@@ -92,8 +92,9 @@ time to 0.1%.
 **The MLM row** is diagnosed in
 [MLM integration cost against MadEvent](mlm-integration-cost-vs-madevent.md). The 2.4× on
 the glibc build is almost all the two-jet part's cost per point: 485 µs against
-MadEvent's 104 µs, because every one of its 64 flavour groups is clustered and evaluated
-twice at every point. The single-threaded system time on this row (22–40 s) is the musl
+MadEvent's 104 µs. Both sides cluster about as often per point (28 against ~33), but each
+of our clusterings costs about 4× MadEvent's, and we evaluate every group's matrix element
+twice (56 evaluations) where MadEvent evaluates the one term it selects. The single-threaded system time on this row (22–40 s) is the musl
 allocator; the glibc build shows 0.28 s. The plain and v3 assets take different iteration
 paths from one seed on this row (inferred: last-ulp differences flipping a decision at a
 threshold).

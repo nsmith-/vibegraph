@@ -1,11 +1,12 @@
 ---
 type: Measurement
 title: "MLM integration cost against MadEvent: where pp_to_ll_0j2j_mlm's gap goes"
-description: "At v0.2.0, pp_to_ll_0j2j_mlm takes 2.4× MadEvent's CPU to equal accuracy (glibc build); the two-jet part's per-point cost (485 µs against 104 µs) explains it, from 64 flavour groups each clustered and evaluated twice per point."
+description: "At v0.2.0, pp_to_ll_0j2j_mlm takes 2.4× MadEvent's CPU to equal accuracy (glibc build); the two-jet part's per-point cost (485 µs against 104 µs) explains it: 28 flavour groups each clustered and evaluated twice per point, where MadEvent clusters as often but evaluates one matrix element."
 status: draft
 tags: [performance, madgraph-comparison, mlm, integration, profiling]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-10}
 measured:
+  - {commit: 10bad39e, host: "same host", command: "scratch tracing probe after the partition loop of derive_flavor_groups; MadEvent P2_qq_llqq rebuilt with counters in setclscales, cluster and DSIGPROC by IMODE, refine on G1 (496 000 points), plus eu-stack sampling", data: "CERN host: results/mlm_diag/{groups_probe, mg_counter.diff, mg_count_G1_short.log, mg_count_G1_sampled.log, mg_count_samples}"}
   - {commit: 2c80e447, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "glibc cargo build --release (and release-debug for profiling); integrate pp_to_ll_0j2j_mlm --target-rel 0.001 --seed 20260719 -j 4 --log-file trace.log; fixed-budget A/B --allocate neyman --neval 120000 --niter 20, seeds 20260719/20/21; eu-stack sampling at about 5 Hz, -j 1; a per-part timer around MultiplicitySum::value_in_channel in an uncommitted scratch build", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/mlm_diag/ (main_glibc_j4_target, mg_parts.txt, prof_j1, ab, redelta.md, instrumentation.diff); tools in tools/mlm_diag/"}
 ---
 
@@ -80,16 +81,53 @@ samples, about 89% of CPU in @2), inclusive shares:
 About 18% of samples are allocator leaves, mostly inside the clustering.
 
 **Structure (from the code).** `per_group_sum` handles every flavour group of the part at
-every point, 64 groups at @2. For each group it:
+every point: 28 groups at @2 (64 subprocesses), 6 at @1 (12), 2 at @0 (4). A probe of
+`derive_flavor_groups` confirms the u≡c and d≡s copies already share a group, member for
+member, and that no two group heads come within 1e-3 of each other, so no group is held
+apart by cuts, colour pairing or tolerance
+([flavour groups](../hadronic/flavour-groups.md)). For each group it:
 - draws a configuration ∝ AMP2, which is a full matrix-element pass (`eval_amp2`);
 - clusters (`setclscales`, `kt::cluster`);
 - computes the member reweights;
 - moves αs and evaluates the matrix element again at the same momenta (`eval_m2`).
 
 `walk_tree` rebuilds a 2ⁿ-mask PDG table (64 entries at @2) from `MergeTable.ipdgcl` per
-group per point, though it depends only on the channel and graph. MadEvent also has 64 @2
-matrix-element files (40 in `P2_qq_llqq` alone), but clusters once per point, in its own
-P-directory's configuration.
+group per point, though it depends only on the channel and graph.
+
+## What MadEvent does per point
+
+Read from MadGraph 3.7.1's generated `P2_qq_llqq` and counted with instrumented
+`setclscales`, `cluster` and `DSIGPROC` over 496 000 points of a refine on G1 (scalar path,
+`VECSIZE_MEMMAX = 1`):
+- **Selection loop.** `DSIG` calls `DSIGPROC` in mode 4 for every (configuration in
+  `SYMCONF`, subprocess with `CONFSUB ≠ 0`, mirror) to weight its choice. Each call runs
+  `update_scale_coupling`, so `setclscales` and `cluster` run per term, with no cache;
+  mode 4 returns the luminosity before `SMATRIX`. On G1 that is 32 terms per point
+  (configurations 1 and 5: 16 subprocesses plus 12 mirrors, and 4 more).
+- **One matrix element.** It then picks one (configuration, subprocess, mirror) and calls
+  `DSIGPROC` in mode 0 once: one more `setclscales`, one `SMATRIX`, and `rewgt`, which
+  clusters again.
+- **Counted per point:** `setclscales` 34.0, `cluster` 66.2, mode-4 `DSIGPROC` 32.0,
+  mode-0 1.0. A point evaluates the `CONFSUB`-nonzero subset of its channel's
+  subprocesses (4–28 per configuration), not all 20 (36 with mirrors).
+- **Its time** (280 samples of the same run): `setclscales` 62%, `cluster` inclusive 44%,
+  PDFs 12%, matrix element 4%.
+
+Per point, then:
+
+| | ours, @2 (485 µs) | MadEvent, `P2_qq_llqq` G1 (~120 µs) |
+|---|--:|--:|
+| clusterings | 28, one per group | ~33, one per (configuration, subprocess, mirror) term |
+| matrix-element evaluations | 56, two per group | 1 |
+| member reweights | 64 | 1 |
+| clustering time (inferred from shares) | ~240 µs, ~8.7 µs per clustering | ~75 µs, ~2.2 µs per `setclscales` |
+| matrix-element time (inferred) | ~155 µs | ~5 µs |
+
+So the gap is not how often each side clusters: MadEvent clusters slightly more often. It is
+two things:
+- **Matrix elements.** Pooling shows here: we evaluate every group's matrix element, twice,
+  where MadEvent evaluates the one it selected.
+- **Cost per clustering,** about 4× MadEvent's (inferred from the shares).
 
 ## Levers, estimated
 
@@ -98,14 +136,20 @@ item.
 
 | lever | effect | gain on ours/MadEvent |
 |---|---|--:|
-| share matrix element and clustering across flavour copies (u≡c, d≡s: 64 @2 groups → 28 classes; 12 → 6 at @1) | @2 cost ×0.54 | ~1.6× |
+| evaluate one group's matrix element per point, drawn by luminosity after every group's clustered scale and PDF weight (MadEvent's selection) | @2 ×0.65 (removes most of the matrix-element and member-reweight shares); adds the variance of a discrete choice, and gives up the per-group expectation | ~1.5× |
 | cache `walk_tree`'s PDG table per (group, configuration) | @2 ×0.89 | ~1.1× |
 | one matrix-element pass per group, rescaling by the αs ratio | @2 ×0.86 | ~1.13× |
 | allocation-free clustering scratch | @2 ×0.9 | ~1.08× |
 | cost-aware part allocation, n ∝ S/√c (the optimum gives @2 about 10% of points, not 24–26%) | allocation excess 1.40–1.46 → 1 | ≤ 1.4×, ~1.2× if @2's true sd is 1.4× its quoted |
 
-The first four together put @2's cost at about ×0.4 and the ratio near 1.2 (inferred; the
-overlaps are not checked). The cost-aware split runs against the tail argument of
+The cache, the single pass and allocation-free clustering together put @2's cost at about
+×0.69, a gain of about 1.45× (the row near 1.7×); adding the one-matrix-element selection
+reaches about ×0.5 (the row near 1.2×) at its variance cost. All are inferred and their
+overlaps are not checked. Closing the 4× per-clustering cost needs more than the cache and
+the scratch. An earlier version of this concept proposed sharing work across u≡c and d≡s
+flavour copies (64 → 28); the groups already do that, since the 64 were subprocesses.
+
+The cost-aware split runs against the tail argument of
 [mlm-at2-tail-unpriced-in-allocation](../backlog/performance/mlm-at2-tail-unpriced-in-allocation.md):
 both effects are real, and the net is unmeasured.
 

@@ -398,12 +398,13 @@ Three rows need a closer reading:
   second than MadEvent but needs about nine times as many. That is the map at
   the fiducial cut boundary, the next lever on this row.
 - **The MLM row is 2.7× slower** (2.4× with a glibc build). Almost all of it is
-  the two-jet part's cost per point, 485 µs against MadEvent's 104 µs: every one
-  of its 64 flavour groups is clustered and evaluated twice at every point, where
-  MadEvent clusters once. The levers are estimated in
+  the two-jet part's cost per point, 485 µs against MadEvent's 104 µs. Both
+  cluster about as often per point, but each of our clusterings costs about 4×
+  MadEvent's, and we evaluate every flavour group's matrix element twice where
+  MadEvent evaluates the one term it selects. The levers are estimated in
   [the diagnosis](research/kb/performance/mlm-integration-cost-vs-madevent.md);
-  together they could bring the row near 1.2×. Merged multi-jet integration is
-  the clearest open performance gap.
+  together they could bring the row to between 1.2× and 1.7×. Merged multi-jet
+  integration is the clearest open performance gap.
 
 **Integrand throughput.** The per-point half of the same comparison: our
 evaluations per single-core CPU-second against MadEvent's points per Fortran
