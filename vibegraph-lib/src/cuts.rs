@@ -51,12 +51,20 @@
 //!   cuts and every pairwise `ΔR` and invariant-mass cut it takes part in; `ptll`
 //!   and `mmnl` are set without reading `do_cuts` (`setcuts.f:431`, `:473`) and
 //!   stay on. MadEvent reads the forced lines of configuration 1
-//!   (`check_decay`, `setcuts.f:995`); here a leg counts as a decay product when
-//!   it descends from a forced line in every diagram, which is the same set on a
-//!   card without identical particles across its decays. An exemption that would
-//!   leave uncut a massless coloured leg descending from no forced line in some
-//!   diagram is refused ([`CutError::IrUnsafeExemption`]): that leg's collinear
-//!   region is divergent.
+//!   (`check_decay`, `setcuts.f:995`), one pairing of identical particles
+//!   across decays, on a matrix element that keeps only that pairing. Here every
+//!   pairing is kept coherently. On a card without identical particles across
+//!   its decays, or where they are decay products in every pairing, the exempt
+//!   legs are those that descend from a forced line in every diagram, the set
+//!   MadEvent exempts. Where identical particles sit in a decay in some pairing
+//!   and in the core in another (`g g > z u u~, z > u u~`), each pairing exempts
+//!   its own decay products and the integrand weights each pairing's indicator
+//!   by its share of `|M|²` ([`Cuts::compile_with`], [`crate::pairing`]); the
+//!   σ is not MadEvent's, which drops the other pairings. An exemption that
+//!   would leave uncut a massless coloured leg descending from no forced line in
+//!   some diagram of the pairings it serves is refused
+//!   ([`CutError::IrUnsafeExemption`]): that leg's collinear region is
+//!   divergent.
 //! - **Massless soft and collinear limits**: a card whose diagrams reach a
 //!   [`MasslessLimit`] that its compiled cuts leave open is refused, because σ
 //!   diverges logarithmically there and a run reports how far its sampler
@@ -167,6 +175,50 @@ pub struct ForcedResonances {
     /// The soft and collinear limits of massless legs that some diagram
     /// reaches, each once, sorted.
     massless_limits: Vec<MasslessLimit>,
+    /// The diagrams grouped by the lines they force, one entry per distinct set
+    /// (including the empty set, for diagrams that force none), in the order of
+    /// `patterns`.
+    pairings: Vec<Pairing>,
+}
+
+/// The diagrams of a subprocess that force one set of lines: with identical
+/// particles across decays, one assignment of those particles to the decays.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Pairing {
+    /// The forced lines, sorted as [`diagram_forced_lines`] sorts them; empty for
+    /// diagrams that force none.
+    lines: Vec<ForcedLine>,
+    /// The outgoing legs the lines carry, bit `k` naming the `k`-th.
+    products: u64,
+    /// [`ForcedResonances`]'s field of the same name, over these diagrams.
+    massless_coloured_core: u64,
+    /// [`ForcedResonances`]'s field of the same name, over these diagrams.
+    massless_limits: Vec<MasslessLimit>,
+}
+
+impl Pairing {
+    /// The lines this pairing's diagrams force.
+    pub(crate) fn lines(&self) -> &[ForcedLine] {
+        &self.lines
+    }
+
+    /// The outgoing legs that descend from a forced line in this pairing.
+    pub(crate) fn products(&self) -> u64 {
+        self.products
+    }
+}
+
+/// The forced lines of `diagram` in a canonical order (by slots, then mass and
+/// width), so two diagrams that force the same lines give equal lists.
+pub(crate) fn diagram_forced_lines(diagram: &Diagram, model: &EvaluatedModel) -> Vec<ForcedLine> {
+    let mut lines = forced_lines(diagram, model);
+    lines.sort_by(|a, b| {
+        a.slots
+            .cmp(&b.slots)
+            .then(a.mass.total_cmp(&b.mass))
+            .then(a.width.total_cmp(&b.width))
+    });
+    lines
 }
 
 impl ForcedResonances {
@@ -180,37 +232,52 @@ impl ForcedResonances {
         let mut patterns: Vec<Vec<ForcedLine>> = Vec::new();
         let mut massless_coloured_core = 0u64;
         let mut massless_limits: Vec<MasslessLimit> = Vec::new();
+        let mut pairings: Vec<Pairing> = Vec::new();
         for diagram in diagrams {
-            for limit in diagram_massless_limits(diagram, model) {
+            let limits = diagram_massless_limits(diagram, model);
+            for &limit in &limits {
                 if !massless_limits.contains(&limit) {
                     massless_limits.push(limit);
                 }
             }
-            let mut lines: Vec<ForcedLine> = forced_lines(diagram, model);
+            let lines = diagram_forced_lines(diagram, model);
             let products = lines.iter().fold(0u64, |m, l| m | l.slots);
-            massless_coloured_core |= massless_coloured_finals(diagram, model) & !products;
-            if lines.is_empty() {
-                continue;
+            let core = massless_coloured_finals(diagram, model) & !products;
+            massless_coloured_core |= core;
+            let k = pairings
+                .iter()
+                .position(|p| p.lines == lines)
+                .unwrap_or_else(|| {
+                    pairings.push(Pairing {
+                        lines: lines.clone(),
+                        products,
+                        ..Pairing::default()
+                    });
+                    pairings.len() - 1
+                });
+            let pairing = &mut pairings[k];
+            pairing.massless_coloured_core |= core;
+            for limit in limits {
+                if !pairing.massless_limits.contains(&limit) {
+                    pairing.massless_limits.push(limit);
+                }
             }
-            lines.sort_by(|a, b| {
-                a.slots
-                    .cmp(&b.slots)
-                    .then(a.mass.total_cmp(&b.mass))
-                    .then(a.width.total_cmp(&b.width))
-            });
-            if !patterns.contains(&lines) {
+            if !lines.is_empty() && !patterns.contains(&lines) {
                 patterns.push(lines);
             }
         }
-        patterns.sort_by(|a, b| {
-            let key = |p: &Vec<ForcedLine>| p.iter().map(|l| l.slots).collect::<Vec<_>>();
-            key(a).cmp(&key(b))
-        });
+        let key = |p: &[ForcedLine]| p.iter().map(|l| l.slots).collect::<Vec<_>>();
+        patterns.sort_by_key(|p| key(p));
+        pairings.sort_by_key(|p| key(&p.lines));
+        for p in &mut pairings {
+            p.massless_limits.sort_unstable();
+        }
         massless_limits.sort_unstable();
         ForcedResonances {
             patterns,
             massless_coloured_core,
             massless_limits,
+            pairings,
         }
     }
 
@@ -233,6 +300,59 @@ impl ForcedResonances {
             .map(|p| p.iter().fold(0u64, |m, l| m | l.slots))
             .reduce(|a, b| a & b)
             .unwrap_or(0)
+    }
+
+    /// The groups of diagrams that force the same lines, one per pairing of
+    /// identical particles across decays.
+    pub(crate) fn pairings(&self) -> &[Pairing] {
+        &self.pairings
+    }
+
+    /// Whether the diagrams that force lines do not all have the same decay
+    /// products: identical particles sit in a decay in some pairing and in the
+    /// core in another, so `cut_decays = F` exempts a different leg set per
+    /// pairing ([`Cuts::compile_with`]).
+    pub(crate) fn exemption_varies(&self) -> bool {
+        let mut products = self
+            .pairings
+            .iter()
+            .filter(|p| !p.lines.is_empty())
+            .map(|p| p.products);
+        products
+            .next()
+            .is_some_and(|first| products.any(|m| m != first))
+    }
+
+    /// The distinct decay-product sets of the pairings, sorted: the exemptions
+    /// of the pairing-weighted cut.
+    fn distinct_exemptions(&self) -> Vec<u64> {
+        let mut out: Vec<u64> = self.pairings.iter().map(|p| p.products).collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// These lines, with the limits and core legs of the pairings whose decay
+    /// products are `products` only: what the limit guards read for the filter
+    /// that exempts those products.
+    fn of_exemption(&self, products: u64) -> ForcedResonances {
+        let mut massless_coloured_core = 0u64;
+        let mut massless_limits: Vec<MasslessLimit> = Vec::new();
+        for p in self.pairings.iter().filter(|p| p.products == products) {
+            massless_coloured_core |= p.massless_coloured_core;
+            for &limit in &p.massless_limits {
+                if !massless_limits.contains(&limit) {
+                    massless_limits.push(limit);
+                }
+            }
+        }
+        massless_limits.sort_unstable();
+        ForcedResonances {
+            patterns: self.patterns.clone(),
+            massless_coloured_core,
+            massless_limits,
+            pairings: Vec::new(),
+        }
     }
 }
 
@@ -653,6 +773,11 @@ pub enum CutError {
     )]
     IrUnsafeExemption { leg: usize, pdg: i32 },
     #[error(
+        "cut_decays = F gives this subprocess's pairings of identical particles across decays \
+         {count} distinct sets of exempt decay products; at most 64 are supported"
+    )]
+    TooManyPairingExemptions { count: usize },
+    #[error(
         "final-state photon (outgoing leg {photon}) and massless coloured parton (outgoing leg \
          {parton}, PDG {pdg}) meet at a vertex of a kept diagram, and the run card leaves their \
          collinear limit uncut: no ΔR minimum between them (draj, or drab for a b-class parton) \
@@ -831,6 +956,20 @@ pub struct Cuts {
     windows: Vec<Vec<WindowCut>>,
     /// `bwcutoff`, the window half-width in widths.
     bwcutoff: f64,
+    /// Under the pairing-weighted `cut_decays = F` exemption, one complete filter
+    /// per distinct exemption, bit `k` of [`Cuts::pass_pairings`] naming the
+    /// `k`-th; empty otherwise. The fields above are then the filter that exempts
+    /// every leg some pairing exempts: it accepts every point a pairing filter
+    /// accepts, so every bound read off it holds over their union.
+    pairings: Vec<PairingFilter>,
+}
+
+/// The filter of the pairings whose decay products are `exempt`: the run card's
+/// cuts with those legs exempt and every other leg cut.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PairingFilter {
+    exempt: u64,
+    cuts: Cuts,
 }
 
 /// Cut parameters implemented by [`Cuts::compile`]; every other `cut=`-tagged
@@ -1334,19 +1473,79 @@ impl Cuts {
     /// Compile the run card's cuts for an external-leg assignment whose diagrams
     /// force the lines of `forced` on shell: [`Cuts::compile`] plus the
     /// decay-chain windows, and `cut_decays` read against the decay products.
+    ///
+    /// At `cut_decays = F`, where identical particles sit in a decay in some
+    /// pairing and in the core in another ([`ForcedResonances::exemption_varies`]),
+    /// each pairing exempts its own decay products: the filter holds one filter per
+    /// distinct exemption ([`Cuts::pass_pairings`]), and the integrand weights each
+    /// pairing's indicator by that pairing's share of the squared amplitude,
+    /// `Σ_p w_p Θ_p |M|²` with `w_p = |M_p|² / Σ_q |M_q|²`
+    /// ([`crate::pairing`]). The limit guards then run per exemption, over the
+    /// diagrams of the pairings that exempt it: `w_p Θ_p |M|² ≤ N Θ_p |M_p|²` for
+    /// `N` pairings, so σ is finite where each pairing's own `|M_p|²` is
+    /// integrable over its own filter. The decay-chain windows are the same in
+    /// every filter, the union over pairings that `cut_decays = T` applies.
+    /// Everywhere else a leg is exempt when it is a decay product in every
+    /// diagram.
     pub fn compile_with(
         rc: &RunCard,
         legs: &[ExternalLeg],
         forced: &ForcedResonances,
     ) -> Result<Cuts, CutError> {
-        detect_unimplemented(rc)?;
-        let pdg_pt_min = PdgPtMin::from_card(rc)?;
+        if !cut_decays(rc) && forced.exemption_varies() {
+            return Self::compile_pairing_weighted(rc, legs, forced);
+        }
         let uncut_products = if cut_decays(rc) {
             0
         } else {
             forced.decay_products()
         };
-        refuse_ir_unsafe_exemption(uncut_products, forced, legs)?;
+        Self::compile_exempting(rc, legs, forced, uncut_products, true)
+    }
+
+    /// The pairing-weighted filter of [`Cuts::compile_with`]: one filter per
+    /// distinct exemption, each guarded against the limits of its own pairings,
+    /// and around them the unguarded filter exempting their union.
+    fn compile_pairing_weighted(
+        rc: &RunCard,
+        legs: &[ExternalLeg],
+        forced: &ForcedResonances,
+    ) -> Result<Cuts, CutError> {
+        let exemptions = forced.distinct_exemptions();
+        if exemptions.len() > 64 {
+            return Err(CutError::TooManyPairingExemptions {
+                count: exemptions.len(),
+            });
+        }
+        let pairings = exemptions
+            .iter()
+            .map(|&exempt| {
+                let own = forced.of_exemption(exempt);
+                Self::compile_exempting(rc, legs, &own, exempt, true)
+                    .map(|cuts| PairingFilter { exempt, cuts })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let union = exemptions.iter().fold(0u64, |m, &e| m | e);
+        let mut cuts = Self::compile_exempting(rc, legs, forced, union, false)?;
+        cuts.pairings = pairings;
+        Ok(cuts)
+    }
+
+    /// The filter with the outgoing legs `uncut_products` exempt from the
+    /// `do_cuts` cuts, refusing an exemption or a [`MasslessLimit`] of `forced`
+    /// that leaves a divergence uncut when `guard` is set.
+    fn compile_exempting(
+        rc: &RunCard,
+        legs: &[ExternalLeg],
+        forced: &ForcedResonances,
+        uncut_products: u64,
+        guard: bool,
+    ) -> Result<Cuts, CutError> {
+        detect_unimplemented(rc)?;
+        let pdg_pt_min = PdgPtMin::from_card(rc)?;
+        if guard {
+            refuse_ir_unsafe_exemption(uncut_products, forced, legs)?;
+        }
 
         let maxjetflavor = rc.maxjetflavor;
         let incoming: Vec<usize> = legs
@@ -1377,7 +1576,9 @@ impl Cuts {
 
         let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
-        refuse_unregulated_limits(forced, &infos, &single, &pairs, legs, kt_veto_applies(rc))?;
+        if guard {
+            refuse_unregulated_limits(forced, &infos, &single, &pairs, legs, kt_veto_applies(rc))?;
+        }
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
 
@@ -1420,6 +1621,7 @@ impl Cuts {
             shat_max_hint,
             windows,
             bwcutoff,
+            pairings: Vec::new(),
         })
     }
 
@@ -1445,7 +1647,7 @@ impl Cuts {
     /// hadronic x-integration mapping (`x_min = shat_min / s`). Never exceeds the
     /// true ŝ of a surviving point.
     pub fn shat_min(&self) -> f64 {
-        self.shat_min_hint
+        self.union_bound(|c| c.shat_min_hint, f64::min)
     }
 
     /// A conservative upper bound on ŝ (GeV²) implied by the decay-chain windows,
@@ -1454,7 +1656,51 @@ impl Cuts {
     /// it. Infinite where no window bounds the whole final state. Never below the
     /// true ŝ of a surviving point.
     pub(crate) fn shat_max(&self) -> f64 {
-        self.shat_max_hint
+        self.union_bound(|c| c.shat_max_hint, f64::max)
+    }
+
+    /// `bound` of this filter, or under the pairing-weighted exemption the
+    /// `combine` of the pairing filters' bounds: the one that holds over the
+    /// union of their accepted regions.
+    fn union_bound(&self, bound: impl Fn(&Cuts) -> f64, combine: fn(f64, f64) -> f64) -> f64 {
+        self.pairings
+            .iter()
+            .map(|p| bound(&p.cuts))
+            .reduce(combine)
+            .unwrap_or_else(|| bound(self))
+    }
+
+    /// Whether the integrand weights each pairing of identical particles across
+    /// decays by its share of `|M|²` ([`Cuts::compile_with`]).
+    pub(crate) fn is_pairing_weighted(&self) -> bool {
+        !self.pairings.is_empty()
+    }
+
+    /// Under the pairing-weighted exemption, the bit of [`Cuts::pass_pairings`]
+    /// that names the filter exempting `products`; `None` for any other set, or
+    /// on a filter without pairings.
+    pub(crate) fn pairing_bit(&self, products: u64) -> Option<u64> {
+        self.pairings
+            .iter()
+            .position(|p| p.exempt == products)
+            .map(|k| 1u64 << k)
+    }
+
+    /// Which filters accept `momenta`: under the pairing-weighted exemption bit
+    /// `k` for the `k`-th pairing filter, otherwise bit `0` for this one. Zero
+    /// exactly where [`Cuts::pass`] is `false`.
+    pub(crate) fn pass_pairings<F: Real>(&self, momenta: &[LorentzVector<F>]) -> u64 {
+        if !self.pass_own(momenta) {
+            return 0;
+        }
+        if self.pairings.is_empty() {
+            return 1;
+        }
+        self.pairings
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.cuts.pass_own(momenta))
+            .fold(0u64, |m, (k, _)| m | (1u64 << k))
     }
 
     /// A regulator scale (GeV²) for the spacelike propagator pole of a peripheral
@@ -1488,6 +1734,9 @@ impl Cuts {
     /// [`DiagramChannel::from_diagram_regulated`]:
     ///     crate::phasespace::diagram_channel::DiagramChannel::from_diagram_regulated
     pub fn spacelike_floor(&self) -> f64 {
+        if self.is_pairing_weighted() {
+            return self.union_bound(Cuts::spacelike_floor, f64::min);
+        }
         let pt_min = self
             .single
             .iter()
@@ -1563,6 +1812,9 @@ impl Cuts {
     /// The combined lepton-plus-neutrino mass threshold bounds its own member set,
     /// hence any subsystem containing it.
     pub fn timelike_floor(&self, slots: u64) -> f64 {
+        if self.is_pairing_weighted() {
+            return self.union_bound(|c| c.timelike_floor(slots), f64::min);
+        }
         let holds = |idx: usize| -> bool {
             self.finals
                 .iter()
@@ -1599,6 +1851,9 @@ impl Cuts {
     /// [`DiagramChannel::with_split_angles`]:
     ///     crate::phasespace::diagram_channel::DiagramChannel::with_split_angles
     pub(crate) fn energy_floor(&self, slots: u64) -> f64 {
+        if self.is_pairing_weighted() {
+            return self.union_bound(|c| c.energy_floor(slots), f64::min);
+        }
         self.finals
             .iter()
             .enumerate()
@@ -1678,7 +1933,11 @@ impl Cuts {
             windows,
             // The width of the decay-chain windows, which `windows` already covers.
             bwcutoff: _,
+            pairings,
         } = self;
+        if !pairings.is_empty() {
+            return pairings.iter().all(|p| p.cuts.admits_every_point());
+        }
         *shat_min_sq <= 0.0
             && *shat_max_sq < 0.0
             && pairs.is_empty()
@@ -1705,8 +1964,17 @@ impl Cuts {
     }
 
     /// Phase-space indicator: `true` iff `momenta` (all external legs, in the
-    /// order given to [`Cuts::compile`]) pass every compiled cut.
+    /// order given to [`Cuts::compile`]) pass every compiled cut. Under the
+    /// pairing-weighted exemption, `true` iff some pairing's filter accepts them:
+    /// the support of the weighted integrand, whose value also needs which ones
+    /// ([`Cuts::pass_pairings`]).
     pub fn pass<F: Real>(&self, momenta: &[LorentzVector<F>]) -> bool {
+        self.pass_pairings(momenta) != 0
+    }
+
+    /// [`Cuts::pass`] on this filter's own thresholds, without its pairing
+    /// filters.
+    fn pass_own<F: Real>(&self, momenta: &[LorentzVector<F>]) -> bool {
         // ŝ window.
         if self.shat_min_sq > 0.0 || self.shat_max_sq >= 0.0 {
             let mut sum = LorentzVector::<F>::new(F::zero(), F::zero(), F::zero(), F::zero());
@@ -3402,11 +3670,21 @@ mod tests {
         }
     }
 
+    /// Forced lines with one pairing per set of lines and no massless limit.
     fn forced(patterns: Vec<Vec<ForcedLine>>) -> ForcedResonances {
+        let pairings = patterns
+            .iter()
+            .map(|lines| Pairing {
+                lines: lines.clone(),
+                products: lines.iter().fold(0u64, |m, l| m | l.slots),
+                ..Pairing::default()
+            })
+            .collect();
         ForcedResonances {
             patterns,
             massless_coloured_core: 0,
             massless_limits: Vec::new(),
+            pairings,
         }
     }
 
@@ -3712,6 +3990,116 @@ mod tests {
             })
             .collect();
         (ForcedResonances::of(diagrams, &evaluated), legs)
+    }
+
+    /// Where identical quarks sit in the decay in some pairing and in the core
+    /// in another, `cut_decays = F` compiles one filter per pairing, each
+    /// exempting that pairing's two decay quarks and cutting the other two, and
+    /// the filter accepts a point where some pairing's does.
+    #[test]
+    fn identical_quarks_across_a_decay_compile_one_filter_per_pairing() {
+        let (forced, legs) = stitched_subprocess("generate g g > z u u~, z > u u~");
+        assert!(forced.exemption_varies());
+        assert_eq!(forced.pairings().len(), 4);
+        let rc = card("F = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        let cuts = Cuts::compile_with(&rc, &legs, &forced).unwrap();
+        assert!(cuts.is_pairing_weighted());
+        assert_eq!(cuts.pairings.len(), 4);
+        for p in forced.pairings() {
+            let bit = cuts.pairing_bit(p.products()).unwrap();
+            let filter = &cuts.pairings[bit.trailing_zeros() as usize].cuts;
+            assert_eq!(p.products().count_ones(), 2);
+            for k in 0..4 {
+                let cut = filter.has_pt_floor(2 + k);
+                assert_eq!(cut, p.products() & (1 << k) == 0, "leg {k}");
+            }
+        }
+        // The union filter's bounds are the pairings' weakest, which each cut two
+        // quarks at `ptj`.
+        assert_eq!(cuts.spacelike_floor(), 400.0);
+
+        // Quark legs `a`, `b` of one pairing at `pT = 0.5` near the two beams, at
+        // the pair mass of the pole, the other two hard: only the filter
+        // exempting `a` and `b` accepts it.
+        let p = &forced.pairings()[0];
+        let (b1, b2) = beams(300.0);
+        let pi = std::f64::consts::PI;
+        let dy = (MZ * MZ / (2.0 * 0.25) - 1.0).acosh();
+        let mut out = [V::new(0.0, 0.0, 0.0, 0.0); 4];
+        let mut hard = [lep(80.0, 0.3, 0.0), lep(80.0, -0.3, pi)].into_iter();
+        let mut soft = [lep(0.5, 0.5 * dy, 0.5 * pi), lep(0.5, -0.5 * dy, 1.5 * pi)].into_iter();
+        for (k, slot) in out.iter_mut().enumerate() {
+            *slot = if p.products() & (1 << k) != 0 {
+                soft.next().unwrap()
+            } else {
+                hard.next().unwrap()
+            };
+        }
+        let point = [b1, b2, out[0], out[1], out[2], out[3]];
+        let mask = cuts.pass_pairings(&point);
+        assert_eq!(mask, cuts.pairing_bit(p.products()).unwrap());
+        assert!(cuts.pass(&point));
+    }
+
+    /// A filter without a varying exemption is the one `cut_decays` compiled to
+    /// before pairings were weighted: the legs that are decay products in every
+    /// diagram exempt (none at `cut_decays = T`), no pairing filter, and
+    /// [`Cuts::pass_pairings`] the indicator itself.
+    #[test]
+    fn a_filter_without_a_varying_exemption_is_unweighted() {
+        let f = card("F = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n20 = ptl\n");
+        let t = card("T = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n20 = ptl\n");
+        for (text, rc) in [
+            ("generate g g > z u u~, z > d d~", &f),
+            ("generate g g > z u u~, z > u u~", &t),
+            ("generate e+ e- > z z, z > e+ e-", &f),
+            ("generate e+ e- > z z, z > e+ e-", &t),
+        ] {
+            let (forced, legs) = stitched_subprocess(text);
+            let cuts = Cuts::compile_with(rc, &legs, &forced).unwrap();
+            assert!(!cuts.is_pairing_weighted(), "{text}");
+            let mask = if cut_decays(rc) {
+                0
+            } else {
+                forced.decay_products()
+            };
+            let before = Cuts::compile_exempting(rc, &legs, &forced, mask, true).unwrap();
+            assert_eq!(cuts, before, "{text}");
+            let (b1, b2) = beams(300.0);
+            let n = legs.len() - 2;
+            let mut point = vec![b1, b2];
+            point.extend(
+                (0..n).map(|k| lep(15.0 + 10.0 * k as f64, 0.4 * k as f64, 1.3 * k as f64)),
+            );
+            assert_eq!(
+                cuts.pass_pairings(&point),
+                u64::from(cuts.pass(&point)),
+                "{text}"
+            );
+        }
+    }
+
+    /// A multi-body decay whose massless products are identical to core
+    /// partons: in the pairing that decays `u u~ u u~`, the decay's own
+    /// `g* → u u~` splitting is collinear-singular among exempt legs, so
+    /// `|M_p|²` is not integrable over that pairing's filter and the weighted
+    /// cut is refused. The rule that cuts every leg that is not a decay product
+    /// in every pairing accepted the card.
+    #[test]
+    fn a_pairing_whose_own_decay_is_collinear_singular_is_refused() {
+        let (forced, legs) = stitched_subprocess("generate e+ e- > z u u~, z > u u~ u u~");
+        assert!(forced.exemption_varies());
+        assert_eq!(forced.decay_products(), 0);
+        let rc = card("F = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        Cuts::compile_exempting(&rc, &legs, &forced, forced.decay_products(), true)
+            .expect("the every-pairing rule cuts every quark and compiles");
+        let err = Cuts::compile_with(&rc, &legs, &forced).unwrap_err();
+        let CutError::UncutCollinearSplitting { regulator, .. } = &err else {
+            panic!("{err}");
+        };
+        assert!(regulator.starts_with("cut_decays = T"), "{err}");
+        let t = card("T = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        Cuts::compile_with(&t, &legs, &forced).unwrap();
     }
 
     /// On `g g > z u u~, z > u u~` every quark is a core parton in some kept
@@ -4280,6 +4668,7 @@ mod tests {
             }]],
             massless_coloured_core: 0,
             massless_limits: Vec::new(),
+            pairings: Vec::new(),
         };
         // Back to back at y = 0, so m(jj) = 80.4 sits on the pole.
         let half = 40.2;

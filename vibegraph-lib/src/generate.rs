@@ -44,6 +44,7 @@ use crate::multiplicity::{
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::subprocess_vetoes;
+use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
@@ -449,9 +450,12 @@ fn generate_sample(
         Vec::new()
     };
 
+    let pairing_splits = subprocess_pairing_splits(sets, &cuts, model, evaluated)
+        .map_err(|e| err(format!("failed to compile the pairing amplitudes: {e}")))?;
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
+    integ.use_pairing_weights(&pairing_splits, evaluated);
     integ.use_resonances(&resonances);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
