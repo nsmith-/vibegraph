@@ -76,8 +76,8 @@ use rand_chacha::ChaCha8Rng;
 
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
-    FixedBeams,
+    compile_subprocesses, initial_spin_color_average, process_external_legs, subprocess_diagrams,
+    FixedBeamIntegrand, FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{EventHeader, SubprocessRecord};
@@ -734,7 +734,7 @@ fn with_integrand<R>(
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
     integ.use_multichannel(
         &diagrams,
@@ -1401,7 +1401,7 @@ fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
             spin_color_avg,
         );
         let report = integ
-            .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
             .unwrap_or_else(|e| panic!("[{}] the scale prescription was refused: {e}", row.key));
         assert!(
             report.depends_on_alpha_s,
@@ -1941,7 +1941,7 @@ fn with_mumua_integrand<R>(
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
     integ.use_multichannel(
         &diagrams,
