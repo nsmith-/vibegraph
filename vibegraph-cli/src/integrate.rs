@@ -41,7 +41,7 @@ use vibegraph::config::{process_facts, GlobalConfig, LoadRunCardError};
 use vibegraph::config_share;
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
-use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact};
+use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact, ENUMERATION_VERSION};
 use vibegraph::diagrams::{
     enumerate_lines_in, forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card,
     DiagramSet, ParsingOptions, SupportedCard,
@@ -1175,6 +1175,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
+        enumeration_version: ENUMERATION_VERSION,
         process: output.process,
         proc_card,
         model: model_id,
