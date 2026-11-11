@@ -3,7 +3,7 @@ members = ["vibegraph-lib", "vibegraph-cli", "validation-report"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 # `if !(x > 0.0)` is how this crate routes a NaN into the rejecting branch: a NaN
