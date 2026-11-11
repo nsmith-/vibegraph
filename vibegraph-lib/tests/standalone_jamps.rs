@@ -1110,6 +1110,32 @@ fn ee_to_mumu_negmz() {
     check("ee_to_mumu_negmz");
 }
 
+/// Bhabha with its outgoing legs listed particle first. The s channel pairs the
+/// initial-state leptons on one line and the final-state ones on the other, the t
+/// channel pairs each incoming lepton with its outgoing one: the relative sign of
+/// the two must not read the order the legs are listed in.
+#[test]
+#[ignore = "fails until the relative Fermi sign stops reading the leg order"]
+fn ee_to_emep() {
+    check("ee_to_emep");
+}
+
+/// The same two pairings with the antiquark first in the initial state and the
+/// quark first in the final state, in two colour flows.
+#[test]
+#[ignore = "fails until the relative Fermi sign stops reading the leg order"]
+fn uxu_to_uux() {
+    check("uxu_to_uux");
+}
+
+/// Two final-state lines paired two ways: (t t~)(b b~) through gluons, photons and
+/// Z, and (t b~)(b t~) through a W joining the two lines.
+#[test]
+#[ignore = "fails until the relative Fermi sign stops reading the leg order"]
+fn uux_to_ttxbbx_qed2() {
+    check("uux_to_ttxbbx_qed2");
+}
+
 /// The gate is sensitive to which colour structure of the four-gluon contact
 /// multiplies which Lorentz structure: each of the five non-identity assignments
 /// disagrees with `gg_to_ttxg` far above [`REL_TOL`]. Measured over the five, the

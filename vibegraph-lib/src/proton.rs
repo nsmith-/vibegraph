@@ -5321,6 +5321,80 @@ mod tests {
         );
     }
 
+    /// `u~ u > u u~` compiled as its own line equals `u u~ > u u~` at the exchanged
+    /// event ([`exchange_into`]: every leg rotated by π about x, the beams swapped):
+    /// the two are one configuration with its legs listed in another order. The
+    /// pairings that differ between them are an initial-state line with a
+    /// final-state line (s channel) against two mixed lines (t channel), so the
+    /// relative Fermi sign of the two must not read the order the legs are listed
+    /// in. Controls: the distinct-flavour line, the same mirrored process with its
+    /// outgoing legs listed the other way, and C-conjugate lines at one point.
+    #[test]
+    #[ignore = "fails until the relative Fermi sign stops reading the leg order"]
+    fn antiquark_first_line_with_its_flavour_in_the_final_state() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let m2 = |process: &str, ext: &[V]| {
+            let set = enumerate(process, &m)
+                .into_iter()
+                .find(|s| !s.diagrams.is_empty())
+                .expect("enumerates");
+            let eval = compile_class(&set, &m, &evaluated).expect("compiles");
+            let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+            bound.eval_m2(ext, &mut bound.scratch_space())
+        };
+        let agree = |what: &str, a: f64, b: f64| {
+            let rel = (a - b).abs() / a;
+            assert!(
+                rel < 1e-12,
+                "{what}: {a:.12e} against {b:.12e}, rel {rel:.3e}"
+            );
+        };
+        let (th, ph, e) = (0.7f64, 0.3f64, 250.0);
+        let k = [
+            e * th.sin() * ph.cos(),
+            e * th.sin() * ph.sin(),
+            e * th.cos(),
+        ];
+        let cm = vec![
+            V::new(e, 0.0, 0.0, e),
+            V::new(e, 0.0, 0.0, -e),
+            V::new(e, k[0], k[1], k[2]),
+            V::new(e, -k[0], -k[1], -k[2]),
+        ];
+        let mut exchanged = Vec::new();
+        exchange_into(&cm, &mut exchanged);
+        for (direct, mirrored) in [
+            ("u u~ > u u~", "u~ u > u u~"),
+            ("u u~ > d d~", "u~ u > d d~"),
+        ] {
+            agree(
+                &format!("{direct} against {mirrored} at the exchanged event"),
+                m2(direct, &cm),
+                m2(mirrored, &exchanged),
+            );
+        }
+        let swapped = vec![exchanged[0], exchanged[1], exchanged[3], exchanged[2]];
+        agree(
+            "u u~ > u u~ against u~ u > u~ u at the exchanged event, outgoing legs swapped",
+            m2("u u~ > u u~", &cm),
+            m2("u~ u > u~ u", &swapped),
+        );
+        // QCD is C-invariant: a line equals its conjugate at the same momenta.
+        for (quarks, antiquarks) in [
+            ("u u > u u", "u~ u~ > u~ u~"),
+            ("u c > u c", "u~ c~ > u~ c~"),
+            ("u u~ > u u~", "u~ u > u~ u"),
+            ("u u~ > u~ u", "u~ u > u u~"),
+        ] {
+            agree(
+                &format!("{quarks} against {antiquarks}"),
+                m2(quarks, &cm),
+                m2(antiquarks, &cm),
+            );
+        }
+    }
+
     /// Every group paired with the compiled matrix element of its mirrored beam
     /// ordering, asserted to be the same process.
     fn mirror_pairs<'a>(
