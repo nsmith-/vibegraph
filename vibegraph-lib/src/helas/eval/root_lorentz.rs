@@ -578,7 +578,10 @@ impl LorentzEvalTree {
         }
         let reordered = reorder_reversed_sink_chains(term, flow, idx, flows)?;
         let term: &LorentzTerm = &reordered;
-        let idx = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let rooted = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let reconjugated = conjugate_rerooted_chain(term, idx, rooted, flows);
+        let term: &LorentzTerm = &reconjugated;
+        let idx = rooted;
         let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
             nodes: vec![],
@@ -936,6 +939,61 @@ fn reorder_reversed_sink_chains<'t>(
         }
     }
     Ok(reordered)
+}
+
+/// `term` with the chirality of the rooted chain conjugated (`P_L ↔ P_R`,
+/// `γ⁵ → −γ⁵`) when [`correct_spin_index_for_flow`] re-rooted an off-shell fermion
+/// current and the chain carries an even number of gammas.
+///
+/// On a line read against the vertex's arrow, a fermion output is re-rooted onto the
+/// slot whose adjoint matches, and the current then applies the chain in its written
+/// order to the input spinor, from the other end. That puts each chiral factor on
+/// the far side of the chain's gammas from where it stood: through one gamma it is the
+/// conjugate chirality `γ^μ P_χ = P_χ̄ γ^μ`, which is what the re-rooting is there to
+/// realise, so a one-gamma chain needs nothing more. Through two it is the same
+/// chirality, and the current would read `[γ^μ, p̸] P_R` where MadGraph's line reads
+/// `[γ^μ, p̸] P_L` — SMEFTsim's one-chirality W dipoles (`FFV10`, `FFV4`) producing the
+/// off-shell quark of single-top production. Conjugating the chain's chiral factors
+/// restores the parity the single gamma gave.
+///
+/// A crossed line binds each end at the slot its adjoint expects and is never
+/// re-rooted. `Sigma` commutes with `γ⁵` and is not counted.
+fn conjugate_rerooted_chain<'t>(
+    term: &'t LorentzTerm,
+    out: Option<usize>,
+    rooted: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> std::borrow::Cow<'t, LorentzTerm> {
+    let unchanged = std::borrow::Cow::Borrowed(term);
+    let (Some(out), Some(rooted)) = (out, rooted) else {
+        return unchanged;
+    };
+    if out == rooted
+        || matches!(
+            flows.get(out).copied().flatten(),
+            Some(LegAdjoint { crossed: true, .. }) | None
+        )
+    {
+        return unchanged;
+    }
+    let chain = chain_ops(term, rooted as isize);
+    let gammas = chain
+        .iter()
+        .filter(|&&k| matches!(term.ops[k], LorentzOp::Gamma { .. }))
+        .count();
+    if gammas < 2 || gammas % 2 == 1 {
+        return unchanged;
+    }
+    let mut conjugated = term.clone();
+    for &k in &chain {
+        match conjugated.ops[k] {
+            LorentzOp::ProjM { i, j } => conjugated.ops[k] = LorentzOp::ProjP { i, j },
+            LorentzOp::ProjP { i, j } => conjugated.ops[k] = LorentzOp::ProjM { i, j },
+            LorentzOp::Gamma5 { .. } => conjugated.coeff = -conjugated.coeff,
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(conjugated)
 }
 
 /// The operators of the spinor chain that starts at leg `start`, in order from it.

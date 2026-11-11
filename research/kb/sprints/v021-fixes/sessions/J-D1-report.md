@@ -362,6 +362,73 @@ decided by any row in reach (see Found). The scalar-root change is pinned only b
 `FFVV1`; any other structure whose chain closes through a projector or the
 identity at the amplitude root is reached by no gated row.
 
+## 10. Fourth defect: a re-rooted one-chirality chain (tW production)
+
+Found by a reach check on `t t~ > w+ w-` under ctWRe. The failing graph had the same
+topology on both sides (our diagram 7, `["V_284#2", "V_324#1"]`, against MadGraph's
+`AMP(8)`: a t-channel b with the O_tW `FFV10` at the t~–W- end, coupling GC_368 on
+both sides) but not the same value. Its overlap was 0.25, so this is a binding
+mismatch, not an enumeration one. It reaches physical tW production, so it is fixed
+here at the manager's direction.
+
+**Pre-existing.** At `main` 9a1349c, in a scratch worktree, `b g > t w-` reads
+worst flow 1.49e-3 under ctWRe alone and 6.12e-3 under cbWRe alone. The same s-channel
+graph fails there, and the t-channel graph also has the sign that fix 1 corrects.
+
+**Rows** (`38c7a71`, listed): `bg_to_twm_ctw`, `gb_to_twm_cbw` (beams swapped, so the
+canonical root falls on the other vertex), `bxg_to_txwp_ctw`, with cards `vg_ctW` and
+`vg_cbW`. The commit message quotes 7.3e-4 and 6.2e-4 for the first and third rows.
+Those values came from a stale `main` binary in the shared target directory, built
+by the scratch worktree. On `38c7a71` itself the rows read 4.961e-4, 2.326e-3 and
+4.980e-4 (re-measured, `jd1-rep.log`).
+
+**Dumps.** Per graph, every failing graph is one where the W dipole vertex produces
+an off-shell quark current: the s-channel b in `b g > t w-`, and in `g b > t w-` also
+the t-channel top. Those currents are re-rooted by `correct_spin_index_for_flow`
+onto a line read against the arrow. Overlap with the MadGraph graph is 1e-4 to 0.1.
+The same graphs agree wherever the dipole closes the amplitude.
+
+**Arithmetic check.** I used a scratch copy of the UFO with `V_324`'s `FFV10` and
+`FFV4` exchanged, which conjugates the chirality at that vertex only. With it, every
+re-rooted dipole graph pairs with its MadGraph graph at overlap 1.000000000000000,
+ratio +i, residual ≤ 1.1e-15 (`gb_to_twm_cbW` agrees in full at 2.8e-15). The one
+graph where the dipole is a sink then breaks (overlap 0.002).
+
+**Root cause.** A re-rooted current applies the chain in its written order to the
+input spinor, from the far end. That puts each chiral factor on the far side of the
+chain's gammas. Through one gamma this is the conjugate chirality
+(`γ^μ P_χ = P_χ̄ γ^μ`), which is the conjugation the re-rooting exists to realise.
+Through two gammas it is the same chirality, so `[γ^μ, p̸]P_R` was read where the
+line needs `[γ^μ, p̸]P_L`. `FFV9`, which carries both chiralities, cannot show this;
+that is why every neutral-dipole row passed.
+
+**Fix.** `conjugate_rerooted_chain` (root_lorentz.rs). When `correct_spin_index_for_flow`
+moves the root of a non-crossed fermion output, and the rooted chain carries an even
+number (≥ 2) of gammas, the chain's chiral factors are conjugated (`P_L ↔ P_R`,
+`γ⁵ → −γ⁵`). One-gamma chains and crossed lines are untouched.
+
+**Oracles.**
+
+| check | result |
+|---|---|
+| `bg_to_twm_ctw`, `gb_to_twm_cbw`, `bxg_to_txwp_ctw` | all pass (3 of the 66 standalone rows) |
+| scratch `b g > t w-` ctWIm alone | 3.9e-15 |
+| scratch `g b > t w-` cbWIm alone | 2.2e-15 |
+| scratch `t t~ > w+ w-` ctWRe | 6.6e-14 (was 2.07e-3) |
+| scratch `w+ w- > t t~` ctWRe | 3.1e-14 (unchanged) |
+| `cargo test -p vibegraph-lib --test standalone_jamps` | `66 passed; 0 failed` |
+| rooting-invariance tests (`--features extended-validation --lib rooting_invariant`) | 5 passed |
+| `ufo::tests` | 15 passed |
+
+Mutation, with the change reverted: the three rows `FAILED` at 4.961e-4, 2.326e-3
+and 4.980e-4.
+
+**What it cannot detect.** The `γ⁵` half of the conjugation is not measured. It
+follows from `γ⁵ = P_R − P_L`, but no row re-roots a `γ⁵` chain on a reversed line:
+`b b~ > e+ e- g`, `b~ b > e+ e- g` and `b g > b e+ e-` under cbGIm are identical with
+and without the change, and SMEFTsim writes its W dipoles with projectors only. A
+chain with three or more gammas is not reached.
+
 ## Found
 
 1. **The rooting-soundness sweep never roots a reversed multi-gamma chain both
@@ -383,12 +450,9 @@ identity at the amplitude root is reached by no gated row.
    scalar with a CP phase) would still bind its own coupling; no model in reach
    has one with a non-zero imaginary part on the cards in use.
 
-5. **`t t~ > w+ w- NP<=1` under ctWRe alone disagrees with MadGraph** at worst
-   flow 2.07e-3 on the head with all three fixes; the crossed `w+ w- > t t~` agrees
-   on every graph (3.1e-14). One diagram (our diagram 7) pairs with no MadGraph
-   graph (best overlap 0.253, against `AMP(7)`), and MadGraph's `AMP(8)` has no
-   partner; every other diagram pairs at overlap 1. Unlocalised; the reproducer is
-   the scratch row `ttx_to_wpwm_ctW` (card: ctWRe = 0.002 alone).
+5. *(Closed in this branch, section 10.)* A one-chirality W dipole producing an
+   off-shell fermion current on a line read against its arrow, reaching tW
+   production and `t t~ > w+ w-`.
 6. **`boson_momentum_sign` and `fermion_structure_constant_sign` may be one rule.**
    Every vertex either signs carries an odd number of colour structure constants,
    and the momentum reading the first rule's derivation assumes (kernels incoming,

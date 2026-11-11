@@ -724,16 +724,7 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
-    ("bg_to_twm_ctw", W_DIPOLE_FERMION_CURRENT),
-    ("gb_to_twm_cbw", W_DIPOLE_FERMION_CURRENT),
-    ("bxg_to_txwp_ctw", W_DIPOLE_FERMION_CURRENT),
-];
-
-const W_DIPOLE_FERMION_CURRENT: &str = "a one-chirality W dipole chain (FFV10, FFV4) whose \
-     vertex produces an off-shell quark current on a line read against the vertex's arrow \
-     does not match its MadGraph graph (overlap 1e-4 to 0.1), while the same graph agrees \
-     where the dipole closes the amplitude";
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
