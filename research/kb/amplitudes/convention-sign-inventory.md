@@ -199,13 +199,21 @@ the sign pattern over graph features, as above.
   coloured count only on a colourless vertex of self-conjugate bosons with odd
   `n_P` (a 2HDM `A Z h`), which no model in reach has
   ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
-- **The fermion dipole.** The naive `(−1)^{n_P}` would put `−1` on a
-  one-momentum fermion vertex (the `σ^{μν}q_ν` dipole, SMEFTsim's
-  `P(-1,3)·γγ` FFV structures), yet `ee_to_ttx_dipole`, `ll_to_qqx_toy_dipole`
-  and the `ctZ`/`ctA` chains of `ee_to_ttx_smeft` agree with MadGraph with no
-  such factor. Whether the bilinear's slot reversal (`vertex_root_signs`)
-  supplies the cancelling `ε_slot` is not established; `boson_momentum_sign`
-  counts no fermion vertex[^ha2-report].
+- **The fermion dipole (resolved).** A one-momentum fermion vertex (the
+  `σ^{μν}q_ν` dipole, SMEFTsim's `P(-1,3)·γγ` FFV structures) carries no
+  `(−1)^{n_P}` in `convention_sign`, and needs none. Its two failures against
+  MadGraph were elsewhere. On a quark line read against the vertex's arrow, a
+  chain closed at a vector sink is applied in reverse order, which negates a
+  two-gamma commutator; `reorder_reversed_sink_chains` reads it in written order.
+  On a charged vertex the momentum sign enters the Hermitian-conjugate map
+  `UFOModel::conjugate_couplings`: a bound term takes the coupling its partner
+  carries on `γ⁰L†γ⁰` read with each momentum reversed, which for
+  `[γ^μ, p̸]P_R` is `[γ^μ, p̸]P_L` (SMEFTsim's `FFV10 ↔ FFV4`), and the UFO's
+  couplings satisfy `bound = −conj(partner)` on that map. Pinned by the standalone
+  dipole rows (`bbx_to_epem_cbb`, `ttx_to_epem_ctb`, `bbx_to_epemg_cbb`,
+  `bbx_to_ttx_tbdipole`, `tbx_to_vlep_tbdipole`, `vlep_to_tbx_ctwim`,
+  `vlep_to_tbx_cbwim`), `reversed_dipole_chain_is_rooting_invariant` and
+  `ufo::tests::w_dipole_terms_bind_their_hermitian_partners`.
 - **`ε_slot = (−1)^{n_P}` on conjugate-pair vertices is assumed, not computed.**
   It holds on every W-pair structure a gated row reaches; a structure that broke
   it would come out wrong with no refusal.

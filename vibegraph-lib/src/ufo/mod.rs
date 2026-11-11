@@ -728,59 +728,47 @@ impl UFOModel {
     /// crossing and reversal corrections, which evaluate the bound structure on the
     /// conjugate interaction's spinor slots.
     ///
-    /// The exchange is made for a charged vector current
-    /// ([`conjugate_vector_current`](Self::conjugate_vector_current)), where the
-    /// conjugate interaction's term `key` has the same structure. Every other vertex
-    /// keeps its own coupling: a self-conjugate one binds the same interaction either
-    /// way, and for the rest the term correspondence depends on the structure (a
-    /// chiral scalar or tensor term conjugates into the opposite chirality).
+    /// The exchange is made term by term ([`conjugate_couplings`](Self::conjugate_couplings)):
+    /// each term of the bound vertex takes the coupling the conjugate interaction
+    /// carries on the conjugate of its structure. A vector current is its own
+    /// conjugate, so its term keeps its key; a momentum-slashed chain with one
+    /// chirality conjugates into the other (`FFV10 ↔ FFV4` in SMEFTsim), whose
+    /// coupling differs from the bound one wherever the coefficient is complex — the
+    /// CP-odd parts of the W dipoles. A self-conjugate vertex, a structure outside
+    /// the chain normal form, or a vertex with no unique conjugate keeps its own.
     pub(crate) fn bound_coupling(&self, vertex: VertexId, key: (usize, usize)) -> CouplingId {
-        let target = self.conjugate_vector_current(vertex).unwrap_or(vertex);
-        self.vertex_def(target).couplings[&key]
+        match self.conjugate_couplings(vertex) {
+            Some(couplings) => couplings[&key],
+            None => self.vertex_def(vertex).couplings[&key],
+        }
     }
 
-    /// The Hermitian-conjugate interaction of a charged fermion–fermion–vector vertex
-    /// whose every Lorentz structure is a vector current (one `γ^μ`, with only `P_L`,
-    /// `P_R`, `γ⁵` or the identity beside it), when the model has exactly one.
+    /// For a charged vertex with two fermion slots, the coupling the Hermitian-conjugate
+    /// interaction carries on the conjugate of each of `vertex`'s terms, by term key.
     ///
-    /// Such a structure is its own conjugate (`(ψ̄₁γ^μP_χψ₂)† = ψ̄₂γ^μP_χψ₁`), so the
-    /// conjugate interaction is the vertex with the antiparticles of `vertex`'s
-    /// particles and the same Lorentz structures, colour structures, coupling keys
-    /// and per-key coupling orders. `None` for a self-conjugate vertex, any other
-    /// structure, or no unique conjugate.
-    pub(crate) fn conjugate_vector_current(&self, vertex: VertexId) -> Option<VertexId> {
-        use lorentz::LorentzOp;
+    /// The conjugate of a term is what this crate's binding evaluates in its place:
+    /// `γ⁰L†γ⁰` with the fermion slots exchanged, read with each momentum's sign
+    /// reversed (the kernels read momenta incoming, against MadGraph's outgoing; see
+    /// `boson_momentum_sign` in `helas::eval::root_diagram`). For a vector current
+    /// that is the structure itself; for `[γ^μ, p̸]P_R` it is `[γ^μ, p̸]P_L` (the
+    /// `−1` of `γ⁰[γ^μ, p̸]†γ⁰ = [p̸, γ^μ]` against that of the momentum). The
+    /// conjugate interaction is the unique vertex with the antiparticles of
+    /// `vertex`'s particles and the same colour structures whose terms are those
+    /// conjugates one to one, at the same colour index and coupling orders.
+    ///
+    /// `None` for a self-conjugate vertex, a structure outside
+    /// [`chain_normal_form`], or no unique conjugate.
+    pub(crate) fn conjugate_couplings(
+        &self,
+        vertex: VertexId,
+    ) -> Option<BTreeMap<(usize, usize), CouplingId>> {
         let v = self.vertex_def(vertex);
-        let spin_count = |s: i32| {
-            v.particles
-                .iter()
-                .filter(|&&p| self.particle(p).spin == s)
-                .count()
-        };
-        if v.particles.len() != 3 || spin_count(2) != 2 || spin_count(3) != 1 {
-            return None;
-        }
-        let vector_current = v.lorentz.iter().all(|&l| {
-            self.lorentz_struct(l).expr.iter().all(|term| {
-                let gammas = term
-                    .ops
-                    .iter()
-                    .filter(|op| matches!(op, LorentzOp::Gamma { .. }))
-                    .count();
-                gammas == 1
-                    && term.ops.iter().all(|op| {
-                        matches!(
-                            op,
-                            LorentzOp::Gamma { .. }
-                                | LorentzOp::ProjM { .. }
-                                | LorentzOp::ProjP { .. }
-                                | LorentzOp::Gamma5 { .. }
-                                | LorentzOp::Identity { .. }
-                        )
-                    })
-            })
-        });
-        if !vector_current {
+        let fermions = v
+            .particles
+            .iter()
+            .filter(|&&p| self.particle(p).spin == 2)
+            .count();
+        if fermions != 2 {
             return None;
         }
         let sorted = |mut ids: Vec<ParticleId>| {
@@ -797,24 +785,184 @@ impl UFOModel {
         if own == anti {
             return None;
         }
-        let orders = |w: &Vertex| -> Vec<&BTreeMap<String, usize>> {
-            w.couplings
-                .values()
-                .map(|&c| &self.coupling_def(c).orders)
-                .collect()
-        };
-        let mut candidates = self.vertices.values().enumerate().filter(|(_, w)| {
-            sorted(w.particles.clone()) == anti
-                && w.lorentz == v.lorentz
-                && w.color == v.color
-                && w.couplings.keys().eq(v.couplings.keys())
-                && orders(w) == orders(v)
-        });
-        match (candidates.next(), candidates.next()) {
-            (Some((i, _)), None) => Some(VertexId(i)),
+        let targets = v
+            .couplings
+            .iter()
+            .map(|(&key, &g)| {
+                let form = chain_normal_form(self.lorentz_struct(v.lorentz[key.1]), true)?;
+                Some((key, form, &self.coupling_def(g).orders))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let mut found = None;
+        for w in self.vertices.values() {
+            if sorted(w.particles.clone()) != anti
+                || w.color != v.color
+                || w.couplings.len() != targets.len()
+            {
+                continue;
+            }
+            let mut couplings = BTreeMap::new();
+            let matched = targets.iter().all(|(key, form, orders)| {
+                let mut hits = w.couplings.iter().filter(|(&(c, l), &g)| {
+                    c == key.0
+                        && self.coupling_def(g).orders == **orders
+                        && chain_normal_form(self.lorentz_struct(w.lorentz[l]), false).as_ref()
+                            == Some(form)
+                });
+                match (hits.next(), hits.next()) {
+                    (Some((_, &g)), None) => couplings.insert(*key, g).is_none(),
+                    _ => false,
+                }
+            });
+            if matched {
+                if found.is_some() {
+                    return None;
+                }
+                found = Some(couplings);
+            }
+        }
+        found
+    }
+}
+
+/// The normal form of a two-fermion Lorentz structure, or of its Hermitian
+/// conjugate read the way this crate binds it (see
+/// [`UFOModel::conjugate_couplings`]): each term's chain of `Gamma` and `Sigma`
+/// factors from the row slot, every Lorentz index named by what it meets, with the
+/// chiral factors (`P_L`, `P_R`, `γ⁵`) commuted to the column end and expanded on
+/// `1` and `γ⁵`. Equal structures written in different term orders, dummy names or
+/// projector placements have equal normal forms. `None` for a structure with other
+/// than two fermion slots or with an operator outside the chain (`Metric`,
+/// `Epsilon`, `C`).
+fn chain_normal_form(
+    structure: &lorentz::LorentzStructure,
+    conjugate: bool,
+) -> Option<BTreeMap<(Vec<String>, bool), i64>> {
+    use lorentz::LorentzOp as Op;
+    let fermions: Vec<isize> = (0..structure.spins.len())
+        .filter(|&s| structure.spins[s] == 2)
+        .map(|s| s as isize)
+        .collect();
+    let &[a, b] = fermions.as_slice() else {
+        return None;
+    };
+    let mut form: BTreeMap<(Vec<String>, bool), i64> = BTreeMap::new();
+    for term in &structure.expr {
+        let spinor_ends = |op: &Op| match *op {
+            Op::Gamma { i, j, .. }
+            | Op::Sigma { i, j, .. }
+            | Op::Identity { i, j }
+            | Op::ProjM { i, j }
+            | Op::ProjP { i, j }
+            | Op::Gamma5 { i, j } => Some((i, j)),
             _ => None,
+        };
+        // The row slot is the fermion slot an operator holds as its first index.
+        let row = term
+            .ops
+            .iter()
+            .filter_map(spinor_ends)
+            .find_map(|(i, _)| [a, b].contains(&i).then_some(i))?;
+        let col = if row == a { b } else { a };
+        // The chain from the row; the conjugate structure reads it from the column.
+        let mut walked: Vec<usize> = Vec::new();
+        let mut cursor = if conjugate { col } else { row };
+        let end = if conjugate { row } else { col };
+        while cursor != end {
+            let (k, (i, j)) = term
+                .ops
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !walked.contains(k))
+                .find_map(|(k, op)| {
+                    spinor_ends(op)
+                        .filter(|&(i, j)| i == cursor || j == cursor)
+                        .map(|e| (k, e))
+                })?;
+            walked.push(k);
+            cursor = if i == cursor { j } else { i };
+        }
+        let mut n_p = 0usize;
+        for (k, op) in term.ops.iter().enumerate() {
+            match op {
+                Op::P { .. } => n_p += 1,
+                Op::Metric { .. } | Op::Epsilon { .. } | Op::C { .. } => return None,
+                _ if !walked.contains(&k) => return None,
+                _ => {}
+            }
+        }
+        // What a Lorentz index meets: an external boson slot, a momentum (whose
+        // fermion slot the conjugate exchanges), or another carrier of the chain.
+        let leg_name = |leg: isize| -> isize {
+            match (conjugate, leg) {
+                (true, l) if l == a => b,
+                (true, l) if l == b => a,
+                (_, l) => l,
+            }
+        };
+        let mut dummies: Vec<isize> = Vec::new();
+        let mut name = |mu: isize| -> Option<String> {
+            if mu >= 0 {
+                return Some(format!("E{mu}"));
+            }
+            if let Some(leg) = term.ops.iter().find_map(|op| match *op {
+                Op::P { mu: m, leg } if m == mu => Some(leg),
+                _ => None,
+            }) {
+                return Some(format!("P{}", leg_name(leg)));
+            }
+            let n = dummies.iter().position(|&d| d == mu).unwrap_or_else(|| {
+                dummies.push(mu);
+                dummies.len() - 1
+            });
+            Some(format!("D{n}"))
+        };
+        // Chiral factor `(x + y γ⁵) / scale`, moved to the column end: through a gamma
+        // `γ⁵` changes sign, through a `Sigma` not.
+        let (mut x, mut y) = (1i64, 0i64);
+        let mut scale = 1i64;
+        let mut carriers: Vec<String> = Vec::new();
+        for (pos, &k) in walked.iter().enumerate() {
+            let gammas_after = walked[pos + 1..]
+                .iter()
+                .filter(|&&q| matches!(term.ops[q], Op::Gamma { .. }))
+                .count() as i64;
+            let flip = if gammas_after % 2 == 0 { 1 } else { -1 };
+            let factor = match term.ops[k] {
+                Op::Gamma { mu, .. } => {
+                    carriers.push(format!("G{}", name(mu)?));
+                    None
+                }
+                Op::Sigma { mu, nu, .. } => {
+                    carriers.push(format!("S{},{}", name(mu)?, name(nu)?));
+                    None
+                }
+                Op::Identity { .. } => None,
+                // γ⁰P_L†γ⁰ = P_R and γ⁰γ⁵†γ⁰ = −γ⁵ under conjugation.
+                Op::ProjM { .. } => Some((if conjugate { (1, 1) } else { (1, -1) }, 2)),
+                Op::ProjP { .. } => Some((if conjugate { (1, -1) } else { (1, 1) }, 2)),
+                Op::Gamma5 { .. } => Some((if conjugate { (0, -1) } else { (0, 1) }, 1)),
+                _ => return None,
+            };
+            if let Some(((p, q), halves)) = factor {
+                let q = q * flip;
+                (x, y) = (x * p + y * q, x * q + y * p);
+                scale *= halves;
+            }
+        }
+        // The term's coefficient, with this crate's momentum sign on the conjugate.
+        let sign = if conjugate && n_p % 2 == 1 { -1.0 } else { 1.0 };
+        let coeff = term.coeff * sign;
+        for (g5, part) in [(false, x), (true, y)] {
+            if part == 0 {
+                continue;
+            }
+            let value = coeff * part as f64 / scale as f64;
+            *form.entry((carriers.clone(), g5)).or_default() += (value * 1e9).round() as i64;
         }
     }
+    form.retain(|_, v| *v != 0);
+    Some(form)
 }
 
 /// Resolve raw vertex definitions into `Vertex`es
@@ -1372,6 +1520,124 @@ fn split_vertices_by_coupling_order(
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    /// The Hermitian partner of each W dipole vertex of SMEFTsim, term by term.
+    ///
+    /// With every third-generation quark dipole on in both CP parities, the W vertices
+    /// come in conjugate pairs: `[t~, b, W+]` (`V_324` CP-even, `V_323` CP-odd) and
+    /// `[b~, t, W-]` (`V_285`, `V_284`). A vector current conjugates into itself, so
+    /// the gauge term `FFV3` keeps its key; a one-chirality momentum chain conjugates
+    /// into the other (`FFV10 ↔ FFV4`). Each bound term must take the partner's
+    /// coupling on the conjugate structure.
+    ///
+    /// The Lagrangian's hermiticity fixes those couplings: the partner's coupling on
+    /// `γ⁰L†γ⁰` is `(−1)^{n_P+1}·conj(G)` (the `i` of the Feynman rule and the `−i`
+    /// of each derivative), and `γ⁰[γ^μ, p̸]P_R†γ⁰ = −[γ^μ, p̸]P_L`. On the key map
+    /// both cases read `bound = −conj(partner)`: `n_P = 0` with no structure sign
+    /// (`FFV3`), and `n_P = 1` against the commutator's `−1` (`FFV10 ↔ FFV4`). The
+    /// UFO satisfies it on every term of both pairs, the CP-odd couplings real and the
+    /// CP-even ones imaginary, which is what makes the bound coupling, rather than the
+    /// pair's, the one that differs from MadGraph's on the CP-odd terms.
+    #[test]
+    fn w_dipole_terms_bind_their_hermitian_partners() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_tbdipole.dat")),
+        )
+        .unwrap();
+        let ev = EvaluatedModel::from_model(model.clone());
+        let lorentz = |v: &Vertex, key: (usize, usize)| {
+            model.lorentz_struct(v.lorentz[key.1]).python_name.clone()
+        };
+        // Enumeration splits each UFO vertex by coupling orders (`V_284#2`, ...).
+        let split = |base: &str| -> Vec<VertexId> {
+            model
+                .vertices
+                .values()
+                .enumerate()
+                .filter(|(_, v)| v.name.split('#').next() == Some(base))
+                .map(|(i, _)| VertexId(i))
+                .collect()
+        };
+        for (bound, partner) in [
+            ("V_284", "V_323"),
+            ("V_323", "V_284"),
+            ("V_285", "V_324"),
+            ("V_324", "V_285"),
+        ] {
+            let partners = split(partner);
+            let mut seen = Vec::new();
+            for id in split(bound) {
+                let v = model.vertex_def(id);
+                let map = model
+                    .conjugate_couplings(id)
+                    .unwrap_or_else(|| panic!("{} has no term-by-term conjugate", v.name));
+                for (&key, &g) in &v.couplings {
+                    let own = lorentz(v, key);
+                    let (w, pkey) = partners
+                        .iter()
+                        .map(|&p| model.vertex_def(p))
+                        .find_map(|w| {
+                            w.couplings
+                                .iter()
+                                .find(|&(_, &h)| h == map[&key])
+                                .map(|(&k, _)| (w, k))
+                        })
+                        .unwrap_or_else(|| {
+                            panic!("{} {own} binds a coupling {partner} lacks", v.name)
+                        });
+                    let want = match own.as_str() {
+                        "FFV10" => "FFV4",
+                        "FFV4" => "FFV10",
+                        same => same,
+                    };
+                    assert_eq!(lorentz(w, pkey), want, "{} {own}", v.name);
+                    assert_eq!(model.bound_coupling(id, key), map[&key]);
+                    let (gb, gp) = (ev.coupling(g), ev.coupling(map[&key]));
+                    assert!(gb.norm() > 0.0, "{} {own} vanishes on this card", v.name);
+                    assert!(
+                        (gb + gp.conj()).norm() <= 1e-15 * gb.norm(),
+                        "{} {own} carries {gb}, {} {want} carries {gp}: not −conj",
+                        v.name,
+                        w.name
+                    );
+                    seen.push(own);
+                }
+            }
+            for chain in ["FFV10", "FFV4"] {
+                assert!(
+                    seen.iter().any(|l| l == chain),
+                    "{bound} has no {chain} term"
+                );
+            }
+        }
+    }
+
+    /// A self-conjugate vertex binds its own couplings: the photon and Z dipoles of the
+    /// b, whose CP-odd coupling is real like the W's.
+    #[test]
+    fn a_self_conjugate_dipole_vertex_has_no_partner() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_tbdipole.dat")),
+        )
+        .unwrap();
+        let mut checked = 0;
+        for (i, v) in model.vertices.values().enumerate() {
+            let base = v.name.split('#').next().unwrap();
+            if ["V_188", "V_189", "V_233", "V_234"].contains(&base) {
+                assert!(
+                    model.conjugate_couplings(VertexId(i)).is_none(),
+                    "{}",
+                    v.name
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 4, "the b photon and Z vertices");
+    }
 
     /// Every W–quark vertex of the CKM model carries, as bound by diagram
     /// enumeration (particles read all-incoming), the coupling the Lagrangian

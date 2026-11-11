@@ -721,18 +721,7 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
-    ("vlep_to_tbx_ctwim", W_DIPOLE_CP_ODD),
-    ("vlep_to_tbx_cbwim", W_DIPOLE_CP_ODD),
-    ("bbx_to_ttx_tbdipole", W_DIPOLE_CP_ODD),
-    ("tbx_to_vlep_tbdipole", W_DIPOLE_CP_ODD),
-];
-
-const W_DIPOLE_CP_ODD: &str = "the W dipoles' CP-odd parts, real couplings on the \
-     one-chirality chains FFV10 and FFV4, take the opposite sign to MadGraph's in either \
-     line orientation while their CP-even parts, imaginary couplings on the same chains, \
-     agree: a diagram vertex bound to one of a Hermitian-conjugate pair keeps its own \
-     coupling, where MadGraph binds the other";
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
