@@ -378,6 +378,14 @@ ROWS = {
         # spacelike W.
         Row("bbx_to_ttx_4f_nodipole", "b b~ > t t~ NP<=1", (5, -5), (6, -6), 1000.0, 3, 5108,
             model=SMEFT, restrict="vg_nodipole", zero_widths=True),
+        # The same-flavour pairing of a four-quark contact (`u~ b b~ u`, SMEFTsim's
+        # `V_787`/`V_788`): its vector-vector structures pair slots (2,3)(4,1), so the
+        # off-shell quark current toward the gluon emission is rooted at slot 4 and,
+        # against an incoming antiquark at slot 1, re-rooted across the b pair.
+        # `SMHLOOP=0` drops the loop-induced Higgs-gluon vertices and their
+        # seven-digit Fortran couplings.
+        Row("uux_to_bbxg_4f_nodipole", "u u~ > b b~ g NP<=1 SMHLOOP=0", (2, -2), (5, -5, 21),
+            1000.0, 3, 5109, model=SMEFT, restrict="vg_nodipole"),
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
     ]

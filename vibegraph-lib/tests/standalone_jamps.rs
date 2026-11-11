@@ -1069,6 +1069,15 @@ fn bbx_to_ttx_4f_nodipole() {
     check("bbx_to_ttx_4f_nodipole");
 }
 
+/// The same-flavour pairing of a four-quark contact (`u~ b b~ u`, SMEFTsim's
+/// `V_787`/`V_788`) under `vg_nodipole`. Its vector-vector structures pair slots
+/// (2,3)(4,1); the off-shell quark current toward the gluon emission, rooted at slot 4
+/// against an incoming antiquark at slot 1, is re-rooted at slot 1, across the b pair.
+#[test]
+fn uux_to_bbxg_4f_nodipole() {
+    check("uux_to_bbxg_4f_nodipole");
+}
+
 /// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top
 /// line, whose three colour structures each multiply one of its Lorentz structures.
 #[test]

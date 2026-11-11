@@ -2333,6 +2333,56 @@ mod tests {
         );
     }
 
+    /// A four-fermion current re-rooted across the other line reads the continuing
+    /// spinor from the caller's child at the partner slot.
+    ///
+    /// SMEFTsim's `FFFF3`, `Gamma(-1,2,-2)*Gamma(-1,4,-3)*ProjM(-3,1)*ProjM(-2,3)`, pairs
+    /// slots (2,3) and (4,1). Rooted at slot 4 with slot 1 bound as a bra (an incoming
+    /// antiquark), the current is re-rooted at slot 1; the caller's inputs are slots
+    /// 1, 2, 3. The vector the closed line (2,3) builds must read inputs 1 and 2, and the
+    /// continuing fermion input 0.
+    #[test]
+    fn four_fermion_current_rerooted_across_a_line_reads_its_partner() {
+        let gamma = |mu, i, j| LorentzOp::Gamma { mu, i, j };
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                gamma(-1, 1, -2),
+                gamma(-1, 3, -3),
+                LorentzOp::ProjM { i: -3, j: 0 },
+                LorentzOp::ProjM { i: -2, j: 2 },
+            ],
+        };
+        let spins = [2, 2, 2, 2];
+        let flow = [(2, 1), (0, 3)];
+        let flows = [
+            lf(Adjoint::Bra),
+            lf(Adjoint::Bra),
+            lf(Adjoint::Ket),
+            lf(Adjoint::Bra),
+        ];
+        let (tree, _, _) =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow, Some(3), &flows).unwrap();
+        let legs = |n: usize| -> Vec<usize> {
+            let mut legs = Vec::new();
+            let mut stack = vec![n];
+            while let Some(k) = stack.pop() {
+                match tree.nodes[k] {
+                    LorentzEvalNode::Leg(i) => legs.push(i),
+                    ref node => stack.extend(node.children()),
+                }
+            }
+            legs.sort_unstable();
+            legs
+        };
+        let vectors: Vec<Vec<usize>> = (0..tree.nodes.len())
+            .filter(|&k| matches!(tree.nodes[k], LorentzEvalNode::GammaVout { .. }))
+            .map(legs)
+            .collect();
+        assert_eq!(vectors, vec![vec![1, 2]], "tree: {tree}");
+        assert_eq!(legs(tree.root.unwrap()), vec![0, 1, 2], "tree: {tree}");
+    }
+
     /// A cycle the tensor path does not cover is refused by name, not walked into.
     ///
     /// The recognised shape is narrow on purpose (four fermion legs, two adjacent
