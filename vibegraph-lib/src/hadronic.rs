@@ -5191,6 +5191,66 @@ mod tests {
         }
     }
 
+    /// Two decay-chain lines that reach one ordered final state through different
+    /// forced resonances give two subprocesses with different diagram content, and
+    /// a fixed-energy `sde_strategy = 2` run must derive each one's channel-cut
+    /// forests from its own diagrams.
+    ///
+    /// `z z` and `h z` (each Z and the Higgs decaying to `b b~`) share the
+    /// ordered externals `e+ e- > b b~ b b~` and the initial-state average, so
+    /// the card clears every refusal in front of the integrand; the first has
+    /// t- and u-channel electron exchange, the second one s-channel configuration,
+    /// and the diagrams of the pair together make more configurations than either
+    /// subprocess has.
+    #[test]
+    fn fixed_energy_sde_strategy_two_draws_each_subprocess_from_its_own_forest() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let proc = parse_proc_card(
+            "generate e+ e- > z z, z > b b~, z > b b~\n\
+             add process e+ e- > h z, h > b b~, z > b b~",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        assert_eq!(evals.len(), 2, "one subprocess per decay-chain line");
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  500.0 = ebeam1\n  500.0 = ebeam2\n\
+             \x20 2 = sde_strategy\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(1000.0),
+            masses,
+            avg,
+        );
+        integ
+            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .expect("the card's scales compile");
+        integ.use_multichannel(&diagrams, &evaluated, 2_000, 2, 0x5EED_9C);
+        let (grids, _) = integ.adapt_grids(1_000, 2, 0x5EED_9D);
+        assert!(!grids.is_empty());
+    }
+
     /// The channel-split integration is the same numbers at any pool size — the
     /// property the parallel CLI rests on, checked on the integrand rather than on
     /// a plain closure.
