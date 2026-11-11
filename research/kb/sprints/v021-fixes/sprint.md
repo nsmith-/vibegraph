@@ -76,6 +76,22 @@ The concept says so.
 | `smeft-four-quark-compile-panics` | medium | The repro card compiles and integrates, never panics. The cause is named: what produced an `Op::Add` with no operands, and whether it stood for a vanished amplitude (benign) or lost contributions (a dropped diagram). Per-diagram amplitudes against MadGraph standalone, like the other SMEFTsim rows. If a root-cause fix is not tractable, refuse it by name with a test. |
 | `sde-strategy-2-weights-only-first-fixed-energy-subprocess` | medium | Reachability first: a card that reaches the path at fixed energy under `sde_strategy = 2` with two subprocesses of different diagram content, or a proof from the code that none does. If reachable, a fix or refusal with a test that fails before the change. If not, a test pinning the refusal that makes it unreachable, and the item re-scoped or closed with the evidence. |
 
+### PR 5: the fermion-pairing sign (`sprintj-fermion-order`)
+
+Added by the user's decision (2026-11-11, "fix the bugs").
+
+| Item | Pri | Oracle |
+|---|---|---|
+| `fermion-sign-wrong-for-crossed-pairings` (filed by this plan) | high | σ of `e+ e- > e- e+` equal to `e+ e- > e+ e-`; `u~ u > u u~` against `u u~ > u u~` at the exchanged point; `u u~ > t t~ b b~ QED<=2` against MadGraph standalone per flow × helicity. Each an enforced row that fails before the fix (mutation recorded); every banked row unchanged. |
+
+### PR 6: SMEFTsim dipoles at the amplitude root (`sprintj-dipoles`)
+
+Added by the same decision.
+
+| Item | Pri | Oracle |
+|---|---|---|
+| `smeft-dipole-at-amplitude-root-disagrees` (filed by this plan) | high | `b b~ > e+ e-` (cbBRe), `t t~ > e+ e-` (ctBRe) and `b b~ > t t~` with the full dipole set against MadGraph standalone per flow × helicity, as enforced rows that fail before the fix; every banked row unchanged. |
+
 ### PR 4: close-out and release preparation (`sprintj-plan`, this PR)
 
 The plan and the record; the workspace version 0.2.0 → 0.2.1;
@@ -92,7 +108,9 @@ is no unexplained ok → not-ok and no panics.
 | [J-A1](sessions/J-A1.md) | feature-dev (Opus) | 2 | – | The enumeration version, its known-answer test, the refusals. |
 | [J-E1](sessions/J-E1.md) | validation-dev (Opus) | 3 | – | The SMEFT compile panic. |
 | [J-E2](sessions/J-E2.md) | validation-dev (Sonnet) | 3 | – | The `sde_strategy = 2` reachability and fix or re-scope. |
-| J-Z | manager | 4 | PRs 1–3 merged | The version bump, the release notes, the campaign request, the record. |
+| J-F1 | validation-dev (Opus) | 5 | – | Diagnose, then fix, the fermion-pairing sign. |
+| J-D1 | validation-dev (Opus) | 6 | – | Diagnose and fix the dipole disagreement. |
+| J-Z | manager | 4 | PRs 1–3, 5, 6 merged | The version bump, the release notes, the campaign request, the record. |
 
 J-A1, J-E1 and J-E2 run first, in parallel worktrees. J-E2 works on its own branch,
 merged into `sprintj-panics` with a merge commit. Heavy runs (seed sweeps,
