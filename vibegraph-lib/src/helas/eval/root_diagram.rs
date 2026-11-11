@@ -1031,14 +1031,55 @@ fn line_end(diagram: &Diagram, model: &UFOModel, v: VtxIdx, slot: usize) -> LegI
 /// * [`propagator_phase_sign`]: the phase of each propagator against ALOHA's;
 /// * [`vertex_root_signs`]: each vertex's reading of its fermion bilinears;
 /// * [`boson_momentum_sign`]: the momentum sign of each all-boson vertex of
-///   self-conjugate legs, which reads its momenta incoming against MadGraph's outgoing.
+///   self-conjugate legs, which reads its momenta incoming against MadGraph's outgoing;
+/// * [`fermion_structure_constant_sign`]: the sign of each fermion vertex whose colour
+///   carries an odd number of structure constants.
 ///
 /// With [`Diagram::sign`] (the external fermions' pairing parity and the crossed-line
 /// reordering) that is the whole of `fermi_sign`.
 fn convention_sign(diagram: &Diagram, model: &UFOModel, chain: &[u8]) -> Result<i8, CompileError> {
     Ok(propagator_phase_sign(diagram, model)
         * vertex_root_signs(diagram, model, chain)?
-        * boson_momentum_sign(diagram, model)?)
+        * boson_momentum_sign(diagram, model)?
+        * fermion_structure_constant_sign(diagram, model, chain))
+}
+
+/// `−1` per vertex with a fermion leg whose colour structure, the one `chain` selects,
+/// carries an odd number of structure constants `f`: the quark–gluon-pair contacts of
+/// the chromo-dipole operators (SMEFTsim's `t~ t g g`, `f(-1,3,4)·T(-1,2,1)`).
+///
+/// Measured, not derived. On `g g > t t~` and `t t~ > g g` under O_tG the contact
+/// diagram alone disagrees with MadGraph's `AMP()` by exactly `−1` at every helicity,
+/// on both of its Lorentz structures (`FFVV3`, and `FFVV1` with a `γ⁵`) and on a
+/// crossed as on an annihilating top line, while the same structures on the colourless
+/// `t~ t W- W+` contact agree. No momentum enters these structures, so the sign is not
+/// [`boson_momentum_sign`]'s; what the two contacts differ in is the `f`. Every vertex
+/// [`boson_momentum_sign`] gives `−1` also carries an odd number of `f`, so the two
+/// rules may be one, read off the colour; they part only on a colourless all-boson
+/// vertex of self-conjugate legs with an odd momentum count, which no model in reach
+/// has.
+pub(super) fn fermion_structure_constant_sign(
+    diagram: &Diagram,
+    model: &UFOModel,
+    chain: &[u8],
+) -> i8 {
+    use crate::ufo::color::ColorAtom;
+    let mut sign = 1i8;
+    for (v, vertex) in diagram.vertices.iter().enumerate() {
+        let def = model.vertex_def(vertex.interaction);
+        if !def.particles.iter().any(|&p| model.particle(p).spin == 2) {
+            continue;
+        }
+        let structure_constants = def.color[chain[v] as usize]
+            .atoms
+            .iter()
+            .filter(|atom| matches!(atom, ColorAtom::F(..)))
+            .count();
+        if structure_constants % 2 == 1 {
+            sign = -sign;
+        }
+    }
+    sign
 }
 
 /// `−1` per internal scalar line and per internal fermion line of a crossed fermion

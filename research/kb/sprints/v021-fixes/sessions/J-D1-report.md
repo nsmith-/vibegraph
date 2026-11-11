@@ -290,6 +290,78 @@ silently, as before; no row reaches a charged vertex with a complex coupling on 
 scalar or tensor structure. The unit test's hermiticity check is on the UFO, not
 on the evaluator.
 
+## 9. Third defect: O_tG's quark–gluon-pair contact
+
+Found when adding a gate for the two-gluon contacts on a reversed line; fixed
+here at the manager's direction, with its own failing-first commit (`5cdc73b`).
+
+**Rows.** `ttx_to_gg_ctg` (`t t~ > g g NP<=1 SMHLOOP=0`) and its crossed mirror
+`gg_to_ttx_ctg`, card `vg_ctG` (ctGRe 0.08, ctGIm 0.07), widths zero. Before:
+worst flow 8.043e-3 and 1.074e-2; with fix 1 reverted `ttx_to_gg_ctg` reads
+2.948e-2 and `gg_to_ttx_ctg` is bit-identical (a crossed line never reaches fix 1).
+Split by parity (scratch cards): ctGRe alone fails both orientations (7.5e-3,
+7.8e-3); ctGIm alone agrees on `t t~ > g g` (8.9e-16) and fails on `g g > t t~`
+(7.2e-3).
+
+**Dumps.** A two-flow per-diagram comparison: each diagram compiled alone through
+the production evaluator, its per-flow values (or, where its own evaluator folds to
+one flow, its single value) against MadGraph's `c_{f,k}·AMP(k)`, the coefficients
+parsed from matrix.f with its `TMP_JAMP` temporaries expanded. All nine diagrams pair
+one to one at overlap 1.000000000000 with residual ≤ 2e-15. On `g g > t t~` the
+contact diagram (`V_564`, `FFVV1`/`FFVV3_0(…, GC_385/GC_386)`) takes ratio −G and
+the eight others +G, for ctGIm and ctGRe alike; on `t t~ > g g` the same for ctGRe,
+while under ctGIm the contact agrees.
+
+**Arithmetic check.** Negating the contact diagram on the dumps and recontracting:
+`g g > t t~` ctGIm 5.7e-16, ctGRe 5.8e-16; `t t~ > g g` ctGRe 8.8e-16.
+
+**Root cause, two signs.**
+
+1. *The contact's colour sign.* The colourless `t~ t W- W+` contact of O_tW has the
+   same Lorentz structures (`FFVV1`, `FFVV3`) and agrees with MadGraph in both
+   orientations (`w+ w- > t t~`, ctWRe alone: every graph at overlap 1, worst flow
+   3.1e-14). The gluon contact differs from it only in its colour,
+   `f(-1,3,4)·T(-1,2,1)`. No momentum enters either structure, so
+   `boson_momentum_sign` (odd `n_P`, all-boson vertices only) cannot be it. Every
+   vertex `boson_momentum_sign` signs also carries an odd number of `f` (the
+   triple-gluon vertex, O_HG's and O_HGtil's Higgs–three-gluon contacts, O_G's five-
+   and three-gluon structures), so the measured sign follows the `f` count.
+   `fermion_structure_constant_sign` gives `−1` per fermion vertex whose selected
+   colour structure carries an odd number of `f`. It is lifted into
+   `convention_sign`, graph-level and rooting-free.
+2. *A reversed-bilinear sign the runtime never applied.* `FFVV1` lists its `Gamma5`
+   first, so the amplitude root closed the chain through `Gamma5Amp`, with no
+   runtime reversal sign, while `term_reversed_parity` (counting the gamma whose row
+   slot is bound to a ket) still counted one and the live parity cancelled a sign
+   that was not there. On the annihilating line this `−1` cancelled the colour sign,
+   which is why ctGIm on `t t~ > g g` agreed. The scalar-root loop in `build_at_leg`
+   now closes a chain that carries a gamma through that gamma (`GammaVout`) when the
+   first unvisited operator is a projector, `γ⁵` or the identity. Measured in order:
+   with sign 1 alone, `t t~ > g g` under ctGIm moved from 8.9e-16 to 6.9e-3 (contact
+   ratio −1) while the other three cases went to ≤ 8.8e-16; with sign 2 added, all
+   four read ≤ 8.9e-16.
+
+**Oracles.**
+
+```
+cargo test -p vibegraph-lib --test standalone_jamps -- --nocapture
+test result: ok. 63 passed; 0 failed
+gg_to_ttx_ctg: worst flow 3.863e-16
+ttx_to_gg_ctg: worst flow 9.601e-16
+cargo test -p vibegraph-lib --features extended-validation --lib rooting_invariant
+test result: ok. 5 passed; 0 failed
+```
+
+`b b~ > t t~` under ctGRe and under ctGIm alone (scratch) are unchanged at 2.1e-15.
+Mutation (both signs reverted with `git apply -R`): the two rows `FAILED` at their
+pre-fix 8.043e-3 and 1.074e-2.
+
+**What it cannot detect.** The rows are blind to a sign carried by the whole
+process. Whether the `f` rule and `boson_momentum_sign` are one rule is not
+decided by any row in reach (see Found). The scalar-root change is pinned only by
+`FFVV1`; any other structure whose chain closes through a projector or the
+identity at the amplitude root is reached by no gated row.
+
 ## Found
 
 1. **The rooting-soundness sweep never roots a reversed multi-gamma chain both
@@ -297,9 +369,8 @@ on the evaluator.
    `all_rootings_preserve_amplitude` could not see (no MG-validated process puts a
    two-gamma chain on a reversed line). A sweep over SMEFTsim dipole and FFVV
    processes on initial-state lines would close the class.
-2. **No gate reaches the quark-gluon dipoles' two-gluon contacts (FFVV1-4) on a
-   reversed line** (e.g. `t t~ > g g NP<=1` under ctGRe/ctGIm). The fix changes
-   their evaluation there; it is unmeasured.
+2. *(Closed in this branch.)* The quark–gluon-pair contacts on a reversed line
+   are now gated by `ttx_to_gg_ctg` (section 9).
 3. **The backlog item `conjugate-vector-current-fallback-silent` names a function
    that no longer exists.** `conjugate_vector_current` is now
    `UFOModel::conjugate_couplings`, which matches more structures but keeps the
@@ -311,6 +382,20 @@ on the evaluator.
    (a four-fermion contact with `Metric`, an `Epsilon` structure, a charged
    scalar with a CP phase) would still bind its own coupling; no model in reach
    has one with a non-zero imaginary part on the cards in use.
+
+5. **`t t~ > w+ w- NP<=1` under ctWRe alone disagrees with MadGraph** at worst
+   flow 2.07e-3 on the head with all three fixes; the crossed `w+ w- > t t~` agrees
+   on every graph (3.1e-14). One diagram (our diagram 7) pairs with no MadGraph
+   graph (best overlap 0.253, against `AMP(7)`), and MadGraph's `AMP(8)` has no
+   partner; every other diagram pairs at overlap 1. Unlocalised; the reproducer is
+   the scratch row `ttx_to_wpwm_ctW` (card: ctWRe = 0.002 alone).
+6. **`boson_momentum_sign` and `fermion_structure_constant_sign` may be one rule.**
+   Every vertex either signs carries an odd number of colour structure constants,
+   and the momentum reading the first rule's derivation assumes (kernels incoming,
+   MadGraph outgoing) does not hold for `P` on a fermion vertex: the stored momenta
+   are read as ALOHA reads them. The two predictions part only on a colourless
+   all-boson vertex of self-conjugate legs with an odd momentum count (a 2HDM
+   `A Z h`), already an open item of `amplitudes/convention-sign-inventory`.
 
 The knowledge bundle's open item "the fermion dipole" in
 `amplitudes/convention-sign-inventory` is resolved there in this branch (at the

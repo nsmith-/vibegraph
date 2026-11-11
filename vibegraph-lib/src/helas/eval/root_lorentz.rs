@@ -616,13 +616,37 @@ impl LorentzEvalTree {
 
         // find all the remaining scalar roots
         while visited_ops.len() < term.ops.len() {
-            // find an unvisited op
-            let Some((iop, op)) = term
-                .ops
-                .iter()
-                .enumerate()
-                .find(|&(i, _)| visited_ops.iter().all(|&j| i != j))
-            else {
+            let unvisited = |i: usize| visited_ops.iter().all(|&j| i != j);
+            // A chain that carries a gamma closes through it, as a vector current
+            // contracted with what sits at its Lorentz index: that `GammaVout` is where
+            // the runtime applies the reversed-bilinear sign `term_reversed_parity`
+            // counts. Closed through a projector, `γ⁵` or the identity instead (an
+            // `FFVV1`-type term lists its `Gamma5` first), the chain would reach the
+            // amplitude with no reversal sign while the parity still counted one.
+            let closes_a_chain = |op: &LorentzOp| {
+                matches!(
+                    op,
+                    LorentzOp::ProjM { .. }
+                        | LorentzOp::ProjP { .. }
+                        | LorentzOp::Identity { .. }
+                        | LorentzOp::Gamma5 { .. }
+                )
+            };
+            let first = term.ops.iter().enumerate().find(|&(i, _)| unvisited(i));
+            let Some((iop, op)) = first.and_then(|(i, op)| {
+                if closes_a_chain(op) {
+                    term.ops
+                        .iter()
+                        .enumerate()
+                        .find(|&(k, o)| {
+                            unvisited(k)
+                                && matches!(o, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })
+                        })
+                        .or(Some((i, op)))
+                } else {
+                    Some((i, op))
+                }
+            }) else {
                 break; // no more unvisited ops
             };
             let root = tree.scalar_root(term, iop, op, &mut visited_ops, flows)?;
