@@ -301,7 +301,42 @@ informational row, and it would be needed before anyone gated on it.
 All gates ran on ac74b42 in `/home/user/cargo-target-jw1`, with debug info and
 incremental compilation off.
 
-GATES
+Driver: `$S/jw1-gates.sh`, fully detached, with an EXIT-trap marker
+(`$S/jw1-gates-status`). The first attempt was lost to a container restart and
+rerun from scratch.
+
+```
+$ cat $S/jw1-gates-status
+HEAD 2449637beb4d7f608731124784b9d986122360b3 04:39:34
+WORKSPACE-TEST-EXIT 0 04:50:19
+VALIDATE-EXIT 0 06:22:00
+DRIVER-EXIT rc=0 06:22:00
+```
+
+2449637 changes only `research/kb/` relative to ac74b42, so the code under test
+is ac74b42's.
+
+- **`cargo test --workspace --no-fail-fast`**: exit 0. Over 58 test targets,
+  2073 passed, 0 failed and 26 ignored (`$S/jw1-wstest.log`, the summed
+  `test result` lines).
+- **`bash validation/validate.sh`**: exit 0. It runs its own feature-enabled
+  `clippy --workspace --all-targets -D warnings` first, which was clean. Then
+  2523 passed, 0 failed and 110 ignored (`$S/jw1-validate.log`). The collator:
+
+  ```
+  76 rows × 4 categories = 304 cells: 218 measured in the layers this run drove (213 ✅, 5 ⚠️, 13 ⏳, 73 — / uncovered).
+  The measured cells are exactly the cells the manifest declares, every gate cell
+  passed, and every measurement agrees with the manifest about what it is.
+  ```
+
+  The five ⚠️ cells are the manifest's deliberately unenforced ones:
+  `gg_to_gg` and `gg_to_gg_cg` diagrams, `ee_to_wpwm_cw` and `ee_to_zh_smeft`
+  amplitudes, and `ee_to_mumua` samples. None is a decay chain. The decay-chain
+  σ gate passed (`decay_chain_cross_sections_match_madevent_over_seeds ... ok`).
+  No banked row has identical particles both in a decay and in the core, so no
+  banked σ line reaches the weighted path.
+- **`cargo fmt --all --check`**, **`cargo clippy --workspace --all-targets -- -D warnings`**
+  and **`python3 scripts/kb.py lint`** on the final head: see §7.
 
 ## 6. Item and brief corrections
 
@@ -330,7 +365,31 @@ GATES
 
 ## 7. Commits
 
-COMMITS
+All commits are on `sprintj-weighted-cut` and pushed. Author
+`Nicholas Smith <nick.smith@cern.ch>`; each ends with
+`Assisted-by: claude-code:claude-opus-5-5`.
+
+- `d96f535` feat(cuts): the pairing-weighted `cut_decays` exemption. Touches
+  `cuts.rs`, `pairing.rs` (new), `proton.rs`, `hadronic.rs`, `generate.rs`,
+  `generate/source.rs`, `lib.rs` and the CLI's `integrate.rs`.
+- `4b5d3bb` test(proton): the ignored `u~ u > u u~` reproducer (Found 1). It
+  was removed again in the next commit, on the manager's instruction.
+- `ac74b42` test(pairing): the identity test, and the reproducer's removal.
+- `2449637` docs(kb): `release-scope.md`, the identical-particles concept,
+  `madgraph-defects.md`, the indexes and this report as a draft.
+- The final commit fills in §5 and this section. The MadGraph run directories were then deleted, keeping each seed's `results.dat`, `vg_seed_result.txt`, event count and run card under `$S/jw1-mg-kept/`.
+
+Final-head checks, run before that commit:
+
+```
+$ cargo fmt --all --check                                   # exit 0
+$ cargo clippy --workspace --all-targets -- -D warnings     # exit 0 (on ac74b42's code; docs-only since)
+$ python3 scripts/kb.py lint
+1259 concepts, 434 backlog items; 0 errors, 5 warnings
+```
+
+The five lint warnings are pre-existing backlog-item warnings and are not in
+files this session touched.
 
 ## Found
 
