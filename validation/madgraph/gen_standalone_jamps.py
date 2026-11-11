@@ -406,6 +406,17 @@ ROWS = {
             model=SMEFT, restrict="vg_ctWIm", bank_amps=True),
         Row("vlep_to_tbx_cbwim", "ve e+ > t b~ NP<=1", (12, -11), (6, -5), 800.0, 3, 5119,
             model=SMEFT, restrict="vg_cbWIm", bank_amps=True),
+        # O_tG in both CP parities on an annihilating top pair: the two-gluon
+        # contacts (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains with no
+        # momentum, closed into the amplitude on a line read against the vertex's
+        # arrow, beside the top-gluon dipole chains and QCD. Widths are zero for the
+        # spacelike top. `SMHLOOP=0` drops the loop-induced Higgs-gluon vertices and
+        # their seven-digit Fortran couplings.
+        Row("ttx_to_gg_ctg", "t t~ > g g NP<=1 SMHLOOP=0", (6, -6), (21, 21), 800.0, 3, 5120,
+            model=SMEFT, restrict="vg_ctG", zero_widths=True),
+        # The crossed mirror: the same contacts on a final-state top pair.
+        Row("gg_to_ttx_ctg", "g g > t t~ NP<=1 SMHLOOP=0", (21, 21), (6, -6), 800.0, 3, 5121,
+            model=SMEFT, restrict="vg_ctG", zero_widths=True),
     ]
 }
 

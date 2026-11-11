@@ -721,7 +721,14 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
+    ("ttx_to_gg_ctg", TOP_GLUON_DIPOLE_TWO_GLUONS),
+    ("gg_to_ttx_ctg", TOP_GLUON_DIPOLE_TWO_GLUONS),
+];
+
+const TOP_GLUON_DIPOLE_TWO_GLUONS: &str = "O_tG with two external gluons disagrees with \
+     MadGraph at O(1e-2) of the largest flow: ctGRe alone in both orientations, ctGIm alone \
+     on g g > t t~ only, while b b~ > t t~ (one s-channel gluon) agrees";
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1168,6 +1175,22 @@ fn vlep_to_tbx_ctwim() {
 #[test]
 fn vlep_to_tbx_cbwim() {
     check("vlep_to_tbx_cbwim");
+}
+
+/// O_tG in both CP parities on an annihilating top pair: its two-gluon contacts
+/// (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains closed into the amplitude
+/// on a line read against the vertex's arrow, beside the top-gluon dipole chains and
+/// QCD.
+#[test]
+fn ttx_to_gg_ctg() {
+    check("ttx_to_gg_ctg");
+}
+
+/// The crossed mirror of [`ttx_to_gg_ctg`]: the same contacts on a final-state top
+/// pair.
+#[test]
+fn gg_to_ttx_ctg() {
+    check("gg_to_ttx_ctg");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact
