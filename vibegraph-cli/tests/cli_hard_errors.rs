@@ -696,7 +696,9 @@ fn cli_generate_refuses_a_grid_whose_scan_finds_no_weight() {
 /// pairing-weighted (identical quarks in the core and in the decay) is refused
 /// before any event is written: a reweighting ratio is taken on the whole
 /// `|M|²`, while the event's weight also carries the pairing weight, which moves
-/// with the parameters reweighted. Fixed-energy beams.
+/// with the parameters reweighted. Fixed-energy gluon beams: a lepton-collider
+/// core with the same quarks is refused at enumeration, where a core `Z` would
+/// be ambiguous with the decay's.
 #[test]
 fn cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams() {
     let home = tempfile::tempdir().unwrap();
@@ -706,7 +708,7 @@ fn cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams() {
     let proc_card = cwd.path().join("proc_card.dat");
     std::fs::write(
         &proc_card,
-        "import model sm\ngenerate e+ e- > z u u~, z > u u~\n",
+        "import model sm\ngenerate g g > z u u~, z > u u~\n",
     )
     .unwrap();
     let run_card = cwd.path().join("run_card.dat");
