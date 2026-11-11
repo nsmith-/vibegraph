@@ -19,7 +19,9 @@ The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
 references. The fourth, **`vibegraph inspect`**, prints the results a saved
 `grid.bin.zst` records (σ, its error, χ²/dof, the factorization scale, each
-multiplicity's and each channel's share) without re-running anything.
+multiplicity's and each channel's share) without re-running anything, and
+with `--ranking` writes its configurations ranked by their share of σ as
+JSON ([below](#ranking-the-diagrams)).
 
 The fifth, **`vibegraph enumerate`**, takes a process card and reports every
 diagram that contributes, so that a user can check that a card means the
@@ -60,6 +62,32 @@ card. Given `--run-card` or `--param-card`, the summary also previews the
 flavour groups `integrate` would form under those cards (the one not given
 takes `integrate`'s default), and records which cards it used; without
 either, it reports no grouping, since the grouping depends on both cards.
+
+### Ranking the diagrams
+
+Once a run has integrated (from the card or from `diagrams.bin.zst`),
+
+```sh
+vibegraph inspect grid.bin.zst --ranking ranking.json --diagrams diagrams/
+```
+
+writes a JSON document that ranks the run's integration configurations
+(`s0.c3`: `diagrams.json`'s configuration `c3` of subprocess `s0`) by σ_c,
+their share of the cross section under MadEvent's `AMP2` partition, with each
+one's diagrams, share and cumulative share, the channels that sample it and,
+at proton beams, the flavour group it stands for. Contact diagrams and the
+weight no configuration carried are listed apart, and the sampler's own
+per-channel σⱼ is reported as a diagnostic, not as a ranking: it measures
+which channel drew the points, not which diagrams matter. Everything is read
+from the artifact; nothing is integrated again.
+
+`--diagrams` pairs the ranking with an `enumerate` output directory (or its
+`diagrams.json`): it is refused unless the two record the same
+`diagram_set_digest`, and each diagram's `svg` is then the drawing
+`diagrams.json` records, relative to that directory. Without it, each carries
+the conventional `svg/<set>/<diagram>.svg`. `--ranking -` writes to stdout,
+and an existing file is kept unless `--force` is given. The schema is in the
+knowledge bundle (`research/kb/pipeline/ranking-json.md`).
 
 ## Cards
 
@@ -283,7 +311,8 @@ kinds, bumps the version.
   path and its `format_version`, the `diagram_set_digest` of the diagrams it
   integrated, and `param_card` (whether a param card's text is banked).
   `inspect --output-ldjson` prints the same
-  object for a saved artifact. `generate`'s carries `events_written`,
+  object for a saved artifact; with `--ranking <file>` its result carries
+  `ranking_path` and the document under `ranking` instead. `generate`'s carries `events_written`,
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
   `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries

@@ -190,6 +190,10 @@ whose fractions move with αs), and the MadEvent oracle `cli_config_share`
 The sum rule is blind to a share moved between two configurations; the oracle
 is what sees that.
 
+**Reading them.** `vibegraph inspect` lists the shares per set, and
+`inspect --ranking` writes them as a ranked JSON document beside the
+channels and the diagrams' drawings ([the ranking JSON](ranking-json.md)).
+
 ## What `generate` checks before replaying
 
 `generate` takes no card, so nothing it is given can mismatch the record;
@@ -311,9 +315,8 @@ tracks. Three obstacles come first, and none is a `derive`:
   kinematics it silently drops helicities. The pruned flag must not travel
   unless the contract travels with it and is rechecked on load.
 
-A future `vibegraph enumerate` diagram artifact
-([diagram-inspection-command-missing](../backlog/feature/diagram-inspection-command-missing.md))
-would supply the cache's input. It gets its own concept beside this one.
+The diagram artifact `vibegraph enumerate` writes
+([diagrams.json](diagrams-json.md)) would supply the cache's input.
 
 [^n18-h8]: Note 18 §5, H8 (`cli-integrate`) and H5's `float_roundtrip` warning.
 [^n23-identity]: Note 23, "model identity in the artifact", with its test and mutation tables.
