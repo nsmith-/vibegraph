@@ -371,6 +371,34 @@ ROWS = {
         # the photon's.
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
+        # The rows below put SMEFTsim's momentum-slashed dipole chains (two gammas,
+        # `[γ^μ, p̸]`) on a quark line read against the vertex's arrow: an
+        # initial-state pair, or a line from an initial to a final state. The
+        # bilinear then reads the chain from its column end, in reverse order.
+        #
+        # O_bB alone on the annihilating b pair, the dipole vertex beside the
+        # gauge coupling through the same s-channel photon and Z.
+        Row("bbx_to_epem_cbb", "b b~ > e+ e- NP<=1", (5, -5), (-11, 11), 500.0, 3, 5113,
+            model=SMEFT, restrict="vg_cbB", bank_amps=True),
+        # O_tB alone on an annihilating top pair.
+        Row("ttx_to_epem_ctb", "t t~ > e+ e- NP<=1", (6, -6), (-11, 11), 800.0, 3, 5114,
+            model=SMEFT, restrict="vg_ctB", bank_amps=True),
+        # A gluon off the annihilating b pair: the O_bB vertex is the amplitude
+        # contraction in some diagrams and produces the off-shell b current toward the
+        # gluon emission in others, so the two readings of one chain meet in one sum.
+        Row("bbx_to_epemg_cbb", "b b~ > e+ e- g NP<=1", (5, -5), (-11, 11, 21), 500.0, 3,
+            5115, model=SMEFT, restrict="vg_cbB", bank_amps=True),
+        # Every third-generation quark dipole in both CP parities on `b b~ > t t~`:
+        # the b line annihilates, the t line is crossed, and the t-channel W joins
+        # the two on lines from an initial to a final state, with the one-chirality
+        # chains FFV10 and FFV4 of O_tW and O_bW. Widths are zero for the spacelike W.
+        Row("bbx_to_ttx_tbdipole", "b b~ > t t~ NP<=1", (5, -5), (6, -6), 1000.0, 3, 5116,
+            model=SMEFT, restrict="vg_tbdipole", zero_widths=True),
+        # The same dipoles on an annihilating t b~ pair through the s-channel W. With
+        # the b massless the O_tW and O_bW graphs are proportional to the gauge
+        # graph at every helicity, so no graph pairing is banked: the flow carries it.
+        Row("tbx_to_vlep_tbdipole", "t b~ > ve e+ NP<=1", (6, -5), (12, -11), 800.0, 3, 5117,
+            model=SMEFT, restrict="vg_tbdipole"),
     ]
 }
 

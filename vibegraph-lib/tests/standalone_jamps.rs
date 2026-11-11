@@ -146,6 +146,9 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("wpwm_to_wpwma_cw", WPWM_TO_WPWMA_CW_GRAPHS),
     ("ee_to_wpwmwpwm_cw", EE_TO_WPWMWPWM_CW_GRAPHS),
     ("ee_to_mumu_negmz", &[0, 1]),
+    ("bbx_to_epem_cbb", &[0, 1, 2, 3]),
+    ("ttx_to_epem_ctb", &[0, 1, 2, 3]),
+    ("bbx_to_epemg_cbb", &[0, 1, 2, 3, 4, 5, 6, 7]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -716,7 +719,18 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
+    ("bbx_to_epem_cbb", DIPOLE_REVERSED),
+    ("ttx_to_epem_ctb", DIPOLE_REVERSED),
+    ("bbx_to_epemg_cbb", DIPOLE_REVERSED),
+    ("bbx_to_ttx_tbdipole", DIPOLE_REVERSED),
+    ("tbx_to_vlep_tbdipole", DIPOLE_REVERSED),
+];
+
+const DIPOLE_REVERSED: &str = "a momentum-slashed dipole chain on a quark line read against the \
+     vertex's arrow, closed into the amplitude or into a vector current, takes the opposite \
+     sign to MadGraph's while the gauge coupling on the same line agrees: per graph the dipole \
+     graphs fit -G and every other graph G, at |r| = 1 to rounding";
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1108,6 +1122,47 @@ fn uux_to_ttxg() {
 #[test]
 fn ee_to_mumu_negmz() {
     check("ee_to_mumu_negmz");
+}
+
+/// O_bB's momentum-slashed chain (`[γ^μ, p̸]`, FFV9) on an annihilating b pair, beside
+/// the gauge coupling through the same s-channel photon and Z; compared per MadGraph
+/// graph. The b line runs against the dipole vertex's arrow, so the bilinear reads the
+/// chain from its column end; a two-gamma chain read in that order without being put
+/// back is the commutator with the other sign, and the dipole graphs alone flip.
+#[test]
+fn bbx_to_epem_cbb() {
+    check("bbx_to_epem_cbb");
+}
+
+/// O_tB's chain on an annihilating top pair; compared per MadGraph graph.
+#[test]
+fn ttx_to_epem_ctb() {
+    check("ttx_to_epem_ctb");
+}
+
+/// A gluon off the annihilating b pair under O_bB: the dipole vertex is the amplitude
+/// contraction in some diagrams and produces the off-shell b current toward the gluon
+/// emission in others, so both readings of one chain are compared per MadGraph graph.
+#[test]
+fn bbx_to_epemg_cbb() {
+    check("bbx_to_epemg_cbb");
+}
+
+/// Every third-generation quark dipole in both CP parities on `b b~ > t t~`: the
+/// neutral chains FFV9 and FFV2 on the annihilating b pair and on the crossed top pair,
+/// and the one-chirality W chains FFV10 and FFV4 on the t-channel lines from an
+/// initial b to a final t.
+#[test]
+fn bbx_to_ttx_tbdipole() {
+    check("bbx_to_ttx_tbdipole");
+}
+
+/// The same dipoles on an annihilating t b~ pair through the s-channel W. With the b
+/// massless the O_tW and O_bW graphs are proportional to the gauge graph, so the flow is
+/// the comparison and no graph pairing is declared.
+#[test]
+fn tbx_to_vlep_tbdipole() {
+    check("tbx_to_vlep_tbdipole");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact
