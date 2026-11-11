@@ -386,6 +386,18 @@ ROWS = {
         # seven-digit Fortran couplings.
         Row("uux_to_bbxg_4f_nodipole", "u u~ > b b~ g NP<=1 SMHLOOP=0", (2, -2), (5, -5, 21),
             1000.0, 3, 5112, model=SMEFT, restrict="vg_nodipole"),
+        # Six quarks with no charged current between the two produced pairs: the
+        # light-light, light-third-generation and charm contacts beside QCD and
+        # electroweak exchange. Widths are zero for the spacelike W.
+        Row("uux_to_ttxccx_4f_nodipole", "u u~ > t t~ c c~ NP<=1 SMHLOOP=0", (2, -2),
+            (6, -6, 4, -4), 1000.0, 3, 5111, model=SMEFT, restrict="vg_nodipole",
+            zero_widths=True),
+        # The six-quark process both contacts above meet in: four flavours, with the
+        # `t~ b b~ t` contact beside the `u~ b b~ u` one. Widths are zero for the
+        # spacelike W.
+        Row("uux_to_ttxbbx_4f_nodipole", "u u~ > t t~ b b~ NP<=1 SMHLOOP=0", (2, -2),
+            (6, -6, 5, -5), 1000.0, 3, 5110, model=SMEFT, restrict="vg_nodipole",
+            zero_widths=True),
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
     ]
