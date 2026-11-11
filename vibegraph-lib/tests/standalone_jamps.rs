@@ -149,6 +149,8 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("bbx_to_epem_cbb", &[0, 1, 2, 3]),
     ("ttx_to_epem_ctb", &[0, 1, 2, 3]),
     ("bbx_to_epemg_cbb", &[0, 1, 2, 3, 4, 5, 6, 7]),
+    ("vlep_to_tbx_ctwim", &[0, 1]),
+    ("vlep_to_tbx_cbwim", &[1, 0]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -719,7 +721,18 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
+    ("vlep_to_tbx_ctwim", W_DIPOLE_CP_ODD),
+    ("vlep_to_tbx_cbwim", W_DIPOLE_CP_ODD),
+    ("bbx_to_ttx_tbdipole", W_DIPOLE_CP_ODD),
+    ("tbx_to_vlep_tbdipole", W_DIPOLE_CP_ODD),
+];
+
+const W_DIPOLE_CP_ODD: &str = "the W dipoles' CP-odd parts, real couplings on the \
+     one-chirality chains FFV10 and FFV4, take the opposite sign to MadGraph's in either \
+     line orientation while their CP-even parts, imaginary couplings on the same chains, \
+     agree: a diagram vertex bound to one of a Hermitian-conjugate pair keeps its own \
+     coupling, where MadGraph binds the other";
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1137,10 +1150,10 @@ fn bbx_to_epemg_cbb() {
     check("bbx_to_epemg_cbb");
 }
 
-/// Every third-generation quark dipole on `b b~ > t t~`, the W ones CP-even: the
+/// Every third-generation quark dipole in both CP parities on `b b~ > t t~`: the
 /// neutral chains FFV9 and FFV2 on the annihilating b pair and on the crossed top pair,
 /// and the one-chirality W chains FFV10 and FFV4 on the t-channel lines from an
-/// initial b to a final t.
+/// initial b to a final t, their CP-odd parts with real couplings.
 #[test]
 fn bbx_to_ttx_tbdipole() {
     check("bbx_to_ttx_tbdipole");
@@ -1152,6 +1165,20 @@ fn bbx_to_ttx_tbdipole() {
 #[test]
 fn tbx_to_vlep_tbdipole() {
     check("tbx_to_vlep_tbdipole");
+}
+
+/// O_tW's CP-odd part alone on a crossed top line: a real coupling on FFV10 of
+/// `[t~ b W+]`, which its Hermitian partner `[b~ t W-]` carries on FFV4. Compared per
+/// MadGraph graph.
+#[test]
+fn vlep_to_tbx_ctwim() {
+    check("vlep_to_tbx_ctwim");
+}
+
+/// O_bW's CP-odd part alone, the same with the chiralities exchanged.
+#[test]
+fn vlep_to_tbx_cbwim() {
+    check("vlep_to_tbx_cbwim");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact

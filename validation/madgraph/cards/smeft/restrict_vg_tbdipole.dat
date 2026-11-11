@@ -2,16 +2,11 @@
 ## RESTRICT CARD AUTHORED FOR THE VIBEGRAPH VALIDATION LADDER ########
 ######################################################################
 ##
-## Every third-generation quark dipole: O_tG, O_tW, O_tB, O_bG, O_bW, O_bB, the
-## neutral ones in both CP parities and the W ones CP-even. Between them they
-## reach all four momentum-slashed chain structures SMEFTsim writes on a quark
-## line -- FFV9 and FFV2 on the neutral vertices, FFV10 and FFV4 (one chirality
-## each) on the W vertex.
-##
-## ctWIm and cbWIm stay at zero: they put real couplings on the W vertex's FFV10
-## and FFV4, and with either one on alone `t b~ > ve e+ NP<=1` and
-## `ve e+ > t b~ NP<=1` disagree with MadGraph by the sign of the dipole graph,
-## a defect of its own that the CP-even coefficients do not reach.
+## Every third-generation quark dipole in both CP parities: O_tG, O_tW, O_tB,
+## O_bG, O_bW, O_bB. Between them they reach all four momentum-slashed chain
+## structures SMEFTsim writes on a quark line -- FFV9 and FFV2 on the neutral
+## vertices, FFV10 and FFV4 (one chirality each) on the W vertex, the CP-odd W
+## parts with real couplings.
 ##
 ## Built from the model's own restrict_massless.dat with every SMEFT and
 ## SMEFTcpv coefficient set to zero except:
@@ -23,8 +18,10 @@
 ##   cbWRe        0.008          (shipped value)
 ##   cbBRe        0.0002         (shipped value)
 ##   ctGIm        0.07           (chosen here)
+##   ctWIm        0.0025         (chosen here)
 ##   ctBIm        0.0045         (chosen here)
 ##   cbGIm        0.0055         (chosen here)
+##   cbWIm        0.0075         (chosen here)
 ##   cbBIm        0.00035        (chosen here)
 ##
 ## The CP-odd block ships at zero throughout, so each imaginary part is chosen
@@ -266,13 +263,13 @@ Block SMEFTcpv
     7 0.0000000e+00 # cuGIm 
     8 7.0000000e-02 # ctGIm 
     9 0.0000000e+00 # cuWIm 
-   10 0.0000000e+00 # ctWIm 
+   10 2.5000000e-03 # ctWIm 
    11 0.0000000e+00 # cuBIm 
    12 4.5000000e-03 # ctBIm 
    13 0.0000000e+00 # cdGIm 
    14 5.5000000e-03 # cbGIm 
    15 0.0000000e+00 # cdWIm 
-   16 0.0000000e+00 # cbWIm 
+   16 7.5000000e-03 # cbWIm 
    17 0.0000000e+00 # cdBIm 
    18 3.5000000e-04 # cbBIm 
    19 0.0000000e+00 # cuHIm 
