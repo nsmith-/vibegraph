@@ -1059,6 +1059,16 @@ fn hh_to_hh_chbox() {
     check("hh_to_hh_chbox");
 }
 
+/// A four-quark contact whose Lorentz structures pair its spinors two ways
+/// (`t~ b b~ t`, SMEFTsim's `V_753`), under `vg_nodipole`: the model's own all-on
+/// card with every dipole operator zero. Each colour structure is coupled through one
+/// pairing only, so each fermion-flow group's diagrams carry only the colour chains
+/// that group couples, beside QCD, electroweak s-channel and t-channel W exchange.
+#[test]
+fn bbx_to_ttx_4f_nodipole() {
+    check("bbx_to_ttx_4f_nodipole");
+}
+
 /// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top
 /// line, whose three colour structures each multiply one of its Lorentz structures.
 #[test]
