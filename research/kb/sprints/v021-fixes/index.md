@@ -6,6 +6,10 @@
 
 * [Sprint J: v0.2.1 fixes](sprint.md) - Before v0.2.1: the pairing-weighted cut_decays default, refusing diagram and integrate artifacts from an older enumeration, the SMEFT four-quark compile panic, the fixed-energy sde_strategy = 2 subprocess weights; then the release preparation.
 
+## Sprint Record
+
+* [Sprint J: the v0.2.1 fixes](closeout.md) - Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The release waits on the CERN host's CMS campaign.
+
 ## Directories
 
 * [sessions](sessions/index.md)
