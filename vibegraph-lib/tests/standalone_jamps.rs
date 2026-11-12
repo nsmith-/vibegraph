@@ -154,6 +154,7 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("bg_to_twm_ctw", &[0, 1, 2, 3]),
     ("gb_to_twm_cbw", &[0, 1, 2, 3]),
     ("bxg_to_txwp_ctw", &[0, 1, 2, 3]),
+    ("ttx_to_wpwm_ctw", &[0, 1, 2, 3, 4, 5, 6, 7, 8]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -1208,6 +1209,15 @@ fn gb_to_twm_cbw() {
 #[test]
 fn bxg_to_txwp_ctw() {
     check("bxg_to_txwp_ctw");
+}
+
+/// O_tW on an annihilating top pair into a W pair, compared per MadGraph graph: the
+/// t-channel b puts the dipole on a vertex that produces the off-shell b in one
+/// diagram and closes the amplitude in its mirror, beside the photon and Z dipoles and
+/// the colourless `t~ t W- W+` contact.
+#[test]
+fn ttx_to_wpwm_ctw() {
+    check("ttx_to_wpwm_ctw");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact

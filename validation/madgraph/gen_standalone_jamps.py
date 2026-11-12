@@ -418,6 +418,12 @@ ROWS = {
         # The charge-conjugate channel.
         Row("bxg_to_txwp_ctw", "b~ g > t~ w+ NP<=1 SMHLOOP=0", (-5, 21), (-6, 24), 800.0, 3,
             5124, model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
+        # O_tW on an annihilating top pair into a W pair: the t-channel b between the
+        # two W vertices puts the dipole on a vertex that produces the off-shell b
+        # in one diagram and closes the amplitude in its mirror, beside the photon and
+        # Z dipoles, the colourless `t~ t W- W+` contact (FFVV3) and the Higgs exchange.
+        Row("ttx_to_wpwm_ctw", "t t~ > w+ w- NP<=1 SMHLOOP=0", (6, -6), (24, -24), 800.0, 3,
+            5125, model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
         # O_tG in both CP parities on an annihilating top pair: the two-gluon
         # contacts (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains with no
         # momentum, closed into the amplitude on a line read against the vertex's

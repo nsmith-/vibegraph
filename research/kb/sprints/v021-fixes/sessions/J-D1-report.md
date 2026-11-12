@@ -414,7 +414,7 @@ number (≥ 2) of gammas, the chain's chiral factors are conjugated (`P_L ↔ P_
 | `bg_to_twm_ctw`, `gb_to_twm_cbw`, `bxg_to_txwp_ctw` | all pass (3 of the 66 standalone rows) |
 | scratch `b g > t w-` ctWIm alone | 3.9e-15 |
 | scratch `g b > t w-` cbWIm alone | 2.2e-15 |
-| scratch `t t~ > w+ w-` ctWRe | 6.6e-14 (was 2.07e-3) |
+| `ttx_to_wpwm_ctw` (`t t~ > w+ w-`, ctWRe; banked after review) | worst flow 2.853e-14, worst graph 5.398e-15; with fix 4 reverted 7.326e-4 (graph 2.396e-4) |
 | scratch `w+ w- > t t~` ctWRe | 3.1e-14 (unchanged) |
 | `cargo test -p vibegraph-lib --test standalone_jamps` | `66 passed; 0 failed` |
 | rooting-invariance tests (`--features extended-validation --lib rooting_invariant`) | 5 passed |
@@ -438,6 +438,51 @@ the dev-profile results measured after it existed are suspect. On 02d8174, after
 - `cargo test --workspace --no-fail-fast`: 2081 passed, 0 failed, 26 ignored.
 
 The `release-debug` build of `validate.sh` is the definitive check.
+
+## 11. Narrowings after review
+
+The independent review of #134 found fixes 2 and 3 broader than their evidence.
+Each is narrowed in its own commit, with a test that fails if it is widened again.
+
+**Fix 2 (`9064479`).** `conjugate_couplings` had mapped every charged vertex with
+two fermions. The reviewer measured what that changes:
+
+- the SM's charged-Goldstone Yukawas flip wholesale (`V_88` FFS1 +0.0270 → −0.0270);
+- the CKM restrictions' scalar terms are conjugated;
+- SMEFTsim's `t b W H` `FFVS` vertices (`V_290`, `V_329`) change.
+
+None of these was measured, and nothing moves today only because unitary gauge
+drops the Goldstones. The exchange now applies only to three-leg
+fermion–fermion–vector vertices whose every term carries a gamma: the CKM vector
+currents (unchanged) and the W dipoles (the fix). Every other vertex keeps its own
+coupling, as before the dipoles were mapped. I found no case that needs the
+zero-gamma rule.
+
+`ufo::tests::the_partner_exchange_is_limited_to_gamma_currents` checks three things:
+
+- `V_88` binds its own couplings exactly;
+- every CKM W–quark vertex binds its partner's coupling on the same key;
+- `V_290` and `V_329` have no partner map.
+
+Mutation: widening the guard to every two-fermion vertex fails the test, at the
+`V_88` assertion.
+
+**Fix 3 (`ea49a80`).** The structure-constant sign fired on any fermion vertex
+with an odd number of `f`. It is empirical, so I narrowed it rather than claim a
+general rule. It now applies to vertices with two fermion and two vector legs
+(the measured `t~ t g g` contacts). Every other fermion vertex with an odd number
+of `f` is refused by name (`UnsupportedVertex`): SMEFTsim's `t~ t g g H`
+(`V_560`–`V_584` with a Higgs), or a colour-octet fermion's gauge vertex. No
+hermetic or gated process reaches them.
+
+`root_diagram::tests::the_structure_constant_sign_is_limited_to_the_measured_contact`
+checks four vertices: `V_564` gives −1, `V_563` is refused naming the vertex, and
+`V_281` and `V_9` give +1. Mutation: giving every odd-`f` fermion vertex the sign
+fails the test, at the `V_563` refusal.
+
+**Item 4.** `t t~ > w+ w-` under ctWRe is now the banked row `ttx_to_wpwm_ctw`
+(card `vg_ctW`, graphs paired one to one). It reads 2.853e-14, and 7.326e-4 with
+fix 4 reverted. The γ⁵ half of fix 4 still has no row (section 10).
 
 ## Found
 
