@@ -492,6 +492,134 @@ fn momentum_slashed_chain_is_rooting_invariant() {
     }
 }
 
+/// A momentum-slashed dipole on a quark line read against its arrow, rooted every way.
+///
+/// In `b b~ > e+ e- g` under O_bB the dipole vertex sits on the annihilating b pair
+/// with an internal b leg. Rooted at the dipole vertex or across its photon, the chain
+/// is closed into a bilinear whose bra sits at the column slot, so the kernels apply
+/// its two gammas in reverse order; rooted across the internal b, the vertex produces
+/// the off-shell b current and applies them in their written order. `[γ^μ, p̸]` read
+/// backwards is `[p̸, γ^μ]`, so the two disagree by a sign unless the sink reading puts
+/// the chain back. The `ee_to_ttx_dipole` sweep cannot see this: its dipole sits on a
+/// crossed line, and a two-vertex diagram never roots it at a fermion leg.
+///
+/// Every diagram, at every vertex, at every helicity of one banked point, against the
+/// production rooting.
+#[test]
+#[cfg(feature = "extended-validation")]
+fn reversed_dipole_chain_is_rooting_invariant() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let model = Arc::new(
+        UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_cbB.dat")),
+        )
+        .expect("load SMEFTsim under the O_bB card"),
+    );
+    let table: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            root.join("../validation/madgraph/standalone/bbx_to_epemg_cbb.json"),
+        )
+        .expect("the banked O_bB emission table"),
+    )
+    .expect("parse the banked O_bB emission table");
+    let card: ParamCard = table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .expect("the banked param card");
+    let evaluated = EvaluatedModel::from_model_card((*model).clone(), &card).unwrap();
+    let opts = ParsingOptions::default();
+    let pc = parse_proc_card("generate b b~ > e+ e- g NP<=1", &opts).unwrap();
+    let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
+    let set = sets.iter().find(|s| !s.diagrams.is_empty()).unwrap();
+    let momenta: Vec<LorentzVector<f64>> = table["points"][0]["momenta"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            let c: Vec<f64> = m
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_f64().unwrap())
+                .collect();
+            LorentzVector::new(c[0], c[1], c[2], c[3])
+        })
+        .collect();
+    let helicities: Vec<Vec<i32>> = table["helicities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| {
+            h.as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_i64().unwrap() as i32)
+                .collect()
+        })
+        .collect();
+
+    let eval_at = |d: &Diagram, r: Option<usize>| -> Vec<num_complex::Complex<f64>> {
+        if let Some(r) = r {
+            set_root_override(Box::new(move |_| VtxIdx(r)));
+        }
+        let one = DiagramSet {
+            particles_in: set.particles_in.clone(),
+            particles_out: set.particles_out.clone(),
+            polarizations: set.polarizations.clone(),
+            diagrams: vec![d.clone()],
+            mirrored: set.mirrored,
+        };
+        let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
+        clear_root_override();
+        let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
+        let mut scratch = bound.scratch_space();
+        helicities
+            .iter()
+            .map(|hel| bound.eval_amplitude(&momenta, hel, &mut scratch))
+            .collect()
+    };
+
+    let mut dipole_diagrams = 0;
+    for (k, d) in set.diagrams.iter().enumerate() {
+        let names: Vec<String> = d
+            .vertices
+            .iter()
+            .map(|v| v.interaction_name(model.as_ref()).to_owned())
+            .collect();
+        let baseline = eval_at(d, None);
+        let scale = baseline.iter().fold(0.0f64, |m, z| m.max(z.norm()));
+        assert!(
+            scale > 0.0,
+            "diagram {k} {names:?} vanishes at every helicity"
+        );
+        // The O_bB parts of the b-pair photon and Z vertices, split from the gauge
+        // couplings by coupling order.
+        if names.iter().any(|n| n == "V_188#3" || n == "V_234#4") {
+            dipole_diagrams += 1;
+        }
+        for r in 0..d.vertices.len() {
+            for (h, (a, b)) in baseline.iter().zip(eval_at(d, Some(r))).enumerate() {
+                assert!(
+                    (a - b).norm() / scale < REL_TOL,
+                    "diagram {k} {names:?} rooted at vertex {r}, helicities {:?}: {b:?} \
+                     against the production rooting's {a:?}",
+                    helicities[h]
+                );
+            }
+        }
+    }
+    assert_eq!(
+        dipole_diagrams, 4,
+        "the four diagrams through an O_bB vertex"
+    );
+}
+
 /// A four-fermion vertex with an *off-shell* fermion output, re-rooted.
 ///
 /// Every four-fermion diagram of the gated rows is a single contact vertex, which has

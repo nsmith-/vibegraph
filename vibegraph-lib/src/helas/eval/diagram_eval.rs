@@ -249,6 +249,16 @@ impl VertexInfo {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // An occurrence with no coupling would lower to an empty sum, which has no
+        // momentum or value to route; the color walk only pairs a vertex with color
+        // structures its flow group couples, so reaching this is a caller defect.
+        if terms.is_empty() {
+            return Err(RootLorentzError::UnsupportedVertex(format!(
+                "vertex '{}' has no coupling for color structure {color_idx} in \
+                 fermion-flow group {flow_group}",
+                vertex.name
+            )));
+        }
         Ok(VertexInfo { terms })
     }
 
@@ -399,6 +409,40 @@ mod tests {
                 matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("reversed-bilinear")),
                 "{what}: {err:?}"
             );
+        }
+    }
+
+    /// A vertex occurrence paired with a color structure its fermion-flow group does
+    /// not couple has no term, and is refused by name rather than lowered to an empty
+    /// sum. SMEFTsim's `t~ b b~ t` contact couples color structure 0 only through its
+    /// second spinor pairing, and color structure 1 only through its first.
+    #[test]
+    fn uncoupled_color_and_flow_group_is_refused() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+        let model = UFOModel::load(&dir, Some(&dir.join("restrict_massless.dat"))).unwrap();
+        let (index, vertex) = model
+            .vertices
+            .values()
+            .enumerate()
+            .find(|(_, v)| v.name.starts_with("V_753#"))
+            .expect("SMEFTsim's t~ b b~ t contact");
+        let id = VertexId(index);
+        assert_eq!(flow_groups(vertex, &model.lorentz).len(), 2);
+        let flows = [None; 4];
+        for (color_idx, flow_group) in [(0, 0), (1, 1)] {
+            let err = VertexInfo::from_ufo(&model, id, color_idx, flow_group, None, &flows)
+                .map(|_| ())
+                .unwrap_err();
+            assert!(
+                matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("no coupling")),
+                "color {color_idx}, group {flow_group}: {err:?}"
+            );
+        }
+        for (color_idx, flow_group) in [(1, 0), (0, 1)] {
+            let info = VertexInfo::from_ufo(&model, id, color_idx, flow_group, None, &flows)
+                .unwrap_or_else(|e| panic!("color {color_idx}, group {flow_group}: {e:?}"));
+            assert!(!info.terms.is_empty());
         }
     }
 }

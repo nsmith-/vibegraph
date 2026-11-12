@@ -57,8 +57,8 @@ use rand_chacha::ChaCha8Rng;
 
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
-    FixedBeams,
+    compile_subprocesses, initial_spin_color_average, process_external_legs, subprocess_diagrams,
+    FixedBeamIntegrand, FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -241,7 +241,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
+        .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
     integ.use_multichannel(
         &diagrams,
