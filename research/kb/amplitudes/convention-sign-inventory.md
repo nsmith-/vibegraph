@@ -57,6 +57,7 @@ and `convention_sign` is that product[^b-report].
 | vertex reading | `vertex_root_signs`, from `VertexInfo::reversed_sign` | each vertex's reversed-bilinear parity, read with the vertex as the amplitude root: `−1` per `γ^μ` or `σ^{μν}` bilinear whose row slot is bound to a ket | 17 standalone rows fail without it, and 13 amplitude-oracle rows per diagram or per flow (15 more only on the `CONFIG_AMP_SIGNS` tripwire) |
 | tensor-path sign | `vertex_root_signs`, from `VertexInfo::build_sign` on a cyclic four-fermion term | the sign the tensor path gives its amplitude root: `−1` per crossed line of the cyclic structure | `tata_to_ttxa_tensor4f`, `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` |
 | all-boson momentum sign | `boson_momentum_sign`, from `momentum_parity_sign` | `−1` per all-boson vertex whose legs are all self-conjugate and whose Lorentz terms carry an odd number of momenta (the triple-gluon vertex; the Higgs–three-gluon contacts; `O_G`'s five-gluon contact); a vertex mixing parities is refused | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`, `gg_to_hg_chg`, `gg_to_hg_chgtil`, `gg_to_hgg_chg`, `gg_to_ggg_cg`; oracle `gg_to_ttx` and its two SM-limit rows; which factor carries the triple-gluon sign, by `helas::eval::triple_gluon`; the rule per vertex class, by `root_diagram::tests` |
+| fermion structure-constant sign | `fermion_structure_constant_sign` | `−1` per vertex of two fermion and two vector legs (any number of scalars) whose selected colour structure carries an odd number of `f` (the quark–gluon-pair contacts of the chromo-dipoles, `t~ t g g` and `t~ t g g H`); every other fermion vertex with an odd number of `f` (a colour-octet fermion's gauge vertex) is refused. Measured, not derived: the colourless `t~ t W- W+` contact with the same Lorentz structures needs none | `ttx_to_gg_ctg`, `gg_to_ttx_ctg`, `gg_to_ttxh_ctg` |
 | live reversed parity | `DiagramEvalTree::live_reversed_parity` | the runtime parity of the live tree, applied again so that it cancels | `rooting_soundness` (`literal_sigma_currents_are_rooting_invariant`, 3 of the sweep's 270 re-rootings), and 6 standalone and 7 amplitude-oracle rows |
 
 The "pinned by" column is the per-factor mutation of the B′ session, re-measured
@@ -199,13 +200,21 @@ the sign pattern over graph features, as above.
   coloured count only on a colourless vertex of self-conjugate bosons with odd
   `n_P` (a 2HDM `A Z h`), which no model in reach has
   ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
-- **The fermion dipole.** The naive `(−1)^{n_P}` would put `−1` on a
-  one-momentum fermion vertex (the `σ^{μν}q_ν` dipole, SMEFTsim's
-  `P(-1,3)·γγ` FFV structures), yet `ee_to_ttx_dipole`, `ll_to_qqx_toy_dipole`
-  and the `ctZ`/`ctA` chains of `ee_to_ttx_smeft` agree with MadGraph with no
-  such factor. Whether the bilinear's slot reversal (`vertex_root_signs`)
-  supplies the cancelling `ε_slot` is not established; `boson_momentum_sign`
-  counts no fermion vertex[^ha2-report].
+- **The fermion dipole (resolved).** A one-momentum fermion vertex (the
+  `σ^{μν}q_ν` dipole, SMEFTsim's `P(-1,3)·γγ` FFV structures) carries no
+  `(−1)^{n_P}` in `convention_sign`, and needs none. Its two failures against
+  MadGraph were elsewhere. On a quark line read against the vertex's arrow, a
+  chain closed at a vector sink is applied in reverse order, which negates a
+  two-gamma commutator; `reorder_reversed_sink_chains` reads it in written order.
+  On a charged vertex the momentum sign enters the Hermitian-conjugate map
+  `UFOModel::conjugate_couplings`: a bound term takes the coupling its partner
+  carries on `γ⁰L†γ⁰` read with each momentum reversed, which for
+  `[γ^μ, p̸]P_R` is `[γ^μ, p̸]P_L` (SMEFTsim's `FFV10 ↔ FFV4`), and the UFO's
+  couplings satisfy `bound = −conj(partner)` on that map. Pinned by the standalone
+  dipole rows (`bbx_to_epem_cbb`, `ttx_to_epem_ctb`, `bbx_to_epemg_cbb`,
+  `bbx_to_ttx_tbdipole`, `tbx_to_vlep_tbdipole`, `vlep_to_tbx_ctwim`,
+  `vlep_to_tbx_cbwim`), `reversed_dipole_chain_is_rooting_invariant` and
+  `ufo::tests::w_dipole_terms_bind_their_hermitian_partners`.
 - **`ε_slot = (−1)^{n_P}` on conjugate-pair vertices is assumed, not computed.**
   It holds on every W-pair structure a gated row reaches; a structure that broke
   it would come out wrong with no refusal.

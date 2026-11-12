@@ -584,7 +584,10 @@ impl LorentzEvalTree {
     /// The tree-rooted half of [`build_at_leg`](Self::build_at_leg), before its legs are
     /// relabelled for the caller: the tree over the vertex's own slots, rooted at the
     /// slot [`correct_spin_index_for_flow`] chooses (returned beside it), and the term's
-    /// reversed-bilinear parity.
+    /// reversed-bilinear parity. The term's chains are first put in the order the
+    /// rooted bilinear reads them ([`reorder_reversed_sink_chains`],
+    /// [`conjugate_rerooted_chain`]), so a caller that relabels the slots afterwards
+    /// sees the same chain order as one that does not.
     fn build_rerooted(
         term: &LorentzTerm,
         spins: &[i32],
@@ -593,7 +596,12 @@ impl LorentzEvalTree {
         out_adjoint: Option<Adjoint>,
         flows: &[Option<LegAdjoint>],
     ) -> Result<(Self, Option<usize>, i8), RootLorentzError> {
-        let idx = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let reordered = reorder_reversed_sink_chains(term, flow, idx, flows)?;
+        let term: &LorentzTerm = &reordered;
+        let rooted = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let reconjugated = conjugate_rerooted_chain(term, idx, rooted, flows);
+        let term: &LorentzTerm = &reconjugated;
+        let idx = rooted;
         let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
             nodes: vec![],
@@ -631,13 +639,37 @@ impl LorentzEvalTree {
 
         // find all the remaining scalar roots
         while visited_ops.len() < term.ops.len() {
-            // find an unvisited op
-            let Some((iop, op)) = term
-                .ops
-                .iter()
-                .enumerate()
-                .find(|&(i, _)| visited_ops.iter().all(|&j| i != j))
-            else {
+            let unvisited = |i: usize| visited_ops.iter().all(|&j| i != j);
+            // A chain that carries a gamma closes through it, as a vector current
+            // contracted with what sits at its Lorentz index: that `GammaVout` is where
+            // the runtime applies the reversed-bilinear sign `term_reversed_parity`
+            // counts. Closed through a projector, `γ⁵` or the identity instead (an
+            // `FFVV1`-type term lists its `Gamma5` first), the chain would reach the
+            // amplitude with no reversal sign while the parity still counted one.
+            let closes_a_chain = |op: &LorentzOp| {
+                matches!(
+                    op,
+                    LorentzOp::ProjM { .. }
+                        | LorentzOp::ProjP { .. }
+                        | LorentzOp::Identity { .. }
+                        | LorentzOp::Gamma5 { .. }
+                )
+            };
+            let first = term.ops.iter().enumerate().find(|&(i, _)| unvisited(i));
+            let Some((iop, op)) = first.and_then(|(i, op)| {
+                if closes_a_chain(op) {
+                    term.ops
+                        .iter()
+                        .enumerate()
+                        .find(|&(k, o)| {
+                            unvisited(k)
+                                && matches!(o, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })
+                        })
+                        .or(Some((i, op)))
+                } else {
+                    Some((i, op))
+                }
+            }) else {
                 break; // no more unvisited ops
             };
             let root = tree.scalar_root(term, iop, op, &mut visited_ops, flows)?;
@@ -878,6 +910,168 @@ fn term_reversed_parity(
         }
     }
     parity
+}
+
+/// `term` with the gammas of every fermion chain that a sink reads against its UFO
+/// arrow put in the opposite order.
+///
+/// A chain closed into a bilinear — the amplitude contraction, or a vector current
+/// rooted at a boson leg — is evaluated by applying its operators to the spinor at
+/// each end, from that end inwards. When the chain's row slot is bound to a ket (an
+/// initial-state pair, or a line from an initial to a final state, read against the
+/// vertex's arrow), the bra sits at the column slot, so the bilinear the kernels form
+/// is `ψ̄_bra (O_n ⋯ O_1) ψ_ket` for a chain written `O_1 ⋯ O_n` from row to column:
+/// the operators in reverse order. With one gamma that is the structure itself up to
+/// the chirality conjugation of [`chiral_correction`] and the reversed-bilinear sign
+/// of [`term_reversed_parity`]. With two or more it is a different matrix:
+/// `[γ^μ, p̸]` becomes `[p̸, γ^μ]`, so a momentum-slashed dipole would come out with
+/// the opposite sign to the gauge coupling on the same line.
+///
+/// Permuting the gammas' Lorentz indices so that the gamma at position `k` from the
+/// row carries the index of the one at `n + 1 − k` makes the reverse-order reading
+/// equal the structure as written, term by term. A projector or `γ⁵` beside an even
+/// number of gammas commutes back to where it stood, and the row operator stays a
+/// gamma, so the reversed-bilinear parity and the runtime reversal it cancels are
+/// those of the unpermuted term.
+///
+/// A chain rooted at its own fermion leg is not touched: the off-shell current is
+/// re-rooted onto the slot whose adjoint matches ([`correct_spin_index_for_flow`]) and
+/// applies the operators in their written order. A crossed line binds each end at the
+/// slot its adjoint expects, so its row slot is never bound to a ket.
+///
+/// A chain carrying a literal `Sigma` beside another gamma or `Sigma` has no index
+/// permutation that reverses it, and is refused.
+fn reorder_reversed_sink_chains<'t>(
+    term: &'t LorentzTerm,
+    flow: &[(usize, usize)],
+    out: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> Result<std::borrow::Cow<'t, LorentzTerm>, RootLorentzError> {
+    let mut reordered = std::borrow::Cow::Borrowed(term);
+    for &(ket, bra) in flow {
+        if out == Some(ket) || out == Some(bra) {
+            continue;
+        }
+        let read_reversed = matches!(
+            flows.get(bra).copied().flatten(),
+            Some(LegAdjoint {
+                adjoint: Adjoint::Ket,
+                ..
+            })
+        );
+        if !read_reversed {
+            continue;
+        }
+        let carriers: Vec<usize> = chain_ops(term, bra as isize)
+            .into_iter()
+            .filter(|&k| {
+                matches!(
+                    term.ops[k],
+                    LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. }
+                )
+            })
+            .collect();
+        if carriers.len() < 2 {
+            continue;
+        }
+        let mut mus = Vec::with_capacity(carriers.len());
+        for &k in &carriers {
+            match term.ops[k] {
+                LorentzOp::Gamma { mu, .. } => mus.push(mu),
+                _ => {
+                    return Err(RootLorentzError::UnsupportedVertex(format!(
+                        "a chain of {} gamma and Sigma factors with a Sigma among them, read \
+                         against its UFO arrow, has no index permutation that reverses it",
+                        carriers.len()
+                    )))
+                }
+            }
+        }
+        let ops = &mut reordered.to_mut().ops;
+        for (&k, &mu) in carriers.iter().zip(mus.iter().rev()) {
+            if let LorentzOp::Gamma { mu: slot, .. } = &mut ops[k] {
+                *slot = mu;
+            }
+        }
+    }
+    Ok(reordered)
+}
+
+/// `term` with the chirality of the rooted chain conjugated (`P_L ↔ P_R`,
+/// `γ⁵ → −γ⁵`) when [`correct_spin_index_for_flow`] re-rooted an off-shell fermion
+/// current and the chain carries an even number of gammas.
+///
+/// On a line read against the vertex's arrow, a fermion output is re-rooted onto the
+/// slot whose adjoint matches, and the current then applies the chain in its written
+/// order to the input spinor, from the other end. That puts each chiral factor on
+/// the far side of the chain's gammas from where it stood: through one gamma it is the
+/// conjugate chirality `γ^μ P_χ = P_χ̄ γ^μ`, which is what the re-rooting is there to
+/// realise, so a one-gamma chain needs nothing more. Through two it is the same
+/// chirality, and the current would read `[γ^μ, p̸] P_R` where MadGraph's line reads
+/// `[γ^μ, p̸] P_L` — SMEFTsim's one-chirality W dipoles (`FFV10`, `FFV4`) producing the
+/// off-shell quark of single-top production. Conjugating the chain's chiral factors
+/// restores the parity the single gamma gave.
+///
+/// A crossed line binds each end at the slot its adjoint expects and is never
+/// re-rooted. `Sigma` commutes with `γ⁵` and is not counted.
+fn conjugate_rerooted_chain<'t>(
+    term: &'t LorentzTerm,
+    out: Option<usize>,
+    rooted: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> std::borrow::Cow<'t, LorentzTerm> {
+    let unchanged = std::borrow::Cow::Borrowed(term);
+    let (Some(out), Some(rooted)) = (out, rooted) else {
+        return unchanged;
+    };
+    if out == rooted
+        || matches!(
+            flows.get(out).copied().flatten(),
+            Some(LegAdjoint { crossed: true, .. }) | None
+        )
+    {
+        return unchanged;
+    }
+    let chain = chain_ops(term, rooted as isize);
+    let gammas = chain
+        .iter()
+        .filter(|&&k| matches!(term.ops[k], LorentzOp::Gamma { .. }))
+        .count();
+    if gammas < 2 || gammas % 2 == 1 {
+        return unchanged;
+    }
+    let mut conjugated = term.clone();
+    for &k in &chain {
+        match conjugated.ops[k] {
+            LorentzOp::ProjM { i, j } => conjugated.ops[k] = LorentzOp::ProjP { i, j },
+            LorentzOp::ProjP { i, j } => conjugated.ops[k] = LorentzOp::ProjM { i, j },
+            LorentzOp::Gamma5 { .. } => conjugated.coeff = -conjugated.coeff,
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(conjugated)
+}
+
+/// The operators of the spinor chain that starts at leg `start`, in order from it.
+fn chain_ops(term: &LorentzTerm, start: isize) -> Vec<usize> {
+    let mut walked: Vec<usize> = Vec::new();
+    let mut cursor = start;
+    for _ in 0..term.ops.len() {
+        let Some((iop, op)) = term
+            .ops
+            .iter()
+            .enumerate()
+            .find(|&(i, op)| op.involves_spinor(cursor) && !walked.contains(&i))
+        else {
+            break;
+        };
+        walked.push(iop);
+        match other_spinor_index(op, cursor) {
+            Some(next) if next < 0 => cursor = next,
+            _ => break,
+        }
+    }
+    walked
 }
 
 /// The spinor adjoint a node rooted at the *summed* spinor index `idx` must produce:
