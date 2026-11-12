@@ -400,6 +400,76 @@ ROWS = {
             zero_widths=True),
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
+        # The rows below put SMEFTsim's momentum-slashed dipole chains (two gammas,
+        # `[γ^μ, p̸]`) on a quark line read against the vertex's arrow: an
+        # initial-state pair, or a line from an initial to a final state. The
+        # bilinear then reads the chain from its column end, in reverse order.
+        #
+        # O_bB alone on the annihilating b pair, the dipole vertex beside the
+        # gauge coupling through the same s-channel photon and Z.
+        Row("bbx_to_epem_cbb", "b b~ > e+ e- NP<=1", (5, -5), (-11, 11), 500.0, 3, 5113,
+            model=SMEFT, restrict="vg_cbB", bank_amps=True),
+        # O_tB alone on an annihilating top pair.
+        Row("ttx_to_epem_ctb", "t t~ > e+ e- NP<=1", (6, -6), (-11, 11), 800.0, 3, 5114,
+            model=SMEFT, restrict="vg_ctB", bank_amps=True),
+        # A gluon off the annihilating b pair: the O_bB vertex is the amplitude
+        # contraction in some diagrams and produces the off-shell b current toward the
+        # gluon emission in others, so the two readings of one chain meet in one sum.
+        Row("bbx_to_epemg_cbb", "b b~ > e+ e- g NP<=1", (5, -5), (-11, 11, 21), 500.0, 3,
+            5115, model=SMEFT, restrict="vg_cbB", bank_amps=True),
+        # Every third-generation quark dipole in both CP parities on `b b~ > t t~`:
+        # the b line annihilates, the t line is crossed, and the t-channel W joins
+        # the two on lines from an initial to a final state, with the one-chirality
+        # chains FFV10 and FFV4 of O_tW and O_bW. Widths are zero for the spacelike W.
+        Row("bbx_to_ttx_tbdipole", "b b~ > t t~ NP<=1", (5, -5), (6, -6), 1000.0, 3, 5116,
+            model=SMEFT, restrict="vg_tbdipole", zero_widths=True),
+        # The same dipoles on an annihilating t b~ pair through the s-channel W. With
+        # the b massless the O_tW and O_bW graphs are proportional to the gauge
+        # graph at every helicity, so no graph pairing is banked: the flow carries it.
+        Row("tbx_to_vlep_tbdipole", "t b~ > ve e+ NP<=1", (6, -5), (12, -11), 800.0, 3, 5117,
+            model=SMEFT, restrict="vg_tbdipole"),
+        # The W dipoles' CP-odd parts alone, each a real coupling on a one-chirality
+        # chain whose Hermitian partner carries it on the other chirality, on a
+        # crossed top line.
+        Row("vlep_to_tbx_ctwim", "ve e+ > t b~ NP<=1", (12, -11), (6, -5), 800.0, 3, 5118,
+            model=SMEFT, restrict="vg_ctWIm", bank_amps=True),
+        Row("vlep_to_tbx_cbwim", "ve e+ > t b~ NP<=1", (12, -11), (6, -5), 800.0, 3, 5119,
+            model=SMEFT, restrict="vg_cbWIm", bank_amps=True),
+        # tW production under the CP-even W dipoles. The b line runs from the
+        # initial b to the final t, against the W vertex's arrow, and the dipole
+        # vertex produces the off-shell b (s-channel) or top (t-channel) current in
+        # some rootings and closes the amplitude in others: both beam orders, so the
+        # canonical root falls on different vertices.
+        Row("bg_to_twm_ctw", "b g > t w- NP<=1 SMHLOOP=0", (5, 21), (6, -24), 800.0, 3, 5122,
+            model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
+        Row("gb_to_twm_cbw", "g b > t w- NP<=1 SMHLOOP=0", (21, 5), (6, -24), 800.0, 3, 5123,
+            model=SMEFT, restrict="vg_cbW", zero_widths=True, bank_amps=True),
+        # The charge-conjugate channel.
+        Row("bxg_to_txwp_ctw", "b~ g > t~ w+ NP<=1 SMHLOOP=0", (-5, 21), (-6, 24), 800.0, 3,
+            5124, model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
+        # O_tW on an annihilating top pair into a W pair: the t-channel b between the
+        # two W vertices puts the dipole on a vertex that produces the off-shell b
+        # in one diagram and closes the amplitude in its mirror, beside the photon and
+        # Z dipoles, the colourless `t~ t W- W+` contact (FFVV3) and the Higgs exchange.
+        Row("ttx_to_wpwm_ctw", "t t~ > w+ w- NP<=1 SMHLOOP=0", (6, -6), (24, -24), 800.0, 3,
+            5125, model=SMEFT, restrict="vg_ctW", zero_widths=True, bank_amps=True),
+        # O_tG in both CP parities on an annihilating top pair: the two-gluon
+        # contacts (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains with no
+        # momentum, closed into the amplitude on a line read against the vertex's
+        # arrow, beside the top-gluon dipole chains and QCD. Widths are zero for the
+        # spacelike top. `SMHLOOP=0` drops the loop-induced Higgs-gluon vertices and
+        # their seven-digit Fortran couplings.
+        Row("ttx_to_gg_ctg", "t t~ > g g NP<=1 SMHLOOP=0", (6, -6), (21, 21), 800.0, 3, 5120,
+            model=SMEFT, restrict="vg_ctG", zero_widths=True),
+        # The crossed mirror: the same contacts on a final-state top pair.
+        Row("gg_to_ttx_ctg", "g g > t t~ NP<=1 SMHLOOP=0", (21, 21), (6, -6), 800.0, 3, 5121,
+            model=SMEFT, restrict="vg_ctG", zero_widths=True),
+        # O_tG on t t~ h: the quark-gluon-pair contact with a Higgs beside it
+        # (FFVVS, the `v -> v + h` partner of the `t~ t g g` contact), beside the
+        # contact itself, the top-gluon dipole chains and QCD with the Higgs off the
+        # top line. Widths are zero for the spacelike top.
+        Row("gg_to_ttxh_ctg", "g g > t t~ h NP<=1 SMHLOOP=0", (21, 21), (6, -6, 25), 1000.0, 3,
+            5126, model=SMEFT, restrict="vg_ctG", zero_widths=True),
         # Bhabha with its outgoing legs listed particle first: the s-channel holds
         # an initial-state and a final-state line, the t-channel two mixed lines,
         # and their relative sign must not depend on the order the legs are listed

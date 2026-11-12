@@ -146,6 +146,15 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("wpwm_to_wpwma_cw", WPWM_TO_WPWMA_CW_GRAPHS),
     ("ee_to_wpwmwpwm_cw", EE_TO_WPWMWPWM_CW_GRAPHS),
     ("ee_to_mumu_negmz", &[0, 1]),
+    ("bbx_to_epem_cbb", &[0, 1, 2, 3]),
+    ("ttx_to_epem_ctb", &[0, 1, 2, 3]),
+    ("bbx_to_epemg_cbb", &[0, 1, 2, 3, 4, 5, 6, 7]),
+    ("vlep_to_tbx_ctwim", &[0, 1]),
+    ("vlep_to_tbx_cbwim", &[1, 0]),
+    ("bg_to_twm_ctw", &[0, 1, 2, 3]),
+    ("gb_to_twm_cbw", &[0, 1, 2, 3]),
+    ("bxg_to_txwp_ctw", &[0, 1, 2, 3]),
+    ("ttx_to_wpwm_ctw", &[0, 1, 2, 3, 4, 5, 6, 7, 8]),
 ];
 
 const VVS_PAIR_GRAPHS: &[usize] = &[2, 1, 0, 3, 8, 7, 6, 5, 4, 13, 12, 11, 10, 9];
@@ -1142,6 +1151,115 @@ fn uux_to_ttxg() {
 #[test]
 fn ee_to_mumu_negmz() {
     check("ee_to_mumu_negmz");
+}
+
+/// O_bB's momentum-slashed chain (`[γ^μ, p̸]`, FFV9) on an annihilating b pair, beside
+/// the gauge coupling through the same s-channel photon and Z; compared per MadGraph
+/// graph. The b line runs against the dipole vertex's arrow, so the bilinear reads the
+/// chain from its column end; a two-gamma chain read in that order without being put
+/// back is the commutator with the other sign, and the dipole graphs alone flip.
+#[test]
+fn bbx_to_epem_cbb() {
+    check("bbx_to_epem_cbb");
+}
+
+/// O_tB's chain on an annihilating top pair; compared per MadGraph graph.
+#[test]
+fn ttx_to_epem_ctb() {
+    check("ttx_to_epem_ctb");
+}
+
+/// A gluon off the annihilating b pair under O_bB: the dipole vertex is the amplitude
+/// contraction in some diagrams and produces the off-shell b current toward the gluon
+/// emission in others, so both readings of one chain are compared per MadGraph graph.
+#[test]
+fn bbx_to_epemg_cbb() {
+    check("bbx_to_epemg_cbb");
+}
+
+/// Every third-generation quark dipole in both CP parities on `b b~ > t t~`: the
+/// neutral chains FFV9 and FFV2 on the annihilating b pair and on the crossed top pair,
+/// and the one-chirality W chains FFV10 and FFV4 on the t-channel lines from an
+/// initial b to a final t, their CP-odd parts with real couplings.
+#[test]
+fn bbx_to_ttx_tbdipole() {
+    check("bbx_to_ttx_tbdipole");
+}
+
+/// The same dipoles on an annihilating t b~ pair through the s-channel W. With the b
+/// massless the O_tW and O_bW graphs are proportional to the gauge graph, so the flow is
+/// the comparison and no graph pairing is declared.
+#[test]
+fn tbx_to_vlep_tbdipole() {
+    check("tbx_to_vlep_tbdipole");
+}
+
+/// O_tW's CP-odd part alone on a crossed top line: a real coupling on FFV10 of
+/// `[t~ b W+]`, which its Hermitian partner `[b~ t W-]` carries on FFV4. Compared per
+/// MadGraph graph.
+#[test]
+fn vlep_to_tbx_ctwim() {
+    check("vlep_to_tbx_ctwim");
+}
+
+/// O_bW's CP-odd part alone, the same with the chiralities exchanged.
+#[test]
+fn vlep_to_tbx_cbwim() {
+    check("vlep_to_tbx_cbwim");
+}
+
+/// O_tG in both CP parities on an annihilating top pair: its two-gluon contacts
+/// (FFVV3, and FFVV1 with a `Gamma5`) are two-gamma chains closed into the amplitude
+/// on a line read against the vertex's arrow, beside the top-gluon dipole chains and
+/// QCD.
+#[test]
+fn ttx_to_gg_ctg() {
+    check("ttx_to_gg_ctg");
+}
+
+/// The crossed mirror of [`ttx_to_gg_ctg`]: the same contacts on a final-state top
+/// pair.
+#[test]
+fn gg_to_ttx_ctg() {
+    check("gg_to_ttx_ctg");
+}
+
+/// O_tG on `g g > t t~ h`: the quark-gluon-pair contact with a Higgs beside it
+/// (`FFVVS`), beside the `t~ t g g` contact, the top-gluon dipole chains and QCD with
+/// the Higgs off the top line.
+#[test]
+fn gg_to_ttxh_ctg() {
+    check("gg_to_ttxh_ctg");
+}
+
+/// tW production under O_tW: the dipole vertex on the line from the initial b to the
+/// final t produces the off-shell b (s-channel) or top (t-channel) current in some
+/// rootings and closes the amplitude in others; compared per MadGraph graph.
+#[test]
+fn bg_to_twm_ctw() {
+    check("bg_to_twm_ctw");
+}
+
+/// The same under O_bW with the beams in the other order, so the canonical root
+/// falls on the other vertex of each diagram.
+#[test]
+fn gb_to_twm_cbw() {
+    check("gb_to_twm_cbw");
+}
+
+/// The charge-conjugate tW channel under O_tW.
+#[test]
+fn bxg_to_txwp_ctw() {
+    check("bxg_to_txwp_ctw");
+}
+
+/// O_tW on an annihilating top pair into a W pair, compared per MadGraph graph: the
+/// t-channel b puts the dipole on a vertex that produces the off-shell b in one
+/// diagram and closes the amplitude in its mirror, beside the photon and Z dipoles and
+/// the colourless `t~ t W- W+` contact.
+#[test]
+fn ttx_to_wpwm_ctw() {
+    check("ttx_to_wpwm_ctw");
 }
 
 /// Bhabha with its outgoing legs listed particle first. The s channel pairs the
