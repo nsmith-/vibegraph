@@ -245,7 +245,11 @@ from in its artifact, with its name, restrict card and digest, and `generate`
 rebuilds the model from those bytes: it takes no `--ufo-dir`. Each artifact
 also banks |M|² at a few fixed phase-space points per subprocess, and
 `generate` refuses a build that no longer reproduces them to 1e-10, since the
-banked cross section would then describe another matrix element. Squared-order constraints (`NP^2==1`) are a
+banked cross section would then describe another matrix element. Both
+artifacts, `diagrams.bin.zst` and `grid.bin.zst`, also record the version of
+the diagram enumeration that produced their diagrams, and a build that
+enumerates differently (a fixed sign, a diagram added or dropped) refuses
+them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`) are a
 hard error: this generator selects diagrams by their coupling orders and squares
 the whole amplitude, so it cannot bound an interference term.
 

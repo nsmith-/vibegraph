@@ -1749,6 +1749,7 @@ mod tests {
         let (run_card, settings) = RunCard::default().split().expect("the default card splits");
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
+            enumeration_version: crate::diagrams::artifact::ENUMERATION_VERSION,
             process: "u u~ > e+ e-".to_string(),
             proc_card: text.to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),

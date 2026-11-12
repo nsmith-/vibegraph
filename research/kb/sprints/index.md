@@ -74,6 +74,7 @@
 * [v02-last-refusals](v02-last-refusals/index.md)
 * [v02-output-modes](v02-output-modes/index.md)
 * [v02-refusals](v02-refusals/index.md)
+* [v021-fixes](v021-fixes/index.md)
 * [v3-backlog](v3-backlog/index.md)
 * [validation-2](validation-2/index.md)
 * [validation-3](validation-3/index.md)
