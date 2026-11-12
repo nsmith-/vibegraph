@@ -295,3 +295,78 @@ fn matched_mixed_multiplicity_reweighting_is_taken_in_the_drawn_subprocess() {
     );
     check(&audit, &file, nevents, 3);
 }
+
+/// `generate --reweight-card` on a proton card whose `cut_decays = F` exemption
+/// is pairing-weighted (`g g > z u u~, z > u u~`) is refused before any event is
+/// written: a reweighting ratio is taken on the whole `|M|²`, while the event's
+/// weight also carries the pairing weight, which moves with the parameters
+/// reweighted.
+#[test]
+fn reweighting_a_pairing_weighted_card_is_refused() {
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "reweighting_a_pairing_weighted_card_is_refused",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let proc_card = dir.join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate g g > z u u~, z > u u~\n",
+    )
+    .unwrap();
+    let run_card = dir.join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n  lhapdf = pdlabel\n  \
+         247000 = lhaid\n  True = fixed_ren_scale\n  True = fixed_fac_scale\n  91.188 = scale\n  \
+         91.188 = dsqrt_q2fact1\n  91.188 = dsqrt_q2fact2\n  F = cut_decays\n  20.0 = ptj\n  \
+         5.0 = etaj\n  0.4 = drjj\n",
+    )
+    .unwrap();
+    let out = dir.join("out");
+    let integrate = common::vibegraph_ambient()
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .pdf_data_path(pdf_dir())
+        .args(["--fixed-budget", "--neval", "4000", "--niter", "2"])
+        .args(["--seed", SEED])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrate.status.success(),
+        "integrate failed:\n{}",
+        common::stderr_of(&integrate)
+    );
+    let rw_card = dir.join("reweight_card.dat");
+    std::fs::write(&rw_card, CARD).unwrap();
+    let lhe = dir.join("events.lhe");
+    let generate = common::vibegraph_ambient()
+        .arg("generate")
+        .arg(out.join("grid.bin.zst"))
+        .pdf_data_path(pdf_dir())
+        .args(["--seed", SEED, "--nevents", "50"])
+        .arg("--reweight-card")
+        .arg(&rw_card)
+        .arg("-o")
+        .arg(&lhe)
+        .output()
+        .expect("spawn vibegraph");
+    let log = common::stderr_of(&generate);
+    assert!(
+        !generate.status.success(),
+        "reweighting a pairing-weighted card must be refused:\n{log}"
+    );
+    assert!(
+        log.contains("pairing") && log.contains("cut_decays = T"),
+        "got:\n{log}"
+    );
+    assert!(!lhe.exists(), "no event file is written");
+}

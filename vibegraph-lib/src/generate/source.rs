@@ -705,6 +705,7 @@ mod tests {
             group_rewgt: Vec::new(),
             group_records: Vec::new(),
             group_histories: Vec::new(),
+            group_pairing_weights: Vec::new(),
             lab: Vec::new(),
             cm: Vec::new(),
         };

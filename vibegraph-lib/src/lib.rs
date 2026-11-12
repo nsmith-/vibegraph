@@ -13,6 +13,7 @@ pub mod helas;
 pub mod lhef;
 pub mod multiplicity;
 pub mod onshell;
+pub mod pairing;
 pub mod pdf;
 pub mod phasespace;
 pub mod progress;
