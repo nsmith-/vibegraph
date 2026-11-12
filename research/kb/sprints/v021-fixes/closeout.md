@@ -156,6 +156,7 @@ the benchmarks have not been run, so the item stays open.
 ## Found
 
 Filed by this record:
+- [pin-rust-toolchain](../../backlog/hygiene/pin-rust-toolchain.md) (high): Rust 1.100 reached CI through the unpinned `@stable` toolchain during the release, and its `needless_range_loop` reddened `main` and #129; three sites were rewritten in #129. The user chose to fix the lints without a pin in this PR.
 - [onshell-veto-with-pairing-weighted-cut-refused](../../backlog/feature/onshell-veto-with-pairing-weighted-cut-refused.md) (the campaign).
 - [zz-ee-sigma-excess-not-attributed](../../backlog/validation/zz-ee-sigma-excess-not-attributed.md) (above).
 - [fixed-beam-pairing-union-sigma-unmeasured](../../backlog/validation/fixed-beam-pairing-union-sigma-unmeasured.md) (J-W1 Found 3).
