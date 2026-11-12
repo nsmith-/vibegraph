@@ -762,3 +762,54 @@ fn cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams() {
     );
     assert!(!lhe.exists(), "no event file is written");
 }
+
+/// A `$` veto on a card whose `cut_decays = F` exemption is pairing-weighted is
+/// refused by name before integration, at fixed beams: the pairing weights are
+/// formed from the pairings' unvetoed amplitudes while the term they multiply
+/// is vetoed.
+#[test]
+fn cli_a_veto_on_a_pairing_weighted_card_is_refused_at_fixed_beams() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate u u~ > z u u~ $ a, z > u u~\n",
+    )
+    .unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        format!(
+            "{}  F = cut_decays\n  20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n",
+            fixed_beams(250.0, 250.0)
+        ),
+    )
+    .unwrap();
+    let output = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = stderr_of(&output);
+    assert!(
+        !output.status.success(),
+        "a veto on a pairing-weighted card must be refused:\n{stderr}"
+    );
+    assert!(
+        stderr.contains('$') && stderr.contains("cut_decays = T"),
+        "got:\n{stderr}"
+    );
+    assert!(
+        !out.path().join("grid.bin.zst").exists(),
+        "no artifact is written"
+    );
+}

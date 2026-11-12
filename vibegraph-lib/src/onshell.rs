@@ -859,6 +859,41 @@ mod tests {
         assert_eq!(veto.pattern(&at(40.0)), 0);
     }
 
+    /// A `$` veto on a group whose `cut_decays = F` filter is pairing-weighted
+    /// is refused by name before integration: the pairing weights are formed
+    /// from the pairings' unvetoed amplitudes while the term they multiply is
+    /// vetoed. `u u~ > z u u~ $ a, z > u u~` carries a photon s-channel in its
+    /// core and identical quarks in the core and in the decay.
+    #[test]
+    fn a_veto_on_a_pairing_weighted_group_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(Arc::clone(&model));
+        let a = [particle(&model, "a").pdg_code];
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  F = cut_decays\n  20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n",
+        )
+        .unwrap();
+        let all = sets("u u~ > z u u~, z > u u~", &model);
+        let groups = derive_flavor_groups(all, &model, &evaluated, &card).unwrap();
+        assert!(groups.groups()[0].cuts().is_pairing_weighted());
+        let message = match group_vetoes(&groups, &a, &evaluated, &card) {
+            Ok(_) => panic!("a veto on a pairing-weighted group compiled"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            message.contains("u u~") && message.contains('$') && message.contains("cut_decays = T"),
+            "{message}"
+        );
+
+        // The same card at cut_decays = T is not pairing-weighted, and its veto
+        // compiles.
+        let t = RunCard::parse("  1 = lpp1\n  1 = lpp2\n  T = cut_decays\n  20.0 = ptj\n").unwrap();
+        let all = sets("u u~ > z u u~, z > u u~", &model);
+        let groups = derive_flavor_groups(all, &model, &evaluated, &t).unwrap();
+        let vetoes = group_vetoes(&groups, &a, &evaluated, &t).unwrap();
+        assert!(vetoes.iter().any(Option::is_some));
+    }
+
     /// A flavour group's members share the representative's marking on
     /// `p p > e+ e- $ z`; a member marked differently is refused.
     #[test]
