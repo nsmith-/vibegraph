@@ -349,11 +349,13 @@ compiled behaviour and no gate cell, and the cells above stand for it.
 
 4. **Re-check the target once both defects are fixed.**
    `u u~ > t t~ b b~ NP<=1` under the full `restrict_massless` card integrates
-   now (σ = 208.8 ± 2.8 fb at 1000 × 1), but that value is not validated. Once
-   the cross-line W sign (Found 2) and the initial-state dipole (Found 1) are
-   fixed, `uux_to_ttxbbx_4f_nodipole` leaves `KNOWN_DISAGREEMENT`. That test
-   fails as soon as the row agrees. After that, a full-card standalone row and
-   a σ against MadGraph close the card.
+   now (σ = 208.8 ± 2.8 fb at 1000 × 1), but that value is not validated.
+   `vg_nodipole` zeroes every dipole, so `uux_to_ttxbbx_4f_nodipole` depends
+   on the cross-line W sign (Found 2) alone: once that is fixed it leaves
+   `KNOWN_DISAGREEMENT` (an independent review's scratch merge with the fix
+   agrees at 2.9e-15, G = −i). That test fails as soon as the row agrees. The
+   full card also needs the initial-state dipole fix (Found 1); after both, a
+   full-card standalone row and a σ against MadGraph close the card.
 
 5. **The brief's premise.** The item located the empty sum in
    "`lower::lower_flows` / `lower::optimize`, or rooting". It came from

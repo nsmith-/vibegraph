@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::amplitude_probe::SetProbe;
-use crate::diagrams::artifact::diagram_set_digest;
+use crate::diagrams::artifact::{diagram_set_digest, ENUMERATION_VERSION};
 use crate::diagrams::DiagramSet;
 use crate::generate::GenerateSettings;
 use crate::phasespace::maps::MapChoices;
@@ -108,11 +108,17 @@ use crate::vegas::{GridRule, VegasGrid};
 /// file has neither: its run accumulated no share, and the shares cannot be
 /// recovered from its grids without integrating again, so it is refused rather
 /// than read with an empty ranking that would look like a measured one.
-/// [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 23;
+///
+/// `24` records the [`ENUMERATION_VERSION`] of the build that enumerated the
+/// banked sets ([`IntegrateArtifact::enumeration_version`]), and a reader
+/// refuses any other. A version-23 file does not say which enumeration produced
+/// its sets, and its amplitude probe recompiles those sets, so it agrees with
+/// itself whatever enumeration wrote them; only integrating again can tell, so
+/// it is refused. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 24;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 23;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 24;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -161,6 +167,13 @@ pub enum ArtifactError {
          {recorded}; the file is corrupt or was edited (regenerate it with `vibegraph integrate`)"
     )]
     DiagramDigestMismatch { recorded: String, computed: String },
+    #[error(
+        "the artifact's diagram sets were enumerated by enumeration version {found}, but this \
+         build enumerates as version {expected}: its diagrams, Fermi signs or symmetry factors \
+         may differ from what this build computes (integrate again from the proc card with \
+         `vibegraph integrate`)"
+    )]
+    EnumerationVersion { found: u32, expected: u32 },
     #[error("cannot rebuild the model embedded in the artifact: {0}")]
     Model(#[from] UfoError),
 }
@@ -556,6 +569,10 @@ pub struct MultiplicityTotal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrateArtifact {
     pub format_version: u32,
+    /// The [`ENUMERATION_VERSION`] of the build that enumerated
+    /// [`sets`](Self::sets). Second, so it is checked before the body is
+    /// decoded.
+    pub enumeration_version: u32,
     /// The process string this artifact was integrated for (`"p p > e+ e-"`).
     pub process: String,
     /// The proc card the run was integrated from, as its text: the process
@@ -706,7 +723,9 @@ impl IntegrateArtifact {
     ///
     /// The format version is read from the payload's prefix before the body is
     /// decoded, so a file written by another schema version is refused by name —
-    /// never misread into whatever the current field order happens to accept.
+    /// never misread into whatever the current field order happens to accept —
+    /// and then the enumeration version, so a file whose sets another
+    /// enumeration produced is refused by name before anything reads them.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
         Self::read_hashed(path).map(|(artifact, _)| artifact)
     }
@@ -722,7 +741,17 @@ impl IntegrateArtifact {
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         let artifact: Self = match header.format_version {
-            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode)?,
+            FORMAT_VERSION => {
+                let (_, enumeration_version): (u32, u32) =
+                    bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
+                if enumeration_version != ENUMERATION_VERSION {
+                    return Err(ArtifactError::EnumerationVersion {
+                        found: enumeration_version,
+                        expected: ENUMERATION_VERSION,
+                    });
+                }
+                bincode::deserialize(&raw).map_err(ArtifactError::Decode)?
+            }
             found => {
                 return Err(ArtifactError::UnsupportedVersion {
                     found,
@@ -801,6 +830,7 @@ mod tests {
     fn sample_artifact() -> IntegrateArtifact {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
+            enumeration_version: ENUMERATION_VERSION,
             process: "p p > e+ e-".to_string(),
             proc_card: "import model sm\ngenerate p p > e+ e-\n".to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
@@ -1047,8 +1077,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 22,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1056,6 +1086,87 @@ mod tests {
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-23 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 23's real shape: the current encoding
+    /// with the enumeration version's four bytes removed, which is exactly
+    /// version 23's field order.
+    #[test]
+    fn a_version_23_artifact_is_refused() {
+        let a = sample_artifact();
+        let current = bincode::serialize(&a).unwrap();
+        assert_eq!(
+            current[4..8],
+            ENUMERATION_VERSION.to_le_bytes(),
+            "the enumeration version is the second field"
+        );
+        let mut raw = 23u32.to_le_bytes().to_vec();
+        raw.extend_from_slice(&current[8..]);
+
+        let dir = scratch_dir("v23");
+        let path = dir.join("v23.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-23 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 23,
+                    oldest: 24,
+                    expected: 24
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An artifact recording another enumeration version is refused on read by
+    /// name, naming both versions and the remedy, although its model and sets
+    /// pass every digest check: the sets digest to what they hold, whatever
+    /// enumeration computed them, and the amplitude probe recompiles those
+    /// same sets.
+    ///
+    /// Cannot detect an enumeration change made without bumping
+    /// [`ENUMERATION_VERSION`]; the known-answer test in
+    /// [`crate::diagrams::artifact`] is what sees that.
+    #[test]
+    fn another_enumeration_version_is_refused_by_name() {
+        let dir = scratch_dir("enumeration");
+        for version in [ENUMERATION_VERSION - 1, ENUMERATION_VERSION + 1] {
+            let mut a = sample_artifact();
+            a.enumeration_version = version;
+            let path = dir.join(format!("e{version}.bin.zst"));
+            a.write_to_path(&path, true).unwrap();
+            let err = IntegrateArtifact::read_from_path(&path)
+                .expect_err("another enumeration version must be refused");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::EnumerationVersion { found, expected }
+                        if found == version && expected == ENUMERATION_VERSION
+                ),
+                "{err}"
+            );
+            let message = err.to_string();
+            assert!(
+                message.contains(&format!("enumeration version {version}")),
+                "{message}"
+            );
+            assert!(
+                message.contains(&format!("version {ENUMERATION_VERSION}:")),
+                "{message}"
+            );
+            assert!(message.contains("`vibegraph integrate`"), "{message}");
+        }
+        let path = dir.join("same.bin.zst");
+        sample_artifact().write_to_path(&path, true).unwrap();
+        IntegrateArtifact::read_from_path(&path).unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1392,7 +1503,8 @@ mod tests {
     }
 
     /// A version-14 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode. Version 22 banks no
+    /// to re-integrate, however well its bytes would decode. Version 23 does
+    /// not record which enumeration produced its diagram sets; version 22 banks no
     /// configuration share or channel membership; version 21 embeds
     /// no model, diagrams or amplitude probe to replay from; version 20 holds
     /// grids of a whole-state decay chain trained on a `τ` draw reaching
@@ -1406,7 +1518,20 @@ mod tests {
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, FORMAT_VERSION + 1] {
+        for version in [
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            FORMAT_VERSION + 1,
+        ] {
             let path = stamped(&sample_artifact(), &dir, version);
             let err = IntegrateArtifact::read_from_path(&path).expect_err("another version");
             assert!(
@@ -1414,8 +1539,8 @@ mod tests {
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 23,
-                        expected: 23
+                        oldest: 24,
+                        expected: 24
                     } if found == version
                 ),
                 "{err}"
@@ -1455,8 +1580,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 16,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1494,8 +1619,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 17,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1610,8 +1735,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 18,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1698,8 +1823,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 19,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1721,9 +1846,10 @@ mod tests {
         let raw = v21_bytes(&a, 21);
         let current = bincode::serialize(&a).unwrap();
         assert_eq!(
-            current[4..raw.len()],
+            current[8..raw.len() + 4],
             raw[4..],
-            "version 21's fields are a prefix of this build's"
+            "version 21's fields after the format version are a prefix of this build's after \
+             the enumeration version"
         );
         assert!(current.len() > raw.len());
 
@@ -1736,8 +1862,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 21,
-                    oldest: 23,
-                    expected: 23
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"

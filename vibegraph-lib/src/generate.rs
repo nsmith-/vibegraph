@@ -43,7 +43,8 @@ use crate::multiplicity::{
     multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
-use crate::onshell::subprocess_vetoes;
+use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
+use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
@@ -217,6 +218,17 @@ pub enum GenerateError {
     /// The weight scan of the artifact's grids found no point carrying weight.
     #[error(transparent)]
     NoUsableWeight(#[from] NoUsableWeight),
+    /// A reweight card on a process whose `cut_decays = F` filter is
+    /// pairing-weighted: a reweighting ratio is taken on the whole `|M|²`, while
+    /// the event's weight also carries the pairing weight
+    /// `Σ_p |M_p|² / Σ_q |M_q|²`, which moves with the parameters reweighted.
+    #[error(
+        "'{process}': the cut_decays = F exemption varies across pairings or subprocesses, so \
+         each carries its own weight, a share of |M|²; reweighting takes its ratios on the \
+         whole |M|² and would leave that weight at the original parameters. Integrate with \
+         cut_decays = T, or generate without the reweight card"
+    )]
+    ReweightPairingWeighted { process: String },
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -224,6 +236,25 @@ pub enum GenerateError {
 
 fn err(msg: impl Into<String>) -> GenerateError {
     GenerateError::Other(msg.into())
+}
+
+/// Refuse a reweight card on a process one of whose cut filters is
+/// pairing-weighted ([`GenerateError::ReweightPairingWeighted`]); `filters`
+/// pairs each filter with the process line it is named by.
+fn refuse_reweighting_pairing_weights<'c>(
+    reweighting: bool,
+    filters: impl IntoIterator<Item = (&'c Cuts, String)>,
+) -> Result<(), GenerateError> {
+    if !reweighting {
+        return Ok(());
+    }
+    match filters
+        .into_iter()
+        .find(|(cuts, _)| cuts.is_pairing_weighted())
+    {
+        Some((_, process)) => Err(GenerateError::ReweightPairingWeighted { process }),
+        None => Ok(()),
+    }
 }
 
 /// Refuse an artifact whose recorded proc card no longer parses, in this build,
@@ -407,6 +438,8 @@ fn generate_sample(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    refuse_vetoed_pairing_weights(sets, &vetoes, &cuts).map_err(|e| err(e.to_string()))?;
+    refuse_reweighting_pairing_weights(launches.is_some(), [(&cuts, artifact.process.clone())])?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
@@ -449,9 +482,12 @@ fn generate_sample(
         Vec::new()
     };
 
+    let pairing_splits = subprocess_pairing_splits(sets, &cuts, model, evaluated)
+        .map_err(|e| err(format!("failed to compile the pairing amplitudes: {e}")))?;
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
+    integ.use_pairing_weights(&pairing_splits, evaluated);
     integ.use_resonances(&resonances);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
@@ -895,6 +931,13 @@ fn generate_proton_sample(
     )
     .map_err(err)?;
     refuse_rounding_on_mixed_multiplicity(options.strategy, groups.len())?;
+    refuse_reweighting_pairing_weights(
+        launches.is_some(),
+        groups
+            .iter()
+            .flat_map(FlavorGroups::groups)
+            .map(|g| (g.cuts(), artifact.process.clone())),
+    )?;
     let mut parts_records = Vec::with_capacity(groups.len());
     // Under matching every record lists the resonances the clustering found on
     // their Breit–Wigner, whatever the card's decays.
@@ -1749,6 +1792,7 @@ mod tests {
         let (run_card, settings) = RunCard::default().split().expect("the default card splits");
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
+            enumeration_version: crate::diagrams::artifact::ENUMERATION_VERSION,
             process: "u u~ > e+ e-".to_string(),
             proc_card: text.to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),

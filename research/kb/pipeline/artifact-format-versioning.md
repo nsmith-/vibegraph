@@ -100,7 +100,7 @@ committed file or test consumes a banked integrate artifact: every test writes
 its own with `vibegraph integrate`. So raising the floor breaks only users'
 files, and they are told to regenerate.
 
-The integrate artifact's floor is its current version, 23. No file older
+The integrate artifact's floor is its current version, 24. No file older
 than 13 records a proc card, so `generate`, which takes none, has nothing to
 replay from one; 13 records no PDF checksums; 14 holds grids trained under
 channel maps that 15 builds differently for the same keys, and no channel-map
@@ -108,13 +108,16 @@ digest that could tell; 21 embeds no model, diagrams or amplitude probe; 22
 banks no configuration share or channel membership, which only integrating
 again can measure, so reading it with empty shares would present a ranking
 that was never measured (`a_version_22_artifact_is_refused` writes its real
-shape). The `v3`–`v9` readers, `version_for` and the threshold constants
+shape); 23 does not record which enumeration produced its diagram sets
+(`a_version_23_artifact_is_refused`). The `v3`–`v9` readers, `version_for` and the threshold constants
 went with the versions they served, so rules 5–7 have no live instance in it;
 the examples above are their history.
 
 The diagram artifact (`DiagramArtifact`, `diagrams/artifact.rs`) follows the
 same rules with a version sequence of its own. Its floor is its current
-version, 2. Version 2 added the process facts MadGraph's default run card
+version, 3. Version 3 added the enumeration version, and a version-2 file is
+refused for the same reason as an integrate artifact at 23
+(`a_version_2_artifact_is_refused_by_name`). Version 2 added the process facts MadGraph's default run card
 reads (`ProcessFacts`), so `integrate` can build that card without
 enumerating. A version-1 file has none, and they cannot be recovered from its
 sets: a decay-chain line's facts come from its core, enumerated again without
@@ -123,6 +126,15 @@ mean enumerating, which is what the artifact exists to avoid, so version 1 is
 refused by name with the remedy, re-run `vibegraph enumerate`. Version 1 was
 the first, and was current only briefly. The refusal test writes version 1's
 real shape.
+
+**The enumeration version is not a format version.** Both artifacts also
+record `ENUMERATION_VERSION`, the version of what enumeration computes, and
+refuse a file that records another
+([integrate artifact](integrate-artifact.md), check 2). A format version
+says how to decode the bytes; the enumeration version says whether the
+decoded diagrams are what this build would enumerate, which no schema change
+marks. Bumping it changes no struct, so no file needs an upgrade path: it is
+refused with the remedy to enumerate or integrate again.
 
 The interned SM model blob (`ufo/sm_assets/sm_parsed.bin.zst`) is a build input,
 not a run artifact, and carries no version. It is regenerated from the pinned
