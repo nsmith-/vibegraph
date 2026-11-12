@@ -41,7 +41,7 @@ use vibegraph::config::{process_facts, GlobalConfig, LoadRunCardError};
 use vibegraph::config_share;
 use vibegraph::coupling::scales::{ClosedForms, ScaleChoice};
 use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
-use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact};
+use vibegraph::diagrams::artifact::{diagram_set_digest, DiagramArtifact, ENUMERATION_VERSION};
 use vibegraph::diagrams::{
     enumerate_lines_in, forbidden_onshell_ids, generate_from_proc_card_in, parse_proc_card,
     DiagramSet, ParsingOptions, SupportedCard,
@@ -56,7 +56,8 @@ use vibegraph::multiplicity::{
     multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
-use vibegraph::onshell::subprocess_vetoes;
+use vibegraph::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
+use vibegraph::pairing::subprocess_pairing_splits;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{
@@ -1175,6 +1176,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
+        enumeration_version: ENUMERATION_VERSION,
         process: output.process,
         proc_card,
         model: model_id,
@@ -1694,15 +1696,24 @@ fn integrate_fixed_energy(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(ErrorKind::Card, format!("failed to compile cuts: {e}")))?;
+    refuse_vetoed_pairing_weights(sets, &vetoes, &cuts)
+        .map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
         .collect();
     let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
 
+    let pairing_splits = subprocess_pairing_splits(sets, &cuts, model, evaluated).map_err(|e| {
+        err(
+            ErrorKind::Process,
+            format!("failed to compile the pairing amplitudes: {e}"),
+        )
+    })?;
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
+    integ.use_pairing_weights(&pairing_splits, evaluated);
     integ.set_map_options(args.maps.options());
     integ.set_grid_rule(args.grid.rule()?);
     integ.set_alpha_floor(args.alpha_floor.0);

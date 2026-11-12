@@ -4,4 +4,6 @@
 
 ## Session Report
 
+* [J-A1 report: diagram and integrate artifacts refuse another enumeration](J-A1-report.md) - ENUMERATION_VERSION is recorded in both artifacts (diagram format 3, integrate format 24) and a mismatch is refused by name with the remedy. A known-answer test pins seven cards' set and process-facts digests to it, and two sign mutations showed it fails on an unbumped change.
 * [J-F1 report: the relative Fermi sign read the order the legs are listed in](J-F1-report.md) - e+ e- > e- e+ against e+ e- > e+ e-, u~ u > u u~, the t t~ b b~ W class and four identical leptons are one defect: Diagram::sign listed each fermion pair lower index first. Dumps, the arithmetic check, the MadGraph verdict, the reach census, the fix and its gates.
+* [J-W1 report: the pairing-weighted cut_decays exemption, its guard, its probe and its σ attribution](J-W1-report.md) - cut_decays = F with identical particles across a decay is now Σ_p w_p Θ_p |M|². The weighted integrand has no beam-collinear pole (w|M|²ε² falls as ε², |M|²ε² flat). σ reads +1.72% above MadGraph on g g > z u u~, z > u u~ and +0.44% on g g > z j j, z > j j. Per event that is the interference plus the window union, with zero from the exemption. MadGraph's rule read on vibegraph's events closes on MadGraph's σ to 0.1%.
