@@ -756,19 +756,39 @@ impl UFOModel {
     /// `vertex`'s particles and the same colour structures whose terms are those
     /// conjugates one to one, at the same colour index and coupling orders.
     ///
-    /// `None` for a self-conjugate vertex, a structure outside
+    /// The exchange is made only for a fermion–fermion–vector vertex whose every term
+    /// carries a gamma, the class it is measured on: the vector currents (the CKM
+    /// vertices) and SMEFTsim's momentum-slashed W dipoles. A scalar or chiral-scalar
+    /// structure (`FFS`, a charged Goldstone's or Higgs's Yukawa) and a vertex with a
+    /// further boson (`FFVS`) keep their own couplings, as they did before the dipoles
+    /// were mapped: what such a term's conjugate is under this crate's binding has not
+    /// been measured against MadGraph, and the binding is a convention, not an
+    /// identity, so it is not extended to them by analogy.
+    ///
+    /// `None` for any other vertex, a self-conjugate vertex, a structure outside
     /// [`chain_normal_form`], or no unique conjugate.
     pub(crate) fn conjugate_couplings(
         &self,
         vertex: VertexId,
     ) -> Option<BTreeMap<(usize, usize), CouplingId>> {
         let v = self.vertex_def(vertex);
-        let fermions = v
-            .particles
-            .iter()
-            .filter(|&&p| self.particle(p).spin == 2)
-            .count();
-        if fermions != 2 {
+        let spin_count = |s: i32| {
+            v.particles
+                .iter()
+                .filter(|&&p| self.particle(p).spin == s)
+                .count()
+        };
+        if v.particles.len() != 3 || spin_count(2) != 2 || spin_count(3) != 1 {
+            return None;
+        }
+        let every_term_carries_a_gamma = v.lorentz.iter().all(|&l| {
+            self.lorentz_struct(l).expr.iter().all(|term| {
+                term.ops
+                    .iter()
+                    .any(|op| matches!(op, lorentz::LorentzOp::Gamma { .. }))
+            })
+        });
+        if !every_term_carries_a_gamma {
             return None;
         }
         let sorted = |mut ids: Vec<ParticleId>| {
@@ -1612,6 +1632,98 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The partner exchange stays on the class it was measured on. A charged Goldstone's
+    /// Yukawa (`V_88`, `[t~, b, G+]`, `FFS1`/`FFS3`) and SMEFTsim's `t b W H` contacts
+    /// (`V_290`, `V_329`, `FFVS*`) keep their own couplings, as before the dipoles were
+    /// mapped; a CKM vector current keeps binding its partner's coupling on the same
+    /// key. Mapping every two-fermion charged vertex would flip the Goldstone Yukawas
+    /// (`GC_15`, `GC_21` against their partner's), which no measurement supports.
+    #[test]
+    fn the_partner_exchange_is_limited_to_gamma_currents() {
+        let sm = sm::sm_model(sm::SMRestrict::Default);
+        let id = sm.vertex_id("V_88").unwrap();
+        assert!(sm.conjugate_couplings(id).is_none());
+        for key in sm.vertex_def(id).couplings.keys() {
+            assert_eq!(
+                sm.bound_coupling(id, *key),
+                sm.vertex_def(id).couplings[key],
+                "V_88 {key:?}"
+            );
+        }
+
+        let ckm = sm::sm_model(sm::SMRestrict::CkmNoBMass);
+        let mut charged_currents = 0;
+        for (i, v) in ckm.vertices.values().enumerate() {
+            let names: Vec<&str> = v
+                .particles
+                .iter()
+                .map(|&q| ckm.particle(q).name.as_str())
+                .collect();
+            if names.len() != 3 || !(names[2] == "W+" || names[2] == "W-") {
+                continue;
+            }
+            if names
+                .iter()
+                .take(2)
+                .any(|n| ckm.particle_id(n).map(|p| ckm.particle(p).spin) != Some(2))
+            {
+                continue;
+            }
+            let map = ckm
+                .conjugate_couplings(VertexId(i))
+                .unwrap_or_else(|| panic!("{} {names:?} lost its partner", v.name));
+            let mut anti: Vec<ParticleId> = v
+                .particles
+                .iter()
+                .map(|&p| ckm.particle_id(&ckm.particle(p).antiname).unwrap())
+                .collect();
+            anti.sort_by_key(|p| p.index());
+            let partner = ckm
+                .vertices
+                .values()
+                .find(|w| {
+                    let mut ps = w.particles.clone();
+                    ps.sort_by_key(|p| p.index());
+                    ps == anti
+                })
+                .unwrap();
+            for (key, g) in map {
+                assert_eq!(
+                    partner.couplings[&key], g,
+                    "{} keeps its key {key:?}",
+                    v.name
+                );
+            }
+            charged_currents += 1;
+        }
+        assert!(
+            charged_currents >= 18,
+            "W-fermion vertices: {charged_currents}"
+        );
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let smeft = UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(
+                &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/restrict_massless.dat"),
+            ),
+        )
+        .unwrap();
+        let mut checked = 0;
+        for (i, v) in smeft.vertices.values().enumerate() {
+            let base = v.name.split('#').next().unwrap();
+            if base == "V_290" || base == "V_329" {
+                assert!(
+                    smeft.conjugate_couplings(VertexId(i)).is_none(),
+                    "{}",
+                    v.name
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked >= 2, "the t b W H vertices");
     }
 
     /// A self-conjugate vertex binds its own couplings: the photon and Z dipoles of the
