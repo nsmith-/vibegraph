@@ -1096,12 +1096,11 @@ fn compare_rewgt(
     let killed_pdf = matches!(mine.kill, Some(RewgtKill::PdfDenominator { .. }));
     let (mut steps_ok, mut x_dev, mut q_dev, mut f_dev, mut r_dev) =
         (true, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    for beam in 0..2 {
+    for (beam, ours) in mine.pdf_chain.iter().enumerate() {
         let theirs: Vec<Rec<'_>> = event
             .recs()
             .filter(|r| r.tag() == "RWPDF" && r.u(2) == beam + 1)
             .collect();
-        let ours = &mine.pdf_chain[beam];
         if theirs.len() != ours.len() {
             steps_ok = false;
             continue;

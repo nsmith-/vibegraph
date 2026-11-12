@@ -3,7 +3,7 @@ authors = ["Nick Smith <nick.smith@cern.ch>"]
 channels = ["conda-forge", "pytorch"]
 name = "vibegraph"
 platforms = ["osx-arm64", "linux-64"]
-version = "0.2.0"
+version = "0.2.1"
 
 # Default environment: the Rust toolchain comes from rustup, not conda. `zstd`
 # is the one binary the layer's own scripts shell out to (the refdata bundle is

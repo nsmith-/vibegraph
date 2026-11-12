@@ -170,9 +170,9 @@ that misses: twenty seeds scatter by 1.0% against a quoted 0.23% with a
 one-sided low tail, and two 50k-event runs land +0.06% from this side, so
 MadEvent converges upward with budget. The last row is the pairing
 difference: keeping both pairings and their interference puts the
-identical-lepton σ 0.25% ± 0.08% above MadGraph's one pairing ÷ 2, of which
-the interference is below 0.1% (reversing the pairings' relative sign moved
-the row by 0.01% ± 0.11%). `generate`
+identical-lepton σ 0.25% ± 0.08% above MadGraph's one pairing ÷ 2: per event
++0.11% is the window union, the interference is negligible (4e-5), and +0.14% ±
+0.08% is unattributed. `generate`
 writes status-2 resonance records with mother pointers for a decay-chain card,
 so a shower keeps the forced line shapes
 ([resonance records](../events/resonance-records.md)).
