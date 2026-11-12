@@ -49,7 +49,8 @@ use vibegraph::diagrams::{
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, InitialState, Observable,
+    refuse_polarized_frame, subprocess_diagrams, ChannelIntegration, FixedBeamIntegrand,
+    InitialState, Observable,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
@@ -1721,7 +1722,7 @@ fn integrate_fixed_energy(
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
     integ
-        .use_running_coupling(&diagrams, model, evaluated, rc)
+        .use_running_coupling(&subprocess_diagrams(sets), model, evaluated, rc)
         .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
     let n_survey = survey_points(args.neval);

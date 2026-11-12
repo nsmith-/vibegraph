@@ -369,6 +369,35 @@ ROWS = {
         # positive M*Gamma. Just below the pole the width carries most of the Z
         # propagator's phase, so a wrong width sign turns the Z diagram against
         # the photon's.
+        # The rows below use `vg_nodipole`: the model's own all-on card with every
+        # dipole operator zero. A third-generation four-quark contact (`t~ b b~ t`,
+        # SMEFTsim's `V_753`) whose structures pair its spinors two ways and couple
+        # each colour structure through one pairing only: each fermion-flow group's
+        # diagrams carry only the colour chains that group couples, beside QCD,
+        # electroweak s-channel and t-channel W exchange. Widths are zero for the
+        # spacelike W.
+        Row("bbx_to_ttx_4f_nodipole", "b b~ > t t~ NP<=1", (5, -5), (6, -6), 1000.0, 3, 5108,
+            model=SMEFT, restrict="vg_nodipole", zero_widths=True),
+        # The same-flavour pairing of a four-quark contact (`u~ b b~ u`, SMEFTsim's
+        # `V_787`/`V_788`): its vector-vector structures pair slots (2,3)(4,1), so the
+        # off-shell quark current toward the gluon emission is rooted at slot 4 and,
+        # against an incoming antiquark at slot 1, re-rooted across the b pair.
+        # `SMHLOOP=0` drops the loop-induced Higgs-gluon vertices and their
+        # seven-digit Fortran couplings.
+        Row("uux_to_bbxg_4f_nodipole", "u u~ > b b~ g NP<=1 SMHLOOP=0", (2, -2), (5, -5, 21),
+            1000.0, 3, 5112, model=SMEFT, restrict="vg_nodipole"),
+        # Six quarks with no charged current between the two produced pairs: the
+        # light-light, light-third-generation and charm contacts beside QCD and
+        # electroweak exchange. Widths are zero for the spacelike W.
+        Row("uux_to_ttxccx_4f_nodipole", "u u~ > t t~ c c~ NP<=1 SMHLOOP=0", (2, -2),
+            (6, -6, 4, -4), 1000.0, 3, 5111, model=SMEFT, restrict="vg_nodipole",
+            zero_widths=True),
+        # The six-quark process both contacts above meet in: four flavours, with the
+        # `t~ b b~ t` contact beside the `u~ b b~ u` one. Widths are zero for the
+        # spacelike W.
+        Row("uux_to_ttxbbx_4f_nodipole", "u u~ > t t~ b b~ NP<=1 SMHLOOP=0", (2, -2),
+            (6, -6, 5, -5), 1000.0, 3, 5110, model=SMEFT, restrict="vg_nodipole",
+            zero_widths=True),
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
     ]
