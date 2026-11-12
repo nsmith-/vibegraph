@@ -333,8 +333,10 @@ is ac74b42's.
   `gg_to_gg` and `gg_to_gg_cg` diagrams, `ee_to_wpwm_cw` and `ee_to_zh_smeft`
   amplitudes, and `ee_to_mumua` samples. None is a decay chain. The decay-chain
   σ gate passed (`decay_chain_cross_sections_match_madevent_over_seeds ... ok`).
-  No banked row has identical particles both in a decay and in the core, so no
-  banked σ line reaches the weighted path.
+  No banked row reaches the weighted path. That is a statement about the banked
+  rows, not about the path's reach: besides identical particles across a decay,
+  a fixed-beam process whose subprocesses' decays carry different legs also
+  goes weighted (§5c).
 - **`cargo fmt --all --check`**, **`cargo clippy --workspace --all-targets -- -D warnings`**
   and **`python3 scripts/kb.py lint`** on the final head: see §7.
 
@@ -393,12 +395,112 @@ assumption systematics already makes for |M|² as a whole.
 reasons:
 - the refusal only fires when reweighting is requested on a pairing-weighted
   card;
-- no banked row is pairing-weighted (§5);
+- no banked row reaches the weighted path (§5);
 - the banked reweighting rows (`cli_reweight_proton`'s two existing tests,
   `validate_param_card_sigma`) are on cards without a varying exemption, so
   their path is unchanged.
 
 The final-head gates are in §7.
+
+## 5c. Review fixes (#131)
+
+**1. A `$` veto on a pairing-weighted card is refused.**
+- **The defect.** `BoundPairings::weights` evaluates each pairing's unvetoed
+  |M_p|², while the term it multiplies is `vetoed_m2`. On a `$` card the weights
+  would come from amplitudes the veto does not reach: a silent wrong answer.
+  Vetoing per pairing would need vetoed part programs per pairing, which is out
+  of scope, so the card is refused instead.
+- **The refusal** is the typed `OnShellVetoError::PairingWeighted { process }`.
+  Its message names the `$`, the varying exemption and the remedies
+  (`cut_decays = T`, or no `$`). It fires on any `$` restriction together with
+  a pairing-weighted filter, whether or not the diagrams carry a line the `$`
+  marks.
+  - Conservative on purpose. On the test card the `$ a` marks nothing: at the
+    card's minimal QED order there is no photon line, and the window of a
+    massless, widthless line never zeroes anything. A core with a marked massive
+    line would need extra coupling orders, which I did not search for.
+  - It fires before integration at both beam types:
+    - proton beams: in `group_vetoes`, which `multiplicity_groups_of` calls for
+      both `integrate` and `generate`;
+    - fixed beams: in `refuse_vetoed_pairing_weights`, called by `integrate.rs`
+      and `generate.rs` right after `Cuts::compile_with`.
+- **The tests** came first, in d412d93:
+  - `onshell::tests::a_veto_on_a_pairing_weighted_group_is_refused`, at proton
+    beams on `u u~ > z u u~, z > u u~` with `$ a`; the same card at
+    `cut_decays = T` still compiles. After d412d93 only its T-side control
+    changed, from "some veto is built" to "the call succeeds", because `$ a`
+    marks no line on that card. The failing assertion is unchanged.
+  - `cli_hard_errors::cli_a_veto_on_a_pairing_weighted_card_is_refused_at_fixed_beams`,
+    on `u u~ > z u u~ $ a, z > u u~` at fixed beams; no artifact is written.
+
+  Before the refusal, at d412d93 (`$S/jw1-veto-before.log`):
+
+  ```
+  test onshell::tests::a_veto_on_a_pairing_weighted_group_is_refused ... FAILED
+  panicked at vibegraph-lib/src/onshell.rs:880:22: a veto on a pairing-weighted group compiled
+  test cli_a_veto_on_a_pairing_weighted_card_is_refused_at_fixed_beams ... FAILED
+  panicked at vibegraph-cli/tests/cli_hard_errors.rs:803:5: a veto on a pairing-weighted card must be refused:
+   INFO compile: compiled evaluator: 222 ops process=u u~ > u u~ u u~   (integrate ran)
+  ```
+
+  After: see the checks at the end of this section.
+
+**2. The weighted path's reach is wider than identical particles.** At fixed
+beams, `integrate.rs` and `generate.rs` compile one filter from the union of
+every subprocess's diagrams. `exemption_varies` is therefore true whenever
+subprocesses' decays carry different legs, even with no identical particle
+across any decay. The reviewer's reproducer is `e+ e- > d d~ z, z > u u~` with
+`add process e+ e- > z u u~, z > d d~`: two subprocesses, each with one
+exemption, two together. The new test
+`cuts::tests::subprocesses_whose_decays_carry_different_legs_weight_one_shared_filter`
+pins it:
+- neither subprocess alone varies;
+- together they do, with `decay_products()` = 0;
+- at F the filter is pairing-weighted with two 2-leg exemptions;
+- at T it is not.
+
+What this means for such cards:
+- **σ moves against main.** Main exempted the every-diagram intersection, which
+  is empty here, so every leg was cut. Now each subprocess's single pairing has
+  weight 1 exactly where its own filter passes, so each subprocess is cut with
+  its own decay products exempt.
+- **That is MadGraph's per-process behaviour, but unmeasured here** (Found 3).
+- **Wording.** The `ReweightPairingWeighted` message, the `compile_with`,
+  `exemption_varies` and `cuts.rs` module docs now say what is true: "the
+  cut_decays = F exemption varies across pairings or subprocesses, so each
+  carries its own weight". The refusal itself is unchanged.
+
+**3. Reach claims** in this report are corrected (§5, §5b).
+
+**Two notes for the record, not fixed:**
+- **NaN.** `weights` maps a non-positive or non-finite total Σ_q|M_q|² to weight
+  0. An infinite total therefore gives a NaN integrand only when |M|² is itself
+  infinite, which the unweighted path would already have produced.
+- **The unaffected-path test's comparison.**
+  `a_filter_without_a_varying_exemption_is_unweighted` compares `compile_with`
+  against the new helper `compile_exempting`, not against main's code. It pins
+  that the unweighted branch is taken and that the guards run, not that
+  `compile_exempting`'s body equals main's `compile_with`. That equality rests on
+  the diff, which moves the body unchanged apart from the `guard` flag, and on
+  the banked σ lines.
+
+**After #133.** The attribution and σ tables of §4 are stale: #133 flips the
+relative sign between pairings on `g g > z u u~, z > u u~`, so the interference
+share changes sign. The manager re-measures them in the close-out.
+
+**Checks after the fixes** (`$S/jw1-after.sh`, `$S/jw1-after-status`). They ran
+on the working tree that became the fix commit. Under Nick's rule CI is the gate:
+no local full workspace test run and no `validate.sh`.
+
+```
+FMT-EXIT 0                    cargo fmt --all --check
+LIB-TESTS-EXIT 0              cargo test -p vibegraph-lib --lib -- onshell:: cuts:: pairing::   107 passed, 0 failed
+CLI-HARD-ERRORS-EXIT 0        cargo test -p vibegraph --test cli_hard_errors                    16 passed, 0 failed
+CLI-REWEIGHT-PROTON-EXIT 0    cargo test -p vibegraph --features extended-validation --test cli_reweight_proton -- reweighting_a_pairing_weighted_card_is_refused
+CLIPPY-EXIT 0                 cargo clippy --workspace --all-targets -- -D warnings
+CLIPPY-EV-EXIT 0              the same with --features vibegraph/extended-validation,vibegraph-lib/extended-validation
+KB-LINT-EXIT 0                python3 scripts/kb.py lint
+```
 
 ## 6. Item and brief corrections
 
@@ -507,16 +609,15 @@ files this session touched.
    pairing-weighted cards.
 3. **The fixed-beam path reads one `ForcedResonances` over every subprocess's
    diagrams.** That predates this work (`integrate.rs`, `generate.rs`). On a
-   fixed-beam card mixing a same-flavour chain with distinct-flavour ones, the
-   old intersection rule cut every leg of every subprocess. It now goes
-   weighted, and each subprocess's single pairing gets its own exemption. That
-   is MadGraph's behaviour on those subprocesses, but it is an unmeasured change
-   on such cards.
-   - A lepton-collider core with the decay's quarks (`e+ e- > z u u~, z > u u~`)
-     is refused at enumeration as ambiguous (§5b). So this reaches only fixed
-     beams of partons, `g g > z j j, z > j j` at `lpp = 0`, and I did not check
-     how common such cards are.
-   - To close it: one such fixed-beam σ row against MadGraph.
+   fixed-beam card whose subprocesses' decays carry different legs, the old
+   intersection rule cut every leg of every subprocess. That covers a card such
+   as `e+ e- > d d~ z, z > u u~` with `add process e+ e- > z u u~, z > d d~`
+   (§5c), with or without identical particles. Such a card now goes weighted,
+   and each subprocess's single pairing gets its own exemption. That is
+   MadGraph's behaviour on those subprocesses, but it is an unmeasured σ change
+   against main. A lepton-collider core sharing the decay's quarks
+   (`e+ e- > z u u~, z > u u~`) is refused at enumeration as ambiguous (§5b).
+   To close it: one such fixed-beam σ row against MadGraph.
 4. **Members of a flavour group share the representative's pairing
    amplitudes.** They are grouped on equal |M|² traces and equal filters, which
    include the exemptions, but the per-pairing |M_p|² of a member is not
