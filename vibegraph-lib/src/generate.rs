@@ -43,7 +43,7 @@ use crate::multiplicity::{
     multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
-use crate::onshell::subprocess_vetoes;
+use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
 use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
@@ -218,16 +218,15 @@ pub enum GenerateError {
     /// The weight scan of the artifact's grids found no point carrying weight.
     #[error(transparent)]
     NoUsableWeight(#[from] NoUsableWeight),
-    /// A reweight card on a process whose `cut_decays = F` exemption is
+    /// A reweight card on a process whose `cut_decays = F` filter is
     /// pairing-weighted: a reweighting ratio is taken on the whole `|M|²`, while
     /// the event's weight also carries the pairing weight
     /// `Σ_p |M_p|² / Σ_q |M_q|²`, which moves with the parameters reweighted.
     #[error(
-        "'{process}' has identical particles in a decay in one pairing and in the core in \
-         another, so cut_decays = F weights each pairing's exemption by its share of |M|²; \
-         reweighting takes its ratios on the whole |M|² and would leave that pairing weight at \
-         the original parameters. Integrate with cut_decays = T, or generate without the \
-         reweight card"
+        "'{process}': the cut_decays = F exemption varies across pairings or subprocesses, so \
+         each carries its own weight, a share of |M|²; reweighting takes its ratios on the \
+         whole |M|² and would leave that weight at the original parameters. Integrate with \
+         cut_decays = T, or generate without the reweight card"
     )]
     ReweightPairingWeighted { process: String },
     /// Any other refusal, as a message for whoever ran the generation.
@@ -439,6 +438,7 @@ fn generate_sample(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    refuse_vetoed_pairing_weights(sets, &vetoes, &cuts).map_err(|e| err(e.to_string()))?;
     refuse_reweighting_pairing_weights(launches.is_some(), [(&cuts, artifact.process.clone())])?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()

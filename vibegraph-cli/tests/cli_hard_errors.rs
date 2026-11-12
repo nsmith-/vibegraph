@@ -763,10 +763,10 @@ fn cli_reweighting_a_pairing_weighted_card_is_refused_at_fixed_beams() {
     assert!(!lhe.exists(), "no event file is written");
 }
 
-/// A `$` veto on a card whose `cut_decays = F` exemption is pairing-weighted is
-/// refused by name before integration, at fixed beams: the pairing weights are
-/// formed from the pairings' unvetoed amplitudes while the term they multiply
-/// is vetoed.
+/// A `$` restriction on a card whose `cut_decays = F` exemption is
+/// pairing-weighted is refused by name before integration, at fixed beams: the
+/// pairing weights are formed from the pairings' unvetoed amplitudes while the
+/// term they multiply is vetoed.
 #[test]
 fn cli_a_veto_on_a_pairing_weighted_card_is_refused_at_fixed_beams() {
     let home = tempfile::tempdir().unwrap();

@@ -56,7 +56,7 @@ use vibegraph::multiplicity::{
     multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
-use vibegraph::onshell::subprocess_vetoes;
+use vibegraph::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
 use vibegraph::pairing::subprocess_pairing_splits;
 use vibegraph::pdf::select::{load_for_run_card, LoadedPdf};
 use vibegraph::pdf::{PdfMember, PdfSet};
@@ -1696,6 +1696,8 @@ fn integrate_fixed_energy(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(ErrorKind::Card, format!("failed to compile cuts: {e}")))?;
+    refuse_vetoed_pairing_weights(sets, &vetoes, &cuts)
+        .map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))

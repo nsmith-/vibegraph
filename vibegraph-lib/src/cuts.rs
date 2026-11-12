@@ -60,7 +60,10 @@
 //!   and in the core in another (`g g > z u u~, z > u u~`), each pairing exempts
 //!   its own decay products and the integrand weights each pairing's indicator
 //!   by its share of `|M|²` ([`Cuts::compile_with`], [`crate::pairing`]); the
-//!   σ is not MadEvent's, which drops the other pairings. An exemption that
+//!   σ is not MadEvent's, which drops the other pairings. A fixed-beam process
+//!   compiles one filter over every subprocess's diagrams, so there the
+//!   weighting also applies where subprocesses' decays carry different legs,
+//!   each subprocess's own pairing exempting its own products. An exemption that
 //!   would leave uncut a massless coloured leg descending from no forced line in
 //!   some diagram of the pairings it serves is refused
 //!   ([`CutError::IrUnsafeExemption`]): that leg's collinear region is
@@ -309,9 +312,10 @@ impl ForcedResonances {
     }
 
     /// Whether the diagrams that force lines do not all have the same decay
-    /// products: identical particles sit in a decay in some pairing and in the
-    /// core in another, so `cut_decays = F` exempts a different leg set per
-    /// pairing ([`Cuts::compile_with`]).
+    /// products, so `cut_decays = F` exempts a different leg set per group
+    /// ([`Cuts::compile_with`]): identical particles sit in a decay in some
+    /// pairing and in the core in another, or, over the diagrams of several
+    /// subprocesses, their decays carry different legs.
     pub(crate) fn exemption_varies(&self) -> bool {
         let mut products = self
             .pairings
@@ -1474,9 +1478,13 @@ impl Cuts {
     /// force the lines of `forced` on shell: [`Cuts::compile`] plus the
     /// decay-chain windows, and `cut_decays` read against the decay products.
     ///
-    /// At `cut_decays = F`, where identical particles sit in a decay in some
-    /// pairing and in the core in another ([`ForcedResonances::exemption_varies`]),
-    /// each pairing exempts its own decay products: the filter holds one filter per
+    /// At `cut_decays = F`, where the diagrams that force lines do not all have
+    /// the same decay products ([`ForcedResonances::exemption_varies`]), each
+    /// group of diagrams forcing one set of lines exempts its own decay products.
+    /// Within one subprocess that is identical particles sitting in a decay in
+    /// some pairing and in the core in another; over the diagrams of several
+    /// subprocesses compiled into one filter (a fixed-beam process) it is also
+    /// subprocesses whose decays carry different legs. The filter holds one filter per
     /// distinct exemption ([`Cuts::pass_pairings`]), and the integrand weights each
     /// pairing's indicator by that pairing's share of the squared amplitude,
     /// `Σ_p w_p Θ_p |M|²` with `w_p = |M_p|² / Σ_q |M_q|²`
@@ -4077,6 +4085,66 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    /// A fixed-beam process compiles one filter over every subprocess's
+    /// diagrams. Two subprocesses with no identical particle across a decay, whose
+    /// decays carry different legs (`e+ e- > d d~ z, z > u u~` with
+    /// `e+ e- > z u u~, z > d d~`), each have one exemption, but together two:
+    /// the shared filter is pairing-weighted, each subprocess's own pairing
+    /// exempting its own decay products where the rule without weights cut every
+    /// leg.
+    #[test]
+    fn subprocesses_whose_decays_carry_different_legs_weight_one_shared_filter() {
+        use crate::diagrams::diagram::antiparticle;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let proc_card = parse_proc_card(
+            "generate e+ e- > d d~ z, z > u u~\nadd process e+ e- > z u u~, z > d d~",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let sets: Vec<_> = generate_from_proc_card(&proc_card, &model)
+            .unwrap()
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        assert_eq!(sets.len(), 2);
+        for set in &sets {
+            assert!(!ForcedResonances::of(&set.diagrams, &evaluated).exemption_varies());
+        }
+        let diagrams: Vec<Diagram> = sets.iter().flat_map(|s| s.diagrams.clone()).collect();
+        let first = &diagrams[0];
+        let legs: Vec<ExternalLeg> = first
+            .legs
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                if i < first.n_in {
+                    let pdg = model.particle(l.particle).pdg_code as i32;
+                    ExternalLeg::incoming(pdg, evaluated.mass(l.particle))
+                } else {
+                    let crossed = antiparticle(&model, l.particle);
+                    let pdg = model.particle(crossed).pdg_code as i32;
+                    ExternalLeg::outgoing(pdg, evaluated.mass(crossed))
+                }
+            })
+            .collect();
+        let forced = ForcedResonances::of(&diagrams, &evaluated);
+        assert!(forced.exemption_varies());
+        assert_eq!(forced.decay_products(), 0);
+        let rc = card("F = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        let cuts = Cuts::compile_with(&rc, &legs, &forced).unwrap();
+        assert!(cuts.is_pairing_weighted());
+        let exempt: Vec<u64> = cuts.pairings.iter().map(|p| p.exempt).collect();
+        assert_eq!(exempt.len(), 2, "{exempt:?}");
+        assert!(exempt.iter().all(|m| m.count_ones() == 2), "{exempt:?}");
+        let t = card("T = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
+        assert!(!Cuts::compile_with(&t, &legs, &forced)
+            .unwrap()
+            .is_pairing_weighted());
     }
 
     /// A multi-body decay whose massless products are identical to core
