@@ -716,15 +716,7 @@ fn measure_with(
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
-    "uux_to_ttxbbx_4f_nodipole",
-    "a W exchanged between the t and b lines beside a third fermion line takes the \
-     opposite sign to MadGraph's. In MadGraph's `sm`, `u u~ > t t~ b b~ QED<=2` \
-     disagrees at O(1) per flow; its four W diagrams alone \
-     (`QED=2 QCD=2 / z a h`) agree under G = -i and the process without the W \
-     (`/ w+ w-`) under G = +i, while `u u~ > t t~ c c~ QED<=2` and the two-line \
-     `b b~ > t t~` agree",
-)];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -1094,7 +1086,8 @@ fn uux_to_ttxccx_4f_nodipole() {
 }
 
 /// The six-quark process both contacts above meet in, `u u~ > t t~ b b~` under
-/// `vg_nodipole`: listed in [`KNOWN_DISAGREEMENT`].
+/// `vg_nodipole`, where a W exchanged between the t and b lines interferes with the
+/// pairing that keeps them apart.
 #[test]
 fn uux_to_ttxbbx_4f_nodipole() {
     check("uux_to_ttxbbx_4f_nodipole");
