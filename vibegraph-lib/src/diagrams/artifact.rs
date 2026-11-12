@@ -56,7 +56,11 @@ use crate::ufo::{ParsedModel, UfoError};
 /// `enumeration_output_matches_the_pinned_version` pins the output of a fixed
 /// card set to this version, so an unbumped change to that output fails it. A
 /// change that moves only cards outside that set is not seen there.
-pub const ENUMERATION_VERSION: u32 = 1;
+///
+/// `2`: the relative Fermi sign orders each fermion pair without reading leg
+/// numbers (`Diagram::fermion_pairing_sign`), which moves `sign` on every
+/// set where two pairings of the same legs interfere.
+pub const ENUMERATION_VERSION: u32 = 2;
 
 /// The schema version of a [`DiagramArtifact`].
 ///
@@ -682,19 +686,19 @@ mod tests {
         (
             KnownModel::Sm,
             "generate e+ e- > z z, z > mu+ mu-\n",
-            "99a0d99581dec0e63c7d08e0d26ef94ce8a89fe10d0bfc05dfaa6ab95abdee4a",
+            "4fca8babc7e0baff31573fe706a99b824daa0ce3e7ac1f92447e8af861e84cc7",
             "8e7ac86a8a558c179465567b409cd30beee390d6686dfb2f37fc307bbca04bd5",
         ),
         (
             KnownModel::Sm,
             "generate p p > z j, z > e+ e-\n",
-            "d904cbfa5ecadb4dc4cae2e0fcb4a0739841d77769a1d073c2b39827c15645da",
+            "840047ff15749001cca0f8c17bf4a8f6ed33150bec9b7fff828b4fb56e6474a5",
             "1c5a4fdfe718de09dfe70060a536fddf9d96654ee19dcb68eb108d9b2f35624c",
         ),
         (
             KnownModel::Sm,
             "generate u u~ > z{0} g\n",
-            "52839bbd96e5aa09c4b11d80109c30863c72146cce76798403a42f5a19a1e9ff",
+            "a085d42f52a7413bbcfcbb3f32e89396f67385c3ee187af4d9aeb72b8b8a8925",
             "54295cbb4d4d5c5b5d12203cd3af923b56625f55bc6d5eaafb84233ab767007e",
         ),
         (
@@ -706,7 +710,7 @@ mod tests {
         (
             KnownModel::Sm,
             "generate e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~\n",
-            "9088a370bbee74e2047309980bd1dec62063594415213018a1633076c1c0e86f",
+            "6741d36d52845e61d0a98647c063e52726f32a0725da3563d773d672e1b6c6b5",
             "e32695af77e2374ac3e4ec3425ff4173dc589c3710efc035fefd46ab781fa366",
         ),
         (
@@ -719,7 +723,7 @@ mod tests {
 
     /// The [`ENUMERATION_VERSION`] the digests of [`KNOWN_ANSWERS`] were
     /// recorded at.
-    const PINNED_ENUMERATION_VERSION: u32 = 1;
+    const PINNED_ENUMERATION_VERSION: u32 = 2;
 
     #[derive(Clone, Copy, Debug)]
     enum KnownModel {

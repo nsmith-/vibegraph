@@ -400,6 +400,19 @@ ROWS = {
             zero_widths=True),
         Row("ee_to_mumu_negmz", "e+ e- > mu+ mu-", (-11, 11), (-13, 13), 90.0, 3, 5103,
             card_edits=(("mass", 23, -91.188),), madevent_params=True, bank_amps=True),
+        # Bhabha with its outgoing legs listed particle first: the s-channel holds
+        # an initial-state and a final-state line, the t-channel two mixed lines,
+        # and their relative sign must not depend on the order the legs are listed
+        # in. Widths are zero for the spacelike Z.
+        Row("ee_to_emep", "e+ e- > e- e+", (-11, 11), (11, -11), 500.0, 3, 5201,
+            zero_widths=True),
+        # The same pairings with the antiquark first in the initial state and the
+        # quark first in the final state, two flows.
+        Row("uxu_to_uux", "u~ u > u u~", (-2, 2), (2, -2), 500.0, 3, 5202),
+        # Two final-state lines paired two ways: (t t~)(b b~) through gluons,
+        # photons and Z, (t b~)(b t~) through a W joining them.
+        Row("uux_to_ttxbbx_qed2", "u u~ > t t~ b b~ QED<=2", (2, -2), (6, -6, 5, -5),
+            1000.0, 3, 5203, zero_widths=True),
     ]
 }
 
