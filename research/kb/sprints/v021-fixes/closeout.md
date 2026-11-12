@@ -1,7 +1,7 @@
 ---
 type: Sprint Record
 title: "Sprint J: the v0.2.1 fixes"
-description: "Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The release waits on the CERN host's CMS campaign."
+description: "Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The CERN host's CMS campaign on the release candidate met its bar: no panics, no unexplained ok → not-ok."
 status: draft
 tags: [release, v0.2.1, cuts, decay-chains, identical-particles, artifacts, panics, fermion-sign, smeft, sprint-j, sprint-record]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-12}
@@ -81,16 +81,82 @@ manifest, `cli_decay_chain_events.rs` and the concepts now say otherwise.
   fix (#128), `vibegraph enumerate` and diagram artifacts (#114–#121),
   configuration shares (#124, #126), the three physics fixes, the two panics,
   and the known issues with the post-#133 numbers.
-- The CERN host's full CMS campaign on the release-candidate head is requested
-  on #129 (`full-cms-campaign-after-v02-cut`). Its bar is no unexplained
-  ok → not-ok and no panics. Expected movers: four-lepton, ZZ, `b b~ b b~` and
-  electroweak `t t~ b b~` cards (#133); SMEFTsim top-dipole cards (#134); and
-  `cut_decays = F` decay chains with identical particles across decays (#131).
-  The user tags the release.
+- The CERN host's full CMS campaign on the release candidate meets its bar
+  (below). The user tags the release.
+
+## The CMS campaign on the release candidate
+
+Campaign `v021rc-ff20017-200-pc` ran on the CERN host on `ff200179`. Its policy
+and setup were identical to `main-202a540-200-pc`, with a 4500M scope cap per
+card; card wall time totalled 5.97 h. The figures are as the vibegraph manager
+relayed them from the host's `gridpacks.sqlite` (`comparison` view). This
+manager did not re-read the database.
+
+| Outcome | main-202a540 | v0.2.1 RC |
+|---|---|---|
+| ok | 66 | 63 |
+| refused | 93 | 103 |
+| timeout | 37 | 31 |
+| cap kill | 0 | 2 |
+| panic | 3 | **0** |
+
+**Bar met: no panics, and no unexplained ok → not-ok.**
+
+Transitions:
+- **ok → refused (7), all expected:**
+  - the D1 family's uncut limits: DYto2L-2Jets-EWK MLL-50, VBFto2L MLL-50,
+    VBFto2L MLL-4to50;
+  - #109's photon cards: GJ-2Jets-EWK, GJ-2Jets-EWK PTG-40, VBFtoG PTG-100to200,
+    VBFtoG PTG-200.
+- **panic → ok (2):** DarkPhoton-monojet MZd-40 and MZd-86. The old panic was at
+  `rambo.rs:52`. Both ran with their param card dropped (below).
+- **panic → refused (1):** idm_dilepton_mH80_mA160, now refused by the uncut
+  e+e− collinear guard.
+- **timeout → refused (3):**
+  - idm_dilepton_mH110_mA202, by the collinear guard;
+  - Wto2Q-3Jets HT-400to800 and HT-800to1500, by #131's refusal of a `$` veto
+    on a card whose `cut_decays = F` exemption varies (`u u > u d~ u d`).
+    Filed as
+    [onshell-veto-with-pairing-weighted-cut-refused](../../backlog/feature/onshell-veto-with-pairing-weighted-cut-refused.md).
+- **timeout → ok (1):** aQGC_WPJJWPJJjj_EWK_LO_NPle1, σ/MG 1.007.
+- **refused → ok (1):** QCD-4Jets_HT-100to200, 0.975.
+- **timeout → cap kill (2):** QCD-5Jets_HT-40 and QCD-5Jets_Bin-HT-40, each at
+  4500M after about 200 s.
+
+|pull| > 5:
+- **DarkPhoton MZd-86: 0.052 (pull −323).** This was a patched run. The card's
+  param card was refused because block mass carries code 1000022, which the
+  model lacks (`param-card-entries-for-absent-particles-refused`). The driver
+  dropped the param card, so both MZd cards ran at model defaults with an
+  identical σ. Neither counts as an as-shipped ok.
+- **Four pre-existing pulls, unchanged:** WH_HToAATo4B M-15 (4.01),
+  bbDM_2HDMa 600/100 (33.6), VBFH_HToAATo4B M-45 (3.50) and bbDM_2HDMa 1500/400
+  (4.66).
+
+σ movers: every ok → ok shift beyond 2σ moves towards 1.
+- **TCP_m50 and TCP_m55 ht_400toInf** (`cut_decays = F` decay chains):
+  3.89 → 1.008 and 4.21 → 1.081. σ went down on these cards, not up as the
+  campaign request anticipated for #131's cards.
+- **TprimeBToTZ thirtypct M3000:** 0.518 → 0.927.
+- **tbj DMsimp mphi-600:** 0.574 → 1.123.
+
+No ok card exercises the #133 families (four leptons, ZZ → 4ℓ, `b b~ b b~`,
+electroweak `t t~ b b~`) or the SMEFTsim top dipoles. On real cards, those
+fixes rest on the standalone MadGraph rows alone.
+
+Worth a look (one seed, `neval` 10000):
+- QCDB-4Jets_Bin-HT-40to100: 0.907, pull −3.9 (was 1.010);
+- TprimeBToTZ twentypct M1800: 0.929, pull −3.6;
+- VBF_XtoVV M4000: 0.934, pull −2.2.
+
+`full-cms-campaign-after-v02-cut` asks for the campaign together with the
+performance benchmarks on the same revision. The campaign half is met here;
+the benchmarks have not been run, so the item stays open.
 
 ## Found
 
 Filed by this record:
+- [onshell-veto-with-pairing-weighted-cut-refused](../../backlog/feature/onshell-veto-with-pairing-weighted-cut-refused.md) (the campaign).
 - [zz-ee-sigma-excess-not-attributed](../../backlog/validation/zz-ee-sigma-excess-not-attributed.md) (above).
 - [fixed-beam-pairing-union-sigma-unmeasured](../../backlog/validation/fixed-beam-pairing-union-sigma-unmeasured.md) (J-W1 Found 3).
 - [fixed-beam-reweight-audit-names-wrong-cause](../../backlog/validation/fixed-beam-reweight-audit-names-wrong-cause.md) (J-W1 Found 6).

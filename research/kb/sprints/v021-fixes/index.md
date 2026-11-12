@@ -8,7 +8,7 @@
 
 ## Sprint Record
 
-* [Sprint J: the v0.2.1 fixes](closeout.md) - Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The release waits on the CERN host's CMS campaign.
+* [Sprint J: the v0.2.1 fixes](closeout.md) - Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The CERN host's CMS campaign on the release candidate met its bar: no panics, no unexplained ok → not-ok.
 
 ## Directories
 

@@ -18,3 +18,4 @@
 * #131, #132, #133 and #134 merged (a2a37b1a, 88e58cbc, 95119d91, 5c704bb7), each after a merge commit of `main` and the manager's targeted gates; CI gated. #133's merge enforced `uux_to_ttxbbx_4f_nodipole`; #134's rewrites moved into `build_rerooted`.
 * `zz_ee` re-measured after #133: +0.25% ± 0.08% (was +0.26%). The per-event decomposition puts the interference at 4e-5 and the window at +0.11%; +0.14% is unattributed and filed.
 * J-W1's rows re-measured on 5c704bb7: +0.60% (F), +0.10% (T), +0.05% (jj), with the interference now −0.46%. Docs, the release notes and the record updated; the CMS campaign requested on #129.
+* The CERN host's campaign `v021rc-ff20017-200-pc` on the RC (ff200179) met the bar: 0 panics (was 3), no unexplained ok → not-ok (7 ok → refused, all expected). Two Wto2Q-3Jets cards hit #131's `$`-veto refusal; filed as `onshell-veto-with-pairing-weighted-cut-refused`. Recorded in closeout.md.
