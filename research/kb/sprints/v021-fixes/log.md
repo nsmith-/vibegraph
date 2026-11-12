@@ -12,3 +12,6 @@
 * The shared `CARGO_TARGET_DIR` ran sibling worktrees' stale test binaries (J-A1 caught it): workspace members hash identically across worktrees. Every session moved to its own target dir and re-ran its results.
 * Three pre-existing amplitude defects surfaced: SMEFTsim dipoles at the amplitude root (J-E1); `u u~ > t t~ b b~ QED<=2`'s W-exchange class sign, also in plain `sm` (J-E1); the antiparticle-first ordering (J-W1), which the manager confirmed on `e+ e- > e- e+` (168.92 against 155.96 pb). J-F1 dispatched to diagnose the ordering.
 * The user decided: **fix the bugs.** Read as all three defects. Two items filed here; J-F1 becomes the fix session for both sign defects (PR 5), J-D1 dispatched for the dipoles (PR 6).
+
+## 2026-11-12
+* The user approved #130–#134. #130 squash-merged as b76aa859; its item `diagram-artifacts-replay-stale-enumeration`, filed on this branch only, is removed here. The manager brings `main` into each following PR with a merge commit and re-runs the gates before the vibegraph manager merges it.
