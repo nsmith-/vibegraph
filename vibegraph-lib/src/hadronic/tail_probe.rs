@@ -361,7 +361,7 @@ fn probe_2to6_tail_points() {
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &card)
+        .use_running_coupling(&subprocess_diagrams(&sets), &model, &evaluated, &card)
         .expect("the run card's scale installs");
 
     let channel_diags = channel_diagrams(&diagrams, &evaluated);

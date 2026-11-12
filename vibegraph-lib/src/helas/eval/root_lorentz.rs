@@ -576,6 +576,23 @@ impl LorentzEvalTree {
                 LorentzEvalTree::build_tensor_term(term, &tensor, idx, out_adjoint, flows)?;
             return Ok((tree.compact_legs(idx), sign, 1));
         }
+        let (tree, root_leg, reversed_parity) =
+            Self::build_rerooted(term, spins, flow, idx, out_adjoint, flows)?;
+        Ok((tree.compact_for_caller(idx, root_leg), 1.0, reversed_parity))
+    }
+
+    /// The tree-rooted half of [`build_at_leg`](Self::build_at_leg), before its legs are
+    /// relabelled for the caller: the tree over the vertex's own slots, rooted at the
+    /// slot [`correct_spin_index_for_flow`] chooses (returned beside it), and the term's
+    /// reversed-bilinear parity.
+    fn build_rerooted(
+        term: &LorentzTerm,
+        spins: &[i32],
+        flow: &[(usize, usize)],
+        idx: Option<usize>,
+        out_adjoint: Option<Adjoint>,
+        flows: &[Option<LegAdjoint>],
+    ) -> Result<(Self, Option<usize>, i8), RootLorentzError> {
         let idx = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
         let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
@@ -655,7 +672,7 @@ impl LorentzEvalTree {
 
         tree.root = Some(root);
 
-        Ok((tree.compact_legs(idx), 1.0, reversed_parity))
+        Ok((tree, idx, reversed_parity))
     }
 
     /// Root one operator no leg-rooted walk reached as a scalar: an amplitude
@@ -756,6 +773,42 @@ impl LorentzEvalTree {
     /// (vertex legs in order, output omitted) with no per-eval reindexing. A `P` *can*
     /// reference the output leg's momentum (e.g. VVV1); it becomes the leg-less
     /// `POut`, evaluated from the input currents.
+    /// Relabel a tree built over the vertex's own slots and rooted at `root_leg` into
+    /// the caller's gap-free inputs, which omit the slot `output`.
+    ///
+    /// Re-rooted at the output's partner slot, the tree reads the output slot as the
+    /// line's continuing input. That input is the caller's child at the partner slot,
+    /// so the two slots trade labels before the output is compacted away, and every
+    /// other leg keeps its own position. Compacting over the partner slot instead gives
+    /// the same tree only when the two slots are adjacent; a four-fermion pairing such
+    /// as `(2,3)(4,1)` puts other legs between them.
+    fn compact_for_caller(mut self, output: Option<usize>, root_leg: Option<usize>) -> Self {
+        if let (Some(out), Some(root)) = (output, root_leg) {
+            if out != root {
+                self.swap_legs(out, root);
+            }
+        }
+        self.compact_legs(output)
+    }
+
+    /// Exchange every reference to legs `a` and `b`, leg and momentum alike.
+    fn swap_legs(&mut self, a: usize, b: usize) {
+        let swap = |i: &mut usize| {
+            if *i == a {
+                *i = b;
+            } else if *i == b {
+                *i = a;
+            }
+        };
+        for node in &mut self.nodes {
+            match node {
+                LorentzEvalNode::Leg(i) => swap(i),
+                LorentzEvalNode::P { leg } => swap(leg),
+                _ => {}
+            }
+        }
+    }
+
     fn compact_legs(mut self, idx: Option<usize>) -> Self {
         if let Some(out) = idx {
             for node in &mut self.nodes {
@@ -2331,6 +2384,155 @@ mod tests {
                 ("FFFF8".to_string(), false, vec![(1, 0), (3, 2)]),
             ]
         );
+    }
+
+    /// Every fermion-output rooting of every tree-rooted term of the vendored UFOs, with
+    /// each of its lines bound along or against its UFO arrow and the output bound as
+    /// its partner is (as `root_diagram` binds it), split by whether the rooting moved
+    /// onto the output's partner slot and whether that slot is adjacent to the output.
+    /// Yields `(structure, term, output, root slot, tree over the vertex's slots)`.
+    fn rerooted_trees() -> Vec<(String, usize, usize, usize, LorentzEvalTree)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo");
+        let mut out = Vec::new();
+        for model in [
+            "SMEFTsim_topU3l_MwScheme_UFO",
+            "vibegraph_toy_UFO",
+            "vibegraph_toy_majorana_UFO",
+        ] {
+            let parsed = crate::ufo::ParsedModel::parse(&root.join(model))
+                .unwrap_or_else(|e| panic!("parse {model}: {e}"));
+            for structure in parsed.lorentz.values() {
+                let Some(flow) = crate::ufo::topo::fermion_flow(structure) else {
+                    continue;
+                };
+                if flow.is_empty() {
+                    continue;
+                }
+                for (ti, term) in structure.expr.iter().enumerate() {
+                    if cyclic_index_graph(term) {
+                        continue;
+                    }
+                    for along in 0..(1u32 << flow.len()) {
+                        let mut flows = vec![None; structure.spins.len()];
+                        for (k, &(ket, bra)) in flow.iter().enumerate() {
+                            let reversed = along & (1 << k) != 0;
+                            let (a, b) = if reversed {
+                                (Adjoint::Bra, Adjoint::Ket)
+                            } else {
+                                (Adjoint::Ket, Adjoint::Bra)
+                            };
+                            flows[ket] = lf(a);
+                            flows[bra] = lf(b);
+                        }
+                        for &(ket, bra) in &flow {
+                            for (o, partner) in [(ket, bra), (bra, ket)] {
+                                let mut flows = flows.clone();
+                                flows[o] = flows[partner];
+                                let adjoint = flows[o].map(|f| f.adjoint);
+                                let Ok((tree, Some(root_leg), _)) = LorentzEvalTree::build_rerooted(
+                                    term,
+                                    &structure.spins,
+                                    &flow,
+                                    Some(o),
+                                    adjoint,
+                                    &flows,
+                                ) else {
+                                    continue;
+                                };
+                                out.push((structure.name.clone(), ti, o, root_leg, tree));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Re-rooting onto a partner slot adjacent to the output gives the caller the same
+    /// tree whichever slot the compaction runs over.
+    ///
+    /// The caller's inputs omit the output slot, and the re-rooted tree reads the output
+    /// slot as the continuing input; relabelling them is the identity on the compacted
+    /// tree exactly when no other leg sits between the two slots. Every two-fermion
+    /// structure and every `(1,2)(3,4)` pairing is in that case, so every rooting they
+    /// had keeps its tree. The census also pins that the vendored models do reach the
+    /// other case.
+    #[test]
+    fn rerooting_onto_an_adjacent_partner_keeps_the_tree() {
+        let (mut adjacent, mut apart) = (0usize, 0usize);
+        for (name, term, output, root_leg, tree) in rerooted_trees() {
+            if root_leg == output {
+                continue;
+            }
+            if root_leg.abs_diff(output) == 1 {
+                adjacent += 1;
+                assert_eq!(
+                    tree.clone()
+                        .compact_for_caller(Some(output), Some(root_leg)),
+                    tree.compact_legs(Some(root_leg)),
+                    "{name} term {term}: output {output} re-rooted at {root_leg}"
+                );
+            } else {
+                apart += 1;
+            }
+        }
+        println!("re-rooted: {adjacent} onto an adjacent partner, {apart} across another leg");
+        assert!(adjacent > 0, "no rooting moved onto an adjacent partner");
+        assert!(
+            apart > 0,
+            "no rooting moved onto a partner across another leg"
+        );
+    }
+
+    /// A four-fermion current re-rooted across the other line reads the continuing
+    /// spinor from the caller's child at the partner slot.
+    ///
+    /// SMEFTsim's `FFFF3`, `Gamma(-1,2,-2)*Gamma(-1,4,-3)*ProjM(-3,1)*ProjM(-2,3)`, pairs
+    /// slots (2,3) and (4,1). Rooted at slot 4 with slot 1 bound as a bra (an incoming
+    /// antiquark), the current is re-rooted at slot 1; the caller's inputs are slots
+    /// 1, 2, 3. The vector the closed line (2,3) builds must read inputs 1 and 2, and the
+    /// continuing fermion input 0.
+    #[test]
+    fn four_fermion_current_rerooted_across_a_line_reads_its_partner() {
+        let gamma = |mu, i, j| LorentzOp::Gamma { mu, i, j };
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                gamma(-1, 1, -2),
+                gamma(-1, 3, -3),
+                LorentzOp::ProjM { i: -3, j: 0 },
+                LorentzOp::ProjM { i: -2, j: 2 },
+            ],
+        };
+        let spins = [2, 2, 2, 2];
+        let flow = [(2, 1), (0, 3)];
+        let flows = [
+            lf(Adjoint::Bra),
+            lf(Adjoint::Bra),
+            lf(Adjoint::Ket),
+            lf(Adjoint::Bra),
+        ];
+        let (tree, _, _) =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow, Some(3), &flows).unwrap();
+        let legs = |n: usize| -> Vec<usize> {
+            let mut legs = Vec::new();
+            let mut stack = vec![n];
+            while let Some(k) = stack.pop() {
+                match tree.nodes[k] {
+                    LorentzEvalNode::Leg(i) => legs.push(i),
+                    ref node => stack.extend(node.children()),
+                }
+            }
+            legs.sort_unstable();
+            legs
+        };
+        let vectors: Vec<Vec<usize>> = (0..tree.nodes.len())
+            .filter(|&k| matches!(tree.nodes[k], LorentzEvalNode::GammaVout { .. }))
+            .map(legs)
+            .collect();
+        assert_eq!(vectors, vec![vec![1, 2]], "tree: {tree}");
+        assert_eq!(legs(tree.root.unwrap()), vec![0, 1, 2], "tree: {tree}");
     }
 
     /// A cycle the tensor path does not cover is refused by name, not walked into.

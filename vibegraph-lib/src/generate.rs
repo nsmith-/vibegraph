@@ -30,7 +30,7 @@ use crate::cuts::{Cuts, ForcedResonances};
 use crate::diagrams::{forbidden_onshell_ids, DiagramSet, SupportedCard};
 use crate::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
+    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, InitialState, Observable,
 };
 use crate::helas::eval::BoundAmplitude;
 use crate::lhef::build::SubprocessRecord;
@@ -493,7 +493,7 @@ fn generate_sample(
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
     integ
-        .use_running_coupling(&diagrams, model, evaluated, rc)
+        .use_running_coupling(&subprocess_diagrams(sets), model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
 
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();

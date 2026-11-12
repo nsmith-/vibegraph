@@ -90,7 +90,7 @@ impl Decay {
         );
         assert_eq!(integ.observable(), Observable::PartialWidth);
         integ
-            .use_running_coupling(&self.diagrams, &self.model, &self.evaluated, card)
+            .use_running_coupling(&[&self.diagrams], &self.model, &self.evaluated, card)
             .unwrap();
         integ.use_multichannel(&self.diagrams, &self.evaluated, neval.min(40_000), 6, seed);
         let (_, result) = integ.adapt_grids(neval, niter, seed);
@@ -130,7 +130,7 @@ impl Decay {
             avg,
         );
         integ
-            .use_running_coupling(&self.diagrams, &self.model, &self.evaluated, card)
+            .use_running_coupling(&[&self.diagrams], &self.model, &self.evaluated, card)
             .unwrap();
         integ.use_multichannel(&self.diagrams, &self.evaluated, neval.min(40_000), 6, seed);
         let (_, result, report) = integ.adapt_grids_budget(
@@ -451,7 +451,7 @@ fn probe_h4l_width_ladder() {
         final_masses,
         avg,
     );
-    flat.use_running_coupling(&decay.diagrams, &decay.model, &decay.evaluated, &card)
+    flat.use_running_coupling(&[&decay.diagrams], &decay.model, &decay.evaluated, &card)
         .unwrap();
     let runs: Vec<(f64, f64, Option<f64>)> = (0..5u64)
         .map(|s| {

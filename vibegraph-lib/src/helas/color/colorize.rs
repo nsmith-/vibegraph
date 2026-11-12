@@ -49,6 +49,7 @@ use num_rational::Ratio;
 use crate::diagrams::diagram::{Diagram, PropIdx, Ray, VtxIdx};
 use crate::helas::repr::color::ColorRep;
 use crate::ufo::color::{ColorAtom, ColorExpr};
+use crate::ufo::topo::flow_groups;
 use crate::ufo::UFOModel;
 
 use super::coeff::ColorCoeff;
@@ -122,14 +123,24 @@ fn slot_rep(
         .ok_or_else(|| ColorAlgebraError::Unsupported(format!("color rep {color}")))
 }
 
-/// The color structure indices actually used by a vertex: the distinct
+/// The color structure indices actually used by a vertex occurrence: the distinct
 /// `color_idx` appearing as the first component of a `(color_idx, lorentz_idx)`
-/// coupling key, sorted ascending.
+/// coupling key whose Lorentz structure belongs to the occurrence's fermion-flow
+/// group, sorted ascending.
+///
+/// A four-fermion vertex whose structures pair its spinors two ways is enumerated as
+/// one vertex per pairing ([`flow_groups`]), and the evaluator sums only that
+/// pairing's couplings. A color structure the UFO couples only to the other pairing's
+/// Lorentz structures has no coupling at this occurrence, so it is not a term of it:
+/// pairing it in would give the diagram a color chain whose amplitude is an empty sum.
 fn used_color_indices(model: &UFOModel, vtx: &crate::diagrams::diagram::Vertex) -> Vec<usize> {
-    let mut idxs: Vec<usize> = model
-        .vertex_def(vtx.interaction)
+    let def = model.vertex_def(vtx.interaction);
+    let groups = flow_groups(def, &model.lorentz);
+    let lorentz = &groups[vtx.flow_group].lorentz;
+    let mut idxs: Vec<usize> = def
         .couplings
         .keys()
+        .filter(|&(_, l)| lorentz.contains(l))
         .map(|&(c, _)| c)
         .collect();
     idxs.sort_unstable();
