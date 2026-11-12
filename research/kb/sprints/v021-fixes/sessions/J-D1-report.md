@@ -480,6 +480,20 @@ checks four vertices: `V_564` gives −1, `V_563` is refused naming the vertex, 
 `V_281` and `V_9` give +1. Mutation: giving every odd-`f` fermion vertex the sign
 fails the test, at the `V_563` refusal.
 
+**The Higgs contact (follow-up).** Refusing SMEFTsim's `t~ t g g H` contacts
+(`V_560`–`V_584` with H) refused `g g > t t~ h NP<=1` under ctG outright. That
+vertex comes from the same operator as the measured contact (`v → v + h`), so I
+measured it. The new row is `gg_to_ttxh_ctg` (`g g > t t~ h NP<=1 SMHLOOP=0`, card
+`vg_ctG`, two flows, compared per flow × helicity). The narrowed rule refused it at
+compile. With the `−1` extended to two fermion and two vector legs plus any number
+of scalars it agrees at 5.764e-16. Without the sign on the Higgs contact it misses by
+3.110e-2. The extension is kept, the row is enforced, and the `t~ t g g H`
+vertices are no longer refused. A fermion vertex with one vector leg and an odd
+number of `f` is still refused. The unit test pins that on the top-gluon vertex
+given an `f` by hand, since no model in reach has a colour-octet fermion.
+Mutations: dropping the sign for the Higgs contact fails the row at 3.110e-2.
+Signing every odd-`f` fermion vertex fails the unit test's refusal.
+
 **Item 4.** `t t~ > w+ w-` under ctWRe is now the banked row `ttx_to_wpwm_ctw`
 (card `vg_ctW`, graphs paired one to one). It reads 2.853e-14, and 7.326e-4 with
 fix 4 reverted. The γ⁵ half of fix 4 still has no row (section 10).

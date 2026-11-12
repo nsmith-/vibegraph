@@ -435,6 +435,12 @@ ROWS = {
         # The crossed mirror: the same contacts on a final-state top pair.
         Row("gg_to_ttx_ctg", "g g > t t~ NP<=1 SMHLOOP=0", (21, 21), (6, -6), 800.0, 3, 5121,
             model=SMEFT, restrict="vg_ctG", zero_widths=True),
+        # O_tG on t t~ h: the quark-gluon-pair contact with a Higgs beside it
+        # (FFVVS, the `v -> v + h` partner of the `t~ t g g` contact), beside the
+        # contact itself, the top-gluon dipole chains and QCD with the Higgs off the
+        # top line. Widths are zero for the spacelike top.
+        Row("gg_to_ttxh_ctg", "g g > t t~ h NP<=1 SMHLOOP=0", (21, 21), (6, -6, 25), 1000.0, 3,
+            5126, model=SMEFT, restrict="vg_ctG", zero_widths=True),
     ]
 }
 

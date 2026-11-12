@@ -1190,6 +1190,14 @@ fn gg_to_ttx_ctg() {
     check("gg_to_ttx_ctg");
 }
 
+/// O_tG on `g g > t t~ h`: the quark-gluon-pair contact with a Higgs beside it
+/// (`FFVVS`), beside the `t~ t g g` contact, the top-gluon dipole chains and QCD with
+/// the Higgs off the top line.
+#[test]
+fn gg_to_ttxh_ctg() {
+    check("gg_to_ttxh_ctg");
+}
+
 /// tW production under O_tW: the dipole vertex on the line from the initial b to the
 /// final t produces the off-shell b (s-channel) or top (t-channel) current in some
 /// rootings and closes the amplitude in others; compared per MadGraph graph.
