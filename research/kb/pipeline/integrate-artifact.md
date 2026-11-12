@@ -24,7 +24,7 @@ and the matrix element at fixed points. So `vibegraph generate` needs no card,
 no UFO directory and no enumeration of its own, and can refuse a build or an
 asset that changed instead of silently sampling against the wrong grid. The
 type is `IntegrateArtifact` in `vibegraph-lib/src/artifact.rs`, at
-`FORMAT_VERSION = 23`, which is also the oldest version read.
+`FORMAT_VERSION = 24`, which is also the oldest version read.
 
 `integrate`'s positional input is a proc card or a diagram artifact
 (`diagrams.bin.zst`, written by `vibegraph enumerate`), told apart by content:
@@ -63,7 +63,8 @@ writing are in [generate](../events/generate.md).
 
 | Field | Meaning |
 |---|---|
-| `format_version` | `FORMAT_VERSION` (23); every artifact is written at the current version. |
+| `format_version` | `FORMAT_VERSION` (24); every artifact is written at the current version. |
+| `enumeration_version` | `ENUMERATION_VERSION` of the build that enumerated `sets` (below, check 2). The second field, so it is checked before the body is decoded. Since version 24. |
 | `process` | The canonical process string, every process line with its number. |
 | `proc_card` | The proc card's text, verbatim, which `generate` re-parses. From a diagram artifact, the card that artifact records. |
 | `model` | `ModelIdentity { name, restrict, digest }`: the `import model` label and a SHA-256 of the restricted model. |
@@ -201,24 +202,61 @@ what it checks are the assets it reads again, the artifact's own integrity,
 and the build it runs on ([events/generate](../events/generate.md) lists the
 steps). `--ufo-dir` is refused: no UFO directory is read.
 
-1. **The version.** Below 23 is refused by `UnsupportedVersion`, which says
+1. **The version.** Below 24 is refused by `UnsupportedVersion`, which says
    to regenerate with `vibegraph integrate` (rules in
    [artifact format versioning](artifact-format-versioning.md)).
-2. **The embedded bytes** (on read, `IntegrateArtifact::read_hashed`). The
+2. **The enumeration version** (on read, before the body is decoded). An
+   artifact whose `enumeration_version` is not this build's
+   `ENUMERATION_VERSION` is refused by `EnumerationVersion`, naming both
+   versions, with the remedy to integrate again from the proc card. The
+   diagram artifact records and checks the same constant, so `integrate`
+   refuses a `diagrams.bin.zst` another enumeration wrote, naming both, with
+   the remedy to run `vibegraph enumerate` again. Both are refused before
+   anything is integrated or generated. This is what covers check 8's blind
+   spot: the sets digest to what they hold and the probe recompiles them, so
+   neither can tell an artifact whose enumeration a later build changed.
+   **How the version is kept honest.** `ENUMERATION_VERSION`
+   (`diagrams/artifact.rs`) covers every field of the banked `DiagramSet`s
+   that enumeration, decay-chain stitching and the conversion of feyngraph's
+   diagrams compute (the subprocesses and their order, legs, polarizations
+   and `mirrored`; per diagram its legs, propagators with their momentum
+   routing and on-shell flag, vertices with interaction index, flow group and
+   ray order, the Fermi sign, the symmetry factor and the provenance) and the
+   diagram artifact's `ProcessFacts`. The known-answer test
+   `enumeration_output_matches_the_pinned_version` pins, at the version, the
+   `diagram_set_digest` and the facts' digest of seven cards: Bhabha
+   scattering (both Fermi signs), `e+ e- > z z, z > mu+ mu-` (a decay chain
+   with identical fermions across its decays), `p p > z j, z > e+ e-`
+   (several subprocesses, mirrored sets), `u u~ > z{0} g` (a polarized leg)
+   and SMEFTsim's `e+ e- > e+ e- NP<=1` under `restrict_vg_c4l` (a
+   four-fermion contact vertex in both flow groups of one interaction),
+   `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` (a nested decay) and
+   `e+ e- > mu+ mu- a $ z` (an on-shell s-channel veto). Any
+   change to that output fails it with the digests to re-pin and the
+   instruction to bump the version with them. Removing the line sign from
+   conversion (`diagram.rs`) moved three of the five digests then pinned,
+   and removing it from the stitched decay-chain diagrams (`chain.rs`)
+   moved only the `z z` card's, also with all seven pinned. Every tree-level
+   symmetry factor is 1 (each internal vertex
+   of a tree is fixed by the external legs below it, so a graph automorphism
+   fixing the legs is the identity), and the test asserts it.
+   **Blind spot:** a change that moves only cards outside the seven passes
+   the test, and an artifact from before it is then read without complaint.
+3. **The embedded bytes** (on read, `IntegrateArtifact::read_hashed`). The
    embedded model must digest to `model.digest` and the sets to
    `diagram_set_digest`; a file that was edited or corrupted is refused by
    name. This replaces the check of a model re-read from a UFO directory,
    which no longer exists.
-3. **The process.** The recorded `proc_card` is re-parsed and its process
+4. **The process.** The recorded `proc_card` is re-parsed and its process
    string must equal `process` (`vibegraph::generate::check_process`).
-4. **The PDF set.** The recorded PDF set is located by name and member, and
+5. **The PDF set.** The recorded PDF set is located by name and member, and
    the files read are recorded in the event file's header.
-5. **The channels** (`check_channel_keys`). They are compared position by
+6. **The channels** (`check_channel_keys`). They are compared position by
    position: the count, each key, and each grid's dimension. The same keys in
    a different order would install every grid on the wrong channel, and that
    samples a plausible wrong distribution. Comparing counts or key sets would
    not see it.[^generate-keys]
-6. **The channel maps** (`check_channel_maps`, both the hadronic and the
+7. **The channel maps** (`check_channel_maps`, both the hadronic and the
    fixed-energy path). The digest is recomputed from the channels `generate`
    rebuilt and must equal `channel_map_digest`. Equal keys and grid
    dimensions say the channels are the same diagrams, not that each diagram
@@ -229,7 +267,7 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    (topology, poles, floors, transfer bounds, beam masses, `√s`), not the code
    that draws from them. A change to how a map with an unchanged key samples
    or weighs a point passes this check and still needs a version bump.
-7. **The amplitude probe** (`check_amplitude_probe`, before any scan). Every
+8. **The amplitude probe** (`check_amplitude_probe`, before any scan). Every
    set is compiled by the running build and \|M\|² recomputed at each banked
    point under the bound card; a relative deviation above 1e-10 is refused,
    naming the set, the point and the deviation, with the remedy to integrate
@@ -237,7 +275,7 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    \|M\|², a change to parameter evaluation or binding, and replay on another
    binary, none of which changes a field of the artifact. It does not cover a
    change to enumeration or to the conversion of feyngraph's diagrams, whose
-   output the artifact banks (blind spots below).
+   output the artifact banks (blind spots below); check 2 does.
 
 ### The amplitude probe
 

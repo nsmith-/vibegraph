@@ -1068,6 +1068,40 @@ fn hh_to_hh_chbox() {
     check("hh_to_hh_chbox");
 }
 
+/// A four-quark contact whose Lorentz structures pair its spinors two ways
+/// (`t~ b b~ t`, SMEFTsim's `V_753`), under `vg_nodipole`: the model's own all-on
+/// card with every dipole operator zero. Each colour structure is coupled through one
+/// pairing only, so each fermion-flow group's diagrams carry only the colour chains
+/// that group couples, beside QCD, electroweak s-channel and t-channel W exchange.
+#[test]
+fn bbx_to_ttx_4f_nodipole() {
+    check("bbx_to_ttx_4f_nodipole");
+}
+
+/// The same-flavour pairing of a four-quark contact (`u~ b b~ u`, SMEFTsim's
+/// `V_787`/`V_788`) under `vg_nodipole`. Its vector-vector structures pair slots
+/// (2,3)(4,1); the off-shell quark current toward the gluon emission, rooted at slot 4
+/// against an incoming antiquark at slot 1, is re-rooted at slot 1, across the b pair.
+#[test]
+fn uux_to_bbxg_4f_nodipole() {
+    check("uux_to_bbxg_4f_nodipole");
+}
+
+/// Six quarks under `vg_nodipole` with no charged current between the produced pairs,
+/// 1325 diagrams: the four-quark contacts beside QCD and electroweak exchange.
+#[test]
+fn uux_to_ttxccx_4f_nodipole() {
+    check("uux_to_ttxccx_4f_nodipole");
+}
+
+/// The six-quark process both contacts above meet in, `u u~ > t t~ b b~` under
+/// `vg_nodipole`, where a W exchanged between the t and b lines interferes with the
+/// pairing that keeps them apart.
+#[test]
+fn uux_to_ttxbbx_4f_nodipole() {
+    check("uux_to_ttxbbx_4f_nodipole");
+}
+
 /// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top
 /// line, whose three colour structures each multiply one of its Lorentz structures.
 #[test]
@@ -1226,6 +1260,29 @@ fn bxg_to_txwp_ctw() {
 #[test]
 fn ttx_to_wpwm_ctw() {
     check("ttx_to_wpwm_ctw");
+}
+
+/// Bhabha with its outgoing legs listed particle first. The s channel pairs the
+/// initial-state leptons on one line and the final-state ones on the other, the t
+/// channel pairs each incoming lepton with its outgoing one: the relative sign of
+/// the two must not read the order the legs are listed in.
+#[test]
+fn ee_to_emep() {
+    check("ee_to_emep");
+}
+
+/// The same two pairings with the antiquark first in the initial state and the
+/// quark first in the final state, in two colour flows.
+#[test]
+fn uxu_to_uux() {
+    check("uxu_to_uux");
+}
+
+/// Two final-state lines paired two ways: (t t~)(b b~) through gluons, photons and
+/// Z, and (t b~)(b t~) through a W joining the two lines.
+#[test]
+fn uux_to_ttxbbx_qed2() {
+    check("uux_to_ttxbbx_qed2");
 }
 
 /// The gate is sensitive to which colour structure of the four-gluon contact

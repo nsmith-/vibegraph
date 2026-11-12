@@ -453,8 +453,8 @@ Each session is one PR. They land in this order.
 
 ## Found while designing
 
-- **A compiler panic**, filed as
-  [smeft-four-quark-compile-panics](../backlog/validation/smeft-four-quark-compile-panics.md).
+- **A compiler panic** on SMEFTsim `u u~ > t t~ b b~ NP<=1`, fixed in v0.2.1
+  ([J-E1](../sprints/v021-fixes/sessions/J-E1-report.md)).
 - **Stale concepts.** [The integrate artifact](integrate-artifact.md) and
   [artifact format versioning](artifact-format-versioning.md) describe format
   version 15 while the code was at 21. They are brought up to date by the

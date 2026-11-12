@@ -36,8 +36,8 @@ use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
 use vibegraph::cuts::{Cuts, ForcedResonances};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
-    FixedBeamIntegrand, FixedBeams,
+    compile_subprocesses, initial_spin_color_average, process_external_legs, subprocess_diagrams,
+    ChannelIntegration, FixedBeamIntegrand, FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::LorentzVector;
@@ -243,7 +243,7 @@ fn measure_fixed(
         FixedBeamIntegrand::new(amps, &cuts, initial, final_masses.clone(), spin_color_avg);
     integ.set_map_options(MapOptions::default());
     integ
-        .use_running_coupling(&diagrams, model, evaluated, &rc)
+        .use_running_coupling(&subprocess_diagrams(&sets), model, evaluated, &rc)
         .unwrap();
     integ.use_multichannel(&diagrams, evaluated, SURVEY, 6, SEED);
 

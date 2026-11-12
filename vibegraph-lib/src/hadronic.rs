@@ -53,6 +53,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::scalup;
 use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
+use crate::pairing::{BoundPairings, PairingAmplitudes, PairingSplit};
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
@@ -1046,6 +1047,16 @@ impl InitialState {
     }
 }
 
+/// The diagram list of every non-empty subprocess, in the order
+/// [`compile_subprocesses`] compiles them: the per-subprocess input
+/// [`FixedBeamIntegrand::use_running_coupling`] derives its channel forests from.
+pub fn subprocess_diagrams(sets: &[DiagramSet]) -> Vec<&[Diagram]> {
+    sets.iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .map(|s| s.diagrams.as_slice())
+        .collect()
+}
+
 /// Compile every non-empty subprocess of a generated proc card into a
 /// helicity-pruned evaluator, requiring that they share one external-particle
 /// sequence so a single RAMBO mass list and one cut filter serve them all.
@@ -1184,6 +1195,15 @@ enum SubAmplitude<'a> {
 }
 
 impl<'a> SubprocessProto<'a> {
+    /// A scale-aware amplitude of `eval`, starting at the parameter card's own
+    /// coupling.
+    pub(crate) fn running(eval: &'a AmplitudeEvaluator, evaluated: &EvaluatedModel) -> Self {
+        SubprocessProto {
+            symmetry_factor: outgoing_symmetry_factor(eval),
+            amp: ProtoAmplitude::Running(ScaleAwareAmplitude::new(eval, evaluated)),
+        }
+    }
+
     pub(crate) fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
         let eval = amp.evaluator();
         SubprocessProto {
@@ -1917,8 +1937,10 @@ pub struct FixedBeamIntegrand<'a> {
     scale_draw_fallbacks: AtomicU64,
     /// The channel forests MadEvent's enhancement weight is a product over, where
     /// the run card makes that weight something other than the squared amplitude.
-    /// `None` leaves every configuration draw on `AMP2`.
-    config_weights: Option<ChannelSet>,
+    /// `None` leaves every configuration draw on `AMP2`. Otherwise one set per
+    /// subprocess, each derived from that subprocess's own diagrams, so a
+    /// subprocess indexes its own configurations.
+    config_weights: Option<Vec<ChannelSet>>,
     /// Whether any subprocess's matrix element moves with the strong coupling.
     ///
     /// The prescription is compiled whatever the answer, because a run card that
@@ -1945,6 +1967,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
     /// for a subprocess, leaves its matrix element whole.
     vetoes: Vec<Option<VetoedAmplitudes<'a>>>,
+    /// Per subprocess, its per-pairing amplitudes under a pairing-weighted
+    /// filter ([`use_pairing_weights`](Self::use_pairing_weights)); empty
+    /// otherwise.
+    pairings: Vec<Option<PairingAmplitudes<'a>>>,
     /// Per subprocess, the timelike lines of every configuration
     /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
     /// configuration draw on `AMP2` alone.
@@ -1979,6 +2005,9 @@ struct FixedBeamScratch<'a> {
     amp2_buf: RefCell<Vec<f64>>,
     /// This thread's copies of [`FixedBeamIntegrand::vetoes`], per subprocess.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
+    /// This thread's copies of [`FixedBeamIntegrand::pairings`], per
+    /// subprocess.
+    pairings: Vec<Option<BoundPairings<'a>>>,
     /// This thread's count of the points it evaluated
     /// ([`FixedBeamIntegrand::census`]).
     census: CensusCell,
@@ -2231,6 +2260,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             maps: None,
             alpha_floor: Some(DEFAULT_ALPHA_FLOOR),
             vetoes: Vec::new(),
+            pairings: Vec::new(),
             resonances: &[],
             grid_rule: GridRule::default(),
             share_offsets,
@@ -2291,6 +2321,37 @@ impl<'a> FixedBeamIntegrand<'a> {
                 veto.as_ref()
                     .map(|v| VetoedAmplitudes::new(v, sub, evaluated))
             })
+            .collect();
+        self.reset_scratch();
+    }
+
+    /// Weight each subprocess's term by the share of its `|M|²` carried by the
+    /// pairings whose filters accept the point, under a pairing-weighted
+    /// `cut_decays` exemption ([`crate::pairing`]). `splits` holds one entry
+    /// per subprocess, in subprocess order ([`subprocess_pairing_splits`]); an
+    /// empty slice, for a filter that is not pairing-weighted, changes nothing.
+    ///
+    /// [`subprocess_pairing_splits`]: crate::pairing::subprocess_pairing_splits
+    ///
+    /// # Panics
+    ///
+    /// If `splits` is neither empty nor one entry per subprocess.
+    pub fn use_pairing_weights(
+        &mut self,
+        splits: &'a [Option<PairingSplit>],
+        evaluated: &EvaluatedModel,
+    ) {
+        if splits.is_empty() {
+            return;
+        }
+        assert_eq!(
+            splits.len(),
+            self.subs.len(),
+            "one pairing entry per subprocess"
+        );
+        self.pairings = splits
+            .iter()
+            .map(|s| s.as_ref().map(|s| PairingAmplitudes::new(s, evaluated)))
             .collect();
         self.reset_scratch();
     }
@@ -2373,6 +2434,11 @@ impl<'a> FixedBeamIntegrand<'a> {
             last_coupling: Cell::new((f64::NAN, f64::NAN)),
             amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
             vetoed: bind_vetoes(&self.vetoes),
+            pairings: self
+                .pairings
+                .iter()
+                .map(|p| p.as_ref().map(PairingAmplitudes::bind))
+                .collect(),
             census: CensusCell::default(),
             shares: ShareSplit::new(
                 self.share_count(),
@@ -2449,7 +2515,11 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///
     /// Each subprocess is replaced by a scale-aware copy owning its constant pools;
     /// the channel forests the `-1` scale clusters against are derived from
-    /// `diagrams` rather than declared per process.
+    /// `subprocess_diagrams` (one list per subprocess, in order) rather than
+    /// declared per process. The clustering reads the first subprocess's
+    /// configurations over the union of every list, whose leading configurations
+    /// are the first subprocess's own; the enhancement weights are each
+    /// subprocess's own.
     /// A fixed-beam run has no parton distributions, so only `μR` is consumed here —
     /// the per-beam `μF` the same prescription produces has nothing to feed.
     ///
@@ -2466,11 +2536,21 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// the card's constants, so no event is ever clustered.
     pub fn use_running_coupling(
         &mut self,
-        diagrams: &[Diagram],
+        subprocess_diagrams: &[&[Diagram]],
         model: &UFOModel,
         evaluated: &EvaluatedModel,
         card: &RunCard,
     ) -> Result<RunningCouplingReport, HadronicError> {
+        assert_eq!(
+            subprocess_diagrams.len(),
+            self.subs.len(),
+            "one diagram list per subprocess"
+        );
+        let diagrams: Vec<Diagram> = subprocess_diagrams
+            .iter()
+            .flat_map(|d| d.iter().cloned())
+            .collect();
+        let diagrams = diagrams.as_slice();
         let decay_card;
         let card = match self.initial {
             InitialState::Beams(_) => card,
@@ -2483,13 +2563,14 @@ impl<'a> FixedBeamIntegrand<'a> {
         // The enhancement weight the configuration draws follow is a property of
         // the run card, not of the scale, so it is installed whether or not a
         // prescription is.
-        self.config_weights = compile_configuration_weights(
-            &[(self.subs[0].evaluator(), diagrams)],
-            model,
-            evaluated,
-            card,
-        )?
-        .map(|mut sets| sets.remove(0));
+        let per_subprocess: Vec<(&AmplitudeEvaluator, &[Diagram])> = self
+            .subs
+            .iter()
+            .zip(subprocess_diagrams)
+            .map(|(sub, d)| (sub.evaluator(), *d))
+            .collect();
+        self.config_weights =
+            compile_configuration_weights(&per_subprocess, model, evaluated, card)?;
         self.alpha_s_dependent = awareness.depends_on_alpha_s;
         // A fixed-beam run has no parton distributions, so `pdlabel` never reaches
         // the branch that would want a set's alpha_s tabulation, and the coupling
@@ -2726,9 +2807,13 @@ impl<'a> FixedBeamIntegrand<'a> {
     ) -> f64 {
         self.apply_scale(sc, momenta, channel);
 
+        let weights = self.pairing_weights(sc, ext);
         let mut m2 = 0.0;
         for (i, sub) in sc.subs.iter().enumerate() {
-            let term = sub.symmetry_factor() * vetoed_m2(vetoed_of(&sc.vetoed, i), sub, ext);
+            let mut term = sub.symmetry_factor() * vetoed_m2(vetoed_of(&sc.vetoed, i), sub, ext);
+            if let Some(w) = &weights {
+                term *= w[i];
+            }
             if sc.shares.active() {
                 self.split_term(sc, i, sub, ext, term);
             }
@@ -2739,9 +2824,8 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Record subprocess `i`'s term at `ext` in the thread's [`ShareSplit`].
     ///
-    /// The channel forests behind `sde_strategy = 2`'s weights are derived for
-    /// the first subprocess only, so under that strategy every other
-    /// subprocess's term is recorded as carried by no configuration.
+    /// Under `sde_strategy = 2` the term is split by the subprocess's own
+    /// channel-cut forests.
     fn split_term(
         &self,
         sc: &FixedBeamScratch<'a>,
@@ -2753,10 +2837,15 @@ impl<'a> FixedBeamIntegrand<'a> {
         let n = sub.evaluator().n_configs();
         let offset = self.share_offsets[i];
         match &self.config_weights {
-            Some(set) if i == 0 => sc.shares.split(offset, n, term, |w| {
-                enhancement_weights(None, sub, ext, Some((set, self.sqrt_s * self.sqrt_s)), w)
+            Some(sets) => sc.shares.split(offset, n, term, |w| {
+                enhancement_weights(
+                    None,
+                    sub,
+                    ext,
+                    Some((&sets[i], self.sqrt_s * self.sqrt_s)),
+                    w,
+                )
             }),
-            Some(_) => sc.shares.split(offset, n, term, |w| w.fill(0.0)),
             None => sc.shares.split(offset, n, term, |w| {
                 enhancement_weights(vetoed_of(&sc.vetoed, i), sub, ext, None, w)
             }),
@@ -3178,9 +3267,9 @@ impl<'a> FixedBeamIntegrand<'a> {
                 }
                 sub.eval_amp2(ext, out);
             }
-            Some(set) => {
+            Some(sets) => {
                 let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
-                set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, out);
+                sets[0].channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, out);
             }
         }
     }
@@ -3323,6 +3412,47 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.cuts.pass(&lab)
     }
 
+    /// [`Cuts::pass_pairings`] in the frame [`passes_cuts`](Self::passes_cuts)
+    /// reads.
+    fn passed_pairings(&self, ext: &[V]) -> u64 {
+        if self.lab_beta == 0.0 {
+            return self.cuts.pass_pairings(ext);
+        }
+        let lab: Vec<V> = ext.iter().map(|p| boost_z(*p, self.lab_beta)).collect();
+        self.cuts.pass_pairings(&lab)
+    }
+
+    /// Per subprocess, its pairing weight at `ext` ([`crate::pairing`]), each
+    /// bound at its subprocess's current coupling; `None` where the filter is not
+    /// pairing-weighted.
+    ///
+    /// # Panics
+    ///
+    /// If the filter is pairing-weighted and no pairing amplitudes were
+    /// installed ([`use_pairing_weights`](Self::use_pairing_weights)): the
+    /// integrand would otherwise integrate the union of the pairings' filters
+    /// unweighted, an IR-divergent observable.
+    fn pairing_weights(&self, sc: &FixedBeamScratch<'a>, ext: &[V]) -> Option<Vec<f64>> {
+        if !self.cuts.is_pairing_weighted() {
+            return None;
+        }
+        assert!(
+            !sc.pairings.is_empty(),
+            "a pairing-weighted cut filter needs its pairing amplitudes installed"
+        );
+        let passed = self.passed_pairings(ext);
+        Some(
+            sc.pairings
+                .iter()
+                .zip(&sc.subs)
+                .map(|(p, sub)| match p {
+                    Some(p) => p.weights([passed], sub, ext)[0],
+                    None => 1.0,
+                })
+                .collect(),
+        )
+    }
+
     /// The external momenta an amplitude is evaluated at: the beams, then the
     /// outgoing legs.
     fn externals(&self, momenta: &[V]) -> Vec<V> {
@@ -3378,7 +3508,15 @@ impl<'a> FixedBeamIntegrand<'a> {
             .enumerate()
             .map(|(i, s)| vetoed_m2(vetoed_of(&sc.vetoed, i), s, &ext))
             .collect();
-        let subprocess = select_index(&m2, u[0])?;
+        // Under the pairing-weighted exemption each subprocess carries its
+        // weighted share of the point; the record keeps its whole `|M|²`.
+        let subprocess = match self.pairing_weights(sc, &ext) {
+            Some(w) => {
+                let shares: Vec<f64> = m2.iter().zip(&w).map(|(m, w)| m * w).collect();
+                select_index(&shares, u[0])?
+            }
+            None => select_index(&m2, u[0])?,
+        };
         let sub = &sc.subs[subprocess];
         let eval = sub.evaluator();
 
@@ -3387,9 +3525,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         let mut jamp2 = vec![0.0; eval.n_flows()];
         sub.eval_diagonals(&ext, &mut hel_m2, &mut amp2, &mut jamp2);
         match &self.config_weights {
-            Some(set) => {
+            Some(sets) => {
                 let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
-                set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
+                sets[subprocess].channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
             }
             None => {
                 mask_zeroed(vetoed_of(&sc.vetoed, subprocess), &ext, &mut amp2);
@@ -4436,7 +4574,7 @@ mod tests {
             avg,
         );
         let report = integ
-            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
             .expect("the clustering scale compiles for g g > g g");
         assert_eq!(report.channels, Some(3));
 
@@ -4521,7 +4659,7 @@ mod tests {
             avg,
         );
         integ
-            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
             .expect("the clustering scale compiles for g g > g g");
         integ.use_multichannel(&diagrams, &evaluated, 2048, 2, 0x5EED_5A);
         assert_eq!(
@@ -5146,7 +5284,7 @@ mod tests {
             avg,
         );
         integ
-            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
         integ.use_multichannel(&diagrams, &evaluated, 2_000, 3, 0x5EED_9C);
 
@@ -5189,6 +5327,74 @@ mod tests {
                 assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
             }
         }
+    }
+
+    /// Two decay-chain lines that reach one ordered final state through different
+    /// forced resonances give two subprocesses with different diagram content, and
+    /// a fixed-energy `sde_strategy = 2` run must derive each one's channel-cut
+    /// forests from its own diagrams.
+    ///
+    /// `z z` and `h z` (each Z and the Higgs decaying to `b b~`) share the
+    /// ordered externals `e+ e- > b b~ b b~` and the initial-state average, so
+    /// the card clears every refusal in front of the integrand; the first has
+    /// t- and u-channel electron exchange, the second one s-channel configuration,
+    /// and the diagrams of the pair together make more configurations than either
+    /// subprocess has.
+    #[test]
+    fn fixed_energy_sde_strategy_two_draws_each_subprocess_from_its_own_forest() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let proc = parse_proc_card(
+            "generate e+ e- > z z, z > b b~, z > b b~\n\
+             add process e+ e- > h z, h > b b~, z > b b~",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        assert_eq!(evals.len(), 2, "one subprocess per decay-chain line");
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  500.0 = ebeam1\n  500.0 = ebeam2\n\
+             \x20 2 = sde_strategy\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(1000.0),
+            masses,
+            avg,
+        );
+        integ
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
+            .expect("the card's scales compile");
+        let forests = integ
+            .config_weights
+            .as_ref()
+            .expect("sde_strategy 2 forests");
+        assert_eq!(forests.len(), evals.len(), "one channel set per subprocess");
+        for (set, eval) in forests.iter().zip(&evals) {
+            assert_eq!(set.configs.len(), eval.n_configs());
+        }
+        integ.use_multichannel(&diagrams, &evaluated, 2_000, 2, 0x5EED_9C);
+        let (grids, _) = integ.adapt_grids(1_000, 2, 0x5EED_9D);
+        assert!(!grids.is_empty());
     }
 
     /// The channel-split integration is the same numbers at any pool size — the
@@ -5240,7 +5446,7 @@ mod tests {
             avg,
         );
         integ
-            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
         integ.use_multichannel(&diagrams, &evaluated, 2_000, 3, 0x5EED_9A);
 
@@ -5329,7 +5535,7 @@ mod tests {
             avg,
         );
         integ
-            .use_running_coupling(&diagrams, &m, &evaluated, &card)
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
             .expect("a fixed-beam card is never refused for the factorisation floor");
         integ.use_multichannel(&diagrams, &evaluated, 512, 1, 0x5EED_C7);
 

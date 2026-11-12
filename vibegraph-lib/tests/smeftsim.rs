@@ -761,3 +761,36 @@ fn gated_rows_op_census() {
         .collect();
     assert_op_coverage_across(&instances, &KNOWN_UNCOVERED);
 }
+
+/// A four-quark contact whose Lorentz structures pair its spinors two ways, each
+/// colour structure coupled through one pairing only, compiles.
+///
+/// SMEFTsim's `t~ b b~ t` contact (`V_753`, and its `NP`-split partner) couples
+/// colour structures 0 and 2 to its Lorentz structures 2 and 3 only, and colour
+/// structures 1 and 3 to its Lorentz structures 0 and 1 only; the two Lorentz pairs
+/// read different spinor pairings, so enumeration splits the vertex into one
+/// occurrence per pairing. An occurrence paired with a colour structure its pairing
+/// does not couple has no term at all, and compiling that empty sum panicked. The
+/// colour walk takes each occurrence's colour structures from its own pairing's
+/// couplings, so no such chain exists. `b b~ > t t~` is the smallest process that
+/// reaches the contact; the colour basis keeps its two flows.
+#[test]
+fn crossed_four_quark_contact_compiles() {
+    use vibegraph::helas::eval::AmplitudeEvaluator;
+
+    let model = load("restrict_massless.dat");
+    let pc = parse_proc_card("generate b b~ > t t~ NP<=1", &ParsingOptions::default()).unwrap();
+    let sets = generate_from_proc_card(&pc, &model).unwrap();
+    assert_eq!(sets.len(), 1);
+    let set = &sets[0];
+    assert!(
+        set.diagrams.iter().any(|d| d
+            .vertices
+            .iter()
+            .any(|v| v.interaction_name(&model).starts_with("V_753#"))),
+        "no diagram of 'b b~ > t t~ NP<=1' reaches the crossed contact V_753"
+    );
+    let evaluator = AmplitudeEvaluator::compile(set, &model)
+        .unwrap_or_else(|e| panic!("compile 'b b~ > t t~ NP<=1': {e}"));
+    assert_eq!(evaluator.n_flows(), 2);
+}
