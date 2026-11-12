@@ -1032,8 +1032,8 @@ fn line_end(diagram: &Diagram, model: &UFOModel, v: VtxIdx, slot: usize) -> LegI
 /// * [`vertex_root_signs`]: each vertex's reading of its fermion bilinears;
 /// * [`boson_momentum_sign`]: the momentum sign of each all-boson vertex of
 ///   self-conjugate legs, which reads its momenta incoming against MadGraph's outgoing;
-/// * [`fermion_structure_constant_sign`]: the sign of each fermion vertex whose colour
-///   carries an odd number of structure constants.
+/// * [`fermion_structure_constant_sign`]: the sign of each two-fermion, two-vector
+///   vertex whose colour carries an odd number of structure constants.
 ///
 /// With [`Diagram::sign`] (the external fermions' pairing parity and the crossed-line
 /// reordering) that is the whole of `fermi_sign`.
@@ -1041,45 +1041,75 @@ fn convention_sign(diagram: &Diagram, model: &UFOModel, chain: &[u8]) -> Result<
     Ok(propagator_phase_sign(diagram, model)
         * vertex_root_signs(diagram, model, chain)?
         * boson_momentum_sign(diagram, model)?
-        * fermion_structure_constant_sign(diagram, model, chain))
+        * fermion_structure_constant_sign(diagram, model, chain)?)
 }
 
-/// `−1` per vertex with a fermion leg whose colour structure, the one `chain` selects,
-/// carries an odd number of structure constants `f`: the quark–gluon-pair contacts of
-/// the chromo-dipole operators (SMEFTsim's `t~ t g g`, `f(-1,3,4)·T(-1,2,1)`).
+/// `−1` per two-fermion, two-vector vertex whose colour structure, the one `chain`
+/// selects, carries an odd number of structure constants `f`: the quark–gluon-pair
+/// contacts of the chromo-dipole operators (SMEFTsim's `t~ t g g`,
+/// `f(-1,3,4)·T(-1,2,1)`). Any other vertex with a fermion leg and an odd number of
+/// `f` is refused ([`structure_constant_vertex_sign`]).
 ///
 /// Measured, not derived. On `g g > t t~` and `t t~ > g g` under O_tG the contact
 /// diagram alone disagrees with MadGraph's `AMP()` by exactly `−1` at every helicity,
 /// on both of its Lorentz structures (`FFVV3`, and `FFVV1` with a `γ⁵`) and on a
 /// crossed as on an annihilating top line, while the same structures on the colourless
 /// `t~ t W- W+` contact agree. No momentum enters these structures, so the sign is not
-/// [`boson_momentum_sign`]'s; what the two contacts differ in is the `f`. Every vertex
-/// [`boson_momentum_sign`] gives `−1` also carries an odd number of `f`, so the two
-/// rules may be one, read off the colour; they part only on a colourless all-boson
-/// vertex of self-conjugate legs with an odd momentum count, which no model in reach
-/// has.
-pub(super) fn fermion_structure_constant_sign(
+/// [`boson_momentum_sign`]'s; what the two contacts differ in is the `f`. That is a
+/// correlation on one class of vertex, not a rule: this crate's `f` is MadGraph's
+/// `f^{abc}`, and no derivation says why the contact reads opposite. So the sign is
+/// given to the class it was measured on and nothing wider.
+fn fermion_structure_constant_sign(
     diagram: &Diagram,
     model: &UFOModel,
     chain: &[u8],
-) -> i8 {
-    use crate::ufo::color::ColorAtom;
+) -> Result<i8, CompileError> {
     let mut sign = 1i8;
     for (v, vertex) in diagram.vertices.iter().enumerate() {
-        let def = model.vertex_def(vertex.interaction);
-        if !def.particles.iter().any(|&p| model.particle(p).spin == 2) {
-            continue;
-        }
-        let structure_constants = def.color[chain[v] as usize]
-            .atoms
-            .iter()
-            .filter(|atom| matches!(atom, ColorAtom::F(..)))
-            .count();
-        if structure_constants % 2 == 1 {
-            sign = -sign;
-        }
+        sign *= structure_constant_vertex_sign(model, vertex.interaction, chain[v] as usize)?;
     }
-    sign
+    Ok(sign)
+}
+
+/// The sign [`fermion_structure_constant_sign`] gives one vertex at colour structure
+/// `color_idx`: `−1` for two fermion and two vector legs with an odd number of `f`,
+/// `+1` for a vertex with no fermion leg or an even number of `f`, and a refusal for
+/// every other vertex with a fermion leg and an odd number of `f` (a colour-octet
+/// fermion's gauge vertex, or the chromo-dipole contact with a Higgs beside the gluon
+/// pair, SMEFTsim's `t~ t g g H`), whose sign against MadGraph nothing has measured.
+pub(super) fn structure_constant_vertex_sign(
+    model: &UFOModel,
+    interaction: VertexId,
+    color_idx: usize,
+) -> Result<i8, RootLorentzError> {
+    use crate::ufo::color::ColorAtom;
+    let def = model.vertex_def(interaction);
+    let spins = |s: i32| {
+        def.particles
+            .iter()
+            .filter(|&&p| model.particle(p).spin == s)
+            .count()
+    };
+    if spins(2) == 0 {
+        return Ok(1);
+    }
+    let structure_constants = def.color[color_idx]
+        .atoms
+        .iter()
+        .filter(|atom| matches!(atom, ColorAtom::F(..)))
+        .count();
+    if structure_constants % 2 == 0 {
+        return Ok(1);
+    }
+    if def.particles.len() == 4 && spins(2) == 2 && spins(3) == 2 {
+        return Ok(-1);
+    }
+    Err(RootLorentzError::UnsupportedVertex(format!(
+        "vertex {}: a fermion vertex whose colour carries an odd number of structure \
+         constants has a sign against MadGraph that is measured only on the \
+         two-fermion, two-vector contacts",
+        def.name
+    )))
 }
 
 /// `−1` per internal scalar line and per internal fermion line of a crossed fermion
@@ -1257,6 +1287,48 @@ mod tests {
     use super::*;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
     use crate::ufo::sm::{sm_model, SMRestrict};
+
+    /// The structure-constant sign stays on the class it was measured on: the
+    /// chromo-dipole's `t~ t g g` contact takes `−1`, the same contact with a Higgs
+    /// beside the gluon pair (`t~ t g g H`) is refused by name, and a quark-gluon or
+    /// triple-gluon vertex takes nothing. Giving every odd-`f` fermion vertex the
+    /// sign fails the refusal.
+    #[test]
+    fn the_structure_constant_sign_is_limited_to_the_measured_contact() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let model = UFOModel::load(
+            &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
+            Some(&root.join("../validation/madgraph/cards/smeft/restrict_vg_ctG.dat")),
+        )
+        .unwrap();
+        let mut seen = [0usize; 4];
+        for (i, v) in model.vertices.values().enumerate() {
+            let id = VertexId(i);
+            let base = v.name.split('#').next().unwrap();
+            let sign = structure_constant_vertex_sign(&model, id, 0);
+            match base {
+                "V_564" => {
+                    assert_eq!(sign.unwrap(), -1, "{}", v.name);
+                    seen[0] += 1;
+                }
+                "V_563" => {
+                    let err = sign.unwrap_err().to_string();
+                    assert!(err.contains(&v.name), "{err}");
+                    seen[1] += 1;
+                }
+                "V_281" => {
+                    assert_eq!(sign.unwrap(), 1, "{}", v.name);
+                    seen[2] += 1;
+                }
+                "V_9" => {
+                    assert_eq!(sign.unwrap(), 1, "{}", v.name);
+                    seen[3] += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(seen.iter().all(|&n| n > 0), "vertices reached: {seen:?}");
+    }
 
     fn generate(process: &str) -> Vec<DiagramSet> {
         let opts = ParsingOptions::default();
