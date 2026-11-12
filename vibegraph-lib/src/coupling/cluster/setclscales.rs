@@ -640,8 +640,7 @@ fn walk_tree(channel: &Channel<'_>, clustering: &Clustering, n: usize, p: &[[f64
     for leg in 1..=n {
         ipart[1usize << (leg - 1)] = [leg, 0];
     }
-    for step in 0..n.saturating_sub(3) {
-        let merge = &clustering.merges[step];
+    for merge in &clustering.merges[..n.saturating_sub(3)] {
         // The provenance walk compares the *lab* transverse momenta of the
         // external legs, not the possibly boosted lines the clustering left.
         ipartupdate(

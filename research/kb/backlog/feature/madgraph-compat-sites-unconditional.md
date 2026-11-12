@@ -55,9 +55,9 @@ fix.
   - **Off (the default):** every pairing coherently, the window union, and
     `cut_decays = F` through the pairing-weighted cut Σ_p w_p Θ_p |M|²
     (implemented in v0.2.1, sprint J).
-  - **Size:** +1.72% (F) / +1.39% (T) on `g g > z u u~, z > u u~`, +0.44% on
-    `g g > z j j, z > j j` at F (sprint J, J-W1): per event +0.78% interference
-    and +0.86% window union, zero from the exemption.
+  - **Size:** +0.60% (F) / +0.10% (T) on `g g > z u u~, z > u u~`, +0.05% on
+    `g g > z j j, z > j j` at F (sprint J close-out): per event −0.46%
+    interference and +0.84% window union, zero from the exemption.
   - **History:** registered deviations (user, 2026-09-26 and 2026-11-06);
     D3 (2026-11-08) puts MadGraph's behaviour behind the flag; option A (user,
     2026-11-11): no flag is built in sprint J, and MadGraph's single pairing

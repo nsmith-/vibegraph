@@ -1209,8 +1209,8 @@ mod tests {
                 if let Some(a) = v.alpha_s {
                     by_hand *= a.ratio;
                 }
-                for beam in 0..2 {
-                    for s in r.pdf_chain[beam].iter().filter(|s| s.n == v.n) {
+                for chain in &r.pdf_chain {
+                    for s in chain.iter().filter(|s| s.n == v.n) {
                         if let PdfOutcome::Ratio { ratio, .. } = s.outcome {
                             by_hand *= ratio;
                         }

@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: Keep every pairing of identical particles across decays
-description: "Unlike MadGraph's single pairing with identical_decay_chain_factor, all pairings and their interference are kept. At cut_decays = F, where an identical particle sits in a decay in one pairing and in the core in another, each pairing exempts its own decay products through the pairing-weighted cut Σ_p w_p Θ_p |M|²; on g g > z u u~, z > u u~ σ reads +1.72% above MadGraph (+0.78% interference, +0.86% window union, zero from the exemption), a registered, attributed deviation."
+description: "Unlike MadGraph's single pairing with identical_decay_chain_factor, all pairings and their interference are kept. At cut_decays = F, where an identical particle sits in a decay in one pairing and in the core in another, each pairing exempts its own decay products through the pairing-weighted cut Σ_p w_p Θ_p |M|²; on g g > z u u~, z > u u~ σ reads +0.60% above MadGraph (−0.46% interference, +0.84% window union, zero from the exemption), a registered, attributed deviation."
 status: stable
 tags: [decay-chains, identical-particles, madgraph-deviation, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -126,8 +126,13 @@ tail [^n38-decisions]:
   1e-3 of events), and about 0.08·Γ/M overall.
 
 So the permuted treatment should read about **+0.2%** above MadGraph on such cards. The
-measurement on `e+ e- > z z, z > e+ e-` (500 GeV) is **+2.6e-3 ± 0.8e-3**: MadEvent
-4.7194e-4 ± 3.3e-7 pb, here 4.7318e-4 ± 2.0e-7 pb (ten seeds here). [^n38-d3]
+measurement on `e+ e- > z z, z > e+ e-` (500 GeV) is **+2.5e-3 ± 0.8e-3**: MadEvent
+4.7196e-4 ± 3.3e-7 pb, here 4.7313e-4 ± 1.9e-7 pb (ten seeds here; +2.6e-3 before the
+relative sign of the two pairings was corrected in v0.2.1, which left it unchanged).
+[^n38-d3] Per event, on 20000 events of this side (sprint J close-out), the interference
+there is negligible (⟨Σ_q \|M_q\|²/\|M\|²⟩ = 0.99996) and the window union accounts for
++0.11%: MadGraph's rule read on these events predicts +0.11%, leaving **+0.14% ± 0.08%**
+unattributed. Unlike the `p p` study's +0.2%, it is not the interference.
 
 ## How it is gated
 
@@ -138,17 +143,21 @@ measurement on `e+ e- > z z, z > e+ e-` (500 GeV) is **+2.6e-3 ± 0.8e-3**: MadE
   core (`g g > z j j, z > j j`) are an attributed difference, not a match. On
   `g g > z u u~, z > u u~` (13 TeV, `ptj 20`, `etaj 5`, `drjj 0.4`, fixed scales
   91.188, lhaid 247000; five seeds a side, unweighted means; sprint J, J-W1):
-  vibegraph 7.330 ± 0.007 pb against MadGraph 7.206 ± 0.013 pb at `cut_decays = F`,
-  **+1.72 %**, and 5.361 ± 0.004 against 5.288 ± 0.009 at `cut_decays = T`, **+1.39 %**.
-  Per event, on 20000 vibegraph events, the `F` difference is the interference between
-  pairings (⟨Σ_q \|M_q\|²/\|M\|²⟩ = 0.9922, **+0.78 %**) and the window union against
-  MadGraph's own pairing's window (**+0.86 %**); the exemption contributes zero by
-  construction. MadGraph's rule read on vibegraph's events (`Σ_p Θ_p W_p |M_p|²` over
-  the integrand) predicts its σ to +0.08 % at `F` and −0.04 % at `T`. On the whole
-  `g g > z j j, z > j j` card (same settings): vibegraph 150.76 ± 0.14 pb against
-  MadGraph 150.09 ± 0.23 pb, **+0.44 %**, all of it in the four same-flavour
-  subprocesses (a quarter of the events): +0.24 % interference and +0.19 % window per
-  event, and the per-event reading predicts MadGraph to +0.02 %.
+  vibegraph 7.249 ± 0.009 pb against MadGraph 7.206 ± 0.013 pb at `cut_decays = F`,
+  **+0.60 % ± 0.22 %**, and 5.293 ± 0.007 against 5.288 ± 0.009 at `cut_decays = T`,
+  **+0.10 %**. Per event, on 20000 vibegraph events, the `F` difference is the
+  interference between pairings (⟨Σ_q \|M_q\|²/\|M\|²⟩ = 1.0046, **−0.46 %**: the
+  pairings interfere destructively, as Fermi statistics requires) and the window union
+  against MadGraph's own pairing's window (**+0.84 %**); the exemption contributes zero
+  by construction. MadGraph's rule read on vibegraph's events (`Σ_p Θ_p W_p |M_p|²` over
+  the integrand) predicts its σ to +0.20 % (0.9 combined standard errors) at `F` and
+  −0.03 % at `T` (−0.51 % interference, +0.64 % window). On the whole
+  `g g > z j j, z > j j` card (same settings): vibegraph 150.16 ± 0.17 pb against
+  MadGraph 150.09 ± 0.23 pb, **+0.05 %**, all of it in the four same-flavour
+  subprocesses (a quarter of the events): −0.14 % interference and +0.19 % window per
+  event, and the per-event reading predicts MadGraph to −0.01 %. These are the numbers
+  after v0.2.1's relative-sign fix; with the sign it replaced, the interference read
+  +0.78 % and σ +1.72 % (sprint J, J-W1).
   Where every identical particle is a decay product (`e+ e- > z z, z > e+ e-`) both
   sides exempt the same legs. No banked σ row has the core-and-decay overlap. [^hk1]
 - The structural census matches MadGraph's per-matrix-element diagram counts by counting

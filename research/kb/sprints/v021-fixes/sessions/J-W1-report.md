@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "J-W1 report: the pairing-weighted cut_decays exemption, its guard, its probe and its σ attribution"
-description: "cut_decays = F with identical particles across a decay is now Σ_p w_p Θ_p |M|². The weighted integrand has no beam-collinear pole (w|M|²ε² falls as ε², |M|²ε² flat). σ reads +1.72% above MadGraph on g g > z u u~, z > u u~ and +0.44% on g g > z j j, z > j j. Per event that is the interference plus the window union, with zero from the exemption. MadGraph's rule read on vibegraph's events closes on MadGraph's σ to 0.1%."
+description: "cut_decays = F with identical particles across a decay is now Σ_p w_p Θ_p |M|². The weighted integrand has no beam-collinear pole (w|M|²ε² falls as ε², |M|²ε² flat). σ reads +1.72% above MadGraph on g g > z u u~, z > u u~ and +0.44% on g g > z j j, z > j j. Per event that is the interference plus the window union, with zero from the exemption. MadGraph's rule read on vibegraph's events closes on MadGraph's σ to 0.1%. These numbers predate #133's relative-sign fix; re-measured after it (§5): +0.60%, +0.10% at T and +0.05%, with the interference −0.46%."
 status: draft
 tags: [cuts, decay-chains, identical-particles, ir-safety, madgraph-parity, sprint-j]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-11}
@@ -484,9 +484,43 @@ What this means for such cards:
   the diff, which moves the body unchanged apart from the `guard` flag, and on
   the banked σ lines.
 
-**After #133.** The attribution and σ tables of §4 are stale: #133 flips the
-relative sign between pairings on `g g > z u u~, z > u u~`, so the interference
-share changes sign. The manager re-measures them in the close-out.
+**After #133** (manager, sprint J close-out). #133 reverses the relative sign
+between pairings on these cards, so the §4 tables were re-measured on main
+5c704bb7 (#130–#134 in) with the same run cards, seeds, budget, event counts and
+per-event scripts, against the same MadGraph seeds:
+
+```
+### g g > z u u~, z > u u~, cut_decays = F
+vibegraph  n=5 mean 7.2490 pb sd 0.0183 se(scatter) 0.0082 se(quoted) 0.0088 chi2/dof 0.88
+           seeds: 7.254±0.020, 7.223±0.020, 7.247±0.020, 7.274±0.019, 7.247±0.019
+vg-mg: +0.597% ± 0.22%, pull +2.69
+### g g > z u u~, z > u u~, cut_decays = T
+vibegraph  n=5 mean 5.2928 pb sd 0.0164 se(scatter) 0.0073 se(quoted) 0.0064 chi2/dof 1.35
+           seeds: 5.274±0.014, 5.283±0.015, 5.299±0.015, 5.317±0.014, 5.291±0.013
+vg-mg: +0.098% ± 0.22%, pull +0.44
+### g g > z j j, z > j j, cut_decays = F
+vibegraph  n=5 mean 150.162 pb sd 0.215 se(scatter) 0.096 se(quoted) 0.174 chi2/dof 0.30
+           seeds: 150.34±0.35, 150.14±0.37, 149.89±0.41, 150.41±0.40, 150.03±0.41
+vg-mg: +0.045% ± 0.21%, pull +0.22
+
+ggzuu F: events 20000; mixed-filter events 5042; <Σ|M_q|²/|M|²> = 1.00461; <MG-reading/integrand> = 0.99610 ± 0.00061; <W> = 0.99163
+ggzuu T: events 20000; mixed-filter events 0;    <Σ|M_q|²/|M|²> = 1.00517; <MG-reading/integrand> = 0.99869 ± 0.00048; <W> = 0.99362
+ggzjj F: same-flavour events 10274, others 29726; mixed-filter events 2552; <Σ|M_q|²/|M|²> = 1.00137; <MG-reading/integrand> = 0.99943 ± 0.00023; <W> = 0.99812
+```
+
+| card | vibegraph | predicted MadGraph | MadGraph measured | closure | interference | window union | exemption |
+|---|---|---|---|---|---|---|---|
+| ggzuu F | 7.249 ± 0.009 | 7.221 ± 0.010 | 7.206 ± 0.013 | +0.20 % | −0.46 % | +0.84 % | 0 |
+| ggzuu T | 5.293 ± 0.007 | 5.286 ± 0.008 | 5.288 ± 0.009 | −0.03 % | −0.51 % | +0.64 % | – |
+| ggzjj F | 150.16 ± 0.17 | 150.08 ± 0.18 | 150.09 ± 0.23 | −0.01 % | −0.14 % | +0.19 % | 0 |
+
+The interference changed sign and is now destructive, as Fermi statistics
+requires of two identical quarks exchanged. Its size moved too (+0.78 % → −0.46 %),
+because each figure is a ratio against its own |M|². The ratio of the two σ
+predicted from the two event samples, 1.00461/0.9922 = 1.0125, matches the
+measured 7.330/7.249 = 1.0112. The window union is unchanged (+0.86 % → +0.84 %),
+and the exemption still contributes zero. Each closure is within one combined
+standard error (+0.20 % ± 0.23 % on the F row).
 
 **Checks after the fixes** (`$S/jw1-after.sh`, `$S/jw1-after-status`). They ran
 on the working tree that became the fix commit. Under Nick's rule CI is the gate:
@@ -523,7 +557,8 @@ KB-LINT-EXIT 0                python3 scripts/kb.py lint
   - **Size:** "+1.72% (F) / +1.39% (T) on `g g > z u u~, z > u u~`, +0.44% on
     `g g > z j j, z > j j` at F (sprint J, J-W1): per event +0.78% interference
     and +0.86% window union, zero from the exemption". This replaces "about
-    −0.2% for the pairing; −26% / −6.8% for the stricter cut".
+    −0.2% for the pairing; −26% / −6.8% for the stricter cut". (Applied with
+    the post-#133 numbers of §5: +0.60% / +0.10% / +0.05%, −0.46% interference.)
   - **History:** add "option A (user, 2026-11-11): no flag is built; MadGraph's
     single pairing stays this site".
 
