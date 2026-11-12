@@ -26,7 +26,15 @@ Every diagram carries a relative Fermi sign `Diagram::sign`, set once in
 (`vibegraph-lib/src/diagrams/diagram.rs`):
 
 - `fermion_pairing_sign` — the parity of the external fermions paired by line
-  (feyngraph's `view.sign()`, the Wick sign);
+  (the Wick sign), with each pair ordered without reading leg numbers: on a
+  line whose ends are both incoming or both outgoing the physical antiparticle
+  comes first, and on a mixed line the incoming end comes first. Ordering each
+  pair by the lower leg index (feyngraph's `view.sign()`) made the relative sign
+  of two pairings depend on how the card lists its legs: `e+ e- > e- e+` read
+  8.3% above `e+ e- > e+ e-`, and the W-exchange class of
+  `u u~ > t t~ b b~ QED<=2` came out at the opposite sign to MadGraph's. The
+  test `relative_fermi_signs_do_not_read_the_leg_order` and the standalone rows
+  `ee_to_emep`, `uxu_to_uux` and `uux_to_ttxbbx_qed2` pin it;
 - `fermion_line_sign` — one factor per fermion line, described here.
 
 The line sign reads only the lines (`Diagram::fermion_lines`): their two end legs
