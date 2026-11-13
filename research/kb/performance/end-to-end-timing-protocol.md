@@ -173,9 +173,14 @@ did exactly that ([integration against MadGraph](integration-vs-madgraph.md)
 records both readings for v0.2.0).
 
 Check that δ is honest on each row in two ways:
-- **Iteration scatter.** The iteration-scatter χ²/dof, reconstructed from the
-  cumulative lines (Iₖ = k·Mₖ − (k−1)·Mₖ₋₁, σₖ² = k²Qₖ² − (k−1)²Qₖ₋₁²) or read
-  from a `--log-file` trace, should be near 1.
+- **Iteration scatter.** The iteration-scatter χ²/dof should be near 1. Read it
+  from a `--log-file` trace: sum the per-channel lines of each iteration into σₖ ±
+  errₖ, skip the warm-up iterations, and take the χ²/dof of the σₖ about their
+  inverse-variance mean (v0.2.0's MLM row: 1.04 on the M3, 0.82 on x86). The
+  printed per-iteration line is a running combination from the fourth iteration on,
+  so reconstructing from it (Iₖ = k·Mₖ − (k−1)·Mₖ₋₁, σₖ² = k²Qₖ² − (k−1)²Qₖ₋₁²)
+  works only where that combination is a plain running mean; on other rows it gives
+  nonsense.
 - **Seed spread.** The sd of σ over the seeds should not exceed the mean quoted
   error.
 

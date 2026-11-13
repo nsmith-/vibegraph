@@ -34,8 +34,12 @@ It splits into three factors:
 - **The printed χ²/dof is the wrong statistic for δ.** It reads 1.49–1.82 on this row. The
   iteration scatter of σ is 0.83–1.05 (0.82 from the glibc run's full trace), and six seeds
   span 1064.0–1065.4 pb against a quoted ±1.0 pb.
-- **The musl share is allocator time.** The musl assets spend 22–40 s of system time
-  single-threaded on this row; the glibc build spends 0.28 s.
+- **The musl share is allocator time,** and v0.2.1 removed it. The v0.2.0 musl assets spent
+  22–40 s of system time single-threaded on this row, the glibc build 0.28 s. With the
+  v0.2.1 assets the system time is 0.5–0.8 s and the row reads 2.09× (2.12× at v3) at
+  consistency-scaled δ on the same host, against the glibc build's 2.41× at v0.2.0 and
+  2.43× at v0.2.1 (both at `-j 4`). On the M3 Max at v0.2.0 the row is 1.56×
+  ([integration against MadGraph](integration-vs-madgraph.md)).
 
 ## The 2.40×, by merged part
 

@@ -1,12 +1,14 @@
 ---
 type: Measurement
 title: "Reweighting cost against MadGraph's reweight module"
-description: "On a 45-hypothesis EFT operator basis at v0.2.0, MadGraph's real run is 151–335× slower than vibegraph's; per event and hypothesis MadGraph pays ~500 µs, mostly Python I/O."
+description: "On a 45-hypothesis EFT operator basis (1000 events), MadGraph's real run is 214–708× slower than vibegraph's on x86 at v0.2.1 and 351–1015× on the M3 Max; MadGraph pays ~320–550 µs per event and hypothesis."
 status: draft
 tags: [performance, reweighting, madgraph-comparison, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
+  - {commit: e4a90128, tag: v0.2.1, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "VIBEGRAPH_BIN=<v0.2.1 release asset> pixi run -e madgraph python validation/madgraph/bench_reweight.py; basis8.py; both sides rerun the same day", data: "CERN host: /home/ncsmith/bench-v0.2.0/results-v0.2.1/phase3/ and TABLES_EXTRA.md"}
+  - {commit: 3cc7f9c2, tag: v0.2.0, host: "Apple M3 Max, interactive desktop (load 2.8–6.4)", command: "VIBEGRAPH_BIN=<v0.2.0 aarch64-apple-darwin asset> pixi run -e madgraph python validation/madgraph/bench_reweight.py; basis8.py", data: "M3 host: /Users/ncsmith/bench-v020/results/phase3/"}
   - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "VIBEGRAPH_BIN=<release asset> pixi run -e madgraph python validation/madgraph/bench_reweight.py --work <oracle work> --out <dir>; basis8.py for the operator-basis row", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/phase3/"}
   - {commit: f6b1936, pr: 13, host: "4-vCPU cloud VM, Intel Xeon @ 2.80 GHz", command: "pixi run -e madgraph bench-reweight (validation/madgraph/bench_reweight.py)"}
 sources:
@@ -20,19 +22,59 @@ Both sides timed in one sitting on one host by `validation/madgraph/bench_reweig
 weights agree with MadGraph's event by event to the files' printed precision. It is a quick
 comparison, not a calibrated one: **read it as an order of magnitude.**[^rw]
 
-**Headline (v0.2.0).** On an EFT operator basis (8 SMEFTsim operators at NP=1, 45
-hypotheses, 1000 events), MadGraph's real 45-launch run takes 71.0 s against vibegraph's
-0.40–0.47 s exact and 0.21–0.29 s on the polynomial path: **151–335× slower**, or 134–298×
-without MadGraph's one-off setup. MadGraph's loop costs about 490–550 µs per event and
-hypothesis on every row; vibegraph's exact path covers all of a row's hypotheses in
-15–120 µs per event.
+**Headline.** On an EFT operator basis (8 SMEFTsim operators at NP=1, 45 hypotheses, 1000
+events), MadGraph's real 45-launch run is **214–708× slower** than vibegraph on the x86 host
+at v0.2.1 and **351–1015× slower** on the M3 Max. The lower bound is vibegraph's exact
+path, the upper its polynomial path. MadGraph's reweight loop costs 480–550 µs per event
+and hypothesis on x86 and 320–360 µs on the M3, mostly Python I/O. vibegraph's exact path
+covers all of a row's hypotheses in 4–70 µs per event at 20 000 events.
 
-The f6b1936 measurement below is kept for history: per event and hypothesis MadGraph cost
-720–800 µs and vibegraph's exact path 5–14 µs, with MadGraph's multi-hypothesis cost
-estimated as setup + H × one loop. The v0.2.0 basis row shows that estimate understates
-MadGraph's real cost by 2.4×.
+Every hypothesis on the four oracle rows agrees with MadGraph per event to ≤ 1e-7 on both
+hosts.
 
-## v0.2.0, Ice Lake VM (`3cc7f9c2`, 2026-11-10)
+## Current: x86 at v0.2.1 and the M3 Max at v0.2.0
+
+Cost is the added wall time of `generate` with the reweight card over the same run without
+it (median of 5). MadGraph's is its reweight module under cProfile, both sides at
+`change helicity False`. On x86 both sides ran the same day at v0.2.1; the M3 ran v0.2.0,
+whose macOS build the musl allocator fix does not touch.
+
+**Operator basis,** 1000 events (`e+ e- > t t~ NP<=1`, SMEFTsim `topU3l`, the 45 points of
+the v0.2.0 section below):
+
+| | x86 v0.2.1 plain | x86 v0.2.1 v3 | M3 v0.2.0 |
+|---|--:|--:|--:|
+| ours, exact (46 evaluations per event) | 0.338 s | 0.282 s | 0.133 s |
+| ours, polynomial (9 evaluations per event) | 0.112 s | 0.102 s | 0.046 s |
+| MadGraph, real 45-launch card | 72.2 s | (same run) | 46.7 s |
+| ratio, exact / polynomial | 214× / 645× | 256× / 708× | 351× / 1015× |
+| ratio without MadGraph's setup (7.8 s; 8.3 s on the M3) | 191× / 575× | 228× / 631× | 289× / 835× |
+
+At 20 000 events on x86 the cost per event is 266.5 µs exact and 68.9 µs polynomial (plain;
+210.8 / 57.7 at v3), against v0.2.0's 371.8 / 174.6. MadGraph's 45-launch output still
+carries one weight per event (the multi-launch defect, below), so its time is real work
+that a correct 45-weight basis would exceed.
+
+**The oracle rows,** µs per event over all of the row's H hypotheses (20 000 events;
+MadGraph per event and hypothesis):
+
+| row | H | x86 v0.2.1 exact / polynomial | M3 v0.2.0 exact / polynomial | MadGraph loop, x86 / M3 |
+|---|--:|--:|--:|--:|
+| `ee_tth_ymt` | 4 | 9.9 / 5.2 | 3.9 / 1.9 | 518 / 346 |
+| `ee_ttx_smeft` | 11 | 69.6 / 26.7 | 25.9 / 9.8 | 482 / 325 |
+| `tata_tth_grid` | 9 | 48.0 / 31.2 | 18.7 / 12.2 | 533 / 355 |
+| `pp_llj` | 3 | 8.4 / — | 7.7 (2000 events) / — | 544 / 358 |
+
+The x86 v0.2.1 per-event costs are 1.3–5× below v0.2.0's on the same host: v0.2.0's
+`generate` ran at its default thread count, where the musl assets contended on their
+allocator.
+
+The f6b1936 measurement at the end is kept for history: per event and hypothesis MadGraph
+cost 720–800 µs and vibegraph's exact path 5–14 µs, with MadGraph's multi-hypothesis cost
+estimated as setup + H × one loop. The basis row shows that estimate understates
+MadGraph's real cost by 2.0–2.4×.
+
+## x86 v0.2.0, Ice Lake VM (`3cc7f9c2`, 2026-11-10)
 
 Both release assets (musl, plain and x86-64-v3) through `bench_reweight.py` with
 `VIBEGRAPH_BIN` set; logging shims confirmed each pass called only its own binary. The work
