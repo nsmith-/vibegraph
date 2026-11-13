@@ -1,11 +1,13 @@
 ---
 type: Measurement
 title: "Systematics weights against MadGraph's systematics module"
-description: "At v0.2.0 on 20 000 pp_to_llj events, vibegraph's in-process systematics weights add 0.70 s for a 9-point scale request and 48 s for CMS's 926-weight request; MadGraph's module takes 8.7 s and 452 s (12× and 9.3×)."
+description: "On 20 000 pp_to_llj events, CMS's 926-weight request costs vibegraph 38.6 s against 455 s for MadGraph's systematics module on x86 at v0.2.1 (11.8×), and 14.6 s against 256 s on the M3 Max (17.5×), at about a quarter of the memory."
 status: draft
 tags: [performance, madgraph-comparison, systematics, pdf, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-10}
 measured:
+  - {commit: e4a90128, tag: v0.2.1, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "taskset -c 2 <v0.2.1 release asset> generate <artifact> --seed 7 --nevents 20000 -j 1 [--systematics \"<request>\"], 5 interleaved reps; systematics.py under cProfile, 3 reps; twin artifacts regenerated with v0.2.1", data: "CERN host: /home/ncsmith/bench-v0.2.0/results-v0.2.1/phase4/ and TABLES_EXTRA.md"}
+  - {commit: 3cc7f9c2, tag: v0.2.0, host: "Apple M3 Max, interactive desktop (load 3.0–7.0)", command: "<v0.2.0 aarch64-apple-darwin asset> generate … -j 1 (no affinity), 5 reps; systematics.py under cProfile, 3 reps; artifacts integrated at -j 12 (σ = 527.4 ± 1.2 pb)", data: "M3 host: /Users/ncsmith/bench-v020/results/phase4/"}
   - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2", command: "taskset -c 2 <release asset> generate <artifact> --seed 7 --nevents 20000 -j 1 [--systematics \"<request>\"], 5 interleaved reps; python -m cProfile systematics.py in.lhe out.lhe <request>, 3 reps", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/phase4/"}
 ---
 
@@ -16,10 +18,43 @@ recorded at `integrate` (`use_syst = T`). MadGraph computes them afterwards, wit
 `systematics.py` reading and rewriting the event file. This page times both on the same
 events. The weights themselves are gated per event against MadGraph's output elsewhere.
 
-**Headline (v0.2.0).** On 20 000 `pp_to_llj` events, CMS's request (926 weights over 880
-PDF members) adds 48 s to vibegraph's `generate` against 452 s for MadGraph's module,
-**9.3×**, at 725 MiB against 3.0 GiB peak memory. A 9-point scale request adds 0.70 s
-against 8.7 s, **12×**.
+**Headline.** On 20 000 `pp_to_llj` events, CMS's request (926 weights over 880 PDF
+members) adds 38.6 s to vibegraph's `generate` on the x86 host at v0.2.1, against 455 s for
+MadGraph's module: **11.8×**. On the M3 Max at v0.2.0 it is 14.6 s against 256 s,
+**17.5×**. Peak memory is 806 MiB against 3.1 GiB (801 MiB against 3.2 GiB on the M3). A
+9-point scale request adds about 0.5 s against 8.8 s on x86 (18×) and 0.21 s against 4.5 s
+on the M3 (about 22×, noisy at that size).
+
+## Current: x86 at v0.2.1 and the M3 Max at v0.2.0
+
+Same rows, requests and method as the v0.2.0 run described below; on x86 both sides ran the
+same day at v0.2.1, with the twin artifacts regenerated (σ = 527.4 ± 1.2 pb; a 2000-event
+check found the twins' events identical). The M3 ran v0.2.0, whose macOS build the musl
+allocator fix does not touch.
+
+vibegraph, added `generate` time over the `use_syst = F` twin (median of 5, single thread):
+
+| request | weights/event | x86 v0.2.1 plain / v3 | M3 v0.2.0 | peak RSS, x86 / M3 |
+|---|--:|--:|--:|--:|
+| default (`use_syst = T`, no flag) | 147 | 4.76 / 4.70 s | 1.85 s | 132 / 125 MiB |
+| `scale9` | 8 | 0.48 / 0.48 s | 0.21 s | 51 / 35 MiB |
+| `cms` | 926 | 38.6 / 37.6 s | 14.6 s | 806 / 801 MiB |
+
+MadGraph `systematics.py` on the same events (median of 3; setup is `Systematics.__init__`,
+the loop `Systematics.run`):
+
+| request | x86 v0.2.1: wall / setup / loop | M3: wall / setup / loop | peak RSS, x86 / M3 |
+|---|--:|--:|--:|
+| `scale9` | 8.76 / 0.03 / 8.53 s | 4.5 / 0.03 / 4.4 s | 77 / 34–37 MiB |
+| `cms` | 454.7 / 12.6 / 442.1 s | 255.8 / 18.6 / 237 s | 3093 / 3221–3281 MiB |
+
+Ratios against our added time: `cms` 11.8× on x86 (11.5× on the loop alone; 12.1× at v3)
+and 17.5× on the M3 (16.2×); `scale9` 18× and about 22×. On x86, v0.2.1's added time is
+20–30% below v0.2.0's on the same host, from the musl allocator fix. The weights were
+checked on x86 at v0.2.0 (MadGraph on our events reproduces all 926 CMS weights exactly, on
+20 events); the M3 run checked only the weight counts.
+
+The v0.2.0 x86 measurement below is the earlier record: `cms` 9.3×, `scale9` 12×.
 
 ## Setup
 
