@@ -141,6 +141,23 @@ On x86 the v0.2.1 release assets scale cleanly: their `-j 4` CPU matches `-j 1`,
 `pp_to_jj` at a fixed budget speeds up 3.7× from `-j 1` to `-j 4` on every build
 ([musl allocator thread scaling](musl-allocator-thread-scaling.md)).
 
+## Per-point cost on the 2→6 rows (M3 Max)
+
+The matrix element is not the whole integrand: the phase-space map, the cuts, the scale
+draw and the multichannel density sum `Σⱼ αⱼgⱼ(p)` are in every point too. On the two
+2→6 rows, at 579 and 615 channels:
+- **a point that survives the cuts** costs 138 µs and 207 µs, of which the density sum
+  is 36 and 38 µs (26% and 18%);
+- **most points never get that far:** acceptance is 3.6% and 4.3%, and the density runs
+  only after the cut and the matrix element, so the average drawn point costs 5.8 µs and
+  9.0 µs.
+
+Both were an order of magnitude higher before the density moved behind the cut and began
+sharing subtree momenta across channels
+([the channel contract](../phase-space/channel-contract.md)).
+`probe_2to6_eval_cost` and `probe_2to6_density_decomposition` in
+`vibegraph-lib/tests/validate_sigma.rs` re-measure them.
+
 ## x86 v0.2.0, Ice Lake VM (`3cc7f9c2`, 2026-11-09/10)
 
 Kept as the record behind the v0.2.0 MLM diagnosis and the δ correction; the x86 figures

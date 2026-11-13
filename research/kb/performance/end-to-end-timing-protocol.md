@@ -207,6 +207,9 @@ acceptance there is ≈3%.[^n34-cutfirst]
 
 ## Traps seen
 
+- Wall times are the noise-sensitive direction: a busy host has been worth
+  double-digit percentages, so every published timing is taken with nothing else
+  heavy running.
 - A σ printed by a probe in GeV⁻² is not pb: multiply by `GEV2_TO_PB`
   (3.893793721e8) before comparing with a bank.[^n32-tta]
 - A row timing from a sitting under heavy sibling load is not bankable even when

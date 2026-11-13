@@ -209,6 +209,20 @@ Two traps this run exposed:
   `processes` key and read as an empty table; the script now names that case instead of
   reporting the empty join.
 
+## How the gap closed
+
+The first evaluator was 8.6×–110× slower than `MATRIX1`: a general expression DAG walked
+per point. Four changes closed the distance, holding the ≤ 1e-12 matrix-element gate
+throughout:
+- compiling that DAG into a flat typed tape;
+- expanding one straight-line program per contributing helicity combination
+  ([helicity expansion](helicity-expansion.md));
+- reproducing MadGraph's own two layers of zero-filtering, whose survivor sets match bit
+  for bit;
+- specialising the arithmetic itself.
+
+The record is the [evaluator performance programme](../sprints/eval-performance-program/closeout.md).
+
 ## The earlier points (14 processes, M3 Max)
 
 | date | vibegraph commit | geomean ours/MG | beating MG |

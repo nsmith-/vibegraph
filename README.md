@@ -8,9 +8,11 @@
 A **leading-order (LO) tree-level Monte Carlo event generator** written in Rust,
 following the same pipeline as
 [MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301) — and validated against it
-at the strictest level each stage permits: bit-identical derived parameters and
-couplings from the same UFO model and cards, machine precision on the matrix
-elements, and statistical agreement on the emitted Les Houches event samples.
+at the strictest level each stage permits: model parameters and couplings to
+1e-13 of MadGraph's own evaluation, bit-exact where both sides compute the same
+number from the same inputs (the αs running, helicity survivor sets, colour
+tags), machine precision on the matrix elements, and statistical agreement on
+the emitted Les Houches event samples.
 
 Per-point |M|² agrees with MadGraph's to ≤ 1e-12 relative, and cross sections and
 event samples agree statistically with the banked MadGraph references. Reaching
