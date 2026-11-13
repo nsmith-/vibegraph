@@ -1,12 +1,15 @@
 ---
 type: Measurement
 title: "Matrix element per point against MadGraph's MATRIX1"
-description: "ns per evaluation against MATRIX1 over 19 processes. At v0.2.0 on an Ice Lake VM: geomean 0.85× at default flags and 0.74× with both sides at x86-64-v3; earlier 0.87× (Cascade Lake, M3 Max)."
+description: "ns per evaluation against MATRIX1 over 19 processes. Ice Lake VM, v0.2.0 and v0.2.1: geomean 0.85× at default flags, 0.74–0.75× with both sides at x86-64-v3. M3 Max, v0.2.0: 0.80×."
 status: draft
 tags: [performance, madgraph-comparison, matrix-element, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
+  - {commit: e4a90128, tag: v0.2.1, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2, rustc 1.99.1, gfortran 14.4.0", command: "as for v0.2.0, both configurations, MadGraph side rerun the same day", data: "CERN host: /home/ncsmith/bench-v0.2.0/results-v0.2.1/phase1/{cfg1,cfg2}/compare.{1,2}.md"}
+  - {commit: 3cc7f9c2, tag: v0.2.0, host: "Apple M3 Max, macOS 15.8.2, rustc 1.97.1, pixi gfortran 14.3.0, interactive desktop (load 2.7–3.1)", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh (×2, mean) with VIBEGRAPH_BENCH_EXTRA_PROCESSES; gen_amplitude.py ×3, median; 19 process directories launched through time_stages.py with global_flag = -O set explicitly", data: "M3 host: /Users/ncsmith/bench-v020/results/phase1/ (phase1_table.md, mg_timings_run{1,2,3}.json, mg_timings_median.json, vg_run{1,2}.out)"}
+  - {commit: 3cc7f9c2, host: "Apple M3 Max, load 3.5–8.1", command: "RUSTFLAGS='-C target-cpu=native' scripts/mg_perf_compare.sh (×2); MadGraph with -mcpu=native in FFLAGS, libraries and f2py modules rebuilt; gen_amplitude.py ×3", data: "M3 host: /Users/ncsmith/bench-v020/results/phase1n/"}
   - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake, family 6 model 106), 4-vCPU KVM guest, AlmaLinux 10.2, rustc 1.99.1, gfortran 14.4.0", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2), RUSTFLAGS unset or '-C target-cpu=x86-64-v3'; gen_amplitude.py ×3, median", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/phase1/{cfg1,cfg2} (driver logs, make_opts_flags.txt, f2py_effective_flags.txt, isa_check.txt)"}
   - {commit: cf8b2b7, pr: 8, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2); gen_amplitude.py ×3, median"}
   - {host: "Apple M3 Max (darwin), 2026-08-06, quiet host, MG side regenerated the same day", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh"}
@@ -32,8 +35,11 @@ against MadGraph's standalone `MATRIX1` ns per evaluation from
 accuracy, which carry the phase-space map, VEGAS, cuts and clustering, are a different
 measurement: [integration against MadGraph](integration-vs-madgraph.md).
 
-**Headline at v0.2.0 (Ice Lake VM): geomean 0.85× (ours/MadGraph) over 19 processes at
-default flags, and 0.74× with both sides compiled for x86-64-v3.** Fourteen rows are faster
+**Headline: geomean 0.85× (ours/MadGraph) over 19 processes at default flags on the Ice
+Lake VM, 0.74–0.75× with both sides compiled for x86-64-v3, and 0.80× on the M3 Max.** The
+evaluator is the same in v0.2.0 and v0.2.1: rerun at v0.2.1, the x86 geomeans read 0.85×
+and 0.75× (two runs each, 0.84/0.85 and 0.74/0.76), and no row's v3 ratio moved more than
+5%. Fourteen rows are faster
 than MATRIX1 at default flags and sixteen at x86-64-v3; the slow side is still `uux_to_uux`,
 `gg_to_gg` and `ee_to_wpwm`. Ours is the scalar interpreter in both configurations, with no
 lane batching. The earlier tables (0.87× on Cascade Lake and the M3 Max) predate constant
@@ -91,6 +97,53 @@ MadGraph by 1.08×. Against the Cascade Lake table (different host, ratios only)
 `gg_to_gg` moved from 1.37× to 1.17× and `bbx_to_ccx_emmm_qcd0` from 1.17× to 0.90×, while
 `uux_to_uux` moved the other way, 1.24× to 1.43×, which is not explained.
 
+## M3 Max, v0.2.0 (`3cc7f9c2`, 2026-11-10)
+
+Default codegen on both sides, run with `env -u RUSTFLAGS` (this host's shell profile has
+exported `-C target-cpu=native`). MadGraph: the 19 process directories rebuilt fresh (the
+bundle's prebuilt modules were months old), `global_flag = -O` and empty `aloha_flag` /
+`matrix_flag` set explicitly. The f2py build logs show `MATRIX1` compiled with the pixi
+environment's `-march=armv8.3-a … -O2`, then `-O3 -funroll-loops`. The environment's
+`FFLAGS` is set, so `make_opts` skips its own block and `global_flag` does not reach the
+libraries (inferred from `make_opts`, not checked object by object). Our side is the mean
+of two runs, which agree to 1.4% per row (geomeans 0.799 and 0.801); MadGraph's is the
+median of three, most rows within 0–4%. The host is the user's desktop, load average
+2.7–3.1 and no core affinity.
+
+| process | MG ns/eval | ours ns/eval | ours/MG |
+|---|--:|--:|--:|
+| `ee_to_zh` | 202 | 191 | 0.95× |
+| `uux_to_uux` | 274 | 380 | 1.39× |
+| `pp_to_ll_qcd0` | 287 | 240 | 0.83× |
+| `ee_to_mumu` | 301 | 237 | 0.79× |
+| `ee_to_ttx` | 344 | 352 | 1.02× |
+| `gg_to_ttx` | 661 | 682 | 1.03× |
+| `ee_to_ee` | 728 | 562 | 0.77× |
+| `ee_to_wpwm` | 760 | 864 | 1.14× |
+| `ee_to_tatah` | 840 | 628 | 0.75× |
+| `gu_to_epemu` | 844 | 512 | 0.61× |
+| `ddx_to_epemg` | 844 | 513 | 0.61× |
+| `gux_to_epemux` | 844 | 512 | 0.61× |
+| `uux_to_epemg` | 849 | 513 | 0.60× |
+| `gg_to_gg` | 964 | 1 182 | 1.23× |
+| `ee_to_mumua` | 1 437 | 883 | 0.61× |
+| `ud_to_epemud_qcd0` | 5 981 | 3 406 | 0.57× |
+| `ee_to_mumu_tata_qcd0` | 6 255 | 3 689 | 0.59× |
+| `uux_to_ccx_emmm_qcd0` | 97 942 | 77 372 | 0.79× |
+| `bbx_to_ccx_emmm_qcd0` | 141 244 | 126 192 | 0.89× |
+
+**Geomean 0.80×, range 0.57×–1.39×, 14 of 19 below 1.0.** The slow rows are the same as on
+x86: `uux_to_uux`, `gg_to_gg`, `ee_to_wpwm`, then `gg_to_ttx` and `ee_to_ttx` at parity.
+
+**Both sides at native codegen** (same commit and day, a separate worktree): vibegraph
+built with `RUSTFLAGS="-C target-cpu=native"` (resolved to `apple-m3`; a source build, not
+the release binary), MadGraph with the environment's `-march=armv8.3-a` replaced by
+`-mcpu=native` in `MATRIX1` and in rebuilt `libdhelas.a` / `libmodel.a`, checked on the
+compile lines. MadGraph gets 1.073× faster in geomean and vibegraph 1.002×, so the ratio
+moves to **0.857×** (range 0.61×–1.49×, 13 of 19 below 1.0). Rust's default
+`aarch64-apple-darwin` target already enables NEON, `dotprod`, `lse` and `fp16`, so native
+codegen adds little to this scalar evaluator. Load average 3.5–8.1 during these runs.
+
 ## Cascade Lake, `cf8b2b7` (2026-09-26)
 
 Both codes on one host in one sitting, as cross-host absolute times are out of scope.[^cl]
@@ -133,7 +186,7 @@ carries across hosts unchanged while end-to-end ratios do not. `host_info.py` re
 macOS `sysctl`, so on Linux the CPU block of `mg_timings.json` is filled in by hand from
 `/proc/cpuinfo`.
 
-## M3 Max, 2026-08-06
+## M3 Max, 2026-08-06 (earlier)
 
 Same 19 rows, quiet host, MG side regenerated the same day, run with `env -u RUSTFLAGS`
 because that host's shell profile exports `-C target-cpu=native` while every recorded table
@@ -155,6 +208,20 @@ Two traps this run exposed:
 - **A stale MG table joins to nothing.** A pre-`host`-block `mg_timings.json` has no
   `processes` key and read as an empty table; the script now names that case instead of
   reporting the empty join.
+
+## How the gap closed
+
+The first evaluator was 8.6×–110× slower than `MATRIX1`: a general expression DAG walked
+per point. Four changes closed the distance, holding the ≤ 1e-12 matrix-element gate
+throughout:
+- compiling that DAG into a flat typed tape;
+- expanding one straight-line program per contributing helicity combination
+  ([helicity expansion](helicity-expansion.md));
+- reproducing MadGraph's own two layers of zero-filtering, whose survivor sets match bit
+  for bit;
+- specialising the arithmetic itself.
+
+The record is the [evaluator performance programme](../sprints/eval-performance-program/closeout.md).
 
 ## The earlier points (14 processes, M3 Max)
 
