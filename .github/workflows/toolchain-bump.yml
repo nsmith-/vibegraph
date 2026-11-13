@@ -1,0 +1,130 @@
+name: toolchain-bump
+
+# Once a month, one PR that moves the Rust and pixi pins to the current stable
+# releases (scripts/bump-toolchains.sh) and reports the lint gates on the new
+# Rust. New lints are fixed on that PR's branch before it merges. GitHub
+# Actions' versions move through Dependabot (.github/dependabot.yml) on the
+# same cadence. research/kb/tooling/toolchain-pins.md is the procedure.
+on:
+  schedule:
+    - cron: "37 4 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: toolchain-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    env:
+      # A PR opened with the workflow's own GITHUB_TOKEN starts no workflows, so
+      # CI would not run on it until a maintainer pushes to the branch. A
+      # fine-grained token in this secret (contents and pull requests: write,
+      # this repository only) opens the PR as its owner and CI starts at once.
+      GH_TOKEN: ${{ secrets.TOOLCHAIN_BUMP_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.TOOLCHAIN_BUMP_TOKEN || github.token }}
+
+      - name: Current stable releases
+        id: latest
+        run: |
+          manifest=$(curl -sSf https://static.rust-lang.org/dist/channel-rust-stable.toml)
+          rust=$(awk '/^\[pkg\.rust\]/ { f = 1 } f && /^version/ { print $3; exit }' <<< "$manifest" | tr -d '"')
+          [[ $rust =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unreadable Rust release: $rust"; exit 1; }
+          pixi=$(gh release view --repo prefix-dev/pixi --json tagName --jq .tagName)
+          pixi=${pixi#v}
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+          echo "pixi=$pixi" >> "$GITHUB_OUTPUT"
+          echo "branch=toolchain-bump/rust-$rust-pixi-$pixi" >> "$GITHUB_OUTPUT"
+
+      - name: Is a bump due?
+        id: due
+        env:
+          RUST: ${{ steps.latest.outputs.rust }}
+          PIXI: ${{ steps.latest.outputs.pixi }}
+          BRANCH: ${{ steps.latest.outputs.branch }}
+        run: |
+          if grep -qx "channel = \"$RUST\"" rust-toolchain.toml &&
+             grep -qx "requires-pixi = \"==$PIXI\"" pixi.toml; then
+            echo "Pins already at Rust $RUST, pixi $PIXI."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "$BRANCH already exists."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.due.outputs.run == 'true'
+        uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: v${{ steps.latest.outputs.pixi }}
+          run-install: false
+
+      - if: steps.due.outputs.run == 'true'
+        run: scripts/bump-toolchains.sh "${{ steps.latest.outputs.rust }}" "${{ steps.latest.outputs.pixi }}"
+
+      # The gates CI enforces, run on the new Rust so the PR says up front what
+      # needs fixing. A failure here does not stop the PR: it is opened either
+      # way, and CI stays red on it until the lints are fixed.
+      - name: Lint gates on the new Rust
+        if: steps.due.outputs.run == 'true'
+        run: |
+          out=$RUNNER_TEMP/gates.md
+          printf '| gate | result |\n|---|---|\n' > "$out"
+          details=$RUNNER_TEMP/details.md
+          : > "$details"
+          gate() {
+            local name=$1; shift
+            if "$@" > "$RUNNER_TEMP/gate.log" 2>&1; then
+              echo "| \`$name\` | pass |" >> "$out"
+            else
+              echo "| \`$name\` | **fail** |" >> "$out"
+              {
+                echo "<details><summary>$name</summary>"
+                echo
+                echo '```'
+                grep -E '^(error|warning)|^ *--> ' "$RUNNER_TEMP/gate.log" | head -60
+                echo '```'
+                echo "</details>"
+              } >> "$details"
+            fi
+          }
+          gate "cargo fmt --all --check" cargo fmt --all --check
+          gate "clippy" cargo clippy --workspace --all-targets --locked -- -D warnings
+          gate "clippy, extended-validation" cargo clippy --workspace --all-targets --locked \
+            --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- -D warnings
+          cat "$details" >> "$out"
+
+      - name: Open the PR
+        if: steps.due.outputs.run == 'true'
+        env:
+          RUST: ${{ steps.latest.outputs.rust }}
+          PIXI: ${{ steps.latest.outputs.pixi }}
+          BRANCH: ${{ steps.latest.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add rust-toolchain.toml pixi.toml pixi.lock .github/workflows
+          git commit -m "Toolchain bump: Rust $RUST, pixi $PIXI"
+          git push -u origin "$BRANCH"
+          {
+            echo "The monthly toolchain bump (\`toolchain-bump.yml\`): Rust $RUST, pixi $PIXI, \`pixi.lock\` re-locked."
+            echo
+            echo "Lint gates on the new Rust:"
+            echo
+            cat "$RUNNER_TEMP/gates.md"
+            echo
+            echo "Fix any new lint on this branch: rewrite the site, or allow it with a reason per AGENTS.md. Merge when CI is green, banked included."
+            echo "Don't merge while a release is in flight. See \`research/kb/tooling/toolchain-pins.md\`."
+          } > "$RUNNER_TEMP/body.md"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Toolchain bump: Rust $RUST, pixi $PIXI" --body-file "$RUNNER_TEMP/body.md"

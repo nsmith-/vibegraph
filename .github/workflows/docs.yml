@@ -36,7 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Installs the release rust-toolchain.toml pins, with its components.
+      - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -57,7 +58,7 @@ jobs:
       # keeps that call off the unauthenticated rate limit shared by runners.
       - uses: prefix-dev/setup-pixi@v0.10.0
         with:
-          pixi-version: v0.63.2
+          pixi-version: v0.84.1
           environments: kb
           cache: true
 

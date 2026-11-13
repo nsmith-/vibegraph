@@ -1,0 +1,8 @@
+# The Rust release every build uses: CI, the docs and release workflows, and
+# local work through rustup. It moves only in a toolchain-bump PR
+# (scripts/bump-toolchains.sh; research/kb/tooling/toolchain-pins.md), so a new
+# stable's lints cannot turn an unrelated PR or a release run red.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

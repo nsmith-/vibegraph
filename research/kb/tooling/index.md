@@ -14,6 +14,7 @@
 * [Logging and the terminal UI](logging-and-tui.md) - tracing events under vibegraph::* targets, the progress contract, plain/TUI/file layers, inline-viewport footer, stdout for results only, and graceful stop on q/Ctrl-C.
 * [Network consent policy](network-consent.md) - NetworkPolicy Deny/Ask/Allow from --no-network, $VIBEGRAPH_NO_NETWORK and --yes; refusal outranks consent; no terminal means refusal; HttpFetch is built in one place.
 * [Release binaries](release-binaries.md) - release.yml builds static musl Linux (baseline and x86-64-v3) and native macOS binaries on tag push, publishes bare executables with SHA256SUMS, and dispatches acceptance.
+* [Pinned Rust and pixi, bumped monthly](toolchain-pins.md) - rust-toolchain.toml pins Rust and pixi.toml's requires-pixi pins pixi; every workflow reads the pins; a scheduled workflow opens the monthly bump PR and reports the lint gates.
 
 ## Design Decision
 
