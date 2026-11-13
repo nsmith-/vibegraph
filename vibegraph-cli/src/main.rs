@@ -7,8 +7,15 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser, Subcommand};
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
+/// Only on musl, whose own allocator takes one process-wide lock per call: the
+/// glibc and macOS system allocators keep per-thread caches and scale already.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod assets;
 mod check;
+mod enumerate;
 mod error;
 mod fetch;
 mod generate;
@@ -18,6 +25,7 @@ mod logging;
 mod network;
 mod output;
 mod parallel;
+mod ranking;
 mod si;
 mod tui;
 
@@ -120,8 +128,12 @@ enum Command {
     Generate(generate::GenerateArgs),
     /// Read a Les Houches file back and check that it is internally consistent.
     CheckEvents(check::CheckArgs),
-    /// Print the results a saved integration artifact records.
+    /// Print the results a saved integration artifact records, or write its
+    /// configuration ranking as JSON.
     Inspect(inspect::InspectArgs),
+    /// Enumerate a process's Feynman diagrams: the diagram artifact, a summary
+    /// JSON and one SVG drawing per diagram.
+    Enumerate(enumerate::EnumerateArgs),
 }
 
 impl Command {
@@ -131,7 +143,7 @@ impl Command {
     fn is_watchable(&self) -> bool {
         match self {
             Command::Integrate(_) | Command::Generate(_) => true,
-            Command::CheckEvents(_) | Command::Inspect(_) => false,
+            Command::Enumerate(_) | Command::CheckEvents(_) | Command::Inspect(_) => false,
         }
     }
 }
@@ -218,6 +230,7 @@ fn main() -> ExitCode {
     }
     let network = NetworkPolicy::from_env(cli.no_network, cli.yes);
     let result = match cli.command {
+        Command::Enumerate(args) => enumerate::run(&args),
         Command::Integrate(args) => integrate::run(&args, network),
         Command::Generate(args) => generate::run(&args, network),
         Command::CheckEvents(args) => check::run(&args),

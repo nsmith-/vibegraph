@@ -576,7 +576,32 @@ impl LorentzEvalTree {
                 LorentzEvalTree::build_tensor_term(term, &tensor, idx, out_adjoint, flows)?;
             return Ok((tree.compact_legs(idx), sign, 1));
         }
-        let idx = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let (tree, root_leg, reversed_parity) =
+            Self::build_rerooted(term, spins, flow, idx, out_adjoint, flows)?;
+        Ok((tree.compact_for_caller(idx, root_leg), 1.0, reversed_parity))
+    }
+
+    /// The tree-rooted half of [`build_at_leg`](Self::build_at_leg), before its legs are
+    /// relabelled for the caller: the tree over the vertex's own slots, rooted at the
+    /// slot [`correct_spin_index_for_flow`] chooses (returned beside it), and the term's
+    /// reversed-bilinear parity. The term's chains are first put in the order the
+    /// rooted bilinear reads them ([`reorder_reversed_sink_chains`],
+    /// [`conjugate_rerooted_chain`]), so a caller that relabels the slots afterwards
+    /// sees the same chain order as one that does not.
+    fn build_rerooted(
+        term: &LorentzTerm,
+        spins: &[i32],
+        flow: &[(usize, usize)],
+        idx: Option<usize>,
+        out_adjoint: Option<Adjoint>,
+        flows: &[Option<LegAdjoint>],
+    ) -> Result<(Self, Option<usize>, i8), RootLorentzError> {
+        let reordered = reorder_reversed_sink_chains(term, flow, idx, flows)?;
+        let term: &LorentzTerm = &reordered;
+        let rooted = correct_spin_index_for_flow(spins, flow, idx, out_adjoint)?;
+        let reconjugated = conjugate_rerooted_chain(term, idx, rooted, flows);
+        let term: &LorentzTerm = &reconjugated;
+        let idx = rooted;
         let reversed_parity = term_reversed_parity(term, idx, flows);
         let mut tree = LorentzEvalTree {
             nodes: vec![],
@@ -614,13 +639,37 @@ impl LorentzEvalTree {
 
         // find all the remaining scalar roots
         while visited_ops.len() < term.ops.len() {
-            // find an unvisited op
-            let Some((iop, op)) = term
-                .ops
-                .iter()
-                .enumerate()
-                .find(|&(i, _)| visited_ops.iter().all(|&j| i != j))
-            else {
+            let unvisited = |i: usize| visited_ops.iter().all(|&j| i != j);
+            // A chain that carries a gamma closes through it, as a vector current
+            // contracted with what sits at its Lorentz index: that `GammaVout` is where
+            // the runtime applies the reversed-bilinear sign `term_reversed_parity`
+            // counts. Closed through a projector, `γ⁵` or the identity instead (an
+            // `FFVV1`-type term lists its `Gamma5` first), the chain would reach the
+            // amplitude with no reversal sign while the parity still counted one.
+            let closes_a_chain = |op: &LorentzOp| {
+                matches!(
+                    op,
+                    LorentzOp::ProjM { .. }
+                        | LorentzOp::ProjP { .. }
+                        | LorentzOp::Identity { .. }
+                        | LorentzOp::Gamma5 { .. }
+                )
+            };
+            let first = term.ops.iter().enumerate().find(|&(i, _)| unvisited(i));
+            let Some((iop, op)) = first.and_then(|(i, op)| {
+                if closes_a_chain(op) {
+                    term.ops
+                        .iter()
+                        .enumerate()
+                        .find(|&(k, o)| {
+                            unvisited(k)
+                                && matches!(o, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })
+                        })
+                        .or(Some((i, op)))
+                } else {
+                    Some((i, op))
+                }
+            }) else {
                 break; // no more unvisited ops
             };
             let root = tree.scalar_root(term, iop, op, &mut visited_ops, flows)?;
@@ -655,7 +704,7 @@ impl LorentzEvalTree {
 
         tree.root = Some(root);
 
-        Ok((tree.compact_legs(idx), 1.0, reversed_parity))
+        Ok((tree, idx, reversed_parity))
     }
 
     /// Root one operator no leg-rooted walk reached as a scalar: an amplitude
@@ -756,6 +805,42 @@ impl LorentzEvalTree {
     /// (vertex legs in order, output omitted) with no per-eval reindexing. A `P` *can*
     /// reference the output leg's momentum (e.g. VVV1); it becomes the leg-less
     /// `POut`, evaluated from the input currents.
+    /// Relabel a tree built over the vertex's own slots and rooted at `root_leg` into
+    /// the caller's gap-free inputs, which omit the slot `output`.
+    ///
+    /// Re-rooted at the output's partner slot, the tree reads the output slot as the
+    /// line's continuing input. That input is the caller's child at the partner slot,
+    /// so the two slots trade labels before the output is compacted away, and every
+    /// other leg keeps its own position. Compacting over the partner slot instead gives
+    /// the same tree only when the two slots are adjacent; a four-fermion pairing such
+    /// as `(2,3)(4,1)` puts other legs between them.
+    fn compact_for_caller(mut self, output: Option<usize>, root_leg: Option<usize>) -> Self {
+        if let (Some(out), Some(root)) = (output, root_leg) {
+            if out != root {
+                self.swap_legs(out, root);
+            }
+        }
+        self.compact_legs(output)
+    }
+
+    /// Exchange every reference to legs `a` and `b`, leg and momentum alike.
+    fn swap_legs(&mut self, a: usize, b: usize) {
+        let swap = |i: &mut usize| {
+            if *i == a {
+                *i = b;
+            } else if *i == b {
+                *i = a;
+            }
+        };
+        for node in &mut self.nodes {
+            match node {
+                LorentzEvalNode::Leg(i) => swap(i),
+                LorentzEvalNode::P { leg } => swap(leg),
+                _ => {}
+            }
+        }
+    }
+
     fn compact_legs(mut self, idx: Option<usize>) -> Self {
         if let Some(out) = idx {
             for node in &mut self.nodes {
@@ -825,6 +910,168 @@ fn term_reversed_parity(
         }
     }
     parity
+}
+
+/// `term` with the gammas of every fermion chain that a sink reads against its UFO
+/// arrow put in the opposite order.
+///
+/// A chain closed into a bilinear — the amplitude contraction, or a vector current
+/// rooted at a boson leg — is evaluated by applying its operators to the spinor at
+/// each end, from that end inwards. When the chain's row slot is bound to a ket (an
+/// initial-state pair, or a line from an initial to a final state, read against the
+/// vertex's arrow), the bra sits at the column slot, so the bilinear the kernels form
+/// is `ψ̄_bra (O_n ⋯ O_1) ψ_ket` for a chain written `O_1 ⋯ O_n` from row to column:
+/// the operators in reverse order. With one gamma that is the structure itself up to
+/// the chirality conjugation of [`chiral_correction`] and the reversed-bilinear sign
+/// of [`term_reversed_parity`]. With two or more it is a different matrix:
+/// `[γ^μ, p̸]` becomes `[p̸, γ^μ]`, so a momentum-slashed dipole would come out with
+/// the opposite sign to the gauge coupling on the same line.
+///
+/// Permuting the gammas' Lorentz indices so that the gamma at position `k` from the
+/// row carries the index of the one at `n + 1 − k` makes the reverse-order reading
+/// equal the structure as written, term by term. A projector or `γ⁵` beside an even
+/// number of gammas commutes back to where it stood, and the row operator stays a
+/// gamma, so the reversed-bilinear parity and the runtime reversal it cancels are
+/// those of the unpermuted term.
+///
+/// A chain rooted at its own fermion leg is not touched: the off-shell current is
+/// re-rooted onto the slot whose adjoint matches ([`correct_spin_index_for_flow`]) and
+/// applies the operators in their written order. A crossed line binds each end at the
+/// slot its adjoint expects, so its row slot is never bound to a ket.
+///
+/// A chain carrying a literal `Sigma` beside another gamma or `Sigma` has no index
+/// permutation that reverses it, and is refused.
+fn reorder_reversed_sink_chains<'t>(
+    term: &'t LorentzTerm,
+    flow: &[(usize, usize)],
+    out: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> Result<std::borrow::Cow<'t, LorentzTerm>, RootLorentzError> {
+    let mut reordered = std::borrow::Cow::Borrowed(term);
+    for &(ket, bra) in flow {
+        if out == Some(ket) || out == Some(bra) {
+            continue;
+        }
+        let read_reversed = matches!(
+            flows.get(bra).copied().flatten(),
+            Some(LegAdjoint {
+                adjoint: Adjoint::Ket,
+                ..
+            })
+        );
+        if !read_reversed {
+            continue;
+        }
+        let carriers: Vec<usize> = chain_ops(term, bra as isize)
+            .into_iter()
+            .filter(|&k| {
+                matches!(
+                    term.ops[k],
+                    LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. }
+                )
+            })
+            .collect();
+        if carriers.len() < 2 {
+            continue;
+        }
+        let mut mus = Vec::with_capacity(carriers.len());
+        for &k in &carriers {
+            match term.ops[k] {
+                LorentzOp::Gamma { mu, .. } => mus.push(mu),
+                _ => {
+                    return Err(RootLorentzError::UnsupportedVertex(format!(
+                        "a chain of {} gamma and Sigma factors with a Sigma among them, read \
+                         against its UFO arrow, has no index permutation that reverses it",
+                        carriers.len()
+                    )))
+                }
+            }
+        }
+        let ops = &mut reordered.to_mut().ops;
+        for (&k, &mu) in carriers.iter().zip(mus.iter().rev()) {
+            if let LorentzOp::Gamma { mu: slot, .. } = &mut ops[k] {
+                *slot = mu;
+            }
+        }
+    }
+    Ok(reordered)
+}
+
+/// `term` with the chirality of the rooted chain conjugated (`P_L ↔ P_R`,
+/// `γ⁵ → −γ⁵`) when [`correct_spin_index_for_flow`] re-rooted an off-shell fermion
+/// current and the chain carries an even number of gammas.
+///
+/// On a line read against the vertex's arrow, a fermion output is re-rooted onto the
+/// slot whose adjoint matches, and the current then applies the chain in its written
+/// order to the input spinor, from the other end. That puts each chiral factor on
+/// the far side of the chain's gammas from where it stood: through one gamma it is the
+/// conjugate chirality `γ^μ P_χ = P_χ̄ γ^μ`, which is what the re-rooting is there to
+/// realise, so a one-gamma chain needs nothing more. Through two it is the same
+/// chirality, and the current would read `[γ^μ, p̸] P_R` where MadGraph's line reads
+/// `[γ^μ, p̸] P_L` — SMEFTsim's one-chirality W dipoles (`FFV10`, `FFV4`) producing the
+/// off-shell quark of single-top production. Conjugating the chain's chiral factors
+/// restores the parity the single gamma gave.
+///
+/// A crossed line binds each end at the slot its adjoint expects and is never
+/// re-rooted. `Sigma` commutes with `γ⁵` and is not counted.
+fn conjugate_rerooted_chain<'t>(
+    term: &'t LorentzTerm,
+    out: Option<usize>,
+    rooted: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> std::borrow::Cow<'t, LorentzTerm> {
+    let unchanged = std::borrow::Cow::Borrowed(term);
+    let (Some(out), Some(rooted)) = (out, rooted) else {
+        return unchanged;
+    };
+    if out == rooted
+        || matches!(
+            flows.get(out).copied().flatten(),
+            Some(LegAdjoint { crossed: true, .. }) | None
+        )
+    {
+        return unchanged;
+    }
+    let chain = chain_ops(term, rooted as isize);
+    let gammas = chain
+        .iter()
+        .filter(|&&k| matches!(term.ops[k], LorentzOp::Gamma { .. }))
+        .count();
+    if gammas < 2 || gammas % 2 == 1 {
+        return unchanged;
+    }
+    let mut conjugated = term.clone();
+    for &k in &chain {
+        match conjugated.ops[k] {
+            LorentzOp::ProjM { i, j } => conjugated.ops[k] = LorentzOp::ProjP { i, j },
+            LorentzOp::ProjP { i, j } => conjugated.ops[k] = LorentzOp::ProjM { i, j },
+            LorentzOp::Gamma5 { .. } => conjugated.coeff = -conjugated.coeff,
+            _ => {}
+        }
+    }
+    std::borrow::Cow::Owned(conjugated)
+}
+
+/// The operators of the spinor chain that starts at leg `start`, in order from it.
+fn chain_ops(term: &LorentzTerm, start: isize) -> Vec<usize> {
+    let mut walked: Vec<usize> = Vec::new();
+    let mut cursor = start;
+    for _ in 0..term.ops.len() {
+        let Some((iop, op)) = term
+            .ops
+            .iter()
+            .enumerate()
+            .find(|&(i, op)| op.involves_spinor(cursor) && !walked.contains(&i))
+        else {
+            break;
+        };
+        walked.push(iop);
+        match other_spinor_index(op, cursor) {
+            Some(next) if next < 0 => cursor = next,
+            _ => break,
+        }
+    }
+    walked
 }
 
 /// The spinor adjoint a node rooted at the *summed* spinor index `idx` must produce:
@@ -2331,6 +2578,155 @@ mod tests {
                 ("FFFF8".to_string(), false, vec![(1, 0), (3, 2)]),
             ]
         );
+    }
+
+    /// Every fermion-output rooting of every tree-rooted term of the vendored UFOs, with
+    /// each of its lines bound along or against its UFO arrow and the output bound as
+    /// its partner is (as `root_diagram` binds it), split by whether the rooting moved
+    /// onto the output's partner slot and whether that slot is adjacent to the output.
+    /// Yields `(structure, term, output, root slot, tree over the vertex's slots)`.
+    fn rerooted_trees() -> Vec<(String, usize, usize, usize, LorentzEvalTree)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo");
+        let mut out = Vec::new();
+        for model in [
+            "SMEFTsim_topU3l_MwScheme_UFO",
+            "vibegraph_toy_UFO",
+            "vibegraph_toy_majorana_UFO",
+        ] {
+            let parsed = crate::ufo::ParsedModel::parse(&root.join(model))
+                .unwrap_or_else(|e| panic!("parse {model}: {e}"));
+            for structure in parsed.lorentz.values() {
+                let Some(flow) = crate::ufo::topo::fermion_flow(structure) else {
+                    continue;
+                };
+                if flow.is_empty() {
+                    continue;
+                }
+                for (ti, term) in structure.expr.iter().enumerate() {
+                    if cyclic_index_graph(term) {
+                        continue;
+                    }
+                    for along in 0..(1u32 << flow.len()) {
+                        let mut flows = vec![None; structure.spins.len()];
+                        for (k, &(ket, bra)) in flow.iter().enumerate() {
+                            let reversed = along & (1 << k) != 0;
+                            let (a, b) = if reversed {
+                                (Adjoint::Bra, Adjoint::Ket)
+                            } else {
+                                (Adjoint::Ket, Adjoint::Bra)
+                            };
+                            flows[ket] = lf(a);
+                            flows[bra] = lf(b);
+                        }
+                        for &(ket, bra) in &flow {
+                            for (o, partner) in [(ket, bra), (bra, ket)] {
+                                let mut flows = flows.clone();
+                                flows[o] = flows[partner];
+                                let adjoint = flows[o].map(|f| f.adjoint);
+                                let Ok((tree, Some(root_leg), _)) = LorentzEvalTree::build_rerooted(
+                                    term,
+                                    &structure.spins,
+                                    &flow,
+                                    Some(o),
+                                    adjoint,
+                                    &flows,
+                                ) else {
+                                    continue;
+                                };
+                                out.push((structure.name.clone(), ti, o, root_leg, tree));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Re-rooting onto a partner slot adjacent to the output gives the caller the same
+    /// tree whichever slot the compaction runs over.
+    ///
+    /// The caller's inputs omit the output slot, and the re-rooted tree reads the output
+    /// slot as the continuing input; relabelling them is the identity on the compacted
+    /// tree exactly when no other leg sits between the two slots. Every two-fermion
+    /// structure and every `(1,2)(3,4)` pairing is in that case, so every rooting they
+    /// had keeps its tree. The census also pins that the vendored models do reach the
+    /// other case.
+    #[test]
+    fn rerooting_onto_an_adjacent_partner_keeps_the_tree() {
+        let (mut adjacent, mut apart) = (0usize, 0usize);
+        for (name, term, output, root_leg, tree) in rerooted_trees() {
+            if root_leg == output {
+                continue;
+            }
+            if root_leg.abs_diff(output) == 1 {
+                adjacent += 1;
+                assert_eq!(
+                    tree.clone()
+                        .compact_for_caller(Some(output), Some(root_leg)),
+                    tree.compact_legs(Some(root_leg)),
+                    "{name} term {term}: output {output} re-rooted at {root_leg}"
+                );
+            } else {
+                apart += 1;
+            }
+        }
+        println!("re-rooted: {adjacent} onto an adjacent partner, {apart} across another leg");
+        assert!(adjacent > 0, "no rooting moved onto an adjacent partner");
+        assert!(
+            apart > 0,
+            "no rooting moved onto a partner across another leg"
+        );
+    }
+
+    /// A four-fermion current re-rooted across the other line reads the continuing
+    /// spinor from the caller's child at the partner slot.
+    ///
+    /// SMEFTsim's `FFFF3`, `Gamma(-1,2,-2)*Gamma(-1,4,-3)*ProjM(-3,1)*ProjM(-2,3)`, pairs
+    /// slots (2,3) and (4,1). Rooted at slot 4 with slot 1 bound as a bra (an incoming
+    /// antiquark), the current is re-rooted at slot 1; the caller's inputs are slots
+    /// 1, 2, 3. The vector the closed line (2,3) builds must read inputs 1 and 2, and the
+    /// continuing fermion input 0.
+    #[test]
+    fn four_fermion_current_rerooted_across_a_line_reads_its_partner() {
+        let gamma = |mu, i, j| LorentzOp::Gamma { mu, i, j };
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                gamma(-1, 1, -2),
+                gamma(-1, 3, -3),
+                LorentzOp::ProjM { i: -3, j: 0 },
+                LorentzOp::ProjM { i: -2, j: 2 },
+            ],
+        };
+        let spins = [2, 2, 2, 2];
+        let flow = [(2, 1), (0, 3)];
+        let flows = [
+            lf(Adjoint::Bra),
+            lf(Adjoint::Bra),
+            lf(Adjoint::Ket),
+            lf(Adjoint::Bra),
+        ];
+        let (tree, _, _) =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow, Some(3), &flows).unwrap();
+        let legs = |n: usize| -> Vec<usize> {
+            let mut legs = Vec::new();
+            let mut stack = vec![n];
+            while let Some(k) = stack.pop() {
+                match tree.nodes[k] {
+                    LorentzEvalNode::Leg(i) => legs.push(i),
+                    ref node => stack.extend(node.children()),
+                }
+            }
+            legs.sort_unstable();
+            legs
+        };
+        let vectors: Vec<Vec<usize>> = (0..tree.nodes.len())
+            .filter(|&k| matches!(tree.nodes[k], LorentzEvalNode::GammaVout { .. }))
+            .map(legs)
+            .collect();
+        assert_eq!(vectors, vec![vec![1, 2]], "tree: {tree}");
+        assert_eq!(legs(tree.root.unwrap()), vec![0, 1, 2], "tree: {tree}");
     }
 
     /// A cycle the tensor path does not cover is refused by name, not walked into.

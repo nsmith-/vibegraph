@@ -56,7 +56,7 @@ Setup ([benchmark hosts](benchmark-hosts.md)):
   (1.5–1.8) it overstated δ. The "§5 χ²" column keeps those first readings.
 - **The musl assets anti-scale with threads**, so every multi-core figure below is a glibc
   `cargo build --release` of the same commit, labelled as such
-  ([backlog](../backlog/performance/musl-release-assets-anti-scale-with-threads.md)). The
+  ([musl allocator thread scaling](musl-allocator-thread-scaling.md); fixed after v0.2.0). The
   musl assets also carry 15–20% single-thread overhead against glibc, which every
   single-core ratio here includes.
 

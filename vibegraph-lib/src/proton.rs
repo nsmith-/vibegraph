@@ -119,10 +119,12 @@ use crate::coupling::cluster::graph::ChannelSet;
 use crate::coupling::cluster::rewgt::{rewgt, Rewgt, RewgtHistory};
 use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
+use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, mask_zeroed, vetoed_m2, vetoed_of, zeroed_diagonals, BoundVetoed, VetoedAmplitudes,
+    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
+    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
@@ -138,6 +140,7 @@ use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
+use crate::pairing::{BoundPairings, PairingAmplitudes, PairingSplit};
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
 use crate::phasespace::beams;
@@ -277,9 +280,17 @@ pub struct FlavorGroup {
     /// `|M|²` at the card's parameters, which is what grouped them; at other
     /// parameters each is its own process again.
     member_sets: Vec<DiagramSet>,
+    /// Per member, parallel to `members`: the order its enumerated outgoing legs
+    /// were put in ([`DiagramSet::with_final_order`]), the identity where they
+    /// were left as enumerated.
+    member_orders: Vec<Vec<usize>>,
     evaluator: AmplitudeEvaluator,
     legs: Vec<ExternalLeg>,
     cuts: Cuts,
+    /// The representative's per-pairing amplitudes where `cuts` is
+    /// pairing-weighted ([`crate::pairing`]), shared by every member as its
+    /// `|M|²` is.
+    pairings: Option<PairingSplit>,
     members: Vec<Subprocess>,
     /// Per member, parallel to `members`: where its beam partons sit in a
     /// flavour row.
@@ -403,9 +414,55 @@ impl FlavorGroup {
         &self.representative
     }
 
+    /// Each member as an index into the enumeration `sets` it was derived from
+    /// and the order its outgoing legs were put in, members in order (the
+    /// representative first): the enumerated set which, reordered, is the
+    /// member's diagram set, compared by [`diagram_set_digest`].
+    ///
+    /// # Errors
+    ///
+    /// Naming the member, where no set of `sets` reorders to it.
+    pub fn member_origins(
+        &self,
+        sets: &[DiagramSet],
+        model: &UFOModel,
+    ) -> Result<Vec<crate::artifact::SetRef>, String> {
+        self.member_sets
+            .iter()
+            .zip(&self.member_orders)
+            .map(|(member, order)| {
+                let want = diagram_set_digest(std::slice::from_ref(member));
+                sets.iter()
+                    .position(|set| {
+                        set.particles_in == member.particles_in
+                            && set.diagrams.len() == member.diagrams.len()
+                            && set
+                                .with_final_order(order, model)
+                                .is_some_and(|r| diagram_set_digest(&[r]) == want)
+                    })
+                    .map(|set| crate::artifact::SetRef {
+                        set,
+                        final_order: order.clone(),
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "no enumerated set reorders to the group member {}",
+                            label(member)
+                        )
+                    })
+            })
+            .collect()
+    }
+
     /// The cut filter every member compiles to.
     pub fn cuts(&self) -> &Cuts {
         &self.cuts
+    }
+
+    /// The per-pairing amplitudes of the pairing-weighted `cut_decays`
+    /// exemption, `None` where the group's filter is not pairing-weighted.
+    pub fn pairing_split(&self) -> Option<&PairingSplit> {
+        self.pairings.as_ref()
     }
 
     /// Concrete flavour assignments summed into this group.
@@ -963,7 +1020,10 @@ pub fn derive_flavor_groups(
     }
     refuse_untabulated_partons(&sets, model)?;
 
-    let sets = content_ordered(sets, model, evaluated, card)?;
+    let (sets, final_orders): (Vec<DiagramSet>, Vec<Vec<usize>>) =
+        content_ordered(sets, model, evaluated, card)?
+            .into_iter()
+            .unzip();
     let labels: Vec<String> = sets.iter().map(label).collect();
     let processes: Vec<u32> = sets
         .iter()
@@ -1144,7 +1204,10 @@ pub fn derive_flavor_groups(
             .iter()
             .map(|&i| sets[i].clone().expect("member unclaimed"))
             .collect();
+        let member_orders = indices.iter().map(|&i| final_orders[i].clone()).collect();
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
+        let representative = sets[head].take().expect("group head unclaimed");
+        let pairings = PairingSplit::new(&representative, &cuts, model, evaluated)?;
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
         let member_slots = members
             .iter()
@@ -1160,11 +1223,13 @@ pub fn derive_flavor_groups(
             })
             .collect();
         groups.push(FlavorGroup {
-            representative: sets[head].take().expect("group head unclaimed"),
+            representative,
             member_sets,
+            member_orders,
             evaluator,
             legs,
             cuts,
+            pairings,
             members,
             member_slots,
             spin_color_avg,
@@ -1192,7 +1257,7 @@ fn content_ordered(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
-) -> Result<Vec<DiagramSet>, ProtonError> {
+) -> Result<Vec<(DiagramSet, Vec<usize>)>, ProtonError> {
     let maxjetflavor = card.maxjetflavor;
     let keys = |set: &DiagramSet| -> Vec<(u64, Option<char>)> {
         set.particles_out
@@ -1207,14 +1272,15 @@ fn content_ordered(
             .collect()
     };
     let Some(first) = sets.first() else {
-        return Ok(sets);
+        return Ok(Vec::new());
     };
     let reference = keys(first);
     sets.into_iter()
         .map(|set| {
             let own = keys(&set);
+            let identity: Vec<usize> = (0..set.particles_out.len()).collect();
             if own == reference || own.len() != reference.len() {
-                return Ok(set);
+                return Ok((set, identity));
             }
             let mut used = vec![false; own.len()];
             let mut order = Vec::with_capacity(own.len());
@@ -1224,12 +1290,13 @@ fn content_ordered(
                         used[j] = true;
                         order.push(j);
                     }
-                    None => return Ok(set),
+                    None => return Ok((set, identity)),
                 }
             }
-            Ok(set
+            let reordered = set
                 .with_final_order(&order, model)
-                .expect("a matching of every slot is a permutation"))
+                .expect("a matching of every slot is a permutation");
+            Ok((reordered, order))
         })
         .collect()
 }
@@ -1596,6 +1663,11 @@ pub struct ProtonEvent {
     /// clustering `rewgt` read, from which the drawn member's `<mgrwt>` record
     /// is taken; `None` without matching and where the term carries no weight.
     pub(crate) group_histories: Vec<[Option<RewgtHistory>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, the pairing
+    /// weight its term's luminosity was multiplied by under the pairing-weighted
+    /// `cut_decays` exemption ([`crate::pairing`]); empty where no group's
+    /// filter is pairing-weighted, where every weight is one.
+    pub(crate) group_pairing_weights: Vec<[f64; 2]>,
     /// Lab-frame external momenta of the sampled configuration, beams first —
     /// what the event record reports under the direct ordering
     /// ([`ProtonIntegrand::record_momenta`] gives either ordering's).
@@ -1931,6 +2003,9 @@ pub struct ProtonIntegrand<'a> {
     /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
     /// for a group, leaves its matrix element whole.
     vetoes: Vec<Option<VetoedAmplitudes<'a>>>,
+    /// Per flavour group, its per-pairing amplitudes where its filter is
+    /// pairing-weighted, `None` elsewhere.
+    pairings: Vec<Option<PairingAmplitudes<'a>>>,
     /// Per group, the timelike lines of every configuration
     /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
     /// configuration draw on `AMP2` alone.
@@ -1939,6 +2014,9 @@ pub struct ProtonIntegrand<'a> {
     /// ([`emulate_madevent_mirrored_cut`](Self::emulate_madevent_mirrored_cut)).
     #[cfg(any(test, feature = "extended-validation"))]
     madevent_mirrored_cut: bool,
+    /// Per flavour group, its first part of a point's split over
+    /// configurations ([`ShareSplit`]), and the total last.
+    share_offsets: Vec<usize>,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1982,9 +2060,29 @@ struct ProtonScratch<'a> {
     /// ([`ProtonIntegrand::census`]).
     census: CensusCell,
     /// Per cut filter ([`ProtonIntegrand::filters`]), which of the point's
-    /// `[direct, mirrored]` events it passes: the sampled one, and the exchanged
-    /// one where the filter cuts a mirrored group (`false` elsewhere).
-    filter_passes: RefCell<Vec<[bool; 2]>>,
+    /// `[direct, mirrored]` events it passes, as a [`Cuts::pass_pairings`] mask:
+    /// the sampled one, and the exchanged one where the filter cuts a mirrored
+    /// group (zero elsewhere).
+    filter_passes: RefCell<Vec<[u64; 2]>>,
+    /// This thread's copies of [`ProtonIntegrand::pairings`], per group.
+    pairings: Vec<Option<BoundPairings<'a>>>,
+    /// The last evaluated point's pairing weights, per flavour group
+    /// ([`ProtonEvent::group_pairing_weights`]); `[1, 1]` for a group whose
+    /// filter is not pairing-weighted.
+    pairing_weights: RefCell<Vec<[f64; 2]>>,
+    /// This thread's split of a point's value over configurations.
+    shares: ShareSplit,
+}
+
+impl ProtonScratch<'_> {
+    /// [`ProtonEvent::group_pairing_weights`] at the last evaluated point.
+    fn event_pairing_weights(&self) -> Vec<[f64; 2]> {
+        if self.pairings.iter().any(Option::is_some) {
+            self.pairing_weights.borrow().clone()
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -2277,9 +2375,18 @@ impl<'a> ProtonIntegrand<'a> {
             config_weights: None,
             alpha_s_dependent: false,
             vetoes: Vec::new(),
+            pairings: groups
+                .groups()
+                .iter()
+                .map(|g| {
+                    g.pairing_split()
+                        .map(|split| PairingAmplitudes::new(split, model))
+                })
+                .collect(),
             resonances: &[],
             #[cfg(any(test, feature = "extended-validation"))]
             madevent_mirrored_cut: false,
+            share_offsets: share_offsets(groups.groups().iter().map(|g| g.evaluator().n_configs())),
         })
     }
 
@@ -2321,9 +2428,69 @@ impl<'a> ProtonIntegrand<'a> {
                 group_histories: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 vetoed: bind_vetoes(&self.vetoes),
                 census: CensusCell::default(),
-                filter_passes: RefCell::new(vec![[true, true]; self.filters.len()]),
+                filter_passes: RefCell::new(vec![[1, 1]; self.filters.len()]),
+                pairings: self
+                    .pairings
+                    .iter()
+                    .map(|p| p.as_ref().map(PairingAmplitudes::bind))
+                    .collect(),
+                pairing_weights: RefCell::new(vec![[1.0, 1.0]; self.groups.groups().len()]),
+                shares: ShareSplit::new(
+                    self.share_count(),
+                    self.groups
+                        .groups()
+                        .iter()
+                        .map(|g| g.evaluator().n_configs())
+                        .max()
+                        .unwrap_or(0),
+                ),
             }
         })
+    }
+
+    /// The parts [`value_in_channel_shared`](Self::value_in_channel_shared)
+    /// splits a value into: per flavour group, in group order, one per
+    /// integration configuration of the group's evaluator (the order `AMP2`
+    /// takes) and one for the weight no configuration carried.
+    pub fn share_count(&self) -> usize {
+        self.share_offsets.last().copied().unwrap_or(0)
+    }
+
+    /// Group `gi`'s first part in [`share_count`](Self::share_count)'s layout.
+    pub fn share_offset(&self, gi: usize) -> usize {
+        self.share_offsets[gi]
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel), its value split over the
+    /// configurations of every flavour group and added into `shares`
+    /// ([`share_count`](Self::share_count) long).
+    ///
+    /// Each group's term, both beam orderings and every member's luminosity in
+    /// it, is divided by MadEvent's enhancement weights of the group's matrix
+    /// element at the point ([`enhancement_weights`]): the factor a grouped
+    /// MadEvent channel multiplies each of its subprocesses' integrands by,
+    /// `AMP2(CONFSUB(IPROC, c)) / Σ AMP2` over the subprocess's own
+    /// configurations. The exchanged ordering's event is the sampled one
+    /// rotated, at which every weight is the same.
+    pub fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        let sc = self.scratch();
+        sc.shares.begin();
+        let value = self.value_in_channel(channel, u);
+        sc.shares.finish(value, shares);
+        value
+    }
+
+    /// Record group `gi`'s `term` at `cm` in the thread's [`ShareSplit`].
+    fn split_term(&self, sc: &ProtonScratch<'a>, gi: usize, cm: &[V], term: f64) {
+        let sub = &sc.subs[gi];
+        let n = self.groups.groups()[gi].evaluator().n_configs();
+        let cuts = self
+            .config_weights
+            .as_ref()
+            .map(|sets| (&sets[gi], self.s_had));
+        sc.shares.split(self.share_offsets[gi], n, term, |w| {
+            enhancement_weights(vetoed_of(&sc.vetoed, gi), sub, cm, cuts, w)
+        });
     }
 
     /// The points evaluated since the integrand was built or the census last
@@ -2871,19 +3038,20 @@ impl<'a> ProtonIntegrand<'a> {
         let mut passes = sc.filter_passes.borrow_mut();
         let mut any = false;
         for (k, (p, cuts)) in passes.iter_mut().zip(&self.filters).enumerate() {
-            let direct = cuts.pass(&lab);
-            let mirrored = self.filter_mirrored[k]
-                && if self.cuts_exchanged_as_sampled() {
-                    direct
-                } else {
-                    if !built {
-                        self.exchanged_lab_into([m.x1, m.x2], cm, &mut exchanged);
-                        built = true;
-                    }
-                    cuts.pass(&exchanged)
-                };
+            let direct = cuts.pass_pairings(&lab);
+            let mirrored = if !self.filter_mirrored[k] {
+                0
+            } else if self.cuts_exchanged_as_sampled() {
+                direct
+            } else {
+                if !built {
+                    self.exchanged_lab_into([m.x1, m.x2], cm, &mut exchanged);
+                    built = true;
+                }
+                cuts.pass_pairings(&exchanged)
+            };
             *p = [direct, mirrored];
-            any |= direct || mirrored;
+            any |= direct != 0 || mirrored != 0;
         }
         any
     }
@@ -2932,9 +3100,30 @@ impl<'a> ProtonIntegrand<'a> {
     /// Group `gi`'s cut indicator on each ordering's event, `[direct, mirrored]`,
     /// at the point last cut.
     fn group_cut(&self, sc: &ProtonScratch<'a>, gi: usize) -> [bool; 2] {
-        sc.filter_passes.borrow()[self.group_filter[gi]]
+        sc.filter_passes.borrow()[self.group_filter[gi]].map(|mask| mask != 0)
     }
 
+    /// Group `gi`'s pairing weights `[direct, mirrored]` at the point last cut,
+    /// at the partonic-CM momenta `cm` and the coupling `sub` is at: the share of
+    /// its `|M|²` carried by the pairings whose filters accept each ordering's
+    /// event ([`crate::pairing`]). `None` for a group whose filter is not
+    /// pairing-weighted.
+    ///
+    /// Both orderings read the sampled point's pairing amplitudes, as they read
+    /// its `|M|²`: the exchanged event is that configuration rotated.
+    fn pairing_weights(
+        &self,
+        sc: &ProtonScratch<'a>,
+        gi: usize,
+        sub: &BoundSubprocess<'a>,
+        cm: &[V],
+    ) -> Option<[f64; 2]> {
+        let pairings = sc.pairings.get(gi)?.as_ref()?;
+        let masks = sc.filter_passes.borrow()[self.group_filter[gi]];
+        let weights = pairings.weights(masks, sub, cm);
+        sc.pairing_weights.borrow_mut()[gi] = weights;
+        Some(weights)
+    }
     /// Group `gi`'s `[direct, mirrored]` luminosities with the ordering whose
     /// event its cuts reject zeroed.
     fn cut_luminosities(&self, sc: &ProtonScratch<'a>, gi: usize, lumi: [f64; 2]) -> [f64; 2] {
@@ -2997,7 +3186,11 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             if self.group_passes(sc, gi) {
-                acc += self.group_term(sc, gi, g, sub, cm, &f1, &f2);
+                let term = self.group_term(sc, gi, g, sub, cm, &f1, &f2);
+                if sc.shares.active() {
+                    self.split_term(sc, gi, cm, term);
+                }
+                acc += term;
             }
         }
         acc
@@ -3108,7 +3301,11 @@ impl<'a> ProtonIntegrand<'a> {
             let mut term = 0.0;
             if lumi != [0.0, 0.0] {
                 self.apply_scale_to(sc, sub, scales.mu_r);
-                term = (lumi[0] + lumi[1]) * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
+                let luminosity = match self.pairing_weights(sc, gi, sub, cm) {
+                    Some([w_direct, w_mirrored]) => lumi[0] * w_direct + lumi[1] * w_mirrored,
+                    None => lumi[0] + lumi[1],
+                };
+                term = luminosity * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
             }
             out.push([
                 cut_direct.then_some(scales),
@@ -3123,7 +3320,11 @@ impl<'a> ProtonIntegrand<'a> {
                 history.filter(|_| mirrored),
             ]);
             factors.push([direct_rewgt.filter(|_| cut_direct), mirrored_rewgt]);
-            acc += g.spin_color_average() * term;
+            let term = g.spin_color_average() * term;
+            if sc.shares.active() {
+                self.split_term(sc, gi, cm, term);
+            }
+            acc += term;
         }
         acc
     }
@@ -3224,7 +3425,10 @@ impl<'a> ProtonIntegrand<'a> {
     ) -> f64 {
         let lumi = g.symmetry_weighted_luminosity_rows(f1, f2);
         let [direct, mirrored] = self.cut_luminosities(sc, gi, lumi);
-        let luminosity = direct + mirrored;
+        let luminosity = match self.pairing_weights(sc, gi, sub, cm) {
+            Some([w_direct, w_mirrored]) => direct * w_direct + mirrored * w_mirrored,
+            None => direct + mirrored,
+        };
         if luminosity == 0.0 {
             return 0.0;
         }
@@ -3501,6 +3705,7 @@ impl<'a> ProtonIntegrand<'a> {
             group_rewgt: sc.group_rewgt.borrow().clone(),
             group_records: sc.group_records.borrow().clone(),
             group_histories: sc.group_histories.borrow().clone(),
+            group_pairing_weights: sc.event_pairing_weights(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -3621,13 +3826,17 @@ impl<'a> ProtonIntegrand<'a> {
             // the ones its term of the point's value was taken at.
             let [direct_scales, mirrored_scales] = event.group_scales[gi];
             let [direct_rewgt, mirrored_rewgt] = rewgt_of(event, gi);
+            let pairing_weights = event.group_pairing_weights.get(gi).copied();
             let mut term_m2 = [0.0; 2];
             let mut rows = [no_rows; 2];
             let mut term = 0.0;
             let mut lumis = [0.0; 2];
             if let Some(scales) = direct_scales {
                 rows[0] = rows_at(scales.mu_f);
-                let lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
+                let mut lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
+                if let Some([w, _]) = pairing_weights {
+                    lumi *= w;
+                }
                 lumis[0] = lumi;
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
@@ -3639,7 +3848,11 @@ impl<'a> ProtonIntegrand<'a> {
                 // The densities are read per parton, in the representative's leg
                 // order, which the exchanged scales hold in physical beam order.
                 rows[1] = rows_at(exchanged_scales(scales).mu_f);
-                let lumi = term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
+                let mut lumi =
+                    term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
+                if let Some([_, w]) = pairing_weights {
+                    lumi *= w;
+                }
                 lumis[1] = lumi;
                 if lumi != 0.0 {
                     // The sampled point's matrix element, at the same coupling.
@@ -4102,6 +4315,14 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         ProtonIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn share_count(&self) -> usize {
+        ProtonIntegrand::share_count(self)
+    }
+
+    fn value_in_channel_shared(&self, channel: usize, u: &[f64], shares: &mut [f64]) -> f64 {
+        ProtonIntegrand::value_in_channel_shared(self, channel, u, shares)
     }
 }
 
@@ -5192,6 +5413,234 @@ mod tests {
         );
     }
 
+    /// `u~ u > u u~` compiled as its own line equals `u u~ > u u~` at the exchanged
+    /// event ([`exchange_into`]: every leg rotated by π about x, the beams swapped):
+    /// the two are one configuration with its legs listed in another order. The
+    /// pairings that differ between them are an initial-state line with a
+    /// final-state line (s channel) against two mixed lines (t channel), so the
+    /// relative Fermi sign of the two must not read the order the legs are listed
+    /// in. Controls: the distinct-flavour line, the same mirrored process with its
+    /// outgoing legs listed the other way, and C-conjugate lines at one point.
+    #[test]
+    fn antiquark_first_line_with_its_flavour_in_the_final_state() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let m2 = |process: &str, ext: &[V]| {
+            let set = enumerate(process, &m)
+                .into_iter()
+                .find(|s| !s.diagrams.is_empty())
+                .expect("enumerates");
+            let eval = compile_class(&set, &m, &evaluated).expect("compiles");
+            let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+            bound.eval_m2(ext, &mut bound.scratch_space())
+        };
+        let agree = |what: &str, a: f64, b: f64| {
+            let rel = (a - b).abs() / a;
+            assert!(
+                rel < 1e-12,
+                "{what}: {a:.12e} against {b:.12e}, rel {rel:.3e}"
+            );
+        };
+        let (th, ph, e) = (0.7f64, 0.3f64, 250.0);
+        let k = [
+            e * th.sin() * ph.cos(),
+            e * th.sin() * ph.sin(),
+            e * th.cos(),
+        ];
+        let cm = vec![
+            V::new(e, 0.0, 0.0, e),
+            V::new(e, 0.0, 0.0, -e),
+            V::new(e, k[0], k[1], k[2]),
+            V::new(e, -k[0], -k[1], -k[2]),
+        ];
+        let mut exchanged = Vec::new();
+        exchange_into(&cm, &mut exchanged);
+        for (direct, mirrored) in [
+            ("u u~ > u u~", "u~ u > u u~"),
+            ("u u~ > d d~", "u~ u > d d~"),
+        ] {
+            agree(
+                &format!("{direct} against {mirrored} at the exchanged event"),
+                m2(direct, &cm),
+                m2(mirrored, &exchanged),
+            );
+        }
+        let swapped = vec![exchanged[0], exchanged[1], exchanged[3], exchanged[2]];
+        agree(
+            "u u~ > u u~ against u~ u > u~ u at the exchanged event, outgoing legs swapped",
+            m2("u u~ > u u~", &cm),
+            m2("u~ u > u~ u", &swapped),
+        );
+        // QCD is C-invariant: a line equals its conjugate at the same momenta.
+        for (quarks, antiquarks) in [
+            ("u u > u u", "u~ u~ > u~ u~"),
+            ("u c > u c", "u~ c~ > u~ c~"),
+            ("u u~ > u u~", "u~ u > u~ u"),
+            ("u u~ > u~ u", "u~ u > u u~"),
+        ] {
+            agree(
+                &format!("{quarks} against {antiquarks}"),
+                m2(quarks, &cm),
+                m2(antiquarks, &cm),
+            );
+        }
+    }
+
+    /// Under the pairing-weighted `cut_decays` exemption each ordering's term of
+    /// an accepted point carries the weight of the event that ordering writes:
+    /// `Σ_p |M_p|² / Σ_q |M_q|²` over the pairings whose filters accept that
+    /// event, with the mirrored ordering's per-pairing amplitudes compiled from
+    /// **its own** process line and evaluated at the exchanged event. Between
+    /// beams of 6500 and 4000 GeV with a tight rapidity cut, so the two events
+    /// often pass different pairings.
+    ///
+    /// What it cannot see: anything the integrand and this oracle share, the
+    /// filters' thresholds and the representative's compiled amplitude; the
+    /// partition of the diagrams into pairings is read with the same
+    /// [`ForcedResonances`] on both sides.
+    #[test]
+    fn each_ordering_carries_the_pairing_weight_of_its_event() {
+        use crate::cuts::{diagram_forced_lines, ForcedResonances};
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  F = cut_decays\n  20.0 = ptj\n  1.5 = etaj\n  \
+             0.4 = drjj\n  4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        // A line whose initial state lists both orderings, so `d d~` carries its
+        // mirror. The beam quarks are not the identical ones, so the mirrored
+        // line's own amplitude is the representative's at the exchanged event.
+        let proc_card = parse_proc_card(
+            "define q = d d~\ngenerate q q > z u u~, z > u u~",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets = generate_from_proc_card(&proc_card, &m).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &card).expect("flavour groups");
+        let gi = groups
+            .groups()
+            .iter()
+            .position(FlavorGroup::has_mirror)
+            .expect("a mirrored group");
+        let g = &groups.groups()[gi];
+        assert!(g.cuts().is_pairing_weighted());
+        assert_eq!(g.pairing_split().map(PairingSplit::len), Some(4));
+        let pdf = beam_asymmetric_pdf();
+        let amps = bind_all(&groups, &evaluated);
+        let (e1, e2) = (6500.0, 4000.0);
+        let integ = ProtonIntegrand::new(
+            &groups,
+            &amps,
+            &evaluated,
+            &pdf,
+            ProtonBeams::new(e1, e2),
+            MU_F,
+        )
+        .expect("integrand");
+
+        // Per pairing, its products and the amplitude over its diagrams, compiled
+        // here from the set of each ordering's own process line.
+        let parts = |set: &DiagramSet| -> Vec<(u64, AmplitudeEvaluator)> {
+            let forced = ForcedResonances::of(&set.diagrams, &evaluated);
+            forced
+                .pairings()
+                .iter()
+                .map(|p| {
+                    let subset = DiagramSet {
+                        diagrams: set
+                            .diagrams
+                            .iter()
+                            .filter(|d| diagram_forced_lines(d, &evaluated) == p.lines())
+                            .cloned()
+                            .collect(),
+                        ..set.clone()
+                    };
+                    let eval = compile_class(&subset, &m, &evaluated).expect("pairing compiles");
+                    (p.products(), eval)
+                })
+                .collect()
+        };
+        let direct_parts = parts(g.diagram_set());
+        let set = g.diagram_set();
+        let swapped = format!(
+            "{} {} > z u u~, z > u u~",
+            set.particles_in[1], set.particles_in[0]
+        );
+        let mirror_set = enumerate(&swapped, &m)
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("the mirrored ordering enumerates");
+        let mirror_parts = parts(&mirror_set);
+        let weight = |parts: &[(u64, AmplitudeEvaluator)], ext: &[V], passed: u64| -> f64 {
+            let m2: Vec<(u64, f64)> = parts
+                .iter()
+                .map(|(products, eval)| {
+                    let bound = BoundAmplitude::<f64>::bind(eval, &evaluated);
+                    (*products, bound.eval_m2(ext, &mut bound.scratch_space()))
+                })
+                .collect();
+            let total: f64 = m2.iter().map(|(_, v)| v).sum();
+            let kept: f64 = m2
+                .iter()
+                .filter(|(products, _)| g.cuts().pairing_bit(*products).unwrap() & passed != 0)
+                .map(|(_, v)| v)
+                .sum();
+            kept / total
+        };
+
+        let events = find_events(&integ, 0x9A1_12E5, |_| true, 300);
+        let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(f64::MIN_POSITIVE);
+        let (mut worst, mut fractional, mut differ) = (0.0f64, 0, 0);
+        let mut exchanged = Vec::new();
+        for event in &events {
+            let lab = integ.record_momenta(event, BeamOrdering::Direct);
+            let written = integ.record_momenta(event, BeamOrdering::Exchanged);
+            exchange_into(&event.cm, &mut exchanged);
+            let passed = [
+                g.cuts().pass_pairings(&lab),
+                g.cuts().pass_pairings(&written),
+            ];
+            let want = [
+                if passed[0] != 0 {
+                    weight(&direct_parts, &event.cm, passed[0])
+                } else {
+                    0.0
+                },
+                if passed[1] != 0 {
+                    weight(&mirror_parts, &exchanged, passed[1])
+                } else {
+                    0.0
+                },
+            ];
+            let got = event.group_pairing_weights[gi];
+            for o in 0..2 {
+                if passed[o] != 0 {
+                    worst = worst.max(rel(got[o], want[o]));
+                    fractional += usize::from(want[o] > 0.0 && want[o] < 1.0);
+                }
+            }
+            differ += usize::from(passed[0] != passed[1] && passed[0] != 0 && passed[1] != 0);
+        }
+        eprintln!(
+            "pairing weights: worst {worst:.2e} against each written event's own; \
+             {fractional} fractional weights; {differ} points whose orderings pass different \
+             pairings"
+        );
+        assert!(
+            worst < 1e-10,
+            "a pairing weight is off its event's by {worst:.2e}"
+        );
+        assert!(
+            fractional > 50,
+            "only {fractional} fractional weights compared"
+        );
+        assert!(
+            differ > 10,
+            "only {differ} points pass different pairings per ordering"
+        );
+    }
+
     /// Every group paired with the compiled matrix element of its mirrored beam
     /// ordering, asserted to be the same process.
     fn mirror_pairs<'a>(
@@ -5838,6 +6287,7 @@ mod tests {
             group_rewgt: sc.group_rewgt.borrow().clone(),
             group_records: sc.group_records.borrow().clone(),
             group_histories: sc.group_histories.borrow().clone(),
+            group_pairing_weights: sc.event_pairing_weights(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         };
@@ -6807,7 +7257,7 @@ mod tests {
         content_ordered(sets.to_vec(), m, evaluated, run_card)
             .expect("content order")
             .iter()
-            .map(|set| {
+            .map(|(set, _)| {
                 let evaluator = compile_class(set, m, evaluated).expect("compile");
                 let bound = BoundAmplitude::<F>::bind(&evaluator, evaluated);
                 let mut scratch = bound.scratch_space();
@@ -6997,6 +7447,148 @@ mod tests {
     /// reference consumes each point by point exactly as a serial integrator
     /// would, written out rather than shared with the implementation so the two
     /// cannot drift together.
+    /// A hadronic point's value is split over every flavour group's
+    /// configurations by the group's own `AMP2` fractions, and an integration's
+    /// shares add up to its cross section; every member of every group is found
+    /// among the enumerated sets.
+    ///
+    /// On `p p > l+ l- j` at a clustered scale (each group draws its own
+    /// configuration), every configuration is `O(αs α²)`, so a group's fractions
+    /// read at the bound coupling are the ones its term was split by at the
+    /// event's. Pointwise the shares sum to the value and stand in each group in
+    /// the ratios of that group's `AMP2` at the point; over the integration they
+    /// sum to every channel's term and to σ, and no weight goes unattributed.
+    #[test]
+    fn hadronic_shares_follow_each_groups_amp2_and_sum_to_sigma() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 False = fixed_ren_scale\n  False = fixed_fac_scale1\n\
+             \x20 False = fixed_fac_scale2\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n",
+        )
+        .expect("dynamical run card");
+        let sets = enumerate(LLJ, &m);
+        let groups =
+            derive_flavor_groups(sets.clone(), &m, &evaluated, &card).expect("flavour groups");
+        for g in groups.groups() {
+            let origins = g
+                .member_origins(&sets, &m)
+                .expect("every member is enumerated");
+            assert_eq!(origins.len(), g.members().len());
+            for (o, member) in origins.iter().zip(0..) {
+                assert_eq!(
+                    sets[o.set]
+                        .with_final_order(&o.final_order, &m)
+                        .map(|r| r.label()),
+                    Some(g.member_diagram_set(member).label())
+                );
+            }
+        }
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+            .expect("the dynamical prescription compiles");
+        let n = integ.share_count();
+        let n_groups = groups.groups().len();
+        assert_eq!(
+            n,
+            groups
+                .groups()
+                .iter()
+                .map(|g| g.evaluator().n_configs() + 1)
+                .sum::<usize>()
+        );
+
+        let ndim = integ.point_ndim();
+        let mut s = SubStream::from_stream(0x5EED_5D, 4);
+        let mut checked = 0;
+        for i in 0..600 {
+            let u = s.uniforms::<f64>(ndim);
+            let channel = i % integ.channel_count();
+            let mut shares = vec![0.0; n];
+            let value = integ.value_in_channel_shared(channel, &u, &mut shares);
+            assert_eq!(
+                value.to_bits(),
+                integ.value_in_channel(channel, &u).to_bits()
+            );
+            if value == 0.0 {
+                continue;
+            }
+            let summed: f64 = shares.iter().sum();
+            assert!(
+                (summed - value).abs() <= 1e-12 * value.abs(),
+                "{summed} of {value}"
+            );
+            let cm = integ.scratch().cm_buf.borrow().clone();
+            for (gi, g) in groups.groups().iter().enumerate() {
+                let at = integ.share_offset(gi);
+                let k = g.evaluator().n_configs();
+                let part = &shares[at..at + k];
+                assert_eq!(shares[at + k], 0.0, "group {gi} left weight unattributed");
+                let group_total: f64 = part.iter().sum();
+                if group_total == 0.0 {
+                    continue;
+                }
+                let bound = BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated);
+                let mut scratch = bound.scratch_space();
+                let mut amp2 = vec![0.0; k];
+                bound.eval_amp2(&cm, &mut scratch, &mut amp2);
+                let amp2_total: f64 = amp2.iter().sum();
+                for c in 0..k {
+                    let want = group_total * amp2[c] / amp2_total;
+                    assert!(
+                        (part[c] - want).abs() <= 1e-11 * group_total,
+                        "group {gi} configuration {c}: {} against {want}",
+                        part[c]
+                    );
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked > 20, "{checked} points carried weight");
+
+        let (per_channel, total, _) = integ.adapt_grids_budget(
+            Budget::Fixed {
+                neval: 3000,
+                niter: 3,
+            },
+            BlockAllocation::ByAlpha,
+            0x5EED_5E,
+            &StopSignal::default(),
+        );
+        let mut summed = vec![0.0; n];
+        for c in &per_channel {
+            let own: f64 = c.shares.iter().map(|r| r.integral).sum();
+            assert!(
+                (own - c.result.integral).abs() <= 1e-12 * c.result.integral.abs(),
+                "{own:e} against {:e}",
+                c.result.integral
+            );
+            for (acc, r) in summed.iter_mut().zip(&c.shares) {
+                *acc += r.integral;
+            }
+        }
+        let sum: f64 = summed.iter().sum();
+        assert!((sum - total.integral).abs() <= 1e-12 * total.integral);
+        for gi in 0..n_groups {
+            let at = integ.share_offset(gi);
+            let k = groups.groups()[gi].evaluator().n_configs();
+            assert!(
+                summed[at..at + k].iter().sum::<f64>() > 0.0,
+                "group {gi} carries nothing"
+            );
+            assert_eq!(summed[at + k], 0.0);
+        }
+    }
+
     #[test]
     fn the_parallel_integration_reproduces_a_sequential_one() {
         let m = model();
@@ -9727,6 +10319,7 @@ mod tests {
             group_rewgt: Vec::new(),
             group_records: Vec::new(),
             group_histories: Vec::new(),
+            group_pairing_weights: Vec::new(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         };

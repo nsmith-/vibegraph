@@ -24,14 +24,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
 
+use crate::amplitude_probe::{self, ProbeError, PROBE_REL_TOL};
 use crate::artifact::{channel_map_digest, IntegrateArtifact};
 use crate::cuts::{Cuts, ForcedResonances};
-use crate::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
-};
+use crate::diagrams::{forbidden_onshell_ids, DiagramSet, SupportedCard};
 use crate::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
+    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, InitialState, Observable,
 };
 use crate::helas::eval::BoundAmplitude;
 use crate::lhef::build::SubprocessRecord;
@@ -41,10 +40,11 @@ use crate::lhef::emit::{
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
-    multiplicity_groups, multiplicity_maps, refuse_exchanged_beam_orderings,
+    multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
-use crate::onshell::subprocess_vetoes;
+use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
+use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
@@ -53,7 +53,6 @@ use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
 use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
 use crate::systematics::request::{DynScale, VariationRequest};
-use crate::ufo::identity::ModelIdentity;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::{MaxRule, NoUsableWeight, ScanBudget, UnweightStats, Unweighter};
 
@@ -130,8 +129,6 @@ pub struct GenerateOptions<'a> {
     /// The reweighting hypotheses, resolved against the model, and how to
     /// evaluate them; `None` writes no `<rwgt>` block.
     pub reweight: Option<(Vec<Launch>, ReweightOptions)>,
-    /// The pool the process is enumerated on.
-    pub enumeration: EnumerationPool,
     /// The event file to write. A file whose reweighting fails its audit is
     /// removed.
     pub out: PathBuf,
@@ -142,13 +139,14 @@ pub struct GenerateOptions<'a> {
     pub on_scan: Option<&'a (dyn Fn(f64) + Sync)>,
 }
 
-/// What an artifact was integrated against and a generation reads again: the
-/// parsed proc card, the model, and on proton beams the parton densities.
+/// What a generation rebuilds from an artifact, or reads besides it: the parsed
+/// proc card, the model, and on proton beams the parton densities. The diagram
+/// sets are the artifact's own ([`IntegrateArtifact::sets`]).
 #[derive(Clone, Copy)]
 pub struct GenerateAssets<'a> {
     /// The artifact's recorded proc card, as this build parses it.
     pub card: &'a SupportedCard,
-    /// The model that card names, at the digest the artifact records.
+    /// The model the artifact embeds ([`IntegrateArtifact::loaded_model`]).
     pub model: &'a UFOModel,
     /// `model` evaluated at the parameters the artifact records
     /// (`ufo::bind::bind_recorded`).
@@ -197,18 +195,10 @@ pub enum GenerateError {
          re-integrate"
     )]
     ProcessReparsed { recorded: String, reparsed: String },
-    /// The model the recorded proc card resolves to is not the one the artifact
-    /// was integrated against.
-    #[error(
-        "model {label} at {location} has digest {got}; the grid was integrated against {want}: \
-         its files changed after vibegraph integrate ran; re-integrate, or restore them"
-    )]
-    ModelChanged {
-        label: String,
-        location: String,
-        got: String,
-        want: String,
-    },
+    /// This build does not reproduce the matrix element the artifact banked at
+    /// its amplitude probe points, or cannot recompute it.
+    #[error(transparent)]
+    AmplitudeProbe(#[from] ProbeError),
     /// A proton artifact's recorded collider energy is not the `2√(E₁E₂)` its
     /// recorded beams give: its grids were trained on the frames of another
     /// collision energy.
@@ -228,6 +218,17 @@ pub enum GenerateError {
     /// The weight scan of the artifact's grids found no point carrying weight.
     #[error(transparent)]
     NoUsableWeight(#[from] NoUsableWeight),
+    /// A reweight card on a process whose `cut_decays = F` filter is
+    /// pairing-weighted: a reweighting ratio is taken on the whole `|M|²`, while
+    /// the event's weight also carries the pairing weight
+    /// `Σ_p |M_p|² / Σ_q |M_q|²`, which moves with the parameters reweighted.
+    #[error(
+        "'{process}': the cut_decays = F exemption varies across pairings or subprocesses, so \
+         each carries its own weight, a share of |M|²; reweighting takes its ratios on the \
+         whole |M|² and would leave that weight at the original parameters. Integrate with \
+         cut_decays = T, or generate without the reweight card"
+    )]
+    ReweightPairingWeighted { process: String },
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -235,6 +236,25 @@ pub enum GenerateError {
 
 fn err(msg: impl Into<String>) -> GenerateError {
     GenerateError::Other(msg.into())
+}
+
+/// Refuse a reweight card on a process one of whose cut filters is
+/// pairing-weighted ([`GenerateError::ReweightPairingWeighted`]); `filters`
+/// pairs each filter with the process line it is named by.
+fn refuse_reweighting_pairing_weights<'c>(
+    reweighting: bool,
+    filters: impl IntoIterator<Item = (&'c Cuts, String)>,
+) -> Result<(), GenerateError> {
+    if !reweighting {
+        return Ok(());
+    }
+    match filters
+        .into_iter()
+        .find(|(cuts, _)| cuts.is_pairing_weighted())
+    {
+        Some((_, process)) => Err(GenerateError::ReweightPairingWeighted { process }),
+        None => Ok(()),
+    }
 }
 
 /// Refuse an artifact whose recorded proc card no longer parses, in this build,
@@ -250,25 +270,26 @@ pub fn check_process(artifact: &IntegrateArtifact, reparsed: &str) -> Result<(),
     })
 }
 
-/// Refuse a model whose digest is not the one the artifact recorded. `found` is
-/// the identity of the model the recorded proc card resolved to, and `location`
-/// says where it was read from, for the message. The interned Standard Model is
-/// checked the same way, so a build whose compiled-in model differs from the
-/// integrating build's is refused too.
-pub fn check_model(
+/// Refuse a build that no longer computes the matrix element `artifact` was
+/// integrated with: every banked amplitude probe point is recomputed under
+/// `evaluated` and must agree to [`PROBE_REL_TOL`] ([`crate::amplitude_probe`]).
+pub fn check_amplitude_probe(
     artifact: &IntegrateArtifact,
-    found: &ModelIdentity,
-    location: &str,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
 ) -> Result<(), GenerateError> {
-    if artifact.model.digest == found.digest {
-        return Ok(());
-    }
-    Err(GenerateError::ModelChanged {
-        label: found.label(),
-        location: location.to_string(),
-        got: found.digest.clone(),
-        want: artifact.model.digest.clone(),
-    })
+    amplitude_probe::check(&artifact.amplitude_probe, &artifact.sets, model, evaluated)?;
+    let points: usize = artifact
+        .amplitude_probe
+        .iter()
+        .map(|p| p.points.len())
+        .sum();
+    info!(
+        "amplitude probe: {points} points over {} diagram sets reproduce the banked |M|² to \
+         {PROBE_REL_TOL:e}",
+        artifact.sets.len()
+    );
+    Ok(())
 }
 
 /// Refuse a proton artifact whose recorded collider energy is not the one its
@@ -307,7 +328,9 @@ pub fn check_collider_energy(
 /// installed rather than re-surveyed; a process whose channels do not match the
 /// banked grids, position by position, is refused, and so is a proton artifact
 /// whose recorded collider energy its recorded beams no longer give
-/// ([`check_collider_energy`]).
+/// ([`check_collider_energy`]), and a build that no longer reproduces the
+/// artifact's amplitude probe ([`check_amplitude_probe`]). The diagram sets are
+/// the artifact's; nothing is enumerated.
 pub fn generate(
     artifact: &IntegrateArtifact,
     assets: &GenerateAssets<'_>,
@@ -316,6 +339,7 @@ pub fn generate(
 ) -> Result<EmitSummary, GenerateError> {
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
     check_collider_energy(artifact, assets.card)?;
+    check_amplitude_probe(artifact, assets.model, assets.evaluated)?;
     if assets.card.is_decay() && settings.systematics.enabled {
         warn!(
             "use_syst = T on a decay: no <mgrwt> record and no systematics weights are written, \
@@ -385,15 +409,14 @@ fn generate_sample(
     let rc = &artifact.run_card;
     let nevents = settings.nevents as usize;
     let launches = options.reweight.clone();
-    let sets = generate_from_proc_card_in(parsed, model, options.enumeration)
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    refuse_mixed_multiplicity(&sets).map_err(err)?;
-    refuse_one_body_final_state(&sets).map_err(err)?;
-    refuse_exchanged_beam_orderings(&sets).map_err(err)?;
-    let evals = compile_subprocesses(&sets, model, evaluated)
+    let sets = &artifact.sets;
+    refuse_mixed_multiplicity(sets).map_err(err)?;
+    refuse_one_body_final_state(sets).map_err(err)?;
+    refuse_exchanged_beam_orderings(sets).map_err(err)?;
+    let evals = compile_subprocesses(sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
-        &sets,
+        sets,
         &evals,
         &forbidden_onshell(parsed, model)?,
         evaluated,
@@ -415,6 +438,8 @@ fn generate_sample(
         .collect();
     let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
         .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    refuse_vetoed_pairing_weights(sets, &vetoes, &cuts).map_err(|e| err(e.to_string()))?;
+    refuse_reweighting_pairing_weights(launches.is_some(), [(&cuts, artifact.process.clone())])?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
@@ -457,15 +482,18 @@ fn generate_sample(
         Vec::new()
     };
 
+    let pairing_splits = subprocess_pairing_splits(sets, &cuts, model, evaluated)
+        .map_err(|e| err(format!("failed to compile the pairing amplitudes: {e}")))?;
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
+    integ.use_pairing_weights(&pairing_splits, evaluated);
     integ.use_resonances(&resonances);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
     integ
-        .use_running_coupling(&diagrams, model, evaluated, rc)
+        .use_running_coupling(&subprocess_diagrams(sets), model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
 
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
@@ -894,9 +922,22 @@ fn generate_proton_sample(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
-    let MultiplicityGroups { groups, vetoes } =
-        multiplicity_groups(parsed, model, evaluated, rc, options.enumeration).map_err(err)?;
+    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of(
+        artifact.sets.clone(),
+        &forbidden_onshell(parsed, model)?,
+        model,
+        evaluated,
+        rc,
+    )
+    .map_err(err)?;
     refuse_rounding_on_mixed_multiplicity(options.strategy, groups.len())?;
+    refuse_reweighting_pairing_weights(
+        launches.is_some(),
+        groups
+            .iter()
+            .flat_map(FlavorGroups::groups)
+            .map(|g| (g.cuts(), artifact.process.clone())),
+    )?;
     let mut parts_records = Vec::with_capacity(groups.len());
     // Under matching every record lists the resonances the clustering found on
     // their Breit–Wigner, whatever the card's decays.
@@ -1751,6 +1792,7 @@ mod tests {
         let (run_card, settings) = RunCard::default().split().expect("the default card splits");
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
+            enumeration_version: crate::diagrams::artifact::ENUMERATION_VERSION,
             process: "u u~ > e+ e-".to_string(),
             proc_card: text.to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
@@ -1779,6 +1821,7 @@ mod tests {
                 sigma_err_pb: 0.01,
                 chi2_per_dof: Some(1.0),
                 sampler: None,
+                members: Vec::new(),
             }],
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
@@ -1788,6 +1831,14 @@ mod tests {
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: String::new(),
             alpha_floor: None,
+            embedded: crate::artifact::EmbeddedModel::of(
+                &crate::ufo::loaded::LoadedModel::interned_sm(SMRestrict::Default),
+            ),
+            param_card: None,
+            sets: Vec::new(),
+            diagram_set_digest: crate::diagrams::artifact::diagram_set_digest(&[]),
+            amplitude_probe: Vec::new(),
+            configurations: Vec::new(),
         }
     }
 
@@ -1859,42 +1910,6 @@ mod tests {
                 && why.contains("`u u~ > e+ e-`")
                 && why.contains("re-integrate"),
             "{why}"
-        );
-    }
-
-    /// The model is checked by digest alone. The interned SM at the recorded
-    /// restriction passes; another restriction, and the same label over
-    /// different contents, are both refused, naming the model, where it was
-    /// read and both digests.
-    #[test]
-    fn a_model_whose_digest_moved_is_refused() {
-        use crate::ufo::sm::SMRestrict;
-        let artifact = proton_artifact();
-        let same = ModelIdentity::interned_sm(SMRestrict::Default);
-        assert!(check_model(&artifact, &same, "(built in)").is_ok());
-
-        let other = ModelIdentity::interned_sm(SMRestrict::NoBMass);
-        let why = check_model(&artifact, &other, "(built in)")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            why.starts_with("model sm-no_b_mass at (built in) has digest"),
-            "{why}"
-        );
-
-        let mut altered = same.clone();
-        altered.digest = crate::ufo::identity::digest_bytes(b"a different restrict card");
-        let why = check_model(&artifact, &altered, "/models/sm")
-            .unwrap_err()
-            .to_string();
-        assert_eq!(
-            why,
-            format!(
-                "model sm-default at /models/sm has digest {}; the grid was integrated against \
-                 {}: its files changed after vibegraph integrate ran; re-integrate, or restore \
-                 them",
-                altered.digest, artifact.model.digest
-            )
         );
     }
 
@@ -1973,7 +1988,6 @@ mod tests {
             scan_points: ScanBudget::PerChannel(10),
             max_rule: MaxRule::Extremum,
             reweight: None,
-            enumeration: EnumerationPool::default(),
             out: out.clone(),
             artifact_label: "grid.bin.zst".to_string(),
             on_scan: None,

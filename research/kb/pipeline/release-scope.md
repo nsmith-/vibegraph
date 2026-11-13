@@ -127,23 +127,28 @@ figure lived outside the repository and is not recoverable. Note 38 §5 is the
 record of its numbers.
 
 The third is **`cut_decays = F` with identical particles across a decay**.
-MadEvent exempts its single pairing's decay products from the cuts. vibegraph
-keeps every pairing, so it exempts only a leg that is a decay product in every
-pairing. On `g g > z u u~, z > u u~` that cuts all four quarks: −26% against
-MadGraph, −6.8% on the whole `g g > z j j, z > j j` card. The deviation was
-registered in sprint H (D5) and kept for v0.2 (sprint I, D2). No exemption
-on the full every-pairing |M|² is IR-safe: an exempt quark is a core quark of
-another pairing, so its beam-collinear limit diverges
+MadEvent keeps one pairing and exempts that pairing's decay products from the
+cuts. vibegraph keeps every pairing coherently, and each pairing exempts its own
+decay products through a pairing-weighted cut, Σ_p w_p Θ_p |M|² with
+w_p = |M_p|²/Σ_q |M_q|²: MadGraph's exemption, applied per pairing, with the
+interference between pairings shared out by the weights. This is the only
+behaviour; there is no `--madgraph-compat` switch for it (sprint J, option A),
+and MadGraph's single pairing stays site (d) of
+[madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md).
+σ on such cards is therefore an **attributed difference, not a match**: on
+`g g > z u u~, z > u u~` vibegraph reads +0.6% above MadGraph, the sum of −0.46%
+from the interference between pairings and +0.84% from the window (vibegraph's
+union over pairings against MadGraph's own pairing's window); the exemption
+contributes nothing; +0.1% at `cut_decays = T`. On the whole
+`g g > z j j, z > j j` card the difference is +0.05%. A per-event reading of
+MadGraph's rule on vibegraph's events closes on MadGraph's σ to 0.2%
 ([identical particles across decays](../process/identical-particles-across-decays.md)).
-
-After v0.2 both identical-particle deviations change shape (sprint I, D3).
-- **By default,** vibegraph keeps every pairing and applies `cut_decays = F`
-  through a pairing-weighted cut, Σ_p w_p Θ_p |M|² with w_p = |M_p|²/Σ_q |M_q|².
-- **With `--madgraph-compat`,** MadGraph's single pairing and its exemption
-  are reproduced.
-
-The flag defaults to off at every site, and the banked MadGraph gates run with
-it on.
+Until v0.2.1 vibegraph cut every leg that was not a decay product in every
+pairing (−26% on that card; sprint H D5, sprint I D2). No exemption on the full
+every-pairing |M|² is IR-safe; the weighted one is, because each pairing's
+exemption multiplies that pairing's own share of |M|², and a card where some
+pairing's own |M_p|² is not integrable over its filter (a multi-body decay
+with massless products) is refused.
 
 The second is **MadEvent's small-width treatment**. Below `Γ = M·1e-6`
 MadEvent evaluates the propagator at the floored width and corrects the

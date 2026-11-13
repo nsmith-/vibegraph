@@ -28,7 +28,7 @@ It splits into three factors:
 | factor | size | kind |
 |---|--:|---|
 | δ widened by the printed χ²/dof | ×1.4–1.5 | measurement definition ([protocol §5](end-to-end-timing-protocol.md)) |
-| musl allocator | ×1.15 | release build ([backlog](../backlog/performance/musl-release-assets-anti-scale-with-threads.md)) |
+| musl allocator (v0.2.0 assets only; fixed in v0.2.1) | ×1.15 | release build ([musl allocator thread scaling](musl-allocator-thread-scaling.md)) |
 | real gap, glibc build, consistency-scaled δ | **×2.40** | performance |
 
 - **The printed χ²/dof is the wrong statistic for δ.** It reads 1.49–1.82 on this row. The

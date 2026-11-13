@@ -53,15 +53,15 @@ fix.
     evaluates fewer diagrams. MadGraph's pairing must be carried out of
     `stitch_set` (the forced-line patterns cannot name it).
   - **Off (the default):** every pairing coherently, the window union, and
-    `cut_decays = F` through the pairing-weighted cut
-    ([cut-decays-identical-quarks-cut-a-stricter-observable](../validation/cut-decays-identical-quarks-cut-a-stricter-observable.md)).
-    Until that is implemented, the default is D2's stricter rule: only legs that
-    are decay products in every pairing are exempt.
-  - **Size:** about −0.2% for the pairing; −26% / −6.8% for the stricter cut on
-    `g g > z u u~, z > u u~` / `g g > z j j, z > j j` at `cut_decays = F`
-    (H-K1).
+    `cut_decays = F` through the pairing-weighted cut Σ_p w_p Θ_p |M|²
+    (implemented in v0.2.1, sprint J).
+  - **Size:** +0.60% (F) / +0.10% (T) on `g g > z u u~, z > u u~`, +0.05% on
+    `g g > z j j, z > j j` at F (sprint J close-out): per event −0.46%
+    interference and +0.84% window union, zero from the exemption.
   - **History:** registered deviations (user, 2026-09-26 and 2026-11-06);
-    D3 (2026-11-08) puts MadGraph's behaviour behind the flag.
+    D3 (2026-11-08) puts MadGraph's behaviour behind the flag; option A (user,
+    2026-11-11): no flag is built in sprint J, and MadGraph's single pairing
+    stays this site.
   - **No exemption on the full every-pairing |M|² is IR-safe.** MadGraph's
     configuration-1 legs (H-C2) and the kinematic window rule (I-C1) both leave
     an exempt quark uncut where it is a core quark of another pairing.

@@ -1,6 +1,6 @@
 # Command line
 
-The `vibegraph` binary has four commands. Two of them are the generator, and
+The `vibegraph` binary has five commands. Two of them are the generator, and
 the split between them mirrors MadEvent's survey-and-refine phase followed
 by its event-generation phase:
 
@@ -11,24 +11,83 @@ by its event-generation phase:
    `--neval × --niter` under `--fixed-budget`.
 2. **`vibegraph generate`** reloads the artifact, unweights against the
    frozen grids by accept/reject, and writes a Les Houches event file. It
-   takes the artifact and no card: the cards `integrate` read are recorded in
-   it.
+   takes the artifact and no card: the cards `integrate` read, the model
+   itself and the diagrams are recorded in it, so a worker needs the binary,
+   the artifact and, at proton beams, the PDF set, and nothing else.
 
 The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
 references. The fourth, **`vibegraph inspect`**, prints the results a saved
 `grid.bin.zst` records (σ, its error, χ²/dof, the factorization scale, each
-multiplicity's and each channel's share) without re-running anything.
+multiplicity's and each channel's share) without re-running anything, and
+with `--ranking` writes its configurations ranked by their share of σ as
+JSON ([below](#ranking-the-diagrams)).
 
-A fifth, `vibegraph enumerate`, is planned: it will take a process card
-and report every diagram that contributes, as drawings, a summary page and
-a binary artifact `integrate` can take instead of enumerating again, so
-that a user can check that a card means the process they intended and
-nothing more, the way MadGraph's `display diagrams` is used.
+The fifth, **`vibegraph enumerate`**, takes a process card and reports every
+diagram that contributes, so that a user can check that a card means the
+process they intended and nothing more, the way MadGraph's `display diagrams`
+is used. It is described [below](#enumerating-diagrams). `integrate` takes
+the `diagrams.bin.zst` it writes in place of a proc card, told apart by
+content, and then enumerates nothing and reads no UFO directory: the card and
+the restricted model are the artifact's.
 
 The [command reference](reference.md) lists every option of each command;
 this page is about how they fit together. The physics behind each
 step is the subject of the [guided tour](../guide/01-pipeline.md).
+
+## Enumerating diagrams
+
+```sh
+vibegraph enumerate proc_card.dat --out diagrams/
+```
+
+writes three things into `--out` (the current directory by default):
+
+- `diagrams.bin.zst`, the diagram artifact: the card, the restricted model it
+  was enumerated against, every subprocess's diagrams in enumeration order,
+  and a digest of them;
+- `diagrams.json`, a summary: per subprocess (`s0`, `s1`, … in enumeration
+  order) its label, diagram count, coupling-order histogram, integration
+  configurations (`c0`, `c1`, …, MadGraph's `AMP2` grouping) and the contact
+  diagrams that have none; per diagram (`s3.d17`) its propagators, vertices,
+  coupling orders, configuration and drawing;
+- `svg/<set>/<diagram>.svg`, one drawing per diagram, its external legs
+  labelled with their particle and their index in the subprocess. `--svg`
+  selects them: `all`, `none`, or `first=N` per subprocess (the default is
+  `first=500`, which draws every diagram of most cards; drawing costs about a
+  millisecond and 5 KB per diagram).
+
+It refuses to overwrite any of the three without `--force`, before reading the
+card. Given `--run-card` or `--param-card`, the summary also previews the
+flavour groups `integrate` would form under those cards (the one not given
+takes `integrate`'s default), and records which cards it used; without
+either, it reports no grouping, since the grouping depends on both cards.
+
+### Ranking the diagrams
+
+Once a run has integrated (from the card or from `diagrams.bin.zst`),
+
+```sh
+vibegraph inspect grid.bin.zst --ranking ranking.json --diagrams diagrams/
+```
+
+writes a JSON document that ranks the run's integration configurations
+(`s0.c3`: `diagrams.json`'s configuration `c3` of subprocess `s0`) by σ_c,
+their share of the cross section under MadEvent's `AMP2` partition, with each
+one's diagrams, share and cumulative share, the channels that sample it and,
+at proton beams, the flavour group it stands for. Contact diagrams and the
+weight no configuration carried are listed apart, and the sampler's own
+per-channel σⱼ is reported as a diagnostic, not as a ranking: it measures
+which channel drew the points, not which diagrams matter. Everything is read
+from the artifact; nothing is integrated again.
+
+`--diagrams` pairs the ranking with an `enumerate` output directory (or its
+`diagrams.json`): it is refused unless the two record the same
+`diagram_set_digest`, and each diagram's `svg` is then the drawing
+`diagrams.json` records, relative to that directory. Without it, each carries
+the conventional `svg/<set>/<diagram>.svg`. `--ranking -` writes to stdout,
+and an existing file is kept unless `--force` is given. The schema is in the
+knowledge bundle (`research/kb/pipeline/ranking-json.md`).
 
 ## Cards
 
@@ -181,9 +240,16 @@ printf 'import model SMEFTsim_topU3l_MwScheme_UFO-massless\ngenerate e+ e- > t t
   | vibegraph integrate - --ufo-dir validation/ufo --run-card run_card.dat --out ee_to_ttx_smeft/
 ```
 
-runs it out of a checkout. Every run records the model it was built from — name,
-restrict card and a digest of both — in its artifact, and `generate` refuses
-grids trained on a different one. Squared-order constraints (`NP^2==1`) are a
+runs it out of a checkout. Every run embeds the restricted model it was built
+from in its artifact, with its name, restrict card and digest, and `generate`
+rebuilds the model from those bytes: it takes no `--ufo-dir`. Each artifact
+also banks |M|² at a few fixed phase-space points per subprocess, and
+`generate` refuses a build that no longer reproduces them to 1e-10, since the
+banked cross section would then describe another matrix element. Both
+artifacts, `diagrams.bin.zst` and `grid.bin.zst`, also record the version of
+the diagram enumeration that produced their diagrams, and a build that
+enumerates differently (a fixed sign, a diagram added or dropped) refuses
+them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`) are a
 hard error: this generator selects diagrams by their coupling orders and squares
 the whole amplitude, so it cannot bound an interference term.
 
@@ -246,11 +312,17 @@ kinds, bumps the version.
   `seed`, `multiplicities` (each final-state phase space of a proton run:
   `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
-  path and its `format_version`. `inspect --output-ldjson` prints the same
-  object for a saved artifact. `generate`'s carries `events_written`,
+  path and its `format_version`, the `diagram_set_digest` of the diagrams it
+  integrated, and `param_card` (whether a param card's text is banked).
+  `inspect --output-ldjson` prints the same
+  object for a saved artifact; with `--ranking <file>` its result carries
+  `ranking_path` and the document under `ranking` instead. `generate`'s carries `events_written`,
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
-  `integration_sigma_err`, and the `pull` between them.
+  `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries
+  the `artifact` and `summary_path` it wrote, the `svg_dir` (`null` when
+  nothing was drawn) and the number of `drawings`, and the whole of
+  `diagrams.json` under `summary`.
 - `refusal`: in place of a result, `error_kind` and `message`. A refused
   run writes no artifact, so this is its only record.
 

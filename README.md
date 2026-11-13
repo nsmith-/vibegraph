@@ -440,7 +440,7 @@ Caveats on all of these:
   scales normally. All single-core figures above use the release binaries,
   which carry about 20% single-thread overhead against glibc as well; the fix
   is tracked in the
-  [backlog](research/kb/backlog/performance/musl-release-assets-anti-scale-with-threads.md).
+  [record](research/kb/performance/musl-allocator-thread-scaling.md).
   Until it lands, run the Linux binaries at `-j 1`, or build from source. The
   macOS binaries are unaffected.
 
