@@ -174,8 +174,7 @@ the `~/.vibegraph/` cache. Only a set found in none of them is downloaded, and
 only with consent, against a checksum compiled into the binary, so on a machine
 with CVMFS a proton run needs no network at all. Non-SM UFO models are resolved
 from a flag, an environment variable, the cache or the working directory, and
-are never downloaded. The
-resolution order, the consent rules (`-y`, `--no-network`) and the cache layout
+are never downloaded. The resolution order, the consent rules (`-y`, `--no-network`) and the cache layout
 are documented under
 [Data the binary does not carry](https://nsmith-.github.io/vibegraph/cli/overview.html#data-the-binary-does-not-carry).
 `scripts/acceptance.sh` runs the whole proton path on a clean machine.
@@ -330,9 +329,8 @@ an optional diagram step, then two phases that share one on-disk artifact:
    a diagram artifact (`diagrams.bin.zst`) that `integrate` can start from, a
    `diagrams.json` summary and one SVG drawing per diagram.
 2. `vibegraph integrate` — enumerate diagrams (or read them from a diagram
-   artifact), compile the matrix element,
-   adapt one VEGAS grid **per phase-space channel**, and bank everything in
-   `grid.bin.zst`. It runs until σ's relative uncertainty reaches
+   artifact), compile the matrix element, adapt one VEGAS grid **per
+   phase-space channel**, and bank everything in `grid.bin.zst`. It runs until σ's relative uncertainty reaches
    `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
    `--neval × --niter` instead, which is the mode a banked run is reproducible
    under: there, the thread count `-j` does not change the result, and every run
