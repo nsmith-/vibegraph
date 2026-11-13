@@ -68,9 +68,8 @@ def timed(cmd, log=None, env=None):
 
 def vibegraph(binary, row, work, out, nevents, reps):
     """Per variant: median wall and CPU of `generate`, and the plan it logged."""
-    model, ufo = oracle.vibegraph_model(row)
     card = os.path.join(work, "reweight_card.dat")
-    base = [binary, "generate", os.path.join(work, "integrate", "grid.bin.zst"), *ufo,
+    base = [binary, "generate", os.path.join(work, "integrate", "grid.bin.zst"),
             "--seed", SEED, "--nevents", str(nevents), "--force", "-o", os.path.join(out, "events.lhe")]
     variants = {
         "none": [],
