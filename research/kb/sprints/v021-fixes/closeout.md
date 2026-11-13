@@ -2,6 +2,7 @@
 type: Sprint Record
 title: "Sprint J: the v0.2.1 fixes"
 description: "Five fix PRs before v0.2.1: refusing artifacts from another enumeration, the pairing-weighted cut_decays default, two SMEFT and sde_strategy panics, the leg-order-dependent relative Fermi sign, and four SMEFTsim dipole defects; each pinned by a MadGraph oracle that failed before it. The CERN host's CMS campaign on the release candidate met its bar: no panics, no unexplained ok → not-ok."
+closed: 2026-11-12
 status: draft
 tags: [release, v0.2.1, cuts, decay-chains, identical-particles, artifacts, panics, fermion-sign, smeft, sprint-j, sprint-record]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-12}
@@ -156,7 +157,7 @@ the benchmarks have not been run, so the item stays open.
 ## Found
 
 Filed by this record:
-- [pin-rust-toolchain](../../backlog/hygiene/pin-rust-toolchain.md) (high): Rust 1.100 reached CI through the unpinned `@stable` toolchain during the release, and its `needless_range_loop` reddened `main` and #129; three sites were rewritten in #129. The user chose to fix the lints without a pin in this PR.
+- `pin-rust-toolchain` (high; folded into `monthly-toolchain-bumps` and closed by the [toolchain pins](../../tooling/toolchain-pins.md) PR): Rust 1.100 reached CI through the unpinned `@stable` toolchain during the release, and its `needless_range_loop` reddened `main` and #129; three sites were rewritten in #129. The user chose to fix the lints without a pin in this PR.
 - [onshell-veto-with-pairing-weighted-cut-refused](../../backlog/feature/onshell-veto-with-pairing-weighted-cut-refused.md) (the campaign).
 - [zz-ee-sigma-excess-not-attributed](../../backlog/validation/zz-ee-sigma-excess-not-attributed.md) (above).
 - [fixed-beam-pairing-union-sigma-unmeasured](../../backlog/validation/fixed-beam-pairing-union-sigma-unmeasured.md) (J-W1 Found 3).

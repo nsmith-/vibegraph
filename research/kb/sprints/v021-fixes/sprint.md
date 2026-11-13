@@ -3,7 +3,7 @@ type: Sprint
 title: "Sprint J: v0.2.1 fixes"
 description: "Before v0.2.1: the pairing-weighted cut_decays default, refusing diagram and integrate artifacts from an older enumeration, the SMEFT four-quark compile panic, the fixed-energy sde_strategy = 2 subprocess weights; then the release preparation."
 status: draft
-active: true
+active: false
 tags: [release, v0.2.1, cuts, decay-chains, identical-particles, artifacts, panics, sprint-j]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-11}
 sources:
