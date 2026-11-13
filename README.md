@@ -167,11 +167,14 @@ program ([flavour groups](https://nsmith-.github.io/vibegraph/guide/10-hadronic.
 ### Data the binary does not carry
 
 The Standard Model is compiled in, so the leptonic run above needs nothing
-else. PDF sets (for proton beams) and non-SM UFO models are resolved on
-demand, from a flag, an environment variable, the `~/.vibegraph/` cache or
-the working directory, in that order. A PDF set is the only input that can
-involve the network: a missing one is downloaded only with consent, against a
-checksum compiled into the binary; UFO models are never downloaded. The
+else. A PDF set (for proton beams) is read from the first place that has it:
+`$LHAPDF_DATA_PATH` (or `$LHAPATH`), the CVMFS LHAPDF area
+`/cvmfs/sft.cern.ch/lcg/external/lhapdfsets/current` when it is mounted, then
+the `~/.vibegraph/` cache. Only a set found in none of them is downloaded, and
+only with consent, against a checksum compiled into the binary, so on a machine
+with CVMFS a proton run needs no network at all. Non-SM UFO models are resolved
+from a flag, an environment variable, the cache or the working directory, and
+are never downloaded. The
 resolution order, the consent rules (`-y`, `--no-network`) and the cache layout
 are documented under
 [Data the binary does not carry](https://nsmith-.github.io/vibegraph/cli/overview.html#data-the-binary-does-not-carry).
@@ -320,24 +323,26 @@ unweighting efficiency is in [`events/unweighting.md`](research/kb/events/unweig
 
 ## Using the CLI
 
-The two phases split the work the way MadGraph's survey/refine-then-generate
-structure does, and share one on-disk artifact:
+The work splits the way MadGraph's survey/refine-then-generate structure does:
+an optional diagram step, then two phases that share one on-disk artifact:
 
-1. `vibegraph integrate` — enumerate diagrams, compile the matrix element,
+1. `vibegraph enumerate` (optional) — enumerate a process's diagrams once, into
+   a diagram artifact (`diagrams.bin.zst`) that `integrate` can start from, a
+   `diagrams.json` summary and one SVG drawing per diagram.
+2. `vibegraph integrate` — enumerate diagrams (or read them from a diagram
+   artifact), compile the matrix element,
    adapt one VEGAS grid **per phase-space channel**, and bank everything in
    `grid.bin.zst`. It runs until σ's relative uncertainty reaches
    `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
    `--neval × --niter` instead, which is the mode a banked run is reproducible
    under: there, the thread count `-j` does not change the result, and every run
    of a card writes the same artifact at any `-j`.
-2. `vibegraph generate` — reload the artifact, unweight against the frozen
+3. `vibegraph generate` — reload the artifact, unweight against the frozen
    grids by accept/reject, and write a Les Houches event file.
 
-Three more commands: `vibegraph check-events` reads an emitted file back and
-checks it against itself; `vibegraph enumerate` writes a process's diagrams (an
-artifact `integrate` can start from, a summary and one SVG drawing per diagram);
-and `vibegraph inspect` prints what a saved integration records, or its
-configuration ranking as JSON. `vibegraph <cmd> --help` has the full option list, and the
+Two more commands: `vibegraph check-events` reads an emitted file back and
+checks it against itself, and `vibegraph inspect` prints what a saved
+integration records, or its configuration ranking as JSON. `vibegraph <cmd> --help` has the full option list, and the
 documentation site's [command-line pages](https://nsmith-.github.io/vibegraph/cli/overview.html)
 cover the rest: the unweighting strategies and the maximum-weight scan, run
 cards beyond the defaults, what the grid artifact contains and how it makes
