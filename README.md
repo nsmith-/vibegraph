@@ -7,18 +7,18 @@
 
 A **leading-order (LO) tree-level Monte Carlo event generator** written in Rust,
 following the same pipeline as
-[MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301) — and validated against it
-at the strictest level each stage permits: model parameters and couplings to
-1e-13 of MadGraph's own evaluation, bit-exact where both sides compute the same
-number from the same inputs (the αs running, helicity survivor sets, colour
-tags), machine precision on the matrix elements, and statistical agreement on
-the emitted Les Houches event samples.
+[MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301) and validated against it at
+the strictest level each stage permits:
+- couplings agree with MadGraph's own evaluation to 1e-13;
+- the αs running, helicity survivor sets and colour tags are bit-exact;
+- per-point |M|² agrees to ≤ 1e-12 relative;
+- cross sections and event samples agree statistically with MadGraph reference
+  runs frozen in the repository, apart from the documented
+  [differences from MadGraph](#differences-from-madgraph).
 
-Per-point |M|² agrees with MadGraph's to ≤ 1e-12 relative, and cross sections and
-event samples agree statistically with the banked MadGraph references. Reaching
-0.1% on σ takes about half of MadEvent's CPU time on x86 and under a third on an
-Apple M3 Max, and EFT reweighting runs about 200–1000× faster than MadGraph's
-reweight module ([Performance](#performance)).
+Reaching 0.1% on σ takes about half of MadEvent's CPU time on x86 and under a
+third on an Apple M3 Max, and EFT reweighting runs about 200–1000× faster than
+MadGraph's reweight module ([Performance](#performance)).
 
 **Documentation:** <https://nsmith-.github.io/vibegraph/> — a guided tour of
 how the generator works, stage by stage and paper by paper, the command-line
@@ -183,23 +183,25 @@ Leading-order event generation for tree-level processes at any leg
 multiplicity, with MLM matching: a UFO model and MadGraph's own process and run
 cards go in, an unweighted `.lhe` event sample comes out.
 
-**Anything the cards ask for that is not implemented is refused by name, not
-ignored.** Process-card features are refused before diagram enumeration;
-run-card settings and cuts when `integrate` starts.
+**Card settings that are not implemented are refused by name, not ignored.**
+Process-card features are refused before diagram enumeration; run-card settings
+and cuts when `integrate` starts.
 
 | Surface | Supported | Refused by name | More |
 |---|---|---|---|
-| Process grammar | MadGraph's: multiparticle labels, coupling orders, `add process` with `@N`, decay chains (`p p > t t~, t > b e+ ve`) stitched onto their core legs, 1→n decays to a partial width, polarized external legs (`w+{0}`, `e-{L}`) and polarized cross sections. The s-channel restrictions `/`, `>`, `$` and `$$`: `>` and `$$` filter diagrams, `$` is MadEvent's zeroed on-shell propagator. Diagrams by [feyngraph](https://github.com/Jens-Braun/FeynGraph), checked against MadGraph's diagram counts and its own generation on censuses of proc cards | squared-order constraints; polarized intermediate resonances; one-body final states (`p p > z'` with no decay); `add process` lines of different multiplicity at fixed-energy beams (at proton beams they are summed, the way MadEvent sums its `P<n>` directories) | [grammar](https://nsmith-.github.io/vibegraph/guide/03-diagrams.html#the-process-grammar) |
-| Matching | MLM of mixed jet multiplicities (`ickkw = 1`, `xqcut`): MadEvent's cut, clustering scales and α_s/PDF reweighting, and the `<scales>` record Pythia's kT-MLM matching reads | MLM at fixed-energy beams or on decays | [hadronic](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html) |
+| Process grammar | MadGraph's: multiparticle labels, coupling orders, `add process` with `@N`, decay chains (`p p > t t~, t > b e+ ve`) stitched onto their core legs, 1→n decays to a partial width, polarized external legs (`w+{0}`, `e-{L}`) and polarized cross sections. The s-channel restrictions `/`, `>`, `$` and `$$`: `>` and `$$` filter diagrams, `$` is MadEvent's zeroed on-shell propagator. Diagrams by [feyngraph](https://github.com/Jens-Braun/FeynGraph) | squared-order constraints; polarized intermediate resonances; one-body final states (`p p > z'` with no decay); `add process` lines of different multiplicity, or several flavour subprocesses, at fixed-energy beams (at proton beams both are summed, the way MadEvent sums its `P<n>` directories) | [grammar](https://nsmith-.github.io/vibegraph/guide/03-diagrams.html#the-process-grammar) |
+| Matching | MLM of mixed jet multiplicities (`ickkw = 1`, `xqcut`): MadEvent's cut, clustering scales and α_s/PDF reweighting, and the `<scales>` record Pythia's kT-MLM matching reads | MLM at fixed-energy beams or on decays; `ptj` below `xqcut`; CKKW-L | [hadronic](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html) |
 | Scales, couplings, cuts | MadGraph's α_s RGE, per-event μR and per-beam μF prescriptions, including the default kT-clustered dynamical scale (`dynamical_scale_choice = -1`) reproduced against MadGraph's own clustering; MadGraph's run-card cuts, compiled | photon isolation; a card that leaves a soft or collinear divergence uncut (naming the legs and the cut that would regulate it) | [scales](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html#scales) |
-| UFO models | Any UFO model, read by a Python-AST parser; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts. SMEFTsim's `topU3l_MwScheme` and two small models written here are gated against MadGraph's own matrix elements | spin-3/2 and spin-2 particles; Majorana fermions and charge conjugation; custom UFO propagators and Fortran operators; coupling orders in a model without `coupling_orders.py`; loop-level UFOs (out of the LO charter) | [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model), [`manifest.toml`](validation/manifest.toml) |
+| UFO models | General UFO models, read by a Python-AST parser; restrict cards baked into parameters. SMEFTsim's `topU3l_MwScheme` and two small models written here are gated against MadGraph's own matrix elements | spin-3/2 and spin-2 particles; Majorana fermions and charge conjugation; custom UFO propagators and Fortran operators; coupling-order expressions and negative orders; coupling orders in a model without `coupling_orders.py`; loop-level UFOs (out of the LO charter) | [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model), [`manifest.toml`](validation/manifest.toml) |
 | Amplitudes | HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), one program per contributing helicity combination, with MadGraph-matched helicity filtering. Matrix elements are evaluated in the partonic CM frame, with beams along ±z | the coloured-scalar seagull vertex (so squark-pair production) | [amplitudes](https://nsmith-.github.io/vibegraph/guide/04-helicity-amplitudes.html) |
 | Colour | Exact colour-factor \|M\|² via per-flow JAMPs; colour sextets and baryonic epsilon tensors (`Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6`, `ColorRep::Sextet`), each gated against MadGraph on a row of its own | a `T6` carrying adjoint indices; any colour basis in which such a tensor survives to an external leg, which no Les Houches record can write | [colour](https://nsmith-.github.io/vibegraph/guide/05-color.html) |
 | Beams, phase space | Unpolarized proton–proton, including unequal beam energies and massive incoming partons, or fixed-energy partonic beams. At proton beams, flavour groups summed over both beam orderings. Multichannel VEGAS, one grid per diagram channel; decay chains inside MadEvent's Breit–Wigner windows | any other beam configuration | [multichannel](https://nsmith-.github.io/vibegraph/guide/09-multichannel.html) |
-| Weights | MadGraph reweight cards; scale, PDF and α_s variations in MadGraph's systematics format | — | [CLI](https://nsmith-.github.io/vibegraph/cli/overview.html) |
-| Output | Unweighted LHEF at fixed-energy and proton beams; per-event helicity and colour-flow selection following MadEvent's rules, the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; an LHEF writer and reader that round-trip MadGraph's own event files byte for byte | MadSpin decays | [events](https://nsmith-.github.io/vibegraph/guide/11-unweighting-events.html) |
+| Weights | MadGraph reweight cards (helicity-summed ratio); scale, PDF and α_s variations in MadGraph's systematics format | reweighting a process with a `$` veto, a hypothesis that moves α_s, or an existing `.lhe` file | [CLI](https://nsmith-.github.io/vibegraph/cli/overview.html) |
+| Output | Unweighted LHEF at fixed-energy and proton beams; per-event helicity and colour-flow selection following MadEvent's rules; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; an LHEF writer and reader that round-trip MadGraph's own event files byte for byte | — | [events](https://nsmith-.github.io/vibegraph/guide/11-unweighting-events.html) |
 
-Open validation items are tracked in the
+A `madspin_card.dat` is not an input: vibegraph does not read it, and MadSpin-style
+decays are future scope (below). **Known defect:** `-o events.lhe.gz` (or `.zst`)
+writes an uncompressed file under that name. Open validation items are tracked in the
 [backlog](https://nsmith-.github.io/vibegraph/backlog.html), and the design
 record in [`research/kb/`](research/kb/index.md).
 
@@ -209,7 +211,7 @@ decays, CKKW-L merging, and NLO event generation.
 
 ### Differences from MadGraph
 
-Where vibegraph knowingly gives a different answer from MadGraph (the
+Documented and open differences from MadGraph (the
 [v0.2.1 release notes](docs/release-notes/v0.2.1.md) carry the current list):
 - **Identical particles across decays.** vibegraph keeps every pairing, their
   interference and the union of their decay windows; MadGraph keeps one pairing.
@@ -221,8 +223,6 @@ Where vibegraph knowingly gives a different answer from MadGraph (the
 - **Open measurements:** the `p p > l+ l- j` family reads +0.15% to +0.23% above
   MadEvent's seed records, and `p p > b b~` drifts from MadEvent as the budget
   grows. Neither is attributed yet.
-- **`-o events.lhe.gz`** (or `.zst`) writes an uncompressed file under that
-  name; the extension is not acted on.
 
 ## Validation
 
@@ -261,17 +261,18 @@ as tracked rows, never as loosened tolerances.
 ## Performance
 
 Ratios are costs, ours over MadGraph's, so **below 1.0× is faster than
-MadGraph** unless a figure says "faster". Both sides run on the same host: a
-4-vCPU Intel Ice Lake Xeon (KVM guest) with the v0.2.1 binaries, and an Apple
-M3 Max with the v0.2.0 macOS binary (nothing performance-related changed for
-macOS in v0.2.1), against the pinned MadGraph 3.7.1 run through its own
-`launch` with its default compiler flags set explicitly.
+MadGraph** unless a figure says "faster". Each comparison runs both sides on
+the same host, against the pinned MadGraph 3.7.1 run through its own `launch`
+with its default compiler flags set explicitly. Two hosts:
+- **x86:** a 4-vCPU Intel Ice Lake Xeon (KVM guest), with the v0.2.1 binaries;
+- **Apple M3 Max:** the v0.2.0 macOS binary (nothing performance-related
+  changed for macOS in v0.2.1).
 
 | measure | x86, plain / x86-64-v3 | M3 Max |
 |---|--:|--:|
 | CPU time to 0.1% on σ, geometric mean over 7 processes | **0.52×** / **0.47×** | **0.30×** |
 | matrix element per point, geometric mean over 19 processes | 0.85× / 0.75× | 0.80× |
-| EFT reweighting, 45 hypotheses on 1000 `e+ e- > t t~` events | 214×–708× faster | 351×–1015× faster |
+| EFT reweighting, 45 hypotheses on 1000 `e+ e- > t t~` events | 214×–708× faster (exact to polynomial path) | 351×–1015× faster |
 | systematics, 926 weights on 20 000 `p p > l+ l- j` events | 11.8× faster | 17.5× faster |
 
 Time to 0.1% on σ, per process:
@@ -287,7 +288,9 @@ Time to 0.1% on σ, per process:
 | `p p > e+ e-` + 0–2 jets, MLM | 2.09× | 2.12× | 1.56× |
 | **geometric mean** | **0.52×** | **0.47×** | **0.30×** |
 
-Every σ agrees with MadEvent's, the largest pull 1.47. **The MLM row is the one
+Every σ in these timing runs agrees with MadEvent's within its 0.1% error (three
+seeds; largest pull 1.47); σ itself is validated separately, under
+[Validation](#validation). **The MLM row is the one
 open gap**: almost all of it is the two-jet part's cost per point, 485 µs against
 MadEvent's 104 µs, because each of our clusterings costs about 4× MadEvent's and
 we evaluate every flavour group's matrix element where MadEvent evaluates the one
@@ -325,7 +328,8 @@ structure does, and share one on-disk artifact:
    `grid.bin.zst`. It runs until σ's relative uncertainty reaches
    `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
    `--neval × --niter` instead, which is the mode a banked run is reproducible
-   under.
+   under: there, the thread count `-j` does not change the result, and every run
+   of a card writes the same artifact at any `-j`.
 2. `vibegraph generate` — reload the artifact, unweight against the frozen
    grids by accept/reject, and write a Les Houches event file.
 
