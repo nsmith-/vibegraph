@@ -9,6 +9,7 @@ verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: e4a90128, tag: v0.2.1, host: "Intel Xeon (Ice Lake), 4-vCPU KVM guest, AlmaLinux 10.2, rustc 1.99.1, gfortran 14.4.0", command: "as for v0.2.0, both configurations, MadGraph side rerun the same day", data: "CERN host: /home/ncsmith/bench-v0.2.0/results-v0.2.1/phase1/{cfg1,cfg2}/compare.{1,2}.md"}
   - {commit: 3cc7f9c2, tag: v0.2.0, host: "Apple M3 Max, macOS 15.8.2, rustc 1.97.1, pixi gfortran 14.3.0, interactive desktop (load 2.7–3.1)", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh (×2, mean) with VIBEGRAPH_BENCH_EXTRA_PROCESSES; gen_amplitude.py ×3, median; 19 process directories launched through time_stages.py with global_flag = -O set explicitly", data: "M3 host: /Users/ncsmith/bench-v020/results/phase1/ (phase1_table.md, mg_timings_run{1,2,3}.json, mg_timings_median.json, vg_run{1,2}.out)"}
+  - {commit: 3cc7f9c2, host: "Apple M3 Max, load 3.5–8.1", command: "RUSTFLAGS='-C target-cpu=native' scripts/mg_perf_compare.sh (×2); MadGraph with -mcpu=native in FFLAGS, libraries and f2py modules rebuilt; gen_amplitude.py ×3", data: "M3 host: /Users/ncsmith/bench-v020/results/phase1n/"}
   - {commit: 3cc7f9c2, tag: v0.2.0, host: "Intel Xeon (Ice Lake, family 6 model 106), 4-vCPU KVM guest, AlmaLinux 10.2, rustc 1.99.1, gfortran 14.4.0", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2), RUSTFLAGS unset or '-C target-cpu=x86-64-v3'; gen_amplitude.py ×3, median", data: "CERN host: /home/ncsmith/bench-v0.2.0/results/phase1/{cfg1,cfg2} (driver logs, make_opts_flags.txt, f2py_effective_flags.txt, isa_check.txt)"}
   - {commit: cf8b2b7, pr: 8, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2); gen_amplitude.py ×3, median"}
   - {host: "Apple M3 Max (darwin), 2026-08-06, quiet host, MG side regenerated the same day", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh"}
@@ -133,6 +134,15 @@ median of three, most rows within 0–4%. The host is the user's desktop, load a
 
 **Geomean 0.80×, range 0.57×–1.39×, 14 of 19 below 1.0.** The slow rows are the same as on
 x86: `uux_to_uux`, `gg_to_gg`, `ee_to_wpwm`, then `gg_to_ttx` and `ee_to_ttx` at parity.
+
+**Both sides at native codegen** (same commit and day, a separate worktree): vibegraph
+built with `RUSTFLAGS="-C target-cpu=native"` (resolved to `apple-m3`; a source build, not
+the release binary), MadGraph with the environment's `-march=armv8.3-a` replaced by
+`-mcpu=native` in `MATRIX1` and in rebuilt `libdhelas.a` / `libmodel.a`, checked on the
+compile lines. MadGraph gets 1.073× faster in geomean and vibegraph 1.002×, so the ratio
+moves to **0.857×** (range 0.61×–1.49×, 13 of 19 below 1.0). Rust's default
+`aarch64-apple-darwin` target already enables NEON, `dotprod`, `lse` and `fp16`, so native
+codegen adds little to this scalar evaluator. Load average 3.5–8.1 during these runs.
 
 ## Cascade Lake, `cf8b2b7` (2026-09-26)
 
