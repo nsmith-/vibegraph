@@ -2,47 +2,26 @@
 
 <p align="center">
   <img src="assets/badger.png" width="420"
-       alt="A whimsical photograph of a blissful European badger seated cross-legged on a mossy forest floor at sunset. The badger is dressed in a vibrant tie-dye t-shirt, wears large wooden headphones, and listens to music on a vintage cassette tape player. Its eyes are contentedly closed, soaking in the moment, surrounded by ferns, glowing mushrooms, small daisies, a sprig of lavender, and a dreamcatcher hanging from a tree branch above. The soft, filtering golden light of the woods creates a warm and peaceful atmosphere." />
+       alt="A European badger in a tie-dye t-shirt and wooden headphones, listening to a cassette player on a mossy forest floor at sunset." />
 </p>
 
 A **leading-order (LO) tree-level Monte Carlo event generator** written in Rust,
 following the same pipeline as
 [MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301) — and validated against it
-at the strictest level each stage permits: bit-level on the UFO-model and card
-inputs, machine precision on the matrix elements, and statistical agreement on
-the emitted Les Houches event samples.
+at the strictest level each stage permits: bit-identical derived parameters and
+couplings from the same UFO model and cards, machine precision on the matrix
+elements, and statistical agreement on the emitted Les Houches event samples.
+
+Per-point |M|² agrees with MadGraph's to ≤ 1e-12 relative, and cross sections and
+event samples agree statistically with the banked MadGraph references. Reaching
+0.1% on σ takes about half of MadEvent's CPU time on x86 and under a third on an
+Apple M3 Max, and EFT reweighting runs about 200–1000× faster than MadGraph's
+reweight module ([Performance](#performance)).
 
 **Documentation:** <https://nsmith-.github.io/vibegraph/> — a guided tour of
 how the generator works, stage by stage and paper by paper, the command-line
 reference, and the `vibegraph-lib` API docs. Its source is [`docs/`](docs/)
 and `scripts/build-docs.sh` builds it locally.
-
-## Scope
-
-**What it does:** leading-order event generation for tree-level processes at
-any leg multiplicity, with MLM matching. A UFO model and MadGraph's own process
-and run cards go in; an unweighted `.lhe` event sample comes out.
-- **Process cards** in MadGraph's grammar: decay chains
-  (`p p > t t~, t > b e+ ve`), 1→n decays to a partial width, the s-channel
-  restrictions `/`, `>`, `$` and `$$`, polarized external legs (`w+{0}`,
-  `e-{L}`), and `add process` with `@N`.
-- **MLM matching** of mixed jet multiplicities (`ickkw = 1`, `xqcut`):
-  MadEvent's cut, clustering scales and α_s/PDF reweighting, and the `<scales>`
-  record Pythia's kT-MLM matching reads.
-- **MadGraph's default dynamical scale** at proton beams, the kT-clustering
-  prescription (`dynamical_scale_choice = -1`), reproduced against MadGraph's
-  own clustering rather than approximated.
-- **Weights at generation:** MadGraph reweight cards, and scale, PDF and α_s
-  variations in MadGraph's systematics format.
-- **Beams:** unpolarized proton–proton, including unequal beam energies and
-  massive incoming partons, or fixed-energy partonic beams.
-
-**Anything the cards ask for that is not implemented is refused by name, not
-ignored.** Process-card features are refused before diagram enumeration;
-run-card settings and cuts when `integrate` starts. A card that leaves a soft or
-collinear divergence uncut is refused too, naming the legs and the cut that
-would regulate it. The known cases where vibegraph's answer differs from
-MadGraph's are listed under [Differences from MadGraph](#differences-from-madgraph).
 
 ```
 UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALOHA)
@@ -50,23 +29,6 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
         LHEF events ◀── unweighting ◀── σ integration ◀── phase-space sampling
                                                           (multichannel VEGAS)
 ```
-
-The UFO loader is not tied to the Standard Model, and its Lorentz and colour
-surface reaches past it: SMEFTsim's `topU3l_MwScheme` model and two small
-models written here are enumerated, compiled and gated against MadGraph's own
-matrix elements. What is covered, what is refused as a hard error (spin-3/2 and
-spin-2 particles, Majorana fermions, squared-order constraints, custom UFO
-propagators and Fortran operators, coupling orders in a model without
-`coupling_orders.py`) and where each claim is
-measured is in the guide's [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model)
-and in [`validation/manifest.toml`](validation/manifest.toml). Beam
-configurations other than unpolarized proton–proton or fixed-energy partonic
-collisions are out of scope for now; open validation items are tracked in the
-[backlog](https://nsmith-.github.io/vibegraph/backlog.html).
-
-**Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
-boundary checklist already lives in the backlog's items tagged `non-sm-ufo` — MadSpin-style
-decays, CKKW-L merging, and NLO event generation.
 
 ## Quickstart
 
@@ -78,27 +40,28 @@ formats, so the same pair drives a MadGraph reference run unchanged.
 
 ### Get the binary
 
-Precompiled binaries for macOS (Apple Silicon and Intel) and Linux x86\_64 are
-attached to every [release](../../releases) as bare executables — nothing to
-unpack. The Linux build is statically linked; none of them needs a Rust
-toolchain, a Python installation, or LHAPDF. License notices for the binary
-and the Standard Model description compiled into it are printed by
-`./vibegraph --version` (`-V` for just the version).
+Every [release](https://github.com/nsmith-/vibegraph/releases) attaches
+precompiled bare executables — nothing to unpack, and none needs a Rust
+toolchain, a Python installation, or LHAPDF. The Linux builds are statically
+linked. `./vibegraph --version` prints the license notices for the binary and
+the Standard Model description compiled into it (`-V` for just the version).
 
 ```bash
-# pick the binary matching your platform, and mark it executable
-curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/vibegraph-aarch64-apple-darwin
+# asset: vibegraph-aarch64-apple-darwin      (macOS, Apple Silicon)
+#        vibegraph-x86_64-apple-darwin       (macOS, Intel)
+#        vibegraph-x86_64-unknown-linux-musl     (Linux, any x86_64)
+#        vibegraph-x86_64-unknown-linux-musl-v3  (Linux, x86-64-v3)
+asset=vibegraph-aarch64-apple-darwin
+curl -fsSL -o vibegraph https://github.com/nsmith-/vibegraph/releases/latest/download/$asset
 chmod +x vibegraph
 ./vibegraph -V
 ```
 
-The Linux build comes in two flavours. `vibegraph-x86_64-unknown-linux-musl`
-runs on any x86\_64 machine; `…-musl-v3` is the same code compiled for
+`…-musl-v3` is the same code compiled for
 [x86-64-v3](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels)
-(AVX2/FMA, roughly Haswell and later), which is worth picking up for the
-amplitude evaluation if your CPU is recent enough. It will die with an illegal
-instruction on anything older, so take the plain one if unsure — this prints
-`supported` when the `-v3` asset will run:
+(AVX2/FMA, roughly Haswell and later), which speeds up the amplitude
+evaluation. It dies with an illegal instruction on older CPUs, so take the
+plain build if unsure — this prints `supported` when the `-v3` asset will run:
 
 ```bash
 grep -qw avx2 /proc/cpuinfo && grep -qw fma /proc/cpuinfo \
@@ -108,7 +71,7 @@ grep -qw avx2 /proc/cpuinfo && grep -qw fma /proc/cpuinfo \
 To build from a checkout instead:
 
 ```bash
-git clone --recurse-submodules <repo-url>
+git clone --recurse-submodules https://github.com/nsmith-/vibegraph
 cd vibegraph
 cargo build --release        # library + `vibegraph` CLI
 cargo test                   # the hermetic suite: complete on a bare clone
@@ -188,92 +151,59 @@ vibegraph generate llj/grid.bin.zst --nevents 10000 --seed 1 -o events.lhe
 vibegraph check-events events.lhe
 ```
 
-Nothing sets an iteration count here either: the run stops when σ's relative
-uncertainty reaches 0.1%, so the `integrating 20/43` the pane counts is
-against a *projected* total, re-estimated from the error every iteration — which
-is why the bar's denominator moves, and why the bar itself is not monotonic.
-[The status pane](https://nsmith-.github.io/vibegraph/cli/overview.html#watching-a-run) has the arithmetic, and `--fixed-budget`
-trades the target for a set number of iterations.
+Nothing sets an iteration count: the run stops when σ's relative uncertainty
+reaches 0.1%, so the pane's progress bar counts against a projected total that
+is re-estimated every iteration
+([the status pane](https://nsmith-.github.io/vibegraph/cli/overview.html#watching-a-run));
+`--fixed-budget` trades the target for a set number of iterations.
 
 `p`, `j` and `l+ l-` are MadGraph's multiparticle labels, and coupling-order
 constraints belong to the same grammar (`generate p p > l+ l- j QCD=2 QED=2`).
-Concrete subprocesses that share a matrix element are grouped — the grouping is
-*measured* pointwise, not listed — and each group's parton luminosity is summed
-over its members and both beam orderings, so one compiled program serves the
-whole group.
-
-A proton run also needs a PDF set — the one input the binary does not carry, and
-the only thing here that can involve the network.
+Subprocesses that share a matrix element are grouped and served by one compiled
+program ([flavour groups](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html#flavour-groups)).
 
 ### Data the binary does not carry
 
 The Standard Model is compiled in, so the leptonic run above needs nothing
 else. PDF sets (for proton beams) and non-SM UFO models are resolved on
 demand, from a flag, an environment variable, the `~/.vibegraph/` cache or
-the working directory, in that order. A missing PDF set is downloaded only
-with consent, against a checksum compiled into the binary; UFO models are
-never downloaded. The resolution order, the consent rules (`-y`,
-`--no-network`) and the cache layout are documented under
+the working directory, in that order. A PDF set is the only input that can
+involve the network: a missing one is downloaded only with consent, against a
+checksum compiled into the binary; UFO models are never downloaded. The
+resolution order, the consent rules (`-y`, `--no-network`) and the cache layout
+are documented under
 [Data the binary does not carry](https://nsmith-.github.io/vibegraph/cli/overview.html#data-the-binary-does-not-carry).
 `scripts/acceptance.sh` runs the whole proton path on a clean machine.
 
-## Using the CLI
+## What is supported, and what is refused
 
-The two phases split the work the way MadGraph's survey/refine-then-generate
-structure does, and share one on-disk artifact:
+Leading-order event generation for tree-level processes at any leg
+multiplicity, with MLM matching: a UFO model and MadGraph's own process and run
+cards go in, an unweighted `.lhe` event sample comes out.
 
-1. `vibegraph integrate` — enumerate diagrams, compile the matrix element,
-   adapt one VEGAS grid **per phase-space channel**, and bank everything in
-   `grid.bin.zst`. It runs until σ's relative uncertainty reaches
-   `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
-   `--neval × --niter` instead, which is the mode a banked run is reproducible
-   under.
-2. `vibegraph generate` — reload the artifact, unweight against the frozen
-   grids by accept/reject, and write a Les Houches event file.
+**Anything the cards ask for that is not implemented is refused by name, not
+ignored.** Process-card features are refused before diagram enumeration;
+run-card settings and cuts when `integrate` starts.
 
-Three more commands: `vibegraph check-events` reads an emitted file back and
-checks it against itself; `vibegraph enumerate` writes a process's diagrams (an
-artifact `integrate` can start from, a summary and one SVG drawing per diagram);
-and `vibegraph inspect` prints what a saved integration records, or its
-configuration ranking as JSON. `vibegraph <cmd> --help` has the full option list, and the
-documentation site's [command-line pages](https://nsmith-.github.io/vibegraph/cli/overview.html)
-cover the rest: the unweighting strategies and the maximum-weight scan, run
-cards beyond the defaults, what the grid artifact contains and how it makes
-`generate` jobs trivially parallel, what a worker machine needs, logging and
-the live status pane, and the graceful-stop keys. The banked MadGraph cards
-in the checkout are ordinary inputs:
+| Surface | Supported | Refused by name | More |
+|---|---|---|---|
+| Process grammar | MadGraph's: multiparticle labels, coupling orders, `add process` with `@N`, decay chains (`p p > t t~, t > b e+ ve`) stitched onto their core legs, 1→n decays to a partial width, polarized external legs (`w+{0}`, `e-{L}`) and polarized cross sections. The s-channel restrictions `/`, `>`, `$` and `$$`: `>` and `$$` filter diagrams, `$` is MadEvent's zeroed on-shell propagator. Diagrams by [feyngraph](https://github.com/Jens-Braun/FeynGraph), checked against MadGraph's diagram counts and its own generation on censuses of proc cards | squared-order constraints; polarized intermediate resonances; one-body final states (`p p > z'` with no decay); `add process` lines of different multiplicity at fixed-energy beams (at proton beams they are summed, the way MadEvent sums its `P<n>` directories) | [grammar](https://nsmith-.github.io/vibegraph/guide/03-diagrams.html#the-process-grammar) |
+| Matching | MLM of mixed jet multiplicities (`ickkw = 1`, `xqcut`): MadEvent's cut, clustering scales and α_s/PDF reweighting, and the `<scales>` record Pythia's kT-MLM matching reads | MLM at fixed-energy beams or on decays | [hadronic](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html) |
+| Scales, couplings, cuts | MadGraph's α_s RGE, per-event μR and per-beam μF prescriptions, including the default kT-clustered dynamical scale (`dynamical_scale_choice = -1`) reproduced against MadGraph's own clustering; MadGraph's run-card cuts, compiled | photon isolation; a card that leaves a soft or collinear divergence uncut (naming the legs and the cut that would regulate it) | [scales](https://nsmith-.github.io/vibegraph/guide/10-hadronic.html#scales) |
+| UFO models | Any UFO model, read by a Python-AST parser; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts. SMEFTsim's `topU3l_MwScheme` and two small models written here are gated against MadGraph's own matrix elements | spin-3/2 and spin-2 particles; Majorana fermions and charge conjugation; custom UFO propagators and Fortran operators; coupling orders in a model without `coupling_orders.py`; loop-level UFOs (out of the LO charter) | [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model), [`manifest.toml`](validation/manifest.toml) |
+| Amplitudes | HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), one program per contributing helicity combination, with MadGraph-matched helicity filtering. Matrix elements are evaluated in the partonic CM frame, with beams along ±z | the coloured-scalar seagull vertex (so squark-pair production) | [amplitudes](https://nsmith-.github.io/vibegraph/guide/04-helicity-amplitudes.html) |
+| Colour | Exact colour-factor \|M\|² via per-flow JAMPs; colour sextets and baryonic epsilon tensors (`Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6`, `ColorRep::Sextet`), each gated against MadGraph on a row of its own | a `T6` carrying adjoint indices; any colour basis in which such a tensor survives to an external leg, which no Les Houches record can write | [colour](https://nsmith-.github.io/vibegraph/guide/05-color.html) |
+| Beams, phase space | Unpolarized proton–proton, including unequal beam energies and massive incoming partons, or fixed-energy partonic beams. At proton beams, flavour groups summed over both beam orderings. Multichannel VEGAS, one grid per diagram channel; decay chains inside MadEvent's Breit–Wigner windows | any other beam configuration | [multichannel](https://nsmith-.github.io/vibegraph/guide/09-multichannel.html) |
+| Weights | MadGraph reweight cards; scale, PDF and α_s variations in MadGraph's systematics format | — | [CLI](https://nsmith-.github.io/vibegraph/cli/overview.html) |
+| Output | Unweighted LHEF at fixed-energy and proton beams; per-event helicity and colour-flow selection following MadEvent's rules, the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; an LHEF writer and reader that round-trip MadGraph's own event files byte for byte | MadSpin decays | [events](https://nsmith-.github.io/vibegraph/guide/11-unweighting-events.html) |
 
-```bash
-vibegraph integrate validation/madgraph/dy13_proc_card.dat \
-  --run-card validation/madgraph/dy13_default_run_card.dat --out run/
-```
+Open validation items are tracked in the
+[backlog](https://nsmith-.github.io/vibegraph/backlog.html), and the design
+record in [`research/kb/`](research/kb/index.md).
 
-## Feature breakdown
-
-| Pipeline step | Status |
-|---|---|
-| UFO model loading | ✅ Python-AST parser for UFO models; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts |
-| Feynman diagram enumeration | ✅ [feyngraph](https://github.com/Jens-Braun/FeynGraph) topology generation under MadGraph's process-card grammar (multiparticle labels, coupling orders, `add process`/`@N`, `/`, the `>` and `$$` s-channel filters, 1→n decays, decay chains stitched onto their core legs, polarized legs); validated against MadGraph's diagram counts and its own generation on censuses of proc cards |
-| Helicity amplitudes | ✅ HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), topology-driven for arbitrary processes; exact color-factor \|M\|² via per-flow JAMPs; per-helicity program expansion with MadGraph-matched helicity filtering |
-| Phase-space sampling | ✅ Lepage VEGAS (deterministic parallel chunking, serde-frozen grids) + n-body LIPS/RAMBO generic over the scalar type, and MadGraph-style **multichannel**: per-diagram propagator-pole channel trees, Breit–Wigner / multi-rung t-channel-spine / massless-log maps with per-subprocess identical-particle factors, variance-minimising weights with α-adaptation, one grid per channel |
-| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions, including the default kT-clustered dynamical scale reproduced against MadGraph's own clustering; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings; partial widths of 1→n decays; decay chains inside MadEvent's Breit–Wigner windows; `$` as MadEvent's zeroed on-shell propagator; polarized cross sections |
-| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
-
-Notable current boundaries, each refused by name: spin-3/2 and spin-2
-wavefunctions, Majorana fermions and charge conjugation, loop-level UFOs (out of
-the LO charter), beam configurations beyond unpolarized proton–proton or
-fixed-energy partonic beams, squared-order constraints, polarized intermediate
-resonances, one-body final states (`p p > z'` with no decay), the coloured-scalar
-seagull vertex (so squark-pair production), photon isolation, MLM matching at
-fixed-energy beams or on decays, MadSpin decays, and `add process` lines of
-different multiplicity at fixed-energy beams (at proton beams they are summed,
-the way MadEvent sums its `P<n>` directories). Colour sextets and baryonic epsilon tensors are
-*supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
-`ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
-corners still refused rather than guessed: a `T6` carrying adjoint indices, and
-any colour basis in which such a tensor survives to an external leg, which no
-Les Houches record can write. See the [backlog](https://nsmith-.github.io/vibegraph/backlog.html) and the
-design record in [`research/kb/`](research/kb/index.md).
+**Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
+boundary checklist already lives in the backlog's items tagged `non-sm-ufo` — MadSpin-style
+decays, CKKW-L merging, and NLO event generation.
 
 ### Differences from MadGraph
 
@@ -328,86 +258,21 @@ as tracked rows, never as loosened tolerances.
 
 ## Performance
 
-Every ratio below compares both sides **on one host, in one sitting**, on two
-hosts:
-- **x86:** a 4-vCPU Intel Ice Lake Xeon (KVM guest), with the v0.2.1 release
-  binaries, plain x86-64 and x86-64-v3.
-- **Apple M3 Max:** the v0.2.0 macOS release binary. Nothing performance-related
-  changed for macOS between v0.2.0 and v0.2.1.
-- **MadGraph:** the pinned 3.7.1, run through its own `launch` on the same host,
-  with its default compiler flags set explicitly.
+Ratios are costs, ours over MadGraph's, so **below 1.0× is faster than
+MadGraph** unless a figure says "faster". Both sides run on the same host: a
+4-vCPU Intel Ice Lake Xeon (KVM guest) with the v0.2.1 binaries, and an Apple
+M3 Max with the v0.2.0 macOS binary (nothing performance-related changed for
+macOS in v0.2.1), against the pinned MadGraph 3.7.1 run through its own
+`launch` with its default compiler flags set explicitly.
 
-The full record, with every command, is in
-[`research/kb/performance/`](research/kb/performance/index.md):
-[matrix element](research/kb/performance/matrix-element-vs-madgraph.md),
-[integration](research/kb/performance/integration-vs-madgraph.md),
-[reweighting](research/kb/performance/reweighting-cost-vs-madgraph.md) and
-[systematics](research/kb/performance/systematics-cost-vs-madgraph.md).
+| measure | x86, plain / x86-64-v3 | M3 Max |
+|---|--:|--:|
+| CPU time to 0.1% on σ, geometric mean over 7 processes | **0.52×** / **0.47×** | **0.30×** |
+| matrix element per point, geometric mean over 19 processes | 0.85× / 0.75× | 0.80× |
+| EFT reweighting, 45 hypotheses on 1000 `e+ e- > t t~` events | 214×–708× faster | 351×–1015× faster |
+| systematics, 926 weights on 20 000 `p p > l+ l- j` events | 11.8× faster | 17.5× faster |
 
-All ratios are cost ratios, ours over MadGraph's, so **below 1.0× is faster
-than MadGraph**, unless a figure says "faster".
-
-### The matrix element, per point
-
-Our matrix element is evaluated by an interpreter: a helicity-amplitude program
-built from the UFO model when the process is loaded, with no code generation or
-compiler. Against MadGraph's generated, helicity-filtered Fortran
-(`matrix1_optim.f`), over the 19 processes `scripts/mg_perf_compare.sh` covers,
-2→2 through 2→6:
-
-| host and build, both sides | geometric mean | range | slower than MadGraph |
-|---|--:|--:|--:|
-| x86, default x86-64 | **0.85×** | 0.64×–1.45× | 5 of 19 |
-| x86, x86-64-v3 | **0.75×** | 0.57×–1.24× | 3 of 19 |
-| M3 Max, default | **0.80×** | 0.57×–1.39× | 5 of 19 |
-
-- **Fastest relative to MadGraph:** the multi-leg rows. The 2→4 rows run at
-  0.57×–0.59× under x86-64-v3 and on the M3; the 2→6 rows at 0.61×–0.90×.
-- **Slower:** `u u~ > u u~` (about 1.4×; 1.2× under x86-64-v3), `g g > g g`
-  (1.2×) and `e+ e- > W+ W-` (1.1×–1.3×), where colour-flow contraction
-  dominates.
-- **x86-64-v3 helps us more than MadGraph**: about 1.24× faster for us against
-  1.08× for MadGraph. This is still one point at a time, with no SIMD batching.
-
-The starting point was 8.6×–110× slower: a general expression DAG walked per
-point. Four things closed the distance, all of it holding the ≤ 1e-12
-matrix-element gate throughout:
-- compiling that DAG into a flat typed tape;
-- expanding one straight-line program per contributing helicity combination;
-- reproducing MadGraph's own two layers of zero-filtering, whose survivor sets
-  match bit for bit;
-- specialising the arithmetic itself.
-
-### End to end: the integrand, not just the matrix element
-
-A per-point ratio is not what anyone waits for, and the matrix element is not
-the whole integrand. The phase-space map, the cuts, the scale draw and the
-multichannel density sum `Σⱼ αⱼgⱼ(p)` are in every point too. Take the heaviest
-rows, the 2→6 processes at 579 and 615 channels (Apple M3 Max figures):
-- **A point that survives the cuts** costs 138 µs and 207 µs, of which the
-  density sum is 36 and 38 µs (**26%** and **18%**).
-- **Most points never get that far.** Acceptance on these rows is 3.6% and
-  4.3%, and the density runs only after the cut and the matrix element. So the
-  average *drawn* point costs 5.8 µs and 9.0 µs.
-
-Both figures were an order of magnitude worse before the density moved behind
-the cut and began sharing subtree momenta across channels.
-`probe_2to6_eval_cost` and `probe_2to6_density_decomposition` in
-[`validate_sigma.rs`](vibegraph-lib/tests/validate_sigma.rs) re-measure them.
-
-The figures below are therefore the ones that describe running the generator.
-
-**CPU-seconds to a target accuracy on σ.** This is the figure of merit that
-folds in variance as well as per-point cost: the closest thing here to "how
-long until I have the number".
-- **Our side is measured:** `vibegraph integrate --target-rel 0.001 -j 1`,
-  three seeds, CPU time including model load and diagram enumeration.
-- **MadGraph's side is derived.** It takes the same host's MadEvent run of the
-  same process, and scales its `<cumulated_time>` to the accuracy our run
-  actually reached, by the 1/δ² Monte-Carlo law. So the whole extrapolation
-  sits on its side and none on ours.
-- **Errors** are the ones each run stops on, which three seeds' spread and the
-  iterations' own scatter both confirm.
+Time to 0.1% on σ, per process:
 
 | process | x86, plain | x86, x86-64-v3 | M3 Max |
 |---|--:|--:|--:|
@@ -420,106 +285,63 @@ long until I have the number".
 | `p p > e+ e-` + 0–2 jets, MLM | 2.09× | 2.12× | 1.56× |
 | **geometric mean** | **0.52×** | **0.47×** | **0.30×** |
 
-**The same accuracy for about half of MadEvent's CPU on x86, and under a third
-on the M3.** Without the MLM row the geometric means are 0.41×, 0.37× and 0.23×.
-Every σ agrees with MadEvent's, the largest pull 1.47. The hosts differ by about
-2× on every row, mostly on MadEvent's side: much of its `<cumulated_time>` is
-per-job work that barely speeds up on a faster host.
+Every σ agrees with MadEvent's, the largest pull 1.47. **The MLM row is the one
+open gap**: almost all of it is the two-jet part's cost per point, 485 µs against
+MadEvent's 104 µs, because each of our clusterings costs about 4× MadEvent's and
+we evaluate every flavour group's matrix element where MadEvent evaluates the one
+term it selects ([diagnosis and levers](research/kb/performance/mlm-integration-cost-vs-madevent.md)).
+The matrix element is slowest relative to MadGraph on `u u~ > u u~`, `g g > g g`
+and `e+ e- > W+ W-` (1.1×–1.4×), where colour-flow contraction dominates.
 
-Three rows need a closer reading:
-- **`e+ e- > mu+ mu-` and `g g > g g` overshoot.** The default budget's minimum
-  of six iterations already takes them past 0.1%, so the table compares equal
-  accuracy at the δ actually reached. Measured to 0.1% with a smaller budget
-  (`--min-iters 0 --neval 30000`), they read 0.19× and 0.81× on x86, and 0.10×
-  and 0.49× on the M3.
-- **`p p > l+ l- j` is phase-space map quality.** It draws 3.4× more points per
-  second than MadEvent on x86 but needs several times as many. That is the map
-  at the fiducial cut boundary, the next lever on this row.
-- **The MLM row is the one where we are slower:** 2.1× on x86, 1.6× on the M3.
-  Almost all of it is the two-jet part's cost per point, 485 µs against
-  MadEvent's 104 µs. Both cluster about as often per point, but each of our
-  clusterings costs about 4× MadEvent's, and we evaluate every flavour group's
-  matrix element twice where MadEvent evaluates the one term it selects. The
-  levers are estimated in
-  [the diagnosis](research/kb/performance/mlm-integration-cost-vs-madevent.md);
-  together they could take the row from 2.4× to between 1.2× and 1.7× (glibc
-  build on x86). Merged multi-jet integration is the clearest open performance
-  gap.
+- **Our time is measured, MadGraph's derived:** ours is `integrate --target-rel
+  0.001 -j 1` over three seeds, model load and diagram enumeration included;
+  MadEvent's `<cumulated_time>`, which excludes `output` and `compile`, is scaled
+  by 1/δ² to the accuracy our run reached. `e+ e- > mu+ mu-` and `g g > g g`
+  overshoot 0.1% at the six-iteration minimum and compare at the δ reached.
+- **The ratios are measurements, not constants:** they differ by about 2× between
+  the two hosts, mostly on MadEvent's side.
+- **Use v0.2.1 or later on Linux:** v0.2.0's musl builds slowed down with more
+  threads ([record](research/kb/performance/musl-allocator-thread-scaling.md)).
 
-**Integrand throughput.** The per-point half of the same comparison: our
-evaluations per single-core CPU-second against MadEvent's points per Fortran
-CPU-second. **We draw 3.9× more points per second on x86** (4.4× at
-x86-64-v3) **and 6.7× on the M3**, geometric mean over the seven rows. On x86 it
-ranges from 0.88× on the MLM row and 1.5× on `p p > j j` to 28× on
-`e+ e- > mu+ mu-`. Bigger is faster here, the opposite direction to the cost
-ratios above.
+Every command, the remaining caveats, integrand throughput, per-point cost
+breakdowns and thread scaling are in
+[`research/kb/performance/`](research/kb/performance/index.md)
+([matrix element](research/kb/performance/matrix-element-vs-madgraph.md),
+[integration](research/kb/performance/integration-vs-madgraph.md),
+[reweighting](research/kb/performance/reweighting-cost-vs-madgraph.md),
+[systematics](research/kb/performance/systematics-cost-vs-madgraph.md));
+unweighting efficiency is in [`events/unweighting.md`](research/kb/events/unweighting.md).
+`pixi run profile-sigma` records a samply profile of the σ gate.
 
-**Many weights: reweighting and systematics.** These are where the per-event
-cost of MadGraph's Python modules shows most. Both comparisons use the same
-events on both sides:
-- **Reweighting to an EFT operator basis** (8 SMEFTsim operators at NP=1, 45
-  hypotheses, 1000 `e+ e- > t t~` events): MadGraph's reweight module takes
-  72 s on x86 and 47 s on the M3. vibegraph adds 0.28–0.34 s on x86 and 0.13 s
-  on the M3, or about a third of that reading all 45 off nine amplitude
-  evaluations per event. That is **214×–708× faster on x86 and 351×–1015× on
-  the M3**.
-- **Systematics weights** (20 000 `p p > l+ l- j` events): CMS's 926-weight PDF,
-  scale and αs request adds 38.6 s to `generate` on x86 and 14.6 s on the M3,
-  against 455 s and 256 s for MadGraph's `systematics.py` (**11.8× and 17.5×**,
-  at 806 MiB against 3.1 GiB). A 9-point scale request is 18× (x86) and about
-  22× (M3).
+## Using the CLI
 
-Caveats on all of these:
-- **Throughput is an integrand ratio, not a matrix-element one.** Our
-  per-point work is not MadGraph's.
-- **MadEvent's point count may include its survey pass.** Whether its
-  recorded count does was never established, which puts a systematic factor of
-  order unity on its throughput column.
-- **One asymmetry is left uncorrected, and it is against us.** MadGraph's
-  `cumulated_time` excludes its `output` and `compile` stages, while our model
-  load and diagram enumeration sit inside our time.
-- **The x86 integration ratios reuse the v0.2.0 MadEvent runs** from the same
-  host, four days older than the v0.2.1 timings; the matrix-element,
-  reweighting and systematics comparisons reran both sides together.
-- **The M3 is a working desktop** (load average about 3, no core pinning on
-  macOS), so its figures carry more timing noise than the x86 ones.
-- **Use v0.2.1 or later on Linux.** The v0.2.0 Linux binaries ran slower with
-  more threads (musl's allocator lock); v0.2.1 fixed it, and its binaries
-  speed up 3.7× from `-j 1` to `-j 4` on this host
-  ([record](research/kb/performance/musl-allocator-thread-scaling.md)).
+The two phases split the work the way MadGraph's survey/refine-then-generate
+structure does, and share one on-disk artifact:
 
-**Parallel scaling** (Apple M3 Max). `vibegraph integrate -j 16` against
-`-j 1` gives **8.68×** on Drell–Yan and **9.48×** on `p p > l+ l- j`.
-- Thread count moves no bit. All twenty runs behind those figures wrote one
-  artifact digest per card, so `-j 16` is the same number computed faster, not
-  an approximation of it.
-- The residual serial term is the α-adaptation survey.
+1. `vibegraph integrate` — enumerate diagrams, compile the matrix element,
+   adapt one VEGAS grid **per phase-space channel**, and bank everything in
+   `grid.bin.zst`. It runs until σ's relative uncertainty reaches
+   `--target-rel` (0.1% by default); `--fixed-budget` spends a flat
+   `--neval × --niter` instead, which is the mode a banked run is reproducible
+   under.
+2. `vibegraph generate` — reload the artifact, unweight against the frozen
+   grids by accept/reject, and write a Les Houches event file.
 
-**Unweighting.** `w_max` now comes from MadGraph's own `unwgt.f`
-truncation-ladder rule. It used to be the weight scan's extremum, which a
-Pareto tail of index ≈ 2 never lets converge. At matched budgets this raised
-accept/reject efficiency on the five gating rows from 22.2 / 20.6 / 23.3 / 10.6
-/ 4.21% to 54.1 / 52.1 / 52.9 / 38.9 / 9.98%. `p p > l+ l- j` needed 2 269 051
-trials for 20 000 events before the change and 477 125 after: **4.36× cheaper
-per effective event**. That is a ratio of trial counts, so it holds on any
-host.
-
-More caveats:
-- **These ratios are not constants.** They are measurements on one host, and
-  the MadGraph denominator of the end-to-end ones moved by half between two
-  machines. `scripts/mg_perf_compare.sh` re-derives the matrix-element table on
-  any platform, and records the fingerprint that says both sides were built
-  comparably.
-- **Wall times are the noise-sensitive direction.** The figures above were
-  taken with nothing else running, because a busy host has been worth
-  double-digit percentages.
-- **Pruned evaluators inherit MadGraph's frame contract:** partonic-CM
-  momenta, with beams along ±z.
-
-Candidate next steps are listed in the [backlog](https://nsmith-.github.io/vibegraph/backlog.html).
+Three more commands: `vibegraph check-events` reads an emitted file back and
+checks it against itself; `vibegraph enumerate` writes a process's diagrams (an
+artifact `integrate` can start from, a summary and one SVG drawing per diagram);
+and `vibegraph inspect` prints what a saved integration records, or its
+configuration ranking as JSON. `vibegraph <cmd> --help` has the full option list, and the
+documentation site's [command-line pages](https://nsmith-.github.io/vibegraph/cli/overview.html)
+cover the rest: the unweighting strategies and the maximum-weight scan, run
+cards beyond the defaults, what the grid artifact contains and how it makes
+`generate` jobs trivially parallel, what a worker machine needs, logging and
+the live status pane, and the graceful-stop keys. The banked MadGraph cards
+in the checkout are ordinary inputs:
 
 ```bash
-pixi run profile-sigma   # samply profile of the σ gate
+vibegraph integrate validation/madgraph/dy13_proc_card.dat \
+  --run-card validation/madgraph/dy13_default_run_card.dat --out run/
 ```
 
 ## Repository layout
