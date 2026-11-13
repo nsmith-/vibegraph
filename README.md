@@ -156,9 +156,9 @@ echo 'generate e+ e- > mu+ mu-' | vibegraph integrate - --run-card run_card.dat 
 
 ### Proton beams: `p p > l+ l- j`
 
-![Terminal recording: vibegraph integrate runs p p > l+ l- j over 24 phase-space
+![Terminal recording: vibegraph integrate runs p p > l+ l- j over 6 phase-space
 channels with a live status pane pinned below the scrolling log, reaching 0.1%
-in 140 iterations and 12 seconds, then vibegraph generate unweights 10000 events
+in 50 iterations and 11 seconds, then vibegraph generate unweights 10000 events
 and check-events reads them back.](assets/demo_pp.gif)
 
 The same two commands, with no run card at all — which is to say MadGraph's LO
@@ -178,7 +178,7 @@ vibegraph check-events events.lhe
 ```
 
 Nothing sets an iteration count here either: the run stops when σ's relative
-uncertainty reaches 0.1%, so the `integrating 117/136` the pane counts is
+uncertainty reaches 0.1%, so the `integrating 20/43` the pane counts is
 against a *projected* total, re-estimated from the error every iteration — which
 is why the bar's denominator moves, and why the bar itself is not monotonic.
 [The status pane](https://nsmith-.github.io/vibegraph/cli/overview.html#watching-a-run) has the arithmetic, and `--fixed-budget`
