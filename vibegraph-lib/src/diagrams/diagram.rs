@@ -21,10 +21,11 @@
 //! (`endpoints[1]` is momentum-in). This does **not** replace rooting — it makes the
 //! momentum-routing convention explicit data rather than something reconstructed later.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use feyngraph::diagram::view::{DiagramView, LegView};
 use itertools::Either;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::helas::repr::numbers::Charge;
@@ -35,16 +36,16 @@ use crate::ufo::UFOModel;
 // ── Newtype indices ─────────────────────────────────────────────────────────────
 
 /// External leg, in `0..n_ext` with incoming legs first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LegIdx(pub usize);
 /// A vertex within one diagram.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VtxIdx(pub usize);
 /// An internal propagator within one diagram.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PropIdx(pub usize);
 /// The position of a ray within one vertex, in UFO interaction particle-slot order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RaySlot(pub(crate) usize);
 
 // ── Owned diagram ───────────────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ pub struct RaySlot(pub(crate) usize);
 /// `particle`/`charge` are as seen *from the attached vertex* (feyngraph's all-incoming
 /// convention: an outgoing leg carries its crossed antiparticle here). `incoming` is the
 /// momentum-flow direction — equivalently `leg_idx.0 < n_in`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Leg {
     pub particle: ParticleId,
     pub(crate) charge: Charge,
@@ -65,7 +66,7 @@ pub struct Leg {
 }
 
 /// An internal propagator. Momentum flows `endpoints[0] → endpoints[1]`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Prop {
     /// The particle flowing `endpoints[0] → endpoints[1]`, with the momentum: the particle
     /// of the interaction slot at `endpoints[1]`, whose particles are all read incoming.
@@ -91,7 +92,7 @@ pub struct Prop {
 /// MadGraph's third value, forbidden on shell (`False`, `gForceBW = 2`, an `$ A` line), is
 /// not recorded per propagator: the `$` veto is kept per subprocess by
 /// [`crate::onshell`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OnShell {
     /// No constraint (`None`): the line is whatever the amplitude makes it.
     #[default]
@@ -104,12 +105,14 @@ pub enum OnShell {
 /// A node of a process line's decay chain: `0` is the core, and the decays are numbered
 /// from `1` in the order they are written, a decay's own decays straight after it
 /// (`p p > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~`: `t` 1, `w+` 2, `t~` 3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub(crate) struct ChainNode(pub(crate) usize);
 
 /// Where one decay of a stitched diagram hangs: the chain node whose enumeration it came
 /// from, and the propagator its decaying particle became.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct DecayOrigin {
     pub(crate) node: ChainNode,
     pub(crate) prop: PropIdx,
@@ -118,7 +121,7 @@ pub(crate) struct DecayOrigin {
 /// Where a diagram came from on the proc card.
 ///
 /// Bookkeeping, not part of the graph: [`CanonicalDiagram`] equality ignores it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Provenance {
     /// MadGraph's process number of the card line (`@N`, or its position among the
     /// process lines).
@@ -140,7 +143,7 @@ impl Prop {
 }
 
 /// A directed half-edge attached to a vertex, in UFO particle-slot order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Ray {
     /// An external leg.
     Leg(LegIdx),
@@ -150,7 +153,7 @@ pub enum Ray {
 }
 
 /// An internal vertex: its UFO interaction and its rays in interaction-slot order.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Vertex {
     pub(crate) interaction: VertexId,
     /// Which of the interaction's fermion-flow groups
@@ -162,8 +165,16 @@ pub struct Vertex {
     pub rays: Vec<Ray>,
 }
 
+impl Vertex {
+    /// The name of the UFO interaction this vertex binds (`V_12`), without the
+    /// fermion-flow group.
+    pub fn interaction_name<'m>(&self, model: &'m UFOModel) -> &'m str {
+        &model.vertex_def(self.interaction).name
+    }
+}
+
 /// A single UFO-resolved, convention-baked Feynman diagram.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Diagram {
     /// External legs, indexed by [`LegIdx`]; incoming first.
     pub legs: Vec<Leg>,
@@ -172,9 +183,11 @@ pub struct Diagram {
     /// Internal vertices, indexed by [`VtxIdx`].
     pub vertices: Vec<Vertex>,
     /// The diagram's complete relative Fermi sign: the parity of the permutation that
-    /// takes the external fermions, paired by line, to their leg order (feyngraph's
-    /// `view.sign()`), times the per-line [`fermion_line_sign`](Self::fermion_line_sign).
-    /// Both are properties of the graph.
+    /// takes the external fermions, paired by line, to their leg order
+    /// ([`fermion_pairing_sign`](Self::fermion_pairing_sign)), times the per-line
+    /// [`fermion_line_sign`](Self::fermion_line_sign). Both are properties of the graph,
+    /// and their product changes by one factor for every diagram of a process when its
+    /// legs are listed in another order.
     pub(crate) sign: i8,
     /// Combined vertex × propagator symmetry factor (feyngraph `view.symmetry_factor()`).
     pub(crate) symmetry_factor: usize,
@@ -385,18 +398,38 @@ impl Diagram {
             legs,
             props,
             vertices,
-            sign: view.sign(),
+            sign: 1,
             symmetry_factor: view.symmetry_factor(),
             n_in,
             provenance: Provenance::default(),
         };
-        diagram.sign *= diagram.fermion_line_sign(model);
+        diagram.sign = diagram.fermion_pairing_sign(model) * diagram.fermion_line_sign(model);
         Ok(diagram)
     }
 
     /// Number of external legs.
     pub fn n_ext(&self) -> usize {
         self.legs.len()
+    }
+
+    /// The diagram's coupling orders: per order name, the sum over its vertices of
+    /// the powers each vertex's interaction carries. An order no vertex carries is
+    /// absent rather than zero.
+    ///
+    /// A vertex carries one coupling-order tuple, read off any one of its couplings:
+    /// the model splits a vertex whose couplings differ in their orders into one
+    /// interaction per tuple.
+    pub fn coupling_orders(&self, model: &UFOModel) -> BTreeMap<String, usize> {
+        let mut orders = BTreeMap::new();
+        for vertex in &self.vertices {
+            let def = model.vertex_def(vertex.interaction);
+            if let Some(&coupling) = def.couplings.values().next() {
+                for (name, &n) in &model.coupling_def(coupling).orders {
+                    *orders.entry(name.clone()).or_default() += n;
+                }
+            }
+        }
+        orders
     }
 
     /// External leg by index.
@@ -649,16 +682,39 @@ impl Diagram {
     }
 
     /// The parity of the external fermions paired by line: the fermion lines' end legs,
-    /// each pair lower index first and the pairs in the order of their lower index, read
-    /// as a permutation of the legs, `+1` when even. With
-    /// [`fermion_line_sign`](Self::fermion_line_sign) it makes up [`sign`](Self::sign);
-    /// on an enumerated diagram it is feyngraph's `view.sign()`, which counts the same
-    /// inversions (a tree has no closed fermion loop).
+    /// the pairs in the order of their lower index, read as a permutation of the legs,
+    /// `+1` when even. With [`fermion_line_sign`](Self::fermion_line_sign) it makes up
+    /// [`sign`](Self::sign).
+    ///
+    /// Within a pair the ends are put in an order the leg numbering does not choose:
+    /// on a line with both ends in the initial state, or both in the final state, the
+    /// end that is physically the antiparticle comes first; on a mixed line, the
+    /// incoming end. Relabelling the legs then permutes the listed ends the same way in
+    /// every diagram, so the parity of all of them moves together. Taken lower index
+    /// first, as feyngraph's `view.sign()` takes it, the order within a pair would
+    /// follow the labels: two diagrams pairing the same legs differently could then
+    /// change their relative sign when the legs are relabelled (`e+ e- > e+ e-` against
+    /// `e+ e- > e- e+`, where the s-channel's initial- and final-state lines face the
+    /// t-channel's two mixed ones; `t t~ b b~`'s (t t~)(b b~) pairing against the
+    /// (t b~)(b t~) one a W joins). MadGraph's amplitudes are invariant under the
+    /// relabelling, and agree with this order on both.
     pub(crate) fn fermion_pairing_sign(&self, model: &UFOModel) -> i8 {
+        // `Leg::charge` is all-incoming: a final-state leg carries its antiparticle.
+        let physical_antiparticle =
+            |leg: &Leg| (leg.charge == Charge::Antiparticle) == leg.incoming;
         let order: Vec<usize> = self
             .fermion_lines(model)
             .iter()
-            .flat_map(|line| line.legs.map(|l| l.0))
+            .flat_map(|line| {
+                let [a, b] = line.legs.map(|l| self.leg(l));
+                let a_first = a.incoming != b.incoming && a.incoming
+                    || a.incoming == b.incoming && physical_antiparticle(a);
+                if a_first {
+                    [a.leg_idx.0, b.leg_idx.0]
+                } else {
+                    [b.leg_idx.0, a.leg_idx.0]
+                }
+            })
             .collect();
         let inversions = (0..order.len())
             .flat_map(|i| (i + 1..order.len()).map(move |j| (i, j)))

@@ -1,8 +1,9 @@
 //! On-disk artifact for a completed `vibegraph integrate` run: the adapted
 //! VEGAS grids plus everything the run was integrated from (the proc card, the
-//! model's identity, the PDF set, the integration's run card and the
-//! generation settings it recorded), so a later step reads them back rather than
-//! asking for them again.
+//! restricted model itself, the param card, the enumerated diagram sets, the
+//! PDF set, the integration's run card and the generation settings it
+//! recorded), so a later step reads them back rather than asking for them
+//! again. Only the PDF files are read from outside it.
 //!
 //! Encoding is bincode, zstd-compressed — the same pairing already used for
 //! the interned SM model blob ([`crate::ufo::sm`]).
@@ -13,10 +14,15 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::amplitude_probe::SetProbe;
+use crate::diagrams::artifact::{diagram_set_digest, ENUMERATION_VERSION};
+use crate::diagrams::DiagramSet;
 use crate::generate::GenerateSettings;
 use crate::phasespace::maps::MapChoices;
 use crate::runcard::RunCard;
-use crate::ufo::identity::ModelIdentity;
+use crate::ufo::identity::{model_digest, ModelIdentity};
+use crate::ufo::loaded::{LoadedModel, ModelNaming};
+use crate::ufo::{ParsedModel, UfoError};
 use crate::vegas::{GridRule, VegasGrid};
 
 /// Bumped whenever [`IntegrateArtifact`]'s shape or meaning changes. Every
@@ -81,11 +87,38 @@ use crate::vegas::{GridRule, VegasGrid};
 /// span that line's `bwcutoff` window rather than reaching `τ = 1`. A
 /// version-20 grid of such a process was adapted to the unbounded draw and has
 /// the same keys, dimensions and channel maps, so it would replay against a
-/// `τ` map it was not trained on. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 21;
+/// `τ` map it was not trained on.
+///
+/// `22` makes the artifact self-contained but for the PDF files. It embeds the
+/// restricted model and its particle naming ([`IntegrateArtifact::embedded`]),
+/// the param card's text ([`IntegrateArtifact::param_card`]), the enumerated
+/// diagram sets with their digest ([`IntegrateArtifact::sets`],
+/// [`IntegrateArtifact::diagram_set_digest`]), and |M|² at fixed phase-space
+/// points per set ([`IntegrateArtifact::amplitude_probe`]). A generation
+/// rebuilds the model from the embedded bytes and reads the diagrams instead of
+/// reading a UFO directory and enumerating again, and refuses a build that no
+/// longer reproduces the probe. A version-21 file has none of these fields; it
+/// could be replayed only through the UFO lookup and re-enumeration this build
+/// no longer has, and with no probe to tell whether the build computes the
+/// matrix element it was integrated with.
+///
+/// `23` banks each configuration's share of the cross section
+/// ([`IntegrateArtifact::configurations`]) and every `(diagram set,
+/// configuration)` a channel serves ([`ChannelGrid::members`]). A version-22
+/// file has neither: its run accumulated no share, and the shares cannot be
+/// recovered from its grids without integrating again, so it is refused rather
+/// than read with an empty ranking that would look like a measured one.
+///
+/// `24` records the [`ENUMERATION_VERSION`] of the build that enumerated the
+/// banked sets ([`IntegrateArtifact::enumeration_version`]), and a reader
+/// refuses any other. A version-23 file does not say which enumeration produced
+/// its sets, and its amplitude probe recompiles those sets, so it agrees with
+/// itself whatever enumeration wrote them; only integrating again can tell, so
+/// it is refused. [`OLDEST_READABLE_VERSION`] is this version.
+pub const FORMAT_VERSION: u32 = 24;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
-pub(crate) const OLDEST_READABLE_VERSION: u32 = 21;
+pub(crate) const OLDEST_READABLE_VERSION: u32 = 24;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -119,6 +152,58 @@ pub enum ArtifactError {
     },
     #[error("zstd (de)compression failed: {0}")]
     Zstd(io::Error),
+    #[error(
+        "the model embedded in the artifact digests to {embedded}, but the artifact records \
+         {label} with digest {recorded}; the file is corrupt or was edited (regenerate it with \
+         `vibegraph integrate`)"
+    )]
+    ModelDigestMismatch {
+        label: String,
+        recorded: String,
+        embedded: String,
+    },
+    #[error(
+        "the diagram sets in the artifact digest to {computed}, but the artifact records \
+         {recorded}; the file is corrupt or was edited (regenerate it with `vibegraph integrate`)"
+    )]
+    DiagramDigestMismatch { recorded: String, computed: String },
+    #[error(
+        "the artifact's diagram sets were enumerated by enumeration version {found}, but this \
+         build enumerates as version {expected}: its diagrams, Fermi signs or symmetry factors \
+         may differ from what this build computes (integrate again from the proc card with \
+         `vibegraph integrate`)"
+    )]
+    EnumerationVersion { found: u32, expected: u32 },
+    #[error("cannot rebuild the model embedded in the artifact: {0}")]
+    Model(#[from] UfoError),
+}
+
+/// A restricted model as an artifact carries it: the parsed model with its
+/// restriction applied, and the particle naming it was built with, from which
+/// [`LoadedModel::from_restricted`] rebuilds exactly the model the run used.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct EmbeddedModel {
+    pub parsed: ParsedModel,
+    pub naming: ModelNaming,
+}
+
+impl EmbeddedModel {
+    /// The parts of `model` an artifact embeds.
+    pub fn of(model: &LoadedModel) -> Self {
+        EmbeddedModel {
+            parsed: (*model.parsed).clone(),
+            naming: model.naming.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for EmbeddedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmbeddedModel")
+            .field("digest", &model_digest(&self.parsed))
+            .field("naming", &self.naming)
+            .finish()
+    }
 }
 
 /// One file a run read, by its name in the set directory, and the lowercase-hex
@@ -343,6 +428,83 @@ pub struct ChannelGrid {
     /// What the rule-based composition chose for this channel, where the writer
     /// knew it.
     pub sampler: Option<ChannelSampler>,
+    /// Every `(diagram set, configuration)` this channel's map serves: one entry
+    /// per pair of a merged channel, and per member set of a flavour group, in
+    /// the order the channel's pairs were derived. Empty for a channel no
+    /// diagram built (flat phase space).
+    pub members: Vec<ChannelMember>,
+}
+
+/// A diagram set as one term of an integration reads it: the set at index
+/// `set` of [`IntegrateArtifact::sets`], its outgoing legs put in
+/// `final_order` (outgoing leg `i` of the term is outgoing leg
+/// `final_order[i]` of the enumerated set). Reordering keeps every diagram's
+/// index, so a diagram index of the term is one of the enumerated set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetRef {
+    pub set: usize,
+    pub final_order: Vec<usize>,
+}
+
+/// One `(diagram set, configuration)` pair a channel serves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelMember {
+    /// The set, as the integration reads it.
+    pub set: SetRef,
+    /// The set's diagrams that make up the configuration, in its own diagram
+    /// indexing. Empty where the set's own configurations could not be paired
+    /// with the integrated evaluator's.
+    pub diagrams: Vec<usize>,
+    /// The entry of [`IntegrateArtifact::configurations`] whose cross section
+    /// this pair's configuration is counted in, `None` where the channel's
+    /// diagrams carry no integration configuration of the evaluator (a
+    /// configuration whose diagrams the colour basis never references).
+    pub share: Option<usize>,
+}
+
+/// One integration configuration's share of the cross section: MadEvent's
+/// single-diagram-enhancement partition of the integrand.
+///
+/// At every point the integrated term of one evaluator (a fixed-energy
+/// subprocess, or a hadronic flavour group with every member's luminosity and
+/// both beam orderings) is divided over that evaluator's configurations in
+/// proportion to `w_c / Σ w`, with `w_c = AMP2_c` (the coherent squared sum of
+/// the configuration's diagram amplitudes, at the coupling the point's `|M|²`
+/// was evaluated at) under `sde_strategy = 1`, and `get_channel_cut`'s
+/// propagator product under `sde_strategy = 2`. This is the factor
+/// `matrix_madevent_group_v4.inc` multiplies MadEvent's channel `c` by, so
+/// [`sigma`](Self::sigma) is what MadEvent's `G` directory for the
+/// configuration integrates (summed with the configurations MadEvent folds into
+/// it by symmetry). It is accumulated from the points and weights the cross
+/// section is, during the iterations that enter it, and combined over them and
+/// over channels exactly as the cross section is, so the shares of a run sum to
+/// [`IntegrateArtifact::sigma_pb`] to rounding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConfigShare {
+    /// The set whose evaluator was integrated: a fixed-energy subprocess, or a
+    /// flavour group's representative.
+    pub set: usize,
+    /// The configuration's index among the evaluator's (the order `AMP2` takes),
+    /// or `None` for the evaluator's weight at points where no configuration
+    /// carried any (every enhancement weight zero), which contact diagrams alone
+    /// can give. Every evaluator banks one such entry.
+    pub configuration: Option<usize>,
+    /// The configuration's diagrams, in [`set`](Self::set)'s indexing; empty
+    /// for `configuration: None`.
+    pub diagrams: Vec<usize>,
+    /// The set's diagrams no configuration carries: contact diagrams, and
+    /// diagrams the colour basis never references. They enter every share
+    /// through `|M|²`.
+    pub contact_diagrams: Vec<usize>,
+    /// Every set whose term this share includes: the subprocess itself at fixed
+    /// energy, every member of the flavour group (the representative first) at
+    /// proton beams. A group's members share one matrix element and one
+    /// configuration partition, so the share is the group's, not split by
+    /// member.
+    pub members: Vec<SetRef>,
+    /// The share in the run's observable unit (pb, or GeV for a decay).
+    pub sigma: f64,
+    pub sigma_err: f64,
 }
 
 /// One final-state phase space's share of a proton-beam integration: the
@@ -407,6 +569,10 @@ pub struct MultiplicityTotal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntegrateArtifact {
     pub format_version: u32,
+    /// The [`ENUMERATION_VERSION`] of the build that enumerated
+    /// [`sets`](Self::sets). Second, so it is checked before the body is
+    /// decoded.
+    pub enumeration_version: u32,
     /// The process string this artifact was integrated for (`"p p > e+ e-"`).
     pub process: String,
     /// The proc card the run was integrated from, as its text: the process
@@ -468,6 +634,30 @@ pub struct IntegrateArtifact {
     /// keys and grid dimensions do not make two maps the same function. The
     /// key encodes a map's parameters, not the code that samples it.
     pub channel_map_digest: String,
+    /// The restricted model the amplitudes were compiled from, whose
+    /// [`model_digest`] is [`model`](Self::model)'s digest. A generation
+    /// rebuilds its model from these bytes and reads no UFO directory, and
+    /// [`inputs`](Self::inputs)' parameter moves are relative to its defaults.
+    pub embedded: EmbeddedModel,
+    /// The param card's text, verbatim, or `None` for a run that read none.
+    /// For the record: a generation binds from [`RunInputs::params`] and
+    /// [`RunInputs::decays`].
+    pub param_card: Option<String>,
+    /// Every diagram set the run integrated, in enumeration order, which a
+    /// generation reads instead of enumerating the proc card again.
+    pub sets: Vec<DiagramSet>,
+    /// [`diagram_set_digest`] of [`sets`](Self::sets): the digest a
+    /// `vibegraph enumerate` run of the same card records.
+    pub diagram_set_digest: String,
+    /// One entry per diagram set, in set order: |M|² at fixed phase-space
+    /// points under the bound param card ([`crate::amplitude_probe`]). A
+    /// generation recomputes every point and refuses a build that moved one.
+    pub amplitude_probe: Vec<SetProbe>,
+    /// Every integrated evaluator's configuration shares ([`ConfigShare`]), in
+    /// evaluator order (subprocess or flavour group, part by part), each
+    /// evaluator's configurations in `AMP2` order followed by its unattributed
+    /// entry.
+    pub configurations: Vec<ConfigShare>,
 }
 
 /// SHA-256 over every channel's
@@ -533,7 +723,9 @@ impl IntegrateArtifact {
     ///
     /// The format version is read from the payload's prefix before the body is
     /// decoded, so a file written by another schema version is refused by name —
-    /// never misread into whatever the current field order happens to accept.
+    /// never misread into whatever the current field order happens to accept —
+    /// and then the enumeration version, so a file whose sets another
+    /// enumeration produced is refused by name before anything reads them.
     pub fn read_from_path(path: &Path) -> Result<Self, ArtifactError> {
         Self::read_hashed(path).map(|(artifact, _)| artifact)
     }
@@ -548,17 +740,61 @@ impl IntegrateArtifact {
         let sha256 = crate::ufo::identity::digest_bytes(&compressed);
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
-        match header.format_version {
+        let artifact: Self = match header.format_version {
             FORMAT_VERSION => {
-                let artifact: Self = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
-                Ok((artifact, sha256))
+                let (_, enumeration_version): (u32, u32) =
+                    bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
+                if enumeration_version != ENUMERATION_VERSION {
+                    return Err(ArtifactError::EnumerationVersion {
+                        found: enumeration_version,
+                        expected: ENUMERATION_VERSION,
+                    });
+                }
+                bincode::deserialize(&raw).map_err(ArtifactError::Decode)?
             }
-            found => Err(ArtifactError::UnsupportedVersion {
-                found,
-                oldest: OLDEST_READABLE_VERSION,
-                expected: FORMAT_VERSION,
-            }),
+            found => {
+                return Err(ArtifactError::UnsupportedVersion {
+                    found,
+                    oldest: OLDEST_READABLE_VERSION,
+                    expected: FORMAT_VERSION,
+                })
+            }
+        };
+        artifact.check_embedded()?;
+        Ok((artifact, sha256))
+    }
+
+    /// Refuse an artifact whose embedded model does not digest to the recorded
+    /// identity, or whose diagram sets do not digest to the recorded
+    /// [`diagram_set_digest`](Self::diagram_set_digest).
+    fn check_embedded(&self) -> Result<(), ArtifactError> {
+        let embedded = model_digest(&self.embedded.parsed);
+        if embedded != self.model.digest {
+            return Err(ArtifactError::ModelDigestMismatch {
+                label: self.model.label(),
+                recorded: self.model.digest.clone(),
+                embedded,
+            });
         }
+        let computed = diagram_set_digest(&self.sets);
+        if computed != self.diagram_set_digest {
+            return Err(ArtifactError::DiagramDigestMismatch {
+                recorded: self.diagram_set_digest.clone(),
+                computed,
+            });
+        }
+        Ok(())
+    }
+
+    /// The model the run used, rebuilt from the embedded bytes under the
+    /// recorded identity.
+    pub fn loaded_model(&self) -> Result<LoadedModel, ArtifactError> {
+        Ok(LoadedModel::from_restricted(
+            self.embedded.parsed.clone(),
+            self.embedded.naming.clone(),
+            &self.model.name,
+            &self.model.restrict,
+        )?)
     }
 }
 
@@ -580,12 +816,21 @@ mod tests {
             sigma_err_pb: 0.87,
             chi2_per_dof: Some(1.02),
             sampler: None,
+            members: vec![ChannelMember {
+                set: SetRef {
+                    set: 0,
+                    final_order: vec![0, 1],
+                },
+                diagrams: vec![0],
+                share: Some(0),
+            }],
         }
     }
 
     fn sample_artifact() -> IntegrateArtifact {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
+            enumeration_version: ENUMERATION_VERSION,
             process: "p p > e+ e-".to_string(),
             proc_card: "import model sm\ngenerate p p > e+ e-\n".to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
@@ -634,7 +879,309 @@ mod tests {
             grid_rule: Some(GridRule::UNBOUNDED),
             channel_map_digest: channel_map_digest(&["n=2;T"]),
             alpha_floor: Some(crate::phasespace::DEFAULT_ALPHA_FLOOR),
+            embedded: EmbeddedModel::of(&LoadedModel::interned_sm(SMRestrict::Default)),
+            param_card: Some("BLOCK MASS\n 23 9.118800e+01\n".to_string()),
+            sets: Vec::new(),
+            diagram_set_digest: diagram_set_digest(&[]),
+            amplitude_probe: Vec::new(),
+            configurations: vec![ConfigShare {
+                set: 0,
+                configuration: Some(0),
+                diagrams: vec![0],
+                contact_diagrams: Vec::new(),
+                members: vec![SetRef {
+                    set: 0,
+                    final_order: vec![0, 1],
+                }],
+                sigma: 934.42,
+                sigma_err: 0.87,
+            }],
         }
+    }
+
+    /// Version 21's fields, in order: this build's fields up to
+    /// [`IntegrateArtifact::channel_map_digest`], without the embedded model,
+    /// param card, diagram sets, their digest and the amplitude probe. Its
+    /// channels are this build's records, whose member lists version 21 did not
+    /// have; the tests built on it refuse by version before any channel is read.
+    #[derive(Serialize)]
+    struct V21Artifact<'a> {
+        format_version: u32,
+        process: &'a String,
+        proc_card: &'a String,
+        model: &'a ModelIdentity,
+        inputs: &'a RunInputs,
+        mu_f: Option<f64>,
+        sqrt_s_had: f64,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        run_card: &'a RunCard,
+        generate: &'a GenerateSettings,
+        channels: &'a Vec<ChannelGrid>,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: Option<f64>,
+        multiplicities: &'a Vec<MultiplicityTotal>,
+        maps: MapChoices,
+        grid_rule: Option<GridRule>,
+        alpha_floor: Option<f64>,
+        channel_map_digest: &'a String,
+    }
+
+    /// `a`'s values in version 21's shape, stamped `version`.
+    fn v21_bytes(a: &IntegrateArtifact, version: u32) -> Vec<u8> {
+        bincode::serialize(&V21Artifact {
+            format_version: version,
+            process: &a.process,
+            proc_card: &a.proc_card,
+            model: &a.model,
+            inputs: &a.inputs,
+            mu_f: a.mu_f,
+            sqrt_s_had: a.sqrt_s_had,
+            neval: a.neval,
+            niter: a.niter,
+            seed: a.seed,
+            run_card: &a.run_card,
+            generate: &a.generate,
+            channels: &a.channels,
+            sigma_pb: a.sigma_pb,
+            sigma_err_pb: a.sigma_err_pb,
+            chi2_per_dof: a.chi2_per_dof,
+            multiplicities: &a.multiplicities,
+            maps: a.maps,
+            grid_rule: a.grid_rule,
+            alpha_floor: a.alpha_floor,
+            channel_map_digest: &a.channel_map_digest,
+        })
+        .unwrap()
+    }
+
+    /// Version 22's channel record: this build's without
+    /// [`ChannelGrid::members`].
+    #[derive(Serialize)]
+    struct V22ChannelGrid<'a> {
+        key: ChannelKey,
+        alpha: f64,
+        neval: usize,
+        grid: &'a VegasGrid,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: Option<f64>,
+        sampler: &'a Option<ChannelSampler>,
+    }
+
+    /// Version 22's real shape, field for field: version 21's, then the
+    /// embedded model, the param card, the diagram sets, their digest and the
+    /// amplitude probe; its channels without members and no configuration
+    /// shares.
+    #[derive(Serialize)]
+    struct V22Artifact<'a> {
+        format_version: u32,
+        process: &'a String,
+        proc_card: &'a String,
+        model: &'a ModelIdentity,
+        inputs: &'a RunInputs,
+        mu_f: Option<f64>,
+        sqrt_s_had: f64,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+        run_card: &'a RunCard,
+        generate: &'a GenerateSettings,
+        channels: Vec<V22ChannelGrid<'a>>,
+        sigma_pb: f64,
+        sigma_err_pb: f64,
+        chi2_per_dof: Option<f64>,
+        multiplicities: &'a Vec<MultiplicityTotal>,
+        maps: MapChoices,
+        grid_rule: Option<GridRule>,
+        alpha_floor: Option<f64>,
+        channel_map_digest: &'a String,
+        embedded: &'a EmbeddedModel,
+        param_card: &'a Option<String>,
+        sets: &'a Vec<DiagramSet>,
+        diagram_set_digest: &'a String,
+        amplitude_probe: &'a Vec<SetProbe>,
+    }
+
+    /// `a`'s values in version 22's shape, stamped 22.
+    fn v22_bytes(a: &IntegrateArtifact) -> Vec<u8> {
+        bincode::serialize(&V22Artifact {
+            format_version: 22,
+            process: &a.process,
+            proc_card: &a.proc_card,
+            model: &a.model,
+            inputs: &a.inputs,
+            mu_f: a.mu_f,
+            sqrt_s_had: a.sqrt_s_had,
+            neval: a.neval,
+            niter: a.niter,
+            seed: a.seed,
+            run_card: &a.run_card,
+            generate: &a.generate,
+            channels: a
+                .channels
+                .iter()
+                .map(|c| V22ChannelGrid {
+                    key: c.key,
+                    alpha: c.alpha,
+                    neval: c.neval,
+                    grid: &c.grid,
+                    sigma_pb: c.sigma_pb,
+                    sigma_err_pb: c.sigma_err_pb,
+                    chi2_per_dof: c.chi2_per_dof,
+                    sampler: &c.sampler,
+                })
+                .collect(),
+            sigma_pb: a.sigma_pb,
+            sigma_err_pb: a.sigma_err_pb,
+            chi2_per_dof: a.chi2_per_dof,
+            multiplicities: &a.multiplicities,
+            maps: a.maps,
+            grid_rule: a.grid_rule,
+            alpha_floor: a.alpha_floor,
+            channel_map_digest: &a.channel_map_digest,
+            embedded: &a.embedded,
+            param_card: &a.param_card,
+            sets: &a.sets,
+            diagram_set_digest: &a.diagram_set_digest,
+            amplitude_probe: &a.amplitude_probe,
+        })
+        .unwrap()
+    }
+
+    /// A version-22 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 22's real shape: this build's values with
+    /// no channel members and no configuration shares. Stamped with this
+    /// build's version it would misread the first channel's missing member
+    /// list out of the next channel's bytes; stamped 22 it is never decoded.
+    #[test]
+    fn a_version_22_artifact_is_refused() {
+        let a = sample_artifact();
+        assert!(!a.channels[0].members.is_empty() && !a.configurations.is_empty());
+        let raw = v22_bytes(&a);
+        let current = bincode::serialize(&a).unwrap();
+        assert_ne!(
+            current[4..],
+            raw[4..],
+            "version 22's shape is not this build's"
+        );
+
+        let dir = scratch_dir("v22");
+        let path = dir.join("v22.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-22 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 22,
+                    oldest: 24,
+                    expected: 24
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-23 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 23's real shape: the current encoding
+    /// with the enumeration version's four bytes removed, which is exactly
+    /// version 23's field order.
+    #[test]
+    fn a_version_23_artifact_is_refused() {
+        let a = sample_artifact();
+        let current = bincode::serialize(&a).unwrap();
+        assert_eq!(
+            current[4..8],
+            ENUMERATION_VERSION.to_le_bytes(),
+            "the enumeration version is the second field"
+        );
+        let mut raw = 23u32.to_le_bytes().to_vec();
+        raw.extend_from_slice(&current[8..]);
+
+        let dir = scratch_dir("v23");
+        let path = dir.join("v23.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-23 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 23,
+                    oldest: 24,
+                    expected: 24
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An artifact recording another enumeration version is refused on read by
+    /// name, naming both versions and the remedy, although its model and sets
+    /// pass every digest check: the sets digest to what they hold, whatever
+    /// enumeration computed them, and the amplitude probe recompiles those
+    /// same sets.
+    ///
+    /// Cannot detect an enumeration change made without bumping
+    /// [`ENUMERATION_VERSION`]; the known-answer test in
+    /// [`crate::diagrams::artifact`] is what sees that.
+    #[test]
+    fn another_enumeration_version_is_refused_by_name() {
+        let dir = scratch_dir("enumeration");
+        for version in [ENUMERATION_VERSION - 1, ENUMERATION_VERSION + 1] {
+            let mut a = sample_artifact();
+            a.enumeration_version = version;
+            let path = dir.join(format!("e{version}.bin.zst"));
+            a.write_to_path(&path, true).unwrap();
+            let err = IntegrateArtifact::read_from_path(&path)
+                .expect_err("another enumeration version must be refused");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::EnumerationVersion { found, expected }
+                        if found == version && expected == ENUMERATION_VERSION
+                ),
+                "{err}"
+            );
+            let message = err.to_string();
+            assert!(
+                message.contains(&format!("enumeration version {version}")),
+                "{message}"
+            );
+            assert!(
+                message.contains(&format!("version {ENUMERATION_VERSION}:")),
+                "{message}"
+            );
+            assert!(message.contains("`vibegraph integrate`"), "{message}");
+        }
+        let path = dir.join("same.bin.zst");
+        sample_artifact().write_to_path(&path, true).unwrap();
+        IntegrateArtifact::read_from_path(&path).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The configuration shares and every channel's members survive the round
+    /// trip.
+    #[test]
+    fn configuration_shares_and_channel_members_round_trip() {
+        let a = sample_artifact();
+        let dir = scratch_dir("shares");
+        let path = dir.join("shares.bin.zst");
+        a.write_to_path(&path, true).unwrap();
+        let b = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(b.configurations, a.configurations);
+        assert_eq!(b.channels[0].members, a.channels[0].members);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -790,6 +1337,16 @@ mod tests {
                     }],
                     spine_poles_gev2: vec![100.0, 25.0],
                 }),
+                members: (0..=j)
+                    .map(|k| ChannelMember {
+                        set: SetRef {
+                            set: j / 2,
+                            final_order: vec![1, 0],
+                        },
+                        diagrams: vec![k, k + 1],
+                        share: (k % 2 == 0).then_some(k),
+                    })
+                    .collect(),
             })
             .collect();
         assert!(artifact.sole_grid().is_none());
@@ -811,6 +1368,7 @@ mod tests {
             assert_eq!(rc.grid.ndim(), ac.grid.ndim(), "channel {j}");
             assert_eq!(rc.sigma_pb.to_bits(), ac.sigma_pb.to_bits(), "channel {j}");
             assert_eq!(rc.sampler, ac.sampler, "channel {j}");
+            assert_eq!(rc.members, ac.members, "channel {j}");
         }
 
         std::fs::remove_file(&path).ok();
@@ -945,7 +1503,10 @@ mod tests {
     }
 
     /// A version-14 file is refused by its version, with the message that says
-    /// to re-integrate, however well its bytes would decode. Version 20 holds
+    /// to re-integrate, however well its bytes would decode. Version 23 does
+    /// not record which enumeration produced its diagram sets; version 22 banks no
+    /// configuration share or channel membership; version 21 embeds
+    /// no model, diagrams or amplitude probe to replay from; version 20 holds
     /// grids of a whole-state decay chain trained on a `τ` draw reaching
     /// `τ = 1`, which this build bounds by the chain's window; version 16 holds
     /// grids trained through maps this build no longer builds for the same
@@ -957,7 +1518,20 @@ mod tests {
     #[test]
     fn a_version_14_artifact_is_refused() {
         let dir = scratch_dir("v14");
-        for version in [13, 14, 15, 16, 17, 18, 19, 20, FORMAT_VERSION + 1] {
+        for version in [
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            FORMAT_VERSION + 1,
+        ] {
             let path = stamped(&sample_artifact(), &dir, version);
             let err = IntegrateArtifact::read_from_path(&path).expect_err("another version");
             assert!(
@@ -965,8 +1539,8 @@ mod tests {
                     err,
                     ArtifactError::UnsupportedVersion {
                         found,
-                        oldest: 21,
-                        expected: 21
+                        oldest: 24,
+                        expected: 24
                     } if found == version
                 ),
                 "{err}"
@@ -981,7 +1555,7 @@ mod tests {
     }
 
     /// A version-16 file is refused by its version, with the re-integrate
-    /// remedy. The payload is this build's encoding with the field version 16
+    /// remedy. The payload is version 21's shape with the field version 16
     /// lacked, the trailing `channel_map_digest`, taken out. Its grids were
     /// adapted to channel maps that version 17 builds differently for the same
     /// `(group, diagram)` keys.
@@ -989,7 +1563,7 @@ mod tests {
     fn a_version_16_artifact_is_refused() {
         let dir = scratch_dir("v16");
         let artifact = sample_artifact();
-        let mut raw = bincode::serialize(&artifact).unwrap();
+        let mut raw = v21_bytes(&artifact, 16);
         let digest_field = 8 + artifact.channel_map_digest.len();
         let tail = raw.split_off(raw.len() - digest_field);
         assert_eq!(
@@ -997,7 +1571,6 @@ mod tests {
             *artifact.channel_map_digest.as_bytes(),
             "the digest is the last field"
         );
-        raw[..4].copy_from_slice(&16u32.to_le_bytes());
         let path = dir.join("v16.bin.zst");
         std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
 
@@ -1007,8 +1580,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 16,
-                    oldest: 21,
-                    expected: 21
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1020,7 +1593,7 @@ mod tests {
     }
 
     /// A version-17 file is refused by its version, with the re-integrate
-    /// remedy. The payload is this build's encoding with the field version 17
+    /// remedy. The payload is version 21's shape with the field version 17
     /// lacked, the decay tables' (empty) length in the run inputs, taken out, so
     /// every later field sits eight bytes early.
     #[test]
@@ -1028,7 +1601,7 @@ mod tests {
         let dir = scratch_dir("v17");
         let artifact = sample_artifact();
         assert!(artifact.inputs.decays.is_empty());
-        let mut raw = bincode::serialize(&artifact).unwrap();
+        let mut raw = v21_bytes(&artifact, 17);
         let inputs = bincode::serialize(&artifact.inputs).unwrap();
         let at = raw
             .windows(inputs.len())
@@ -1037,7 +1610,6 @@ mod tests {
         let decays_len = at + inputs.len() - 8;
         assert_eq!(raw[decays_len..decays_len + 8], [0u8; 8]);
         raw.drain(decays_len..decays_len + 8);
-        raw[..4].copy_from_slice(&17u32.to_le_bytes());
         let path = dir.join("v17.bin.zst");
         std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
 
@@ -1047,8 +1619,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 17,
-                    oldest: 21,
-                    expected: 21
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1143,14 +1715,15 @@ mod tests {
         current.chi2_per_dof = Some(0.0);
         for c in &mut current.channels {
             c.chi2_per_dof = Some(0.0);
+            c.members.clear();
         }
         current.multiplicities.clear();
         let tags = 2 + current.channels.len();
         assert_eq!(
-            bincode::serialize(&current).unwrap().len(),
-            raw.len() + tags + EMPTY_VEC,
-            "the legacy shape differs from this one by exactly its Option tags and the \
-             multiplicities list"
+            v21_bytes(&current, current.format_version).len(),
+            raw.len() + tags + EMPTY_VEC * (1 + current.channels.len()),
+            "the legacy shape differs from this one by exactly its Option tags, the \
+             multiplicities list and the channels' member lists"
         );
 
         let dir = scratch_dir("v18");
@@ -1162,8 +1735,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 18,
-                    oldest: 21,
-                    expected: 21
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1236,7 +1809,7 @@ mod tests {
         current.format_version = 19;
         current.multiplicities.clear();
         assert_eq!(
-            bincode::serialize(&current).unwrap().len(),
+            v21_bytes(&current, current.format_version).len(),
             raw.len() + EMPTY_VEC,
             "the legacy shape differs from this one by exactly the multiplicities list"
         );
@@ -1250,8 +1823,8 @@ mod tests {
                 err,
                 ArtifactError::UnsupportedVersion {
                     found: 19,
-                    oldest: 21,
-                    expected: 21
+                    oldest: 24,
+                    expected: 24
                 }
             ),
             "{err}"
@@ -1259,6 +1832,129 @@ mod tests {
         assert!(err
             .to_string()
             .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A version-21 file is refused by its version, with the re-integrate
+    /// remedy. The payload is version 21's real shape: this build's values
+    /// without the embedded model, the param card, the diagram sets, their
+    /// digest and the amplitude probe, which a positional decode would read out
+    /// of the end of the buffer.
+    #[test]
+    fn a_version_21_artifact_is_refused() {
+        let a = sample_artifact();
+        let raw = v21_bytes(&a, 21);
+        let current = bincode::serialize(&a).unwrap();
+        assert_eq!(
+            current[8..raw.len() + 4],
+            raw[4..],
+            "version 21's fields after the format version are a prefix of this build's after \
+             the enumeration version"
+        );
+        assert!(current.len() > raw.len());
+
+        let dir = scratch_dir("v21");
+        let path = dir.join("v21.bin.zst");
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        let err = IntegrateArtifact::read_from_path(&path).expect_err("a version-21 file");
+        assert!(
+            matches!(
+                err,
+                ArtifactError::UnsupportedVersion {
+                    found: 21,
+                    oldest: 24,
+                    expected: 24
+                }
+            ),
+            "{err}"
+        );
+        assert!(err
+            .to_string()
+            .contains("regenerate it with `vibegraph integrate`"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An artifact carrying diagram sets, a param card and a probe round-trips
+    /// them, and its embedded model rebuilds to the recorded identity.
+    #[test]
+    fn the_embedded_model_sets_and_probe_round_trip() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        let dir = scratch_dir("embedded");
+        let mut artifact = sample_artifact();
+        let model = LoadedModel::interned_sm(SMRestrict::Default);
+        let card =
+            parse_proc_card("generate e+ e- > mu+ mu-\n", &ParsingOptions::default()).unwrap();
+        artifact.sets = generate_from_proc_card(&card, &model.model).unwrap();
+        artifact.diagram_set_digest = diagram_set_digest(&artifact.sets);
+        artifact.amplitude_probe = vec![SetProbe {
+            points: vec![crate::amplitude_probe::ProbePoint {
+                momenta: vec![[1.0, 0.0, 0.0, 1.0]; 4],
+                m2: 0.1 + f64::EPSILON,
+            }],
+        }];
+        let path = dir.join("embedded.bin.zst");
+        artifact.write_to_path(&path, true).unwrap();
+        let reloaded = IntegrateArtifact::read_from_path(&path).unwrap();
+        assert_eq!(reloaded.param_card, artifact.param_card);
+        assert_eq!(reloaded.diagram_set_digest, artifact.diagram_set_digest);
+        assert_eq!(
+            format!("{:?}", reloaded.sets),
+            format!("{:?}", artifact.sets)
+        );
+        assert_eq!(reloaded.amplitude_probe, artifact.amplitude_probe);
+        assert_eq!(reloaded.embedded.naming, artifact.embedded.naming);
+        let rebuilt = reloaded.loaded_model().unwrap();
+        assert_eq!(rebuilt.identity, model.identity);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An artifact whose embedded model was altered (one external parameter's
+    /// default, by a relative 1e-12) is refused on read: it no longer digests to
+    /// the identity recorded beside it. So are altered diagram sets.
+    ///
+    /// Cannot detect an alteration made consistently to the model and its
+    /// recorded digest; that is a different model, correctly identified.
+    #[test]
+    fn an_altered_embedded_model_or_sets_are_refused() {
+        use crate::ufo::parameters::ParamNature;
+        let dir = scratch_dir("altered");
+        let encode = |a: &IntegrateArtifact, name: &str| {
+            let path = dir.join(name);
+            let raw = bincode::serialize(a).unwrap();
+            std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+            path
+        };
+        let mut artifact = sample_artifact();
+        IntegrateArtifact::read_from_path(&encode(&artifact, "clean.bin.zst")).unwrap();
+        let ParamNature::External { default_value, .. } = &mut artifact
+            .embedded
+            .parsed
+            .params
+            .externals
+            .iter_mut()
+            .find(|p| p.name == "MZ")
+            .expect("the SM has MZ")
+            .nature
+        else {
+            panic!("MZ is external");
+        };
+        *default_value *= 1.0 + 1e-12;
+        let err = IntegrateArtifact::read_from_path(&encode(&artifact, "model.bin.zst"))
+            .expect_err("an altered model must be refused");
+        assert!(
+            matches!(err, ArtifactError::ModelDigestMismatch { .. }),
+            "{err}"
+        );
+        assert!(err.to_string().contains("sm-default"), "{err}");
+
+        let mut artifact = sample_artifact();
+        artifact.diagram_set_digest = "0".repeat(64);
+        let err = IntegrateArtifact::read_from_path(&encode(&artifact, "sets.bin.zst"))
+            .expect_err("altered sets must be refused");
+        assert!(
+            matches!(err, ArtifactError::DiagramDigestMismatch { .. }),
+            "{err}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -7,8 +7,15 @@ use std::process::ExitCode;
 use clap::{CommandFactory, Parser, Subcommand};
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
+/// Only on musl, whose own allocator takes one process-wide lock per call: the
+/// glibc and macOS system allocators keep per-thread caches and scale already.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod assets;
 mod check;
+mod enumerate;
 mod error;
 mod fetch;
 mod generate;
@@ -18,6 +25,7 @@ mod logging;
 mod network;
 mod output;
 mod parallel;
+mod ranking;
 mod si;
 mod tui;
 
@@ -120,8 +128,12 @@ enum Command {
     Generate(generate::GenerateArgs),
     /// Read a Les Houches file back and check that it is internally consistent.
     CheckEvents(check::CheckArgs),
-    /// Print the results a saved integration artifact records.
+    /// Print the results a saved integration artifact records, or write its
+    /// configuration ranking as JSON.
     Inspect(inspect::InspectArgs),
+    /// Enumerate a process's Feynman diagrams: the diagram artifact, a summary
+    /// JSON and one SVG drawing per diagram.
+    Enumerate(enumerate::EnumerateArgs),
 }
 
 impl Command {
@@ -131,12 +143,33 @@ impl Command {
     fn is_watchable(&self) -> bool {
         match self {
             Command::Integrate(_) | Command::Generate(_) => true,
-            Command::CheckEvents(_) | Command::Inspect(_) => false,
+            Command::Enumerate(_) | Command::CheckEvents(_) | Command::Inspect(_) => false,
         }
     }
 }
 
+/// End the process on the first panic, on whichever thread it happens.
+///
+/// A panic on a rayon worker is caught by the pool and re-raised only where the
+/// parallel region joins, and the region runs every one of its other tasks to
+/// completion first: rayon has no cancellation. A panic early in a long VEGAS
+/// iteration therefore printed its message and left the run computing the rest
+/// of that iteration before it unwound. Nothing in the command recovers from a
+/// panic, so there is nothing to wait for: the message is printed by the hook
+/// that was installed before this one, and the process exits with the status an
+/// unwound `main` would have (101).
+fn exit_on_panic() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        previous(info);
+        std::process::exit(101);
+    }));
+}
+
 fn main() -> ExitCode {
+    // Before the display starts, so its own hook runs first and gives the
+    // terminal back before the message is printed.
+    exit_on_panic();
     let cli = Cli::parse();
     // `check-events` prints a report a person reads; it has no result object
     // for the stream to carry.
@@ -197,6 +230,7 @@ fn main() -> ExitCode {
     }
     let network = NetworkPolicy::from_env(cli.no_network, cli.yes);
     let result = match cli.command {
+        Command::Enumerate(args) => enumerate::run(&args),
         Command::Integrate(args) => integrate::run(&args, network),
         Command::Generate(args) => generate::run(&args, network),
         Command::CheckEvents(args) => check::run(&args),

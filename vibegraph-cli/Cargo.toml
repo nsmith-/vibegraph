@@ -41,6 +41,13 @@ ansi-to-tui = "8.0.1"
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3.18"
 
+# musl's allocator serialises allocation behind a global lock, so the rayon
+# workers spend their time in futex waits instead of evaluating: a static musl
+# build ran slower at -j 4 than at -j 1. mimalloc builds its C through `cc`,
+# so the musl binary stays fully static.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = "0.1"
+
 [dev-dependencies]
 tempfile = "3"
 # Forges an artifact stamped with an older format version, to test its refusal.
@@ -89,10 +96,6 @@ required-features = ["extended-validation"]
 
 [[test]]
 name = "cli_reweight_proton"
-required-features = ["extended-validation"]
-
-[[test]]
-name = "validate_ewk_lljj_sigma"
 required-features = ["extended-validation"]
 
 [[test]]

@@ -644,9 +644,10 @@ fn a_nested_decay_chain_sample_matches_madevents_records() {
 /// pairings (the 2026-09-26 decision) and writes the pairing of the
 /// configuration the event's colour flow is drawn in, among those whose forced
 /// windows the event is inside — so every record is a `Z` on its window, as
-/// MadEvent's are. The line shape is compared informationally: the kept
-/// interference between pairings moves the sample by the few per mille the
-/// cross-section row measures.
+/// MadEvent's are. The line shape is compared informationally: the sample sits
+/// the few per mille above MadEvent's that the cross-section row measures, about
+/// half of it the union of the two pairings' windows and almost none of it the
+/// kept interference between pairings.
 #[test]
 fn identical_decays_write_a_pairing_inside_its_windows() {
     let reference = reference();

@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: Keep every pairing of identical particles across decays
-description: "Unlike MadGraph's single pairing with identical_decay_chain_factor, all pairings and their interference are kept; expected σ offset about +0.2%. At cut_decays = F, the default, only a leg that is a decay product in every pairing is exempt, a stricter cut than MadEvent's configuration-1 exemption: −26% on g g > z u u~, z > u u~, a registered deviation of this side's cut."
+description: "Unlike MadGraph's single pairing with identical_decay_chain_factor, all pairings and their interference are kept. At cut_decays = F, where an identical particle sits in a decay in one pairing and in the core in another, each pairing exempts its own decay products through the pairing-weighted cut Σ_p w_p Θ_p |M|²; on g g > z u u~, z > u u~ σ reads +0.60% above MadGraph (−0.46% interference, +0.84% window union, zero from the exemption), a registered, attributed deviation."
 status: stable
 tags: [decay-chains, identical-particles, madgraph-deviation, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -15,7 +15,9 @@ sources:
   - {id: pr18-review, resource: "https://github.com/nsmith-/vibegraph/pull/18#discussion_r4233116250", title: "User review on PR #18: MadGraph's single pairing is an approximation"}
   - {id: mg-identical-factor, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4581", title: "MadGraph helas_objects.py identical_decay_chain_factor"}
   - {id: hk1, resource: "../sprints/cms-gridpack-coverage/sessions/H-K1-report.md", title: "Sprint H H-K1 report, §5b: σ at cut_decays = F on g g > z j j, z > j j"}
+  - {id: ic1, resource: "../sprints/v02-last-refusals/sessions/I-C1-report.md", title: "Sprint I I-C1 report: the window rule diverges through an exempt quark's beam-collinear limit"}
   - {id: hc2, resource: "../sprints/cms-gridpack-coverage/sessions/H-C2-report.md", title: "Sprint H H-C2 report: MadEvent's cut_decays exemption is IR-unsafe on an every-pairing |M|²"}
+  - {id: jw1, resource: "../sprints/v021-fixes/sessions/J-W1-report.md", title: "Sprint J J-W1 report: the pairing-weighted cut, its probe and its σ attribution"}
 measured:
   - {pr: 12, landed_in: 1539abc, command: "cli_decay_chain.rs, ten seeds at --target-rel 2e-3, against MadEvent 3.7.1 (decay_chain_sigma_reference.json)"}
 ---
@@ -49,27 +51,56 @@ equal MadGraph's. [^n38-decisions] [^pr18-review] The parity goal it departs fro
 `runcard.rs:1126`), and 10 of the 11 CMS decay-chain cards use it. MadEvent exempts
 from the cuts every descendant of the lines configuration 1 forces (`check_decay`,
 `setcuts.f:961–1004`): its single pairing's decay legs, which is what the card asks for
-on its single-pairing \|M\|². With every pairing kept no leg set is singled out, so
-here a leg is exempt only when it is a decay product in **every** pairing
-(`ForcedResonances::decay_products`). Where an identical particle sits both in a decay
-and in the core, as in `g g > z u u~, z > u u~`, no quark is a decay product in every
-pairing and all four are cut, as at `cut_decays = T`: a stricter observable than the
-card asks for. That is the difference, 5.348 ± 0.015 pb here against MadEvent's
-7.211 ± 0.028 pb (−26 %, one seed each), −6.8 % on the whole `g g > z j j, z > j j`
-card. [^hk1] The pairing interference MadGraph drops is the small part (the ~0.2 % above)
-and not the cause. The user registered it as a deviation of this side's cut on
-2026-11-06; σ on such cards is informational.
+on its single-pairing \|M\|². Where every identical particle is a decay product in
+every pairing (`e+ e- > z z, z > e+ e-`), or there is no identical particle across
+decays, the legs exempt here are those that are decay products in every diagram
+(`ForcedResonances::decay_products`), the set MadEvent exempts.
 
-The intended fix, tracked as its own item, is a kinematic rule: exempt the pairing whose
-pair invariant mass lies inside the forced window (|m − M| < bwcutoff·Γ, the one closest
-to the pole if several do). It is IR-safe, because a pair holding a soft quark has
-m → 0 and is never in the window, and it should match MadGraph up to the region where
-pairings overlap and interfere. Exempting configuration 1's legs on this side's
-\|M\|² is not a fix: each is a massless core quark of another kept pairing, whose
-collinear region then goes uncut, and σ diverges logarithmically (the integrand grows
-as 1/pT² over three decades). [^hc2] `Cuts::compile_with` refuses any exemption that
-leaves a massless coloured core leg of some kept diagram uncut
-(`CutError::IrUnsafeExemption`).
+Where an identical particle sits in a decay in some pairing and in the core in another,
+as in `g g > z u u~, z > u u~`, every pairing is kept coherently and each exempts its
+own decay products through a **pairing-weighted cut** (sprint I, D3; built in sprint J,
+the only behaviour, option A):
+
+```text
+Σ_p w_p Θ_p |M|²,   w_p = |M_p|² / Σ_q |M_q|²
+```
+
+`Θ_p` is pairing `p`'s filter, which exempts `p`'s decay products and cuts its core
+legs, and `|M_p|²` is the squared amplitude over the diagrams that force `p`'s lines
+(`cuts.rs` `Cuts::compile_with`, `pairing.rs`). The diagrams partition exactly into
+pairings. The weights sum to one, so a point every filter accepts carries \|M\|² and
+one none accepts carries zero; only a point some filters accept and others reject
+evaluates the pairing amplitudes. On `g g > z u u~, z > u u~` that is a quarter of the
+events, and the four pairing amplitudes together cost about half an \|M\|²
+(18 µs against 33 µs per point).
+
+Event by event the weighted integrand is `Σ_p Θ_p |M_p|² · |M|²/Σ_q |M_q|²`: MadGraph's
+exemption, applied to each pairing on its own \|M_p\|², with the interference between
+pairings shared out in proportion. So against MadGraph the exemption contributes
+nothing; the difference is the interference and the window (below). It is a registered
+deviation, recorded as an attributed difference, not a match.
+
+**IR safety.** By Cauchy–Schwarz, \|M\|² ≤ N Σ_q \|M_q\|² for N pairings, so
+w_p Θ_p \|M\|² ≤ N Θ_p \|M_p\|²: σ is finite wherever each pairing's own \|M_p\|²
+is integrable over its own filter. That holds for two-body decays of a massive
+resonance. Measured on the matrix element (`pairing.rs`,
+`the_weighted_integrand_has_no_beam_collinear_pole`): with pair (0, 1) on the Z pole
+and quark 0 at pT = ε along a beam, \|M\|²ε² is constant to 1e-4 between ε = 1e-3 and
+1e-4 (the other pairings' `g → u ū` splitting, the divergence that ruled out every
+exemption on the full \|M\|² [^ic1] [^hc2]), while the weighted integrand × ε² falls
+as ε², in three configurations. The limit guards (`refuse_unregulated_limits`,
+`refuse_ir_unsafe_exemption`) run per exemption, over the diagrams of the pairings that
+exempt it. A multi-body decay with massless products, where a pairing's own decay is
+collinear-singular among exempt legs (`e+ e- > z u u~, z > u u~ u u~`), is refused,
+naming `cut_decays = T` as the regulator.
+
+Exempting configuration 1's legs on this side's \|M\|² is not a fix: each is a
+massless core quark of another kept pairing, whose collinear region then goes uncut,
+and σ diverges logarithmically (the integrand grows as 1/pT² over three decades).
+[^hc2] Neither is the kinematic window rule. [^ic1] MadGraph's single pairing with its
+own exemption is site (d) of
+[madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md),
+not built.
 
 The forced Breit–Wigner windows follow: a point passes when every forced line of *some*
 pairing is inside its window. The union is symmetric under the permutation and independent
@@ -95,29 +126,50 @@ tail [^n38-decisions]:
   1e-3 of events), and about 0.08·Γ/M overall.
 
 So the permuted treatment should read about **+0.2%** above MadGraph on such cards. The
-measurement on `e+ e- > z z, z > e+ e-` (500 GeV) is **+2.6e-3 ± 0.8e-3**: MadEvent
-4.7194e-4 ± 3.3e-7 pb, here 4.7318e-4 ± 2.0e-7 pb (ten seeds here). [^n38-d3]
+measurement on `e+ e- > z z, z > e+ e-` (500 GeV) is **+2.5e-3 ± 0.8e-3**: MadEvent
+4.7196e-4 ± 3.3e-7 pb, here 4.7313e-4 ± 1.9e-7 pb (ten seeds here; +2.6e-3 before the
+relative sign of the two pairings was corrected in v0.2.1, which left it unchanged).
+[^n38-d3] Per event, on 20000 events of this side (sprint J close-out), the interference
+there is negligible (⟨Σ_q \|M_q\|²/\|M\|²⟩ = 0.99996) and the window union accounts for
++0.11%: MadGraph's rule read on these events predicts +0.11%, leaving **+0.14% ± 0.08%**
+unattributed. Unlike the `p p` study's +0.2%, it is not the interference.
 
 ## How it is gated
 
 - σ is **gated** only on cards without identical particles across decays. Cards with that
   overlap are compared with MadGraph **informationally**, the expected difference being the
-  pairing interference.
+  pairing interference and the window union.
 - At `cut_decays = F`, cards on which identical particles sit both in a decay and in the
-  core (`g g > z j j, z > j j`) are informational too, the expected difference being
-  this side's stricter cut (−26 % on `g g > z u u~, z > u u~`). Where every
-  identical particle is a decay product (`e+ e- > z z, z > e+ e-`) both sides exempt the
-  same legs. No banked σ row has the core-and-decay overlap. [^hk1]
+  core (`g g > z j j, z > j j`) are an attributed difference, not a match. On
+  `g g > z u u~, z > u u~` (13 TeV, `ptj 20`, `etaj 5`, `drjj 0.4`, fixed scales
+  91.188, lhaid 247000; five seeds a side, unweighted means; sprint J, J-W1):
+  vibegraph 7.249 ± 0.009 pb against MadGraph 7.206 ± 0.013 pb at `cut_decays = F`,
+  **+0.60 % ± 0.22 %**, and 5.293 ± 0.007 against 5.288 ± 0.009 at `cut_decays = T`,
+  **+0.10 %**. Per event, on 20000 vibegraph events, the `F` difference is the
+  interference between pairings (⟨Σ_q \|M_q\|²/\|M\|²⟩ = 1.0046, **−0.46 %**: the
+  pairings interfere destructively, as Fermi statistics requires) and the window union
+  against MadGraph's own pairing's window (**+0.84 %**); the exemption contributes zero
+  by construction. MadGraph's rule read on vibegraph's events (`Σ_p Θ_p W_p |M_p|²` over
+  the integrand) predicts its σ to +0.20 % (0.9 combined standard errors) at `F` and
+  −0.03 % at `T` (−0.51 % interference, +0.64 % window). On the whole
+  `g g > z j j, z > j j` card (same settings): vibegraph 150.16 ± 0.17 pb against
+  MadGraph 150.09 ± 0.23 pb, **+0.05 %**, all of it in the four same-flavour
+  subprocesses (a quarter of the events): −0.14 % interference and +0.19 % window per
+  event, and the per-event reading predicts MadGraph to −0.01 %. These are the numbers
+  after v0.2.1's relative-sign fix; with the sign it replaced, the interference read
+  +0.78 % and σ +1.72 % (sprint J, J-W1).
+  Where every identical particle is a decay product (`e+ e- > z z, z > e+ e-`) both
+  sides exempt the same legs. No banked σ row has the core-and-decay overlap. [^hk1]
 - The structural census matches MadGraph's per-matrix-element diagram counts by counting
   only the stitched diagrams whose forced lines lead to MadGraph's blocks
   ([decay chains](decay-chains.md), oracle 3). [^n38-d2]
 - On MadEvent's side, `NSYM = 1` and one pairing appear in its event records for identical
   decays (the two Z over legs (3,4) and (5,6)). Naming a parent Z per electron is
   bookkeeping that nothing physical could observe, not a different sample.
-- With the planned `--madgraph-compat` flag on, MadGraph's single pairing and factor 2,
-  its per-pairing window and its configuration-1 `cut_decays` exemption would be
-  reproduced together, the exemption being IR-safe only on the single-pairing \|M\|²
-  ([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md)).
+- No switch reproduces MadGraph's single pairing, factor 2, per-pairing window and
+  configuration-1 exemption (sprint J, option A); that is site (d) of
+  [madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md),
+  the exemption being IR-safe only on the single-pairing \|M\|².
 
 The study's side findings bear on any comparison at this precision: MadEvent's quoted σ
 errors are unreliable at 0.1% (χ²/dof across seeds of 3–14, even for full-process runs),
@@ -132,3 +184,4 @@ unexplained; see the
 [^mg-identical-factor]: `madgraph/core/helas_objects.py` `identical_decay_chain_factor`, L4581.
 [^hk1]: Sprint H session H-K1 report, §5b: `sprints/cms-gridpack-coverage/sessions/H-K1-report.md`.
 [^hc2]: Sprint H session H-C2 report, §2–§3: `sprints/cms-gridpack-coverage/sessions/H-C2-report.md`.
+[^ic1]: Sprint I, I-C1 report §2 (the matrix-element probe).

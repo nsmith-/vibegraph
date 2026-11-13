@@ -21,7 +21,7 @@ pub enum VertexError {
 }
 
 /// Opaque index into `UFOModel::vertices`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct VertexId(pub(crate) usize);
 
 /// A fully resolved interaction vertex.

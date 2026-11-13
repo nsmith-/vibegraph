@@ -18,9 +18,18 @@ self-contained `vibegraph` binaries for a user with no Rust toolchain.
 
 ## Trigger and jobs
 
-- **Trigger**: `push` of a tag matching `v*.*.*`, plus `workflow_dispatch` for
-  a dry run of the build matrix against any ref. `publish` runs only on a tag
-  ref, so a dispatch builds and smoke-tests without releasing.
+- **Trigger**: `push` of a tag matching `v*.*.*` (which also matches a
+  release candidate such as `v0.2.0-rc1`), plus `workflow_dispatch` for a dry
+  run of the build matrix against any ref (input `tag`, default `v0.2.0-rc1`,
+  names the tag whose notes the dry run reports on). `publish` runs only on a
+  tag ref, so a dispatch builds and smoke-tests without releasing.
+- **`release-check`** (`contents: read`): runs `scripts/release-check.sh` on
+  the tag, then `scripts/test-release-check.sh`. On a tag push a refusal fails
+  the run and `publish` (which needs it) is skipped; on a dispatch the real
+  check is only reported, and the self-test exercises acceptance of
+  `v0.2.0`/`v0.2.0-rc1` against a fixture notes file and refusal of a missing
+  file, an empty file, a `TODO` stub, notes for another version and a
+  non-version tag. `cargo test -p vibegraph` runs the same self-test.
 - **`build`** (matrix, `fail-fast: false`, `contents: read`):
 
 | asset | target | runner | note |
@@ -40,13 +49,30 @@ self-contained `vibegraph` binaries for a user with no Rust toolchain.
   vibegraph` (fat LTO, per `[profile.release]`), then a smoke test, then copies
   the binary to `dist/<asset>`.
 - **`publish`** (`contents: write`, `actions: write`): downloads all assets,
-  writes `SHA256SUMS`, and runs `gh release create <tag> --generate-notes` with
-  the binaries, `SHA256SUMS`, `LICENSE-MIT`, `LICENSE-APACHE` and
+  writes `SHA256SUMS`, and runs `gh release create <tag> --notes-file <notes>`
+  (plus `--prerelease` when the tag contains a hyphen) with the binaries, `SHA256SUMS`, `LICENSE-MIT`, `LICENSE-APACHE` and
   `THIRD-PARTY-NOTICES`. It uses the preinstalled `gh` CLI, no third-party
   release action. It then dispatches `acceptance.yml` with `-f tag=<tag>`,
   because a release created with the workflow's own `GITHUB_TOKEN` raises no
   `release` event that starts a workflow; `workflow_dispatch` is one of the
   documented exceptions. See [release acceptance](release-acceptance.md).
+
+## Release notes and prereleases
+
+Notes are committed, never generated: `docs/release-notes/<tag without
+prerelease suffix>.md`, so `v0.2.0-rc1` and `v0.2.0` both read
+`docs/release-notes/v0.2.0.md` and a candidate publishes the same drafted text
+as the final. `scripts/release-check.sh` fails when the file is missing, empty
+or has a line containing `TODO` (a new version starts from a stub with
+`Highlights`, `Changes` and `Known issues` sections and `TODO` lines), and
+`publish` calls it again for the path, so notes can never fall back to the
+generated PR list.
+
+A tag containing a hyphen is published with `--prerelease`. GitHub's "latest
+release" is the newest non-prerelease, non-draft release, so a candidate never
+becomes what `releases/latest` (the weekly acceptance run's default) returns;
+it can still be tested through the `-f tag=` dispatch, which `publish` issues
+for every tag.
 
 ## Bare executables carry their own notices
 
@@ -64,12 +90,26 @@ its bundled zstd via `cc` rather than linking a system `libzstd` (`pkg-config`
 is only an optional probe),[^n24-u1] and `ring`, the `rustls` crypto backend
 that `ureq` (the PDF fetch, `vibegraph-cli/src/fetch.rs`) pulls in, which
 builds its own C and assembly via `cc`. Neither links a system library, and
-there is no `openssl` or `native-tls`. (`release.yml`'s comment still names
-`zstd-sys` as the only C dependency.) So `x86_64-unknown-linux-musl` costs only `musl-tools`
-(`musl-gcc`) on the runner and yields one fully static binary that runs on any
-x86_64 Linux kernel, with no "which glibc does this distro ship" matrix. A
-glibc floor would need an old runner or a manylinux-style container for no
-offsetting benefit. A new C dependency would reopen this.
+there is no `openssl` or `native-tls`. `libmimalloc-sys`, the CLI's musl allocator
+below, is a third, also built via `cc` (only on musl). So
+`x86_64-unknown-linux-musl` costs only `musl-tools` (`musl-gcc`) on the runner
+and yields one fully static binary that runs on any x86_64 Linux kernel, with no
+"which glibc does this distro ship" matrix. A new C dependency that links a
+system library would reopen this.
+
+**The musl builds use mimalloc as the global allocator** (`vibegraph-cli`,
+`cfg(target_env = "musl")`). musl's own allocator takes a process-wide lock, so
+the v0.2.0 assets ran slower at `-j 4` than at `-j 1` and about 20–28% slower
+than glibc single-threaded. The measurements and the alternatives are in
+[musl allocator thread scaling](../performance/musl-allocator-thread-scaling.md).
+
+**The glibc floor was measured and rejected.**
+- `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17` builds on an ordinary
+  runner, needs at most `GLIBC_2.17`, and ran under CentOS 7's glibc. But it adds
+  zig to CI, compiles the C dependencies with `zig cc`, runs about 15% slower than
+  musl + mimalloc, and would rename the assets.
+- A native glibc build needs `GLIBC_2.39` and starts on none of EL7–EL9.
+- Static glibc still carries glibc's NSS loader.
 
 `release.yml` deliberately does not raise the codegen floor for the baseline
 assets; `ci.yml` builds its own tests with `-C target-cpu=x86-64-v3`, which is
@@ -95,7 +135,10 @@ acceptance; macOS is smoke-tested only here.
 ## The version string
 
 `vibegraph-cli/build.rs` sets `VIBEGRAPH_VERSION` from
-`git describe --tags --always --dirty=-dirty`, falling back to
+`git describe --tags --match 'v*' --always --dirty=-dirty` (arguments in
+`vibegraph-cli/build_support/describe.rs`), so the newer `refdata-*` tags do
+not name the version; `tests/release_tooling.rs` builds a repository with both
+kinds of tag and pins this. It falls back to
 `CARGO_PKG_VERSION` when there is no git binary or no repository (a GitHub
 "Source code" tarball). `main.rs` uses it for both `version` and
 `long_version`, so a tagged build reports the tag (`vibegraph v0.1.0`), an
@@ -109,6 +152,8 @@ tags.
 ## To cut a release
 
 ```bash
+# 1. write docs/release-notes/vX.Y.Z.md (no TODO lines) and bump the workspace version
+git tag vX.Y.Z-rc1 && git push origin vX.Y.Z-rc1   # prerelease candidate
 git tag vX.Y.Z && git push origin vX.Y.Z
 # watch Actions: publish needs every build leg green, then dispatches acceptance
 ```

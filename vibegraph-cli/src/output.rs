@@ -29,7 +29,8 @@
 //!   integrand's natural units (GeV⁻² for a cross section, GeV for a width).
 //! - **`result`**: the command's final object, once, after its output is
 //!   written: [`IntegrateResult`] for `integrate` and `inspect`,
-//!   [`GenerateResult`] for `generate`.
+//!   [`GenerateResult`] for `generate`, and for `enumerate` the paths it wrote
+//!   with the `diagrams.json` summary nested under `summary`.
 //! - **`refusal`**: in place of a result, once: [`Refusal`]. A refused run
 //!   writes no artifact, so this is the only record of why.
 //!
@@ -217,6 +218,29 @@ pub(crate) struct ChannelResult {
     pub(crate) chi2_per_dof: Option<f64>,
 }
 
+/// One integration configuration's share of the integral
+/// ([`vibegraph::artifact::ConfigShare`]).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct ConfigurationResult {
+    /// The diagram set whose evaluator was integrated (a fixed-energy
+    /// subprocess, a flavour group's representative), by index and label.
+    pub(crate) set: usize,
+    pub(crate) label: String,
+    /// The configuration's index among the evaluator's, `null` for the weight
+    /// no configuration carried.
+    pub(crate) configuration: Option<usize>,
+    /// Its diagrams, and the set's diagrams no configuration carries, as
+    /// indices into the set.
+    pub(crate) diagrams: Vec<usize>,
+    pub(crate) contact_diagrams: Vec<usize>,
+    /// Every set the share includes, by index into the run's sets.
+    pub(crate) members: Vec<usize>,
+    pub(crate) sigma: f64,
+    pub(crate) sigma_err: f64,
+    /// `sigma` over the run's.
+    pub(crate) share: f64,
+}
+
 /// One final-state phase space's total, at proton beams.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub(crate) struct MultiplicityResult {
@@ -265,6 +289,13 @@ pub(crate) struct IntegrateResult {
     pub(crate) artifact: String,
     /// The artifact's format version.
     pub(crate) format_version: u32,
+    /// The SHA-256 of the diagram sets the run integrated: the digest a
+    /// `vibegraph enumerate` run of the same card records.
+    pub(crate) diagram_set_digest: String,
+    /// Whether the run read a param card, whose text the artifact banks.
+    pub(crate) param_card: bool,
+    /// Every configuration's share, in the artifact's order.
+    pub(crate) configurations: Vec<ConfigurationResult>,
 }
 
 /// `generate`'s final object.

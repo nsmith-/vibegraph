@@ -498,22 +498,42 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         }
         let folded = self.eval.folded_hel();
         self.fill_for(folded, momenta, scratch);
+        self.filled_amp2(scratch, amp2);
+    }
 
-        let program = folded.program();
+    /// [`eval_amp2`](Self::eval_amp2) at the point `scratch` was last filled
+    /// at, read off the configuration amplitudes that fill left in it rather
+    /// than filling again: after [`eval_m2`](Self::eval_m2) at `p`, the `AMP2`
+    /// of `p` at the pools that evaluation ran with, at no second evaluation.
+    /// `amp2` is overwritten.
+    pub(crate) fn filled_amp2(&self, scratch: &ScratchSpace<F>, amp2: &mut [F]) {
+        assert_eq!(
+            amp2.len(),
+            self.eval.n_configs(),
+            "amp2 buffer must hold one entry per integration configuration"
+        );
+        for slot in amp2.iter_mut() {
+            *slot = F::zero();
+        }
+        let program = self.eval.folded_hel().program();
         let n = program.n_amps as usize;
         if n == 0 {
             return;
         }
+        // One pass along each row, closing a configuration's coherent sum where
+        // its last amplitude sits. A configuration of no amplitude closes nowhere
+        // and keeps its zero, which adding the empty sum's `+0` would not change.
+        let ends = self.eval.config_ends();
+        debug_assert_eq!(ends.len(), n, "configuration spans cover the row");
         let rows = program.amp_locs.chunks_exact(n);
         for (row, weights) in rows.zip(program.amp_weights.chunks_exact(n)) {
-            let mut at = 0;
-            for (acc, &span) in amp2.iter_mut().zip(self.eval.config_amp_counts()) {
-                let mut coherent = C::new(F::zero(), F::zero());
-                for (&l, &w) in row[at..at + span].iter().zip(&weights[at..at + span]) {
-                    coherent = coherent + self.weighted(w, scratch.scalars[l as usize]);
+            let mut coherent = C::new(F::zero(), F::zero());
+            for ((&l, &w), &end) in row.iter().zip(weights).zip(ends) {
+                coherent = coherent + self.weighted(w, scratch.scalars[l as usize]);
+                if let Some(acc) = amp2.get_mut(end as usize) {
+                    *acc = *acc + coherent.norm_sqr();
+                    coherent = C::new(F::zero(), F::zero());
                 }
-                *acc = *acc + coherent.norm_sqr();
-                at += span;
             }
         }
     }
@@ -3730,6 +3750,336 @@ mod tests {
         }
     }
 
+    /// Per-diagram × per-helicity amplitudes of a process line and of the same line with
+    /// its outgoing legs listed in another order, at the same physical point. Pairs each
+    /// diagram of the second with the first's by helicity-vector overlap and prints the
+    /// complex ratio together with each diagram's pairing sign, line sign and lines.
+    ///
+    /// Run: VG_PAIR='e+ e- > e+ e-|e+ e- > e- e+|1,0' cargo test -p vibegraph-lib --lib \
+    ///        helas::eval::run::tests::probe_final_order_pair -- --ignored --nocapture
+    /// (the third field is `with_final_order`'s `order`: outgoing leg `order[i]` of the
+    /// first line is outgoing leg `i` of the second).
+    #[test]
+    #[ignore = "diagnostic dump; needs VG_PAIR"]
+    fn probe_final_order_pair() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massless;
+        use rand::SeedableRng;
+
+        let spec = std::env::var("VG_PAIR").expect("VG_PAIR='<proc A>|<proc B>|<order>'");
+        let parts: Vec<&str> = spec.split('|').collect();
+        let order: Vec<usize> = parts[2]
+            .split(',')
+            .map(|s| s.trim().parse().unwrap())
+            .collect();
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = match std::env::var("VG_CARD") {
+            Ok(path) => {
+                let card = std::fs::read_to_string(path)
+                    .unwrap()
+                    .parse::<ParamCard>()
+                    .unwrap();
+                EvaluatedModel::from_model_card(model.clone(), &card).unwrap()
+            }
+            Err(_) => EvaluatedModel::from_model(model.clone()),
+        };
+        let opts = ParsingOptions::default();
+        let set_of = |p: &str| {
+            let pc = parse_proc_card(&format!("generate {p}"), &opts).unwrap();
+            generate_from_proc_card(&pc, &model)
+                .unwrap()
+                .into_iter()
+                .find(|s| !s.diagrams.is_empty())
+                .unwrap()
+        };
+        let sa = set_of(parts[0]);
+        let sb = set_of(parts[1]);
+        let n_in = sa.particles_in.len();
+        let n_ext = n_in + sa.particles_out.len();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(
+            std::env::var("VG_SEED")
+                .map(|s| s.parse().unwrap())
+                .unwrap_or(7),
+        );
+        let sqrt_s = 500.0;
+        let mut pa = vec![
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+        ];
+        pa.extend(rambo_massless(sqrt_s, n_ext - 2, &mut rng));
+        if let Ok(given) = std::env::var("VG_PA") {
+            let x: Vec<f64> = given
+                .split(',')
+                .map(|c| c.trim().parse().unwrap())
+                .collect();
+            pa = (0..n_ext)
+                .map(|i| LorentzVector::new(x[4 * i], x[4 * i + 1], x[4 * i + 2], x[4 * i + 3]))
+                .collect();
+        }
+        let mut pb = pa[..n_in].to_vec();
+        pb.extend(order.iter().map(|&k| pa[n_in + k]));
+        let perm_hel = |hb: &[i32]| -> Vec<i32> {
+            let mut ha = hb[..n_in].to_vec();
+            ha.resize(n_ext, 0);
+            for (i, &k) in order.iter().enumerate() {
+                ha[n_in + k] = hb[n_in + i];
+            }
+            ha
+        };
+
+        let per_diagram = |set: &crate::diagrams::DiagramSet,
+                           p: &[LorentzVector<f64>],
+                           hels: &[Vec<i32>]|
+         -> Vec<Vec<C<f64>>> {
+            let asts = compile_diagram_ast(set, &model).unwrap();
+            asts.iter()
+                .map(|d| {
+                    let symbolic = lower::lower(std::slice::from_ref(d));
+                    let f = Folded::build(&symbolic);
+                    let (cc, cf_pool) = f.pools::<f64>(&evaluated);
+                    let mut res = Vec::new();
+                    hels.iter()
+                        .map(|hel| {
+                            let env = EvalEnv {
+                                consts_c: &cc,
+                                consts_f: &cf_pool,
+                                ext_legs: f.ext_legs(),
+                                momenta: p,
+                                helicities: hel,
+                                ward_leg: None,
+                            };
+                            match run_forward_slot(&f, &env, &mut res) {
+                                WaveformSlot::Scalar(s) => s.value,
+                                WaveformSlot::Empty => C::new(0.0, 0.0),
+                                other => panic!("amplitude root is not a scalar: {other:?}"),
+                            }
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        let ev_b = AmplitudeEvaluator::compile(&sb, &model).unwrap();
+        let hels_b: Vec<Vec<i32>> = ev_b.helicities().to_vec();
+        let hels_a: Vec<Vec<i32>> = hels_b.iter().map(|h| perm_hel(h)).collect();
+        let amps_a = per_diagram(&sa, &pa, &hels_a);
+        let amps_b = per_diagram(&sb, &pb, &hels_b);
+
+        let describe = |set: &crate::diagrams::DiagramSet, i: usize| -> String {
+            let d = &set.diagrams[i];
+            let names: Vec<&String> = set.particles_in.iter().chain(&set.particles_out).collect();
+            let lines: Vec<String> = d
+                .fermion_lines(&model)
+                .iter()
+                .map(|l| {
+                    format!(
+                        "({}{},{}{};P={})",
+                        l.legs[0].0,
+                        names[l.legs[0].0],
+                        l.legs[1].0,
+                        names[l.legs[1].0],
+                        l.vertices.len() - 1
+                    )
+                })
+                .collect();
+            let props: Vec<String> = d
+                .props
+                .iter()
+                .map(|p| model.particle(p.particle).name.clone())
+                .collect();
+            format!(
+                "sign={:+} pairing={:+} line={:+} props=[{}] lines {}",
+                d.sign,
+                d.fermion_pairing_sign(&model),
+                d.fermion_line_sign(&model),
+                props.join(","),
+                lines.join(" ")
+            )
+        };
+        println!("A = {}   B = {}   order {order:?}", sa.label(), sb.label());
+        let quiet = std::env::var("VG_QUIET").is_ok();
+        for (i, _) in sa.diagrams.iter().enumerate().filter(|_| !quiet) {
+            println!("  A d{i}: {}", describe(&sa, i));
+        }
+        for (i, _) in sb.diagrams.iter().enumerate().filter(|_| !quiet) {
+            println!("  B d{i}: {}", describe(&sb, i));
+        }
+        let dot = |x: &[C<f64>], y: &[C<f64>]| -> C<f64> {
+            x.iter().zip(y).map(|(a, b)| a.conj() * b).sum()
+        };
+        let norm = |x: &[C<f64>]| dot(x, x).re.sqrt();
+        let mut ratio_classes: std::collections::BTreeMap<String, usize> = Default::default();
+        for (ib, rb) in amps_b.iter().enumerate() {
+            let (ia, ov) = amps_a
+                .iter()
+                .enumerate()
+                .map(|(ia, ra)| (ia, dot(ra, rb).norm() / (norm(ra) * norm(rb)).max(1e-300)))
+                .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
+                .unwrap();
+            let ra = &amps_a[ia];
+            let ratio = dot(ra, rb) / dot(ra, ra);
+            let resid: f64 = ra
+                .iter()
+                .zip(rb)
+                .map(|(a, b)| (b - ratio * a).norm())
+                .fold(0.0, f64::max)
+                / norm(rb).max(1e-300);
+            *ratio_classes
+                .entry(format!("{:+.6} {:+.6}i", ratio.re, ratio.im))
+                .or_default() += 1;
+            if !quiet {
+                println!(
+                    "  B d{ib} <-> A d{ia}: overlap {ov:.12}  ratio B/A = {:+.12} {:+.12}i  max resid {resid:.2e}",
+                    ratio.re, ratio.im
+                );
+            }
+        }
+        println!("  B/A per-diagram ratio classes: {ratio_classes:?}");
+        if std::env::var("VG_DUMP").is_ok() {
+            for (h, hb) in hels_b.iter().enumerate() {
+                let row = |amps: &[Vec<C<f64>>]| -> String {
+                    amps.iter()
+                        .map(|r| format!("{:+.6e}{:+.6e}i", r[h].re, r[h].im))
+                        .collect::<Vec<_>>()
+                        .join("  ")
+                };
+                if amps_b.iter().all(|r| r[h].norm() == 0.0) {
+                    continue;
+                }
+                println!("  hel B {hb:?} | A {:?}", hels_a[h]);
+                println!("     A: {}", row(&amps_a));
+                println!("     B: {}", row(&amps_b));
+            }
+        }
+        let m2 = |amps: &[Vec<C<f64>>]| -> f64 {
+            (0..hels_b.len())
+                .map(|h| amps.iter().map(|r| r[h]).sum::<C<f64>>().norm_sqr())
+                .sum()
+        };
+        let ev_a = AmplitudeEvaluator::compile(&sa, &model).unwrap();
+        let ba = BoundAmplitude::<f64>::bind(&ev_a, &evaluated);
+        let bb = BoundAmplitude::<f64>::bind(&ev_b, &evaluated);
+        let ma = ba.eval_m2(&pa, &mut ba.scratch_space());
+        let mb = bb.eval_m2(&pb, &mut bb.scratch_space());
+        println!(
+            "eval_m2 A {ma:.12e}  B {mb:.12e}  rel {:.3e};  coherent sums (no colour) A {:.12e} B {:.12e}",
+            (ma - mb).abs() / ma,
+            m2(&amps_a),
+            m2(&amps_b)
+        );
+    }
+
+    /// One process line against the same line with its legs listed in another order,
+    /// evaluated at the same physical point: `|M|²` must agree, and so must every
+    /// helicity's colour-summed `|M|²`. `incoming` and `outgoing` say where
+    /// each leg of `a` goes: leg `incoming[i]` of `a` is incoming leg `i` of `b`, and
+    /// likewise for the outgoing legs.
+    fn assert_relabelling_invariant(a: &str, incoming: &[usize], outgoing: &[usize]) {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::phasespace::rambo_massive;
+        use rand::SeedableRng;
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let opts = ParsingOptions::default();
+        let (head, orders) = a.split_once(" QED").map_or((a, ""), |(h, o)| (h, o));
+        let (ins, outs) = head.split_once(" > ").expect("a process line");
+        let ins: Vec<&str> = ins.split_whitespace().collect();
+        let outs: Vec<&str> = outs.split_whitespace().collect();
+        let b = format!(
+            "{} > {}{}{orders}",
+            incoming
+                .iter()
+                .map(|&k| ins[k])
+                .collect::<Vec<_>>()
+                .join(" "),
+            outgoing
+                .iter()
+                .map(|&k| outs[k])
+                .collect::<Vec<_>>()
+                .join(" "),
+            if orders.is_empty() { "" } else { " QED" },
+        );
+        let compile = |p: &str| {
+            let pc = parse_proc_card(&format!("generate {p}"), &opts).unwrap();
+            let set = generate_from_proc_card(&pc, &model)
+                .unwrap()
+                .into_iter()
+                .find(|s| !s.diagrams.is_empty())
+                .unwrap();
+            AmplitudeEvaluator::compile(&set, &model).unwrap()
+        };
+        let (ea, eb) = (compile(a), compile(&b));
+        let (ba, bb) = (
+            BoundAmplitude::<f64>::bind(&ea, &evaluated),
+            BoundAmplitude::<f64>::bind(&eb, &evaluated),
+        );
+        let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
+        let n_in = ins.len();
+        let to_a = |vb: &[i32]| -> Vec<i32> {
+            let mut va = vec![0; vb.len()];
+            for (i, &k) in incoming.iter().enumerate() {
+                va[k] = vb[i];
+            }
+            for (i, &k) in outgoing.iter().enumerate() {
+                va[n_in + k] = vb[n_in + i];
+            }
+            va
+        };
+        let masses: Vec<f64> = outs
+            .iter()
+            .map(|n| evaluated.mass(model.particle_id(n).unwrap()))
+            .collect();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(11);
+        let sqrt_s = 1000.0;
+        for _ in 0..2 {
+            let mut pa = vec![
+                LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+                LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+            ];
+            pa.extend(rambo_massive(sqrt_s, &masses, &mut rng));
+            let mut pb: Vec<_> = incoming.iter().map(|&k| pa[k]).collect();
+            pb.extend(outgoing.iter().map(|&k| pa[n_in + k]));
+            let (ma, mb) = (ba.eval_m2(&pa, &mut sa), bb.eval_m2(&pb, &mut sb));
+            let rel = (ma - mb).abs() / ma;
+            assert!(rel < 1e-12, "{a}: {ma:.12e}, {b}: {mb:.12e}, rel {rel:.3e}");
+            let mut ha = vec![0.0; ea.helicities().len()];
+            let mut hb = vec![0.0; eb.helicities().len()];
+            ba.eval_hel_m2(&pa, &mut sa, &mut ha);
+            bb.eval_hel_m2(&pb, &mut sb, &mut hb);
+            for (vb, mb) in eb.helicities().iter().zip(&hb) {
+                let va = to_a(vb);
+                let k = ea
+                    .helicities()
+                    .iter()
+                    .position(|h| *h == va)
+                    .expect("the relabelled helicity combination");
+                let d = (ha[k] - mb).abs();
+                assert!(
+                    d <= 1e-12 * ma,
+                    "{a} at {va:?}: {:.12e}, {b} at {vb:?}: {mb:.12e}",
+                    ha[k]
+                );
+            }
+        }
+    }
+
+    /// A process line's relative Fermi signs do not read the order its legs are
+    /// listed in. Each case pairs one ordering with another whose fermion lines join
+    /// the same legs but list one pair the other way round: Bhabha's s channel (one
+    /// initial-state, one final-state line) against its t channel (two mixed lines);
+    /// the same with quarks; four identical leptons paired two ways among the final
+    /// state; and `t t~ b b~`'s (t t~)(b b~) pairing against the (t b~)(b t~) one a W
+    /// joins.
+    #[test]
+    fn relative_fermi_signs_do_not_read_the_leg_order() {
+        assert_relabelling_invariant("e+ e- > e+ e-", &[0, 1], &[1, 0]);
+        assert_relabelling_invariant("e+ e- > e+ e-", &[1, 0], &[0, 1]);
+        assert_relabelling_invariant("u u~ > u u~", &[1, 0], &[0, 1]);
+        assert_relabelling_invariant("u u~ > u u~", &[0, 1], &[1, 0]);
+        assert_relabelling_invariant("u u~ > e+ e- e+ e- QED<=4", &[0, 1], &[0, 1, 3, 2]);
+        assert_relabelling_invariant("u u~ > t t~ b b~ QED<=2", &[0, 1], &[0, 1, 3, 2]);
+    }
+
     /// Cross-check the production scalar bilinear (`scalar_bilinear_current` × scalar
     /// leg) against the `iosxxx` reference routine.
     ///
@@ -5452,6 +5802,54 @@ mod arena_reuse {
                 }
             }
         }
+    }
+
+    /// `AMP2` read along each row's configuration ends is, bit for bit, the sum
+    /// taken configuration by configuration over each one's slice of the row,
+    /// zeroed accumulator and coherent sum included: the two run the same
+    /// additions in the same order, which a regrouping of a configuration's
+    /// amplitudes, or a sum closed at the wrong position, would not.
+    #[test]
+    fn amp2_along_the_row_matches_the_sum_per_configuration() {
+        let mut multi = false;
+        for process in MG_VALIDATED_PROCESSES {
+            let (evals, evaluated) = compiled(process);
+            for eval in &evals {
+                let amp = BoundAmplitude::<f64>::bind(eval, &evaluated);
+                let spans = eval.config_amp_counts();
+                multi |= spans.iter().any(|&s| s > 1);
+                let program = eval.folded_hel().program();
+                let n = program.n_amps as usize;
+                assert_eq!(spans.iter().sum::<usize>(), n, "{process}: row width");
+                for p in points(eval.n_ext(), 3, 0x5EED_A2) {
+                    let mut sc = amp.scratch_space();
+                    let mut amp2 = vec![0.0; eval.n_configs()];
+                    amp.eval_amp2(&p, &mut sc, &mut amp2);
+                    let mut want = vec![0.0_f64; eval.n_configs()];
+                    let rows = program.amp_locs.chunks_exact(n);
+                    for (row, weights) in rows.zip(program.amp_weights.chunks_exact(n)) {
+                        let mut at = 0;
+                        for (acc, &span) in want.iter_mut().zip(spans) {
+                            let mut coherent = C::new(0.0, 0.0);
+                            for k in at..at + span {
+                                let a = sc.scalars[row[k] as usize];
+                                coherent += amp.weighted(weights[k], a);
+                            }
+                            *acc += coherent.norm_sqr();
+                            at += span;
+                        }
+                    }
+                    assert!(amp2.iter().any(|&a| a > 0.0), "{process}: AMP2 vanished");
+                    for (i, (a, b)) in amp2.iter().zip(&want).enumerate() {
+                        assert_eq!(a.to_bits(), b.to_bits(), "{process}: AMP2[{i}]");
+                    }
+                }
+            }
+        }
+        assert!(
+            multi,
+            "no process has a configuration of several amplitudes"
+        );
     }
 
     /// The three things that must retire a fill: a different point, a rewritten pool,

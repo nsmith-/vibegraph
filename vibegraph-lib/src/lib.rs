@@ -1,7 +1,9 @@
+pub mod amplitude_probe;
 pub mod artifact;
 pub mod budget;
 pub mod cache;
 pub mod config;
+pub mod config_share;
 pub mod coupling;
 pub mod cuts;
 pub mod diagrams;
@@ -11,6 +13,7 @@ pub mod helas;
 pub mod lhef;
 pub mod multiplicity;
 pub mod onshell;
+pub mod pairing;
 pub mod pdf;
 pub mod phasespace;
 pub mod progress;

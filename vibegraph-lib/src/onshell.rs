@@ -35,6 +35,7 @@
 
 use thiserror::Error;
 
+use crate::cuts::Cuts;
 use crate::diagrams::diagram::{Diagram, OnShell, Prop};
 use crate::diagrams::schannel::oriented_s_channel_id;
 use crate::diagrams::DiagramSet;
@@ -75,6 +76,17 @@ pub enum OnShellVetoError {
          restriction marks"
     )]
     GroupMarkingDiffers { a: String, b: String },
+    /// A `$` restriction on a subprocess whose `cut_decays = F` filter is
+    /// pairing-weighted: the pairing weights would be formed from the pairings'
+    /// unvetoed amplitudes while the term they multiply is vetoed. Refused
+    /// whether or not the subprocess's diagrams carry a line the `$` marks.
+    #[error(
+        "'{process}' carries a '$' veto, and its cut_decays = F exemption varies across \
+         pairings or subprocesses, so each carries its own weight formed from amplitudes the \
+         veto does not reach; that combination is not implemented. Integrate with \
+         cut_decays = T, or without the '$' restriction"
+    )]
+    PairingWeighted { process: String },
 }
 
 /// The run card's window for the marked propagators.
@@ -479,8 +491,34 @@ pub fn group_vetoes(
     groups
         .groups()
         .iter()
-        .map(|g| OnShellVeto::new(g.diagram_set(), g.evaluator(), forbidden, evaluated, window))
+        .map(|g| {
+            if g.cuts().is_pairing_weighted() {
+                return Err(OnShellVetoError::PairingWeighted {
+                    process: g.diagram_set().label(),
+                });
+            }
+            OnShellVeto::new(g.diagram_set(), g.evaluator(), forbidden, evaluated, window)
+        })
         .collect()
+}
+
+/// Refuse a fixed-beam process with a `$` restriction, whose `vetoes` are one
+/// per non-empty set of `sets` as [`subprocess_vetoes`] builds them (empty
+/// without one), when `cuts`, the process's one filter, is pairing-weighted
+/// ([`OnShellVetoError::PairingWeighted`]).
+pub fn refuse_vetoed_pairing_weights(
+    sets: &[DiagramSet],
+    vetoes: &[Option<OnShellVeto>],
+    cuts: &Cuts,
+) -> Result<(), OnShellVetoError> {
+    if vetoes.is_empty() || !cuts.is_pairing_weighted() {
+        return Ok(());
+    }
+    let process = sets
+        .iter()
+        .find(|s| !s.diagrams.is_empty())
+        .map_or_else(String::new, DiagramSet::label);
+    Err(OnShellVetoError::PairingWeighted { process })
 }
 
 #[cfg(test)]
@@ -857,6 +895,40 @@ mod tests {
         assert_eq!(veto.pattern(&at(mw + 1.0)), 1);
         assert!(veto.amplitude(1).is_none());
         assert_eq!(veto.pattern(&at(40.0)), 0);
+    }
+
+    /// A `$` restriction on a group whose `cut_decays = F` filter is
+    /// pairing-weighted is refused by name before integration: the pairing
+    /// weights are formed from the pairings' unvetoed amplitudes while the term
+    /// they multiply is vetoed. `u u~ > z u u~ $ a, z > u u~` has identical quarks
+    /// in the core and in the decay.
+    #[test]
+    fn a_veto_on_a_pairing_weighted_group_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(Arc::clone(&model));
+        let a = [particle(&model, "a").pdg_code];
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  F = cut_decays\n  20.0 = ptj\n  5.0 = etaj\n  0.4 = drjj\n",
+        )
+        .unwrap();
+        let all = sets("u u~ > z u u~, z > u u~", &model);
+        let groups = derive_flavor_groups(all, &model, &evaluated, &card).unwrap();
+        assert!(groups.groups()[0].cuts().is_pairing_weighted());
+        let message = match group_vetoes(&groups, &a, &evaluated, &card) {
+            Ok(_) => panic!("a veto on a pairing-weighted group compiled"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            message.contains("u u~") && message.contains('$') && message.contains("cut_decays = T"),
+            "{message}"
+        );
+
+        // The same card at cut_decays = T is not pairing-weighted, and its `$`
+        // restriction compiles.
+        let t = RunCard::parse("  1 = lpp1\n  1 = lpp2\n  T = cut_decays\n  20.0 = ptj\n").unwrap();
+        let all = sets("u u~ > z u u~, z > u u~", &model);
+        let groups = derive_flavor_groups(all, &model, &evaluated, &t).unwrap();
+        group_vetoes(&groups, &a, &evaluated, &t).unwrap();
     }
 
     /// A flavour group's members share the representative's marking on
