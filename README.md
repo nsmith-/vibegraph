@@ -19,21 +19,30 @@ and `scripts/build-docs.sh` builds it locally.
 
 ## Scope
 
-**Current goal — MadGraph leading-order process parity** (without NLO): an LO
-event generator for **arbitrary fixed-order Standard Model
-processes**, driven end to end by the standard toolchain formats: a UFO model
-and a MadGraph process card go in, an unweighted `.lhe` event sample comes out.
-The process card is read in MadGraph's full grammar — decay chains
-(`p p > t t~, t > b e+ ve`), 1→n decays to a partial width, the s-channel
-restrictions `>`, `$` and `$$`, polarized external legs (`w+{0}`, `e-{L}`),
-`add process` with `@N`, including mixed jet multiplicities under MLM matching
-(`ickkw = 1`, `xqcut`: MadEvent's cut, clustering scales and α_s/PDF
-reweighting, and the `<scales>` record Pythia's kT-MLM matching reads) — and
-whatever the grammar can say that is not supported yet is refused as a hard
-error before anything reads the card. That includes hadronic processes at MadGraph's
-own default dynamical scale — the kT-clustering prescription
-(`dynamical_scale_choice = -1`) is reproduced against MadGraph's clustering
-itself, not approximated.
+**What it does:** leading-order event generation for tree-level processes at
+any leg multiplicity, with MLM matching. A UFO model and MadGraph's own process
+and run cards go in; an unweighted `.lhe` event sample comes out.
+- **Process cards** in MadGraph's grammar: decay chains
+  (`p p > t t~, t > b e+ ve`), 1→n decays to a partial width, the s-channel
+  restrictions `/`, `>`, `$` and `$$`, polarized external legs (`w+{0}`,
+  `e-{L}`), and `add process` with `@N`.
+- **MLM matching** of mixed jet multiplicities (`ickkw = 1`, `xqcut`):
+  MadEvent's cut, clustering scales and α_s/PDF reweighting, and the `<scales>`
+  record Pythia's kT-MLM matching reads.
+- **MadGraph's default dynamical scale** at proton beams, the kT-clustering
+  prescription (`dynamical_scale_choice = -1`), reproduced against MadGraph's
+  own clustering rather than approximated.
+- **Weights at generation:** MadGraph reweight cards, and scale, PDF and α_s
+  variations in MadGraph's systematics format.
+- **Beams:** unpolarized proton–proton, including unequal beam energies and
+  massive incoming partons, or fixed-energy partonic beams.
+
+**Anything the cards ask for that is not implemented is refused by name, not
+ignored.** Process-card features are refused before diagram enumeration;
+run-card settings and cuts when `integrate` starts. A card that leaves a soft or
+collinear divergence uncut is refused too, naming the legs and the cut that
+would regulate it. The known cases where vibegraph's answer differs from
+MadGraph's are listed under [Differences from MadGraph](#differences-from-madgraph).
 
 ```
 UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALOHA)
@@ -42,11 +51,13 @@ UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALO
                                                           (multichannel VEGAS)
 ```
 
-The UFO loader is model-generic, and its Lorentz and colour surface reaches
-past the Standard Model's: SMEFTsim's `topU3l_MwScheme` model and two small
+The UFO loader is not tied to the Standard Model, and its Lorentz and colour
+surface reaches past it: SMEFTsim's `topU3l_MwScheme` model and two small
 models written here are enumerated, compiled and gated against MadGraph's own
-matrix elements. What is covered, what is refused as a hard error (spin ≥ 3/2,
-spin-2, Majorana fermions, squared-order constraints) and where each claim is
+matrix elements. What is covered, what is refused as a hard error (spin-3/2 and
+spin-2 particles, Majorana fermions, squared-order constraints, custom UFO
+propagators and Fortran operators, coupling orders in a model without
+`coupling_orders.py`) and where each claim is
 measured is in the guide's [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model)
 and in [`validation/manifest.toml`](validation/manifest.toml). Beam
 configurations other than unpolarized proton–proton or fixed-energy partonic
@@ -54,8 +65,8 @@ collisions are out of scope for now; open validation items are tracked in the
 [backlog](https://nsmith-.github.io/vibegraph/backlog.html).
 
 **Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
-boundary checklist already lives in the backlog's items tagged `non-sm-ufo` — CKKW-L merging, and
-NLO event generation.
+boundary checklist already lives in the backlog's items tagged `non-sm-ufo` — MadSpin-style
+decays, CKKW-L merging, and NLO event generation.
 
 ## Quickstart
 
@@ -220,8 +231,11 @@ structure does, and share one on-disk artifact:
 2. `vibegraph generate` — reload the artifact, unweight against the frozen
    grids by accept/reject, and write a Les Houches event file.
 
-A third command, `vibegraph check-events`, reads an emitted file back and checks
-it against itself. `vibegraph <cmd> --help` has the full option list, and the
+Three more commands: `vibegraph check-events` reads an emitted file back and
+checks it against itself; `vibegraph enumerate` writes a process's diagrams (an
+artifact `integrate` can start from, a summary and one SVG drawing per diagram);
+and `vibegraph inspect` prints what a saved integration records, or its
+configuration ranking as JSON. `vibegraph <cmd> --help` has the full option list, and the
 documentation site's [command-line pages](https://nsmith-.github.io/vibegraph/cli/overview.html)
 cover the rest: the unweighting strategies and the maximum-weight scan, run
 cards beyond the defaults, what the grid artifact contains and how it makes
@@ -245,11 +259,13 @@ vibegraph integrate validation/madgraph/dy13_proc_card.dat \
 | Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions, including the default kT-clustered dynamical scale reproduced against MadGraph's own clustering; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings; partial widths of 1→n decays; decay chains inside MadEvent's Breit–Wigner windows; `$` as MadEvent's zeroed on-shell propagator; polarized cross sections |
 | Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
 
-Notable current boundaries (hard errors or tracked rows, not silent
-wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
-conjugation, loop-level UFOs (out of the LO charter), beam configurations
-beyond unpolarized proton–proton or fixed-energy partonic beams, squared-order
-constraints, polarized intermediate resonances, and `add process` lines of
+Notable current boundaries, each refused by name: spin-3/2 and spin-2
+wavefunctions, Majorana fermions and charge conjugation, loop-level UFOs (out of
+the LO charter), beam configurations beyond unpolarized proton–proton or
+fixed-energy partonic beams, squared-order constraints, polarized intermediate
+resonances, one-body final states (`p p > z'` with no decay), the coloured-scalar
+seagull vertex (so squark-pair production), photon isolation, MLM matching at
+fixed-energy beams or on decays, MadSpin decays, and `add process` lines of
 different multiplicity at fixed-energy beams (at proton beams they are summed,
 the way MadEvent sums its `P<n>` directories). Colour sextets and baryonic epsilon tensors are
 *supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
@@ -258,6 +274,23 @@ corners still refused rather than guessed: a `T6` carrying adjoint indices, and
 any colour basis in which such a tensor survives to an external leg, which no
 Les Houches record can write. See the [backlog](https://nsmith-.github.io/vibegraph/backlog.html) and the
 design record in [`research/kb/`](research/kb/index.md).
+
+### Differences from MadGraph
+
+Where vibegraph knowingly gives a different answer from MadGraph (the
+[v0.2.1 release notes](docs/release-notes/v0.2.1.md) carry the current list):
+- **Identical particles across decays.** vibegraph keeps every pairing, their
+  interference and the union of their decay windows; MadGraph keeps one pairing.
+  σ reads +0.6% ± 0.2% on `g g > z u u~, z > u u~` (`cut_decays = F`) and
+  +0.25% ± 0.08% on `e+ e- > z z, z > e+ e-`, of which +0.14% is not yet
+  attributed.
+- **Widths below 1e-6 of the mass** keep the model's width, where MadEvent
+  floors it: 1.4% on one decay-chain card.
+- **Open measurements:** the `p p > l+ l- j` family reads +0.15% to +0.23% above
+  MadEvent's seed records, and `p p > b b~` drifts from MadEvent as the budget
+  grows. Neither is attributed yet.
+- **`-o events.lhe.gz`** (or `.zst`) writes an uncompressed file under that
+  name; the extension is not acted on.
 
 ## Validation
 
@@ -471,11 +504,6 @@ trials for 20 000 events before the change and 477 125 after: **4.36× cheaper
 per effective event**. That is a ratio of trial counts, so it holds on any
 host.
 
-**The validation layer as a user runs it** (Apple M3 Max). `pixi run validate`,
-the whole banked gate at 29 rows, went from 691 s to **341 s wall / 1 306 s
-CPU** on a quiet host. Over the same window the suite itself grew by 42 running
-tests.
-
 More caveats:
 - **These ratios are not constants.** They are measurements on one host, and
   the MadGraph denominator of the end-to-end ones moved by half between two
@@ -500,7 +528,8 @@ pixi run profile-sigma   # samply profile of the σ gate
 vibegraph-lib/        Library: ufo/, diagrams/, helas/, phasespace/, vegas,
                       coupling/, pdf/, hadronic, proton, cuts, unweight,
                       lhef/, artifact
-vibegraph-cli/        The `vibegraph` binary (integrate, generate, check-events)
+vibegraph-cli/        The `vibegraph` binary (integrate, generate, check-events,
+                      enumerate, inspect)
 validation/           MadGraph/HELAS/PDF reference generation + banked references
 research/kb/          The knowledge bundle: topic concepts, backlog items, decisions,
                       sprint records, and the original notes under history/notes/
