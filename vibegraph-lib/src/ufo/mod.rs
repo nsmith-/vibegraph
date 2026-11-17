@@ -204,23 +204,14 @@ pub enum UfoError {
     )]
     RestrictAutoWidth { pdg: i32 },
     #[error(
-        "the restriction card gives no value for {name} (block {block}, code {code}), which \
-         MadGraph's restriction requires; the loader would keep the value parameters.py gives"
+        "the restriction card gives no value for {name} (block {block}, code {code}); MadGraph \
+         refuses a restriction card that leaves out an external parameter of the model, so give \
+         it a value"
     )]
     RestrictMissing {
         name: String,
         block: String,
         code: String,
-    },
-    #[error(
-        "the restriction card sets {name} to {value:e}, MadGraph's spelling of {meaning} for a \
-         parameter its restriction leaves free (neither fixed nor merged); the loader does not \
-         read it so, so give {name} another value"
-    )]
-    RestrictMadgraphFree {
-        name: String,
-        value: f64,
-        meaning: &'static str,
     },
     #[error("the restriction card sets {name} to {value}, which is not a finite number")]
     RestrictNonFinite { name: String, value: f64 },
@@ -245,11 +236,6 @@ fn several(errors: &[UfoError]) -> String {
         .collect::<Vec<_>>()
         .join("; ")
 }
-
-/// The values MadGraph's restriction reads as "one" and "zero" without fixing
-/// the parameter (`restrict_model`, `import_ufo.py`): such a parameter is
-/// neither fixed nor merged, and its default becomes 1 or 0 afterwards.
-const MADGRAPH_FREE_VALUES: [(f64, &str); 2] = [(9.999999e-1, "one"), (0.000001e-99, "zero")];
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
@@ -449,9 +435,9 @@ impl ParsedModel {
     /// given as `Auto` ([`UfoError::RestrictAutoWidth`]: MadGraph keeps such a
     /// width free and computes it at launch, and nothing here computes one); an
     /// external parameter the card gives no value for
-    /// ([`UfoError::RestrictMissing`]); a value MadGraph reads as "one" or "zero"
-    /// without fixing it ([`UfoError::RestrictMadgraphFree`]); and a value that
-    /// is not finite ([`UfoError::RestrictNonFinite`]).
+    /// ([`UfoError::RestrictMissing`], which MadGraph refuses too); and a value
+    /// that is not finite ([`UfoError::RestrictNonFinite`]). MadGraph's spellings
+    /// of a free one or zero are read as `apply_restrict` describes.
     pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
         let mut problems: Vec<UfoError> = restrict_card
             .auto_widths()
@@ -485,17 +471,7 @@ impl ParsedModel {
                 Some(value) if !value.is_finite() => {
                     problems.push(UfoError::RestrictNonFinite { name, value });
                 }
-                Some(value) => {
-                    if let Some(&(_, meaning)) =
-                        MADGRAPH_FREE_VALUES.iter().find(|(v, _)| *v == value)
-                    {
-                        problems.push(UfoError::RestrictMadgraphFree {
-                            name,
-                            value,
-                            meaning,
-                        });
-                    }
-                }
+                Some(_) => {}
             }
         }
         match problems.len() {
@@ -2195,5 +2171,94 @@ mod tests {
         assert_eq!(np.lorentz, vec![LorentzId::from(11)]);
         assert_eq!(np.couplings.keys().collect::<Vec<_>>(), [&(0, 0)]);
         assert_eq!(np.couplings[&(0, 0)], CouplingId::from(1));
+    }
+
+    /// The vendored SMEFTsim under `restrict_vg_special_values.dat`, which sets
+    /// every value MadGraph's restriction treats specially, restricts as
+    /// MadGraph 3.7.1 restricted it (`tests/data/restrict_vg_special_values_madgraph.json`,
+    /// dumped from `RestrictModel` after `import model`): the same free
+    /// externals at the same defaults (cG and cW at 1, free; cHbox at 0, free),
+    /// the same fixed one (cH), the same merge (cHW with cHDD, cHB opposite),
+    /// and the same zero couplings, by name.
+    ///
+    /// Cannot detect a difference in MadGraph's merging of identical couplings,
+    /// which is a renaming not reproduced here, nor in internal parameters it
+    /// folds to constants.
+    #[test]
+    fn the_special_values_card_restricts_as_madgraph_does() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dir = root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+        let card_path =
+            root.join("../validation/madgraph/cards/smeft/restrict_vg_special_values.dat");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                root.join("tests/data/restrict_vg_special_values_madgraph.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut parsed = ParsedModel::parse(&dir).unwrap();
+        let card = ParamCard::from_file(&card_path).unwrap();
+        parsed.apply_restriction(&card).unwrap();
+        let params = &parsed.params;
+
+        let followers: BTreeSet<&String> = params
+            .merged
+            .iter()
+            .flat_map(|group| group.iter().skip(1).map(|(name, _)| name))
+            .collect();
+        let free: BTreeMap<String, f64> = params
+            .externals
+            .iter()
+            .filter(|p| {
+                !params.zeros.contains(&p.name)
+                    && !params.ones.contains(&p.name)
+                    && !followers.contains(&p.name)
+            })
+            .map(|p| match p.nature {
+                ParamNature::External { default_value, .. } => (p.name.clone(), default_value),
+                _ => unreachable!(),
+            })
+            .collect();
+        let want: BTreeMap<String, f64> = fixture["free_externals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e[0].as_str().unwrap().to_owned(), e[1].as_f64().unwrap()))
+            .collect();
+        assert_eq!(
+            free.keys().collect::<Vec<_>>(),
+            want.keys().collect::<Vec<_>>()
+        );
+        for (name, value) in &want {
+            assert!(
+                (free[name] - value).abs() <= 1e-12 * value.abs().max(1.0),
+                "{name}"
+            );
+        }
+        assert_eq!(params.ones.iter().collect::<Vec<_>>(), ["cH"]);
+        assert_eq!(
+            params.merged,
+            vec![vec![
+                ("cHDD".to_string(), 1.0),
+                ("cHW".to_string(), 1.0),
+                ("cHB".to_string(), -1.0)
+            ]]
+        );
+
+        let values = evaluate_couplings_for_restrict(&parsed.params, &parsed.couplings, &card);
+        let rule = ZeroRule::for_couplings(values.values());
+        let zero: BTreeSet<String> = (0..parsed.couplings.len())
+            .filter(|&i| is_zero_coupling(CouplingId::from(i), &values, rule))
+            .map(|i| parsed.couplings[i].name.clone())
+            .collect();
+        let want_zero: BTreeSet<String> = fixture["zero_couplings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(zero, want_zero);
     }
 }

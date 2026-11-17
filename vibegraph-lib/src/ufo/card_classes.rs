@@ -490,17 +490,33 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
         madgraph: "MadGraph5Error \"not define\" (model_reader.py L184), and a missing \
                    block is an \"Invalid restriction card\" (L115); the exceptions are \
                    conversions of other conventions (`loop`, SLHA1, `alpha`)",
-        class: Refused("the loader would keep parameters.py's value in its place"),
+        class: Refused("MadGraph refuses it"),
         example: Edits(&[("    3 1.180000e-01 # aS \n", "")]),
         expect: Error("aS"),
     },
     Construct {
-        name: "`9.999999e-1` or `0.000001e-99`",
-        madgraph: "neither fixed nor merged, then replaced by 1 or 0 as the default \
-                   (restrict_model, import_ufo.py L2455-L2461, L2724)",
-        class: Refused("the loader would merge or keep it as written"),
+        name: "`9.999999e-1`",
+        madgraph: "not exactly one, so neither fixed (detect_special_parameters, \
+                   import_ufo.py L2623) nor merged (L2724); then replaced by 1 as the \
+                   default (restrict_model, L2458-L2459)",
+        class: Consumed("ParameterSet::apply_restrict: a default of one that stays free"),
         example: Edits(&[("   15 1.777000e+00 # MTA", "   15 9.999999e-01 # MTA")]),
-        expect: Error("leaves free"),
+        expect: Differs(Edits(&[(
+            "   15 1.777000e+00 # MTA",
+            "   15 1.000000e+00 # MTA",
+        )])),
+    },
+    Construct {
+        name: "`0.000001e-99`",
+        madgraph: "not exactly zero, so neither fixed (detect_special_parameters, \
+                   import_ufo.py L2621) nor merged (L2724); then replaced by 0 as the \
+                   default (restrict_model, L2460-L2461)",
+        class: Consumed("ParameterSet::apply_restrict: a default of zero that stays free"),
+        example: Edits(&[("   15 1.777000e+00 # MTA", "   15 0.000001e-99 # MTA")]),
+        expect: Differs(Edits(&[(
+            "   15 1.777000e+00 # MTA",
+            "   15 0.000000e+00 # MTA",
+        )])),
     },
     Construct {
         name: "a non-finite value",
