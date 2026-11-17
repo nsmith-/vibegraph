@@ -7,19 +7,20 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// The WEIGHTED of one coupling-order tuple: each order's power times its
 /// hierarchy, summed (`Interaction.get_WEIGHTED_order`, `base_objects.py:893-899`,
-/// before its division by the vertex size).
+/// before its division by the vertex size). A negative power (SMEFTsim's
+/// `QED: -1` vev insertion) weighs negatively, as MadGraph sums it.
 ///
 /// An order the hierarchy does not list weighs nothing, and an interaction
 /// carrying one joins no particle class (see [`WeightedSearchModel::new`]): the
 /// diagram filter the search bounds ignores such an order too, where MadGraph
 /// raises `KeyError` (`base_objects.py:897`, `:1448`).
 pub(crate) fn order_weight(
-    orders: &BTreeMap<String, usize>,
+    orders: &BTreeMap<String, i64>,
     hierarchy: &BTreeMap<String, u32>,
-) -> u32 {
+) -> i64 {
     orders
         .iter()
-        .map(|(order, &n)| hierarchy.get(order).copied().unwrap_or(0) * n as u32)
+        .map(|(order, &n)| hierarchy.get(order).copied().unwrap_or(0) as i64 * n)
         .sum()
 }
 
@@ -28,7 +29,7 @@ pub(crate) fn order_weight(
 /// whose couplings differ in their orders into one interaction per tuple).
 pub(crate) struct Interaction<'a> {
     pub(crate) pdg_codes: Vec<i64>,
-    pub(crate) orders: &'a BTreeMap<String, usize>,
+    pub(crate) orders: &'a BTreeMap<String, i64>,
 }
 
 /// The model-level inputs of the automatic WEIGHTED search, computed once from
@@ -39,9 +40,9 @@ pub(crate) struct WeightedSearchModel {
     /// vertex, `WEIGHTED / max(n_particles - 2, 1)` (`Interaction.get_WEIGHTED_order`,
     /// `Model.get_max_WEIGHTED`, `base_objects.py:893-899`, `:1481-1486`),
     /// truncated to an integer as `find_optimal_process_orders` truncates it
-    /// (`diagram_generation.py:1999`). A four-point vertex carrying QED=2 under a
-    /// QED hierarchy of 2 counts 2, not 4.
-    pub(crate) max_interaction_weighted: u32,
+    /// (`diagram_generation.py:1999`), towards zero as Python's `int` does. A
+    /// four-point vertex carrying QED=2 under a QED hierarchy of 2 counts 2, not 4.
+    pub(crate) max_interaction_weighted: i64,
     /// Rising hierarchy values, each with the particles first reached by the
     /// interactions all of whose orders sit at or below it
     /// (`Model.get_particles_hierarchy`, `base_objects.py:1432-1479`).
@@ -53,7 +54,7 @@ impl WeightedSearchModel {
         let max_interaction_weighted = interactions
             .iter()
             .map(|i| {
-                let legs = i.pdg_codes.len().saturating_sub(2).max(1) as u32;
+                let legs = i.pdg_codes.len().saturating_sub(2).max(1) as i64;
                 order_weight(i.orders, hierarchy) / legs
             })
             .max()
@@ -147,8 +148,8 @@ impl WeightedSearchModel {
     /// The bound the search stops at: `(n_ext - 2)` times
     /// [`max_interaction_weighted`](Self::max_interaction_weighted)
     /// (`diagram_generation.py:1998-1999`).
-    pub(crate) fn maximum_weighted(&self, n_ext: usize) -> u32 {
-        n_ext.saturating_sub(2) as u32 * self.max_interaction_weighted
+    pub(crate) fn maximum_weighted(&self, n_ext: usize) -> i64 {
+        n_ext.saturating_sub(2) as i64 * self.max_interaction_weighted
     }
 }
 
@@ -158,7 +159,7 @@ mod tests {
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::ufo::UFOModel;
 
-    fn orders(pairs: &[(&str, usize)]) -> BTreeMap<String, usize> {
+    fn orders(pairs: &[(&str, i64)]) -> BTreeMap<String, i64> {
         pairs.iter().map(|&(o, n)| (o.to_owned(), n)).collect()
     }
 
