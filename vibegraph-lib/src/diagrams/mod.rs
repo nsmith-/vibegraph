@@ -32,6 +32,7 @@ pub mod check;
 pub mod diagram;
 pub mod draw;
 pub mod parse;
+mod reduction;
 pub mod resolve;
 pub mod schannel;
 pub(crate) mod selector;
@@ -1118,6 +1119,16 @@ fn generate_sets_inner(
     cached_topologies: &[Topology],
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
+    // The `<=` bounds MadGraph spends vertex by vertex while it builds a diagram
+    // (`reduce_orders`); the leftmost constraint on an order wins. They drop
+    // diagrams the total-sum selection keeps only where a vertex carries a
+    // negative power ([`reduction`]).
+    let mut budgets: std::collections::BTreeMap<String, i64> = Default::default();
+    for o in &process.orders {
+        if matches!(o.op, CouplingOp::Le | CouplingOp::Eq) {
+            budgets.entry(o.name.clone()).or_insert(o.value);
+        }
+    }
     // Candidate assignments seen, and the two prefilters' kills: what the
     // enumeration paid for the assignments it never handed to feyngraph.
     let mut candidates = 0usize;
@@ -1266,6 +1277,11 @@ fn generate_sets_inner(
             .views()
             .map(|view| Diagram::from_view(&view, model))
             .collect::<Result<Vec<_>, _>>()?;
+        if !model.negative_orders.is_empty() {
+            diagrams.retain(|d| {
+                reduction::within_running_budget(d, model, &budgets, max_weighted.map(|w| w as i64))
+            });
+        }
         let enumerated = diagrams.len();
         diagrams.retain(|d| process.schannels.keeps(d, model));
         for diagram in &diagrams {
