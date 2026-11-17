@@ -103,6 +103,15 @@ pub enum DiagramError {
          lines differ in their '$' list is not supported"
     )]
     MixedOnShellVeto { a: String, b: String },
+    /// MadGraph's automatic WEIGHTED search lowers a trial's bound by the QCD
+    /// hierarchy per removed gluon, and raises `KeyError` on a model whose
+    /// `coupling_orders.py` gives QCD none.
+    #[error(
+        "'{process}': the automatic WEIGHTED search weighs each final-state gluon by the \
+         QCD hierarchy, and the model's coupling orders give QCD none; give the process \
+         explicit coupling orders"
+    )]
+    GluonTrialWithoutQcd { process: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("{0}")]
@@ -821,17 +830,30 @@ fn generate_undecayed(
     if auto_weighted {
         let search = &model.weighted_search;
         let leg_ids: Vec<Vec<i64>> = checked.iter().map(|(_, ids, _)| ids.clone()).collect();
-        let start = search.minimum_weighted(&leg_ids, &expanded.schannels.required) as usize;
-        let cap = search.maximum_weighted(n_ext) as usize;
+        let start = i64::from(search.minimum_weighted(&leg_ids, &expanded.schannels.required));
+        let cap = search.maximum_weighted(n_ext);
 
         // `find_optimal_process_orders`: start at the model's estimate for the legs
         // (`get_minimum_WEIGHTED`), raise the bound by one (:2111) while it is
-        // below the cap (:2013) and no subprocess has a diagram, then generate at
+        // below the cap (:2013) and no trial has a diagram, then generate at
         // the bound the loop stopped at, `max(start, cap)` (:2115, :1683-1686);
         // its diagrams, if any, are the result.
         let mut w = start;
+        if gluons_leave_trials(&expanded, model) {
+            let line = process.to_string();
+            let mut trials = GluonFreeTrials::new(&line, &expanded, model);
+            while w < cap {
+                if trials.any_diagram(w)? {
+                    debug!("lowest WEIGHTED order with a gluon-free trial diagram: {w}");
+                    break;
+                }
+                debug!("no gluon-free trial diagram at WEIGHTED {w}, raising the bound");
+                w += 1;
+            }
+            return generate_sets_inner(&expanded, model, Some(w as usize), &cached_topologies);
+        }
         while w < cap {
-            let sets = generate_sets_inner(&expanded, model, Some(w), &cached_topologies)?;
+            let sets = generate_sets_inner(&expanded, model, Some(w as usize), &cached_topologies)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
                 debug!("lowest WEIGHTED order with diagrams: {w}");
                 return Ok(sets);
@@ -840,9 +862,177 @@ fn generate_undecayed(
             w += 1;
         }
         debug!("no diagrams below the WEIGHTED cap {cap}; generating at {w}");
-        generate_sets_inner(&expanded, model, Some(w), &cached_topologies)
+        generate_sets_inner(&expanded, model, Some(w as usize), &cached_topologies)
     } else {
         generate_sets_inner(&expanded, model, explicit_weighted, &cached_topologies)
+    }
+}
+
+/// The PDG code MadGraph's automatic WEIGHTED search removes from the final state
+/// of each trial (`diagram_generation.py:2040-2045`).
+const GLUON: i64 = 21;
+
+/// Whether the automatic WEIGHTED search trials a process other than the one it
+/// bounds: the gluon is in the lowest hierarchy class
+/// (`Model.get_particles_hierarchy`'s first class, `diagram_generation.py:2042`)
+/// and some final-state leg can be one.
+///
+/// Otherwise every trial is a subprocess of the process itself, and the search
+/// trials the process whole, keeping the diagrams of the first bound that has any.
+/// MadGraph's trials differ from that only by building each leg from its
+/// particle id alone (a polarized leg's helicities are not read) and by skipping
+/// the crossings of a trial that failed, both of which can move only the bound a
+/// refusal quotes.
+fn gluons_leave_trials(process: &ExpandedProcess, model: &UFOModel) -> bool {
+    let lowest = model.weighted_search.particle_classes.first();
+    lowest.is_some_and(|(_, particles)| particles.contains(&GLUON))
+        && process.final_state.iter().flatten().any(|name| {
+            model
+                .particles
+                .get(name)
+                .is_some_and(|p| p.pdg_code == GLUON)
+        })
+}
+
+/// The trials of MadGraph's automatic WEIGHTED search when the gluon is in the
+/// lowest hierarchy class (`find_optimal_process_orders`,
+/// `diagram_generation.py:2015-2108`).
+///
+/// Per initial-state assignment, each final-state assignment (one per sorted
+/// content) is trialled with its gluons removed, at the bound lowered by the
+/// QCD hierarchy once per removed gluon. A lowered bound below zero bounds
+/// nothing: `reduce_orders` ignores a negative order (`:1062-1083`). A trial
+/// left with two legs has the single diagram MadGraph builds from a
+/// particle-antiparticle pair, the identity vertex its `ref_dict_to0` holds for
+/// every particle (`base_objects.py:579-589`), unless an s-channel is required;
+/// one left with fewer has none. A trial whose crossing, all legs outgoing, has
+/// already failed at this bound is skipped unless the process forbids
+/// s-channels (`:2091-2096`).
+struct GluonFreeTrials<'a> {
+    process: &'a str,
+    expanded: &'a ExpandedProcess,
+    model: &'a UFOModel,
+    topologies: HashMap<usize, Vec<Topology>>,
+}
+
+impl<'a> GluonFreeTrials<'a> {
+    fn new(process: &'a str, expanded: &'a ExpandedProcess, model: &'a UFOModel) -> Self {
+        GluonFreeTrials {
+            process,
+            expanded,
+            model,
+            topologies: HashMap::new(),
+        }
+    }
+
+    /// Whether any trial has a diagram at the bound `w`.
+    fn any_diagram(&mut self, w: i64) -> Result<bool, DiagramError> {
+        let model = self.model;
+        let particle = |name: &String| {
+            model
+                .particles
+                .get(name)
+                .ok_or_else(|| ResolveError::UnknownParticle(name.clone()))
+        };
+        let mut failed: std::collections::HashSet<Vec<String>> = Default::default();
+        let initial_combos = self
+            .expanded
+            .initial
+            .iter()
+            .cloned()
+            .multi_cartesian_product();
+        for initial in initial_combos {
+            let mut seen: std::collections::HashSet<Vec<String>> = Default::default();
+            for final_state in self
+                .expanded
+                .final_state
+                .iter()
+                .cloned()
+                .multi_cartesian_product()
+            {
+                if !seen.insert(final_state.iter().cloned().sorted().collect()) {
+                    continue;
+                }
+                let mut reduced = Vec::with_capacity(final_state.len());
+                let mut gluons = 0i64;
+                for name in final_state {
+                    if particle(&name)?.pdg_code == GLUON {
+                        gluons += 1;
+                    } else {
+                        reduced.push(name);
+                    }
+                }
+                let bound = if gluons == 0 {
+                    w
+                } else {
+                    let qcd = model.order_hierarchy.get("QCD").ok_or_else(|| {
+                        DiagramError::GluonTrialWithoutQcd {
+                            process: self.process.to_owned(),
+                        }
+                    })?;
+                    w - gluons * i64::from(*qcd)
+                };
+                let crossed: Vec<String> = initial
+                    .iter()
+                    .map(|name| particle(name).map(|p| p.antiname.clone()))
+                    .chain(reduced.iter().map(|name| Ok(name.clone())))
+                    .collect::<Result<Vec<_>, ResolveError>>()?
+                    .into_iter()
+                    .sorted()
+                    .collect();
+                if self.expanded.schannels.forbidden.is_empty() && failed.contains(&crossed) {
+                    continue;
+                }
+                if self.trial_has_diagram(&initial, reduced, &crossed, bound)? {
+                    return Ok(true);
+                }
+                failed.insert(crossed);
+            }
+        }
+        Ok(false)
+    }
+
+    fn trial_has_diagram(
+        &mut self,
+        initial: &[String],
+        final_state: Vec<String>,
+        crossed: &[String],
+        bound: i64,
+    ) -> Result<bool, DiagramError> {
+        let n_ext = initial.len() + final_state.len();
+        if n_ext < 2 {
+            return Ok(false);
+        }
+        if n_ext == 2 {
+            let required = self
+                .expanded
+                .schannels
+                .required
+                .iter()
+                .any(|r| !r.is_empty());
+            let pair = self
+                .model
+                .particles
+                .get(&crossed[0])
+                .is_some_and(|p| p.antiname == crossed[1]);
+            return Ok(pair && !required);
+        }
+        let model = self.model;
+        let topologies = self
+            .topologies
+            .entry(n_ext)
+            .or_insert_with(|| generate_topologies(n_ext, &model.topo));
+        let trial = ExpandedProcess {
+            initial: initial.iter().map(|n| vec![n.clone()]).collect(),
+            polarizations: (0..n_ext).map(|_| None).collect(),
+            final_state: final_state.into_iter().map(|n| vec![n]).collect(),
+            forbidden_particles: self.expanded.forbidden_particles.clone(),
+            orders: self.expanded.orders.clone(),
+            schannels: self.expanded.schannels.clone(),
+        };
+        let max_weighted = usize::try_from(bound).ok();
+        let sets = generate_sets_inner(&trial, model, max_weighted, topologies)?;
+        Ok(sets.iter().any(|s| !s.diagrams.is_empty()))
     }
 }
 
@@ -1032,19 +1222,27 @@ fn generate_sets_inner(
             continue;
         }
 
-        let mut sel = build_selector(&concrete);
+        let mut sel = build_selector(&concrete, &model.negative_orders);
 
-        // WEIGHTED coupling-order filter: reject diagrams whose weighted sum exceeds max_weighted.
+        // WEIGHTED coupling-order filter: reject diagrams whose weighted sum, each
+        // order's signed power times its hierarchy, exceeds max_weighted.
         if let Some(max_w) = max_weighted {
             use std::sync::Arc;
             let hierarchy = model.order_hierarchy.clone();
+            let negative = model.negative_orders.clone();
+            let max_w = max_w as i64;
             let weighted_fn: Arc<
                 dyn Fn(&feyngraph::diagram::view::DiagramView) -> bool + Send + Sync,
             > = Arc::new(move |diag_view| {
-                let w: usize = hierarchy
+                let w: i64 = hierarchy
                     .iter()
-                    .map(|(coupling, &h)| diag_view.order(coupling) * h as usize)
+                    .map(|(coupling, &h)| diag_view.order(coupling) as i64 * h as i64)
                     .sum();
+                let w = if negative.is_empty() {
+                    w
+                } else {
+                    w + negative.weighted(diag_view, &hierarchy)
+                };
                 w <= max_w
             });
             sel.add_custom_function(weighted_fn);
