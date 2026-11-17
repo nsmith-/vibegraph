@@ -21,6 +21,6 @@ Reported by simshop's scan of the CMS model store
   the same.
 
 simshop counts this item,
-[`negative-ufo-coupling-orders-refused`](negative-ufo-coupling-orders-refused.md)
+negative coupling orders (closed by #141)
 and [`ufo-vertex-coupling-lists-refused`](ufo-vertex-coupling-lists-refused.md)
 as the cheapest wins: about 180 of 337 refused loads together.

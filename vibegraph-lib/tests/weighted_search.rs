@@ -155,7 +155,6 @@ fn a_chain_whose_core_is_a_decay_runs_no_search_on_the_core() {
 /// `NoDiagramException`. A search that trials the full process instead runs on
 /// past 6 to the `Z* -> Z h*, h* -> g g` diagram.
 #[test]
-#[ignore = "passes once the search trials each subprocess with its final-state gluons removed, as MadGraph does; today it trials the full process"]
 fn a_final_state_gluon_pair_without_a_qcd_vertex_is_refused() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");

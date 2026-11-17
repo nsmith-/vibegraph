@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Sprint K: v0.2.2, SMEFT models and the largest refusal classes](sprint.md) - Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting, integrate memory growth on multijet MLM, and the 4× repeated-decay σ.
+
+## Directories
+
+* [sessions](sessions/index.md)
