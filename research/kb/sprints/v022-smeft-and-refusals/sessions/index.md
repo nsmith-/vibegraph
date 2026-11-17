@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-S1: the coloured-scalar seagull colour structure](K-S1.md) - Compile the squark-squark-gluon-gluon contact colour T(a,-1,i)*T(b,j,-1), match MadGraph per colour flow on g g > t1 t1~, and integrate an SMS-StopStop card.
+
+## Session Report
+
+* [K-S1 report: the coloured-scalar seagull colour structure](K-S1-report.md) - The squark-squark-gluon-gluon contact's colour T(1,-1,3)*T(2,4,-1) now compiles as one generator product crossed between its two slots; g g > t1 t1~ and u u~ > t1 t1~ match MadGraph standalone per flow, the contact's per-structure flow assignment and CF match matrix.f, and the 0-jet SMS-StopStop_mStop-600 sigma agrees with MadEvent to 0.01%.
