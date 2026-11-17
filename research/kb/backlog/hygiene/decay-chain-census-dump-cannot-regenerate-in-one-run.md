@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "dump_decay_chain_census.py cannot regenerate cms_zto2q_zjj_jj in one full run"
-description: "MadGraph raises 'name sm already consider as a python library' once the default sm is imported earlier in the same process, so the census row's banked value cannot be reproduced by a full regeneration."
+description: "MadGraph raises 'name sm already consider as a python library' once sm was imported earlier in the process, so a full regeneration cannot reproduce this census row."
 area: hygiene
 state: open
 priority: low
