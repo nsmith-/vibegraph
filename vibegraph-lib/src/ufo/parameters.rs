@@ -52,6 +52,11 @@ pub struct Parameter {
     pub nature: ParamNature,
 }
 
+/// The values MadGraph's restriction reads as one and zero without fixing the
+/// parameter, each with the value it stands for (`restrict_model`,
+/// `import_ufo.py` L2454-L2462; see [`ParameterSet::apply_restrict`]).
+pub(crate) const MADGRAPH_FREE_VALUES: [(f64, f64); 2] = [(9.999999e-1, 1.0), (0.000001e-99, 0.0)];
+
 /// Parameters a restriction merged: each one's name and its factor against the
 /// first (see [`ParameterSet::merged`]).
 pub(crate) type MergedGroup = Vec<(String, f64)>;
@@ -166,7 +171,18 @@ impl ParameterSet {
     /// [`ones`](Self::ones), and the groups it merges in
     /// [`merged`](Self::merged): a card binding refuses a move of either
     /// (`ufo::bind`), as MadGraph's `param_card_rule.dat` does.
+    ///
+    /// A value in [`MADGRAPH_FREE_VALUES`] is MadGraph's spelling of one or zero
+    /// for a parameter its restriction leaves free. MadGraph tests for 0 and 1
+    /// with exact float equality (`detect_special_parameters`, `import_ufo.py`
+    /// L2615-L2624), so such a value is neither locked, fixed at one nor merged
+    /// (`detect_identical_parameters` skips it, L2724); its couplings are judged
+    /// at the value as written; and only then does the value become 1 or 0
+    /// (L2454-L2462, and `write_param_card.py` L253-L256 for the generated
+    /// card). Here the default becomes 1 or 0 and the parameter stays free;
+    /// the couplings are judged against the card itself.
     pub(crate) fn apply_restrict(&mut self, card: &ParamCard) {
+        let mut free = BTreeSet::new();
         for p in &mut self.externals {
             if let ParamNature::External {
                 default_value,
@@ -175,9 +191,17 @@ impl ParameterSet {
             } = &mut p.nature
             {
                 if let Some(v) = card.get(lha_block, lha_code) {
-                    *default_value = v;
-                    if v.is_zero() {
-                        self.zeros.insert(p.name.clone());
+                    if let Some(&(_, stands_for)) = MADGRAPH_FREE_VALUES
+                        .iter()
+                        .find(|(spelling, _)| *spelling == v)
+                    {
+                        *default_value = stands_for;
+                        free.insert(p.name.clone());
+                    } else {
+                        *default_value = v;
+                        if v.is_zero() {
+                            self.zeros.insert(p.name.clone());
+                        }
                     }
                 }
             }
@@ -187,7 +211,8 @@ impl ParameterSet {
             .externals
             .iter()
             .filter(|p| {
-                matches!(p.nature, ParamNature::External { default_value, .. } if default_value == 1.0)
+                !free.contains(&p.name)
+                    && matches!(p.nature, ParamNature::External { default_value, .. } if default_value == 1.0)
             })
             .map(|p| p.name.clone())
             .collect();
@@ -605,6 +630,61 @@ MZ2 = Parameter(name = 'MZ2',
         let user = "Block MASS\n 23 91.1876\n".parse::<ParamCard>().unwrap();
         let vals = ps.evaluate(&user);
         assert!((vals["MZ"].re - 91.1876).abs() < 1e-10);
+    }
+
+    /// MadGraph's spellings of a free one (`9.999999e-1`) and a free zero
+    /// (`0.000001e-99`) become defaults of exactly one and zero, and the
+    /// parameter stays free: not locked to zero, not fixed at one, not merged
+    /// with its equal neighbour. Exactly 1 is fixed and exactly 0 locked, and
+    /// −1 is neither. Each half fails on its own: reading the spellings as
+    /// written leaves `a` at 0.9999999 and merges `a` with `b`; reading them as
+    /// one and zero puts `a`, `b` in `ones` and `c` in `zeros`.
+    #[test]
+    fn madgraphs_free_spellings_become_free_defaults() {
+        let src = r"
+a = Parameter(name = 'a', nature = 'external', type = 'real', value = 0.3, texname = 'a', lhablock = 'NP', lhacode = [ 1 ])
+b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.3, texname = 'b', lhablock = 'NP', lhacode = [ 2 ])
+c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, texname = 'c', lhablock = 'NP', lhacode = [ 3 ])
+d = Parameter(name = 'd', nature = 'external', type = 'real', value = 0.3, texname = 'd', lhablock = 'NP', lhacode = [ 4 ])
+e = Parameter(name = 'e', nature = 'external', type = 'real', value = 0.3, texname = 'e', lhablock = 'NP', lhacode = [ 5 ])
+f = Parameter(name = 'f', nature = 'external', type = 'real', value = 0.3, texname = 'f', lhablock = 'NP', lhacode = [ 6 ])
+";
+        let mut ps = parse_parameters(src).unwrap();
+        let card =
+            "Block NP\n 1 9.999999e-01\n 2 0.9999999\n 3 0.000001e-99\n 4 1.0\n 5 0\n 6 -1\n"
+                .parse::<ParamCard>()
+                .unwrap();
+        ps.apply_restrict(&card);
+
+        let defaults: Vec<(&str, f64)> = ps
+            .externals
+            .iter()
+            .map(|p| match p.nature {
+                ParamNature::External { default_value, .. } => (p.name.as_str(), default_value),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            defaults,
+            [
+                ("a", 1.0),
+                ("b", 1.0),
+                ("c", 0.0),
+                ("d", 1.0),
+                ("e", 0.0),
+                ("f", -1.0)
+            ]
+        );
+        assert_eq!(ps.ones.iter().collect::<Vec<_>>(), ["d"]);
+        assert_eq!(ps.zeros.iter().collect::<Vec<_>>(), ["e"]);
+        assert!(ps.merged.is_empty(), "{:?}", ps.merged);
+
+        // Free: a card moves them, and they evaluate to their defaults without one.
+        let vals = ps.evaluate(&ParamCard::default());
+        assert_eq!((vals["a"].re, vals["c"].re), (1.0, 0.0));
+        let user = "Block NP\n 1 0.5\n 3 0.25\n".parse::<ParamCard>().unwrap();
+        let vals = ps.evaluate(&user);
+        assert_eq!((vals["a"].re, vals["c"].re), (0.5, 0.25));
     }
 
     #[test]
