@@ -22,16 +22,26 @@ ORDER_RE = re.compile(r"\b(\w+)\s*(\^2)?\s*(==|<=|>=|=|<|>)\s*(-?\d+)")
 
 
 def parse_import(line):
-    """`import model NAME[-RESTRICTION] [flags]` -> (base, restriction, flags), else None."""
-    m = re.match(r"\s*import\s+model\s+(\S+)(.*)$", line)
+    """`import model [flags] NAME[-RESTRICTION] [flags]` -> (base, restriction, flags), else None.
+
+    MadGraph takes `-modelname`/`--modelname` out of the line wherever it
+    stands (`check_import`), so the model name is the first token that is not a
+    flag; `flags` is the other tokens, in order, joined by spaces.
+    """
+    m = re.match(r"\s*import\s+model\s+(\S.*)$", line)
     if not m:
         return None
-    name, rest = m.group(1), m.group(2).strip()
+    tokens = m.group(1).split()
+    at = next((i for i, t in enumerate(tokens) if not t.startswith("-")), None)
+    if at is None:
+        return None
+    name = tokens[at]
+    flags = " ".join(tokens[:at] + tokens[at + 1:])
     base, restr = name, None
     tail = name.rsplit("/", 1)[-1]
     if "-" in tail:
         base, restr = name.rsplit("-", 1)
-    return base, restr, rest
+    return base, restr, flags
 
 
 def parse_process(text):
