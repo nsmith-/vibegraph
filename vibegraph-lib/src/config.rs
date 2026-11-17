@@ -25,7 +25,7 @@ use crate::progress;
 use crate::runcard::process_defaults::ProcessFacts;
 use crate::runcard::{RunCard, RunCardError};
 use crate::ufo::identity::ModelIdentity;
-use crate::ufo::loaded::LoadedModel;
+use crate::ufo::loaded::{LoadedModel, FULL_RESTRICTION};
 use crate::ufo::sm::SMRestrict;
 use crate::ufo::{UFOModel, UfoError};
 
@@ -116,6 +116,9 @@ impl GlobalConfig {
         // The SM's particle names are MadGraph's defaults, so `--modelname`
         // leaves the interned model as it is (`names::tests::the_sm_is_unchanged`).
         if import.name == "sm" {
+            if import.restrict_variant.as_deref() == Some(FULL_RESTRICTION) {
+                return LoadedModel::interned_sm_full().map(describe);
+            }
             let restrict =
                 SMRestrict::from_suffix(import.restrict_variant.as_deref()).ok_or_else(|| {
                     UfoError::UnknownSmRestrict {
@@ -130,21 +133,35 @@ impl GlobalConfig {
             return Ok(describe(LoadedModel::interned_sm(restrict)));
         }
 
-        // Non-SM model: read from the UFO search path.
-        let dir = self.ufo_search_path.join(&import.name);
+        // Non-SM model: read from the UFO search path. As in MadGraph
+        // (`get_path_restrict`, `import_ufo.py` L201-L231), the whole argument
+        // names the model when a directory has that name, and otherwise the
+        // part after the last `-` names its restriction.
+        let (name, variant) = match &import.restrict_variant {
+            Some(v) => {
+                let whole = format!("{}-{v}", import.name);
+                if self.ufo_search_path.join(&whole).is_dir() {
+                    (whole, None)
+                } else {
+                    (import.name.clone(), Some(v.as_str()))
+                }
+            }
+            None => (import.name.clone(), None),
+        };
+        let dir = self.ufo_search_path.join(&name);
+        if self.restrict_path_override.is_none() && variant == Some(FULL_RESTRICTION) {
+            return LoadedModel::from_dir_full(&dir, import.particle_naming, &name).map(describe);
+        }
         let restrict = match &self.restrict_path_override {
             Some(path) => Some(path.clone()),
-            None => import
-                .restrict_variant
-                .as_ref()
-                .map(|v| dir.join(format!("restrict_{v}.dat"))),
+            None => variant.map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        let label = import.restrict_variant.as_deref().unwrap_or("default");
+        let label = variant.unwrap_or("default");
         let loaded = LoadedModel::from_dir(
             &dir,
             restrict.as_deref(),
             import.particle_naming,
-            &import.name,
+            &name,
             label,
         )?;
         Ok(describe(loaded))
@@ -411,6 +428,119 @@ mod tests {
         assert_eq!(default.label(), "sm-default");
         assert_eq!(no_b.label(), "sm-no_b_mass");
         assert_ne!(default.digest, no_b.digest);
+    }
+
+    fn import(name: &str, variant: Option<&str>) -> Option<ModelImport> {
+        Some(ModelImport {
+            name: name.into(),
+            restrict_variant: variant.map(Into::into),
+            particle_naming: Default::default(),
+        })
+    }
+
+    /// The external parameters a card may move: neither locked to zero, fixed
+    /// at one, nor merged into another.
+    fn free_parameters(model: &UFOModel) -> BTreeSet<String> {
+        let tied: BTreeSet<&String> = model
+            .params
+            .merged
+            .iter()
+            .flat_map(|group| group.iter().skip(1).map(|(name, _)| name))
+            .collect();
+        model
+            .params
+            .externals
+            .iter()
+            .map(|p| &p.name)
+            .filter(|n| !model.params.zeros.contains(*n) && !model.params.ones.contains(*n))
+            .filter(|n| !tied.contains(n))
+            .cloned()
+            .collect()
+    }
+
+    /// `import model sm-full` is the interned SM with no restriction at all,
+    /// while a bare `sm` applies `restrict_default.dat`: the default's locked
+    /// zeros are free in the full model, and its pruned vertices are back.
+    #[test]
+    fn sm_full_applies_no_restriction() {
+        let cfg = config();
+        let (full, full_id) = cfg
+            .load_ufo_with_identity(&import("sm", Some("full")))
+            .unwrap();
+        let (bare, bare_id) = cfg.load_ufo_with_identity(&import("sm", None)).unwrap();
+        assert_eq!(full_id.label(), "sm-full");
+        assert_ne!(full_id.digest, bare_id.digest);
+
+        assert!(full.params.zeros.is_empty(), "{:?}", full.params.zeros);
+        assert!(full.params.ones.is_empty() && full.params.merged.is_empty());
+        assert!(!bare.params.zeros.is_empty());
+        let (free_full, free_bare) = (free_parameters(&full), free_parameters(&bare));
+        assert!(free_full.is_superset(&free_bare));
+        for zeroed in &bare.params.zeros {
+            assert!(free_full.contains(zeroed), "{zeroed}");
+        }
+        assert!(full.vertices.len() > bare.vertices.len());
+        // The externals keep `parameters.py`'s values.
+        let unrestricted = crate::ufo::sm::sm_parsed_model();
+        assert_eq!(full.params.externals, unrestricted.params.externals);
+    }
+
+    /// A UFO directory that ships `restrict_default.dat`: a bare name applies
+    /// it, `-full` applies nothing, and a directory whose own name holds a `-`
+    /// is found by its whole name before the suffix is split off.
+    #[test]
+    fn full_on_a_ufo_directory_skips_its_default_restriction() {
+        let tmp = tempfile::tempdir().unwrap();
+        let toy =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO");
+        for dir in ["toy", "toy-x"] {
+            let to = tmp.path().join(dir);
+            std::fs::create_dir(&to).unwrap();
+            for entry in std::fs::read_dir(&toy).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_file() {
+                    std::fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+                }
+            }
+            std::fs::copy(
+                toy.join("restrict_dipole.dat"),
+                to.join("restrict_default.dat"),
+            )
+            .unwrap();
+        }
+        let cfg = GlobalConfig {
+            ufo_search_path: tmp.path().to_path_buf(),
+            ..config()
+        };
+        let load = |name: &str, variant: Option<&str>| {
+            cfg.load_ufo_with_identity(&import(name, variant))
+                .unwrap_or_else(|e| panic!("{name}-{variant:?}: {e}"))
+        };
+
+        let (bare, bare_id) = load("toy", None);
+        let (_, dipole_id) = load("toy", Some("dipole"));
+        let (full, full_id) = load("toy", Some("full"));
+        assert_eq!(bare_id.digest, dipole_id.digest);
+        assert_eq!(full_id.label(), "toy-full");
+        assert_ne!(full_id.digest, bare_id.digest);
+        assert!(
+            bare.params.zeros.contains("gtens"),
+            "{:?}",
+            bare.params.zeros
+        );
+        assert!(full.params.zeros.is_empty(), "{:?}", full.params.zeros);
+        assert!(free_parameters(&full).contains("gtens"));
+        assert!(full.vertices.len() > bare.vertices.len());
+        let unrestricted = crate::ufo::ParsedModel::parse(&tmp.path().join("toy")).unwrap();
+        assert_eq!(full.params.externals, unrestricted.params.externals);
+
+        // `toy-x` is a directory, so it is the model, under its default.
+        let (_, whole_id) = load("toy", Some("x"));
+        assert_eq!(whole_id.label(), "toy-x-default");
+        assert_eq!(whole_id.digest, bare_id.digest);
+        let (_, whole_full_id) = load("toy-x", Some("full"));
+        assert_eq!(whole_full_id.label(), "toy-x-full");
+        assert_eq!(whole_full_id.digest, full_id.digest);
     }
 
     /// [`process_facts`] of `parsed` over an enumeration made for them.

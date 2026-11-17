@@ -204,23 +204,14 @@ pub enum UfoError {
     )]
     RestrictAutoWidth { pdg: i32 },
     #[error(
-        "the restriction card gives no value for {name} (block {block}, code {code}), which \
-         MadGraph's restriction requires; the loader would keep the value parameters.py gives"
+        "the restriction card gives no value for {name} (block {block}, code {code}); MadGraph \
+         refuses a restriction card that leaves out an external parameter of the model, so give \
+         it a value"
     )]
     RestrictMissing {
         name: String,
         block: String,
         code: String,
-    },
-    #[error(
-        "the restriction card sets {name} to {value:e}, MadGraph's spelling of {meaning} for a \
-         parameter its restriction leaves free (neither fixed nor merged); the loader does not \
-         read it so, so give {name} another value"
-    )]
-    RestrictMadgraphFree {
-        name: String,
-        value: f64,
-        meaning: &'static str,
     },
     #[error("the restriction card sets {name} to {value}, which is not a finite number")]
     RestrictNonFinite { name: String, value: f64 },
@@ -245,11 +236,6 @@ fn several(errors: &[UfoError]) -> String {
         .collect::<Vec<_>>()
         .join("; ")
 }
-
-/// The values MadGraph's restriction reads as "one" and "zero" without fixing
-/// the parameter (`restrict_model`, `import_ufo.py`): such a parameter is
-/// neither fixed nor merged, and its default becomes 1 or 0 afterwards.
-const MADGRAPH_FREE_VALUES: [(f64, &str); 2] = [(9.999999e-1, "one"), (0.000001e-99, "zero")];
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
@@ -447,9 +433,9 @@ impl ParsedModel {
     /// given as `Auto` ([`UfoError::RestrictAutoWidth`]: MadGraph keeps such a
     /// width free and computes it at launch, and nothing here computes one); an
     /// external parameter the card gives no value for
-    /// ([`UfoError::RestrictMissing`]); a value MadGraph reads as "one" or "zero"
-    /// without fixing it ([`UfoError::RestrictMadgraphFree`]); and a value that
-    /// is not finite ([`UfoError::RestrictNonFinite`]).
+    /// ([`UfoError::RestrictMissing`], which MadGraph refuses too); and a value
+    /// that is not finite ([`UfoError::RestrictNonFinite`]). MadGraph's spellings
+    /// of a free one or zero are read as `apply_restrict` describes.
     pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) -> Result<(), UfoError> {
         let mut problems: Vec<UfoError> = restrict_card
             .auto_widths()
@@ -483,17 +469,7 @@ impl ParsedModel {
                 Some(value) if !value.is_finite() => {
                     problems.push(UfoError::RestrictNonFinite { name, value });
                 }
-                Some(value) => {
-                    if let Some(&(_, meaning)) =
-                        MADGRAPH_FREE_VALUES.iter().find(|(v, _)| *v == value)
-                    {
-                        problems.push(UfoError::RestrictMadgraphFree {
-                            name,
-                            value,
-                            meaning,
-                        });
-                    }
-                }
+                Some(_) => {}
             }
         }
         match problems.len() {
