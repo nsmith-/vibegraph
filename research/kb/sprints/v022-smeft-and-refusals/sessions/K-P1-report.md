@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "K-P1 report: one-body final-state phase space"
-description: "2 → 1 processes at proton beams integrate through a δ(ŝ − M²) one-body map (τ = M²/s, as genps.f); fixed-energy beams keep a named refusal because MadEvent's number there is a δ coefficient, not a cross section."
+description: "2 → 1 processes at proton beams integrate through a δ(ŝ − M²) one-body map (τ = M²/s, as genps.f) and match MadGraph (p p > z: pull −1.44 over 20 against 5 seeds); on fixed-energy beams MadGraph returns zero, and vibegraph keeps a named refusal."
 status: draft
 tags: [phase-space, one-body, resonance, hadronic, report, validation, sprint-k]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-17}
@@ -14,6 +14,8 @@ shared with sibling sessions.
 | commit | what |
 |---|---|
 | `9719fb3` | feat(phasespace): integrate 2 -> 1 processes at proton beams |
+| `76ec03f` | kb: this report, draft |
+| (final) | the fixed-beam refusal's account of MadEvent corrected; this report; the item deleted |
 
 ## What MadGraph does (genps.f, b7687064)
 
@@ -25,10 +27,15 @@ shared with sibling sessions.
   `(2π)^(3·1−4)`, a factor 2π. So
   `σ = ∫ dy (x₁f₁)(x₂f₂)/τ · (1/s) · 2π|M̄|²/(2ŝ)`. The width does not enter;
   the pole mass fixes τ, and the τ coordinate stays in the grid unread.
-- **Fixed beams (lpp = 0).** `s(-nbranch) = stot`, `sjac = 1`, no δ:
-  `p3 = p1 + p2` is off shell at mass √s, and MadEvent reports
-  `2π|M̄|²(s)/(2s)` in pb, which is the coefficient of δ(s − M²), not a
-  cross section. (To be confirmed by the local run below.)
+- **Fixed beams (lpp = 0).** Reading `gen_mom` alone, `s(-nbranch) = stot`
+  and `sjac = 1` with no δ, which predicted a reported `2π|M̄|²/(2s)` (a δ
+  coefficient). **Measured, that prediction is wrong**: the driver configures
+  the grid with `3·1 − 4 = −1` dimensions (`G1/log.txt`: "-1 dimensions 1000
+  events"; the `ndim < 0` clamp in `genps.f:234` is not what the driver
+  sees), the survey's iteration 0 is `NaN`, every later iteration `0`, and
+  `generate_events` stops with "Survey return zero cross section", at
+  √s = 91.188 GeV and at √s = 200 GeV alike. MadGraph has no fixed-beam σ for
+  a 2 → 1.
 
 ## What changed
 
@@ -93,19 +100,62 @@ n=5 mean=57.19260 nb  spread(sd)=0.03160  sd/sqrt(n)=0.01413  quoted/n=0.01431  
 
 ### Against MadGraph
 
-Pending: local MadGraph runs (p p > z × 5 seeds, e+ e- > z at √s = 91.188 and
-200 GeV, the matched card).
+Local runs, `kp1-mg.sh` (fresh copy of the process directory per seed,
+`iseed` set, `nb_core = 2`), results.dat field 1 and 2:
+
+```
+p p > z, dy13_default_run_card          e+ e- > z, lpp = 0
+1 0.42118E+05 0.41931E+01               √s = 91.188: 1 0.00000E+01 0.00000E+01
+2 0.42118E+05 0.43400E+01               √s = 200:    1 0.00000E+01 0.00000E+01
+3 0.42126E+05 0.44856E+01               ("Survey return zero cross section")
+4 0.42117E+05 0.43474E+01
+5 0.42126E+05 0.45115E+01
+MG n=5 mean=42121.0 pb sd=4.58 sd/sqrtn=2.05 quoted/n=1.96 chi2/dof=1.08
+
+matched p p > z (j), pp_to_llj_mlm_run_card
+1 0.57201E+05 0.57719E+02
+2 0.57225E+05 0.55898E+02
+3 0.57220E+05 0.66422E+02
+MG n=3 mean=57215.3 pb sd=12.7 quoted/n=34.8
+```
+
+- `p p > z`: vibegraph 20-seed mean 42115.35 pb (error max(sd/√n, quoted/n)
+  = 3.35) against MadGraph 42121.0 ± 2.05: difference −5.65 pb
+  (−1.3 × 10⁻⁴), **pull −1.44** on 3.93 combined. Both seed sets are
+  self-consistent (χ²/dof 0.93 and 1.08).
+- Matched `p p > z (j)`: vibegraph 57192.6 ± 14.1 (5 seeds) against
+  MadGraph 57215.3 ± 34.8 (3 seeds): −22.7 pb, pull −0.60. Recorded, not
+  gated; 3 MadGraph seeds cannot calibrate the spread.
+- `e+ e- > z`: MadGraph returns zero; vibegraph refuses by name
+  (`refuse_one_body_final_state`), as the manager's rule for this case asks.
+
+What the hadronic comparison cannot see: anything in |M̄|² that is constant
+over the rapidity, apart from the 1.3 × 10⁻⁴ it resolves (both sides use the
+same couplings and pole mass); MadGraph's `stot` with the proton mass differs
+by m_p²/s ≈ 5 × 10⁻⁹, far below it.
 
 ### Events
 
 `generate` on the p p > z grid writes the Z (status 1, mothers 1 2, mass
-91.188) as p1 + p2 boosted along z. `validate-lhef` pending.
+91.188) as p1 + p2 boosted along z, the record MadGraph writes:
+
+```
+vibegraph:  23  1    1    2    0    0 +0.0 -0.0 -3.3307392693e+02 3.4533098926e+02 9.1188000000e+01
+MadGraph:   23  1    1    2    0    0  0.0 -0.0 -0.24636391836E+04 0.24653262012E+04 0.91188000000E+02
+```
+
+On the matched card a 0-jet event carries `<scales pt_clust_3="13000.00000">`
+and `<mgrwt>` with `<rscale> 0 0.91188000E+02`, `<asrwt>0`, as MadGraph's
+does. `validate-lhef` pending.
 
 ## Brief corrections
 
-The item's "e+ e- > z σ against MadGraph" oracle assumes MadGraph returns a
-cross section at fixed beams; it returns the δ(s − M²) coefficient in pb
-(pending confirmation). vibegraph refuses by name.
+- The item's `closes_when` and the brief ask for e+ e- > z σ against
+  MadGraph on a fixed-beam card. MadGraph has none: it returns zero (NaN
+  survey) at √s = M_Z and at 200 GeV. The fixed-beam oracle is the named
+  refusal, and the item should close on the hadronic card alone.
+- The brief names MadGraph 3.5.7; the reference is the pinned 3.7.1
+  (b7687064), which the banked bundle was made with.
 
 ## Found
 

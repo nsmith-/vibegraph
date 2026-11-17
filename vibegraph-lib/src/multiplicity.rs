@@ -284,10 +284,9 @@ pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
 /// At a fixed `√s` the one-body phase space is `2π δ(s − M²)`, a distribution
 /// in the beam energy and not a number: the cross section is infinite at
 /// `√s = M` and zero elsewhere, and only a sum over a spread of `s` (parton
-/// densities, a beam spectrum) integrates it. MadEvent sets `ŝ = s` on such a
-/// run and drops the `δ` (`genps.f`), giving the outgoing particle the
-/// off-shell mass `√s` and reporting `π|M|²/s` in picobarns, which is the
-/// coefficient of `δ(s − M²)` and not a cross section. A `1 → 1` decay has no
+/// densities, a beam spectrum) integrates it. MadEvent has no answer either: its
+/// grid has `3·1 − 4 = −1` dimensions there, the survey's first iteration is
+/// `NaN` and the run reports a zero cross section. A `1 → 1` decay has no
 /// phase space either.
 pub fn refuse_one_body_final_state(sets: &[DiagramSet]) -> Result<(), String> {
     match sets
