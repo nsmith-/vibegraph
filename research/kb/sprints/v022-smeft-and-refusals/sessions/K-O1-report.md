@@ -177,7 +177,9 @@ run card for it, the restriction's own parameters on both sides.
 **Banked rows.** `cargo test --workspace`: 63 suites, 2117 passed, 0 failed,
 27 ignored (the first attempt died on a full disk and was rerun).
 `cargo clippy --workspace --all-targets -- -D warnings` and
-`cargo fmt --all --check` are clean. `validate.sh --skip-deps`: VALIDATE-PLACEHOLDER
+`cargo fmt --all --check` are clean. `validate.sh --skip-deps` was not run locally: CI's `banked` job runs
+`pixi run --skip-deps validate` on the PR head; the result is the CI banked run
+on this branch's final head.
 
 **What each oracle cannot see.** The counts check numbers, not the diagram sets:
 two compensating errors (one diagram dropped, another kept) would pass; the
@@ -210,12 +212,19 @@ is invisible.
 4. **The automatic WEIGHTED search ignores polarizations in MadGraph's trials
    but not in ours when no gluon is removed** (`g0_g_ttx`: bound 2 against our
    4, refusal text only). Closing: trial every process MadGraph's way.
-5. **The gluon-free trials re-run `generate_sets_inner` per concrete
-   assignment and bound**, as MadGraph does; on a wide multiparticle process
-   with many gluon assignments this may be slower than the whole-process
-   trial. Not measured. Closing: time `p p > j j j` style cards before and
-   after.
-6. **Dangling links after the items' deletion.** The census
-   `validation/cms-gridpack-refusals-202a540.md`, two backlog items and sprint
-   records link the closed slugs; the manager's close-out decides how to
-   repoint them.
+5. **Timing of the gluon-free trials, measured: no regression.** Standard
+   Model, `vibegraph -q enumerate -j 2 --svg none`, the same `dev` profile
+   built on `main` at `703f57f` and on this branch, two repetitions each
+   (both cards run the gluon-free trial path):
+
+   | card | main (s) | branch (s) | diagrams / subprocesses (both) |
+   |---|---|---|---|
+   | `p p > j j j j` | 6.49, 5.92 | 6.00, 7.04 | 8560 / 275 |
+   | `p p > a j j j j` | 45.42, 47.77 | 48.11, 46.14 | 44744 / 274 |
+
+   Nothing to file.
+6. **Dangling links after the items' deletion** (`kb-lint` errors, outside
+   this session's edit scope):
+   `backlog/feature/ufo-parameter-value-expressions-refused.md:24` and
+   `validation/cms-gridpack-refusals-202a540.md:39` link
+   `negative-ufo-coupling-orders-refused.md`.
