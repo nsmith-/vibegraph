@@ -497,10 +497,25 @@ fn summed_states(
     Ok(out)
 }
 
+/// How many candidate assignments pass between two progress reports while the
+/// walk is only pruning them; an assignment that is enumerated reports itself.
+const PRUNED_REPORT_INTERVAL: usize = 4096;
+
+/// Where a process line's walk sits in the card, for the progress it reports.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LinePosition {
+    /// The line's place in the card, from 1.
+    line: usize,
+    /// The lines the card holds.
+    lines: usize,
+    /// Diagrams the card's earlier lines produced.
+    diagrams_before: usize,
+}
+
 fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<LineSets, DiagramError> {
     let _span = info_span!("enumerate").entered();
     let started = Instant::now();
-    let mut sets = Vec::new();
+    let mut sets: Vec<DiagramSet> = Vec::new();
     let mut per_line = Vec::with_capacity(proc_card.processes.len());
     // Every process line's subprocesses are summed into one cross section, so a
     // subprocess two lines both produce would be counted twice. MadGraph's own
@@ -524,7 +539,12 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<LineSets, Di
     // diagrams twice; any state both would count is refused.
     let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
-        let process_sets = generate_from_process(process, model, ProcessRole::TopLevel)?;
+        let position = LinePosition {
+            line: index + 1,
+            lines: proc_card.processes.len(),
+            diagrams_before: sets.iter().map(|s| s.diagrams.len()).sum(),
+        };
+        let process_sets = generate_from_process(process, model, ProcessRole::TopLevel, position)?;
         if process_sets.iter().all(|s| s.diagrams.is_empty()) {
             return Err(DiagramError::NoDiagrams {
                 process: process.to_string(),
@@ -685,11 +705,12 @@ fn generate_from_process(
     process: &SupportedProcess,
     model: &UFOModel,
     role: ProcessRole,
+    position: LinePosition,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     if !process.decays.is_empty() {
-        return chain::generate_chain(process, model);
+        return chain::generate_chain(process, model, position);
     }
-    let mut sets = generate_undecayed(process, model, role)?;
+    let mut sets = generate_undecayed(process, model, role, position)?;
     for diagram in sets.iter_mut().flat_map(|s| s.diagrams.iter_mut()) {
         diagram.provenance.process = process.id;
     }
@@ -701,6 +722,7 @@ fn generate_undecayed(
     process: &SupportedProcess,
     model: &UFOModel,
     role: ProcessRole,
+    position: LinePosition,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     // MadGraph accepts `EW` on a model whose order is called `QED` (and the
     // reverse), then constrains the name as written, which no vertex carries:
@@ -831,7 +853,8 @@ fn generate_undecayed(
         // its diagrams, if any, are the result.
         let mut w = start;
         while w < cap {
-            let sets = generate_sets_inner(&expanded, model, Some(w), &cached_topologies)?;
+            let sets =
+                generate_sets_inner(&expanded, model, Some(w), &cached_topologies, position)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
                 debug!("lowest WEIGHTED order with diagrams: {w}");
                 return Ok(sets);
@@ -840,9 +863,15 @@ fn generate_undecayed(
             w += 1;
         }
         debug!("no diagrams below the WEIGHTED cap {cap}; generating at {w}");
-        generate_sets_inner(&expanded, model, Some(w), &cached_topologies)
+        generate_sets_inner(&expanded, model, Some(w), &cached_topologies, position)
     } else {
-        generate_sets_inner(&expanded, model, explicit_weighted, &cached_topologies)
+        generate_sets_inner(
+            &expanded,
+            model,
+            explicit_weighted,
+            &cached_topologies,
+            position,
+        )
     }
 }
 
@@ -926,6 +955,7 @@ fn generate_sets_inner(
     model: &UFOModel,
     max_weighted: Option<usize>,
     cached_topologies: &[Topology],
+    position: LinePosition,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     let mut sets = Vec::new();
     // Candidate assignments seen, and the two prefilters' kills: what the
@@ -976,8 +1006,23 @@ fn generate_sets_inner(
         .multi_cartesian_product()
         .collect();
 
+    let total = (initial_combos.len() * final_combos.len()) as u64;
+    let report = |done: usize, sets: &[DiagramSet]| {
+        progress::enumeration(
+            done as u64,
+            total,
+            (position.line as u64, position.lines as u64),
+            sets.len() as u64,
+            (position.diagrams_before + sets.iter().map(|s| s.diagrams.len()).sum::<usize>())
+                as u64,
+        );
+    };
+    report(0, &sets);
     'assignments: for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
         candidates += 1;
+        if candidates.is_multiple_of(PRUNED_REPORT_INTERVAL) {
+            report(candidates, &sets);
+        }
         let concrete = ConcreteProcess {
             initial,
             final_state,
@@ -1100,8 +1145,9 @@ fn generate_sets_inner(
             diagrams,
             mirrored: false,
         });
-        progress::step(progress::stage::ENUMERATE, sets.len() as u64, None);
+        report(candidates, &sets);
     }
+    report(candidates, &sets);
 
     // Reported only for the pass that found something: under the automatic
     // WEIGHTED search the same expansion is walked once per candidate order, and
