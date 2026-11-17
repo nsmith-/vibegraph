@@ -1,10 +1,13 @@
 use super::ast_util::{
-    conditional_definitions, constructor_calls, parse_stmts, FieldError, Fields, UniqueNames,
+    call_func_name, conditional_definitions, extract_float, extract_name, named_assignments,
+    parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
+use super::functions::FunctionLibrary;
 use super::slha::ParamCard;
 use num_complex::Complex64;
 use num_traits::Zero;
+use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -26,6 +29,11 @@ pub enum ParameterError {
         "internal parameter '{user}' references '{name}', which parameters.py does not define"
     )]
     UnknownParameter { name: String, user: String },
+    #[error(
+        "parameter '{parameter}': `value` is the name `{name}`, which parameters.py has not \
+         defined as a number or a parameter by that point"
+    )]
+    UnresolvedValueName { parameter: String, name: String },
     #[error(transparent)]
     Field(#[from] FieldError),
 }
@@ -95,6 +103,29 @@ impl ParameterSet {
             .iter()
             .chain(&self.internals)
             .any(|p| p.name == name)
+    }
+
+    /// What `<variable>.value` is for the parameter bound to the Python
+    /// `variable` (`variables` maps each variable to its UFO name): an external
+    /// parameter's default value. An internal parameter's `value` is an
+    /// expression and a missing one is no parameter, both refused with why.
+    pub(crate) fn default_of_variable(
+        &self,
+        variables: &HashMap<String, String>,
+        variable: &str,
+    ) -> Result<f64, String> {
+        let name = variables
+            .get(variable)
+            .ok_or_else(|| format!("names `{variable}`, which parameters.py does not define"))?;
+        match self.externals.iter().find(|p| &p.name == name) {
+            Some(Parameter {
+                nature: ParamNature::External { default_value, .. },
+                ..
+            }) => Ok(*default_value),
+            _ => Err(format!(
+                "names the internal parameter `{variable}`, whose `value` is an expression"
+            )),
+        }
     }
 
     /// The value `card` binds the external parameter `p` to: the card's where it
@@ -286,7 +317,7 @@ impl ParameterSet {
 /// Parse `parameters.py` content into a [`ParameterSet`].
 #[cfg(test)]
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
-    parse_parameters_with_variables(content).map(|(set, _)| set)
+    parse_parameters_with_variables(content, &FunctionLibrary::default()).map(|(set, _)| set)
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`], with each
@@ -299,6 +330,7 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
 /// a reference is resolved.
 pub(crate) fn parse_parameters_with_variables(
     content: &str,
+    library: &FunctionLibrary,
 ) -> Result<(ParameterSet, HashMap<String, String>), ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
@@ -316,8 +348,20 @@ pub(crate) fn parse_parameters_with_variables(
     // `UFOMG5Converter.load_model`, "define multiple time").
     let mut seen = UniqueNames::new("parameter");
     let mut variables: HashMap<String, String> = HashMap::new();
-    for (python_name, keywords) in constructor_calls(&stmts, "Parameter") {
-        let fields = Fields::new("parameter", python_name, keywords);
+    // Numbers assigned at module level so far: a `value = NAME` reads the one
+    // bound when the `Parameter` statement runs.
+    let mut numbers: HashMap<&str, f64> = HashMap::new();
+    for (python_name, assigned) in named_assignments(&stmts) {
+        let ast::Expr::Call(call) = assigned else {
+            if let Some(x) = extract_float(assigned) {
+                numbers.insert(python_name, x);
+            }
+            continue;
+        };
+        if call_func_name(&call.func) != Some("Parameter") {
+            continue;
+        }
+        let fields = Fields::new("parameter", python_name, &call.keywords);
         let name = fields.str("name")?;
         seen.insert(python_name, &name)?;
         variables.insert(python_name.to_owned(), name.clone());
@@ -330,7 +374,10 @@ pub(crate) fn parse_parameters_with_variables(
 
         match fields.str("nature")?.as_str() {
             "external" => {
-                let default_value = fields.float("value")?;
+                let default_value = match fields.required("value").map(extract_name) {
+                    Ok(Some(n)) => *numbers.get(n).ok_or_else(|| unresolved(&name, n))?,
+                    _ => fields.float("value")?,
+                };
                 let lha_block = fields.str("lhablock")?;
                 let lha_code = fields.int32_list("lhacode")?;
                 externals.push(Parameter {
@@ -344,11 +391,24 @@ pub(crate) fn parse_parameters_with_variables(
                 });
             }
             "internal" => {
-                let expr_str = fields.str("value")?;
-                let expr = parse_expr(&expr_str).map_err(|e| ParameterError::ExprParse {
-                    name: name.clone(),
-                    cause: e.to_string(),
-                })?;
+                let expr = match extract_name(fields.required("value")?) {
+                    // The value is a Python name: a `Parameter` object, which MadGraph
+                    // writes into the expression as its UFO `name`, or a number.
+                    Some(n) => match (variables.get(n), numbers.get(n)) {
+                        (Some(target), _) => Expr::Param(target.clone()),
+                        (None, Some(x)) => Expr::Num(*x),
+                        (None, None) => return Err(unresolved(&name, n)),
+                    },
+                    None => {
+                        let expr_str = fields.str("value")?;
+                        parse_expr(&expr_str)
+                            .map(|e| library.resolve(e))
+                            .map_err(|e| ParameterError::ExprParse {
+                                name: name.clone(),
+                                cause: e.to_string(),
+                            })?
+                    }
+                };
                 let mut deps = Vec::new();
                 collect_deps(&expr, &mut deps);
                 raw_internals.push((name, is_complex, expr, deps));
@@ -395,6 +455,13 @@ pub(crate) fn parse_parameters_with_variables(
         ones: BTreeSet::new(),
     };
     Ok((set, variables))
+}
+
+fn unresolved(parameter: &str, name: &str) -> ParameterError {
+    ParameterError::UnresolvedValueName {
+        parameter: parameter.to_owned(),
+        name: name.to_owned(),
+    }
 }
 
 fn toposort_internals(
