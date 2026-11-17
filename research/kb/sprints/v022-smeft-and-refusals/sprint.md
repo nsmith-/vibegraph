@@ -117,8 +117,12 @@ files; they run in parallel and merge in order.
 | `ptj-n-min-nonpositive-refused` | medium |
 | `run-card-classification-table-missing` | medium |
 | `run-card-resolution-not-reported` | medium |
+| `rank-jet-pt-cuts-unimplemented` | medium |
+| `rank-lepton-pt-cuts-unimplemented` (filed in this PR's branch) | medium |
 
 The per-card report and the per-release table come from one implementation. Both read `FIELD_CLASSES` and the parser's resolved card, and the report can ship first. Added at the user's request, 2026-11-17.
+
+The two rank-cut items were added by the user's decision on 2026-11-17. They share one mechanism: `ptj1min`–`ptj4max` and `ptl1min`–`ptl4max` with real values are refused in `UNIMPLEMENTED_CUTS`. The lepton family keeps SMEFTsim_topU3l out of simshop's registry. Seven CMS `ZH_Hto2B_Zto2L_SMEFTsim_topU3l_*` cards integrate only with `ptl1min` patched to 0, and then agree with MadGraph at 5 seeds (|mean pull| 1.1–1.6). PR 5 files `rank-lepton-pt-cuts-unimplemented`. Its oracle is σ on one ZH card at its real `ptl1min` against MadGraph by the multi-seed criterion, and the seven cards must integrate unpatched.
 
 PR 5 starts after PR 4 and PR 7 merge, since all three touch the run-card and
 cut code.
