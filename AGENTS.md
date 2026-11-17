@@ -236,7 +236,8 @@ use the `claude` agent type with an explicit model override — never
 `research/kb/` is the project's knowledge bundle (OKF v0.2): topic concepts
 (conventions, designs, decisions, measurements), the backlog, reviewed
 decisions and sprint records. Start at `research/kb/index.md` and follow the
-links; `pixi run kb-index` regenerates the indexes and `pixi run kb-lint`
+links; `pixi run kb-index` generates the folder indexes (gitignored, never
+committed: only the root index is) and `pixi run kb-lint`
 checks the bundle (CI runs it). The original working notes are archived,
 unchanged, under `research/kb/history/notes/`; each lists the concepts that
 replaced it in `replaced_by`. New knowledge goes into a concept, never a new
