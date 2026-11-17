@@ -213,7 +213,7 @@ def vibegraph_events(row, work, binary, seed):
          "--fixed-budget", "--neval", neval, "--niter", niter, "--seed", seed], env=vibegraph_env())
     lhe = os.path.join(work, "events.lhe")
     extra = ["--reweight-couplings", row["couplings"]] if row["couplings"] else []
-    log = run([binary, "generate", os.path.join(grid, "grid.bin.zst"), *ufo,
+    log = run([binary, "generate", os.path.join(grid, "grid.bin.zst"),
                "--seed", seed, "--nevents", str(row["nevents"]), "--reweight-card", card,
                *extra, "-o", lhe, "--force"], env=vibegraph_env()).stderr
     for line in log.splitlines():
