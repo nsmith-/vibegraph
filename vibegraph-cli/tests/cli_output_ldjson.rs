@@ -45,6 +45,26 @@ fn objects(output: &Output) -> Vec<Value> {
         .collect()
 }
 
+/// `result` with the fields that describe how the run ended nulled, which is
+/// what `inspect` prints for them: the artifact does not record them. The run's
+/// own object must carry a value for each of them but the target, which a
+/// fixed budget does not have.
+fn without_run_outcome(result: &Value) -> Value {
+    let mut result = result.clone();
+    for field in ["stop_reason", "rel_err_quoted", "rel_err_scaled"] {
+        assert!(!result[field].is_null(), "{field}: {result}");
+    }
+    for field in [
+        "stop_reason",
+        "target_rel",
+        "rel_err_quoted",
+        "rel_err_scaled",
+    ] {
+        result[field] = Value::Null;
+    }
+    result
+}
+
 fn of_kind<'a>(objects: &'a [Value], kind: &str) -> Vec<&'a Value> {
     objects.iter().filter(|o| o["kind"] == kind).collect()
 }
@@ -249,11 +269,12 @@ fn the_integrate_result_carries_the_recorded_values() {
 }
 
 /// `inspect --output-ldjson` of the artifact a run wrote is the object the run
-/// emitted, whole.
+/// emitted, whole, but for the fields that describe the run rather than the
+/// artifact: how it stopped and the error it reached are `null` from `inspect`.
 #[test]
 fn inspect_emits_the_object_integrate_emitted() {
     let run = integrated();
-    let emitted = final_object(&objects(&run.output), "result").clone();
+    let emitted = without_run_outcome(final_object(&objects(&run.output), "result"));
     let inspected = common::vibegraph(&run.dir, &run.dir)
         .arg("inspect")
         .arg(&run.artifact_path)
@@ -420,7 +441,10 @@ fn a_decay_result_is_a_width_in_gev() {
         "{}",
         common::stdout_of(&inspected)
     );
-    assert_eq!(final_object(&objects(&inspected), "result"), &emitted);
+    assert_eq!(
+        final_object(&objects(&inspected), "result"),
+        &without_run_outcome(&emitted)
+    );
 }
 
 /// A refusal is the stream's final object, with its stable kind and the

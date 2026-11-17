@@ -312,7 +312,7 @@ and `e+ e- > W+ W-` (1.1×–1.4×), where colour-flow contraction dominates.
 
 Every command, the remaining caveats, integrand throughput, per-point cost
 breakdowns and thread scaling are in
-[`research/kb/performance/`](research/kb/performance/index.md)
+[`research/kb/performance/`](research/kb/performance/)
 ([matrix element](research/kb/performance/matrix-element-vs-madgraph.md),
 [integration](research/kb/performance/integration-vs-madgraph.md),
 [reweighting](research/kb/performance/reweighting-cost-vs-madgraph.md),

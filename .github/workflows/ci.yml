@@ -27,6 +27,14 @@ name: ci
 # Any doubt (no base, a failed diff, an empty diff, `changes` itself failing)
 # runs it. Pushes to `main` always run it.
 #
+# `merge_group` runs the same jobs on a merge-queue group: the tip of `main`
+# with every PR queued ahead of it and this one merged in. A PR in the queue
+# therefore never has to be brought up to date with `main` and re-run before
+# it merges, and a batch of queued PRs shares one `banked` run. The `changes`
+# decision diffs the group against its base, so a group of kb-only PRs still
+# skips `banked`. The queue itself is a branch-ruleset setting on `main`
+# (research/kb/tooling/merge-queue.md).
+#
 # A skipped job reports as passing, and `banked` is also skipped when `test`
 # fails, so the required check is `all-pass`: it accepts a skipped `banked`
 # only when `changes` answered `run=false`, and needs every other job green.
@@ -34,6 +42,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 # The two compiling jobs below run on `ubuntu-latest`, which is x86_64, and both
 # exist only to compile and run this repository's own tests — nothing either of
@@ -70,7 +79,7 @@ jobs:
 
   # The research notes are an OKF knowledge bundle: every concept parses with a
   # non-empty `type`, every backlog item carries the keys the backlog view reads,
-  # and the generated index files are current. Compiles nothing.
+  # and the committed root index is current. Compiles nothing.
   kb:
     runs-on: ubuntu-latest
     steps:
@@ -119,8 +128,8 @@ jobs:
       - run: cargo test --locked --workspace
 
   # Whether `banked` has anything to check. Outputs `run=false` only on a pull
-  # request whose every changed file is on the skip list; the list and its
-  # reasons are in the script.
+  # request or merge-queue group whose every changed file is on the skip list;
+  # the list and its reasons are in the script.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -132,9 +141,9 @@ jobs:
 
       - id: decide
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_EVENT_NAME" != merge_group ]; then
             echo "banked: run: $GITHUB_EVENT_NAME event"
             decision=run=true
           else

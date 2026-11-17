@@ -32,7 +32,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 
 | rank | reason | n | item | priority |
 |--:|---|--:|---|---|
-| 1 | squark–squark–gluon–gluon colour `T(1,-1,3)*T(2,4,-1)` | 3 | [coloured-scalar-seagull-colour-unsupported](../backlog/feature/coloured-scalar-seagull-colour-unsupported.md) | high |
+| 1 | squark–squark–gluon–gluon colour `T(1,-1,3)*T(2,4,-1)` | 3 | closed in sprint K ([K-S1 report](../sprints/v022-smeft-and-refusals/sessions/K-S1-report.md)) | high |
 | 2 | `import model --modelname`, plus gpdb's rewrite of it | 2 | `proc-card-import-model-options-refused` (closed) | high |
 | 3 | model without `coupling_orders.py` (`QAD`) | 2 | `coupling-orders-not-inferred-without-coupling-orders-py` (closed) | high |
 | 4 | `ptj4min = -1` | 2 | [ptj-n-min-nonpositive-refused](../backlog/feature/ptj-n-min-nonpositive-refused.md) | medium |
