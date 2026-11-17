@@ -1023,6 +1023,8 @@ mod tests {
         for card in [
             "import model sm --modelname\ngenerate e+ e- > mu+ mu-",
             "import model sm-no_b_mass -modelname\ngenerate e+ e- > mu+ mu-",
+            "import model --modelname sm-no_b_mass\ngenerate e+ e- > mu+ mu-",
+            "import model --modelname HAHM_MG5model_v3/HAHM_variableMW_v3_UFO\ngenerate e+ e- > mu+ mu-",
         ] {
             let checked = check(card).unwrap_or_else(|e| panic!("{card}: {e}"));
             assert_eq!(
