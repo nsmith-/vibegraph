@@ -27,6 +27,7 @@ mod output;
 mod parallel;
 mod ranking;
 mod si;
+mod signals;
 mod tui;
 
 use error::{err, CliError, ErrorKind};
@@ -191,6 +192,12 @@ fn main() -> ExitCode {
     } else {
         (None, None)
     };
+    if cli.command.is_watchable() {
+        signals::install(
+            matches!(cli.command, Command::Integrate(_)),
+            display.is_some(),
+        );
+    }
     let mode = match &display {
         _ if cli.log.output_ldjson => Mode::Ldjson,
         Some(_) => Mode::Rich,

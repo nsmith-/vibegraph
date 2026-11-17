@@ -116,6 +116,35 @@ pub enum Strategy {
     StochasticRounding,
 }
 
+/// How the event file is encoded on disk.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OutputEncoding {
+    /// Plain Les Houches text.
+    #[default]
+    Plain,
+    /// The text, gzip-compressed.
+    Gzip,
+    /// The text, zstd-compressed.
+    Zstd,
+}
+
+impl OutputEncoding {
+    /// The encoding a file name asks for: `.gz` and `.zst` (any case) are
+    /// compressed, every other name is plain text.
+    pub fn of_path(path: &std::path::Path) -> Self {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("gz") => OutputEncoding::Gzip,
+            Some("zst") => OutputEncoding::Zstd,
+            _ => OutputEncoding::Plain,
+        }
+    }
+}
+
 /// How one generation draws its sample.
 pub struct GenerateOptions<'a> {
     /// The generation seed. Same artifact, settings and seed, same sample.
@@ -129,9 +158,12 @@ pub struct GenerateOptions<'a> {
     /// The reweighting hypotheses, resolved against the model, and how to
     /// evaluate them; `None` writes no `<rwgt>` block.
     pub reweight: Option<(Vec<Launch>, ReweightOptions)>,
-    /// The event file to write. A file whose reweighting fails its audit is
-    /// removed.
+    /// The event file to write. It is written under a temporary name in the same
+    /// directory and renamed to `out` once complete, so `out` never holds a
+    /// partial file, and one whose reweighting fails its audit is removed.
     pub out: PathBuf,
+    /// How `out` is encoded.
+    pub encoding: OutputEncoding,
     /// How the file's provenance header names the artifact.
     pub artifact_label: String,
     /// Told the unweighting efficiency the frozen scan predicts, before any
@@ -789,12 +821,74 @@ fn emit_to(
     plan: &EmitPlan,
     strategy: &dyn UnweightStrategy,
 ) -> Result<EmitSummary, GenerateError> {
-    let file = std::fs::File::create(&options.out)
-        .map_err(|e| err(format!("cannot create {}: {e}", options.out.display())))?;
-    let mut sink = std::io::BufWriter::new(file);
-    strategy
-        .emit(source, plan, &mut sink)
-        .map_err(|e| err(e.to_string()))
+    let partial = partial_path(&options.out);
+    let written = write_events(options, &partial, source, plan, strategy);
+    match written {
+        Ok(summary) => {
+            std::fs::rename(&partial, &options.out).map_err(|e| {
+                let _ = std::fs::remove_file(&partial);
+                err(format!(
+                    "cannot move {} to {}: {e}",
+                    partial.display(),
+                    options.out.display()
+                ))
+            })?;
+            Ok(summary)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&partial);
+            Err(e)
+        }
+    }
+}
+
+/// The temporary name an event file is written under: a hidden sibling of
+/// `out`, so the rename that completes it stays on one filesystem and is atomic.
+fn partial_path(out: &std::path::Path) -> PathBuf {
+    let name = out
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    out.with_file_name(format!(".{name}.{}.partial", std::process::id()))
+}
+
+fn write_events(
+    options: &GenerateOptions<'_>,
+    partial: &std::path::Path,
+    source: &mut dyn EventSource,
+    plan: &EmitPlan,
+    strategy: &dyn UnweightStrategy,
+) -> Result<EmitSummary, GenerateError> {
+    use std::io::Write;
+
+    let io = |e: std::io::Error| err(format!("cannot write {}: {e}", partial.display()));
+    let file = std::fs::File::create(partial)
+        .map_err(|e| err(format!("cannot create {}: {e}", partial.display())))?;
+    let sink = std::io::BufWriter::new(file);
+    let mut emit = |sink: &mut dyn Write| {
+        strategy
+            .emit(source, plan, sink)
+            .map_err(|e| err(e.to_string()))
+    };
+    let (summary, mut file) = match options.encoding {
+        OutputEncoding::Plain => {
+            let mut sink = sink;
+            let summary = emit(&mut sink)?;
+            (summary, sink)
+        }
+        OutputEncoding::Gzip => {
+            let mut sink = flate2::write::GzEncoder::new(sink, flate2::Compression::default());
+            let summary = emit(&mut sink)?;
+            (summary, sink.finish().map_err(io)?)
+        }
+        OutputEncoding::Zstd => {
+            let mut sink = zstd::stream::write::Encoder::new(sink, 3).map_err(io)?;
+            let summary = emit(&mut sink)?;
+            (summary, sink.finish().map_err(io)?)
+        }
+    };
+    file.flush().map_err(io)?;
+    Ok(summary)
 }
 
 /// Resolve the record layer's view of every flavour a group's events can be
@@ -1989,6 +2083,7 @@ mod tests {
             max_rule: MaxRule::Extremum,
             reweight: None,
             out: out.clone(),
+            encoding: OutputEncoding::Plain,
             artifact_label: "grid.bin.zst".to_string(),
             on_scan: None,
         };
