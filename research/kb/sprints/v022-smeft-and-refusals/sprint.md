@@ -1,7 +1,7 @@
 ---
 type: Sprint
 title: "Sprint K: v0.2.2, SMEFT models and the largest refusal classes"
-description: "Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting."
+description: "Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting, and integrate memory growth on multijet MLM."
 status: draft
 active: true
 tags: [release, v0.2.2, smeft, smeftsim, ufo, refusals, cms-gridpacks, simshop, sprint-k]
@@ -150,10 +150,18 @@ cut code.
 |---|---|---|
 | `mixed-outgoing-mass-subprocesses-not-split` | medium | 35 campaign refusals. The grouping splits by outgoing masses itself. σ on ZPrimeToTT against MadGraph at ≥ 5 seeds. Cards whose groups have uniform masses stay bit for bit. |
 
+### PR 10: integrate memory growth on multijet MLM (`sprintk-mlm-memory`), performance-dev, Opus
+
+| Item | Pri | Oracle |
+|---|---|---|
+| `mlm-photon-four-jet-integrate-memory-grows-unbounded` | high | Profile the heap on the GJ-4Jets card and name what grows. Then bound it: peak RSS is flat in the iteration count, measured, and the card completes under 12 GB. σ is bit for bit where the change cannot reach it. |
+
+Added at the user's request, 2026-11-17.
+
 ## Dispatch
 
 1. Merge #135.
-2. Wave 1, in parallel: PRs 1, 2, 3, 4, 6, 7, 8 and 9. PR 7 (phase space) and
+2. Wave 1, in parallel: PRs 1, 2, 3, 4, 6, 7, 8, 9 and 10. PR 7 (phase space) and
    PR 9 (flavour groups) both touch the sampler's subprocess setup; whichever
    merges second merges main in.
 3. Wave 2: PR 5.
