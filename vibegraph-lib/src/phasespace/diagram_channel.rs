@@ -389,12 +389,19 @@ impl<F: Real> Spine<F> {
     }
 }
 
-/// The top-level structure of a channel: an all-timelike decay tree, or a
-/// peripheral t-channel spine with timelike subsystems hanging off it.
+/// The top-level structure of a channel: an all-timelike decay tree, a
+/// peripheral t-channel spine with timelike subsystems hanging off it, or the
+/// single outgoing particle of a `2 → 1` collision.
 #[derive(Clone, Debug)]
 enum ChannelTopology<F: Real> {
     Timelike(Branch<F>),
     Spine(Spine<F>),
+    /// One outgoing particle carrying the whole collision momentum,
+    /// `(√ŝ, 0, 0, 0)`. Its phase space `d³p/(2E) δ⁴(P − p) = δ(ŝ − M²)` has no
+    /// coordinate to draw: the map consumes none and weighs the point `1`, and the
+    /// `δ(ŝ − M²)` is the caller's, which has to fix `ŝ = M²` itself
+    /// (MadEvent's `τ = M²/s`, `genps.f`).
+    OneBody,
 }
 
 /// A single-diagram phase-space channel on one outgoing-mass set.
@@ -487,7 +494,7 @@ impl<F: Real> DiagramChannel<F> {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
         let n_out = n_ext - n_in;
-        assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
+        assert!(n_out >= 1, "a channel needs at least one outgoing leg");
 
         let masses: Vec<F> = (0..n_out)
             .map(|slot| {
@@ -544,6 +551,7 @@ impl<F: Real> DiagramChannel<F> {
             None
         };
         let topology = match chain {
+            _ if n_out == 1 => ChannelTopology::OneBody,
             Some(spine) => ChannelTopology::Spine(spine),
             None => ChannelTopology::Timelike(build_root(n_out, &masses, &subsystems, &resonances)),
         };
@@ -624,6 +632,7 @@ impl<F: Real> DiagramChannel<F> {
                 + count(&b.right, rule)
         }
         match &self.topology {
+            ChannelTopology::OneBody => 0,
             ChannelTopology::Timelike(root) => count(&root.left, rule) + count(&root.right, rule),
             ChannelTopology::Spine(spine) => {
                 spine
@@ -640,7 +649,7 @@ impl<F: Real> DiagramChannel<F> {
     /// for. Zero for an all-timelike tree.
     pub(crate) fn rung_count(&self) -> usize {
         match &self.topology {
-            ChannelTopology::Timelike(_) => 0,
+            ChannelTopology::Timelike(_) | ChannelTopology::OneBody => 0,
             ChannelTopology::Spine(spine) => spine.rungs.len(),
         }
     }
@@ -860,6 +869,7 @@ impl<F: Real> DiagramChannel<F> {
         key_scalar(self.sqrt_s, &mut out);
         out.push_str(");");
         match &self.topology {
+            ChannelTopology::OneBody => out.push('1'),
             ChannelTopology::Timelike(root) => {
                 out.push('T');
                 key_branch(root, &mut out);
@@ -899,6 +909,7 @@ impl<F: Real> DiagramChannel<F> {
     pub fn resonances(&self) -> Vec<Resonance<F>> {
         let mut out = Vec::new();
         match &self.topology {
+            ChannelTopology::OneBody => {}
             ChannelTopology::Timelike(root) => collect_resonances(root, &mut out),
             ChannelTopology::Spine(spine) => {
                 for rung in &spine.rungs {
@@ -964,6 +975,7 @@ impl<F: Real> DiagramChannel<F> {
     /// against a non-zero contribution.
     pub fn with_timelike_floors(mut self, floor: &dyn Fn(u64) -> F) -> Self {
         match &mut self.topology {
+            ChannelTopology::OneBody => {}
             ChannelTopology::Timelike(root) => {
                 floor_branch(root, floor);
             }
@@ -1006,6 +1018,7 @@ impl<F: Real> DiagramChannel<F> {
     /// there too.
     pub(crate) fn with_forced_windows(mut self, window: &dyn Fn(u64) -> Option<(F, F)>) -> Self {
         match &mut self.topology {
+            ChannelTopology::OneBody => {}
             ChannelTopology::Timelike(root) => {
                 window_branch(root, window);
             }
@@ -1049,6 +1062,7 @@ impl<F: Real> DiagramChannel<F> {
         energy_floor: &dyn Fn(u64) -> F,
     ) -> Self {
         match &mut self.topology {
+            ChannelTopology::OneBody => {}
             ChannelTopology::Timelike(root) => angle_branch(root, rule, energy_floor),
             ChannelTopology::Spine(spine) => {
                 for rung in &mut spine.rungs {
@@ -1081,6 +1095,7 @@ impl<F: Real> DiagramChannel<F> {
     /// a factor 2.
     pub(crate) fn with_symmetric_pairs(mut self) -> Self {
         match &mut self.topology {
+            ChannelTopology::OneBody => {}
             ChannelTopology::Timelike(root) => pair_branch(root),
             ChannelTopology::Spine(spine) => {
                 for rung in &mut spine.rungs {
@@ -1106,6 +1121,7 @@ impl<F: Real> DiagramChannel<F> {
             usize::from(resonant_pair(b)) + count(&b.left) + count(&b.right)
         }
         match &self.topology {
+            ChannelTopology::OneBody => 0,
             ChannelTopology::Timelike(root) => count_branch(root),
             ChannelTopology::Spine(spine) => {
                 spine.rungs.iter().map(|r| count(&r.emitted)).sum::<usize>() + count(&spine.recoil)
@@ -1150,7 +1166,7 @@ impl<F: Real> DiagramChannel<F> {
     /// wherever it bound. Empty for an all-timelike tree.
     pub fn spine_poles(&self) -> Vec<F> {
         match &self.topology {
-            ChannelTopology::Timelike(_) => Vec::new(),
+            ChannelTopology::Timelike(_) | ChannelTopology::OneBody => Vec::new(),
             ChannelTopology::Spine(spine) => spine.rungs.iter().map(|r| r.t_mass2).collect(),
         }
     }
@@ -1224,6 +1240,7 @@ impl<F: Real> DiagramChannel<F> {
         w.real(beam_masses[0]);
         w.real(beam_masses[1]);
         match topology {
+            ChannelTopology::OneBody => w.word(2),
             ChannelTopology::Timelike(root) => {
                 w.word(0);
                 w.branch(root);
@@ -1366,6 +1383,7 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
         // Jacobian `density_at` reconstructs, so the two agreeing is a check.
         let mut weight = F::one();
         match &self.topology {
+            ChannelTopology::OneBody => slots[0] = Some(total),
             ChannelTopology::Timelike(root) => {
                 sample_branch(root, s, total, u, &mut cursor, &mut slots, &mut weight)
             }
@@ -1412,6 +1430,7 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
     ) -> F {
         let s = sqrt_s * sqrt_s;
         let jac = match &self.topology {
+            ChannelTopology::OneBody => F::one(),
             ChannelTopology::Timelike(root) => branch_jacobian(root, s, momenta, memo),
             ChannelTopology::Spine(spine) => {
                 spine_jacobian(spine, s, &self.beams_at(sqrt_s), momenta, memo)
@@ -1423,6 +1442,9 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
 
 impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
     fn ndim(&self) -> usize {
+        if self.n_out == 1 {
+            return 0;
+        }
         3 * self.n_out - 4
     }
 
@@ -4147,6 +4169,7 @@ mod tests {
                 }
                 walk(&spine.recoil, &mut out);
             }
+            ChannelTopology::OneBody => {}
         }
         out
     }
@@ -4261,7 +4284,9 @@ mod tests {
             |subs: &[Vec<usize>]| DiagramChannel::<f64>::from_topology(500.0, vec![0.0; 4], subs);
         let roots = |ch: &DiagramChannel<f64>| match &ch.topology {
             ChannelTopology::Timelike(root) => (root.mask, root.shape),
-            ChannelTopology::Spine(_) => panic!("an all-timelike topology was asked for"),
+            ChannelTopology::Spine(_) | ChannelTopology::OneBody => {
+                panic!("an all-timelike topology was asked for")
+            }
         };
 
         let (mask_a, shape_a) = roots(&build(&[vec![0, 1]]));
@@ -4639,6 +4664,42 @@ mod tests {
             var_ch < var_rb,
             "spine variance {var_ch:.3e} not below flat RAMBO {var_rb:.3e}"
         );
+    }
+
+    /// A `2 → 1` diagram builds the one-body channel: no coordinate, the whole
+    /// collision momentum on the outgoing leg at whatever energy it is asked
+    /// for, and weight and density `1`, so the `δ(ŝ − M²)` stays with whoever
+    /// draws `ŝ`. The map key and identity tell it from every multi-leg map, and
+    /// the map builders a production channel passes through leave it alone.
+    #[test]
+    fn a_two_to_one_diagram_is_the_one_body_channel() {
+        let m = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card("generate u u~ > z", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&card, &m).unwrap();
+        let d = &sets[0].diagrams[0];
+        let ch = DiagramChannel::<f64>::from_diagram(d, &ev, 91.188)
+            .with_timelike_floors(&|_| 1.0e4)
+            .with_split_angles(&|_, _| Some(AngleShape::Soft), &|_| 50.0)
+            .with_symmetric_pairs();
+        assert_eq!(ch.ndim(), 0);
+        assert!(ch.resonances().is_empty() && ch.spine_poles().is_empty());
+        assert_eq!(ch.rung_count(), 0);
+        for sqrt_s in [91.188, 250.0] {
+            let pt = ScaledChannel::sample_at(&ch, sqrt_s, &[]);
+            assert_eq!(pt.momenta.len(), 1);
+            let p = pt.momenta[0];
+            assert_eq!([p.e(), p.px(), p.py(), p.pz()], [sqrt_s, 0.0, 0.0, 0.0]);
+            assert_eq!(pt.weight, 1.0);
+            assert_eq!(ScaledChannel::density_at(&ch, sqrt_s, &pt.momenta), 1.0);
+        }
+        let key = ch.map_key();
+        assert!(key.starts_with("n=1;") && key.ends_with(";1"), "{key}");
+        let card = parse_proc_card("generate u u~ > e+ e-", &ParsingOptions::default()).unwrap();
+        let two = &generate_from_proc_card(&card, &m).unwrap()[0].diagrams[0];
+        let two = DiagramChannel::<f64>::from_diagram(two, &ev, 91.188);
+        assert_ne!(ch.map_identity(), two.map_identity());
+        assert_ne!(ch.map_key(), two.map_key());
     }
 
     /// `from_diagram` builds a t-channel spine for a real 2→2 process (`u u~ > u u~`,

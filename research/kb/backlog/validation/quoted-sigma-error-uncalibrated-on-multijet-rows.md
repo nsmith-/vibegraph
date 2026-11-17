@@ -30,3 +30,9 @@ calibration the seed policy asks for before any cause is chosen. H-K1 suggests
 looking at how per-iteration errors combine when many channels sit at the point
 floor. The statistic itself is discussed in
 [chi2-per-own-sigma-misreads-heavy-tails](chi2-per-own-sigma-misreads-heavy-tails.md).
+
+**More cases (2026-11-17).** The CERN host's 1009-gridpack survey, stage 2 (5
+seeds), found seed-scatter χ²/dof of 9.3 on ChargedHiggsGM VBF M2000
+(gridpack 72) and 5.1 on QCD-4Jets HT-10to40 (gridpack 34).
+TpTpTo2T2STo2Mu2G_MS10 (gridpack 508) hits the 500-iteration cap on some
+seeds.
