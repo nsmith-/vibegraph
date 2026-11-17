@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-U1: UFO value forms and import model options](K-U1.md) - Close the cheapest UFO-loader refusal classes: orders inferred without coupling_orders.py, import model --modelname, Python expressions and bare names in parameter values, coupling lists on vertices, order expressions, particle attributes naming parameters, and SMEFTsim's function library.
+
+## Session Report
+
+* [K-U1 report: UFO value forms and import model options](K-U1-report.md) - Seven of eight UFO-loader refusal classes closed against MadGraph's import with failing-first tests; the coupling-order-expression item is not closed, because the model it names is refused earlier by configuration-dependent parameters. MadGraph does not sum a vertex coupling list.
