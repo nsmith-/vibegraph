@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
 * [K-R1: restriction cards as MadGraph applies them](K-R1.md) - Read MadGraph's restriction path and reproduce it: values equal to 1 (and 9.999999e-1), entries absent from the card, and the -full suffix; so the SMEFTsim per-operator restrictions load with MadGraph's restricted model.
 
 ## Session Report
 
+* [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
 * [K-R1 report: restriction cards as MadGraph applies them](K-R1-report.md) - MadGraph's restriction path read at 3.7.1 and reproduced: 9.999999e-1 and 0.000001e-99 load as free one and zero, -full loads unrestricted, the model name splits at the last dash. A card that omits an external parameter stays refused, because MadGraph refuses it too.

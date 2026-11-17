@@ -158,3 +158,19 @@ and `yw^4` (QED=2, NP=3: 7 over four legs, 3.5 per cubic vertex, truncated with
 the `fw~ fw xw` vertex's 3 to a cap of 3 per vertex). No restrict card: the
 model is used whole. Diagram counts only; no amplitude is banked from it, so
 the couplings' values are arbitrary and distinct.
+
+## `vibegraph_toy_negorder_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-11-17 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | A coupling order with a negative power, as SMEFTsim writes its vev insertions (`SMEFT_alpha_UFO`'s triple-Higgs `GC_5284`, `{'NP': 1, 'QED': -1}`): how MadGraph sums it into a diagram's orders and WEIGHTED, and spends a `<=` bound vertex by vertex while it builds a diagram |
+
+Hierarchies QCD=1 (declared because MadGraph's search reads it by name), QED=2
+and NP=1. Three fields: a Dirac fermion `fw`, a neutral massive vector `vw` and
+a real singlet scalar `xw`. Six vertices: `fw~ fw vw`, `fw~ fw xw`, `vw vw xw`
+and `xw^3` (`V_xw3`), each QED=1; `xw^3` again (`V_xw3np`) at NP=1, QED=-1,
+WEIGHTED -1; and `xw^4` at QED=2. No restrict card: the model is used whole, and
+every parameter is distinct and neither 0 nor 1, so a restriction would merge
+nothing. Diagram counts only; the couplings' values are arbitrary.
