@@ -1,9 +1,13 @@
 //! Build a feyngraph `DiagramSelector` from a `ConcreteProcess`.
 
+use std::sync::Arc;
+
+use feyngraph::diagram::view::DiagramView;
 use feyngraph::DiagramSelector;
 
 use super::check::AmplitudeOrder;
 use super::parse::CouplingOp;
+use crate::ufo::topo::NegativeOrders;
 
 /// Maximum coupling power considered when translating a `>` constraint.
 ///
@@ -28,7 +32,11 @@ pub(crate) struct ConcreteProcess {
 /// propagators carry the signed external-momentum combination that decides
 /// whether a line is an s-channel; `$` keeps every diagram and vetoes a window
 /// of the integration ([`crate::onshell`]).
-pub(crate) fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
+///
+/// An order some interaction carries a negative power of is bounded on the
+/// diagram's signed sum rather than through feyngraph's coupling powers, which
+/// count only the non-negative parts ([`NegativeOrders`]).
+pub(crate) fn build_selector(proc: &ConcreteProcess, negative: &NegativeOrders) -> DiagramSelector {
     let mut sel = DiagramSelector::new();
 
     // Forbidden propagator species: `/ Z` → zero Z propagators in the diagram.
@@ -38,10 +46,37 @@ pub(crate) fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
 
     // Coupling order constraints.
     for c in &proc.orders {
-        apply_coupling_constraint(&mut sel, c);
+        if negative.carries(&c.name) {
+            apply_signed_constraint(&mut sel, c, negative);
+        } else {
+            apply_coupling_constraint(&mut sel, c);
+        }
     }
 
     sel
+}
+
+/// `c` on the diagram's signed power of its order, with the comparisons
+/// [`apply_coupling_constraint`] reads: an upper bound for `=` and `<=` (none
+/// when negative, as MadGraph's `reduce_orders` ignores a negative bound,
+/// `diagram_generation.py:1055-1072`), equality for `==`, a strict lower bound
+/// for `>`.
+fn apply_signed_constraint(
+    sel: &mut DiagramSelector,
+    c: &AmplitudeOrder,
+    negative: &NegativeOrders,
+) {
+    let name = c.name.clone();
+    let v = c.value;
+    let negative = negative.clone();
+    let power = move |view: &DiagramView| view.order(&name) as i64 + negative.power(view, &name);
+    let keep: Arc<dyn Fn(&DiagramView) -> bool + Send + Sync> = match c.op {
+        CouplingOp::Eq | CouplingOp::Le if v < 0 => return,
+        CouplingOp::Eq | CouplingOp::Le => Arc::new(move |view| power(view) <= v),
+        CouplingOp::ExactEq => Arc::new(move |view| power(view) == v),
+        CouplingOp::Gt => Arc::new(move |view| power(view) > v),
+    };
+    sel.add_custom_function(keep);
 }
 
 fn apply_coupling_constraint(sel: &mut DiagramSelector, c: &AmplitudeOrder) {
@@ -100,25 +135,25 @@ mod tests {
     #[test]
     fn test_no_constraints() {
         let proc = concrete(vec![], vec![]);
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 
     #[test]
     fn test_coupling_le() {
         let proc = concrete(vec![], vec![constraint("QCD", CouplingOp::Le, 2)]);
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 
     #[test]
     fn test_coupling_exact_eq() {
         let proc = concrete(vec![], vec![constraint("QED", CouplingOp::ExactEq, 4)]);
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 
     #[test]
     fn test_forbidden_propagator() {
         let proc = concrete(vec!["Z"], vec![]);
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 
     #[test]
@@ -130,7 +165,7 @@ mod tests {
                 constraint("QED", CouplingOp::ExactEq, 0),
             ],
         );
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 
     #[test]
@@ -138,6 +173,6 @@ mod tests {
         // Negative coupling powers are physically nonsensical; build_selector should
         // not panic — it will produce an empty power list for these cases.
         let proc = concrete(vec![], vec![constraint("QCD", CouplingOp::ExactEq, -1)]);
-        let _ = build_selector(&proc);
+        let _ = build_selector(&proc, &NegativeOrders::default());
     }
 }

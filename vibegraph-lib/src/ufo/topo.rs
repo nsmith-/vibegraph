@@ -2,7 +2,8 @@
 //!
 //! This module provides functionality to construct a feyngraph Model from vibegraph's parsed UFO data.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Arc;
 
 use crate::ufo::{
     couplings::Coupling,
@@ -10,6 +11,7 @@ use crate::ufo::{
     particles::Particle,
     vertices::Vertex,
 };
+use feyngraph::diagram::view::DiagramView;
 use feyngraph::model::{LineStyle, Model as TopoModel, Statistic};
 use indexmap::IndexMap;
 use rustc_hash::FxHashMap;
@@ -61,7 +63,55 @@ fn spin_to_statistic(spin: i32) -> Statistic {
     }
 }
 
-/// Build a feyngraph Model from vibegraph's parsed UFO data.
+/// The negative coupling-order powers of the interactions that carry one, keyed by
+/// feyngraph vertex name.
+///
+/// feyngraph counts coupling powers as `usize`, so [`build_feyngraph_model`] hands
+/// it each negative power as 0 and records it here. A diagram's signed power of an
+/// order is then feyngraph's count plus [`power`](Self::power), the sum MadGraph's
+/// `Diagram.calculate_orders` forms (`base_objects.py:2638-2657`). An order listed
+/// in [`orders`](Self::orders) cannot be bounded through feyngraph's own selector,
+/// which prunes on the non-negative parts alone.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct NegativeOrders {
+    by_vertex: Arc<FxHashMap<String, Vec<(String, i64)>>>,
+    orders: BTreeSet<String>,
+}
+
+impl NegativeOrders {
+    /// Whether any interaction carries a negative power of `order`.
+    pub(crate) fn carries(&self, order: &str) -> bool {
+        self.orders.contains(order)
+    }
+
+    /// Whether no interaction carries a negative power.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.orders.is_empty()
+    }
+
+    /// The sum of the negative powers of `order` over the diagram's vertices.
+    pub(crate) fn power(&self, view: &DiagramView, order: &str) -> i64 {
+        view.vertices()
+            .filter_map(|v| self.by_vertex.get(v.interaction().name()))
+            .flatten()
+            .filter(|(name, _)| name == order)
+            .map(|&(_, n)| n)
+            .sum()
+    }
+
+    /// The sum of the negative powers over the diagram's vertices, each weighted by
+    /// its order's hierarchy (an order the hierarchy does not list weighs nothing).
+    pub(crate) fn weighted(&self, view: &DiagramView, hierarchy: &BTreeMap<String, u32>) -> i64 {
+        view.vertices()
+            .filter_map(|v| self.by_vertex.get(v.interaction().name()))
+            .flatten()
+            .map(|(name, n)| n * hierarchy.get(name).copied().unwrap_or(0) as i64)
+            .sum()
+    }
+}
+
+/// Build a feyngraph Model from vibegraph's parsed UFO data, with the negative
+/// coupling-order powers it cannot hold.
 ///
 /// Uses feyngraph's mutation API to construct the model without re-parsing the UFO.
 pub(crate) fn build_feyngraph_model(
@@ -69,8 +119,9 @@ pub(crate) fn build_feyngraph_model(
     lorentz: &IndexMap<String, LorentzStructure>,
     couplings: &IndexMap<String, Coupling>,
     vertices: &IndexMap<String, Vertex>,
-) -> Result<TopoModel, TopoError> {
+) -> Result<(TopoModel, NegativeOrders), TopoError> {
     let mut model_builder = TopoModel::empty();
+    let mut negative: FxHashMap<String, Vec<(String, i64)>> = FxHashMap::default();
 
     // Unitary gauge: Goldstone bosons and ghosts never appear in tree-level
     // diagrams (MadGraph excludes them the same way); dropping the particles
@@ -132,7 +183,7 @@ pub(crate) fn build_feyngraph_model(
         // is read off any one of them. Reading them all and asserting agreement is
         // what keeps a future loader change from silently reintroducing the union
         // that made an SM photon current read as `NP = 1`.
-        let mut coupling_orders: FxHashMap<String, usize> = FxHashMap::default();
+        let mut coupling_orders: FxHashMap<String, i64> = FxHashMap::default();
         for (n, &coupling_id) in vertex.couplings.values().enumerate() {
             let orders = &couplings[coupling_id].orders;
             if n == 0 {
@@ -156,22 +207,46 @@ pub(crate) fn build_feyngraph_model(
             )));
         }
 
+        let powers: FxHashMap<String, usize> = coupling_orders
+            .iter()
+            .map(|(k, &v)| (k.clone(), usize::try_from(v).unwrap_or(0)))
+            .collect();
+        let mut negatives: Vec<(String, i64)> = coupling_orders
+            .iter()
+            .filter(|(_, &v)| v < 0)
+            .map(|(k, &v)| (k.clone(), v))
+            .collect();
+        negatives.sort();
         for (g, group) in groups.iter().enumerate() {
             let name = if groups.len() == 1 {
                 vertex_name.clone()
             } else {
                 format!("{vertex_name}@{g}")
             };
+            if !negatives.is_empty() {
+                negative.insert(name.clone(), negatives.clone());
+            }
             model_builder.add_vertex(
                 name,
                 particle_names.clone(),
                 group.spin_map.clone(),
-                coupling_orders.clone(),
+                powers.clone(),
             )?;
         }
     }
 
-    Ok(model_builder)
+    let orders = negative
+        .values()
+        .flatten()
+        .map(|(name, _)| name.clone())
+        .collect();
+    Ok((
+        model_builder,
+        NegativeOrders {
+            by_vertex: Arc::new(negative),
+            orders,
+        },
+    ))
 }
 
 // ───────────────────────── Fermion flow of a Lorentz structure ─────────────────────────

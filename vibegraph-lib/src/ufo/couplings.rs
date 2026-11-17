@@ -74,8 +74,10 @@ pub struct Coupling {
     pub(crate) name: String,
     /// Symbolic expression for the coupling constant value.
     pub(crate) value: Expr,
-    /// Coupling order dict, e.g. `{"QCD": 1}`.
-    pub orders: BTreeMap<String, usize>,
+    /// Coupling order dict, e.g. `{"QCD": 1}`. Signed: SMEFTsim writes its
+    /// vev insertions as `{"NP": 1, "QED": -1}`, and MadGraph sums the powers
+    /// with their sign.
+    pub orders: BTreeMap<String, i64>,
     /// Parameter names this coupling directly depends on.
     pub(crate) deps: Vec<String>,
 }
@@ -170,17 +172,18 @@ fn configuration_aliases(stmts: &[ast::Stmt]) -> Vec<String> {
 
 /// The `order = {'QCD': 1, ...}` dict of a coupling.
 ///
-/// An order is a non-negative integer literal, or one of the forms a model
-/// writes to switch it on a `configuration.py` flag: `A if configuration.flag
-/// else B`, `not configuration.flag`, and a bare `configuration.flag`, nested
-/// freely. Python's own evaluation is reproduced for these and nothing else.
+/// An order is an integer literal (a negative one included: SMEFTsim's vev
+/// insertion is `QED: -1`), or one of the forms a model writes to switch it on
+/// a `configuration.py` flag: `A if configuration.flag else B`,
+/// `not configuration.flag`, and a bare `configuration.flag`, nested freely.
+/// Python's own evaluation is reproduced for these and nothing else.
 fn extract_orders(
     fields: &Fields<'_>,
     module_aliases: &[String],
     configuration: &Configuration,
-) -> Result<BTreeMap<String, usize>, FieldError> {
-    const EXPECTED: &str = "a dict of order names to non-negative integers, or to a conditional \
-                            expression over `configuration.<flag>` flags";
+) -> Result<BTreeMap<String, i64>, FieldError> {
+    const EXPECTED: &str = "a dict of order names to integers, or to a conditional expression \
+                            over `configuration.<flag>` flags";
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("order")? else {
         return Err(fields.malformed("order", EXPECTED));
     };
@@ -188,8 +191,7 @@ fn extract_orders(
         .zip(values.iter())
         .map(|(k, v)| {
             let key = k.as_ref().and_then(|e| extract_str(e));
-            let val =
-                order_value(v, module_aliases, configuration).and_then(|n| usize::try_from(n).ok());
+            let val = order_value(v, module_aliases, configuration);
             match (key, val) {
                 (Some(key), Some(val)) => Ok((key.to_owned(), val)),
                 _ => Err(fields.malformed("order", EXPECTED)),

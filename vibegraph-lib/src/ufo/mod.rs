@@ -298,6 +298,8 @@ pub struct UFOModel {
     /// set: the cap's largest interaction WEIGHTED and the start's particle
     /// classes.
     pub(crate) weighted_search: weighted::WeightedSearchModel,
+    /// The negative coupling-order powers feyngraph's vertices cannot carry.
+    pub(crate) negative_orders: topo::NegativeOrders,
     /// The names a card may write for the particles; see [`names`].
     pub(crate) names: ParticleNames,
 }
@@ -605,7 +607,7 @@ impl ParsedModel {
         }
 
         // Build the feyngraph model using vibegraph's parsed UFO data
-        let topo = build_feyngraph_model(
+        let (topo, negative_orders) = build_feyngraph_model(
             &self.particles,
             &self.lorentz,
             &self.couplings,
@@ -643,6 +645,7 @@ impl ParsedModel {
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
             weighted_search,
+            negative_orders,
         })
     }
 }
@@ -1503,7 +1506,7 @@ fn prune_unreferenced_lorentz(vertex: &mut Vertex) {
 
 /// One coupling-order tuple and the vertex coupling entries carrying it.
 type OrderGroup<'a> = (
-    &'a BTreeMap<String, usize>,
+    &'a BTreeMap<String, i64>,
     BTreeMap<(usize, usize), CouplingId>,
 );
 
@@ -2157,7 +2160,7 @@ mod tests {
                 !name.contains('#'),
                 "vertex '{name}' was split, so it mixed coupling orders"
             );
-            let mut tuples: Vec<&BTreeMap<String, usize>> = vertex
+            let mut tuples: Vec<&BTreeMap<String, i64>> = vertex
                 .couplings
                 .values()
                 .map(|&id| &parsed.couplings[id].orders)
@@ -2184,7 +2187,7 @@ mod tests {
         use couplings::Coupling;
         use expr::parse_expr;
 
-        let coupling = |name: &str, orders: &[(&str, usize)]| Coupling {
+        let coupling = |name: &str, orders: &[(&str, i64)]| Coupling {
             python_name: name.to_owned(),
             name: name.to_owned(),
             value: parse_expr("1").unwrap(),

@@ -36,7 +36,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 2 | `import model --modelname`, plus gpdb's rewrite of it | 2 | `proc-card-import-model-options-refused` (closed) | high |
 | 3 | model without `coupling_orders.py` (`QAD`) | 2 | `coupling-orders-not-inferred-without-coupling-orders-py` (closed) | high |
 | 4 | `ptj4min = -1` | 2 | [ptj-n-min-nonpositive-refused](../backlog/feature/ptj-n-min-nonpositive-refused.md) | medium |
-| 5 | negative coupling order (onia_sm) | 2 | [negative-ufo-coupling-orders-refused](../backlog/feature/negative-ufo-coupling-orders-refused.md) | medium |
+| 5 | negative coupling order (onia_sm) | 2 | `negative-ufo-coupling-orders-refused`, closed by #141 | medium |
 | 6 | coupling order as a Python expression (dim6top) | 2 | [ufo-coupling-order-expressions-refused](../backlog/feature/ufo-coupling-order-expressions-refused.md) | medium |
 | 7 | particle charge referencing a parameter | 2 | `ufo-particle-attribute-parameter-references-refused` (closed) | medium |
 | 8 | subprocesses with different outgoing masses | 2 | [mixed-outgoing-mass-subprocesses-not-split](../backlog/feature/mixed-outgoing-mass-subprocesses-not-split.md) | medium |

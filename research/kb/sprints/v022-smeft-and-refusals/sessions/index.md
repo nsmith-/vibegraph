@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
 * [K-U1: UFO value forms and import model options](K-U1.md) - Close the cheapest UFO-loader refusal classes: orders inferred without coupling_orders.py, import model --modelname, Python expressions and bare names in parameter values, coupling lists on vertices, order expressions, particle attributes naming parameters, and SMEFTsim's function library.
 
 ## Session Report
 
+* [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
 * [K-U1 report: UFO value forms and import model options](K-U1-report.md) - Seven of eight UFO-loader refusal classes closed against MadGraph's import with failing-first tests; the coupling-order-expression item is not closed, because the model it names is refused earlier by configuration-dependent parameters. MadGraph does not sum a vertex coupling list.

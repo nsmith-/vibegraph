@@ -255,7 +255,7 @@ fn a_coupling_list_is_one_interaction_per_order() {
         assert_eq!(v.couplings.len(), 1, "{vertex}");
         model.couplings[v.couplings[&(0, 0)]].orders.clone()
     };
-    let orders = |pairs: &[(&str, usize)]| -> std::collections::BTreeMap<String, usize> {
+    let orders = |pairs: &[(&str, i64)]| -> std::collections::BTreeMap<String, i64> {
         pairs.iter().map(|&(k, v)| (k.to_owned(), v)).collect()
     };
     assert_eq!(orders_of("V_1#1"), orders(&[("QED", 1)]));
@@ -287,7 +287,7 @@ const CONFIGURATION: &str = "flag = False\nother = True\ntext = 'x'\n";
 fn orders_of_gc1(
     order: &str,
     configuration: Option<&str>,
-) -> Result<std::collections::BTreeMap<String, usize>, String> {
+) -> Result<std::collections::BTreeMap<String, i64>, String> {
     let mut edits = vec![(
         "couplings.py",
         "GC_1 = Coupling(name = 'GC_1', value = 'c1', order = {'QED':1})",
@@ -325,6 +325,7 @@ fn a_coupling_order_may_switch_on_a_configuration_flag() {
             2,
         ),
         ("configuration.n", "n = 3\n", 3),
+        ("-1 if configuration.other else 0", "other = True\n", -1),
     ];
     for (body, config, want) in cases {
         let got =
@@ -345,7 +346,6 @@ fn a_coupling_order_outside_the_read_forms_is_refused() {
         ("2 if configuration.flag else 0", None),
         ("2 if flag else 0", Some(CONFIGURATION)),
         ("1 + 1", Some(CONFIGURATION)),
-        ("-1 if configuration.other else 0", Some(CONFIGURATION)),
         ("abs(2)", Some(CONFIGURATION)),
     ] {
         let message = orders_of_gc1(&order(body), config).expect_err(body);
