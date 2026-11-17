@@ -36,9 +36,10 @@
 //! `u b~ > a u b~` and `u~ b > a u~ b` do at `9e-7` under the CKM restriction, is
 //! a physical distinction, and a split costs one more evaluation per point where
 //! a merge of distinct functions would be an error. Grouping is refused unless the
-//! members also share the *external pole masses*, incoming and outgoing (so one phase-space map serves
-//! the decomposition; a card whose subprocesses differ in them is split into one
-//! decomposition per set of masses before it gets here, by
+//! members also share the *external pole masses*, incoming and outgoing slot by
+//! slot once their outgoing legs are paired by content (so one phase-space map
+//! serves the decomposition; a card whose subprocesses differ in them is split
+//! into one decomposition per list of masses before it gets here, by
 //! [`crate::multiplicity::split_by_external_masses`]).
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
@@ -731,10 +732,11 @@ pub enum ProtonError {
          covers the sum; split them by incoming masses first"
     )]
     UnequalInitialMasses { a: String, b: String },
-    /// The decomposition was handed subprocesses on two phase spaces. Every group
-    /// of one decomposition is evaluated at every point its channels draw, so the
-    /// subprocesses are split by outgoing masses before they are decomposed
-    /// ([`crate::multiplicity::split_by_external_masses`]).
+    /// The decomposition was handed subprocesses on two phase spaces: outgoing
+    /// masses that differ slot by slot once the legs are paired by content. Every
+    /// group of one decomposition is evaluated at every point its channels draw,
+    /// so the subprocesses are split by outgoing masses before they are
+    /// decomposed ([`crate::multiplicity::split_by_external_masses`]).
     #[error(
         "subprocesses {a} and {b} have different outgoing masses, so no single phase-space map \
          covers the sum; split them by outgoing masses first"
@@ -1258,47 +1260,95 @@ fn content_ordered(
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Result<Vec<(DiagramSet, Vec<usize>)>, ProtonError> {
-    let maxjetflavor = card.maxjetflavor;
-    let keys = |set: &DiagramSet| -> Vec<(u64, Option<char>)> {
-        set.particles_out
-            .iter()
-            .map(|name| match model.particle_id(name) {
-                Some(id) => (
-                    evaluated.mass(id).to_bits(),
-                    cut_class(model.particle(id).pdg_code as i32, maxjetflavor),
-                ),
-                None => (f64::NAN.to_bits(), None),
-            })
-            .collect()
-    };
     let Some(first) = sets.first() else {
         return Ok(Vec::new());
     };
-    let reference = keys(first);
+    let reference = final_keys(first, model, evaluated, card.maxjetflavor);
     sets.into_iter()
         .map(|set| {
-            let own = keys(&set);
-            let identity: Vec<usize> = (0..set.particles_out.len()).collect();
-            if own == reference || own.len() != reference.len() {
-                return Ok((set, identity));
-            }
-            let mut used = vec![false; own.len()];
-            let mut order = Vec::with_capacity(own.len());
-            for key in &reference {
-                match (0..own.len()).find(|&j| !used[j] && own[j] == *key) {
-                    Some(j) => {
-                        used[j] = true;
-                        order.push(j);
-                    }
-                    None => return Ok((set, identity)),
+            let own = final_keys(&set, model, evaluated, card.maxjetflavor);
+            match content_order(&reference, &own) {
+                Some(order) if order.iter().enumerate().any(|(i, &j)| i != j) => {
+                    let reordered = set
+                        .with_final_order(&order, model)
+                        .expect("a matching of every slot is a permutation");
+                    Ok((reordered, order))
+                }
+                _ => {
+                    let identity: Vec<usize> = (0..set.particles_out.len()).collect();
+                    Ok((set, identity))
                 }
             }
-            let reordered = set
-                .with_final_order(&order, model)
-                .expect("a matching of every slot is a permutation");
-            Ok((reordered, order))
         })
         .collect()
+}
+
+/// One outgoing leg's pole mass, as its bit pattern, and cut class: the content
+/// [`content_ordered`] pairs legs by. A name the model does not know keys as NaN
+/// with no class.
+type FinalKey = (u64, Option<char>);
+
+fn final_keys(
+    set: &DiagramSet,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    maxjetflavor: i64,
+) -> Vec<FinalKey> {
+    set.particles_out
+        .iter()
+        .map(|name| match model.particle_id(name) {
+            Some(id) => (
+                evaluated.mass(id).to_bits(),
+                cut_class(model.particle(id).pdg_code as i32, maxjetflavor),
+            ),
+            None => (f64::NAN.to_bits(), None),
+        })
+        .collect()
+}
+
+/// The slot order that pairs `own`'s legs with `reference`'s by content: slot
+/// `i` takes the first unused leg of `own` with `reference[i]`'s key. The
+/// identity when the two already agree slot by slot, and `None` when the
+/// contents differ.
+fn content_order(reference: &[FinalKey], own: &[FinalKey]) -> Option<Vec<usize>> {
+    if own.len() != reference.len() {
+        return None;
+    }
+    if own == reference {
+        return Some((0..own.len()).collect());
+    }
+    let mut used = vec![false; own.len()];
+    let mut order = Vec::with_capacity(own.len());
+    for key in reference {
+        let j = (0..own.len()).find(|&j| !used[j] && own[j] == *key)?;
+        used[j] = true;
+        order.push(j);
+    }
+    Some(order)
+}
+
+/// The outgoing pole masses, as bit patterns, that `set` presents in a
+/// decomposition whose first subprocess is `reference`: its own in leg order,
+/// after [`content_ordered`] pairs its legs with the reference's.
+///
+/// [`derive_flavor_groups`] refuses ([`ProtonError::UnequalFinalMasses`]) a
+/// subprocess whose masses here differ from the reference's own
+/// (`final_masses_against(reference, reference, ..)`), so subprocesses split
+/// by this key ([`crate::multiplicity::split_by_external_masses`]) are never
+/// refused for their outgoing masses.
+pub(crate) fn final_masses_against(
+    reference: &DiagramSet,
+    set: &DiagramSet,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Vec<u64> {
+    let reference = final_keys(reference, model, evaluated, card.maxjetflavor);
+    let own = final_keys(set, model, evaluated, card.maxjetflavor);
+    match content_order(&reference, &own) {
+        Some(order) => order.iter().map(|&j| own[j].0).collect(),
+        None => own.iter().map(|k| k.0).collect(),
+    }
 }
 
 /// Whether `member` can share `representative`'s colour bookkeeping, and if so the

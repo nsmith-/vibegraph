@@ -22,12 +22,16 @@
 //! on the `m = 1.777` GeV mass shell and `e+ e-` on the light cone. A
 //! [`ProtonIntegrand`] evaluates every group's `|M|²` at every point its channels
 //! draw, and weighs the point by the density of every channel, so its groups must
-//! share their outgoing masses. A multiplicity whose subprocesses differ in them
-//! is therefore split further, one part per set of outgoing masses
-//! ([`split_by_external_masses`]). MadGraph separates them the same way: its
-//! subprocess-group class (`group_subprocs.py`, `find_process_classes`) carries
-//! every leg's mass, so such subprocesses never share a `P` directory, and each
-//! directory is integrated over its own channels.
+//! share their outgoing masses, slot by slot. A multiplicity whose subprocesses
+//! differ in them is therefore split further, one part per list of outgoing
+//! masses ([`split_by_external_masses`]). Equal masses in different slots are
+//! two phase spaces when no pairing of the legs by content lines them up: a
+//! decay chain whose `l+` and `l-` both hold `ta` puts the τ after the `t` in
+//! one subprocess and after the `t~` in another. MadGraph separates them the
+//! same way: its subprocess-group class (`group_subprocs.py`,
+//! `find_process_classes`) carries every leg's mass in leg order, so such
+//! subprocesses never share a `P` directory, and each directory is integrated
+//! over its own channels.
 //!
 //! The incoming masses split a multiplicity the same way. A massive parton in
 //! the proton (`b` at `MB`, `c` at `MC`) sits on its mass shell in the partonic
@@ -44,8 +48,8 @@ use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
-    derive_flavor_groups, process_shape, FlavorGroups, PointAnatomy, ProtonError, ProtonEvent,
-    ProtonIntegrand,
+    derive_flavor_groups, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
+    ProtonError, ProtonEvent, ProtonIntegrand,
 };
 use crate::runcard::RunCard;
 use crate::support::PointCensus;
@@ -97,18 +101,26 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 }
 
 /// Split one multiplicity's subprocesses by their external pole masses: one part
-/// per pair of incoming masses and multiset of outgoing ones, in the order the
+/// per pair of incoming masses and list of outgoing ones, in the order the
 /// enumeration first reaches each, every part keeping the enumeration's own
 /// order.
 ///
-/// The outgoing key is the multiset rather than the masses in leg order, because
-/// two lines listing the same final state in different orders (`p p > w+ j` and
-/// `add process p p > j w-`) are one phase space once their legs are paired by
-/// content, which [`derive_flavor_groups`] does. The incoming key is the pair in
-/// beam order, since the partonic-frame beams, the flux and the threshold are
-/// functions of it: a massive `b` or `c` in the proton puts `b b~ > l+ l-` in a
-/// part of its own, apart from `u u~ > l+ l-`, as MadGraph puts it in a `P`
-/// directory of its own.
+/// A subprocess joins the first part whose leading subprocess has its incoming
+/// masses, in beam order, and its outgoing masses slot by slot once its legs are
+/// paired with the leader's by content ([`final_masses_against`]), which is the
+/// pairing [`derive_flavor_groups`] applies. So two lines listing the same final
+/// state in different orders (`p p > w+ j` and `add process p p > j w-`) share a
+/// part, while two whose massive legs sit in slots the content pairing cannot
+/// line up do not: `u u~ > ta+ vt d u~` and `u u~ > e+ ve ta- vt~` hold the same
+/// masses, but the τ sits in a slot of its own in each and the light legs of the
+/// two differ in cut class, so no slot order puts the two on one map. The
+/// incoming key is the pair in beam order, since the partonic-frame beams, the
+/// flux and the threshold are functions of it: a massive `b` or `c` in the proton
+/// puts `b b~ > l+ l-` in a part of its own, apart from `u u~ > l+ l-`.
+///
+/// MadGraph draws the same line: its subprocess-group class
+/// (`group_subprocs.py`, `find_process_classes`) lists every leg's mass in the
+/// process's own leg order, so such subprocesses never share a `P` directory.
 ///
 /// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
 /// compares them: two subprocesses share a part only when every outgoing mass is
@@ -121,29 +133,37 @@ pub(crate) fn split_by_external_masses(
     part: Vec<DiagramSet>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
+    card: &RunCard,
 ) -> Vec<Vec<DiagramSet>> {
     let mass = |name: &String| {
         model
             .particle_id(name)
             .map_or(f64::NAN, |id| evaluated.mass(id))
     };
-    let key = |set: &DiagramSet| {
-        let mut k: Vec<u64> = set.particles_in.iter().map(|n| mass(n).to_bits()).collect();
-        k.extend(mass_multiset(set.particles_out.iter().map(mass)));
-        k
+    let incoming = |set: &DiagramSet| -> Vec<u64> {
+        set.particles_in.iter().map(|n| mass(n).to_bits()).collect()
+    };
+    let outgoing = |leader: &DiagramSet, set: &DiagramSet| {
+        final_masses_against(leader, set, model, evaluated, card)
     };
     if part.is_empty() {
         return vec![part];
     }
-    let mut parts: Vec<(Vec<u64>, Vec<DiagramSet>)> = Vec::new();
+    let mut parts: Vec<(Vec<u64>, Vec<u64>, Vec<DiagramSet>)> = Vec::new();
     for set in part {
-        let k = key(&set);
-        match parts.iter_mut().find(|(other, _)| *other == k) {
-            Some((_, p)) => p.push(set),
-            None => parts.push((k, vec![set])),
+        let k_in = incoming(&set);
+        match parts
+            .iter_mut()
+            .find(|(lead_in, lead_out, p)| *lead_in == k_in && *lead_out == outgoing(&p[0], &set))
+        {
+            Some((_, _, p)) => p.push(set),
+            None => {
+                let k_out = outgoing(&set, &set);
+                parts.push((k_in, k_out, vec![set]));
+            }
         }
     }
-    parts.into_iter().map(|(_, p)| p).collect()
+    parts.into_iter().map(|(_, _, p)| p).collect()
 }
 
 /// A proton-beam card's flavour decomposition, one per phase space: per
@@ -193,7 +213,7 @@ pub fn multiplicity_groups_of(
     };
     let mut dropped_one_body: Option<String> = None;
     for multiplicity in split_by_multiplicity(sets, rc) {
-        let parts = split_by_external_masses(multiplicity, model, evaluated);
+        let parts = split_by_external_masses(multiplicity, model, evaluated, rc);
         if parts.len() > 1 {
             tracing::info!(
                 "the {}-leg final states have {} different sets of external masses; each is \
@@ -840,21 +860,19 @@ fn final_state_count(part: &ProtonIntegrand<'_>) -> usize {
     part.groups().groups()[0].final_masses().len()
 }
 
-/// A part's incoming pole masses in beam order and its outgoing ones as a
-/// multiset, the key it was split off by.
+/// A part's incoming pole masses in beam order and its outgoing ones in slot
+/// order, compared exactly: the phase space it was split off for
+/// ([`split_by_external_masses`]).
 fn external_mass_key(part: &ProtonIntegrand<'_>) -> Vec<u64> {
     let groups = part.groups();
     let mut key: Vec<u64> = groups.initial_masses().map(f64::to_bits).to_vec();
-    key.extend(mass_multiset(groups.groups()[0].final_masses()));
+    key.extend(
+        groups.groups()[0]
+            .final_masses()
+            .into_iter()
+            .map(f64::to_bits),
+    );
     key
-}
-
-/// Outgoing masses as a multiset, compared exactly: each mass's bit pattern,
-/// sorted ([`split_by_external_masses`]).
-fn mass_multiset(masses: impl IntoIterator<Item = f64>) -> Vec<u64> {
-    let mut bits: Vec<u64> = masses.into_iter().map(f64::to_bits).collect();
-    bits.sort_unstable();
-    bits
 }
 
 /// The standard deviation of the mixture estimator `f/g` over an adaptation's
@@ -1251,6 +1269,138 @@ mod tests {
         assert!(
             matches!(refused, Err(ProtonError::UnequalFinalMasses { .. })),
             "an unsplit mixed-mass multiplicity must be refused"
+        );
+    }
+
+    /// `W+ W-` with the `W+` to a lepton and the `W-` to jets on one line, and
+    /// both to leptons on another, `l` holding `ta`. Every final state is four
+    /// legs, and `u u~ > ta+ vt d u~` and `u u~ > e+ ve ta- vt~` hold the same
+    /// masses, but the τ sits after the `W+` in one and after the `W-` in the
+    /// other, and the light legs differ in cut class, so no pairing by content
+    /// lines the two up: the same masses in different slots.
+    const SLOTTED_MASSES: &str = "define l+ = e+ mu+ ta+\ndefine l- = e- mu- ta-\n\
+         define vl = ve vm vt\ndefine vl~ = ve~ vm~ vt~\n\
+         generate p p > w+ w-, w+ > l+ vl, w- > j j\n\
+         add process p p > w+ w-, w+ > l+ vl, w- > l- vl~\n";
+
+    /// Outgoing masses as bit patterns, in slot order and sorted.
+    fn slot_and_multiset(masses: &[f64]) -> (Vec<u64>, Vec<u64>) {
+        let slots: Vec<u64> = masses.iter().map(|m| m.to_bits()).collect();
+        let mut sorted = slots.clone();
+        sorted.sort_unstable();
+        (slots, sorted)
+    }
+
+    /// Equal outgoing masses in slots the content pairing cannot line up are
+    /// two phase spaces: the multiplicity comes back as one part per list of
+    /// slot masses, the parts holding every enumerated subprocess exactly once
+    /// and each in the enumeration's order, and each part decomposes. Two of the
+    /// parts hold the same masses in different slots, and a sum over the parts
+    /// accepts them as two phase spaces.
+    ///
+    /// Handed the whole multiplicity, the decomposition still refuses it.
+    ///
+    /// Blind to whether the parts integrate to the right cross sections: the
+    /// split only moves subprocesses between decompositions, each of which is
+    /// the one a single-part card gets; σ against MadGraph on a card of this
+    /// structure is what sees the sum.
+    #[test]
+    fn equal_masses_in_different_slots_split_into_parts_of_their_own() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let mta = evaluated.mass(model.particle_id("ta-").expect("ta-"));
+        assert!(mta > 1.0, "the default Standard Model's tau is massive");
+
+        let enumerated: Vec<String> = enumerate(SLOTTED_MASSES, &model)
+            .iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .map(DiagramSet::label)
+            .collect();
+        let multiplicities = split_by_multiplicity(enumerate(SLOTTED_MASSES, &model), &card());
+        assert_eq!(multiplicities.len(), 1, "every final state is four legs");
+        let whole = multiplicities.into_iter().next().expect("one multiplicity");
+
+        let parts = split_by_external_masses(whole.clone(), &model, &evaluated, &card());
+        let split: Vec<Vec<String>> = parts.iter().map(|p| labels(p)).collect();
+        eprintln!(
+            "parts: {:?}",
+            split.iter().map(Vec::len).collect::<Vec<_>>()
+        );
+        let mut union: Vec<String> = split.iter().flatten().cloned().collect();
+        let mut original = enumerated.clone();
+        union.sort();
+        original.sort();
+        assert_eq!(union, original, "the parts are the enumeration, once each");
+        for part in &split {
+            let order: Vec<usize> = part
+                .iter()
+                .map(|l| enumerated.iter().position(|a| a == l).expect("enumerated"))
+                .collect();
+            assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        }
+
+        let decomposed: Vec<FlavorGroups> = parts
+            .into_iter()
+            .map(|p| {
+                derive_flavor_groups(p, &model, &evaluated, &card()).expect("a part decomposes")
+            })
+            .collect();
+        let keys: Vec<(Vec<u64>, Vec<u64>)> = decomposed
+            .iter()
+            .map(|g| {
+                let masses = g.groups()[0].final_masses();
+                for other in g.groups() {
+                    assert_eq!(other.final_masses(), masses, "one part, one list of masses");
+                }
+                slot_and_multiset(&masses)
+            })
+            .collect();
+        let zero = 0.0f64.to_bits();
+        let tau = mta.to_bits();
+        let want = [
+            vec![zero, zero, zero, zero],
+            vec![tau, zero, zero, zero],
+            vec![zero, zero, tau, zero],
+            vec![tau, zero, tau, zero],
+        ];
+        let mut slots: Vec<Vec<u64>> = keys.iter().map(|(s, _)| s.clone()).collect();
+        slots.sort();
+        let mut want_sorted = want.to_vec();
+        want_sorted.sort();
+        assert_eq!(slots, want_sorted, "one part per list of slot masses");
+        let one_tau: Vec<&(Vec<u64>, Vec<u64>)> = keys
+            .iter()
+            .filter(|(s, _)| s.iter().filter(|&&m| m == tau).count() == 1)
+            .collect();
+        assert_eq!(one_tau.len(), 2);
+        assert_eq!(one_tau[0].1, one_tau[1].1, "the same masses");
+        assert_ne!(one_tau[0].0, one_tau[1].0, "in different slots");
+
+        let pdf = pdf();
+        let amps: Vec<_> = decomposed.iter().map(|g| bind_all(g, &evaluated)).collect();
+        let sum = MultiplicitySum::new(
+            decomposed
+                .iter()
+                .zip(&amps)
+                .map(|(g, a)| part(g, a, &evaluated, &pdf))
+                .collect(),
+        );
+        assert_eq!(sum.parts().len(), 4);
+        let channel_keys = sum.channel_keys();
+        let distinct: std::collections::HashSet<_> =
+            channel_keys.iter().map(|k| format!("{k:?}")).collect();
+        assert_eq!(
+            distinct.len(),
+            channel_keys.len(),
+            "two channels share a key"
+        );
+
+        assert!(
+            matches!(
+                derive_flavor_groups(whole, &model, &evaluated, &card()),
+                Err(ProtonError::UnequalFinalMasses { .. })
+            ),
+            "the whole multiplicity is two phase spaces and more"
         );
     }
 
