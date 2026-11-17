@@ -5,6 +5,7 @@ pub(crate) mod card_classes;
 pub(crate) mod color;
 pub(crate) mod couplings;
 pub(crate) mod expr;
+pub(crate) mod functions;
 pub mod identity;
 pub mod loaded;
 pub mod lorentz;
@@ -18,14 +19,15 @@ pub(crate) mod topo;
 pub(crate) mod vertices;
 pub(crate) mod weighted;
 
-use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
+use couplings::{parse_configuration, parse_couplings_with, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
+use functions::{FunctionLibrary, FunctionLibraryError};
 use indexmap::IndexMap;
 use loaded::LoadedModel;
 use lorentz::{parse_lorentz, LorentzError, LorentzId, LorentzStructure};
 use num_complex::Complex64;
 use parameters::{parse_parameters_with_variables, ParamNature, ParameterError, ParameterSet};
-use particles::{parse_particles, Particle, ParticleError, ParticleId};
+use particles::{parse_particles_with, Particle, ParticleError, ParticleId};
 use propagators::{parse_propagators, Propagator, PropagatorError};
 use serde::{Deserialize, Serialize};
 use slha::ParamCard;
@@ -35,7 +37,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
+use vertices::{parse_vertices, RawVertex, UnsplitVertex, Vertex, VertexError, VertexId};
 
 use names::{DefaultNameConflict, ParticleNames, ParticleNaming};
 use topo::build_feyngraph_model;
@@ -58,7 +60,12 @@ pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
 
 /// UFO source files [`ParsedModel::parse`] reads when present, falling back to a
 /// built-in default when absent.
-pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
+pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 4] = [
+    "coupling_orders.py",
+    "propagators.py",
+    "configuration.py",
+    "function_library.py",
+];
 
 /// Refuse a `ctor(...)` object that `src` defines only inside an `if` branch,
 /// naming it. The branch depends on Python the loader does not run, and the
@@ -78,12 +85,24 @@ fn refuse_conditional_definitions(
     }
 }
 
-// Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
-// Used when coupling_orders.py is absent or contains no hierarchy data.
-fn default_sm_hierarchy() -> BTreeMap<String, u32> {
-    [("QCD".to_owned(), 1u32), ("QED".to_owned(), 2u32)]
-        .into_iter()
-        .collect()
+/// The hierarchy MadGraph assigns when the model declares none
+/// (`Model.get_order_hierarchy`, `madgraph/core/base_objects.py`): every order
+/// the interactions' couplings carry (`Model.get_coupling_orders`) at 1, except
+/// that a model whose orders are exactly `QCD` and `QED` weights `QED` at 2.
+fn default_hierarchy(
+    vertices: &IndexMap<String, Vertex>,
+    couplings: &IndexMap<String, Coupling>,
+) -> BTreeMap<String, u32> {
+    let orders: std::collections::BTreeSet<&String> = vertices
+        .values()
+        .flat_map(|v| v.couplings.values())
+        .flat_map(|&id| couplings[id].orders.keys())
+        .collect();
+    let mut hierarchy: BTreeMap<String, u32> = orders.iter().map(|o| ((*o).clone(), 1)).collect();
+    if orders.iter().map(|o| o.as_str()).eq(["QCD", "QED"]) {
+        hierarchy.insert("QED".to_owned(), 2);
+    }
+    hierarchy
 }
 
 /// Why `coupling_orders.py` cannot be read.
@@ -173,6 +192,8 @@ pub enum UfoError {
     ConditionalDefinition { file: &'static str, names: String },
     #[error("Parameter parse error: {0}")]
     Parameters(#[from] ParameterError),
+    #[error(transparent)]
+    FunctionLibrary(#[from] FunctionLibraryError),
     #[error("Coupling parse error: {0}")]
     Couplings(#[from] CouplingError),
     #[error("Particle parse error: {0}")]
@@ -311,7 +332,15 @@ impl ParsedModel {
         refuse_conditional_definitions("couplings.py", &couplings_src, "Coupling")?;
         refuse_conditional_definitions("vertices.py", &vertices_src, "Vertex")?;
 
-        let mut particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
+        let library = match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[3])) {
+            Ok(src) => FunctionLibrary::parse(&src)?,
+            Err(_) => FunctionLibrary::default(),
+        };
+        let (params, variables) = parse_parameters_with_variables(&params_src, &library)?;
+        let mut particles: IndexMap<String, Particle> =
+            parse_particles_with(&particles_src, &|variable| {
+                params.default_of_variable(&variables, variable)
+            })?
             .into_iter()
             .map(|p| (p.name.clone(), p))
             .collect();
@@ -321,12 +350,16 @@ impl ParsedModel {
             .map(|l| (l.name.clone(), l))
             .collect();
 
-        let couplings: IndexMap<String, Coupling> = parse_couplings(&couplings_src)?
-            .into_iter()
-            .map(|c| (c.name.clone(), c))
-            .collect();
+        let configuration = match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[2])) {
+            Ok(src) => parse_configuration(&src)?,
+            Err(_) => Default::default(),
+        };
+        let couplings: IndexMap<String, Coupling> =
+            parse_couplings_with(&couplings_src, &configuration, &library)?
+                .into_iter()
+                .map(|c| (c.name.clone(), c))
+                .collect();
 
-        let (params, variables) = parse_parameters_with_variables(&params_src)?;
         // A particle's `mass = Param.<variable>` is resolved to the parameter's
         // UFO name, which is what the parameter set is keyed by.
         for particle in particles.values_mut() {
@@ -357,11 +390,11 @@ impl ParsedModel {
         }
         let raw_vertices = parse_vertices(&vertices_src)?;
         let vertices = resolve_vertices(raw_vertices, &particles, &lorentz, &couplings)?;
-        let vertices = split_vertices_by_coupling_order(vertices, &couplings);
+        let vertices = split_vertices_by_coupling_order(vertices, &couplings)?;
 
         // Parse coupling_orders.py for the WEIGHTED order hierarchy and the
-        // model's own per-order expansion caps. Fall back to SM defaults
-        // (QCD=1, QED=2) if the file is absent or declares no order.
+        // model's own per-order expansion caps. A file that is absent or
+        // declares no order leaves the hierarchy to `default_hierarchy`.
         let (order_hierarchy, expansion_order) =
             match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
                 Ok(src) => {
@@ -372,12 +405,12 @@ impl ParsedModel {
                     )?;
                     let (hierarchy, expansion) = parse_coupling_orders(&src)?;
                     if hierarchy.is_empty() {
-                        (default_sm_hierarchy(), expansion)
+                        (default_hierarchy(&vertices, &couplings), expansion)
                     } else {
                         (hierarchy, expansion)
                     }
                 }
-                Err(_) => (default_sm_hierarchy(), BTreeMap::new()),
+                Err(_) => (default_hierarchy(&vertices, &couplings), BTreeMap::new()),
             };
 
         let propagators: IndexMap<String, Propagator> =
@@ -974,7 +1007,7 @@ fn resolve_vertices(
     particles: &IndexMap<String, Particle>,
     lorentz: &IndexMap<String, LorentzStructure>,
     couplings: &IndexMap<String, Coupling>,
-) -> Result<IndexMap<String, Vertex>, VertexError> {
+) -> Result<IndexMap<String, UnsplitVertex>, VertexError> {
     // Vertices link to their particles, structures, and couplings by their Python variable names
     // The rest of the library uses the object names (e.g. "P.e__minus__" → "e-"), so we resolve here to get the correct names and IDs.
     let particle_id_map = particles
@@ -1027,10 +1060,11 @@ fn resolve_vertices(
             let coupling_ids = rv
                 .couplings
                 .iter()
+                .flat_map(|(key, names)| names.iter().map(move |n| (*key, n)))
                 .map(|(key, py_name)| {
                     coupling_id_map
                         .get(py_name.as_str())
-                        .map(|&i| (*key, i))
+                        .map(|&i| (key, i))
                         .ok_or(VertexError::Parse(format!(
                             "vertex references nonexistent coupling '{py_name}'"
                         )))
@@ -1048,7 +1082,7 @@ fn resolve_vertices(
                 })
                 .collect::<Result<_, _>>()?;
 
-            let vertex = Vertex {
+            let vertex = UnsplitVertex {
                 name: rv.name,
                 particles: particle_ids,
                 color,
@@ -1472,22 +1506,34 @@ type OrderGroup<'a> = (
 /// writing the same orders in a different sequence would split apart there and
 /// merge here. No model read by this loader contains such a pair.
 fn split_vertices_by_coupling_order(
-    vertices: IndexMap<String, Vertex>,
+    vertices: IndexMap<String, UnsplitVertex>,
     couplings: &IndexMap<String, Coupling>,
-) -> IndexMap<String, Vertex> {
+) -> Result<IndexMap<String, Vertex>, VertexError> {
     let mut out: IndexMap<String, Vertex> = IndexMap::with_capacity(vertices.len());
     for (name, vertex) in vertices {
         // One entry per distinct order tuple, in first-appearance order, holding
         // that tuple's `(color, lorentz) -> coupling` entries.
         let mut groups: Vec<OrderGroup<'_>> = Vec::new();
-        for (&key, &coup_id) in &vertex.couplings {
+        for &(key, coup_id) in &vertex.couplings {
             let orders = &couplings[coup_id].orders;
-            match groups.iter_mut().find(|(o, _)| *o == orders) {
-                Some((_, members)) => {
-                    members.insert(key, coup_id);
+            let members = match groups.iter_mut().find(|(o, _)| *o == orders) {
+                Some((_, members)) => members,
+                None => {
+                    groups.push((orders, BTreeMap::new()));
+                    &mut groups.last_mut().expect("just pushed").1
                 }
-                None => groups.push((orders, [(key, coup_id)].into_iter().collect())),
+            };
+            // MadGraph's `order_to_int[order].get('couplings')[key] = ...` replaces an
+            // earlier coupling of the same order at this key, dropping it silently;
+            // two such couplings in one list are refused instead.
+            if let Some(&first) = members.get(&key) {
+                return Err(VertexError::Parse(format!(
+                    "vertex '{name}': couplings '{}' and '{}' share the entry {key:?} and the \
+                     coupling order {:?}, and MadGraph keeps only the later of the two",
+                    couplings[first].python_name, couplings[coup_id].python_name, orders
+                )));
             }
+            members.insert(key, coup_id);
         }
 
         let single = groups.len() <= 1;
@@ -1512,7 +1558,7 @@ fn split_vertices_by_coupling_order(
             );
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -2116,7 +2162,6 @@ mod tests {
     fn mixed_order_vertex_splits_per_order_tuple() {
         use couplings::Coupling;
         use expr::parse_expr;
-        use vertices::Vertex;
 
         let coupling = |name: &str, orders: &[(&str, i64)]| Coupling {
             python_name: name.to_owned(),
@@ -2136,7 +2181,7 @@ mod tests {
 
         // Three Lorentz structures; the SM current on 0, the dipole on 1, a second
         // SM structure on 2.
-        let vertex = Vertex {
+        let vertex = UnsplitVertex {
             name: "V_1".to_owned(),
             particles: vec![],
             color: vec![color::ColorExpr {
@@ -2148,17 +2193,16 @@ mod tests {
                 LorentzId::from(11),
                 LorentzId::from(12),
             ],
-            couplings: [
+            couplings: vec![
                 ((0, 0), CouplingId::from(0)),
                 ((0, 1), CouplingId::from(1)),
                 ((0, 2), CouplingId::from(2)),
-            ]
-            .into_iter()
-            .collect(),
+            ],
         };
-        let input: IndexMap<String, Vertex> = [("V_1".to_owned(), vertex)].into_iter().collect();
+        let input: IndexMap<String, UnsplitVertex> =
+            [("V_1".to_owned(), vertex)].into_iter().collect();
 
-        let split = split_vertices_by_coupling_order(input, &couplings);
+        let split = split_vertices_by_coupling_order(input, &couplings).unwrap();
         assert_eq!(split.keys().collect::<Vec<_>>(), ["V_1#1", "V_1#2"]);
 
         // The QED-only split keeps both of its structures, renumbered onto 0 and 1.

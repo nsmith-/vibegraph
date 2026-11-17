@@ -55,7 +55,20 @@ pub(crate) struct RawVertex {
     pub(crate) particles: Vec<String>,
     pub(crate) color: Vec<String>,
     pub(crate) lorentz: Vec<String>,
-    pub(crate) couplings: BTreeMap<(usize, usize), String>,
+    /// Each `(color, lorentz)` entry's couplings: one, or the members of a list.
+    pub(crate) couplings: BTreeMap<(usize, usize), Vec<String>>,
+}
+
+/// A vertex with its names resolved and its couplings not yet separated by
+/// order: a `(color, lorentz)` entry may carry several couplings.
+pub(crate) struct UnsplitVertex {
+    pub(crate) name: String,
+    pub(crate) particles: Vec<ParticleId>,
+    pub(crate) color: Vec<ColorExpr>,
+    pub(crate) lorentz: Vec<LorentzId>,
+    /// `((color_idx, lorentz_idx), coupling)` in entry order, a list's members
+    /// in list order.
+    pub(crate) couplings: Vec<((usize, usize), CouplingId)>,
 }
 
 /// Parse `vertices.py` content into raw vertices (names, not IDs).
@@ -78,7 +91,8 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
         let couplings = extract_couplings_dict(&fields)?;
 
         // Validation: check all coupling indices are in range of lorentz/color lists
-        for (&(color_idx, lor_idx), coup_name) in &couplings {
+        for (&(color_idx, lor_idx), coup_names) in &couplings {
+            let coup_name = coup_names.join(", ");
             if lor_idx >= lorentz.len() {
                 return Err(VertexError::Parse(format!(
                     "Coupling {} references invalid lorentz index {} (only {} provided)",
@@ -146,11 +160,13 @@ fn extract_str_list(fields: &Fields<'_>, kw: &'static str) -> Result<Vec<String>
         .collect()
 }
 
-/// Extract `couplings = {(0,0): C.GC_3, ...}` into a map.
+/// Extract `couplings = {(0,0): C.GC_3, (0,1): [C.GC_4, C.GC_5]}` into a map
+/// from each index pair to its coupling names: a list's, or the one.
 fn extract_couplings_dict(
     fields: &Fields<'_>,
-) -> Result<BTreeMap<(usize, usize), String>, FieldError> {
-    const EXPECTED: &str = "a dict of `(colour, lorentz)` index pairs to `C.<name>` references";
+) -> Result<BTreeMap<(usize, usize), Vec<String>>, FieldError> {
+    const EXPECTED: &str = "a dict of `(colour, lorentz)` index pairs to a `C.<name>` reference \
+                            or a non-empty list of them";
     let malformed = || fields.malformed("couplings", EXPECTED);
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("couplings")? else {
         return Err(malformed());
@@ -165,8 +181,18 @@ fn extract_couplings_dict(
             let [i, j] = elts.as_slice() else {
                 return Err(malformed());
             };
-            match (index(i), index(j), extract_attr(v)) {
-                (Some(i), Some(j), Some(("C", coupling))) => Ok(((i, j), coupling.to_owned())),
+            let reference = |e: &ast::Expr| match extract_attr(e) {
+                Some(("C", coupling)) => Some(coupling.to_owned()),
+                _ => None,
+            };
+            let names = match v {
+                ast::Expr::List(ast::ExprList { elts, .. }) if !elts.is_empty() => {
+                    elts.iter().map(reference).collect::<Option<Vec<_>>>()
+                }
+                other => reference(other).map(|c| vec![c]),
+            };
+            match (index(i), index(j), names) {
+                (Some(i), Some(j), Some(names)) => Ok(((i, j), names)),
                 _ => Err(malformed()),
             }
         })
@@ -202,7 +228,7 @@ V_73 = Vertex(name = 'V_73',
         let v1 = vs.iter().find(|v| v.name == "V_1").unwrap();
         assert_eq!(v1.particles, vec!["G0", "G0", "G0", "G0"]);
         assert_eq!(v1.lorentz, vec!["SSSS1"]);
-        assert_eq!(v1.couplings.get(&(0, 0)), Some(&"GC_33".to_owned()));
+        assert_eq!(v1.couplings.get(&(0, 0)), Some(&vec!["GC_33".to_owned()]));
     }
 
     #[test]
@@ -210,8 +236,8 @@ V_73 = Vertex(name = 'V_73',
         let vs = parse_vertices(SAMPLE).unwrap();
         let v73 = vs.iter().find(|v| v.name == "V_73").unwrap();
         assert_eq!(v73.lorentz, vec!["FFV1", "FFV2"]);
-        assert_eq!(v73.couplings.get(&(0, 0)), Some(&"GC_3".to_owned()));
-        assert_eq!(v73.couplings.get(&(0, 1)), Some(&"GC_50".to_owned()));
+        assert_eq!(v73.couplings.get(&(0, 0)), Some(&vec!["GC_3".to_owned()]));
+        assert_eq!(v73.couplings.get(&(0, 1)), Some(&vec!["GC_50".to_owned()]));
     }
 
     #[test]
@@ -219,6 +245,38 @@ V_73 = Vertex(name = 'V_73',
         let vs = parse_vertices(SAMPLE).unwrap();
         let v73 = vs.iter().find(|v| v.name == "V_73").unwrap();
         assert_eq!(v73.color, vec!["1"]);
+    }
+
+    #[test]
+    fn a_list_of_couplings_keeps_its_members_in_order() {
+        let src = "V_1 = Vertex(name = 'V_1', particles = [ P.A, P.A ], color = [ '1' ], \
+                   lorentz = [ L.VV1, L.VV2 ], \
+                   couplings = {(0,0):[ C.GC_2, C.GC_1 ],(0,1):C.GC_3})\n";
+        let v = &parse_vertices(src).unwrap()[0];
+        assert_eq!(v.couplings[&(0, 0)], ["GC_2", "GC_1"]);
+        assert_eq!(v.couplings[&(0, 1)], ["GC_3"]);
+    }
+
+    #[test]
+    fn an_empty_or_mixed_coupling_list_is_refused() {
+        for entry in [
+            "[]",
+            "[ C.GC_1, 2 ]",
+            "[ C.GC_1, L.GC_2 ]",
+            "( C.GC_1, C.GC_2 )",
+        ] {
+            let src = format!(
+                "V_1 = Vertex(name = 'V_1', particles = [ P.A, P.A ], color = [ '1' ], \
+                 lorentz = [ L.VV1 ], couplings = {{(0,0):{entry}}})\n"
+            );
+            assert!(
+                matches!(
+                    parse_vertices(&src),
+                    Err(VertexError::Field(FieldError::Malformed { .. }))
+                ),
+                "{entry}"
+            );
+        }
     }
 
     /// A `particles` or `lorentz` entry that is not a reference into its own

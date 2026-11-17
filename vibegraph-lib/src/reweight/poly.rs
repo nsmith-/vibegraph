@@ -225,6 +225,16 @@ impl<'m> PolyAnalysis<'m> {
                 Some(Support::constant(n))
             }
             Expr::Complex(re, im) => Some(self.expr_support(re)?.union(&self.expr_support(im)?)),
+            // A test or selection is not a polynomial in the parameters; with
+            // every operand constant it is a constant.
+            Expr::Cond(..) | Expr::Cmp(..) | Expr::Logic(..) => {
+                for operand in expr.test_operands() {
+                    if !self.expr_support(operand)?.is_constant() {
+                        return None;
+                    }
+                }
+                Some(Support::constant(n))
+            }
         }
     }
 
