@@ -304,8 +304,8 @@ fn check_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgeb
             for atom in &expr.atoms {
                 match atom {
                     ColorAtom::T(_, i, j) => {
-                        if rep(*i) != Some(ColorRep::Triplet)
-                            || rep(*j) != Some(ColorRep::AntiTriplet)
+                        if (*i > 0 && rep(*i) != Some(ColorRep::Triplet))
+                            || (*j > 0 && rep(*j) != Some(ColorRep::AntiTriplet))
                         {
                             return Err(ColorAlgebraError::Unsupported(format!(
                                 "T({i},{j}) in '{expr}' is not a 3/3̄ slot pair"
@@ -354,7 +354,103 @@ fn check_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgeb
                     ColorAtom::Tr(_) | ColorAtom::F(..) | ColorAtom::D(..) | ColorAtom::T6(..) => {}
                 }
             }
+            check_generator_chains(expr)?;
         }
+    }
+    Ok(())
+}
+
+/// Every index an atom carries, in any position.
+fn atom_indices(atom: &ColorAtom) -> Vec<i32> {
+    match atom {
+        ColorAtom::T(adj, i, j) | ColorAtom::T6(adj, i, j) => {
+            let mut v = adj.clone();
+            v.extend([*i, *j]);
+            v
+        }
+        ColorAtom::Tr(adj) => adj.clone(),
+        ColorAtom::F(a, b, c)
+        | ColorAtom::D(a, b, c)
+        | ColorAtom::Epsilon(a, b, c)
+        | ColorAtom::EpsilonBar(a, b, c)
+        | ColorAtom::K6(a, b, c)
+        | ColorAtom::K6Bar(a, b, c) => vec![*a, *b, *c],
+    }
+}
+
+/// Cross-check the summed fundamental indices of one colour structure: each `T`
+/// whose fundamental or antifundamental index is summed must be a link of an
+/// open generator chain, `T(a,i,-1)·T(b,-1,-2)·…·T(z,-n,j)`, which is the matrix
+/// element `(T^a T^b … T^z)_{ij}` between the `3` slot `i` and the `3̄` slot `j`.
+/// The squark–gluon contact's `T(1,-1,3)*T(2,4,-1)`, `(T^2 T^1)` between the
+/// squark and the antisquark, is the two-link case.
+///
+/// A summed fundamental index must therefore occur exactly twice in the
+/// structure, once as one `T`'s antifundamental index and once as another's
+/// fundamental index, and nowhere else. Every chain must start and end on a slot
+/// ([`check_slot_reps`] checks those slots' reps). What this refuses, by name:
+/// a summed index shared with an `Epsilon`, `K6` or other atom, one that repeats
+/// in the same position, and a closed loop of generators (`T(a,-1,-2)·T(b,-2,-1)`),
+/// which is a trace and is not read from `T` atoms.
+///
+/// The chain needs no handling of its own past this check: [`convert_expr`]
+/// transposes each link and allocates the summed index once, so the links
+/// contract into `(T^z … T^a)_{ji}` exactly as one `T` with the whole adjoint
+/// chain would, and the algebra engine merges them.
+fn check_generator_chains(expr: &ColorExpr) -> Result<(), ColorAlgebraError> {
+    let links: Vec<(i32, i32)> = expr
+        .atoms
+        .iter()
+        .filter_map(|atom| match atom {
+            ColorAtom::T(_, i, j) => Some((*i, *j)),
+            _ => None,
+        })
+        .collect();
+    let refuse = |why: String| Err(ColorAlgebraError::Unsupported(format!("{why} in '{expr}'")));
+    let mut summed: Vec<i32> = links
+        .iter()
+        .flat_map(|&(i, j)| [i, j])
+        .filter(|&k| k < 0)
+        .collect();
+    summed.sort_unstable();
+    summed.dedup();
+    if summed.is_empty() {
+        return Ok(());
+    }
+    for &k in &summed {
+        let as_fundamental = links.iter().filter(|&&(i, _)| i == k).count();
+        let as_anti = links.iter().filter(|&&(_, j)| j == k).count();
+        let anywhere = expr
+            .atoms
+            .iter()
+            .flat_map(atom_indices)
+            .filter(|&x| x == k)
+            .count();
+        if as_fundamental != 1 || as_anti != 1 || anywhere != 2 {
+            return refuse(format!(
+                "summed fundamental index {k} does not join one generator's 3̄ index to \
+                 another's 3 index"
+            ));
+        }
+    }
+    let mut on_chains = 0;
+    for &(start, mut next) in &links {
+        if start < 0 {
+            continue;
+        }
+        on_chains += 1;
+        while next < 0 {
+            let Some(&(_, j)) = links.iter().find(|&&(i, _)| i == next) else {
+                return refuse(format!("summed fundamental index {next} ends a generator chain"));
+            };
+            next = j;
+            on_chains += 1;
+        }
+    }
+    if on_chains != links.len() {
+        return refuse(
+            "a closed loop of generators over summed fundamental indices (a trace)".into(),
+        );
     }
     Ok(())
 }
@@ -608,5 +704,64 @@ mod tests {
         let fixed = fix_summed_indices(&s1, &s2);
         // min index in s1 is -1, so the new summed index is -2.
         assert_eq!(fixed, vec![(TensorKind::T, vec![3, -2, -2, 4])]);
+    }
+
+    /// A colour string parsed against the slot reps of a vertex.
+    fn expr(s: &str, colors: &[i32]) -> ColorExpr {
+        crate::ufo::color::parse_and_resolve(s, colors).unwrap()
+    }
+
+    /// The reps of the squark–gluon contact's slots, `g g q~ q`.
+    const GGSS: [i32; 4] = [8, 8, -3, 3];
+
+    /// Open generator chains between a `3` and a `3̄` slot pass, two links or
+    /// three, in either atom order.
+    #[test]
+    fn generator_chains_between_slots_are_read() {
+        for s in ["T(1,-1,3)*T(2,4,-1)", "T(1,4,-1)*T(2,-1,3)"] {
+            check_generator_chains(&expr(s, &GGSS)).unwrap();
+        }
+        let three = expr("T(1,-1,4)*T(2,-2,-1)*T(3,5,-2)", &[8, 8, 8, -3, 3]);
+        check_generator_chains(&three).unwrap();
+    }
+
+    /// Every other use of a summed fundamental index is refused, each by name.
+    #[test]
+    fn summed_fundamental_indices_outside_a_chain_are_refused() {
+        let cases = [
+            // Closed into a trace.
+            ("T(1,-1,-2)*T(2,-2,-1)", &[8, 8, -3, 3][..], "closed loop"),
+            ("T(1,-1,-1)", &[8, -3, 3][..], "closed loop"),
+            // The same position twice: two 3̄ indices contracted.
+            ("T(1,-1,3)*T(2,-1,4)", &[8, 8, -3, -3][..], "summed fundamental index -1"),
+            // Shared with a baryonic invariant.
+            ("T(1,2,-1)*Epsilon(-1,3,4)", &[8, 3, 3, 3][..], "summed fundamental index -1"),
+            // Shared with an adjoint position.
+            ("T(-1,2,-2)*T(1,-2,-1)", &[8, 3, -3][..], "summed fundamental index -1"),
+        ];
+        for (s, colors, why) in cases {
+            let err = check_generator_chains(&expr(s, colors)).unwrap_err();
+            assert!(err.to_string().contains(why), "{s}: {err}");
+        }
+    }
+
+    /// A two-link chain converts into the conjugate of the matrix element it
+    /// writes, as a single generator does: `T(1,-1,3)*T(2,4,-1)` is
+    /// `(T^2 T^1)_{4,3}`, and the crossing reads it as `(T^1 T^2)_{3,4}`, one
+    /// `T` over both adjoint legs with the chain reversed.
+    #[test]
+    fn a_generator_chain_converts_to_its_conjugate() {
+        let mut counter = -1;
+        let (coeff, tensors) =
+            convert_expr(&expr("T(1,-1,3)*T(2,4,-1)", &GGSS), &[1, 2, 3, 4], &mut counter)
+                .unwrap();
+        assert_eq!(coeff, 1);
+        let reduced = ColorFactor(vec![ColorString::new(tensors)]).full_simplify();
+        assert_eq!(reduced.0.len(), 1, "{reduced:?}");
+        assert_eq!(
+            reduced.0[0].to_immutable(),
+            vec![(TensorKind::T, vec![1, 2, 3, 4])]
+        );
+        assert_eq!(reduced.0[0].coeff, ColorCoeff::one());
     }
 }

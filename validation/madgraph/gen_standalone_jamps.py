@@ -107,11 +107,19 @@ class Row:
     # negates the width at the mass's code, standalone output only a Majorana
     # fermion's.
     madevent_params: bool = False
+    # The model ships with the pinned MadGraph (`research/refs/mg5amcnlo/models/`)
+    # rather than being staged by `build.sh`: MadGraph imports it by name, and the
+    # Rust side reads it from the submodule with the model's own restrict card.
+    bundled: bool = False
 
     def ufo_paths(self) -> dict:
         """The committed model directory and restrict card, repository-relative,
         looked up the way `build.sh` stages them: an authored card under
         `cards/` first, then the model's own."""
+        if self.bundled:
+            model_dir = f"research/refs/mg5amcnlo/models/{self.model}"
+            return {"dir": model_dir,
+                    "restrict_card": f"{model_dir}/restrict_{self.restrict}.dat"}
         model_dir = f"validation/ufo/{self.model}"
         card_dir = "smeft" if self.model.startswith("SMEFTsim_") else self.model
         card = f"validation/madgraph/cards/{card_dir}/restrict_{self.restrict}.dat"
@@ -122,6 +130,8 @@ class Row:
     def import_model(self) -> str:
         if self.model is None:
             return "sm"
+        if self.bundled:
+            return f"{self.model}-{self.restrict}"
         return os.path.join(MODELS_DIR, self.model) + f"-{self.restrict}"
 
 
@@ -483,6 +493,17 @@ ROWS = {
         # photons and Z, (t b~)(b t~) through a W joining them.
         Row("uux_to_ttxbbx_qed2", "u u~ > t t~ b b~ QED<=2", (2, -2), (6, -6, 5, -5),
             1000.0, 3, 5203, zero_widths=True),
+        # Stop pair production in the MSSM: the squark-squark-gluon-gluon contact,
+        # whose two colour structures are each a product of two generators joined by
+        # a summed fundamental index, beside the s-channel gluon and the t- and
+        # u-channel stop. Widths are zero for the spacelike stop.
+        Row("gg_to_t1t1x_mssm", "g g > t1 t1~", (21, 21), (1000006, -1000006), 2000.0, 3,
+            5301, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True),
+        # The quark-initiated channel, with no contact: the s-channel gluon alone in
+        # QCD, beside the electroweak s-channel photon and Z and the t-channel
+        # gluino and neutralinos.
+        Row("uux_to_t1t1x_mssm", "u u~ > t1 t1~", (2, -2), (1000006, -1000006), 2000.0, 3,
+            5302, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True),
     ]
 }
 
