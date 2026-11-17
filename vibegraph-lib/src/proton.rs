@@ -706,21 +706,36 @@ pub enum ProtonError {
         particle: String,
         pdg: i32,
     },
-    /// A `2 → 1` subprocess. Its phase space is the one-body `δ(ŝ − M²)`, which
-    /// fixes `τ = M²/s` and leaves only the rapidity to integrate; no phase-space
-    /// map here integrates it.
-    ///
-    /// `cut_to_zero` records that the run card's cuts reject every point the
-    /// subprocess could reach anyway: its single outgoing particle has zero
-    /// transverse momentum, and a positive `pT` minimum on it rejects that
-    /// ([`Cuts::rejects_zero_transverse_momentum`]). Such a subprocess contributes
+    /// Every subprocess is a `2 → 1` whose run card's cuts reject every point it
+    /// could reach: its single outgoing particle has zero transverse momentum,
+    /// and a positive `pT` minimum on it rejects that
+    /// ([`Cuts::rejects_zero_transverse_momentum`]). The decomposition contributes
     /// exactly nothing, as it does in MadGraph, and a caller summing
-    /// multiplicities may drop it ([`crate::multiplicity::multiplicity_groups`]).
+    /// multiplicities drops it ([`crate::multiplicity::multiplicity_groups`]).
     #[error(
-        "subprocess {process} has a single outgoing particle, whose phase space is the one-body \
-         δ(ŝ − M²); vibegraph has no one-body phase space to integrate it over"
+        "subprocess {process} has a single outgoing particle with zero transverse momentum, \
+         and the run card's pT minimum on it rejects every point, so it contributes nothing"
     )]
-    OneBodyFinalState { process: String, cut_to_zero: bool },
+    OneBodyCutToZero { process: String },
+    /// A `2 → 1` subprocess whose outgoing particle is massless. Its phase space
+    /// `δ(ŝ − M²)` sits at `ŝ = 0`, where no parton density is defined.
+    #[error(
+        "subprocess {process} has a single massless outgoing particle, whose one-body phase \
+         space δ(ŝ) sits at zero partonic energy, where no parton density is defined"
+    )]
+    MasslessOneBody { process: String },
+    /// A `2 → 1` subprocess whose outgoing mass the beams cannot produce: at or
+    /// above the collider energy, or at or below the incoming partons' threshold.
+    #[error(
+        "the single outgoing particle of {process} has mass {mass} GeV, which the partons of a \
+         {sqrt_s} GeV collider cannot produce (its threshold is {threshold} GeV)"
+    )]
+    OneBodyOutOfReach {
+        process: String,
+        mass: f64,
+        sqrt_s: f64,
+        threshold: f64,
+    },
     /// The decomposition was handed subprocesses whose incoming legs carry
     /// different pole masses. The incoming masses fix the partonic-frame beams,
     /// the flux and the threshold every group of one decomposition shares, so
@@ -845,6 +860,17 @@ fn probe_momenta(
     resonance: Option<f64>,
     seed: u64,
 ) -> Vec<Vec<V>> {
+    // A single outgoing particle is on its mass shell at one partonic energy
+    // only, `√ŝ = M`, and carries the whole collision momentum there: that one
+    // configuration is every point the integrand can reach. Above the incoming
+    // threshold it is a point the integrand evaluates; below it no subprocess
+    // contributes and the integrand refuses the decomposition.
+    if let [mass] = final_masses {
+        let sqrt_shat = mass.max(1.2 * (initial_masses[0] + initial_masses[1]));
+        let mut momenta = partonic_beams(sqrt_shat, initial_masses).to_vec();
+        momenta.push(V::new(sqrt_shat, 0.0, 0.0, 0.0));
+        return vec![momenta];
+    }
     let mut points = Vec::new();
     for (i, sqrt_s) in probe_energies(initial_masses, final_masses, resonance)
         .into_iter()
@@ -1032,6 +1058,7 @@ pub fn derive_flavor_groups(
 
     let mut compiled = Vec::with_capacity(sets.len());
     let mut one_body: Option<(String, bool)> = None;
+    let mut massless_one_body: Option<String> = None;
     for (set, process) in sets.iter().zip(&labels) {
         progress::step(
             progress::stage::COMPILE,
@@ -1054,17 +1081,19 @@ pub fn derive_flavor_groups(
                 Some((first, all)) => (first, all && cut_to_zero),
                 None => (process.clone(), cut_to_zero),
             });
+            if !(legs[2].mass > 0.0) {
+                massless_one_body.get_or_insert(process.clone());
+            }
         }
         compiled.push((evaluator, legs, cuts));
     }
-    // Refused before the probe below, which draws the outgoing momenta with RAMBO
-    // and has nothing to draw for one particle. Every subprocess is read first, so
-    // `cut_to_zero` holds of all of them and not only of the first.
-    if let Some((process, cut_to_zero)) = one_body {
-        return Err(ProtonError::OneBodyFinalState {
-            process,
-            cut_to_zero,
-        });
+    // Every subprocess is read first, so `cut_to_zero` holds of all of them and
+    // not only of the first.
+    if let Some((process, true)) = one_body {
+        return Err(ProtonError::OneBodyCutToZero { process });
+    }
+    if let Some(process) = massless_one_body {
+        return Err(ProtonError::MasslessOneBody { process });
     }
     refuse_polarized_frame(card, compiled.iter().map(|(e, ..)| e), model)?;
     progress::step(
@@ -1831,7 +1860,9 @@ pub struct OuterPoint {
     /// The partonic collision energy `√ŝ = √(x₁x₂ s)`.
     pub sqrt_shat: f64,
     /// `dτ dy / (du₀ du₁)` with the `1/τ` from `f = (x·f)/x` on both legs already
-    /// divided out.
+    /// divided out. For a single outgoing particle `τ` is fixed and `dτ/du₀` is
+    /// the one-body `δ(ŝ − M²)` integrated over `τ`, `1/s`, so the Jacobian is in
+    /// GeV⁻².
     pub jac: f64,
 }
 
@@ -1962,6 +1993,12 @@ pub struct ProtonIntegrand<'a> {
     /// The Breit–Wigner components of [`TauMap::BreitWigner`], `None` under any
     /// other map and where no whole-state pole lies inside `[τ_min, τ_max]`.
     tau_mixture: Option<TauMixture>,
+    /// `τ = M²/s` of a single outgoing particle of mass `M`, which the one-body
+    /// phase space's `δ(ŝ − M²)` fixes; `None` for two or more outgoing legs.
+    /// Where it is set, the `τ` coordinate is drawn but read by nothing, as
+    /// MadEvent leaves its `τ` coordinate in the grid for a `2 → 1`
+    /// (`genps.f`).
+    one_body_tau: Option<f64>,
     /// The maps this integrand was built under, every choice settled.
     maps: MapChoices,
     /// The `(2π)^{4−3n}` measure factor.
@@ -2330,15 +2367,37 @@ impl<'a> ProtonIntegrand<'a> {
         // its floor to their production threshold.
         let initial_masses = groups.initial_masses();
         let threshold = initial_masses[0] + initial_masses[1];
-        let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
-        let tau_min = cut_tau_min.max(threshold * threshold / s_had);
-        if !(tau_min > 0.0) {
-            return Err(zero_tau_floor(groups, &filters, &group_filter));
-        }
-        let tau_max = cut_tau_max.max(tau_min);
-        let tau_mixture = match maps.tau {
-            TauMap::BreitWigner => TauMixture::of(groups, model, s_had, tau_min, tau_max),
-            TauMap::Log | TauMap::InverseSquare => None,
+        let one_body_tau = match groups.groups()[0].final_masses()[..] {
+            [mass] => {
+                let tau = mass * mass / s_had;
+                if !(mass > threshold && tau < 1.0) {
+                    return Err(ProtonError::OneBodyOutOfReach {
+                        process: label(groups.groups()[0].diagram_set()),
+                        mass,
+                        sqrt_s: sqrt_s_had,
+                        threshold,
+                    });
+                }
+                Some(tau)
+            }
+            _ => None,
+        };
+        // A one-body `τ` is fixed whatever the cuts: they act on the momenta it
+        // produces, through the filter, and bound no draw.
+        let (tau_min, tau_max) = match one_body_tau {
+            Some(tau) => (tau, tau),
+            None => {
+                let (cut_tau_min, cut_tau_max) = bounds.tau_range(s_had);
+                let tau_min = cut_tau_min.max(threshold * threshold / s_had);
+                if !(tau_min > 0.0) {
+                    return Err(zero_tau_floor(groups, &filters, &group_filter));
+                }
+                (tau_min, cut_tau_max.max(tau_min))
+            }
+        };
+        let tau_mixture = match (maps.tau, one_body_tau) {
+            (TauMap::BreitWigner, None) => TauMixture::of(groups, model, s_had, tau_min, tau_max),
+            _ => None,
         };
         if let Some(mix) = &tau_mixture {
             tracing::info!("tau: {}", mix.describe(s_had));
@@ -2362,6 +2421,7 @@ impl<'a> ProtonIntegrand<'a> {
             tau_max,
             ln_tau_range: (tau_max / tau_min).ln(),
             tau_mixture,
+            one_body_tau,
             maps,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
@@ -2878,7 +2938,24 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// [`map_point`](Self::map_point) under a named `τ` map rather than the run's.
+    ///
+    /// A single outgoing particle of mass `M` fixes `τ = M²/s` whatever `u[0]`:
+    /// `∫ dτ δ(τ s − M²) = 1/s` replaces `dτ/du`, so the Jacobian is
+    /// `2 y_max/(τ s) = 2 y_max/M²`, in GeV⁻², and the one-body map's own weight
+    /// is `1` ([`DiagramChannel`](crate::phasespace::DiagramChannel)). This is
+    /// MadEvent's `sjac = 1/stot` with `τ = pmass(3)²/stot` (`genps.f`).
     fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
+        if let Some(tau) = self.one_body_tau {
+            let sqrt_tau = tau.sqrt();
+            let y_max = -0.5 * tau.ln();
+            let y = (2.0 * u[1] - 1.0) * y_max;
+            return OuterPoint {
+                x1: sqrt_tau * y.exp(),
+                x2: sqrt_tau * (-y).exp(),
+                sqrt_shat: (tau * self.s_had).sqrt(),
+                jac: 2.0 * y_max / (tau * self.s_had),
+            };
+        }
         let (tau, dtau_du_over_tau) = match (tau_map, &self.tau_mixture) {
             (TauMap::BreitWigner, Some(mix)) => mix.draw(u[0]),
             (TauMap::Log | TauMap::BreitWigner, _) => {
@@ -6722,6 +6799,100 @@ mod tests {
     /// against the model rather than against transcribed numbers.
     fn z_id(m: &UFOModel) -> crate::ufo::particles::ParticleId {
         m.particle_id("Z").expect("the model has a Z")
+    }
+
+    /// The one-body integrand of `u u~ > z` at a point is the narrow-resonance
+    /// cross section `σ̂ = 4π² Γ(Z → u ū)/(3M) · δ(ŝ − M²)` times the parton
+    /// luminosity, integrated over `τ` (`1/s`) and mapped over `y`, with `Γ` from
+    /// the decay integrator's own two-body phase space. Crossing ties the two to
+    /// one `Σ|M|²` summed over every spin and colour, so this pins the one-body
+    /// measure (`2π δ(ŝ − M²)`), the `1/(2ŝ)` flux and the initial-state average
+    /// against a textbook relation that shares none of them. Every point sits at
+    /// `√ŝ = M`, and the `τ` coordinate is read by nothing.
+    ///
+    /// What it cannot see: the densities' normalisation (both sides read the same
+    /// member), and an error common to the decay and the production matrix
+    /// element, such as a coupling, which moves `Γ` and `σ̂` together.
+    #[test]
+    fn a_one_body_point_is_the_narrow_resonance_cross_section_times_luminosity() {
+        use crate::hadronic::{compile_subprocesses, DecayAtRest, FixedBeamIntegrand};
+
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive("u u~ > z", &m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        assert_eq!((integ.channel_count(), integ.point_ndim()), (1, 2));
+        let mz = evaluated.mass(z_id(&m));
+
+        let decay = enumerate("z > u u~", &m);
+        let evals = compile_subprocesses(&decay, &m, &evaluated).expect("the decay compiles");
+        let bound = BoundAmplitude::<f64>::bind(&evals[0], &evaluated);
+        let legs = process_external_legs(&evals[0], &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::decay_default(), &legs).expect("decay cuts");
+        let avg = initial_spin_color_average(&evals[0], &m, &evaluated);
+        let decay_integ = FixedBeamIntegrand::new(
+            vec![&bound],
+            &cuts,
+            DecayAtRest::from_legs(&legs).expect("a decay at rest"),
+            vec![0.0, 0.0],
+            avg,
+        );
+        // A vector's decay to two massless fermions, summed over spins, is
+        // isotropic: one point of the two-body map is the width.
+        let mut stream = SubStream::from_stream(0x0B0D_1E5, 2);
+        let width = decay_integ.value(&stream.uniforms::<f64>(decay_integ.vegas_ndim()));
+        let again = decay_integ.value(&stream.uniforms::<f64>(decay_integ.vegas_ndim()));
+        assert!(
+            (again / width - 1.0).abs() < 1e-12,
+            "{again} against {width}"
+        );
+        assert!(width > 0.2 && width < 0.4, "Γ(Z → u ū) = {width} GeV");
+        let coefficient = 4.0 * PI * PI * width / (3.0 * mz);
+
+        let s = SQRT_S_HAD * SQRT_S_HAD;
+        let tau = mz * mz / s;
+        let y_max = -0.5 * tau.ln();
+        let mut stream = SubStream::from_stream(0x0B0D_1E5, 3);
+        for _ in 0..50 {
+            let u = stream.uniforms::<f64>(2);
+            let point = integ.outer_point(&u);
+            assert!((point.sqrt_shat / mz - 1.0).abs() < 1e-14);
+            assert!((point.x1 * point.x2 / tau - 1.0).abs() < 1e-12);
+            let lumi: f64 = groups.groups()[0]
+                .luminosity(&pdf, point.x1, point.x2, [MU_F, MU_F])
+                .iter()
+                .sum();
+            // `∫ dτ δ(τ s − M²) = 1/s`, `f₁f₂ = (x₁f₁)(x₂f₂)/τ`, `dy/du₁ = 2 y_max`.
+            let expected = 2.0 * y_max / (tau * s) * coefficient * lumi;
+            let got = integ.value_in_channel(0, &u);
+            let rel = (got - expected).abs() / expected;
+            assert!(rel < 1e-10, "{got} against {expected}: rel {rel:.3e}");
+            assert_eq!(integ.value_in_channel(0, &[1.0 - u[0], u[1]]), got);
+        }
+    }
+
+    /// A single outgoing particle the beams cannot make is refused when the
+    /// integrand is built, naming its mass: above the collider energy here.
+    #[test]
+    fn a_one_body_mass_beyond_the_collider_is_refused() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive("u u~ > z", &m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let low = ProtonBeams::new(40.0, 40.0);
+        let refused = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, low, MU_F).err();
+        match refused {
+            Some(ProtonError::OneBodyOutOfReach { mass, sqrt_s, .. }) => {
+                assert_eq!(sqrt_s, 80.0);
+                assert!(mass > 91.0);
+            }
+            Some(e) => panic!("refused for the wrong reason: {e}"),
+            None => panic!("a Z at an 80 GeV collider must be refused"),
+        }
     }
 
     /// The integrand's value at a point, against an assembly built from the process
