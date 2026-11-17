@@ -28,6 +28,8 @@
 pub(crate) mod alias;
 pub mod artifact;
 mod chain;
+#[cfg(test)]
+pub(crate) use chain::generate_chain_with_merges;
 pub mod check;
 pub mod diagram;
 pub mod draw;

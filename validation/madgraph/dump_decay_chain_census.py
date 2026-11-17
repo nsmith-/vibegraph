@@ -161,6 +161,14 @@ CORPUS = [
     # More decays than decaying legs.
     ("ee_zz_three", "generate e+ e- > z z, z > e+ e-, z > mu+ mu-, z > ta+ ta-"),
     ("ee_zh", "generate e+ e- > z h, z > e+ e-"),
+    # Two identical decays on the two Z slots of the h-Z-Z vertex: permuting the
+    # electrons between them reaches every graph a second time with the two Z lines
+    # exchanged between the vertex's interchangeable slots.
+    ("ee_zh_h_zz_ee", "generate e+ e- > z h, (h > z z, z > e+ e-, z > e+ e-)"),
+    ("ee_zh_h_zz_ee_mumu", "generate e+ e- > z h, (h > z z, z > e+ e-, z > mu+ mu-)"),
+    # Identical products from decays on the Z and h slots of one vertex, which are not
+    # interchangeable: every permutation is a different diagram.
+    ("ee_zh_bb_bb", "generate e+ e- > z h, z > b b~, h > b b~"),
     ("ee_ttx", "generate e+ e- > t t~, t > w+ b, t~ > w- b~"),
     # The out-of-order case: one concrete decay each, written in another order.
     ("ee_ttx_reversed", "generate e+ e- > t t~, t~ > w- b~, t > w+ b"),
