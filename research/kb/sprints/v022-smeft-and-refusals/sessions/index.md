@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-P1: one-body final-state phase space](K-P1.md) - Integrate 2 → 1 processes (p p > z, e+ e- > z) through a δ(ŝ − M²) one-body phase space following MadGraph's genps.f τ = m²/s, and remove the OneBodyFinalState refusals.
+
+## Session Report
+
+* [K-P1 report: one-body final-state phase space](K-P1-report.md) - 2 → 1 processes at proton beams integrate through a δ(ŝ − M²) one-body map (τ = M²/s, as genps.f) and match MadGraph (p p > z: pull −1.44 over 20 against 5 seeds); on fixed-energy beams MadGraph returns zero, and vibegraph keeps a named refusal.

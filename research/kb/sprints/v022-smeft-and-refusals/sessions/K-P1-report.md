@@ -15,7 +15,8 @@ shared with sibling sessions.
 |---|---|
 | `9719fb3` | feat(phasespace): integrate 2 -> 1 processes at proton beams |
 | `76ec03f` | kb: this report, draft |
-| (final) | the fixed-beam refusal's account of MadEvent corrected; this report; the item deleted |
+| `5dd8a76` | fix(multiplicity): state what MadEvent does with a fixed-beam 2 -> 1 |
+| (final) | this report; `one-body-final-state-phase-space-missing` deleted |
 
 ## What MadGraph does (genps.f, b7687064)
 
@@ -82,6 +83,14 @@ Fixed-beam (`e+ e- > mu+ mu-`, config_share_ee_mumu card), hadronic
 SHA-256 agree, so the channels, α and grids are bit-identical. Structurally,
 every changed path is gated on one outgoing leg.
 
+### Banked layer
+
+`pixi run --skip-deps validate` (which runs `validate_lhef` and
+`validate_sigma`): CI banked on the PR head carrying this report. The local
+run was started and stopped by the manager before its first gate ran (its log
+ends at `Compiling vibegraph v0.2.1`): not a result. The result is recorded
+from CI.
+
 ### vibegraph seed sweeps
 
 `p p > z`, dy13_default_run_card (NNPDF23 lhaid 247000, μ = 91.188), seeds
@@ -146,17 +155,46 @@ MadGraph:   23  1    1    2    0    0  0.0 -0.0 -0.24636391836E+04 0.24653262012
 
 On the matched card a 0-jet event carries `<scales pt_clust_3="13000.00000">`
 and `<mgrwt>` with `<rscale> 0 0.91188000E+02`, `<asrwt>0`, as MadGraph's
-does. `validate-lhef` pending.
+does. `validate-lhef` is part of the banked gate below.
 
 ## Brief corrections
 
 - The item's `closes_when` and the brief ask for e+ e- > z σ against
   MadGraph on a fixed-beam card. MadGraph has none: it returns zero (NaN
   survey) at √s = M_Z and at 200 GeV. The fixed-beam oracle is the named
-  refusal, and the item should close on the hadronic card alone.
+  refusal, and the item should close on the hadronic card alone. The
+  plan's prediction (from reading `gen_mom` alone) that MadGraph would report
+  the δ coefficient `2π|M̄|²/(2s)` was refuted by the run. MadGraph's own
+  output, `e+ e- > z` at `ebeam = 45.594` (`SubProcesses/P1_ll_z/G1/log.txt`
+  and the `generate_events` log):
+
+  ```
+  -1 dimensions   1000 events  2 invarients  5 iterations  1 config(s),  (0.99)
+  Masses: 0.000E+00 0.000E+00 0.912E+02
+   Iteration  0   Mean:        NaN Abs mean:        NaN   Fluctuation:        NaN   0.186E+11   *****%
+   Iteration  1   Mean: 0.0000E+00 Abs mean: 0.0000E+00   Fluctuation:        NaN   0.000E+00   100.0%
+  Survey return zero cross section.
+  ```
+
+  and at `ebeam = 100` the same "Survey return zero cross section", with
+  `results.dat` `0.00000E+01 0.00000E+01` for both.
 - The brief names MadGraph 3.5.7; the reference is the pinned 3.7.1
   (b7687064), which the banked bundle was made with.
 
 ## Found
 
-(to be completed)
+- **MadGraph's fixed-beam 2 → 1 is a silent zero.** MadEvent configures a
+  −1-dimensional grid for `nexternal = 3` at `lpp = 0`, its survey is `NaN`
+  and the run reports σ = 0 with the generic "zero cross section" advice
+  (widths, PDFs, cuts), none of which is the cause. Nothing for vibegraph to
+  do beyond the named refusal it has; worth one line in the run-card or
+  refusal documentation, so a user comparing against MadGraph's 0 is not
+  sent looking for a width.
+- **The item's `closes_when` names a fixed-beam MadGraph σ that does not
+  exist.** Closing on the hadronic card plus the named fixed-beam refusal is
+  what was measured here; the manager should record that reading when the
+  item is deleted.
+- **The matched `p p > z (j)` card has no banked row.** Measured here at
+  pull −0.60 on 3 MadGraph seeds; a seeded-σ row (≥ 5 seeds a side) would
+  turn it into a gate. Closing it means banking the row with
+  `bank_seeded_sigma.sh` and adding it to the manifest.
