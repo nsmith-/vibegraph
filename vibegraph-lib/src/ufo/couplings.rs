@@ -72,8 +72,10 @@ pub struct Coupling {
     pub(crate) name: String,
     /// Symbolic expression for the coupling constant value.
     pub(crate) value: Expr,
-    /// Coupling order dict, e.g. `{"QCD": 1}`.
-    pub orders: BTreeMap<String, usize>,
+    /// Coupling order dict, e.g. `{"QCD": 1}`. Signed: SMEFTsim writes its
+    /// vev insertions as `{"NP": 1, "QED": -1}`, and MadGraph sums the powers
+    /// with their sign.
+    pub orders: BTreeMap<String, i64>,
     /// Parameter names this coupling directly depends on.
     pub(crate) deps: Vec<String>,
 }
@@ -114,8 +116,8 @@ pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError>
 }
 
 /// The `order = {'QCD': 1, ...}` dict of a coupling.
-fn extract_orders(fields: &Fields<'_>) -> Result<BTreeMap<String, usize>, FieldError> {
-    const EXPECTED: &str = "a dict of order names to non-negative integers";
+fn extract_orders(fields: &Fields<'_>) -> Result<BTreeMap<String, i64>, FieldError> {
+    const EXPECTED: &str = "a dict of order names to integers";
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("order")? else {
         return Err(fields.malformed("order", EXPECTED));
     };
@@ -123,7 +125,7 @@ fn extract_orders(fields: &Fields<'_>) -> Result<BTreeMap<String, usize>, FieldE
         .zip(values.iter())
         .map(|(k, v)| {
             let key = k.as_ref().and_then(|e| extract_str(e));
-            let val = extract_int(v).and_then(|n| usize::try_from(n).ok());
+            let val = extract_int(v);
             match (key, val) {
                 (Some(key), Some(val)) => Ok((key.to_owned(), val)),
                 _ => Err(fields.malformed("order", EXPECTED)),

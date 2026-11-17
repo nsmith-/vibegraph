@@ -5,3 +5,8 @@
 ## Session Brief
 
 * [K-D1: σ 4× MadGraph's on a decay chain with repeated decays](K-D1.md) - Attribute and fix the factor of 4 on p p > w+ h01, (h01 > a01 a01, a01 > b b~, a01 > b b~): per-diagram amplitudes and the symmetry factor against MadGraph standalone, the cause checked by arithmetic on the dumps, then σ on the 4 HToAATo4B cards.
+* [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
+
+## Session Report
+
+* [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.

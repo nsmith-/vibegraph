@@ -454,7 +454,7 @@ pub(crate) fn qcd_order(diagram: &Diagram, model: &UFOModel) -> i64 {
                 .values()
                 .filter_map(|&id| model.coupling_def(id).orders.get("QCD").copied())
                 .max()
-                .unwrap_or(0) as i64
+                .unwrap_or(0)
         })
         .sum()
 }

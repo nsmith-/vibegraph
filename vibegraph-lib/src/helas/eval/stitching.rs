@@ -132,7 +132,7 @@ const CASES: &[Case] = &[
 ];
 
 /// The hierarchy-weighted coupling order of a diagram.
-fn weighted(d: &Diagram, model: &UFOModel) -> u32 {
+fn weighted(d: &Diagram, model: &UFOModel) -> i64 {
     d.vertices
         .iter()
         .map(|v| {
@@ -146,14 +146,14 @@ fn weighted(d: &Diagram, model: &UFOModel) -> u32 {
                 .coupling_def(*coupling)
                 .orders
                 .iter()
-                .map(|(order, &n)| model.order_hierarchy[order] * n as u32)
-                .sum::<u32>()
+                .map(|(order, &n)| model.order_hierarchy[order] as i64 * n)
+                .sum::<i64>()
         })
         .sum()
 }
 
 /// The undecayed final state's diagrams that hold `chain`, the resonances flagged forced.
-fn filtered(set: &DiagramSet, w: u32, chain: &[Resonance], model: &UFOModel) -> Vec<Diagram> {
+fn filtered(set: &DiagramSet, w: i64, chain: &[Resonance], model: &UFOModel) -> Vec<Diagram> {
     let process = format!(
         "{} > {} WEIGHTED<={w}",
         set.particles_in.join(" "),
@@ -201,7 +201,7 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
             set.particles_in.join(" "),
             set.particles_out.join(" ")
         );
-        let orders: HashSet<u32> = set.diagrams.iter().map(|d| weighted(d, model)).collect();
+        let orders: HashSet<i64> = set.diagrams.iter().map(|d| weighted(d, model)).collect();
         assert_eq!(orders.len(), 1, "{sub}: one WEIGHTED order");
         let w = *orders.iter().next().unwrap();
         let chain = (case.chain)(&set.particles_out);
