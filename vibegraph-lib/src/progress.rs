@@ -56,8 +56,10 @@ pub mod stage {
     /// Reading and digesting the model. It is one indivisible unit of work, so it
     /// reports `0 of 1` when it starts and `1 of 1` when the model is resolved.
     pub const UFO_LOAD: &str = "ufo_load";
-    /// Diagram enumeration, counting concrete subprocesses. The total is unknown
-    /// until the alias expansion has been walked, so it is absent.
+    /// Diagram enumeration, counting the candidate particle assignments of one
+    /// process line's alias expansion — pruned and enumerated alike — out of the
+    /// expansion's size, which is known before the walk starts. See
+    /// [`enumeration`](super::enumeration) for the fields beside the count.
     pub const ENUMERATE: &str = "enumerate";
     /// Amplitude compilation, counting compiled subprocesses out of the enumerated
     /// ones.
@@ -81,6 +83,48 @@ pub mod stage {
 #[inline]
 pub fn step(stage: &'static str, done: u64, total: Option<u64>) {
     trace!(target: TARGET, stage, done, total);
+}
+
+/// One step through a process line's candidate assignments: `done` of `total`
+/// candidates have been considered.
+///
+/// A line's alias expansion (`p p > e+ e- j j` is every particle `p` and `j`
+/// stand for, leg by leg) is walked once, and its size is the product of the
+/// legs' alternatives, so `total` is known when the walk starts. `done` counts
+/// every candidate passed over, including those pruned as duplicates or for
+/// violating charge, which cost almost nothing; the walk's time is in the
+/// candidates that survive to topology assignment, and a report follows each
+/// of those, so a bar over `done/total` advances unevenly. The walk of one line
+/// restarts the count, as does each further walk a line needs: the automatic
+/// coupling-order search repeats the expansion at a higher bound while no
+/// subprocess has a diagram, and a decay chain walks each of its cores.
+///
+/// Beside `stage`, `done` and `total`, the event carries:
+///
+/// | field | meaning |
+/// |---|---|
+/// | `line` | the process line being walked, from 1 |
+/// | `lines` | the process lines the card holds |
+/// | `subprocesses` | concrete subprocesses this walk has enumerated so far |
+/// | `diagrams` | diagrams the card has produced so far, earlier lines included |
+#[inline]
+pub fn enumeration(
+    done: u64,
+    total: u64,
+    (line, lines): (u64, u64),
+    subprocesses: u64,
+    diagrams: u64,
+) {
+    trace!(
+        target: TARGET,
+        stage = stage::ENUMERATE,
+        done,
+        total = Some(total),
+        line,
+        lines,
+        subprocesses,
+        diagrams
+    );
 }
 
 /// One completed VEGAS iteration, with the estimate as it stands after it.
@@ -197,5 +241,21 @@ mod tests {
         assert_eq!(events[1].field("total"), Some("1000"));
 
         assert_eq!(events[2].field("ns_per_eval"), Some("212.5"));
+    }
+
+    /// Enumeration knows its extent before the walk starts, so `total` is
+    /// always recorded, beside the line it belongs to and the running counts.
+    #[test]
+    fn enumeration_carries_a_total_its_line_and_the_running_counts() {
+        let events = captured(|| super::enumeration(40, 81, (2, 3), 5, 120));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].target, TARGET);
+        assert_eq!(events[0].field("stage"), Some("enumerate"));
+        assert_eq!(events[0].field("done"), Some("40"));
+        assert_eq!(events[0].field("total"), Some("81"));
+        assert_eq!(events[0].field("line"), Some("2"));
+        assert_eq!(events[0].field("lines"), Some("3"));
+        assert_eq!(events[0].field("subprocesses"), Some("5"));
+        assert_eq!(events[0].field("diagrams"), Some("120"));
     }
 }

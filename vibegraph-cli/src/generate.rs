@@ -35,7 +35,7 @@ use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 use vibegraph::generate::{
     check_collider_energy, check_process, generate, reads_parton_densities, sample_pull,
-    GenerateAssets, GenerateError, GenerateOptions, Strategy as SampleStrategy,
+    GenerateAssets, GenerateError, GenerateOptions, OutputEncoding, Strategy as SampleStrategy,
 };
 use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
@@ -123,7 +123,11 @@ pub(crate) struct GenerateArgs {
     #[arg(long)]
     pub(crate) nevents: Option<usize>,
 
-    /// Output Les Houches file.
+    /// Output Les Houches file. A name ending in `.gz` or `.zst` is written
+    /// compressed (gzip, zstd); any other name is plain text, and a name ending
+    /// in another compression extension (`.xz`, `.bz2`, ...) is refused. The
+    /// file appears under its name only once complete: it is written under a
+    /// hidden temporary name beside it and renamed.
     #[arg(short, long, default_value = DEFAULT_OUTPUT)]
     pub(crate) out: PathBuf,
 
@@ -347,6 +351,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     args.parallel
         .install()
         .map_err(|e| err(ErrorKind::Usage, e))?;
+    let encoding = output_encoding(&args.out)?;
     if !args.force && args.out.exists() {
         return Err(err(
             ErrorKind::Io,
@@ -520,6 +525,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         max_rule: max_rule(args),
         reweight,
         out: args.out.clone(),
+        encoding,
         artifact_label: args.artifact.display().to_string(),
         on_scan: Some(&tui::state::note_unweighting_efficiency),
     };
@@ -548,9 +554,54 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     Ok(())
 }
 
+/// Extensions of compression formats this build does not write. A file named
+/// with one would hold plain text under a name that says otherwise.
+const UNSUPPORTED_COMPRESSION: [&str; 8] = ["bz2", "xz", "lz4", "zip", "7z", "lzma", "zstd", "z"];
+
+/// The encoding the output name asks for, or a refusal for a compression
+/// extension that is not one of the two written.
+fn output_encoding(out: &std::path::Path) -> Result<OutputEncoding, CliError> {
+    let extension = out
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    if let Some(e) = extension.as_deref() {
+        if UNSUPPORTED_COMPRESSION.contains(&e) {
+            return Err(err(
+                ErrorKind::Usage,
+                format!(
+                    "--out {}: `.{e}` names a compression format this build does not write; use \
+                     `.gz` or `.zst`, or a name with no compression extension for plain text",
+                    out.display()
+                ),
+            ));
+        }
+    }
+    Ok(OutputEncoding::of_path(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_output_extension_picks_the_encoding_or_is_refused() {
+        use std::path::Path;
+        for (name, want) in [
+            ("ev.lhe", OutputEncoding::Plain),
+            ("cmsgrid_final.lhe", OutputEncoding::Plain),
+            ("ev", OutputEncoding::Plain),
+            ("ev.lhe.gz", OutputEncoding::Gzip),
+            ("EV.LHE.GZ", OutputEncoding::Gzip),
+            ("ev.lhe.zst", OutputEncoding::Zstd),
+        ] {
+            assert_eq!(output_encoding(Path::new(name)).unwrap(), want, "{name}");
+        }
+        for name in ["ev.lhe.xz", "ev.lhe.bz2", "ev.zip", "ev.lhe.zstd"] {
+            let why = output_encoding(Path::new(name)).unwrap_err().to_string();
+            assert!(why.contains("does not write"), "{name}: {why}");
+        }
+    }
 
     /// The CLI names the flag that fixes a rounding refusal; the library's own
     /// text names none.

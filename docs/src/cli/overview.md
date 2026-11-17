@@ -276,6 +276,25 @@ module scope; `q` or `^C` asks for a graceful stop, which finishes the
 iteration, banks what completed, and writes a usable artifact. A second
 press quits at once.
 
+`integrate` takes the same request from a signal, with or without the pane:
+the first SIGTERM or SIGINT, once the iterations have started, finishes the
+iteration in flight, writes the artifact and ends the run with a result whose
+`stop_reason` is `stopped`; a second signal takes the default action. That is
+the signal a batch system sends before it kills a job. A signal before the
+first iteration (during enumeration, compilation or the channel survey) takes
+the default action at once, and so does any signal to `generate`; a stop
+before an iteration is kept ends in a `support` refusal, since nothing was
+measured. `generate` writes its event file under a hidden temporary name
+beside it and renames it once complete, so a killed run leaves nothing under
+the requested name.
+
+`integrate --check` runs everything `integrate` does before its first
+sampling point (every card, the model and the parton densities, enumeration,
+flavour groups, cuts and the phase-space guards) and then reports `check ok`,
+or fails with the refusal the full run would have ended in. It draws no
+point and writes no artifact. Under `--output-ldjson` its `result` is
+`{"check": "ok", "process", "model", "seed"}`.
+
 ## Output modes
 
 A run picks one output mode, which formats its log lines, its progress and
@@ -301,7 +320,14 @@ kinds, bumps the version.
   (its text is `fields.message`) and, inside a stage, the `span` it ran in.
 - `progress`: a progress measurement, at any level, in the same layout. Its
   `fields` are the progress stream's own: `stage`, `done`, `total` when the
-  stage knows it, and the stage's extras. The VEGAS stage's running `sigma`
+  stage knows it, and the stage's extras. The `enumerate` stage counts the
+  candidate particle assignments of one process line's alias expansion, those
+  pruned as duplicates or charge-violating included, out of the expansion's
+  size; its extras are `line` of `lines` (the process line, from 1),
+  `subprocesses` enumerated in this line's walk and the running `diagrams`
+  count over the card. The count restarts for each line, for each further
+  coupling-order bound the automatic search tries, and for each core of a
+  decay chain. The VEGAS stage's running `sigma`
   and `err` are in the integrand's natural units (GeV⁻² for a cross section,
   GeV for a width).
 - `result`: the command's final object. `integrate`'s carries `process`,
@@ -309,20 +335,30 @@ kinds, bumps the version.
   decay's width), `sigma`, `sigma_err`, `chi2_per_dof` (`null` over fewer than
   two iterations), `mu_f` (tagged by `type`: `no_densities`, `constant` with
   `gev`, `per_beam` with two, `per_event` with the `dynamical_scale_choice`),
-  `seed`, `multiplicities` (each final-state phase space of a proton run:
+  `seed`, `stop_reason` (`fixed_budget`, `target_met`, `max_iters`,
+  `max_evals`, `stopped`, or `constant` for an integrand that is constant by
+  construction), `target_rel` (the `--target-rel` asked for, `null` under
+  `--fixed-budget`), `rel_err_quoted` (σ's relative error as `sigma_err`
+  quotes it) and `rel_err_scaled` (the same with each channel's variance
+  widened to the scatter its iterations show, the number `--target-rel` is
+  compared with), `multiplicities` (each final-state phase space of a proton run:
   `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
   path and its `format_version`, the `diagram_set_digest` of the diagrams it
   integrated, and `param_card` (whether a param card's text is banked).
   `inspect --output-ldjson` prints the same
-  object for a saved artifact; with `--ranking <file>` its result carries
+  object for a saved artifact, with `stop_reason`, `target_rel`,
+  `rel_err_quoted` and `rel_err_scaled` `null`, since the artifact does not
+  record how its run ended; with `--ranking <file>` its result carries
   `ranking_path` and the document under `ranking` instead. `generate`'s carries `events_written`,
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
   `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries
   the `artifact` and `summary_path` it wrote, the `svg_dir` (`null` when
   nothing was drawn) and the number of `drawings`, and the whole of
-  `diagrams.json` under `summary`.
+  `diagrams.json` under `summary`. `generate -o` writes `.gz` and `.zst`
+  names compressed and any other name as plain text, and refuses another
+  compression extension (`.xz`, `.bz2`, ...) by name.
 - `refusal`: in place of a result, `error_kind` and `message`. A refused
   run writes no artifact, so this is its only record.
 

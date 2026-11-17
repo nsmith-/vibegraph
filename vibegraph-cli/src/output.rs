@@ -44,6 +44,7 @@ use std::sync::OnceLock;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
+use vibegraph::budget::StopReason;
 use vibegraph::hadronic::Observable;
 
 use crate::error::{CliError, ErrorKind};
@@ -153,6 +154,38 @@ impl From<Observable> for ObservableName {
         match o {
             Observable::CrossSection => ObservableName::CrossSection,
             Observable::PartialWidth => ObservableName::PartialWidth,
+        }
+    }
+}
+
+/// Why an integration ended, by name.
+#[derive(Copy, Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StopReasonName {
+    /// A `--fixed-budget` run spent its iterations.
+    FixedBudget,
+    /// The consistency-scaled relative error reached `--target-rel`.
+    TargetMet,
+    /// `--max-iters` was reached with the target unmet.
+    MaxIters,
+    /// The next iteration would have breached `--max-points`, target unmet.
+    MaxEvals,
+    /// A stop was requested (`q`, `^C`, SIGTERM or SIGINT) and the run ended at
+    /// the iteration boundary after it, whatever its budget still allowed.
+    Stopped,
+    /// The integrand is constant, and one iteration confirmed it.
+    Constant,
+}
+
+impl From<StopReason> for StopReasonName {
+    fn from(s: StopReason) -> Self {
+        match s {
+            StopReason::Budget => StopReasonName::FixedBudget,
+            StopReason::TargetMet => StopReasonName::TargetMet,
+            StopReason::MaxIters => StopReasonName::MaxIters,
+            StopReason::MaxPoints => StopReasonName::MaxEvals,
+            StopReason::Aborted => StopReasonName::Stopped,
+            StopReason::Constant => StopReasonName::Constant,
         }
     }
 }
@@ -280,6 +313,17 @@ pub(crate) struct IntegrateResult {
     pub(crate) mu_f: MuF,
     /// The integration seed.
     pub(crate) seed: u64,
+    /// Why the run ended. `null` from `inspect`, which reads an artifact and
+    /// not a run: the artifact does not record it.
+    pub(crate) stop_reason: Option<StopReasonName>,
+    /// The `--target-rel` the run was asked for; `null` for a fixed budget and
+    /// from `inspect`.
+    pub(crate) target_rel: Option<f64>,
+    /// `Δσ/σ` of the result as quoted in `sigma_err`; `null` from `inspect`.
+    pub(crate) rel_err_quoted: Option<f64>,
+    /// `Δσ/σ` after each channel's variance is widened by its consistency
+    /// factor: the number compared with `target_rel`. `null` from `inspect`.
+    pub(crate) rel_err_scaled: Option<f64>,
     /// Each final-state phase space's total at proton beams, in part order;
     /// empty for fixed-energy beams and decays.
     pub(crate) multiplicities: Vec<MultiplicityResult>,
@@ -296,6 +340,20 @@ pub(crate) struct IntegrateResult {
     pub(crate) param_card: bool,
     /// Every configuration's share, in the artifact's order.
     pub(crate) configurations: Vec<ConfigurationResult>,
+}
+
+/// What `integrate --check` emits as its `result` in place of an
+/// [`IntegrateResult`]: the run passed every refusal ahead of its first
+/// sampling point.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub(crate) struct CheckResult {
+    /// Always `"ok"`: a run that would be refused ends in a `refusal` instead.
+    pub(crate) check: &'static str,
+    /// The process string the run would integrate.
+    pub(crate) process: String,
+    pub(crate) model: ModelRef,
+    /// The integration seed the run would use.
+    pub(crate) seed: u64,
 }
 
 /// `generate`'s final object.
@@ -327,7 +385,9 @@ pub(crate) struct GenerateResult {
 mod tests {
     use serde_json::{json, Value};
 
-    use super::{ChannelKeyObject, MuF, Refusal};
+    use vibegraph::budget::StopReason;
+
+    use super::{ChannelKeyObject, MuF, Refusal, StopReasonName};
     use crate::error::ErrorKind;
 
     fn v(x: &impl serde::Serialize) -> Value {
@@ -369,6 +429,22 @@ mod tests {
             }),
             json!({"error_kind": "support", "message": "m"})
         );
+    }
+
+    /// The stop reasons a batch wrapper branches on are wire names, so each is
+    /// pinned, along with the library reason it names.
+    #[test]
+    fn the_stop_reasons_serialize_by_name() {
+        for (reason, name) in [
+            (StopReason::Budget, "fixed_budget"),
+            (StopReason::TargetMet, "target_met"),
+            (StopReason::MaxIters, "max_iters"),
+            (StopReason::MaxPoints, "max_evals"),
+            (StopReason::Aborted, "stopped"),
+            (StopReason::Constant, "constant"),
+        ] {
+            assert_eq!(v(&StopReasonName::from(reason)), json!(name));
+        }
     }
 
     /// Full precision: the value a reader parses is the value written, bit for

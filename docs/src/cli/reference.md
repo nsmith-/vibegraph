@@ -97,7 +97,7 @@ Options:
           SLHA `param_card.dat` for the flavour-group preview; the run card not given takes `integrate`'s default
 
   -j, --parallel <N>
-          Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
+          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
@@ -160,6 +160,12 @@ Options:
       --force
           Overwrite an existing artifact
 
+      --check
+          Check the run and stop before sampling: read every card, resolve the model and the parton densities, enumerate, build the flavour groups, the cuts and the phase-space guards, then print `check ok` or fail with the refusal the full run would have ended in. No point is drawn and no artifact is written. The refusal is the same object `integrate` emits, so a run that passes the check is not refused later for any reason the check looks at
+
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model, and refused with a diagram artifact, which embeds its model
 
@@ -170,16 +176,19 @@ Options:
           
           [default: 120000]
 
-      --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
+  -q, --quiet
+          Report only warnings and errors
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -188,31 +197,25 @@ Options:
           
           [default: 0.001]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
-
       --fixed-budget
           Spend a fixed `--neval × --niter` and stop, instead of converging to `--target-rel`.
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
-
-  -q, --quiet
-          Report only warnings and errors
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --min-iters <MIN_ITERS>
-          Iterations that must run before the convergence target may stop a run
-          
-          [default: 6]
-
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
+
+      --min-iters <MIN_ITERS>
+          Iterations that must run before the convergence target may stop a run
+          
+          [default: 6]
 
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
@@ -221,13 +224,16 @@ Options:
           
           [default: 500]
 
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
@@ -238,8 +244,8 @@ Options:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
-      --no-tui
-          Never draw the live status pane; report in plain lines
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
       --alpha-floor <FLOOR>
           Raise every channel's selection weight to at least this after the α-survey, and renormalise; `off` installs the survey's weights as they came out.
@@ -248,14 +254,11 @@ Options:
           
           [default: 1e-4]
 
-      --output-ldjson
-          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
-
       --seed <SEED>
           RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
 
   -j, --parallel <N>
-          Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
+          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --parallel-diagrams
           Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
@@ -351,7 +354,7 @@ Options:
           Events to write; defaults to the `nevents` the artifact recorded
 
   -o, --out <OUT>
-          Output Les Houches file
+          Output Les Houches file. A name ending in `.gz` or `.zst` is written compressed (gzip, zstd); any other name is plain text, and a name ending in another compression extension (`.xz`, `.bz2`, ...) is refused. The file appears under its name only once complete: it is written under a hidden temporary name beside it and renamed
           
           [default: events.lhe]
 
@@ -426,7 +429,7 @@ Options:
           MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
 
   -j, --parallel <N>
-          Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
+          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --output-ldjson
           Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
