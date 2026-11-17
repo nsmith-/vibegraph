@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [K-D1 report: σ 4× MadGraph's on a decay chain with repeated decays](K-D1-report.md) - Stitching kept every Feynman diagram twice when two identical decays sit on a vertex's interchangeable boson slots (h01 > a01 a01, a01 > b b~, a01 > b b~): |M|² exactly 4× at every point. Fixed by a slot-symmetric duplicate key, with failing-first tests, a census assertion of the decay-chain symmetry factor against MadGraph's, MadGraph standalone per-helicity amplitudes, and σ at two masses within 2σ of MadGraph.
 * [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
