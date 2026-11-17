@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-R1: restriction cards as MadGraph applies them](K-R1.md) - Read MadGraph's restriction path and reproduce it: values equal to 1 (and 9.999999e-1), entries absent from the card, and the -full suffix; so the SMEFTsim per-operator restrictions load with MadGraph's restricted model.
+
+## Session Report
+
+* [K-R1 report: restriction cards as MadGraph applies them](K-R1-report.md) - MadGraph's restriction path read at 3.7.1 and reproduced: 9.999999e-1 and 0.000001e-99 load as free one and zero, -full loads unrestricted, the model name splits at the last dash. A card that omits an external parameter stays refused, because MadGraph refuses it too.
