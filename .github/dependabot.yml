@@ -1,0 +1,11 @@
+# GitHub Actions' versions, bumped monthly in one grouped PR alongside the
+# toolchain-bump workflow's Rust and pixi PR (research/kb/tooling/toolchain-pins.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
