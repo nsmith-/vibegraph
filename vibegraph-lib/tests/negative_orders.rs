@@ -9,7 +9,7 @@
 //! `diagram_generation.py:1048-1083`), so a diagram whose total is within the bound
 //! is dropped when its negative vertex is added after a prefix that is not.
 //!
-//! Every count below is MadGraph 3.5.7's (the pinned checkout, `generate` and
+//! Every count below is the pinned MadGraph checkout's (3.7.1, `generate` and
 //! nothing else); a refusal is MadGraph's `NoDiagramException`.
 
 mod common;
