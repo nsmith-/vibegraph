@@ -29,28 +29,15 @@ They are under
 `/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/g2HDM_charged_higgs/`.
 Each panicked 375–970 s into the run (seed 1, 4 cores).
 
-The repro is M300. MadGraph's σ is 10.04 ± 0.039 pb. Its process card:
-
-```
-import model g2HDM_UFO
-define p = p b b~
-define j = p
-generate p p > h+ QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
-add process p p > h+ j QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
-add process p p > h+ j j QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
-```
-
-The same three lines follow for h−. The run card is the LO template with:
-- `ickkw = 1`, `xqcut = 30`, `maxjetflavor = 5`;
-- `drjj = drjl = 0`, `ebeam = 6800`;
-- `lhaid = 325300`.
-
-The bundled `g2HDM_UFO` and its param card are used. The command:
-
-```
-vibegraph integrate proc_card.dat --run-card run_card.dat --param-card param_card.dat \
-  --ufo-dir models --neval 120000 --target-rel 0.01 --seed 1 -j 4 --no-tui
-```
+The repro is M300 (MadGraph σ 10.04 ± 0.039 pb):
+- **Process card:** `import model g2HDM_UFO`, then `define p = p b b~`, then
+  `p p > h+ (j, j j) QCD=99, (h+ > t b~, (t > w+ b, W+ > l+ vl))`, and the
+  same for h−.
+- **Run card:** the LO template with `ickkw = 1`, `xqcut = 30`,
+  `maxjetflavor = 5`, `drjj = drjl = 0`, `ebeam = 6800` and `lhaid = 325300`.
+- **Command:** `vibegraph integrate … --ufo-dir models --neval 120000
+  --target-rel 0.01 --seed 1 -j 4 --no-tui`, using the bundled model and
+  param card.
 
 The CERN host has the bundle (`mlm-panic-repro.tar.gz`, sha256 `f24c1f74…`).
 It suspects that the five-flavour `p` with b in the h± → t b decay lets a merge
