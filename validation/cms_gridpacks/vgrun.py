@@ -211,6 +211,15 @@ def cmd_run(db, args, scrape_id):
         print("[%d/%d] %s: %s" % (i, len(rows), label, last), flush=True)
 
 
+def with_gridpack_model(text, gp_name):
+    """`text` with each `import model` line naming the model `gp_name` and keeping its flags."""
+    new = []
+    for l in text.splitlines():
+        pi = P.parse_import(l)
+        new.append("import model %s%s" % (gp_name, (" " + pi[2]) if pi and pi[2] else "") if pi else l)
+    return "\n".join(new) + "\n"
+
+
 def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, adapt, replace=False):
     base = gpdb.db_dir(args)
     inp = gridpack_inputs(base, cache_rel)
@@ -227,11 +236,7 @@ def run_gridpack(db, args, build_id, gid, label, cache_rel, pdf_name, lhaid, ada
     gp_name = "gp_" + hashlib.sha256(label.encode()).hexdigest()[:8]
 
     def use_gridpack_model(text):
-        new = []
-        for l in text.splitlines():
-            pi = P.parse_import(l)
-            new.append("import model %s%s" % (gp_name, (" " + pi[2]) if pi and pi[2] else "") if pi else l)
-        return "\n".join(new) + "\n"
+        return with_gridpack_model(text, gp_name)
 
     if inp["ufomodel"] and imp and imp[0] != "sm":
         staged = stage_model(inp["ufomodel"], models, imp[0].rsplit("/", 1)[-1], imp[1])

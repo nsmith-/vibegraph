@@ -19,6 +19,15 @@ pub enum ParticleError {
 /// What a particle's `mass` and `width` must be.
 const PARAM_REFERENCE: &str = "a `Param.<name>` reference";
 
+/// What a particle's `charge` may be besides a number.
+const CHARGE_FORM: &str = "a number, or the `value` of a parameter imported from parameters.py";
+
+/// The default value of the external parameter whose Python variable is the
+/// argument: what `<parameter>.value` is when `particles.py` is read. `Err`
+/// carries why no number can be given (an unknown variable, an internal
+/// parameter).
+pub(crate) type ParameterValues<'a> = &'a dyn Fn(&str) -> Result<f64, String>;
+
 /// Strongly typed index for [`Particle`] lookup
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParticleId(usize);
@@ -165,7 +174,24 @@ impl Particle {
 ///
 /// Anti-particle entries are created so vertex resolution can look up all
 /// particle python-names, including those defined via `.anti()`.
+#[cfg(test)]
 pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
+    parse_particles_with(src, &|variable| {
+        Err(format!("no parameters.py is available for `{variable}`"))
+    })
+}
+
+/// [`parse_particles`], reading a `charge` that is a parameter's `value` through
+/// `parameter_value`.
+///
+/// MadGraph's import sets the charge to the parameter object's `value` at the
+/// time `particles.py` is read, which is the default `parameters.py` gives
+/// (`import_ufo.py`, `add_particle`, `particle.set(key, value)`), so the
+/// charge is that default, not a card's value.
+pub(crate) fn parse_particles_with(
+    src: &str,
+    parameter_value: ParameterValues<'_>,
+) -> Result<Vec<Particle>, ParticleError> {
     use std::collections::HashMap;
 
     let stmts = parse_stmts(src).map_err(|e| ParticleError::Parse(e.to_string()))?;
@@ -176,6 +202,8 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
     // ([`UniqueNames`]): `.anti()` of a self-conjugate particle repeats its name,
     // which UFO's `Particle.anti` refuses too ("has no anti particle").
     let mut seen = UniqueNames::new("particle");
+    // `from parameters import n [as m]`: local name -> the parameter's variable.
+    let imported = imported_parameters(&stmts);
 
     for (python_name, value) in named_assignments(&stmts) {
         let python_name = python_name.to_owned();
@@ -195,7 +223,7 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
                 let pdg_code = fields.int("pdg_code")?;
                 let spin = fields.int32("spin")?;
                 let color = fields.int32("color")?;
-                let charge = fields.float("charge")?;
+                let charge = charge(&fields, &python_name, &imported, parameter_value)?;
                 let texname = fields.str("texname")?;
                 let antitexname = fields.str("antitexname")?;
                 let mass_param = fields.reference("mass", "Param", PARAM_REFERENCE)?;
@@ -269,6 +297,63 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
     }
 
     Ok(particles)
+}
+
+/// The names `particles.py` imports from `parameters`, as `(local name, variable)`.
+fn imported_parameters(stmts: &[ast::Stmt]) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    for stmt in stmts {
+        let ast::Stmt::ImportFrom(ast::StmtImportFrom {
+            module: Some(module),
+            names,
+            level,
+            ..
+        }) = stmt
+        else {
+            continue;
+        };
+        if module.as_str() != "parameters" || level.is_some_and(|l| l.to_u32() != 0) {
+            continue;
+        }
+        for alias in names {
+            let local = alias.asname.as_ref().unwrap_or(&alias.name);
+            out.insert(local.to_string(), alias.name.to_string());
+        }
+    }
+    out
+}
+
+/// A particle's `charge`: a number, or `<name>.value` / `Param.<name>.value`
+/// for a parameter.
+fn charge(
+    fields: &Fields<'_>,
+    particle: &str,
+    imported: &std::collections::HashMap<String, String>,
+    parameter_value: ParameterValues<'_>,
+) -> Result<f64, ParticleError> {
+    use super::ast_util::{extract_float, extract_name};
+    let expr = fields.required("charge")?;
+    if let Some(x) = extract_float(expr) {
+        return Ok(x);
+    }
+    let malformed = || fields.malformed("charge", CHARGE_FORM);
+    let ast::Expr::Attribute(ast::ExprAttribute {
+        value: owner, attr, ..
+    }) = expr
+    else {
+        return Err(malformed().into());
+    };
+    if attr.as_str() != "value" {
+        return Err(malformed().into());
+    }
+    let variable = match (extract_name(owner), extract_attr(owner)) {
+        (Some(local), _) => imported.get(local).cloned(),
+        (None, Some(("Param", variable))) => Some(variable.to_owned()),
+        _ => None,
+    }
+    .ok_or_else(malformed)?;
+    parameter_value(&variable)
+        .map_err(|why| ParticleError::Parse(format!("particle '{particle}': `charge` {why}")))
 }
 
 /// Extract `Param.XXX` reference from a keyword argument, returning `"XXX"`.
@@ -431,6 +516,62 @@ b.loop_particles = [[['t']]]
             (ps[0].charge - (-1.0 / 3.0)).abs() < tol,
             "expected charge ≈ -1/3, got {}",
             ps[0].charge
+        );
+    }
+
+    const CHARGED: &str = r#"
+from object_library import all_particles, Particle
+import parameters as Param
+from parameters import n
+from parameters import m as mm
+
+heco = Particle(pdg_code = 10000200, name = 'HECO', antiname = 'HECO~', spin = 2, color = 1,
+                mass = Param.ZERO, width = Param.ZERO, texname = 'H', antitexname = 'H~',
+                charge = n.value)
+other = Particle(pdg_code = 10000300, name = 'OTH', antiname = 'OTH~', spin = 2, color = 1,
+                 mass = Param.ZERO, width = Param.ZERO, texname = 'O', antitexname = 'O~',
+                 charge = mm.value)
+third = Particle(pdg_code = 10000400, name = 'THD', antiname = 'THD~', spin = 2, color = 1,
+                 mass = Param.ZERO, width = Param.ZERO, texname = 'T', antitexname = 'T~',
+                 charge = Param.n.value)
+heco_bar = heco.anti()
+"#;
+
+    /// `charge = <parameter>.value` is that parameter's default, through an
+    /// import, an aliased import and `Param.`, and the antiparticle's is
+    /// the negative.
+    #[test]
+    fn a_charge_that_is_a_parameters_value_is_its_default() {
+        let values = |variable: &str| match variable {
+            "n" => Ok(39.0),
+            "m" => Ok(-2.0),
+            other => Err(format!(
+                "names `{other}`, which parameters.py does not define"
+            )),
+        };
+        let ps = parse_particles_with(CHARGED, &values).unwrap();
+        let charges: Vec<(&str, f64)> = ps.iter().map(|p| (p.name.as_str(), p.charge)).collect();
+        assert_eq!(
+            charges,
+            [
+                ("HECO", 39.0),
+                ("OTH", -2.0),
+                ("THD", 39.0),
+                ("HECO~", -39.0)
+            ]
+        );
+    }
+
+    /// A parameter the resolver cannot give a number for is refused naming the
+    /// particle.
+    #[test]
+    fn a_charge_the_resolver_refuses_is_refused_naming_the_particle() {
+        let err = parse_particles_with(CHARGED, &|v| Err(format!("has no value for {v}")))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("'heco'") && err.contains("has no value for n"),
+            "{err}"
         );
     }
 }

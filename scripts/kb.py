@@ -10,7 +10,11 @@ Every concept is a markdown file with YAML frontmatter carrying a non-empty
 `type`; `index.md` and `log.md` are reserved. Backlog items are the
 `type: Backlog Item` concepts under `backlog/<area>/`; the backlog view is
 rendered from them on demand and never committed, so parallel branches never
-conflict over it. `--claims` reads the open pull requests' `Backlog: <slug>`
+conflict over it. Only the root `index.md` (which carries `okf_version`) is
+committed; every folder index below it is generated on demand by `kb.py index`
+and gitignored, because a committed per-folder index changes whenever a
+concept is added to that folder and so conflicts between any two branches that
+add one. `--claims` reads the open pull requests' `Backlog: <slug>`
 lines through the GitHub API (needs `GITHUB_TOKEN`). The bundle's change log
 is rendered the same way, from the Sprint Records' `closed` and the Design
 Decisions' `decided` dates, so no branch writes a shared log file.
@@ -153,10 +157,15 @@ def lint(_args):
         for target in LINK.findall(c.body):
             if re.match(r"^[a-z]+:", target):
                 continue
-            if not (c.path.parent / target).resolve().exists():
+            resolved = (c.path.parent / target).resolve()
+            # A folder index is generated on demand, so a link to one resolves
+            # when the folder exists.
+            if resolved.name == "index.md" and resolved.parent.is_dir():
+                continue
+            if not resolved.exists():
                 problems.append(f"{c.path.relative_to(REPO)}: link to `{target}` does not resolve")
     stale = index(argparse.Namespace(check=True), quiet=True)
-    problems += [f"{p}: generated index is stale (run `pixi run kb-index`)" for p in stale]
+    problems += [f"{p}: generated root index is stale (run `pixi run kb-index`)" for p in stale]
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
     for p in problems:
@@ -191,10 +200,17 @@ def render_index(directory, concepts, is_root):
         out.append("")
     if subdirs:
         out += ["## Directories", ""]
+        if is_root:
+            out += ["Each folder's `index.md` is generated on demand by `pixi run kb-index` "
+                    "and not committed.", ""]
         # No counts: they change with every added concept and conflict across branches.
         for s in subdirs:
             if s in NO_INDEX:
                 out.append(f"* [{s}]({s}/) - one file per item; rendered by `pixi run backlog`")
+            elif is_root:
+                # The committed root links to folders: their indexes are
+                # generated on demand, so a folder link works on GitHub too.
+                out.append(f"* [{s}]({s}/)")
             else:
                 out.append(f"* [{s}]({s}/index.md)")
         out.append("")
@@ -210,6 +226,9 @@ def index(args, quiet=False):
             continue
         dirs.add(c.path.parent)
         dirs.update(p for p in c.path.parent.parents if ROOT in p.parents)
+    if args.check:
+        # Only the root index is committed; the folder indexes are gitignored.
+        dirs = {ROOT}
     stale = []
     for d in sorted(dirs):
         text = render_index(d, concepts, d == ROOT)
@@ -514,7 +533,7 @@ def main():
     b.set_defaults(func=backlog)
     sub.add_parser("lint", help="check the bundle's conformance and the backlog items").set_defaults(func=lint)
     i = sub.add_parser("index", help="regenerate the index.md files")
-    i.add_argument("--check", action="store_true", help="only report stale index files")
+    i.add_argument("--check", action="store_true", help="only report whether the committed root index is stale")
     i.set_defaults(func=index)
     g = sub.add_parser("log", help="render the change log from dated Sprint Records and Design Decisions")
     g.add_argument("--link-base", help="URL prefix for links, e.g. a GitHub blob URL of research/kb/")

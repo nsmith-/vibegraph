@@ -195,7 +195,6 @@ impl Tui {
         let state = Arc::new(Mutex::new(UiState::default()));
         state::install(&state);
         install_panic_hook();
-        install_signal_handler();
 
         let stop = Arc::new(AtomicBool::new(false));
         let log: Arc<OnceLock<LogHandle>> = Arc::new(OnceLock::new());
@@ -616,7 +615,7 @@ fn press(
     abort: &StopSignal,
 ) {
     match key {
-        Key::Stop if controls.stopping => {
+        Key::Stop if controls.stopping || abort.requested() => {
             take_down(terminal);
             let _ = writeln!(std::io::stderr(), "vibegraph: aborted");
             std::process::exit(ABORT_EXIT);
@@ -724,39 +723,15 @@ fn install_panic_hook() {
     }));
 }
 
-/// Give the terminal back when the run is killed rather than stopped.
-///
-/// Raw mode is a property of the terminal and outlives the process that asked
-/// for it, so a signal that ends the run without unwinding leaves the shell in
-/// it. The signals are taken on a thread of their own rather than in a handler,
-/// which is what lets this wait for the pane to come down; the signal is then
-/// re-raised with its default disposition, so the exit status is the one the
-/// kill would have produced and nothing here decides how the run ends.
-///
-/// Only installed once the display holds the terminal. A run reporting in plain
-/// lines has nothing to restore and leaves the signals to their defaults.
-#[cfg(unix)]
-fn install_signal_handler() {
-    use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
-    use signal_hook::iterator::Signals;
-
-    // Raw mode suppresses the terminal's own interrupt, so a SIGINT here came
-    // from outside rather than from the keys the display reads.
-    let Ok(mut signals) = Signals::new([SIGTERM, SIGHUP, SIGQUIT, SIGINT]) else {
-        return;
-    };
-    let _ = std::thread::Builder::new()
-        .name("vibegraph-signals".to_string())
-        .spawn(move || {
-            for signal in signals.forever() {
-                take_terminal_back();
-                let _ = signal_hook::low_level::emulate_default_handler(signal);
-            }
-        });
+/// Give the terminal back, if a display holds it, before the process is killed
+/// by a signal. Raw mode is a property of the terminal and outlives the process
+/// that asked for it, so a run that ends without unwinding would leave the shell
+/// in it. A no-op when no display is drawing.
+pub(crate) fn release_terminal_on_kill() {
+    if LIVE.load(Ordering::SeqCst) {
+        take_terminal_back();
+    }
 }
-
-#[cfg(not(unix))]
-fn install_signal_handler() {}
 
 /// Give the terminal back on behalf of a thread that cannot stop the display
 /// the ordinary way, and wait for the pane to come down first.

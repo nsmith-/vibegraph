@@ -321,7 +321,7 @@ impl StopSignal {
     }
 
     /// Whether the request has been made.
-    pub(crate) fn requested(&self) -> bool {
+    pub fn requested(&self) -> bool {
         self.0.load(Ordering::SeqCst)
     }
 }

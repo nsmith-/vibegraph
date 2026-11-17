@@ -1,10 +1,13 @@
 use super::ast_util::{
-    conditional_definitions, constructor_calls, parse_stmts, FieldError, Fields, UniqueNames,
+    call_func_name, conditional_definitions, extract_float, extract_name, named_assignments,
+    parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
+use super::functions::FunctionLibrary;
 use super::slha::ParamCard;
 use num_complex::Complex64;
 use num_traits::Zero;
+use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use thiserror::Error;
@@ -26,6 +29,11 @@ pub enum ParameterError {
         "internal parameter '{user}' references '{name}', which parameters.py does not define"
     )]
     UnknownParameter { name: String, user: String },
+    #[error(
+        "parameter '{parameter}': `value` is the name `{name}`, which parameters.py has not \
+         defined as a number or a parameter by that point"
+    )]
+    UnresolvedValueName { parameter: String, name: String },
     #[error(transparent)]
     Field(#[from] FieldError),
 }
@@ -51,6 +59,11 @@ pub struct Parameter {
     pub(crate) complex: bool,
     pub nature: ParamNature,
 }
+
+/// The values MadGraph's restriction reads as one and zero without fixing the
+/// parameter, each with the value it stands for (`restrict_model`,
+/// `import_ufo.py` L2454-L2462; see [`ParameterSet::apply_restrict`]).
+pub(crate) const MADGRAPH_FREE_VALUES: [(f64, f64); 2] = [(9.999999e-1, 1.0), (0.000001e-99, 0.0)];
 
 /// Parameters a restriction merged: each one's name and its factor against the
 /// first (see [`ParameterSet::merged`]).
@@ -95,6 +108,29 @@ impl ParameterSet {
             .iter()
             .chain(&self.internals)
             .any(|p| p.name == name)
+    }
+
+    /// What `<variable>.value` is for the parameter bound to the Python
+    /// `variable` (`variables` maps each variable to its UFO name): an external
+    /// parameter's default value. An internal parameter's `value` is an
+    /// expression and a missing one is no parameter, both refused with why.
+    pub(crate) fn default_of_variable(
+        &self,
+        variables: &HashMap<String, String>,
+        variable: &str,
+    ) -> Result<f64, String> {
+        let name = variables
+            .get(variable)
+            .ok_or_else(|| format!("names `{variable}`, which parameters.py does not define"))?;
+        match self.externals.iter().find(|p| &p.name == name) {
+            Some(Parameter {
+                nature: ParamNature::External { default_value, .. },
+                ..
+            }) => Ok(*default_value),
+            _ => Err(format!(
+                "names the internal parameter `{variable}`, whose `value` is an expression"
+            )),
+        }
     }
 
     /// The value `card` binds the external parameter `p` to: the card's where it
@@ -166,7 +202,18 @@ impl ParameterSet {
     /// [`ones`](Self::ones), and the groups it merges in
     /// [`merged`](Self::merged): a card binding refuses a move of either
     /// (`ufo::bind`), as MadGraph's `param_card_rule.dat` does.
+    ///
+    /// A value in [`MADGRAPH_FREE_VALUES`] is MadGraph's spelling of one or zero
+    /// for a parameter its restriction leaves free. MadGraph tests for 0 and 1
+    /// with exact float equality (`detect_special_parameters`, `import_ufo.py`
+    /// L2615-L2624), so such a value is neither locked, fixed at one nor merged
+    /// (`detect_identical_parameters` skips it, L2724); its couplings are judged
+    /// at the value as written; and only then does the value become 1 or 0
+    /// (L2454-L2462, and `write_param_card.py` L253-L256 for the generated
+    /// card). Here the default becomes 1 or 0 and the parameter stays free;
+    /// the couplings are judged against the card itself.
     pub(crate) fn apply_restrict(&mut self, card: &ParamCard) {
+        let mut free = BTreeSet::new();
         for p in &mut self.externals {
             if let ParamNature::External {
                 default_value,
@@ -175,9 +222,17 @@ impl ParameterSet {
             } = &mut p.nature
             {
                 if let Some(v) = card.get(lha_block, lha_code) {
-                    *default_value = v;
-                    if v.is_zero() {
-                        self.zeros.insert(p.name.clone());
+                    if let Some(&(_, stands_for)) = MADGRAPH_FREE_VALUES
+                        .iter()
+                        .find(|(spelling, _)| *spelling == v)
+                    {
+                        *default_value = stands_for;
+                        free.insert(p.name.clone());
+                    } else {
+                        *default_value = v;
+                        if v.is_zero() {
+                            self.zeros.insert(p.name.clone());
+                        }
                     }
                 }
             }
@@ -187,7 +242,8 @@ impl ParameterSet {
             .externals
             .iter()
             .filter(|p| {
-                matches!(p.nature, ParamNature::External { default_value, .. } if default_value == 1.0)
+                !free.contains(&p.name)
+                    && matches!(p.nature, ParamNature::External { default_value, .. } if default_value == 1.0)
             })
             .map(|p| p.name.clone())
             .collect();
@@ -286,7 +342,7 @@ impl ParameterSet {
 /// Parse `parameters.py` content into a [`ParameterSet`].
 #[cfg(test)]
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
-    parse_parameters_with_variables(content).map(|(set, _)| set)
+    parse_parameters_with_variables(content, &FunctionLibrary::default()).map(|(set, _)| set)
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`], with each
@@ -299,6 +355,7 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
 /// a reference is resolved.
 pub(crate) fn parse_parameters_with_variables(
     content: &str,
+    library: &FunctionLibrary,
 ) -> Result<(ParameterSet, HashMap<String, String>), ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
@@ -316,8 +373,20 @@ pub(crate) fn parse_parameters_with_variables(
     // `UFOMG5Converter.load_model`, "define multiple time").
     let mut seen = UniqueNames::new("parameter");
     let mut variables: HashMap<String, String> = HashMap::new();
-    for (python_name, keywords) in constructor_calls(&stmts, "Parameter") {
-        let fields = Fields::new("parameter", python_name, keywords);
+    // Numbers assigned at module level so far: a `value = NAME` reads the one
+    // bound when the `Parameter` statement runs.
+    let mut numbers: HashMap<&str, f64> = HashMap::new();
+    for (python_name, assigned) in named_assignments(&stmts) {
+        let ast::Expr::Call(call) = assigned else {
+            if let Some(x) = extract_float(assigned) {
+                numbers.insert(python_name, x);
+            }
+            continue;
+        };
+        if call_func_name(&call.func) != Some("Parameter") {
+            continue;
+        }
+        let fields = Fields::new("parameter", python_name, &call.keywords);
         let name = fields.str("name")?;
         seen.insert(python_name, &name)?;
         variables.insert(python_name.to_owned(), name.clone());
@@ -330,7 +399,10 @@ pub(crate) fn parse_parameters_with_variables(
 
         match fields.str("nature")?.as_str() {
             "external" => {
-                let default_value = fields.float("value")?;
+                let default_value = match fields.required("value").map(extract_name) {
+                    Ok(Some(n)) => *numbers.get(n).ok_or_else(|| unresolved(&name, n))?,
+                    _ => fields.float("value")?,
+                };
                 let lha_block = fields.str("lhablock")?;
                 let lha_code = fields.int32_list("lhacode")?;
                 externals.push(Parameter {
@@ -344,11 +416,24 @@ pub(crate) fn parse_parameters_with_variables(
                 });
             }
             "internal" => {
-                let expr_str = fields.str("value")?;
-                let expr = parse_expr(&expr_str).map_err(|e| ParameterError::ExprParse {
-                    name: name.clone(),
-                    cause: e.to_string(),
-                })?;
+                let expr = match extract_name(fields.required("value")?) {
+                    // The value is a Python name: a `Parameter` object, which MadGraph
+                    // writes into the expression as its UFO `name`, or a number.
+                    Some(n) => match (variables.get(n), numbers.get(n)) {
+                        (Some(target), _) => Expr::Param(target.clone()),
+                        (None, Some(x)) => Expr::Num(*x),
+                        (None, None) => return Err(unresolved(&name, n)),
+                    },
+                    None => {
+                        let expr_str = fields.str("value")?;
+                        parse_expr(&expr_str)
+                            .map(|e| library.resolve(e))
+                            .map_err(|e| ParameterError::ExprParse {
+                                name: name.clone(),
+                                cause: e.to_string(),
+                            })?
+                    }
+                };
                 let mut deps = Vec::new();
                 collect_deps(&expr, &mut deps);
                 raw_internals.push((name, is_complex, expr, deps));
@@ -395,6 +480,13 @@ pub(crate) fn parse_parameters_with_variables(
         ones: BTreeSet::new(),
     };
     Ok((set, variables))
+}
+
+fn unresolved(parameter: &str, name: &str) -> ParameterError {
+    ParameterError::UnresolvedValueName {
+        parameter: parameter.to_owned(),
+        name: name.to_owned(),
+    }
 }
 
 fn toposort_internals(
@@ -605,6 +697,61 @@ MZ2 = Parameter(name = 'MZ2',
         let user = "Block MASS\n 23 91.1876\n".parse::<ParamCard>().unwrap();
         let vals = ps.evaluate(&user);
         assert!((vals["MZ"].re - 91.1876).abs() < 1e-10);
+    }
+
+    /// MadGraph's spellings of a free one (`9.999999e-1`) and a free zero
+    /// (`0.000001e-99`) become defaults of exactly one and zero, and the
+    /// parameter stays free: not locked to zero, not fixed at one, not merged
+    /// with its equal neighbour. Exactly 1 is fixed and exactly 0 locked, and
+    /// −1 is neither. Each half fails on its own: reading the spellings as
+    /// written leaves `a` at 0.9999999 and merges `a` with `b`; reading them as
+    /// one and zero puts `a`, `b` in `ones` and `c` in `zeros`.
+    #[test]
+    fn madgraphs_free_spellings_become_free_defaults() {
+        let src = r"
+a = Parameter(name = 'a', nature = 'external', type = 'real', value = 0.3, texname = 'a', lhablock = 'NP', lhacode = [ 1 ])
+b = Parameter(name = 'b', nature = 'external', type = 'real', value = 0.3, texname = 'b', lhablock = 'NP', lhacode = [ 2 ])
+c = Parameter(name = 'c', nature = 'external', type = 'real', value = 0.3, texname = 'c', lhablock = 'NP', lhacode = [ 3 ])
+d = Parameter(name = 'd', nature = 'external', type = 'real', value = 0.3, texname = 'd', lhablock = 'NP', lhacode = [ 4 ])
+e = Parameter(name = 'e', nature = 'external', type = 'real', value = 0.3, texname = 'e', lhablock = 'NP', lhacode = [ 5 ])
+f = Parameter(name = 'f', nature = 'external', type = 'real', value = 0.3, texname = 'f', lhablock = 'NP', lhacode = [ 6 ])
+";
+        let mut ps = parse_parameters(src).unwrap();
+        let card =
+            "Block NP\n 1 9.999999e-01\n 2 0.9999999\n 3 0.000001e-99\n 4 1.0\n 5 0\n 6 -1\n"
+                .parse::<ParamCard>()
+                .unwrap();
+        ps.apply_restrict(&card);
+
+        let defaults: Vec<(&str, f64)> = ps
+            .externals
+            .iter()
+            .map(|p| match p.nature {
+                ParamNature::External { default_value, .. } => (p.name.as_str(), default_value),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(
+            defaults,
+            [
+                ("a", 1.0),
+                ("b", 1.0),
+                ("c", 0.0),
+                ("d", 1.0),
+                ("e", 0.0),
+                ("f", -1.0)
+            ]
+        );
+        assert_eq!(ps.ones.iter().collect::<Vec<_>>(), ["d"]);
+        assert_eq!(ps.zeros.iter().collect::<Vec<_>>(), ["e"]);
+        assert!(ps.merged.is_empty(), "{:?}", ps.merged);
+
+        // Free: a card moves them, and they evaluate to their defaults without one.
+        let vals = ps.evaluate(&ParamCard::default());
+        assert_eq!((vals["a"].re, vals["c"].re), (1.0, 0.0));
+        let user = "Block NP\n 1 0.5\n 3 0.25\n".parse::<ParamCard>().unwrap();
+        let vals = ps.evaluate(&user);
+        assert_eq!((vals["a"].re, vals["c"].re), (0.5, 0.25));
     }
 
     #[test]

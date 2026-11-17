@@ -100,6 +100,20 @@ pub(crate) fn extract_str(expr: &ast::Expr) -> Option<&str> {
     }
 }
 
+/// Extract a string from an expression: a literal, or literals joined by `+`
+/// (UFO files write a long value as `'...' + '...'` across lines).
+pub(crate) fn extract_string(expr: &ast::Expr) -> Option<String> {
+    match expr {
+        ast::Expr::BinOp(ast::ExprBinOp {
+            left,
+            op: ast::Operator::Add,
+            right,
+            ..
+        }) => Some(extract_string(left)? + &extract_string(right)?),
+        _ => extract_str(expr).map(str::to_owned),
+    }
+}
+
 /// Extract an integer constant from an expression, handling unary negation.
 pub(crate) fn extract_int(expr: &ast::Expr) -> Option<i64> {
     use num_traits::ToPrimitive;
@@ -264,9 +278,7 @@ impl<'a> Fields<'a> {
 
     /// A required string literal.
     pub(crate) fn str(&self, field: &'static str) -> Result<String, FieldError> {
-        extract_str(self.required(field)?)
-            .map(str::to_owned)
-            .ok_or_else(|| self.malformed(field, "a string"))
+        extract_string(self.required(field)?).ok_or_else(|| self.malformed(field, "a string"))
     }
 
     /// A required integer literal.
