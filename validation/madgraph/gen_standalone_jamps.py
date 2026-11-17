@@ -499,9 +499,8 @@ ROWS = {
         # u-channel stop. Widths are zero for the spacelike stop.
         Row("gg_to_t1t1x_mssm", "g g > t1 t1~", (21, 21), (1000006, -1000006), 2000.0, 3,
             5301, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True),
-        # The quark-initiated channel, with no contact: the s-channel gluon alone in
-        # QCD, beside the electroweak s-channel photon and Z and the t-channel
-        # gluino and neutralinos.
+        # The quark-initiated channel, with no contact: at MadGraph's default
+        # coupling orders the s-channel gluon is its one graph.
         Row("uux_to_t1t1x_mssm", "u u~ > t1 t1~", (2, -2), (1000006, -1000006), 2000.0, 3,
             5302, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True),
     ]

@@ -209,10 +209,10 @@ fn convert_expr(
     slot_index: &[Idx],
     counter: &mut Idx,
 ) -> Result<(i64, Vec<ColorTensor>), ColorAlgebraError> {
+    let atoms = merge_generator_chains(expr)?;
     let mut internal: HashMap<i32, Idx> = HashMap::new();
     let mut map = |idx: i32| map_index(idx, slot_index, &mut internal, counter);
-    let tensors = expr
-        .atoms
+    let tensors = atoms
         .iter()
         .map(|atom| match atom {
             ColorAtom::T(adj, i, j) => {
@@ -360,6 +360,58 @@ fn check_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgeb
     Ok(())
 }
 
+/// An expression with every generator chain [`check_generator_chains`] accepts
+/// merged into the single `T` it writes: `T(a,i,-1)·T(b,-1,-2)·…·T(z,-n,j)`
+/// becomes `T(a,b,…,z,i,j)`, the adjoint indices in matrix-product order. Every
+/// other atom is kept as it is, in order, with the merged chains after them.
+///
+/// **The chain is crossed as one generator, not link by link.** The crossing in
+/// [`convert_expr`] exchanges which of a `T`'s two *slots* MadGraph reads as the
+/// fundamental end, and a summed index inside one vertex is not a slot: MadGraph
+/// reads `T(1,-1,3)*T(2,4,-1)` as `(T^2 T^1)` between its two slots taken the other
+/// way round, the key `T(2,1,3,4)` of `g g > t1 t1~`, with the adjoint order kept.
+/// Transposing each link instead swaps the summed index's ends as well and reverses
+/// the product, `T(1,2,3,4)`, the other structure's flow. A summed index between two
+/// vertices is a propagator slot at both ends, which MadGraph's crossing does
+/// exchange, so a chain built across vertices is transposed link by link.
+fn merge_generator_chains(expr: &ColorExpr) -> Result<Vec<ColorAtom>, ColorAlgebraError> {
+    let linked = |atom: &ColorAtom| matches!(atom, ColorAtom::T(_, i, j) if *i < 0 || *j < 0);
+    let mut out: Vec<ColorAtom> = expr.atoms.iter().filter(|a| !linked(a)).cloned().collect();
+    let links: Vec<(&[i32], i32, i32)> = expr
+        .atoms
+        .iter()
+        .filter_map(|atom| match atom {
+            ColorAtom::T(adj, i, j) if *i < 0 || *j < 0 => Some((adj.as_slice(), *i, *j)),
+            _ => None,
+        })
+        .collect();
+    let mut merged = 0;
+    for &(adj, start, mut next) in &links {
+        if start < 0 {
+            continue;
+        }
+        let mut chain = adj.to_vec();
+        merged += 1;
+        while next < 0 {
+            let Some(&(adj, _, j)) = links.iter().find(|&&(_, i, _)| i == next) else {
+                return Err(ColorAlgebraError::Unsupported(format!(
+                    "summed fundamental index {next} ends a generator chain in '{expr}'"
+                )));
+            };
+            chain.extend_from_slice(adj);
+            next = j;
+            merged += 1;
+        }
+        out.push(ColorAtom::T(chain, start, next));
+    }
+    if merged != links.len() {
+        return Err(ColorAlgebraError::Unsupported(format!(
+            "a closed loop of generators over summed fundamental indices (a trace) in '{expr}'"
+        )));
+    }
+    Ok(out)
+}
+
 /// Every index an atom carries, in any position.
 fn atom_indices(atom: &ColorAtom) -> Vec<i32> {
     match atom {
@@ -393,10 +445,8 @@ fn atom_indices(atom: &ColorAtom) -> Vec<i32> {
 /// in the same position, and a closed loop of generators (`T(a,-1,-2)·T(b,-2,-1)`),
 /// which is a trace and is not read from `T` atoms.
 ///
-/// The chain needs no handling of its own past this check: [`convert_expr`]
-/// transposes each link and allocates the summed index once, so the links
-/// contract into `(T^z … T^a)_{ji}` exactly as one `T` with the whole adjoint
-/// chain would, and the algebra engine merges them.
+/// [`merge_generator_chains`] then reads each chain as the one generator product
+/// it is before the crossing is applied.
 fn check_generator_chains(expr: &ColorExpr) -> Result<(), ColorAlgebraError> {
     let links: Vec<(i32, i32)> = expr
         .atoms
@@ -441,7 +491,9 @@ fn check_generator_chains(expr: &ColorExpr) -> Result<(), ColorAlgebraError> {
         on_chains += 1;
         while next < 0 {
             let Some(&(_, j)) = links.iter().find(|&&(i, _)| i == next) else {
-                return refuse(format!("summed fundamental index {next} ends a generator chain"));
+                return refuse(format!(
+                    "summed fundamental index {next} ends a generator chain"
+                ));
             };
             next = j;
             on_chains += 1;
@@ -733,11 +785,23 @@ mod tests {
             ("T(1,-1,-2)*T(2,-2,-1)", &[8, 8, -3, 3][..], "closed loop"),
             ("T(1,-1,-1)", &[8, -3, 3][..], "closed loop"),
             // The same position twice: two 3̄ indices contracted.
-            ("T(1,-1,3)*T(2,-1,4)", &[8, 8, -3, -3][..], "summed fundamental index -1"),
+            (
+                "T(1,-1,3)*T(2,-1,4)",
+                &[8, 8, -3, -3][..],
+                "summed fundamental index -1",
+            ),
             // Shared with a baryonic invariant.
-            ("T(1,2,-1)*Epsilon(-1,3,4)", &[8, 3, 3, 3][..], "summed fundamental index -1"),
+            (
+                "T(1,2,-1)*Epsilon(-1,3,4)",
+                &[8, 3, 3, 3][..],
+                "summed fundamental index -1",
+            ),
             // Shared with an adjoint position.
-            ("T(-1,2,-2)*T(1,-2,-1)", &[8, 3, -3][..], "summed fundamental index -1"),
+            (
+                "T(-1,2,-2)*T(1,-2,-1)",
+                &[8, 3, -3][..],
+                "summed fundamental index -1",
+            ),
         ];
         for (s, colors, why) in cases {
             let err = check_generator_chains(&expr(s, colors)).unwrap_err();
@@ -745,23 +809,36 @@ mod tests {
         }
     }
 
-    /// A two-link chain converts into the conjugate of the matrix element it
-    /// writes, as a single generator does: `T(1,-1,3)*T(2,4,-1)` is
-    /// `(T^2 T^1)_{4,3}`, and the crossing reads it as `(T^1 T^2)_{3,4}`, one
-    /// `T` over both adjoint legs with the chain reversed.
+    /// A two-link chain is crossed as the one generator product it writes:
+    /// `T(1,-1,3)*T(2,4,-1)` is `(T^2 T^1)` from slot 4 to slot 3, and the crossing
+    /// exchanges its two ends and keeps the adjoint order, `T(2,1,3,4)`, the flow
+    /// MadGraph's `matrix.f` for `g g > t1 t1~` gives this structure. Crossing link
+    /// by link would give the other flow, `T(1,2,3,4)`.
     #[test]
-    fn a_generator_chain_converts_to_its_conjugate() {
+    fn a_generator_chain_crosses_as_one_generator() {
         let mut counter = -1;
-        let (coeff, tensors) =
-            convert_expr(&expr("T(1,-1,3)*T(2,4,-1)", &GGSS), &[1, 2, 3, 4], &mut counter)
-                .unwrap();
+        let (coeff, tensors) = convert_expr(
+            &expr("T(1,-1,3)*T(2,4,-1)", &GGSS),
+            &[1, 2, 3, 4],
+            &mut counter,
+        )
+        .unwrap();
         assert_eq!(coeff, 1);
         let reduced = ColorFactor(vec![ColorString::new(tensors)]).full_simplify();
         assert_eq!(reduced.0.len(), 1, "{reduced:?}");
         assert_eq!(
             reduced.0[0].to_immutable(),
-            vec![(TensorKind::T, vec![1, 2, 3, 4])]
+            vec![(TensorKind::T, vec![2, 1, 3, 4])]
         );
         assert_eq!(reduced.0[0].coeff, ColorCoeff::one());
+        let single = convert_expr(&expr("T(2,1,4,3)", &GGSS), &[1, 2, 3, 4], &mut -1).unwrap();
+        assert_eq!(
+            ColorFactor(vec![ColorString::new(single.1)])
+                .full_simplify()
+                .0[0]
+                .to_immutable(),
+            reduced.0[0].to_immutable(),
+            "the chain and the single generator it writes cross alike"
+        );
     }
 }
