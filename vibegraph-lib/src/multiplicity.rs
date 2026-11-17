@@ -195,11 +195,10 @@ pub fn multiplicity_groups(
 /// on-shell vetoes of the card's `forbidden` s-channels (PDG codes,
 /// [`forbidden_onshell_ids`]).
 ///
-/// A phase space of single-particle final states (`p p > z`) has no map to
-/// integrate it ([`ProtonError::OneBodyFinalState`]) and refuses the card, unless
-/// the cuts zero every one of its subprocesses outright: then it contributes
-/// nothing, as in MadGraph, and is left out of the sum with a warning. A card
-/// left with no phase space at all is refused.
+/// A phase space of single-particle final states (`p p > z`) whose cuts zero
+/// every one of its subprocesses outright ([`ProtonError::OneBodyCutToZero`])
+/// contributes nothing, as in MadGraph, and is left out of the sum with a
+/// warning. A card left with no phase space at all is refused.
 pub fn multiplicity_groups_of(
     sets: Vec<DiagramSet>,
     forbidden: &[i64],
@@ -225,10 +224,7 @@ pub fn multiplicity_groups_of(
         for part in parts {
             let groups = match derive_flavor_groups(part, model, evaluated, rc) {
                 Ok(groups) => groups,
-                Err(ProtonError::OneBodyFinalState {
-                    process,
-                    cut_to_zero: true,
-                }) => {
+                Err(ProtonError::OneBodyCutToZero { process }) => {
                     tracing::warn!(
                         "{process} and the other single-particle final states of its phase \
                          space contribute nothing: the outgoing particle has zero transverse \
@@ -303,17 +299,24 @@ pub fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), String> {
 }
 
 /// Refuse a subprocess with a single outgoing particle on a path that has one
-/// phase space: fixed-energy beams and decays. At fixed `√s` a `2 → 1` is a
-/// `δ(s − M²)` in the beam energy, and the flat and diagram maps both draw at
-/// least two outgoing momenta.
+/// phase space: fixed-energy beams and decays.
+///
+/// At a fixed `√s` the one-body phase space is `2π δ(s − M²)`, a distribution
+/// in the beam energy and not a number: the cross section is infinite at
+/// `√s = M` and zero elsewhere, and only a sum over a spread of `s` (parton
+/// densities, a beam spectrum) integrates it. MadEvent has no answer either: its
+/// grid has `3·1 − 4 = −1` dimensions there, the survey's first iteration is
+/// `NaN` and the run reports a zero cross section. A `1 → 1` decay has no
+/// phase space either.
 pub fn refuse_one_body_final_state(sets: &[DiagramSet]) -> Result<(), String> {
     match sets
         .iter()
         .find(|s| !s.diagrams.is_empty() && s.particles_out.len() < 2)
     {
         Some(set) => Err(format!(
-            "{} -> {} has a single outgoing particle, whose phase space is a one-body δ(s − M²); \
-             vibegraph has no one-body phase space to integrate it over",
+            "{} -> {} has a single outgoing particle, whose phase space at a fixed beam energy \
+             is 2π δ(s − M²): the cross section is a distribution in the beam energy, not a \
+             number. Proton beams (lpp = 1) integrate it over the parton densities",
             set.particles_in.join(" "),
             set.particles_out.join(" ")
         )),
@@ -1434,34 +1437,52 @@ mod tests {
         .expect("run card")
     }
 
-    /// A single outgoing particle is refused by name before the grouping probe
-    /// draws anything: RAMBO, which the probe draws outgoing momenta with, has
-    /// nothing to draw for one particle, and before the refusal existed it
-    /// panicked there. With no cut on the particle the refusal stands for the
-    /// whole card, since its one-body part would contribute.
+    /// A single outgoing particle decomposes like any other final state, at the
+    /// one configuration it can reach, and a card that sums it with a jet keeps
+    /// both parts: `p p > z` with no cut on the `Z` contributes, so nothing is
+    /// left out of the sum.
     #[test]
-    fn a_single_outgoing_particle_is_refused_before_the_probe() {
+    fn a_single_outgoing_particle_decomposes_and_joins_the_sum() {
         let model = sm_model(SMRestrict::Default);
         let evaluated = EvaluatedModel::from_model(model.clone());
-        let refused = derive_flavor_groups(
+        let groups = derive_flavor_groups(
             enumerate("generate p p > z\n", &model),
             &model,
             &evaluated,
             &card(),
-        );
-        match refused {
-            Err(ProtonError::OneBodyFinalState {
-                cut_to_zero: false, ..
-            }) => {}
-            Err(e) => panic!("refused for the wrong reason: {e}"),
-            Ok(_) => panic!("a 2 -> 1 decomposition must be refused"),
+        )
+        .expect("a 2 -> 1 decomposes");
+        // Up- and down-type quarks couple to the Z differently: two groups.
+        assert_eq!(groups.groups().len(), 2);
+        for g in groups.groups() {
+            assert_eq!(g.final_masses().len(), 1);
         }
-        match one_body_groups(ONE_BODY_AND_JET, &card()) {
-            Err(e) => {
-                assert!(e.contains("single outgoing particle"), "{e}");
-                eprintln!("p p > z, add process p p > z j: {e}");
-            }
-            Ok(_) => panic!("an uncut one-body part refuses the card"),
+        let MultiplicityGroups { groups, .. } =
+            one_body_groups(ONE_BODY_AND_JET, &card()).expect("both parts decompose");
+        let legs: Vec<usize> = groups
+            .iter()
+            .map(|part| part.groups()[0].final_masses().len())
+            .collect();
+        assert_eq!(legs, [1, 2]);
+    }
+
+    /// A massless single outgoing particle sits at `ŝ = 0`, where no density is
+    /// defined, and is refused by name where no `pT` minimum on it zeroes it
+    /// first.
+    #[test]
+    fn a_massless_single_outgoing_particle_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let uncut = RunCard::parse("  1 = lpp1\n  1 = lpp2\n  0.0 = pta\n").expect("run card");
+        match derive_flavor_groups(
+            enumerate("generate u u~ > a\n", &model),
+            &model,
+            &evaluated,
+            &uncut,
+        ) {
+            Err(ProtonError::MasslessOneBody { .. }) => {}
+            Err(e) => panic!("refused for the wrong reason: {e}"),
+            Ok(_) => panic!("a massless 2 -> 1 must be refused"),
         }
     }
 
@@ -1485,12 +1506,14 @@ mod tests {
             Ok(_) => panic!("a card of nothing but a cut-to-zero part is refused"),
         }
         // `pT > 0` is no cut on a `pT = 0` particle only when the minimum is zero.
-        assert!(one_body_groups(ONE_BODY_AND_JET, &z_pt_card(0.0)).is_err());
+        let MultiplicityGroups { groups, .. } = one_body_groups(ONE_BODY_AND_JET, &z_pt_card(0.0))
+            .expect("an uncut one-body part is kept");
+        assert_eq!(groups.len(), 2);
     }
 
     /// The paths with one phase space (fixed-energy beams, decays) refuse a
-    /// single outgoing particle by name, where they too would otherwise reach
-    /// RAMBO with one momentum to draw.
+    /// single outgoing particle by name: its cross section there is a `δ` in the
+    /// beam energy.
     #[test]
     fn fixed_energy_refuses_a_single_outgoing_particle() {
         let model = sm_model(SMRestrict::Default);

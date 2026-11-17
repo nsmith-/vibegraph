@@ -5,9 +5,11 @@
 ## Session Brief
 
 * [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
+* [K-P1: one-body final-state phase space](K-P1.md) - Integrate 2 → 1 processes (p p > z, e+ e- > z) through a δ(ŝ − M²) one-body phase space following MadGraph's genps.f τ = m²/s, and remove the OneBodyFinalState refusals.
 * [K-X1: split subprocess groups by outgoing masses](K-X1.md) - Let flavour grouping split subprocesses whose outgoing masses differ, as it already splits incoming masses, so ZPrimeToTT-type cards integrate; σ against MadGraph at ≥ 5 seeds.
 
 ## Session Report
 
 * [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
+* [K-P1 report: one-body final-state phase space](K-P1-report.md) - 2 → 1 processes at proton beams integrate through a δ(ŝ − M²) one-body map (τ = M²/s, as genps.f) and match MadGraph (p p > z: pull −1.44 over 20 against 5 seeds); on fixed-energy beams MadGraph returns zero, and vibegraph keeps a named refusal.
 * [K-X1 report: split subprocess groups by outgoing masses](K-X1-report.md) - Flavour grouping now splits subprocesses by their outgoing masses slot by slot, after the content pairing of legs, as MadGraph's find_process_classes does; cards that grouped before are bit for bit, and ZPrimeToTT integrates, with σ against MadGraph at 5 seeds each.
