@@ -83,11 +83,12 @@ use crate::assets;
 use crate::error::{err, pdf_error_kind, CliError, ErrorKind};
 use crate::network::NetworkPolicy;
 use crate::output::{
-    self, ChannelKeyObject, ChannelResult, ConfigurationResult, IntegrateResult, ModelRef, MuF,
-    MultiplicityResult,
+    self, ChannelKeyObject, ChannelResult, CheckResult, ConfigurationResult, IntegrateResult,
+    ModelRef, MuF, MultiplicityResult,
 };
 use crate::parallel::ParallelArgs;
 use crate::si::{fmt_si_measured, GEV, PICOBARN};
+use crate::signals;
 use crate::tui;
 /// Artifact filename written inside the output directory.
 const GRID_FILENAME: &str = "grid.bin.zst";
@@ -442,6 +443,15 @@ pub(crate) struct IntegrateArgs {
     /// Overwrite an existing artifact.
     #[arg(long)]
     pub(crate) force: bool,
+
+    /// Check the run and stop before sampling: read every card, resolve the
+    /// model and the parton densities, enumerate, build the flavour groups, the
+    /// cuts and the phase-space guards, then print `check ok` or fail with the refusal
+    /// the full run would have ended in. No point is drawn and no artifact is
+    /// written. The refusal is the same object `integrate` emits, so a run that
+    /// passes the check is not refused later for any reason the check looks at.
+    #[arg(long)]
+    pub(crate) check: bool,
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
@@ -1015,6 +1025,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let amplitude_probe = amplitude_probe::measure(&sets, &model, &evaluated)
         .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
 
+    let process_label = process.clone();
     let output = match rc.beam_mode() {
         _ if parsed.is_decay() => {
             integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
@@ -1038,6 +1049,20 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         BeamMode::FixedEnergy => {
             integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
         }
+    };
+
+    let Some(output) = output else {
+        output::text_line(format_args!("check ok: {process_label}"));
+        output::result(&CheckResult {
+            check: "ok",
+            process: process_label,
+            model: ModelRef {
+                label: model_id.label(),
+                digest: model_id.digest.clone(),
+            },
+            seed,
+        });
+        return Ok(());
     };
 
     // A run stopped before its warm-up finished kept no iteration, so its terms
@@ -1220,7 +1245,12 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         .write_to_path(&out_path, args.force)
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
     output::text_line(format_args!("wrote {}", out_path.display()));
-    output::result(&result_object(&artifact, &out_path, observable)?);
+    output::result(&result_object(
+        &artifact,
+        &out_path,
+        observable,
+        Some(conv),
+    )?);
 
     Ok(())
 }
@@ -1232,6 +1262,7 @@ pub(crate) fn result_object(
     artifact: &IntegrateArtifact,
     path: &Path,
     observable: Observable,
+    run: Option<&ConvergenceReport>,
 ) -> Result<IntegrateResult, CliError> {
     Ok(IntegrateResult {
         process: artifact.process.clone(),
@@ -1246,6 +1277,10 @@ pub(crate) fn result_object(
         chi2_per_dof: artifact.chi2_per_dof,
         mu_f: FactorizationScale::recorded_in(artifact)?.object(),
         seed: artifact.seed,
+        stop_reason: run.map(|r| r.stop.into()),
+        target_rel: run.and_then(|r| r.target_rel),
+        rel_err_quoted: run.map(|r| r.achieved_rel),
+        rel_err_scaled: run.map(|r| r.scaled_rel),
         multiplicities: artifact
             .multiplicities
             .iter()
@@ -1412,7 +1447,7 @@ fn integrate_proton(
     seed: u64,
     network: NetworkPolicy,
     systematics: Option<&VariationRequest>,
-) -> Result<RunOutput, CliError> {
+) -> Result<Option<RunOutput>, CliError> {
     let tiers = assets::pdf_tiers();
     let fetch = assets::pdf_fetch(network);
     let loaded = load_for_run_card(rc, &tiers, &fetch)
@@ -1482,7 +1517,7 @@ fn integrate_hadronic(
     process: String,
     seed: u64,
     systematics: Option<&VariationRequest>,
-) -> Result<RunOutput, CliError> {
+) -> Result<Option<RunOutput>, CliError> {
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
@@ -1550,12 +1585,17 @@ fn integrate_hadronic(
 
     tui::state::note_channels(integ.channel_count());
 
+    let budget = args.budget()?;
+    if args.check {
+        return Ok(None);
+    }
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
 
     integ.clear_census();
+    signals::sampling_started();
     let (per_channel, result, convergence) =
-        integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+        integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
     let census = integ.census();
     let multiplicities = multiplicity_totals(&integ, &groups, &per_channel, convergence.iterations);
     if multiplicities.len() > 1 {
@@ -1580,7 +1620,7 @@ fn integrate_hadronic(
             bank_channel(key, c, Some(sampler), members, Observable::CrossSection)
         })
         .collect();
-    Ok(RunOutput {
+    Ok(Some(RunOutput {
         process,
         observable: Observable::CrossSection,
         pdf: pdf_input,
@@ -1596,7 +1636,7 @@ fn integrate_hadronic(
         census,
         multiplicities,
         configurations,
-    })
+    }))
 }
 
 /// Each part's own cross section, from its channels' terms.
@@ -1661,7 +1701,7 @@ fn integrate_fixed_energy(
     rc: &RunCard,
     process: String,
     seed: u64,
-) -> Result<RunOutput, CliError> {
+) -> Result<Option<RunOutput>, CliError> {
     refuse_mixed_multiplicity(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_one_body_final_state(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_exchanged_beam_orderings(sets).map_err(|e| err(ErrorKind::Process, e))?;
@@ -1725,6 +1765,10 @@ fn integrate_fixed_energy(
         .use_running_coupling(&subprocess_diagrams(sets), model, evaluated, rc)
         .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
+    let budget = args.budget()?;
+    if args.check {
+        return Ok(None);
+    }
     let n_survey = survey_points(args.neval);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
     // A process with no diagram to map keeps flat RAMBO, which draws its angles
@@ -1732,8 +1776,9 @@ fn integrate_fixed_energy(
     let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
     integ.clear_census();
+    signals::sampling_started();
     let (per_channel, result, convergence) =
-        integ.adapt_grids_budget(args.budget()?, args.allocation(), seed, &tui::stop_signal());
+        integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
     let census = integ.census();
     let (configurations, members) = config_share::fixed_energy(
         sets,
@@ -1742,7 +1787,7 @@ fn integrate_fixed_energy(
         &per_channel,
         initial.observable().per_natural_unit(),
     );
-    Ok(RunOutput {
+    Ok(Some(RunOutput {
         process,
         observable: initial.observable(),
         pdf: PdfInput::None,
@@ -1773,7 +1818,7 @@ fn integrate_fixed_energy(
         census,
         multiplicities: Vec::new(),
         configurations,
-    })
+    }))
 }
 
 #[cfg(test)]
