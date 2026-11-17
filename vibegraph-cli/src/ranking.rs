@@ -167,7 +167,7 @@ struct DiagramEntry {
     id: String,
     set: String,
     configuration: Option<String>,
-    coupling_orders: BTreeMap<String, usize>,
+    coupling_orders: BTreeMap<String, i64>,
     svg: Option<String>,
 }
 

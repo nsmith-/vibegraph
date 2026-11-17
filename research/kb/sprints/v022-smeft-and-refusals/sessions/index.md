@@ -5,7 +5,9 @@
 ## Session Brief
 
 * [K-B1: batch-safe integrate and enumerate totals](K-B1.md) - SIGTERM handling and a stop reason in the integrate result, enumerate progress with a total, a check-only integrate mode, atomic generate output, the LHE extension honoured, and default threads from batch CPU limits.
+* [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
 
 ## Session Report
 
 * [K-B1 report: batch-safe integrate and enumerate totals](K-B1-report.md) - SIGTERM as a stop request, stop_reason and reached error in the integrate result, integrate --check, atomic and compressed generate output, enumerate progress with a total, and default threads from the affinity mask, cgroup quota and OMP_NUM_THREADS.
+* [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.

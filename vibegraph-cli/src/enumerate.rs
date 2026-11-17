@@ -163,7 +163,7 @@ struct SetSummary {
 
 #[derive(Debug, Serialize)]
 struct OrderCount {
-    orders: BTreeMap<String, usize>,
+    orders: BTreeMap<String, i64>,
     diagrams: usize,
 }
 
@@ -178,7 +178,7 @@ struct DiagramSummary {
     id: String,
     propagators: Vec<PropagatorSummary>,
     vertices: Vec<String>,
-    coupling_orders: BTreeMap<String, usize>,
+    coupling_orders: BTreeMap<String, i64>,
     configuration: Option<String>,
     svg: Option<String>,
 }
@@ -297,8 +297,8 @@ fn remove_earlier_drawings(svg: &Path) -> Result<(), CliError> {
 
 /// The coupling-order histogram of `set`: each distinct order map, with how many
 /// diagrams carry it, in the maps' order.
-fn order_histogram(orders: &[BTreeMap<String, usize>]) -> Vec<OrderCount> {
-    let mut counts: BTreeMap<&BTreeMap<String, usize>, usize> = BTreeMap::new();
+fn order_histogram(orders: &[BTreeMap<String, i64>]) -> Vec<OrderCount> {
+    let mut counts: BTreeMap<&BTreeMap<String, i64>, usize> = BTreeMap::new();
     for o in orders {
         *counts.entry(o).or_default() += 1;
     }
