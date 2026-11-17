@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-X1: split subprocess groups by outgoing masses](K-X1.md) - Let flavour grouping split subprocesses whose outgoing masses differ, as it already splits incoming masses, so ZPrimeToTT-type cards integrate; σ against MadGraph at ≥ 5 seeds.
+
+## Session Report
+
+* [K-X1 report: split subprocess groups by outgoing masses](K-X1-report.md) - Flavour grouping now splits subprocesses by their outgoing masses slot by slot, after the content pairing of legs, as MadGraph's find_process_classes does; cards that grouped before are bit for bit, and ZPrimeToTT integrates, with σ against MadGraph at 5 seeds each.

@@ -39,7 +39,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 5 | negative coupling order (onia_sm) | 2 | [negative-ufo-coupling-orders-refused](../backlog/feature/negative-ufo-coupling-orders-refused.md) | medium |
 | 6 | coupling order as a Python expression (dim6top) | 2 | [ufo-coupling-order-expressions-refused](../backlog/feature/ufo-coupling-order-expressions-refused.md) | medium |
 | 7 | particle charge referencing a parameter | 2 | [ufo-particle-attribute-parameter-references-refused](../backlog/feature/ufo-particle-attribute-parameter-references-refused.md) | medium |
-| 8 | subprocesses with different outgoing masses | 2 | [mixed-outgoing-mass-subprocesses-not-split](../backlog/feature/mixed-outgoing-mass-subprocesses-not-split.md) | medium |
+| 8 | subprocesses with different outgoing masses | 2 | `mixed-outgoing-mass-subprocesses-not-split`, closed ([K-X1 report](../sprints/v022-smeft-and-refusals/sessions/K-X1-report.md)) | medium |
 | 9 | decay chain without nested parentheses | 2 | [decay-chain-without-nested-parentheses-refused](../backlog/feature/decay-chain-without-nested-parentheses-refused.md) | medium |
 | 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md) | medium |
 | 11 | polarised leg in a non-default `me_frame` | 2 | [me-frame-other-than-partonic-cm-refused](../backlog/feature/me-frame-other-than-partonic-cm-refused.md) | medium |
