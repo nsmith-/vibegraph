@@ -251,13 +251,13 @@ fn within_orders(diagram: &Diagram, bounds: &[AmplitudeOrder], model: &UFOModel)
     let orders = diagram.coupling_orders(model);
     let weighted: i64 = orders
         .iter()
-        .map(|(name, &n)| n as i64 * model.order_hierarchy.get(name).copied().unwrap_or(0) as i64)
+        .map(|(name, &n)| n * model.order_hierarchy.get(name).copied().unwrap_or(0) as i64)
         .sum();
     bounds.iter().all(|b| {
         let have = if b.name == "WEIGHTED" {
             weighted
         } else {
-            orders.get(&b.name).map_or(0, |&n| n as i64)
+            orders.get(&b.name).copied().unwrap_or(0)
         };
         have <= b.value
     })

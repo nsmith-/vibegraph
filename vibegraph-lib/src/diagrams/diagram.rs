@@ -413,13 +413,13 @@ impl Diagram {
     }
 
     /// The diagram's coupling orders: per order name, the sum over its vertices of
-    /// the powers each vertex's interaction carries. An order no vertex carries is
-    /// absent rather than zero.
+    /// the powers each vertex's interaction carries, with their sign. An order no
+    /// vertex carries is absent rather than zero; one whose powers cancel is zero.
     ///
     /// A vertex carries one coupling-order tuple, read off any one of its couplings:
     /// the model splits a vertex whose couplings differ in their orders into one
     /// interaction per tuple.
-    pub fn coupling_orders(&self, model: &UFOModel) -> BTreeMap<String, usize> {
+    pub fn coupling_orders(&self, model: &UFOModel) -> BTreeMap<String, i64> {
         let mut orders = BTreeMap::new();
         for vertex in &self.vertices {
             let def = model.vertex_def(vertex.interaction);
