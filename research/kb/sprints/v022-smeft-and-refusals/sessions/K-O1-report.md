@@ -97,8 +97,125 @@ bound a refusal quotes.
 
 ## Oracles
 
-ORACLES-PLACEHOLDER
+Scratch work: `/home/user/wt/sprintk-negative-orders-mg/`. `vg/count.sh` runs
+`vibegraph enumerate` per process; `ko1-mg-counts.sh` runs one pinned-MadGraph
+`generate` per process (`mgcounts/ko1-counts.txt`); `standalone/ko1_rows.py`
+banks standalone tables through `gen_standalone_jamps.py` with scratch rows, a
+scratch Rust test (kept beside them as `ko1_scratch_amps.rs`, never committed)
+dumps this side's per-diagram values at the same points and helicities, and
+`standalone/ko1_match.py` pairs them graph by graph.
+
+**Diagram counts, 32 processes, all equal to MadGraph.** The 22 toy processes
+are the table in `tests/negative_orders.rs` (three of them MadGraph refusals).
+SMEFT_alpha, unrestricted:
+
+| process | MadGraph | vibegraph |
+|---|---|---|
+| `h h > h h NP=1` | 31 | 31 |
+| `h h > h h` | 16 | 16 |
+| `z z > h h NP=1` | 78 | 78 |
+| `z z > h h` | 6 | 6 |
+| `e+ e- > z h h NP=1` | 838 | 838 |
+| `e+ e- > z h h` | 126 | 126 |
+| `e+ e- > z h h QED=2 NP=1` | 168 | 168 |
+| `e+ e- > z h h QED=1 NP=1` | 8 | 8 |
+| `g g > h h NP=1` | 18 | 18 |
+| `e+ e- > mu+ mu-` | 10 | 10 |
+
+and under the σ card's restriction (below): `e+ e- > z h h NP=1` 334/334,
+`e+ e- > z h h` 44/44, `e+ e- > z h h QED=1 NP=1` 6/6.
+
+Non-vacuity, measured: with the signed *total* as the filter (commit `ee1eb01`)
+eight toy rows differed (`fw~ fw > xw xw QED=0` 1 against MadGraph's refusal,
+`WEIGHTED=1` likewise, `fw~ fw > xw xw xw QED=1` 15/12, `QED=0` 3/refused,
+`xw xw > xw xw QED=0` 9/6, `xw xw > xw xw xw QED=1` 115/94,
+`vw vw > xw xw xw QED=1` 15/12, `fw~ fw > fw~ fw xw xw QED=2` 52/38), and so
+did the automatic search on SMEFT_alpha (`h h > h h` 22/16, `z z > h h` 8/6).
+All agree after `de997b7`.
+
+**Per-diagram × per-helicity complex amplitudes against MadGraph standalone.**
+SMEFT_alpha's default card sets every Wilson coefficient to zero, which leaves
+every NP diagram at exactly zero; both sides set `NEWCOUP` 1-15 to distinct
+values between ±0.52 and ±2.9 (Λ = 1 TeV).
+
+| process | graphs paired 1:1 | global G | worst graph / largest | worst total / largest |
+|---|---|---|---|---|
+| toy `fw~ fw > xw xw` (3 points × 4 helicities) | 4/4 | −i, \|G\|−1 = 0 | 3.0e-16 | 5.2e-16 |
+| SMEFT_alpha `z z > h h NP<=1` (3 × 9, zero widths) | 78/78 | +i, \|G\|−1 = 1.1e-11 | 2.9e-11 | 1.4e-10 |
+| SMEFT_alpha `e+ e- > z h h NP<=1` (2 × 12) | 838/838 | +i, \|G\|−1 = −2.1e-11 | 1.2e-10 | 2.3e-10 |
+| the same at 200 RAMBO points | 838/838 | +i, \|G\|−1 = −2.4e-11 | 1.8e-10 | 1.9e-10 |
+
+Every graph off by more than 1e-12 on its own scale is off by a modulus factor of
+exactly 1 − 1.22e-8 per rounded coupling (2.44e-8 for two), phase exact: the
+seven-digit coupling literals MadGraph's Fortran writes, the class of `GC_303`.
+MadGraph graphs of 1e-17 to 1e-19 that are exactly zero here are cancellation
+residues. The vev-insertion graph of `z z > h h` (|amp| up to 0.377) agrees to
+1.5e-15 on its own scale.
+
+**σ (substituting for GluGluH_HToUpsilon).** The Upsilon gridpacks' model is
+`onia_sm`; it is not in the CMS model store and its card was out of reach (the
+`cms-sw/genproductions` repository is not indexed by code search and could not
+be attached here). In its place: SMEFT_alpha restricted by a card with
+cHBox = −0.52, cHDD = 0.69, cH = −0.86 and every other coefficient zero
+(`SMEFT_alpha_UFO-ko1`), `e+ e- > z h h NP=1` at √s = 1 TeV, MadGraph's default
+run card for it, the restriction's own parameters on both sides.
+
+- MadGraph (MadEvent, `nb_core 1`): **117.07 ± 0.149 ab** (`results.dat`
+  `0.11707E-03 0.14859E-06` pb).
+- vibegraph, five seeds (default convergence, target 0.1%): 116.933 ± 0.080,
+  116.979 ± 0.080, 116.955 ± 0.078, 116.800 ± 0.078, 116.986 ± 0.080 ab.
+  Unweighted mean **116.931**, seed spread 0.076, χ²/dof 0.94; mean − MadGraph =
+  −0.139 ab (−0.12%), pull −0.91 against the error of the mean and MadGraph's
+  error combined. About 32 s per seed.
+- What the vev insertion carries here: with cH moved to 0.17874 (its only
+  entries in this process are the `{NP: 1, QED: -1}` coupling `GC_5284`, set to
+  zero by that value; `dlam` otherwise enters only the four-Higgs `GC_5181`),
+  one seed gives 97.402 ± 0.066 ab: the vev-insertion diagrams raise σ by 20%
+  of the no-insertion value, about 130 times the comparison's resolution. At
+  `NP=0` (one seed) σ = 119.76 ± 0.08 ab.
+
+**Banked rows.** `cargo test --workspace`: 63 suites, 2117 passed, 0 failed,
+27 ignored (the first attempt died on a full disk and was rerun).
+`cargo clippy --workspace --all-targets -- -D warnings` and
+`cargo fmt --all --check` are clean. `validate.sh --skip-deps`: VALIDATE-PLACEHOLDER
+
+**What each oracle cannot see.** The counts check numbers, not the diagram sets:
+two compensating errors (one diagram dropped, another kept) would pass; the
+per-diagram oracle closes that for the three processes it covers. The per-diagram
+pairing is free in its global phase and pairs by best match, so it cannot see a
+swap between two diagrams with identical values at every banked point. The toy
+is a single-flow, colourless model: colour and the gluon-free trial are
+exercised only by the SMEFTsim `e+ e- > z g g` test and the banked SM rows. The
+σ comparison has 0.15% resolution and sees the vev diagrams only through their
+interference on one card. The reduction-order rule is pinned by counts on trees
+of up to six external legs; a rooting difference that changes no count there
+is invisible.
 
 ## Found
 
-FOUND-PLACEHOLDER
+1. **The SMEFT_alpha oracles are scratch, not banked.** Per-diagram tables
+   and σ above live in the scratch directory. Closing: vendor SMEFT_alpha (or
+   a SMEFTsim v2 A-model) under `validation/ufo` with its licence, and add
+   `zz_to_hh` / `ee_to_zhh` rows to `gen_standalone_jamps.py` with the
+   Wilson-coefficient card edits, plus a σ row.
+2. **The toy's amplitudes are not a banked standalone row.** The 4-graph
+   table matched at 3e-16, but a row needs a `restrict_*` card for the toy.
+   Closing: add `restrict_full.dat` (its own param card) and the row.
+3. **MadGraph's gluon-free trial raises `KeyError` whenever the gluon is in
+   the lowest class and the model has no QCD hierarchy**, even with no gluon
+   in the final state (`diagram_generation.py:2058` evaluates
+   `nglue * order_hierarchy['QCD']` unconditionally). vibegraph refuses only
+   when a gluon is actually removed. Evidence: reading only. Closing: decide
+   whether to mirror it; no model in reach is affected.
+4. **The automatic WEIGHTED search ignores polarizations in MadGraph's trials
+   but not in ours when no gluon is removed** (`g0_g_ttx`: bound 2 against our
+   4, refusal text only). Closing: trial every process MadGraph's way.
+5. **The gluon-free trials re-run `generate_sets_inner` per concrete
+   assignment and bound**, as MadGraph does; on a wide multiparticle process
+   with many gluon assignments this may be slower than the whole-process
+   trial. Not measured. Closing: time `p p > j j j` style cards before and
+   after.
+6. **Dangling links after the items' deletion.** The census
+   `validation/cms-gridpack-refusals-202a540.md`, two backlog items and sprint
+   records link the closed slugs; the manager's close-out decides how to
+   repoint them.
