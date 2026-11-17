@@ -507,9 +507,15 @@ fn split_arg(line: &str) -> Vec<String> {
 }
 
 /// Parse an `import model` argument: `sm`, `sm-no_b_mass`, a path.
+///
+/// The restriction is what follows the last `-`, as MadGraph splits it
+/// (`get_path_restrict`, `import_ufo.py` L210-L218), so a model name may
+/// itself hold a `-`. MadGraph first tries the whole argument as a model
+/// (L204); [`GlobalConfig::load_model`](crate::config::GlobalConfig::load_model)
+/// does that against the UFO search path.
 fn parse_model_import(spec: &str) -> ModelImport {
     let spec = spec.trim();
-    match spec.find('-') {
+    match spec.rfind('-') {
         Some(dash) => ModelImport {
             name: spec[..dash].to_owned(),
             restrict_variant: Some(spec[dash + 1..].to_owned()),
@@ -1288,6 +1294,15 @@ mod tests {
         assert_eq!(m.name, "sm");
         assert_eq!(m.restrict_variant.as_deref(), Some("no_b_mass"));
         assert_eq!(m.particle_naming, ParticleNaming::MadGraphDefaults);
+    }
+
+    /// The restriction is what follows the last `-`, as MadGraph splits it.
+    #[test]
+    fn model_import_splits_at_the_last_dash() {
+        let ast = parse_proc_card_ast("import model my-model-cG_cHB_massless\n").unwrap();
+        let m = ast.model().unwrap();
+        assert_eq!(m.name, "my-model");
+        assert_eq!(m.restrict_variant.as_deref(), Some("cG_cHB_massless"));
     }
 
     /// Either spelling of `modelname`, wherever it stands, switches the

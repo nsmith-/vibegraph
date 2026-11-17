@@ -149,6 +149,25 @@ class Cards(unittest.TestCase):
         self.assertEqual((c["final_state"], c["nlo_bracket"]), ("e+ e-", "QCD"))
         self.assertEqual(pc["commands"], [("set", "set run_card nevents 10")])
 
+    def test_import_flags_may_precede_the_model(self):
+        for line, want in [
+            ("import model --modelname HAHM_MG5model_v3/HAHM_variableMW_v3_UFO",
+             ("HAHM_MG5model_v3/HAHM_variableMW_v3_UFO", None, "--modelname")),
+            ("import model HAHM_UFO-no_b --modelname", ("HAHM_UFO", "no_b", "--modelname")),
+            ("import model -modelname sm-ckm_no_b_mass --foo", ("sm", "ckm_no_b_mass", "-modelname --foo")),
+            ("import model sm", ("sm", None, "")),
+        ]:
+            self.assertEqual(P.parse_import(line), want, line)
+        self.assertIsNone(P.parse_import("import model --modelname"))
+
+    def test_the_model_rewrite_keeps_the_flags_and_replaces_only_the_model(self):
+        import vgrun
+        card = ("import model --modelname HAHM_MG5model_v3/HAHM_variableMW_v3_UFO\n"
+                "import model HAHM_UFO-no_b --modelname\ngenerate p p > a a\n")
+        self.assertEqual(vgrun.with_gridpack_model(card, "gp_1234abcd"),
+                         "import model gp_1234abcd --modelname\n"
+                         "import model gp_1234abcd --modelname\ngenerate p p > a a\n")
+
     def test_param_diff(self):
         default = "Block MASS\n 6 1.730000e+02 # MT\nDECAY 6 1.5\n"
         card = "Block mass\n 6 1.725000e+02 # MT\nDECAY 6 1.50\n"

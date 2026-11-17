@@ -62,7 +62,7 @@ use super::diagram::{
     CanonicalDiagram, ChainNode, DecayOrigin, Diagram, Leg, LegIdx, OnShell, Prop, PropIdx, Ray,
     VtxIdx,
 };
-use super::{generate_from_process, DiagramError, DiagramSet, ProcessRole};
+use super::{generate_from_process, DiagramError, DiagramSet, LinePosition, ProcessRole};
 use crate::ufo::UFOModel;
 
 /// Enumerate a decay-chain process by stitching: one [`DiagramSet`] per core subprocess
@@ -71,8 +71,9 @@ use crate::ufo::UFOModel;
 pub(super) fn generate_chain(
     process: &SupportedProcess,
     model: &UFOModel,
+    position: LinePosition,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
-    let sets = chain_sets(process, ChainNode(0), model)?;
+    let sets = chain_sets(process, ChainNode(0), model, position)?;
     Ok(sets.into_iter().map(|s| s.set).collect())
 }
 
@@ -94,6 +95,7 @@ fn chain_sets(
     process: &SupportedProcess,
     node: ChainNode,
     model: &UFOModel,
+    position: LinePosition,
 ) -> Result<Vec<ChainSet>, DiagramError> {
     let refuse = |reason: String| DiagramError::DecayChain {
         process: process.to_string(),
@@ -109,7 +111,7 @@ fn chain_sets(
     } else {
         ProcessRole::ChainDecay
     };
-    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model, role)?
+    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model, role, position)?
         .into_iter()
         .filter(|s| !s.diagrams.is_empty())
         .collect();
@@ -142,7 +144,7 @@ fn chain_sets(
                 n_in: decay.initial.len(),
             });
         }
-        let sets = chain_sets(decay, ChainNode(next), model)?;
+        let sets = chain_sets(decay, ChainNode(next), model, position)?;
         if sets.is_empty() {
             return Err(DiagramError::NoDiagrams {
                 process: decay.to_string(),

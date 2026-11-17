@@ -89,7 +89,7 @@ pub(crate) fn run(args: &InspectArgs) -> Result<(), CliError> {
     if let Some(out) = &args.ranking {
         return write_ranking(&artifact, observable, out, args.diagrams.as_deref());
     }
-    let object = result_object(&artifact, path, observable)?;
+    let object = result_object(&artifact, path, observable, None)?;
     if output::mode() == output::Mode::Ldjson {
         output::result(&object);
         return Ok(());
