@@ -31,3 +31,7 @@ cross terms the constraint selects. `reweight::poly` already proves each
 diagram's coupling monomials. A graded evaluator that carries each current as
 its monomial components would also serve one-evaluation-per-event reweighting.
 `WEIGHTED==`/`>` (`Unsupported::WeightedOrder`) needs the same split.
+
+**Campaign count (2026-11-17).** The CERN host's 1009-gridpack survey refuses
+21 cards on squared orders. Three more, retried with a longer setup time, are
+refused on interference-order bounds of the form `M3^2==1` and `T6^2==1`.

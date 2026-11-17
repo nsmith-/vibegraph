@@ -1,7 +1,7 @@
 ---
 type: Sprint
 title: "Sprint K: v0.2.2, SMEFT models and the largest refusal classes"
-description: "Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting, and integrate memory growth on multijet MLM."
+description: "Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting, integrate memory growth on multijet MLM, and the 4× repeated-decay σ."
 status: draft
 active: true
 tags: [release, v0.2.2, smeft, smeftsim, ufo, refusals, cms-gridpacks, simshop, sprint-k]
@@ -161,10 +161,18 @@ cut code.
 
 Added at the user's request, 2026-11-17.
 
+### PR 11: repeated decays in a decay chain (`sprintk-repeated-decay`), validation-dev, Opus
+
+| Item | Pri | Oracle |
+|---|---|---|
+| `decay-chain-repeated-decay-sigma-four-times-high` | high | Per-diagram amplitudes and the symmetry factor against MadGraph standalone on `p p > w+ h01, (h01 > a01 a01, a01 > b b~, a01 > b b~)`. The cause is named and arithmetic on the dumps confirms the factor before any code changes. σ on the 4 HToAATo4B cards against MadGraph at ≥ 5 seeds. A failing-first test. Cards without repeated decays stay bit for bit. |
+
+Added at the user's request, 2026-11-17. It is a silent wrong answer, so the hard-error rule makes it release-blocking.
+
 ## Dispatch
 
 1. Merge #135.
-2. Wave 1, in parallel: PRs 1, 2, 3, 4, 6, 7, 8, 9 and 10. PR 7 (phase space) and
+2. Wave 1, in parallel: PRs 1, 2, 3, 4, 6, 7, 8, 9, 10 and 11. PR 7 (phase space) and
    PR 9 (flavour groups) both touch the sampler's subprocess setup; whichever
    merges second merges main in.
 3. Wave 2: PR 5.
