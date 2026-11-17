@@ -728,6 +728,13 @@ pub(super) fn g_power_expr(expr: &Expr, driven: &HashSet<String>, g_is_driven: b
             .then_some(0),
         // `complex(re, im)` takes the real part of each side, which is not a
         // multiplicative operation on a monomial.
+        // A selection or test of `G`-independent operands is a constant; once one
+        // moves with the coupling it is not a monomial.
+        Expr::Cond(..) | Expr::Cmp(..) | Expr::Logic(..) => expr
+            .test_operands()
+            .into_iter()
+            .all(|e| g_power_expr(e, driven, g_is_driven) == Some(0))
+            .then_some(0),
         Expr::Complex(re, im) => {
             let r = g_power_expr(re, driven, g_is_driven)?;
             let i = g_power_expr(im, driven, g_is_driven)?;

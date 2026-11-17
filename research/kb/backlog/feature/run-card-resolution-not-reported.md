@@ -43,8 +43,7 @@ Per key, the report would give:
 Keys the parser does not recognise should be listed, not dropped. That covers a
 CMS gridpack's `$DEFAULT_PDF_SETS` placeholder.
 
-This is the run-card half of
-[`integrate-has-no-check-only-mode`](integrate-has-no-check-only-mode.md), and
-it can ship first. It is the per-card counterpart of
+It extends `integrate --check`, which stops before sampling, with the
+resolved run card. It is the per-card counterpart of
 [`run-card-classification-table-missing`](run-card-classification-table-missing.md),
 the static per-release table. One implementation could serve both.

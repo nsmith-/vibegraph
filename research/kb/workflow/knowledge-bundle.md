@@ -109,12 +109,16 @@ file, is retired in favour of the sprint folder.[^n42-shape]
   `human:` actor is added only when a person actually reviewed the concept,
   never in bulk. Manager spot-checks add `verified` with the manager's agent
   actor. A drafted concept is `status: draft` until reviewed.
-- **Indexes are generated, never hand-written.** `pixi run kb-index` writes each
-  folder's `index.md` from the frontmatter, grouped by type. Nothing in an
-  index counts concepts: a count changes with every addition anywhere below it
-  and so conflicts between any two branches that add files. The backlog folders
-  have no index at all, for the same reason, so `pixi run backlog` is their
-  listing.
+- **Indexes are generated, never hand-written, and only the root's is
+  committed.** `pixi run kb-index` writes each folder's `index.md` from the
+  frontmatter, grouped by type. The folder indexes are gitignored: a committed
+  one changes whenever a concept is added to its folder, so every sprint PR
+  that added a session brief conflicted with every other open one, and each
+  merge forced the rest to re-sync and re-run CI. The root `index.md` declares
+  `okf_version`, lists only the top-level folders (linked as folders, so they
+  work on GitHub), and changes only when a top-level folder does. Nothing in an
+  index counts concepts, for the same reason. The backlog folders have no index
+  at all, so `pixi run backlog` is their listing.
 - **Sources resolve.** A note section is cited by permalink at a commit with a
   line range. Upstream code is cited by permalink at the pinned commit (below).
   Our own code is cited by path.
@@ -129,7 +133,7 @@ anyway, so a Rust crate would buy nothing.[^n42-decisions]
 
 | Task | Does |
 |---|---|
-| `pixi run kb-index` | Regenerates every `index.md`; `--check` reports stale ones. |
+| `pixi run kb-index` | Generates every folder's `index.md` (gitignored) and the committed root one; `--check` reports whether the root is stale. |
 | `pixi run kb-lint` | Runs in CI as its own job. |
 | `pixi run backlog` | Renders the backlog view ([backlog items](backlog-items.md)). |
 | `pixi run kb-log` | Renders the change log from dated Sprint Records and Design Decisions. |
@@ -142,7 +146,9 @@ The scripts read one bundle root, `ROOT` in `kb.py`: `research/kb/`.
 
 - every non-reserved `.md` has parseable frontmatter with a non-empty `type`;
 - every `description` is one line;
-- the generated indexes are current;
+- the committed root index is current;
+- every link resolves (a link to a folder's `index.md` resolves when the folder
+  exists, since that index is generated on demand);
 - every backlog item passes the item checks: area, state and priority values,
   the area matching its folder, required `title`, `description`,
   `closes_when` and `opened`, description length, slug uniqueness and
