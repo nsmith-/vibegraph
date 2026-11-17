@@ -297,8 +297,12 @@ mod tests {
         let labels = Vec::new();
         for (k, view) in container.views().enumerate() {
             let diagram = Diagram::from_view(&view, model).unwrap();
-            let orders: std::collections::BTreeMap<String, usize> =
-                view.orders().into_iter().filter(|(_, n)| *n > 0).collect();
+            let orders: std::collections::BTreeMap<String, i64> = view
+                .orders()
+                .into_iter()
+                .filter(|(_, n)| *n > 0)
+                .map(|(k, n)| (k, n as i64))
+                .collect();
             assert_eq!(
                 diagram.coupling_orders(model),
                 orders,

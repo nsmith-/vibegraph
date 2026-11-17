@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
 * [K-S1: the coloured-scalar seagull colour structure](K-S1.md) - Compile the squark-squark-gluon-gluon contact colour T(a,-1,i)*T(b,j,-1), match MadGraph per colour flow on g g > t1 t1~, and integrate an SMS-StopStop card.
 
 ## Session Report
 
+* [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
 * [K-S1 report: the coloured-scalar seagull colour structure](K-S1-report.md) - The squark-squark-gluon-gluon contact's colour T(1,-1,3)*T(2,4,-1) now compiles as one generator product crossed between its two slots; g g > t1 t1~ and u u~ > t1 t1~ match MadGraph standalone per flow, the contact's per-structure flow assignment and CF match matrix.f, and the 0-jet SMS-StopStop_mStop-600 sigma agrees with MadEvent to 0.01%.
