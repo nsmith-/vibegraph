@@ -100,9 +100,10 @@ jobs:
       - if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      # The release rust-toolchain.toml pins, plus this leg's target.
+      - run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
 
       - uses: actions/cache@v6
         with:
@@ -114,7 +115,7 @@ jobs:
           # another (`...-musl` of `...-musl-v3`), and a restore-key is a
           # prefix match, so a single dash would let the baseline leg restore
           # the v3 leg's cache.
-          key: release-${{ matrix.asset }}--${{ hashFiles('Cargo.lock') }}
+          key: release-${{ matrix.asset }}--${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             release-${{ matrix.asset }}--
 
