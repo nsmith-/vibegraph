@@ -151,7 +151,7 @@ cut code.
 
 | Item | Pri | Oracle |
 |---|---|---|
-| `mixed-outgoing-mass-subprocesses-not-split` | medium | 35 campaign refusals. The grouping splits by outgoing masses itself. σ on ZPrimeToTT against MadGraph at ≥ 5 seeds. Cards whose groups have uniform masses stay bit for bit. |
+| `mixed-outgoing-mass-subprocesses-not-split` | medium | 2 campaign refusals (the 202a540 census). The grouping splits by outgoing masses itself. σ on ZPrimeToTT against MadGraph at ≥ 5 seeds. Cards whose groups have uniform masses stay bit for bit. |
 
 ### PR 10: integrate memory growth on multijet MLM (`sprintk-mlm-memory`), performance-dev, Opus
 
