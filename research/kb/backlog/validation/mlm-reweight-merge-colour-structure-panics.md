@@ -22,8 +22,39 @@ panics in it are this one:
 `RewgtError::UnnamedColourStructure`
 (`vibegraph-lib/src/coupling/cluster/rewgt.rs:292`) mirrors `ipartupdate`'s
 `stop`. At v0.2.1, `proton.rs:3409` turns it into a panic on a sampled point,
-which breaks the hard-error rule. The gridpack names were not in the tally; ask
-the CERN host for them.
+which breaks the hard-error rule.
+
+All 7 are one family, `g2HDM_charged_higgs_cgbh_M{300,450,900,1000,1250,1500,1750}_rhotu00_rhott06_rhotc04`.
+They are under
+`/cvmfs/cms-griddata.cern.ch/phys_generator/gridpacks_tarball/pp/13p6TeV/madgraph/g2HDM_charged_higgs/`.
+Each panicked 375–970 s into the run (seed 1, 4 cores).
+
+The repro is M300. MadGraph's σ is 10.04 ± 0.039 pb. Its process card:
+
+```
+import model g2HDM_UFO
+define p = p b b~
+define j = p
+generate p p > h+ QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
+add process p p > h+ j QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
+add process p p > h+ j j QCD=99, (h+ > t b~, (t > w+ b , W+ > l+ vl))
+```
+
+The same three lines follow for h−. The run card is the LO template with:
+- `ickkw = 1`, `xqcut = 30`, `maxjetflavor = 5`;
+- `drjj = drjl = 0`, `ebeam = 6800`;
+- `lhaid = 325300`.
+
+The bundled `g2HDM_UFO` and its param card are used. The command:
+
+```
+vibegraph integrate proc_card.dat --run-card run_card.dat --param-card param_card.dat \
+  --ufo-dir models --neval 120000 --target-rel 0.01 --seed 1 -j 4 --no-tui
+```
+
+The CERN host has the bundle (`mlm-panic-repro.tar.gz`, sha256 `f24c1f74…`).
+It suspects that the five-flavour `p` with b in the h± → t b decay lets a merge
+join a decay-product b with a radiated parton. That is not yet checked.
 
 Two readings to separate before fixing:
 - MadEvent never reaches this merge, because its clustering picks a different
