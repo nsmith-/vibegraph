@@ -1285,6 +1285,115 @@ fn uux_to_ttxbbx_qed2() {
     check("uux_to_ttxbbx_qed2");
 }
 
+/// Stop pair production in the MSSM, read from the pinned MadGraph's own
+/// `models/MSSM_SLHA2`, so these rows need the submodule. The squark–gluon contact
+/// writes each of its two colour structures as two generators joined by a summed
+/// fundamental index, `T(1,-1,3)*T(2,4,-1)` and `T(1,4,-1)*T(2,-1,3)`, beside the
+/// s-channel gluon and the t- and u-channel stops.
+///
+/// Both structures carry the same Lorentz structure and coupling, so the contact
+/// reaches the two flows with equal amplitudes: this comparison cannot see the
+/// two structures exchanged between the flows.
+/// [`mssm_contact_structures_reach_madgraphs_flows`] pins that assignment.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn gg_to_t1t1x_mssm() {
+    check("gg_to_t1t1x_mssm");
+}
+
+/// The quark-initiated control, with no contact vertex.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn uux_to_t1t1x_mssm() {
+    check("uux_to_t1t1x_mssm");
+}
+
+/// The colour decomposition of `g g > t1 t1~` against MadGraph's own standalone
+/// `matrix.f` for the same process (`gen_standalone_jamps.py gg_to_t1t1x_mssm`):
+///
+/// ```text
+/// CALL VVSS1_0(W(1,1),W(1,2),W(1,4),W(1,3),GC_90,AMP(1))
+/// CALL VVSS1_0(W(1,1),W(1,2),W(1,4),W(1,3),GC_90,AMP(2))
+/// ...
+/// JAMP(1) = AMP(2)+((0,-1))*AMP(3)+AMP(4)+AMP(5)
+/// JAMP(2) = AMP(1)+((0, 1))*AMP(3)+AMP(6)+AMP(7)
+/// DATA DENOM/3/
+/// DATA (CF(I),I=  1,  2) /16,-4/        C 1 T(1,2,3,4)
+/// DATA (CF(I),I=  3,  3) /16/           C 1 T(2,1,3,4)
+/// ```
+///
+/// MadGraph writes the contact as one `AMP()` per colour structure, in sorted
+/// coupling-key order (`helas_objects.py`, `sorted(inter.get('couplings').keys())`),
+/// so `AMP(1)` is structure 0, `T(1,-1,3)*T(2,4,-1)`, and enters flow 2; `AMP(2)`
+/// is structure 1 and enters flow 1, each with coefficient 1. The packed `CF`
+/// doubles its off-diagonal entries, so the matrix is `[[16, -2], [-2, 16]]/3`.
+/// MadGraph's seven `AMP()` are this side's six diagrams with the contact counted
+/// once per structure; its five propagator graphs are this side's other five,
+/// including the two whose `su6` line is reached through the stop-mixing gluon
+/// couplings `GC_57`/`GC_63`, which both sides keep.
+///
+/// The two structures' amplitudes are equal at every point, so no amplitude
+/// comparison can see them exchanged, and `CF` is a Gram matrix blind to a uniform
+/// transpose: the per-structure flow assignment is pinned here and nowhere else.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn mssm_contact_structures_reach_madgraphs_flows() {
+    use num_rational::Ratio;
+    use vibegraph::helas::color::colorize_process;
+
+    let table: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(table_path("gg_to_t1t1x_mssm")).unwrap())
+            .unwrap();
+    let model = table_model("gg_to_t1t1x_mssm", &table);
+    let sets = generate_with("g g > t1 t1~", &model);
+    let diagrams = &sets
+        .iter()
+        .find(|s| !s.diagrams.is_empty())
+        .expect("a subprocess with diagrams")
+        .diagrams;
+    assert_eq!(
+        diagrams.len(),
+        6,
+        "MadGraph's seven AMP() less one contact copy"
+    );
+    let contacts: Vec<usize> = (0..diagrams.len())
+        .filter(|&d| diagrams[d].props.is_empty())
+        .collect();
+    assert_eq!(contacts.len(), 1, "one contact diagram");
+    let contact = contacts[0];
+
+    let basis = colorize_process(&model, diagrams).unwrap();
+    assert_eq!(basis.ncolor(), 2);
+    let third = |n| Ratio::new(n, 3);
+    assert_eq!(
+        [
+            basis.cf(0, 0),
+            basis.cf(0, 1),
+            basis.cf(1, 0),
+            basis.cf(1, 1)
+        ],
+        [third(16), third(-2), third(-2), third(16)],
+        "CF against matrix.f"
+    );
+    for (flow, structure) in [(0, 1u8), (1, 0u8)] {
+        let from_contact: Vec<_> = basis.elements[flow]
+            .contributions
+            .iter()
+            .filter(|c| c.diagram == contact)
+            .collect();
+        assert_eq!(from_contact.len(), 1, "flow {flow}: {from_contact:?}");
+        assert_eq!(
+            from_contact[0].chain,
+            vec![structure],
+            "flow {} (MadGraph's JAMP({})) takes structure {structure}",
+            flow,
+            flow + 1
+        );
+        assert_eq!(from_contact[0].coeff.eval_nc(3), Ratio::from_integer(1));
+        assert!(!from_contact[0].coeff.imag);
+    }
+}
+
 /// The gate is sensitive to which colour structure of the four-gluon contact
 /// multiplies which Lorentz structure: each of the five non-identity assignments
 /// disagrees with `gg_to_ttxg` far above [`REL_TOL`]. Measured over the five, the
