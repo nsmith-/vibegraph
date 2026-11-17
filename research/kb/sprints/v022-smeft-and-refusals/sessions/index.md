@@ -6,8 +6,10 @@
 
 * [K-B1: batch-safe integrate and enumerate totals](K-B1.md) - SIGTERM handling and a stop reason in the integrate result, enumerate progress with a total, a check-only integrate mode, atomic generate output, the LHE extension honoured, and default threads from batch CPU limits.
 * [K-O1: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1.md) - Load couplings with a negative coupling order (SMEFTsim's QED:-1 vev insertion) the way MadGraph counts them, in the diagram order counting and WEIGHTED, and run MadGraph's gluon-free trial in the WEIGHTED search.
+* [K-P1: one-body final-state phase space](K-P1.md) - Integrate 2 → 1 processes (p p > z, e+ e- > z) through a δ(ŝ − M²) one-body phase space following MadGraph's genps.f τ = m²/s, and remove the OneBodyFinalState refusals.
 
 ## Session Report
 
 * [K-B1 report: batch-safe integrate and enumerate totals](K-B1-report.md) - SIGTERM as a stop request, stop_reason and reached error in the integrate result, integrate --check, atomic and compressed generate output, enumerate progress with a total, and default threads from the affinity mask, cgroup quota and OMP_NUM_THREADS.
 * [K-O1 report: negative UFO coupling orders and the gluon-free WEIGHTED trial](K-O1-report.md) - Coupling orders load signed and are spent as MadGraph spends them, vertex by vertex in its reduction order; the automatic WEIGHTED search trials each subprocess with its final-state gluons removed. SMEFT_alpha loads and matches MadGraph per diagram and per helicity.
+* [K-P1 report: one-body final-state phase space](K-P1-report.md) - 2 → 1 processes at proton beams integrate through a δ(ŝ − M²) one-body map (τ = M²/s, as genps.f) and match MadGraph (p p > z: pull −1.44 over 20 against 5 seeds); on fixed-energy beams MadGraph returns zero, and vibegraph keeps a named refusal.
