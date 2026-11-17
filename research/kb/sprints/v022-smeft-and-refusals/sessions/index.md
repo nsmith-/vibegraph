@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [K-B1: batch-safe integrate and enumerate totals](K-B1.md) - SIGTERM handling and a stop reason in the integrate result, enumerate progress with a total, a check-only integrate mode, atomic generate output, the LHE extension honoured, and default threads from batch CPU limits.
+
+## Session Report
+
+* [K-B1 report: batch-safe integrate and enumerate totals](K-B1-report.md) - SIGTERM as a stop request, stop_reason and reached error in the integrate result, integrate --check, atomic and compressed generate output, enumerate progress with a total, and default threads from the affinity mask, cgroup quota and OMP_NUM_THREADS.
