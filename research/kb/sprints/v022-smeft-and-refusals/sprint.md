@@ -116,6 +116,9 @@ files; they run in parallel and merge in order.
 | `run-card-off-sentinel-values-refused` | medium |
 | `ptj-n-min-nonpositive-refused` | medium |
 | `run-card-classification-table-missing` | medium |
+| `run-card-resolution-not-reported` | medium |
+
+The per-card report and the per-release table come from one implementation. Both read `FIELD_CLASSES` and the parser's resolved card, and the report can ship first. Added at the user's request, 2026-11-17.
 
 PR 5 starts after PR 4 and PR 7 merge, since all three touch the run-card and
 cut code.
