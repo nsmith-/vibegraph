@@ -116,6 +116,11 @@ cross-check gates — which one to run after which kind of change, and the
 (`.agents/skills/extended-validation/`); invoke it after modifying amplitudes,
 color, coupling, or diagram enumeration.
 
+The Rust and pixi versions are pinned (`rust-toolchain.toml`, `requires-pixi`
+in `pixi.toml`) and move only in the monthly toolchain-bump PR
+([toolchain pins](research/kb/tooling/toolchain-pins.md)); rustup and pixi
+apply the pins in the checkout, so local gates match CI's.
+
 Lints are gates, not advice: `cargo fmt --all --check` and
 `cargo clippy --workspace --all-targets -- -D warnings` both run in CI. A lint
 that is wrong for this codebase gets a documented `allow` — per-site, or in the

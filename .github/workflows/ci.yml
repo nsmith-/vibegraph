@@ -63,9 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      # Installs the release rust-toolchain.toml pins, with its components.
+      - run: rustup toolchain install
 
       - run: cargo fmt --all --check
 
@@ -79,7 +78,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@v0.10.0
         with:
-          pixi-version: v0.63.2
+          pixi-version: v0.84.1
           environments: kb
           cache: true
 
@@ -90,9 +89,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # Installs the release rust-toolchain.toml pins, with its components.
+      - run: rustup toolchain install
 
       # Compiled dependencies + the crate registry, keyed on Cargo.lock and the
       # toolchain, with stale target artifacts pruned before saving — so the
@@ -164,14 +162,14 @@ jobs:
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Installs the release rust-toolchain.toml pins, with its components.
+      - run: rustup toolchain install
 
-      # `pixi-version` pinned to the version that writes `pixi.lock` locally:
-      # the action's default pixi is older and rejects lock files the current
-      # tool considers up-to-date.
+      # `pixi-version` is the version `requires-pixi` in pixi.toml pins, so CI
+      # reads `pixi.lock` with the pixi that wrote it.
       - uses: prefix-dev/setup-pixi@v0.10.0
         with:
-          pixi-version: v0.63.2
+          pixi-version: v0.84.1
           environments: default
           cache: true
 

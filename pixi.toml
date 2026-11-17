@@ -4,6 +4,11 @@ channels = ["conda-forge", "pytorch"]
 name = "vibegraph"
 platforms = ["osx-arm64", "linux-64"]
 version = "0.2.1"
+# The one pixi that may write pixi.lock, and the version the workflows'
+# `pixi-version` installs: a newer pixi rewrites the lock in a format the CI
+# pixi cannot read. Moves only in a toolchain-bump PR
+# (scripts/bump-toolchains.sh).
+requires-pixi = "==0.84.1"
 
 # Default environment: the Rust toolchain comes from rustup, not conda. `zstd`
 # is the one binary the layer's own scripts shell out to (the refdata bundle is
