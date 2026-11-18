@@ -26,10 +26,10 @@ use Stage::{Generate, Integrate};
 /// Where a recognized run-card parameter goes.
 pub(crate) enum FieldClass {
     /// Read by this crate. The string names the consumer.
-    Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    Consumed(&'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    IgnoredBenign(&'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///

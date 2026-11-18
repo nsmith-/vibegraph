@@ -16,5 +16,6 @@ The CERN host's survey refused gridpacks 154, 155 and 870–874 (bbDM_2HDMa) for
 so the refusal was correct.
 
 Read how cuts.f decides which particles are invisible before implementing it.
-For a BSM model that probably depends on the PDG code. The −1 "off" value is
-[`run-card-off-sentinel-values-refused`](run-card-off-sentinel-values-refused.md).
+For a BSM model that probably depends on the PDG code. A non-positive
+`misset` is the "off" value and compiles to the default cuts; this item covers
+real values.

@@ -18,6 +18,7 @@ Commands:
   check-events  Read a Les Houches file back and check that it is internally consistent
   inspect       Print the results a saved integration artifact records, or write its configuration ranking as JSON
   enumerate     Enumerate a process's Feynman diagrams: the diagram artifact, a summary JSON and one SVG drawing per diagram
+  run-card      Resolve a run card and classify each of its parameters, or print the table of every known run-card parameter, without sampling
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -90,20 +91,82 @@ Options:
       --run-card <RUN_CARD>
           MadGraph `run_card.dat` for a preview of the flavour groups `integrate` would form; the param card not given takes `integrate`'s default. With neither card, no flavour groups are reported
 
-      --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
-
       --param-card <PARAM_CARD>
           SLHA `param_card.dat` for the flavour-group preview; the run card not given takes `integrate`'s default
 
   -j, --parallel <N>
           Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --parallel-diagrams
           Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
+  -q, --quiet
+          Report only warnings and errors
+
+      --log-level <LEVEL>
+          Report at this level, instead of counting `-v`s
+          
+          [possible values: off, error, warn, info, debug, trace]
+
+      --log-file <PATH>
+          Also record every event, at `trace`, to this file.
+          
+          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
+
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## `vibegraph run-card`
+
+```text
+Resolve a run card and classify each of its parameters, or print the table of every known run-card parameter, without sampling
+
+Usage: vibegraph run-card [OPTIONS] <RUN_CARD|--proc-card <PROC_CARD>|--table>
+
+Arguments:
+  [RUN_CARD]
+          MadGraph `run_card.dat` to resolve and classify
+
+Options:
+      --proc-card <PROC_CARD>
+          Process card, for the defaults the process implies (the incoming-parton `maxjetflavor`, a decay's removed cuts, matching under jet multiplicities). With no run card, the report is of the card `integrate` would build
+
+      --table
+          Print the table of every known run-card parameter, as honoured, ignored or refused with the refused values and a one-line note, instead of resolving a card. The same table for every card; it changes with the release
+
+      --ufo-dir <UFO_DIR>
+          Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model
+
+  -j, --parallel <N>
+          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
+
+      --parallel-diagrams
+          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
+
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
   -v, --verbose...
           Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
@@ -163,9 +226,6 @@ Options:
       --check
           Check the run and stop before sampling: read every card, resolve the model and the parton densities, enumerate, build the flavour groups, the cuts and the phase-space guards, then print `check ok` or fail with the refusal the full run would have ended in. No point is drawn and no artifact is written. The refusal is the same object `integrate` emits, so a run that passes the check is not refused later for any reason the check looks at
 
-      --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
-
       --ufo-dir <UFO_DIR>
           Directory containing the proc card's UFO model directory; defaults to `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current directory. Unused for the built-in Standard Model, and refused with a diagram artifact, which embeds its model
 
@@ -176,19 +236,16 @@ Options:
           
           [default: 120000]
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
+      --no-network
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --niter <NITER>
           VEGAS adaptation iterations under `--fixed-budget`. The default convergence mode decides its own iteration count, capped by `--max-iters`
           
           [default: 12]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
-
-  -q, --quiet
-          Report only warnings and errors
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
@@ -197,25 +254,31 @@ Options:
           
           [default: 0.001]
 
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
       --fixed-budget
           Spend a fixed `--neval × --niter` and stop, instead of converging to `--target-rel`.
           
           The mode a banked run is reproducible under: a fixed budget draws the same points from the same seed every time, where a convergence run's length depends on the variance it measures.
+
+  -q, --quiet
+          Report only warnings and errors
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --log-file <PATH>
-          Also record every event, at `trace`, to this file.
-          
-          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
-
       --min-iters <MIN_ITERS>
           Iterations that must run before the convergence target may stop a run
           
           [default: 6]
+
+      --log-file <PATH>
+          Also record every event, at `trace`, to this file.
+          
+          The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
       --max-iters <MAX_ITERS>
           Iteration cap for `--target-rel`.
@@ -224,16 +287,13 @@ Options:
           
           [default: 500]
 
-      --tui
-          Draw the live status pane even where one would not be drawn by default
-
       --max-points <MAX_POINTS>
           Evaluation cap for `--target-rel`, over all channels and iterations
           
           [default: 400000000]
 
-      --no-tui
-          Never draw the live status pane; report in plain lines
+      --tui
+          Draw the live status pane even where one would not be drawn by default
 
       --allocate <ALLOCATE>
           How the per-iteration budget is split across channels.
@@ -244,8 +304,8 @@ Options:
           - by-alpha: `Nⱼ ∝ αⱼ`, the split the channel weights imply
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
-      --output-ldjson
-          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --alpha-floor <FLOOR>
           Raise every channel's selection weight to at least this after the α-survey, and renormalise; `off` installs the survey's weights as they came out.
@@ -253,6 +313,9 @@ Options:
           A channel whose peak the survey's draws never reach measures no variance, and its weight falls geometrically over the survey to `1e-11` and below; the integration's rare points in that peak then carry a mixture density set by channels that do not follow it. A survey that leaves every weight above the floor installs its weights unchanged. The floor a run used is recorded in its artifact.
           
           [default: 1e-4]
+
+      --output-ldjson
+          Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
       --seed <SEED>
           RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
@@ -381,55 +444,55 @@ Options:
       --no-network
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
-  -y, --yes
-          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
-
       --scan-points <N|share>
           Points the frozen `w_max` scan spends on *each* channel, or `share` to give every channel the integration's own per-channel budget instead. What the budget buys depends on `--max-truncation`: at zero a larger budget raises the maxima, trading acceptance for fewer events above them; under a truncation it sharpens the quantile the maxima converge to
           
           [default: share]
 
-  -v, --verbose...
-          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+  -y, --yes
+          Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
 
       --max-truncation <SHARE>
           Share of each channel's scanned cross section its maximum may leave above itself. `0` takes the largest weight the scan saw instead; a larger share lowers the maxima, accepting more trials and giving more of the accepted events a weight above one
           
           [default: 0.01]
 
+  -v, --verbose...
+          Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all
+
   -q, --quiet
           Report only warnings and errors
+
+      --reweight-card <REWEIGHT_CARD>
+          MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
 
       --log-level <LEVEL>
           Report at this level, instead of counting `-v`s
           
           [possible values: off, error, warn, info, debug, trace]
 
-      --reweight-card <REWEIGHT_CARD>
-          MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
+      --reweight-exact
+          Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking
 
       --log-file <PATH>
           Also record every event, at `trace`, to this file.
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
-      --reweight-exact
-          Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking
-
       --reweight-couplings <NAME,...>
           Track the amplitude as a polynomial jointly in these external parameters (comma-separated names), so every hypothesis costs a quadratic form rather than an amplitude evaluation: an event costs one evaluation per monomial of the amplitude — `1 + n` for `n` couplings entering at most once per diagram — whatever the number of hypotheses. The card may then move only these, and each must enter every subprocess polynomially
-
-      --tui
-          Draw the live status pane even where one would not be drawn by default
-
-      --no-tui
-          Never draw the live status pane; report in plain lines
 
       --systematics <ARGUMENTS>
           MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
 
+      --tui
+          Draw the live status pane even where one would not be drawn by default
+
   -j, --parallel <N>
           Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
+
+      --no-tui
+          Never draw the live status pane; report in plain lines
 
       --output-ldjson
           Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn

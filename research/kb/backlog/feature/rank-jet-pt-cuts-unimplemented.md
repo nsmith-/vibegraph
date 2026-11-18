@@ -15,6 +15,5 @@ The CERN host's survey (gridpacks 407–412, `DY1jToLL_M-1to10_Pt-*`) found thes
 refused. Its driver reset the cuts to the default and got the unbinned σ
 (1.24e6 pb) in every bin, so the refusal was correct.
 
-The non-positive "off" values are
-[`ptj-n-min-nonpositive-refused`](ptj-n-min-nonpositive-refused.md), which is
-in sprint K. This item covers real cut values.
+The non-positive "off" values compile to the default cuts. This item covers
+real cut values.

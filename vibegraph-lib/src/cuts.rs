@@ -1023,8 +1023,10 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "mxx_min_pdg",
 ];
 
-/// Requirements that read as off at any value at or below zero, so only a
-/// positive value is refused: "at least one jet (photon, b, lepton) with
+/// Cut parameters that read as off at any value at or below zero, so only a
+/// positive value is refused.
+///
+/// `xptj`, `xptb`, `xpta`, `xptl` are "at least one jet (photon, b, lepton) with
 /// `pT > xpt*`". Every MadGraph read of them is guarded by `> 0` or folded
 /// through `max(·, 0)`: the cut itself (`cuts.f:981`, `:994`, `:1007`,
 /// `:1020`), the `smin` hint (`setcuts.f:540`, `:584`, `:591`, `:613`, `:622`,
@@ -1032,7 +1034,38 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
 /// `:760`, `:763`, `:772`) and the reset for a process without the class
 /// (`setcuts.f:835-879`). `reweight.f`, `setscales.f` and `initcluster.f`
 /// declare the common block and read none of the four.
-const NONPOSITIVE_IS_OFF: &[&str] = &["xptj", "xptb", "xpta", "xptl"];
+///
+/// `ptj1min`–`ptj4min` and `ptl1min`–`ptl4min` are the rank minima. The
+/// existence requirement tests them `> 0` (`cuts.f:817-820` for jets,
+/// `:920` and `:934-937` for leptons), the cut itself fails a jet or lepton only
+/// when its pT is `< ptjNmin` (`cuts.f:855`, `:963`), which no transverse
+/// momentum is at a value at or below zero, and the `smin` hint folds each into
+/// a `max(…, 0d0)` (`setcuts.f:541-562` for jets, `:646-666` for leptons).
+///
+/// `misset` is the missing-transverse-momentum minimum: `cuts.f:371` fails an
+/// event when `pT(miss) < misset`, never true at a value at or below zero, and
+/// `setcuts.f:776` reports it only when `> 0`. `ptheavy` is guarded `> 0` at
+/// `cuts.f:390` and `setcuts.f:781`. The one other read of `misset`,
+/// `setcuts.f:675`, squares it into the lower limit on ŝ of a process with a
+/// charged lepton; at a negative value that is a floor of `misset²`, 1 GeV² at
+/// the template's `-1`, below every ŝ a lepton pT or pair-mass cut already
+/// leaves, and with those cuts off it removes only ŝ < `misset²`.
+const NONPOSITIVE_IS_OFF: &[&str] = &[
+    "xptj", "xptb", "xpta", "xptl", "ptj1min", "ptj2min", "ptj3min", "ptj4min", "ptl1min",
+    "ptl2min", "ptl3min", "ptl4min", "misset", "ptheavy",
+];
+
+/// `ht2max`–`ht4max`: an upper bound on the summed pT of the two, three or four
+/// hardest jets, tested as `htjmax4(i).ge.0d0.and.htj.gt.htjmax4(i)`
+/// (`cuts.f:883-884`), so any negative value is off. The sum of
+/// `n` jets' transverse momenta cannot exceed their total energy, which cannot
+/// exceed `sqrt(s_hat)`, and head-on beams collide at `sqrt(s_hat) <= ebeam1 +
+/// ebeam2`: a bound at or above that sum cannot exclude any point either. The
+/// templates that write the "off" value as 100000 land there at any collider
+/// below 50 TeV per beam. `setcuts.f` only copies the bounds (`:502-504`) and
+/// reports them in the grouped-subprocess consistency check when `>= 0`
+/// (`:752-772`); the `smin` hint reads the minima alone.
+const HT_MAXIMA: &[&str] = &["ht2max", "ht3max", "ht4max"];
 
 /// The PDG codes `banner.py:4722` means to refuse a per-PDG cut on: the light
 /// quarks, the b, the charged leptons, the gluon and the photon, whose class
@@ -2232,37 +2265,91 @@ const SINGLE_PT_MAXIMA: &[&str] = &[
 
 /// Refuse a run card that activates a cut this crate parses but does not apply,
 /// or a `pt_min_pdg` MadGraph refuses. Reads the run card alone, so callers run
-/// it before any process enumeration. A single-object transverse-momentum
-/// maximum at or above the collider's ceiling reads as its default, and so does
-/// an `xpt*` requirement at or below zero.
+/// it before any process enumeration. A value MadGraph's `cuts.f` provably
+/// ignores reads as the default ([`unimplemented_cut_refusal`]).
 pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
     PdgPtMin::from_card(rc)?;
-    let pt_ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
+    let beam_sum = rc.ebeam1 + rc.ebeam2;
     for &name in UNIMPLEMENTED_CUTS {
-        let (Some(cur), Some(def)) = (rc.get(name), param_default(name)) else {
-            continue;
-        };
-        // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
-        // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
-        // exactly as their LO defaults do.
-        if *cur == def || Some(cur) == decay_cut_reset(name).as_ref() {
-            continue;
+        if let Some(cur) = rc.get(name) {
+            if let Some(refusal) = unimplemented_cut_refusal(name, cur, beam_sum) {
+                return Err(refusal);
+            }
         }
-        if SINGLE_PT_MAXIMA.contains(&name)
-            && matches!(cur, ParamValue::Float(x) if *x >= pt_ceiling)
-        {
-            continue;
-        }
-        if NONPOSITIVE_IS_OFF.contains(&name) && matches!(cur, ParamValue::Float(x) if *x <= 0.0) {
-            continue;
-        }
-        return Err(CutError::UnimplementedCutActive {
-            name: name.to_string(),
-            value: describe(cur),
-            default: describe(&def),
-        });
     }
     Ok(())
+}
+
+/// The refusal for one cut parameter in [`UNIMPLEMENTED_CUTS`] at value `cur`,
+/// `None` when the value is one `cuts.f` ignores: the default, the value
+/// `remove_all_cut` resets it to, a single-object pT maximum at or above the
+/// collider's ceiling, a [`NONPOSITIVE_IS_OFF`] parameter at or below zero, an
+/// [`HT_MAXIMA`] bound that is negative or at or above `ebeam1 + ebeam2`.
+/// `beam_sum` is `ebeam1 + ebeam2`.
+pub(crate) fn unimplemented_cut_refusal(
+    name: &str,
+    cur: &ParamValue,
+    beam_sum: f64,
+) -> Option<CutError> {
+    if !UNIMPLEMENTED_CUTS.contains(&name) {
+        return None;
+    }
+    let def = param_default(name)?;
+    // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
+    // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
+    // exactly as their LO defaults do.
+    if *cur == def || Some(cur) == decay_cut_reset(name).as_ref() {
+        return None;
+    }
+    let value = match cur {
+        ParamValue::Float(x) => Some(*x),
+        _ => None,
+    };
+    let inert = value.is_some_and(|x| {
+        (SINGLE_PT_MAXIMA.contains(&name) && x >= 0.5 * beam_sum)
+            || (NONPOSITIVE_IS_OFF.contains(&name) && x <= 0.0)
+            || (HT_MAXIMA.contains(&name) && (x < 0.0 || x >= beam_sum))
+    });
+    if inert {
+        return None;
+    }
+    Some(CutError::UnimplementedCutActive {
+        name: name.to_string(),
+        value: describe(cur),
+        default: describe(&def),
+    })
+}
+
+/// The values of a parameter in [`UNIMPLEMENTED_CUTS`] that compile to the
+/// default cuts, in words; `None` for a name that is not one.
+pub(crate) fn inert_values(name: &str) -> Option<String> {
+    if !UNIMPLEMENTED_CUTS.contains(&name) {
+        return None;
+    }
+    let mut parts = vec!["MadGraph's default".to_string()];
+    if let Some(reset) = decay_cut_reset(name) {
+        parts.push(format!("{} (a decay's reset)", describe(&reset)));
+    }
+    if SINGLE_PT_MAXIMA.contains(&name) {
+        parts.push("at or above (ebeam1 + ebeam2) / 2".to_string());
+    }
+    if NONPOSITIVE_IS_OFF.contains(&name) {
+        parts.push("at or below 0".to_string());
+    }
+    if HT_MAXIMA.contains(&name) {
+        parts.push("below 0, or at or above ebeam1 + ebeam2".to_string());
+    }
+    Some(parts.join("; "))
+}
+
+/// The refusal of a `pt_min_pdg` or `mxx_only_part_antipart` MadGraph refuses.
+pub(crate) fn pdg_cut_refusal(rc: &RunCard) -> Option<CutError> {
+    PdgPtMin::from_card(rc).err()
+}
+
+/// The names of the cut parameters parsed and detected rather than applied.
+pub(crate) fn unimplemented_cut_names() -> &'static [&'static str] {
+    UNIMPLEMENTED_CUTS
 }
 
 fn describe(v: &ParamValue) -> String {
@@ -3315,12 +3402,12 @@ mod tests {
     }
 
     /// Every other unimplemented cut stays refused at a value no collider can
-    /// bind, so the no-op rule covers exactly `NINE_PT_MAXIMA`.
+    /// bind, so the no-op rule covers exactly `NINE_PT_MAXIMA` and `HT_MAXIMA`.
     #[test]
     fn no_other_unimplemented_cut_reads_an_unbindable_value_as_default() {
         let mut refused = 0;
         for &name in UNIMPLEMENTED_CUTS {
-            if NINE_PT_MAXIMA.contains(&name) {
+            if NINE_PT_MAXIMA.contains(&name) || HT_MAXIMA.contains(&name) {
                 continue;
             }
             let Ok(cut) = RunCard::parse(&format!("{LHC}1e5 = {name}\n")) else {
@@ -3363,12 +3450,12 @@ mod tests {
 
     #[test]
     fn unbindable_value_does_not_excuse_other_cuts() {
-        match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")) {
-            Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "ht2max"),
-            Ok(()) => panic!("ht2max = 1e5 is an active partial-sum cut"),
+        match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ptj1min\n")) {
+            Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "ptj1min"),
+            Ok(()) => panic!("ptj1min = 1e5 is an active cut"),
             Err(other) => panic!("{other}"),
         }
-        assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
+        assert!(detect_unimplemented(&lhc("1e5 = ht2min\n")).is_err());
     }
 
     /// MadGraph never applies `ptonium` or `etaonium` (`banner.py` registers
@@ -4886,6 +4973,119 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ── off sentinels of the rank, missing-energy and HT parameters ───────
+
+    /// The rank minima, `misset` and `ptheavy`: the `NONPOSITIVE_IS_OFF`
+    /// members `cuts.f` reads behind `> 0` or as a `<` comparison against a
+    /// transverse momentum.
+    const SENTINEL_MINIMA: [&str; 10] = [
+        "ptj1min", "ptj2min", "ptj3min", "ptj4min", "ptl1min", "ptl2min", "ptl3min", "ptl4min",
+        "misset", "ptheavy",
+    ];
+
+    /// A value at or below zero is the default's filter on every class.
+    #[test]
+    fn a_nonpositive_rank_minimum_compiles_to_the_default_cuts() {
+        for name in SENTINEL_MINIMA {
+            assert!(NONPOSITIVE_IS_OFF.contains(&name), "{name}");
+            for value in ["-1", "-0.5", "-100"] {
+                let rc = lhc(&format!("{value} = {name}\n"));
+                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+                for set in xpt_leg_sets() {
+                    let compiled = Cuts::compile(&rc, &set).unwrap();
+                    let default = Cuts::compile(&lhc(""), &set).unwrap();
+                    assert_eq!(compiled, default, "{name} = {value}");
+                }
+            }
+        }
+    }
+
+    /// A positive minimum would cut, and is refused by name.
+    #[test]
+    fn a_positive_rank_minimum_is_refused_by_name() {
+        for name in SENTINEL_MINIMA {
+            for value in ["1e-9", "10", "1e5"] {
+                match Cuts::compile(&lhc(&format!("{value} = {name}\n")), &dy_legs()) {
+                    Err(CutError::UnimplementedCutActive { name: n, .. }) => assert_eq!(n, name),
+                    other => panic!("{name} = {value}: {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// The template's off value 100000 sits above `ebeam1 + ebeam2` at any
+    /// collider below 50 TeV per beam; a negative value is `cuts.f`'s own off.
+    #[test]
+    fn an_unbindable_or_negative_ht_maximum_compiles_to_the_default_cuts() {
+        for name in HT_MAXIMA {
+            for value in ["100000", "13000", "-1", "-7"] {
+                let rc = lhc(&format!("{value} = {name}\n"));
+                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+                for set in xpt_leg_sets() {
+                    let compiled = Cuts::compile(&rc, &set).unwrap();
+                    let default = Cuts::compile(&lhc(""), &set).unwrap();
+                    assert_eq!(compiled, default, "{name} = {value}");
+                }
+            }
+        }
+    }
+
+    /// A bound a pair of beams can reach, down to zero, would cut and stays
+    /// refused; the threshold is the beam energy sum, not half of it.
+    #[test]
+    fn a_bindable_ht_maximum_is_refused_by_name() {
+        for name in HT_MAXIMA {
+            for value in ["0", "500", "6500", "12999.9"] {
+                match detect_unimplemented(&lhc(&format!("{value} = {name}\n"))) {
+                    Err(CutError::UnimplementedCutActive { name: n, .. }) => assert_eq!(n, *name),
+                    other => panic!("{name} = {value}: {other:?}"),
+                }
+            }
+        }
+        let beams = "100 = ebeam1\n50 = ebeam2\n";
+        assert!(detect_unimplemented(&card(&format!("{beams}150 = ht2max\n"))).is_ok());
+        assert!(detect_unimplemented(&card(&format!("{beams}149.9 = ht2max\n"))).is_err());
+    }
+
+    /// The other `ht*` parameters share no rule: `ht2min`–`ht4min` read as
+    /// minima against a sum of transverse momenta, and stay refused when
+    /// negative or large.
+    #[test]
+    fn the_ht_minima_stay_refused() {
+        for name in ["ht2min", "ht3min", "ht4min"] {
+            for value in ["-1", "10"] {
+                assert!(
+                    matches!(
+                        detect_unimplemented(&lhc(&format!("{value} = {name}\n"))),
+                        Err(CutError::UnimplementedCutActive { .. })
+                    ),
+                    "{name} = {value}"
+                );
+            }
+        }
+    }
+
+    /// The inert-value description names a rule exactly for the parameters that
+    /// have one.
+    #[test]
+    fn the_inert_value_description_follows_the_rules() {
+        for name in NONPOSITIVE_IS_OFF
+            .iter()
+            .chain(HT_MAXIMA)
+            .chain(SINGLE_PT_MAXIMA)
+        {
+            assert!(UNIMPLEMENTED_CUTS.contains(name), "{name}");
+            assert!(inert_values(name).unwrap().contains("default"));
+        }
+        assert!(inert_values("misset").unwrap().contains("at or below 0"));
+        assert!(inert_values("ht3max").unwrap().contains("ebeam1 + ebeam2"));
+        assert_eq!(
+            inert_values("eta_max_pdg").as_deref(),
+            Some("MadGraph's default")
+        );
+        assert_eq!(inert_values("ptj1"), None);
     }
 
     // ── pt_min_pdg ─────────────────────────────────────────────────────────
