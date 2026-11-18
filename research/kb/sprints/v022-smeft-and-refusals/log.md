@@ -30,3 +30,14 @@
 * simshop's 31 refused restrictions rechecked on #144 (2fa8d82): the 11 missing-CKMlambda cards are still refused by name, as MadGraph refuses them; all 37 `9.999999e-1` probes load.
 * **#149 merged** (c528465), adding PR 11. **PR 11 (#150), K-D1 done at 7cf2482.** The cause was `stitch_set` deduplicating by a slot-order-dependent key, which kept every diagram twice when identical decays sit on interchangeable slots. Neither of the item's readings held. Verified by the sprint session: the σ pulls recomputed from the per-seed files (M-15 +0.96, M-40 +1.94, distinct MadGraph iseeds); the bit-for-bit outputs identical on 4 decay-chain cards; fmt, clippy, **2120 passed, 0 failed**.
 * Filed from K-D1: `wh-htoaa-sigma-reads-a-permille-high` and `decay-chain-census-dump-cannot-regenerate-in-one-run`.
+* **PR 5 scope addition (Nick).** PR 5 adds `rank-jet-pt-cuts-unimplemented` and files `rank-lepton-pt-cuts-unimplemented`. Its gate is CMS ZH SMEFTsim_topU3l card 832 (SM), or 837 as the alternate, at `ptl1min` = 10, against MadGraph 3.7.1 references regenerated on the CERN host (0.07481 ± 0.00005 pb and 0.09970 ± 0.00006 pb). The cards and references are only on the CERN host, so they must be copied in before PR 5 dispatches.
+* **#143 merged** (cce6811). **#151 merged** (67fd0b5): folder `index.md` files are no longer tracked. The manager held all re-syncs until it landed.
+
+## 2026-11-17 (after #151)
+* **#144 re-synced** to 37feab2: the conflict was only the generated `sessions/index.md`. Merge tested at 2157 passed, 0 failed. Merged (0949012).
+* **#145 re-synced** to 1b246ae: the generated index, plus the hand-written refusal table in `cms-gridpack-refusals-202a540.md` (main's row 1, the branch's rows 2–3). Merge tested at 2182 passed, 0 failed. Merged (f65d1bb) on its existing green, after `git merge-tree` showed it merged cleanly onto 0949012.
+* **#147 re-synced** to 579f7e9: the generated index, plus the refusal table again (main's row 7, the branch's row 8). Merge tested at 2188 passed, 0 failed; CI green including banked.
+* **#150 re-synced** to 2d1ccbe with a code conflict in `diagrams/chain.rs`: main threads the progress `LinePosition` through `chain_sets`, and the branch threads the merge record. Both are kept. Merge tested at 2190 passed, 0 failed; the full CI re-ran green including banked.
+* **#148** merged main cleanly.
+## 2026-11-18
+* **#147 and #150 merged.** Main is at 0340a89.
