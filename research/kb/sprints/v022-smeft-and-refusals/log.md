@@ -40,4 +40,40 @@
 * **#150 re-synced** to 2d1ccbe with a code conflict in `diagrams/chain.rs`: main threads the progress `LinePosition` through `chain_sets`, and the branch threads the merge record. Both are kept. Merge tested at 2190 passed, 0 failed; the full CI re-ran green including banked.
 * **#148** merged main cleanly.
 ## 2026-11-18
-* **#147 and #150 merged.** Main is at 0340a89.
+* **#147 merged** (15de3a8) and **#150 merged** (0340a89). Both were green on heads containing main, and they didn't conflict with each other. Main's banked run is green for #144 and for #145.
+
+### State on main 0340a89
+
+**Merged:**
+
+| PR | Sprint PR | Merge commit |
+|---|---|---|
+| #141 | PR 1, negative orders | 54ded74 |
+| #142 | PR 7, one-body phase space | 7b46311 |
+| #143 | PR 6, batch safety | cce6811 |
+| #144 | PR 2, restriction cards | 0949012 |
+| #145 | PR 3, UFO value forms | f65d1bb |
+| #146 | PR 8, seagull colour | 82ed311 |
+| #147 | PR 9, mass split | 15de3a8 |
+| #149 | adds PR 11 | c528465 |
+| #150 | PR 11, repeated decay | 0340a89 |
+| #151 | the merge-queue CI change and untracked folder indexes, merged mid-sprint | 67fd0b5 |
+
+**Plan corrections recorded above:**
+- #142: MadGraph has no fixed-beam 2 → 1 σ.
+- #144: `restriction-card-missing-ckm-entry-refused` keeps its refusal, because MadGraph refuses those cards too.
+- #145: `ufo-coupling-order-expressions-refused` stays open, and MadGraph files coupling-list members by order rather than summing them.
+- #147: the brief's reproduction card was wrong, and the item covers 2 refusals, not 35.
+- #150: neither of the item's readings was the cause.
+
+**Scope change:** PR 5 now includes the rank cuts (`ptj1`–`ptj4` and `ptl1`–`ptl4`, min and max), as recorded in sprint.md.
+
+**Remaining:**
+
+| Sprint PR | Started | Blocked on |
+|---|---|---|
+| PR 4, MLM merge panic | no | the g2HDM_UFO model or `mlm-panic-repro.tar.gz` (Nick). It is not in the reachable CMS model store, and cvmfs is unreachable. |
+| PR 5, run-card sentinels and rank cuts | no | PR 4 under the plan's ordering (PR 7 has merged). Also the ZH gridpacks 832/837 and the `run-*-ptl10` references copied from the CERN host. |
+| PR 10, MLM memory growth | no | the GJ-4Jets card. This container has 15 GB RAM against the reported 23.9 GB growth, so the run needs a reduced card or the CERN host. |
+
+After those three come a hygiene pass per merged feature PR, then the release candidate.
