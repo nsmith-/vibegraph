@@ -92,7 +92,12 @@ fn the_off_sentinels_pass_the_report_and_the_check() {
         let k = key(&result, name);
         assert_eq!(k["moved_by_card"], true, "{name}");
         assert_eq!(k["refusal"], Value::Null, "{name}");
-        assert_eq!(k["status"], "refused", "{name}");
+        let status = if name.starts_with("ptj") || name.starts_with("ptl") {
+            "honoured"
+        } else {
+            "refused"
+        };
+        assert_eq!(k["status"], status, "{name}");
     }
     let checked = integrate_check(tmp.path(), &card);
     assert_eq!(checked["kind"], "result", "{checked}");
@@ -105,7 +110,11 @@ fn the_off_sentinels_pass_the_report_and_the_check() {
 fn a_refused_card_reports_the_refusal_the_check_emits() {
     let tmp = tempfile::tempdir().unwrap();
     let cases = [
-        ("cuts", format!("{}  30 = ptj1min\n", fixed()), "ptj1min"),
+        (
+            "cuts",
+            format!("{}  30 = ptj1min\n  1 = cutuse\n", fixed()),
+            "cutuse",
+        ),
         ("cuts", format!("{}  50 = ht2max\n", fixed()), "ht2max"),
         ("cuts", format!("{}  30 = misset\n", fixed()), "misset"),
         (
@@ -241,11 +250,18 @@ fn the_table_lists_every_parameter() {
     }
     let by_name = |n: &str| parameters.iter().find(|p| p["name"] == n).unwrap();
     assert_eq!(by_name("ptj").status_of(), "honoured");
-    assert_eq!(by_name("ptj1min").status_of(), "refused");
-    assert!(by_name("ptj1min")["refused_values"]
+    assert_eq!(by_name("ptj1min").status_of(), "honoured");
+    assert_eq!(by_name("ptl4max").status_of(), "honoured");
+    assert_eq!(by_name("misset").status_of(), "refused");
+    assert!(by_name("misset")["refused_values"]
         .as_str()
         .unwrap()
         .contains("at or below 0"));
+    assert_eq!(by_name("cutuse").status_of(), "honoured");
+    assert!(by_name("cutuse")["refused_values"]
+        .as_str()
+        .unwrap()
+        .contains("ptj1min"));
     assert_eq!(by_name("nb_proton1").status_of(), "refused");
     assert_eq!(by_name("iseed").status_of(), "honoured");
     assert!(!result["version"].as_str().unwrap().is_empty());

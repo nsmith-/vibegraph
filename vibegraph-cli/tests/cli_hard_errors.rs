@@ -476,11 +476,11 @@ fn integrate_with_cuts(proc_line: &str, cuts: &str) -> Output {
 
 #[test]
 fn cli_integrate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
-    let output = integrate_with_cuts("e+ e- > mu+ mu-", "  30 = ptj1min\n");
+    let output = integrate_with_cuts("e+ e- > mu+ mu-", "  30 = ht2min\n");
     assert!(!output.status.success());
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("'ptj1min' (= 30"),
+        stderr.contains("'ht2min' (= 30"),
         "the refusal must name the cut and its value, got:\n{stderr}"
     );
     assert!(
@@ -500,10 +500,10 @@ fn cli_unimplemented_cut_is_refused_before_enumeration() {
         "the control card must fail in enumeration, got:\n{control_stderr}"
     );
 
-    let output = integrate_with_cuts(process, "  30 = ptj1min\n");
+    let output = integrate_with_cuts(process, "  30 = ht2min\n");
     assert!(!output.status.success());
     let stderr = stderr_of(&output);
-    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
+    assert!(stderr.contains("'ht2min' (= 30"), "got:\n{stderr}");
     assert!(
         !stderr.contains("enumerate"),
         "enumeration ran before the refusal:\n{stderr}"

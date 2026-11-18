@@ -26,7 +26,7 @@ use super::{
     PARAM_DEFAULTS,
 };
 use crate::cuts::{
-    detect_unimplemented, inert_values, pdg_cut_refusal, unimplemented_cut_names,
+    cutuse_refusal, detect_unimplemented, inert_values, pdg_cut_refusal, unimplemented_cut_names,
     unimplemented_cut_refusal, CutError,
 };
 
@@ -127,6 +127,11 @@ const VALUE_REFUSALS: &[(&str, &str)] = &[
     (
         "mxx_only_part_antipart",
         "a negative code, more than 25 codes, or a light-flavour code MadGraph refuses",
+    ),
+    (
+        "cutuse",
+        "any value but 0 while a jet rank bound is on: ptj1min-ptj4min positive, or \
+         ptj1max-ptj4max at or above 0 and below (ebeam1 + ebeam2) / 2",
     ),
 ];
 
@@ -437,6 +442,10 @@ pub fn describe_card(
         }
     }
     let pdg_refusal: Option<CutError> = resolved.as_ref().and_then(pdg_cut_refusal);
+    let cutuse_refused: Option<String> = resolved
+        .as_ref()
+        .and_then(cutuse_refusal)
+        .map(|e| e.to_string());
 
     let table: BTreeMap<&str, TableEntry> = classification_table()
         .into_iter()
@@ -477,6 +486,9 @@ pub fn describe_card(
             } else if let Some(beam_sum) = beam_sum {
                 key_refusal = unimplemented_cut_refusal(name, &resolved_value, beam_sum)
                     .map(|e| e.to_string());
+            }
+            if *name == "cutuse" && cutuse_refused.is_some() {
+                key_refusal = cutuse_refused.clone();
             }
             if let Some(CutError::PdgCutRefused { field, .. }) = &pdg_refusal {
                 if field == name {
@@ -688,7 +700,7 @@ mod tests {
     /// it, on its own key, while an inert sentinel passes.
     #[test]
     fn an_unimplemented_cut_carries_the_detectors_refusal() {
-        let text = "  6500 = ebeam1\n  6500 = ebeam2\n  40 = ptj1min\n  -1 = ptj2min\n";
+        let text = "  6500 = ebeam1\n  6500 = ebeam2\n  40 = misset\n  -1 = ptheavy\n";
         let report = describe_card(Some(text), false, None);
         let rc = RunCard::parse(text).unwrap();
         let error = detect_unimplemented(&rc).unwrap_err().to_string();
@@ -698,11 +710,11 @@ mod tests {
             ("cuts", error.as_str())
         );
         assert_eq!(
-            key(&report, "ptj1min").refusal.as_deref(),
+            key(&report, "misset").refusal.as_deref(),
             Some(error.as_str())
         );
-        assert_eq!(key(&report, "ptj2min").refusal, None);
-        assert!(key(&report, "ptj2min").moved_by_card);
+        assert_eq!(key(&report, "ptheavy").refusal, None);
+        assert!(key(&report, "ptheavy").moved_by_card);
     }
 
     /// The resolution notices ride in `warnings`.
