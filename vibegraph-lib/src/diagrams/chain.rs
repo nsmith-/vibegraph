@@ -32,6 +32,14 @@
 //! final state), so a stitched set is exactly the diagrams of the full final state in
 //! which every chain resonance is an s-channel line with its stated products.
 //!
+//! A permutation can reach a graph already stitched with only the lines on a vertex's
+//! slots of one particle exchanged: in `h > z z, z > e+ e-, z > e+ e-`, moving both
+//! electrons and both positrons between the decays rebuilds the same diagram with the two
+//! `Z` lines swapped between the `h Z Z` vertex's two `Z` slots. That is one Feynman
+//! diagram — the vertex's rule is symmetric under exchanging its identical bosons — so
+//! each graph is kept once by a key that orders such lines ([`slot_symmetric_key`]); kept
+//! twice, it would double the amplitude and quadruple |M|².
+//!
 //! **One subprocess from two decay assignments** follows MadGraph.
 //! `g g > z j j, z > j j` reaches `g g > u u~ c c~` as Z → cc̄ on the uū core and as
 //! Z → uū on the cc̄ core. MadGraph combines each core matrix element with each decay
@@ -73,8 +81,50 @@ pub(super) fn generate_chain(
     model: &UFOModel,
     position: LinePosition,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
-    let sets = chain_sets(process, ChainNode(0), model, position)?;
+    let sets = chain_sets(process, ChainNode(0), model, position, &mut Merges(None))?;
     Ok(sets.into_iter().map(|s| s.set).collect())
+}
+
+/// [`generate_chain`], together with every stitched diagram that was dropped as a
+/// second way to reach one already kept.
+#[cfg(test)]
+pub(crate) fn generate_chain_with_merges(
+    process: &SupportedProcess,
+    model: &UFOModel,
+) -> Result<(Vec<DiagramSet>, Vec<Merge>), DiagramError> {
+    let mut merges = Merges(Some(Vec::new()));
+    let position = LinePosition {
+        line: 1,
+        lines: 1,
+        diagrams_before: 0,
+    };
+    let sets = chain_sets(process, ChainNode(0), model, position, &mut merges)?;
+    Ok((
+        sets.into_iter().map(|s| s.set).collect(),
+        merges.0.unwrap_or_default(),
+    ))
+}
+
+/// A stitched diagram dropped because its graph is one already kept, with the
+/// subprocess both belong to.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct Merge {
+    pub(crate) particles_in: Vec<String>,
+    pub(crate) particles_out: Vec<String>,
+    pub(crate) polarizations: Vec<Option<Vec<i32>>>,
+    pub(crate) kept: Diagram,
+    pub(crate) merged: Diagram,
+}
+
+/// Where dropped stitched diagrams are collected, when anything asks for them.
+struct Merges(Option<Vec<Merge>>);
+
+impl Merges {
+    fn record(&mut self, merge: impl FnOnce() -> Merge) {
+        if let Some(out) = &mut self.0 {
+            out.push(merge());
+        }
+    }
 }
 
 /// One stitched subprocess, with what identifies its decays among the others.
@@ -96,6 +146,7 @@ fn chain_sets(
     node: ChainNode,
     model: &UFOModel,
     position: LinePosition,
+    merges: &mut Merges,
 ) -> Result<Vec<ChainSet>, DiagramError> {
     let refuse = |reason: String| DiagramError::DecayChain {
         process: process.to_string(),
@@ -144,7 +195,7 @@ fn chain_sets(
                 n_in: decay.initial.len(),
             });
         }
-        let sets = chain_sets(decay, ChainNode(next), model, position)?;
+        let sets = chain_sets(decay, ChainNode(next), model, position, merges)?;
         if sets.is_empty() {
             return Err(DiagramError::NoDiagrams {
                 process: decay.to_string(),
@@ -195,7 +246,7 @@ fn chain_sets(
             )));
         }
         for assignment in assignments(&fs, &elements, &is_ids) {
-            out.push(stitch_set(core, &assignment, node, model).map_err(refuse)?);
+            out.push(stitch_set(core, &assignment, node, model, merges).map_err(refuse)?);
         }
     }
 
@@ -364,6 +415,7 @@ fn stitch_set(
     assignment: &[(usize, ChainNode, &ChainSet)],
     node: ChainNode,
     model: &UFOModel,
+    merges: &mut Merges,
 ) -> Result<ChainSet, String> {
     let n_in = core.particles_in.len();
 
@@ -407,7 +459,7 @@ fn stitch_set(
     // property of the graph; they can disagree on which of its lines is forced on shell
     // only where the core itself holds a line that could be the resonance, with the
     // identical products — then no one line is the decay's.
-    let mut seen: HashMap<CanonicalDiagram, (i8, CanonicalDiagram)> = HashMap::new();
+    let mut seen: HashMap<CanonicalDiagram, (usize, i8, CanonicalDiagram)> = HashMap::new();
     let tuples: Vec<Vec<&Diagram>> = decay_diagrams
         .iter()
         .map(|d| d.iter())
@@ -425,17 +477,17 @@ fn stitch_set(
                 let d = relabelled(&glued, permutation, n_in, model);
                 let mut unsigned = d.clone();
                 unsigned.sign = 1;
-                let flagged = unsigned.canonical(model);
+                let flagged = slot_symmetric_key(&unsigned, model);
                 for p in &mut unsigned.props {
                     p.onshell = OnShell::Free;
                 }
-                let graph = unsigned.canonical(model);
+                let graph = slot_symmetric_key(&unsigned, model);
                 match seen.get(&graph) {
                     None => {
-                        seen.insert(graph, (d.sign, flagged));
+                        seen.insert(graph, (diagrams.len(), d.sign, flagged));
                         diagrams.push(d);
                     }
-                    Some((sign, first)) => {
+                    Some((kept, sign, first)) => {
                         assert_eq!(
                             *sign, d.sign,
                             "one stitched graph reached twice with opposite signs"
@@ -450,6 +502,13 @@ fn stitch_set(
                                 particles_out.join(" ")
                             ));
                         }
+                        merges.record(|| Merge {
+                            particles_in: core.particles_in.clone(),
+                            particles_out: particles_out.clone(),
+                            polarizations: polarizations.clone(),
+                            kept: diagrams[*kept].clone(),
+                            merged: d.clone(),
+                        });
                     }
                 }
             }
@@ -641,6 +700,70 @@ fn glue(core: &Diagram, parts: &[(usize, ChainNode, &Diagram)]) -> Diagram {
         n_in,
         provenance,
     }
+}
+
+/// The identity of a stitched graph: its [`Diagram::canonical`] form after the lines at
+/// every vertex's slots of one boson are put in a fixed order, the line whose far side
+/// holds the lowest-numbered external leg in the first of those slots.
+///
+/// Two lines on slots of the same particle, flowing the same way, can trade places
+/// without changing the Feynman diagram: the vertex's rule is symmetric under exchanging
+/// identical bosons. `canonical` keeps slot order as part of the identity, so without
+/// this ordering one diagram would be stitched once per arrangement. Only slots of one
+/// particle are ordered — slots of different particles are not interchangeable — and
+/// only bosons: exchanging two identical fermions moves them between the vertex's spinor
+/// pairings, which is a different diagram. The far sides of a vertex's lines share no
+/// leg in a tree, so the order is fixed and the same for every arrangement.
+fn slot_symmetric_key(diagram: &Diagram, model: &UFOModel) -> CanonicalDiagram {
+    let mut d = diagram.clone();
+    for v in 0..d.vertices.len() {
+        let def = model.vertex_def(d.vertices[v].interaction);
+        let slot_particles = def.particles.clone();
+        let groups: Vec<Vec<usize>> = slot_particles
+            .iter()
+            .enumerate()
+            .filter(|(_, &p)| model.particle(p).spin % 2 == 1)
+            .into_group_map_by(|(_, &p)| p)
+            .into_values()
+            .filter(|slots| slots.len() > 1)
+            .map(|slots| slots.into_iter().map(|(slot, _)| slot).sorted().collect())
+            .collect();
+        for slots in groups {
+            let rays: Vec<Ray> = slots
+                .iter()
+                .map(|&slot| d.vertices[v].rays[slot])
+                .sorted_by_key(|&ray| lowest_leg_beyond(&d, ray))
+                .collect();
+            for (&slot, ray) in slots.iter().zip(rays) {
+                d.vertices[v].rays[slot] = ray;
+                if let Ray::Prop { prop, end } = ray {
+                    d.props[prop.0].endpoints[end] = (VtxIdx(v), super::diagram::RaySlot(slot));
+                }
+            }
+        }
+    }
+    d.canonical(model)
+}
+
+/// The lowest-numbered external leg on the far side of `ray`.
+fn lowest_leg_beyond(d: &Diagram, ray: Ray) -> usize {
+    let mut lowest = usize::MAX;
+    let mut stack = vec![ray];
+    while let Some(ray) = stack.pop() {
+        match ray {
+            Ray::Leg(l) => lowest = lowest.min(l.0),
+            Ray::Prop { prop, end } => {
+                let (next, _) = d.props[prop.0].endpoints[1 - end];
+                stack.extend(
+                    d.vertices[next.0]
+                        .rays
+                        .iter()
+                        .filter(|r| !matches!(r, Ray::Prop { prop: p, .. } if *p == prop)),
+                );
+            }
+        }
+    }
+    lowest
 }
 
 /// `diagram` with its final-state legs relabelled, final-state position `i` moving to
