@@ -9,10 +9,17 @@
 //! - the (process, decays) list: the same subprocesses, each with the same final state in
 //!   the same order, decay products in place of their particle;
 //! - per subprocess, MadGraph's diagram count against the stitched diagrams whose forced
-//!   lines lead to exactly the final-state blocks MadGraph put the decays on. MadGraph
+//!   lines lead to exactly the final-state blocks MadGraph put the decays on, each line
+//!   the particle MadGraph decays there. MadGraph
 //!   does not permute identical particles between decays (it divides by
 //!   `identical_decay_chain_factor` instead), so those diagrams are the ones it has; the
 //!   rest are the permutations, whose count is reported;
+//! - per subprocess, the symmetry factor: here every arrangement of identical particles
+//!   between decays is a diagram and the final state's `Π n!` divides, there each
+//!   diagram stays on its blocks and MadGraph's `identical_particle_factor` divides. The
+//!   two agree when each of MadGraph's diagrams stands for `Π n! / factor` of the
+//!   stitched ones: `stitched · factor = on_blocks · Π n!`. A graph stitched twice (one
+//!   diagram counted twice) breaks it, as does a missing or doubled `1/n!`;
 //! - per card, how many subprocesses two decay assignments reach (`g g > u u~ c c~` from
 //!   `g g > z j j, z > j j`, or from two lines whose resonances differ): each is two
 //!   entries on both sides, one per assignment;
@@ -63,9 +70,9 @@ fn ids(values: &Value) -> Vec<i64> {
 
 /// A MadGraph (process, decays) entry's final state with every decay in place
 /// (`get_legs_with_decays`: each decay to the first remaining leg of its particle), and
-/// the `(start, length)` block of final-state positions each decay's products take,
-/// nested decays included.
-fn expand(entry: &Value) -> (Vec<i64>, Vec<(usize, usize)>) {
+/// the `(start, length, decaying particle)` block of final-state positions each decay's
+/// products take, nested decays included.
+fn expand(entry: &Value) -> (Vec<i64>, Vec<Block>) {
     let mut decays: Vec<&Value> = entry["decays"].as_array().expect("decays").iter().collect();
     let mut out = Vec::new();
     let mut blocks = Vec::new();
@@ -74,8 +81,8 @@ fn expand(entry: &Value) -> (Vec<i64>, Vec<(usize, usize)>) {
             Some(k) => {
                 let (products, inner) = expand(decays.remove(k));
                 let start = out.len();
-                blocks.push((start, products.len()));
-                blocks.extend(inner.into_iter().map(|(s, n)| (s + start, n)));
+                blocks.push((start, products.len(), id));
+                blocks.extend(inner.into_iter().map(|(s, n, p)| (s + start, n, p)));
                 out.extend(products);
             }
             None => out.push(id),
@@ -90,7 +97,11 @@ type Key = (Vec<i64>, Vec<i64>);
 
 /// MadGraph's diagram count, decay blocks and identical-particle factor for one
 /// subprocess.
-type Banked = (usize, Vec<(usize, usize)>, u64);
+type Banked = (usize, Vec<Block>, u64);
+
+/// A decay's products in the final state: first position, count, and the PDG code of
+/// the particle decaying into them.
+type Block = (usize, usize, i64);
 
 /// MadGraph's side: per subprocess, its diagram count, decay blocks and identical
 /// particle factor.
@@ -112,18 +123,22 @@ fn banked(case: &Value) -> BTreeMap<Key, Banked> {
     out
 }
 
-/// The stitched diagrams of `set` whose forced lines lead to exactly `blocks`.
-fn unpermuted(set: &DiagramSet, blocks: &[(usize, usize)]) -> usize {
+/// The stitched diagrams of `set` whose forced lines lead to exactly `blocks`, each line
+/// the block's particle up to charge conjugation (a line's orientation is not read here).
+fn unpermuted(set: &DiagramSet, blocks: &[Block], model: &UFOModel) -> usize {
+    let mut blocks: Vec<Block> = blocks.iter().map(|&(s, n, p)| (s, n, p.abs())).collect();
+    blocks.sort_unstable();
     set.diagrams
         .iter()
         .filter(|d| {
-            let mut sides: Vec<(usize, usize)> = (0..d.props.len())
+            let mut sides: Vec<Block> = (0..d.props.len())
                 .filter(|&p| d.props[p].onshell == OnShell::Forced)
                 .filter_map(|p| {
                     let side = d.final_state_side(PropIdx(p))?;
                     let start = side[0].0 - d.n_in;
                     let contiguous = side.windows(2).all(|w| w[1].0 == w[0].0 + 1);
-                    contiguous.then_some((start, side.len()))
+                    let pdg = model.particle(d.props[p].particle).pdg_code.abs();
+                    contiguous.then_some((start, side.len(), pdg))
                 })
                 .collect();
             sides.sort_unstable();
@@ -242,13 +257,25 @@ fn decay_chain_census_matches_madgraph() {
                 for (key, (count, blocks, factor)) in &theirs {
                     let Some(set) = ours.get(key) else { continue };
                     subprocesses += 1;
-                    let n = unpermuted(set, blocks);
+                    let n = unpermuted(set, blocks, &model);
                     if n != *count {
                         ok = false;
                         failures.push(format!(
                             "{name} {key:?}: MadGraph {count} diagrams, here {n} on its blocks \
                              ({} in all)",
                             set.diagrams.len()
+                        ));
+                    }
+                    let here = identical_factor(&key.1);
+                    if set.diagrams.len() as u64 * factor != n as u64 * here {
+                        ok = false;
+                        failures.push(format!(
+                            "{name} {key:?}: {} stitched diagrams over Π n! = {here}, but \
+                             MadGraph's {count} over its factor {factor} with {n} here on its \
+                             blocks: the symmetry factors differ by {}/{}",
+                            set.diagrams.len(),
+                            set.diagrams.len() as u64 * factor,
+                            n as u64 * here
                         ));
                     }
                     report.push(format!(

@@ -98,6 +98,25 @@ const CASES: &[Case] = &[
         card: "e+ e- > w+ w- z, z > mu+ mu-",
         chain: |_| vec![r(23, &["mu+", "mu-"], vec![])],
     },
+    // Two identical decays on the interchangeable Z slots of the h Z Z vertex, nested
+    // under a core decay: permuting the electrons between the decays reaches each graph a
+    // second time with the two Z lines exchanged between those slots.
+    Case {
+        card: "e+ e- > z h, (h > z z, z > e+ e-, z > e+ e-)",
+        chain: |_| {
+            vec![r(
+                25,
+                &[],
+                vec![r(23, &["e+", "e-"], vec![]), r(23, &["e+", "e-"], vec![])],
+            )]
+        },
+    },
+    // Identical products from decays on the Z and h slots of one vertex, which are not
+    // interchangeable: every permutation is a diagram of its own.
+    Case {
+        card: "e+ e- > z h, z > b b~, h > b b~",
+        chain: |_| vec![r(23, &["b", "b~"], vec![]), r(25, &["b", "b~"], vec![])],
+    },
     // Hadronic labels: every core subprocess, each lepton flavour.
     Case {
         card: "p p > z j, z > l+ l-",
@@ -397,4 +416,109 @@ fn an_ambiguous_forced_line_is_refused() {
         Err(e) => panic!("unexpected error: {e}"),
         Ok(_) => panic!("an ambiguous forced line must be refused"),
     }
+}
+
+/// Every stitched diagram dropped as a second way to reach a graph already kept has the
+/// kept diagram's amplitudes, helicity by helicity and flow by flow, at a fixed point: the
+/// two are one Feynman diagram. A key that merged two different diagrams fails here
+/// rather than silently losing one.
+///
+/// The cards reach both kinds of merge: graphs equal under `Diagram::canonical`
+/// (`e+ e- > z z, z > e+ e-`, whose u-channel core diagram is its t-channel one with the
+/// Z decays swapped) and graphs equal only once lines on a vertex's identical-boson slots
+/// are ordered (`h > z z` with two identical `Z` decays).
+///
+/// Blind to a merge that drops a diagram whose amplitude happens to equal the kept one's
+/// at the point, which a generic point makes measure-zero.
+#[test]
+fn merged_stitched_diagrams_have_equal_amplitudes() {
+    use crate::diagrams::generate_chain_with_merges;
+    let model = sm_model(SMRestrict::Default);
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let mut failures = Vec::new();
+    for (card, min_slot_merges) in [
+        ("e+ e- > z z, z > e+ e-", 0),
+        ("e+ e- > z h, (h > z z, z > e+ e-, z > e+ e-)", 1),
+        ("e+ e- > z h, z > b b~, h > b b~", 0),
+    ] {
+        let ast = parse_proc_card_ast(&format!("generate {card}")).unwrap();
+        let process = &check_supported(&ast).unwrap().processes[0];
+        let (_, merges) = generate_chain_with_merges(process, &model).unwrap();
+        let mut slot_merges = 0;
+        let mut worst = 0.0f64;
+        for m in &merges {
+            if m.kept.canonical(&model) != m.merged.canonical(&model) {
+                slot_merges += 1;
+            }
+            let set = DiagramSet {
+                particles_in: m.particles_in.clone(),
+                particles_out: m.particles_out.clone(),
+                polarizations: m.polarizations.clone(),
+                diagrams: vec![m.kept.clone()],
+                mirrored: false,
+            };
+            let momenta = point(&set, &evaluated);
+            let a = single_diagram_amplitudes(&set, &m.kept, &model, &evaluated, &momenta);
+            let b = single_diagram_amplitudes(&set, &m.merged, &model, &evaluated, &momenta);
+            let scale = a.iter().map(|z| z.norm()).fold(0.0, f64::max);
+            let diff = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| (x - y).norm())
+                .fold(0.0, f64::max);
+            if scale == 0.0 || a.len() != b.len() || diff > AMP_REL_TOL * scale {
+                failures.push(format!(
+                    "{card} | {} > {}: a merged diagram differs from the kept one by \
+                     {diff:.3e} at scale {scale:.3e}",
+                    m.particles_in.join(" "),
+                    m.particles_out.join(" ")
+                ));
+            }
+            worst = worst.max(diff / scale);
+        }
+        println!(
+            "{card}: {} merges, {slot_merges} only up to identical-boson slot order, worst \
+             relative amplitude difference {worst:.1e}",
+            merges.len()
+        );
+        if slot_merges < min_slot_merges {
+            failures.push(format!(
+                "{card}: {slot_merges} merges up to slot order, expected at least \
+                 {min_slot_merges}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// Two decays with identical products on slots of different particles (`Z` and `h` of
+/// the `Z Z h` vertex) are not one diagram under exchange: all four arrangements of the
+/// `b` and `b~` between the decays are kept.
+#[test]
+fn decays_on_slots_of_different_particles_are_all_kept() {
+    let model = sm_model(SMRestrict::Default);
+    let sets = generate("e+ e- > z h, z > b b~, h > b b~", &model);
+    let sets: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+    assert_eq!(sets.len(), 1);
+    let unpermuted = generate("e+ e- > z h", &model)
+        .iter()
+        .map(|s| s.diagrams.len())
+        .sum::<usize>();
+    assert_eq!(sets[0].diagrams.len(), 4 * unpermuted);
+}
+
+/// One graph per Feynman diagram where two identical decays meet at a vertex's
+/// interchangeable slots: `h > z z, z > e+ e-, z > e+ e-` has the two pairings of the
+/// electrons with the positrons, not each of them twice.
+#[test]
+fn identical_decays_on_interchangeable_slots_are_stitched_once() {
+    let model = sm_model(SMRestrict::Default);
+    let sets = generate("e+ e- > z h, (h > z z, z > e+ e-, z > e+ e-)", &model);
+    let sets: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+    assert_eq!(sets.len(), 1);
+    let core = generate("e+ e- > z h", &model)
+        .iter()
+        .map(|s| s.diagrams.len())
+        .sum::<usize>();
+    assert_eq!(sets[0].diagrams.len(), 2 * core);
 }

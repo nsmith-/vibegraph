@@ -335,15 +335,43 @@ fn a_restrict_card_missing_a_parameter_is_refused_naming_it() {
     assert_mentions(&message, &["MS", "MASS"]);
 }
 
-/// `9.999999e-1` and `0.000001e-99` are MadGraph's values for "one" and
-/// "zero" that the restriction must not fix (`import_ufo.py`,
-/// `restrict_model`): neither is fixed or merged, and each is replaced by 1 or 0
-/// afterwards.
+/// `9.999999e-1` and `0.000001e-99` are MadGraph's spellings of one and zero
+/// for a parameter its restriction leaves free (`import_ufo.py`: exact
+/// equality in `detect_special_parameters`, the reset in `restrict_model`).
+/// Each loads; `c3` is neither locked nor fixed, so a param card moves it, and
+/// without one it is 1 or 0. The coupling `c2 * c3` is judged at the value as
+/// written: about 5e-106 under the zero spelling, below MadGraph's 1e-13, so
+/// its vertex is pruned. An exact 1, for contrast, is fixed.
 #[test]
-fn madgraphs_unrestricted_one_and_zero_are_refused() {
-    for value in ["9.999999e-01", "0.000001e-99"] {
-        let message = restrict_refusal(" 3 1.000000e+00 # c3", &format!(" 3 {value} # c3"));
-        assert_mentions(&message, &["c3", "leaves free"]);
+fn madgraphs_free_one_and_zero_load_as_free_defaults() {
+    let load = |value: &str| {
+        let from = " 3 1.000000e+00 # c3";
+        assert_eq!(RESTRICT.matches(from).count(), 1);
+        let dir = model_with(&[]);
+        let card = restrict_file(
+            dir.path(),
+            "restrict_test.dat",
+            &RESTRICT.replacen(from, &format!(" 3 {value} # c3"), 1),
+        );
+        UFOModel::load(dir.path(), Some(&card)).unwrap_or_else(|e| panic!("c3 = {value}: {e}"))
+    };
+    let move_c3: ParamCard = "Block NEWCOUP\n 3 2.0\n".parse().unwrap();
+
+    let exact_one = load("1.000000e+00");
+    assert_eq!(exact_one.vertices.len(), 2);
+    assert!(bind_card(exact_one, &move_c3).is_err());
+
+    for (value, stands_for, vertices) in [("9.999999e-01", 1.0, 2), ("0.000001e-99", 0.0, 1)] {
+        let model = load(value);
+        assert!(!model.params.zeros.contains("c3"), "{value}");
+        assert_eq!(model.vertices.len(), vertices, "{value}");
+        let unmoved = bind_card(model.clone(), &ParamCard::default()).unwrap();
+        assert_eq!(
+            unmoved.evaluated.param_values["c3"].re, stands_for,
+            "{value}"
+        );
+        let moved = bind_card(model, &move_c3).unwrap_or_else(|e| panic!("{value}: {e}"));
+        assert!(moved.moved.iter().any(|m| m.name == "c3"), "{value}");
     }
 }
 

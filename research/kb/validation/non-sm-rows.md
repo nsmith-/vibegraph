@@ -65,8 +65,11 @@ tensor four-fermion structure or a baryonic colour atom.
   (at `4277158`). Before
   that, a card-less evaluation of a restricted model was silently its SM limit
   (the Wilson coefficients stayed at `parameters.py`'s zeros)[^n35-c]. MadGraph
-  also fixes parameters a restrict card sets to exactly `1`; no card here does
-  ([restrict-card-unit-values-not-fixed](../backlog/feature/restrict-card-unit-values-not-fixed.md)).
+  also fixes parameters a restrict card sets to exactly `1`, and leaves free
+  the ones it sets to `9.999999e-1` or `0.000001e-99` (defaults 1 and 0).
+  `restrict_vg_special_values.dat` sets each; no gated row uses it, and
+  `the_special_values_card_restricts_as_madgraph_does` holds it to MadGraph's
+  restricted model.
 
 ## Coverage: every primitive has a gated row
 
