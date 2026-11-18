@@ -5468,6 +5468,27 @@ mod tests {
         }
     }
 
+    /// With one jet, the first rank's bounds are that jet's single-leg pT
+    /// bounds: the two cards accept exactly the same points, boundaries
+    /// included (`<` for a minimum, `>` for a maximum on both paths).
+    #[test]
+    fn a_single_jet_rank_cut_is_its_single_leg_cut() {
+        let set = llj_legs();
+        let rank = Cuts::compile(&rank_base("70 = ptj1min\n100 = ptj1max\n"), &set).unwrap();
+        let single = Cuts::compile(&rank_base("70 = ptj\n100 = ptjmax\n"), &set).unwrap();
+        assert_ne!(rank, single);
+        for k in 0..=400 {
+            let pt = 50.0 + 0.125 * k as f64;
+            for lep_pt in [0.5, 30.0, 200.0] {
+                let point = ranked_point(&[lep_pt, lep_pt, pt]);
+                assert_eq!(rank.pass(&point), single.pass(&point), "jet pT {pt}");
+            }
+        }
+        assert!(rank.pass(&ranked_point(&[1.0, 1.0, 70.0])));
+        assert!(rank.pass(&ranked_point(&[1.0, 1.0, 100.0])));
+        assert_eq!(rank.shat_min(), single.shat_min());
+    }
+
     /// The ŝ floor gains the rank sum where it exceeds the single-leg sum, and
     /// stays below the ŝ of a configuration that passes. The DY1j bin card
     /// `ptj = 0.01`, `ptj1min = 100`, `ptj1max = 200` floors at `100²`, the
