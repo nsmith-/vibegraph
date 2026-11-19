@@ -106,14 +106,16 @@ fn literal_int(expr: &ast::Expr) -> Option<i64> {
     }
 }
 
-/// Parse `couplings.py` content into a list of [`Coupling`]s.
+/// [`parse_couplings_with`] with no `configuration.py` and the SM's function
+/// library.
 #[cfg(test)]
 pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError> {
     parse_couplings_with(src, &Configuration::new(), &FunctionLibrary::default())
 }
 
-/// [`parse_couplings`], reading `configuration.<name>` in a coupling order
-/// from `configuration`.
+/// Parse `couplings.py` content into a list of [`Coupling`]s, reading
+/// `configuration.<name>` in a coupling order from `configuration` and each
+/// value's library functions as `library` defines them.
 pub(crate) fn parse_couplings_with(
     src: &str,
     configuration: &Configuration,

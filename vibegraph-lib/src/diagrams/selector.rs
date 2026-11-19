@@ -170,8 +170,9 @@ mod tests {
 
     #[test]
     fn test_negative_value_skipped_gracefully() {
-        // Negative coupling powers are physically nonsensical; build_selector should
-        // not panic — it will produce an empty power list for these cases.
+        // A negative bound on an order no interaction carries a negative power of
+        // is translated through feyngraph's non-negative powers: no power list
+        // matches it, and building the selector does not panic.
         let proc = concrete(vec![], vec![constraint("QCD", CouplingOp::ExactEq, -1)]);
         let _ = build_selector(&proc, &NegativeOrders::default());
     }

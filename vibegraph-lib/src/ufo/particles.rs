@@ -166,14 +166,8 @@ impl Particle {
     }
 }
 
-/// Parse `particles.py` content into a list of [`Particle`]s.
-///
-/// Handles both direct `Particle(...)` constructor assignments and the
-/// `.anti()` shorthand (`u__tilde__ = u.anti()`).  Attribute assignments
-/// (e.g. loop_sm's `.counterterm = ...`) are silently skipped.
-///
-/// Anti-particle entries are created so vertex resolution can look up all
-/// particle python-names, including those defined via `.anti()`.
+/// [`parse_particles_with`] with no `parameters.py`: a `charge` naming a
+/// parameter is refused.
 #[cfg(test)]
 pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
     parse_particles_with(src, &|variable| {
@@ -181,8 +175,15 @@ pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError>
     })
 }
 
-/// [`parse_particles`], reading a `charge` that is a parameter's `value` through
-/// `parameter_value`.
+/// Parse `particles.py` content into a list of [`Particle`]s, reading a
+/// `charge` that is a parameter's `value` through `parameter_value`.
+///
+/// Handles both direct `Particle(...)` constructor assignments and the
+/// `.anti()` shorthand (`u__tilde__ = u.anti()`).  Attribute assignments
+/// (e.g. loop_sm's `.counterterm = ...`) are silently skipped.
+///
+/// Anti-particle entries are created so vertex resolution can look up all
+/// particle python-names, including those defined via `.anti()`.
 ///
 /// MadGraph's import sets the charge to the parameter object's `value` at the
 /// time `particles.py` is read, which is the default `parameters.py` gives

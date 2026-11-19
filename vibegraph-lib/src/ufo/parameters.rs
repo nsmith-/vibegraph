@@ -102,6 +102,22 @@ pub struct ParameterSet {
 }
 
 impl ParameterSet {
+    /// The externals a card may move: neither locked to zero, fixed at one,
+    /// nor merged into the first of a group.
+    #[cfg(test)]
+    pub(crate) fn free_externals(&self) -> impl Iterator<Item = &Parameter> {
+        let followers: BTreeSet<&String> = self
+            .merged
+            .iter()
+            .flat_map(|group| group.iter().skip(1).map(|(name, _)| name))
+            .collect();
+        self.externals.iter().filter(move |p| {
+            !self.zeros.contains(&p.name)
+                && !self.ones.contains(&p.name)
+                && !followers.contains(&p.name)
+        })
+    }
+
     /// Whether `name` is an external or internal parameter of the set.
     pub(crate) fn defines(&self, name: &str) -> bool {
         self.externals
