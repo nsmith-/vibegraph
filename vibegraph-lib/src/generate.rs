@@ -160,7 +160,8 @@ pub struct GenerateOptions<'a> {
     pub reweight: Option<(Vec<Launch>, ReweightOptions)>,
     /// The event file to write. It is written under a temporary name in the same
     /// directory and renamed to `out` once complete, so `out` never holds a
-    /// partial file, and one whose reweighting fails its audit is removed.
+    /// partial file, and one whose reweighting fails its audit or whose sampling
+    /// met a refusal is removed.
     pub out: PathBuf,
     /// How `out` is encoded.
     pub encoding: OutputEncoding,
@@ -278,6 +279,20 @@ fn refuse_sampled_fault(fault: Option<&SampledPointFault>) -> Result<(), Generat
         Some(fault) => Err(err(format!("{fault}; the run is refused"))),
         None => Ok(()),
     }
+}
+
+/// [`refuse_sampled_fault`] for a run whose event file `out` is already in
+/// place: its events were drawn from points the fault weighted zero, so the
+/// file is removed with the refusal.
+fn refuse_emitted_fault(
+    out: &std::path::Path,
+    fault: Option<&SampledPointFault>,
+) -> Result<(), GenerateError> {
+    let refused = refuse_sampled_fault(fault);
+    if refused.is_err() {
+        let _ = std::fs::remove_file(out);
+    }
+    refused
 }
 
 /// Refuse a reweight card on a process one of whose cut filters is
@@ -652,7 +667,7 @@ fn generate_sample(
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
-    refuse_sampled_fault(integ.fault())?;
+    refuse_emitted_fault(&options.out, integ.fault())?;
     report_resonances(source.tally, summary.drawn);
     if reweight_plan.is_some() {
         source.audit.finish(&options.out)?;
@@ -1224,7 +1239,7 @@ fn generate_proton_sample(
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
-    refuse_sampled_fault(integ.fault())?;
+    refuse_emitted_fault(&options.out, integ.fault())?;
     report_resonances(source.tally, summary.drawn);
     if reweight_plan.is_some() {
         source.audit.finish(&options.out)?;
@@ -1644,6 +1659,30 @@ fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
 mod tests {
     use super::audit::ReweightAudit;
     use super::*;
+
+    /// A sampled-point fault read after the event file is in place refuses the
+    /// run and takes the file with it; with no fault the file stays.
+    #[test]
+    fn a_fault_after_the_file_is_in_place_removes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("ev.lhe");
+        std::fs::write(&out, "events").unwrap();
+        refuse_emitted_fault(&out, None).unwrap();
+        assert!(out.exists());
+        let fault =
+            SampledPointFault::Scale(crate::coupling::scales::ScaleError::UnsupportedChoice {
+                choice: 0,
+            });
+        let message = refuse_emitted_fault(&out, Some(&fault))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            message.contains("per-event scale on a sampled point")
+                && message.contains("the run is refused"),
+            "{message}"
+        );
+        assert!(!out.exists(), "the refused run's file is left in place");
+    }
     use crate::artifact::{ChannelGrid, ChannelKey, FORMAT_VERSION};
     use crate::hadronic::FixedBeams;
     use crate::phasespace::maps::MapChoices;
