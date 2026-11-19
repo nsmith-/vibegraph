@@ -50,3 +50,146 @@ temporarily, run, reverted):
 | `decay_chain_census.rs` `decay_chain_census_matches_madgraph` (symmetry-factor row) | M8 |
 | `proton.rs` `a_subprocess_with_one_live_diagram_does_not_vanish` | M10: `vanishes_at_card` takes `any` diagram, not `all` |
 | `proton.rs` `a_group_joined_on_a_vanishing_matrix_element_is_not_clustered` | M11: drop `g.vanishes() \|\|` from the clustering skip; M11b as D8 |
+
+## Final dispositions
+
+| id | disposition | commit |
+|---|---|---|
+| D1 | fixed: the doc line moved back onto `worst_rel` | `fbe74515` |
+| D2 | fixed: M2 survived the old test (below); the new case `T(-1,2,-1)*T(1,-1,3)` is refused only by the index count, and every per-index case now matches `"summed fundamental index -1 does not join"` | `c9a21ce4` |
+| D3 | fixed: `check_generator_chains` keeps the per-index rule and ends in `merge_generator_chains(expr).map(drop)`; the second walk is gone | `c9a21ce4` |
+| D4 | fixed: `Merges` holds an optional `&mut dyn FnMut(..)` (`OnMerge`); `Merge` is `#[cfg(test)]` and built by the test's own callback; no `allow` left | `a07ce02c` |
+| D5 | fixed: `lowest_leg_beyond` reads `Diagram::legs_on_start_side` | `a07ce02c` |
+| D6 | fixed: `FlavorGroup::vanishes` and `vanishes_at_card` private | `fbe74515` |
+| D7 | fixed: `Subprocess::label` private | `fbe74515` |
+| D8 | not reproduced: M11b fails the test (`assertion failed: factors.iter().all(\|&f\| f == 0.0)` at `proton.rs:8263`): an earlier member's factor is non-zero, so the partial vector is caught | — |
+| D9 | leave (K-H3 H13) | — |
+| D10 | leave (K-H3 H9, Found there) | — |
+| D11–D13 | Found | — |
+| D14 | leave | — |
+
+## Mutations
+
+Driven by `/home/user/wt/kh2-mut/drive.py` (apply one textual mutation, run
+`cargo test -p vibegraph-lib <target> <filter>`, restore, log). Every run below
+is the mutated build; the clean build passes every listed test (run `CLEAN`:
+15 lib tests and `decay_chain_census` green before the edits, 16 after, with
+the added identity test).
+
+| id | mutation | test(s) | before the fixes | after |
+|---|---|---|---|---|
+| M1 | chain walk reads only the first link (`links.iter().take(1)`) in `check_generator_chains` | `generator_chains_between_slots_are_read` | FAILED (caught) | M1′, the same in `merge_generator_chains`: FAILED |
+| M2 | delete `\|\| anywhere != 2` | `summed_fundamental_indices_outside_a_chain_are_refused` | **ok (survived)** | FAILED: `unwrap_err()` on `Ok` for the new case |
+| M3 | `convert_expr` reads `expr.atoms` unmerged (link-by-link crossing) | `a_generator_chain_crosses_as_one_generator` | FAILED | FAILED |
+| M3x | M3 | `standalone_jamps -- mssm` (extended-validation) | — | `mssm_contact_structures_reach_madgraphs_flows` FAILED ("flow 0 (MadGraph's JAMP(1)) takes structure 1"); `gg_to_t1t1x_mssm` and `uux_to_t1t1x_mssm` ok, the blindness their doc states |
+| M5 | outgoing key sorted (a multiset) in `split_by_external_masses` | `equal_masses_in_different_slots_split_into_parts_of_their_own` | FAILED | (code untouched) |
+| M6 | boson slots grouped by spin, not particle | `stitching::` | ok (survived) | see below |
+| M6b | boson slots grouped as all bosons (`spin % 2`) | `stitching::`, `decay_chain_census`, the identity digest | ok, and every diagram and merge digest identical to the clean build | — |
+| M7 | stitch only the first permutation | `decays_on_slots_of_different_particles_are_all_kept` | FAILED (`left: 1, right: 4`) | (code untouched) |
+| M8 | `slot_symmetric_key` returns `canonical` unordered | `identical_decays_on_interchangeable_slots_are_stitched_once`, `merged_stitched_diagrams_have_equal_amplitudes`, `decay_chain_census_matches_madgraph` | all three FAILED | all three FAILED |
+| M5d | `lowest_leg_beyond` reads the near side (`end == 0`) | `stitching::`, `decay_chain_census` | — | FAILED (both) |
+| M10 | `vanishes_at_card` takes `any` diagram | `a_subprocess_with_one_live_diagram_does_not_vanish` | FAILED | (code narrowed only) |
+| M11 | drop `g.vanishes() \|\|` from the clustering skip | `a_group_joined_on_a_vanishing_matrix_element_is_not_clustered` | FAILED | — |
+| M11b | `return factors;` for `vec![0.0; n]` | same | FAILED | — |
+
+**Equivalent mutants (M6, M6b).** `slot_symmetric_key` restricts its reordering
+to slots of one particle, and its doc says slots of different particles are not
+interchangeable. No test can see that restriction, and none could: a line
+moved from a `Z` slot to an `h` slot is not a diagram of the vertex, so two
+valid stitched graphs never differ by such a move, and widening the grouping
+only renames every key the same way. M6b leaves every census and stitching
+card's diagram sets and merge records byte-identical. The restriction is
+defensive; `decays_on_slots_of_different_particles_are_all_kept` guards a lost
+arrangement (M7), not the grouping.
+
+Sites no mutation reaches: the "summed fundamental index … ends a generator
+chain" refusal in `merge_generator_chains` (after the per-index rule every
+summed index has a `3` end, so the walk always finds the next link); #153's
+`refuse_sampled_fault` call sites (K-H3 H13).
+
+## Identity oracles
+
+- **Colour (D3).** A temporary test compared the old `check_generator_chains`,
+  copied verbatim, with the new one on 19 structures (the test cases, three- and
+  four-link chains in both orders, two traces, chains beside unlinked `T`, `f`
+  and `Identity`): equal `Ok`/error message on all 19 (5 traces, 5 per-index
+  refusals, 9 accepted). Deleted before the commit.
+- **Stitching (D4, D5).** A temporary test printed, for every census card
+  (`validation/madgraph/decay_chain_census.json`, 33 cards) and every
+  `stitching.rs` `CASES` card, the sha256 of the `Debug` form of the
+  stitched sets and of every merge record (`particles_in`, `particles_out`,
+  `polarizations`, `kept`, `merged`), all under the default SM (a deterministic
+  identity check, not the census's own models): 34 distinct cards, 32 with a
+  merge record, plus a digest of all of them. Every line is identical before
+  and after the edits (`/home/user/wt/kh2-mut/identity-before.txt`, `CLEAN2.log`).
+- **σ and grid, bit for bit against main 92dee0d7** (main built from `git
+  archive` in its own target dir, deleted after its runs).
+  `vibegraph --no-network integrate <proc> --run-card validation/madgraph/<card>_run_card.dat --fixed-budget --neval 20000 --niter 3 --seed 7 -j 2 --no-tui`,
+  `LHAPDF_DATA_PATH=validation/pdf`:
+
+  | run card | proc card | main | this branch |
+  |---|---|---|---|
+  | `pp_to_llj_mlm` | `import model sm` / `generate p p > e+ e- j` | 6.856446e-7 ± 6.495532e-9, grid `95f0c1bf…1d084d` | identical |
+  | `pp_to_ttx_0j1j_mlm` | `generate p p > t t~ @0` / `add process p p > t t~ j @1` | 2.786081e-6 ± 1.603551e-8, grid `99718440…dc079e` | identical |
+  | `dy13_default` | `generate p p > e+ e-` | 2.402473e-6 ± 2.742323e-8, grid `b5321668…3300f0` | identical |
+
+  These cards hold no decay chain and no summed colour index, so they see
+  only the narrowing and doc edits; the two digests above are the oracle for
+  the stitching and colour refactors.
+
+## What each test provably cannot detect
+
+- `summed_fundamental_indices_outside_a_chain_are_refused`: which refusal a
+  structure meets when it breaks two rules (the per-index rule runs first).
+- `a_generator_chain_crosses_as_one_generator`: a crossing error that the
+  single-generator comparison shares (both sides go through `convert_expr`);
+  `mssm_contact_structures_reach_madgraphs_flows` is the external reference.
+- `decays_on_slots_of_different_particles_are_all_kept`: the particle
+  restriction of the slot grouping (equivalent mutant, above).
+- `merged_stitched_diagrams_have_equal_amplitudes`: a merge of two diagrams
+  equal at its one point (its doc says so).
+
+## Found
+
+1. **A panic on the stitch merge path** (D11). `diagrams/chain.rs` `stitch_set`:
+   `assert_eq!(*sign, d.sign, "one stitched graph reached twice with opposite signs")`.
+   No input reaches it today (the sign is a function of the graph), but it is
+   a panic in diagram generation; close by returning the decay-chain refusal
+   the same block already returns for an ambiguous forced line.
+2. **Two long functions grown further** (D12). `proton.rs` `derive_flavor_groups`
+   is 268 lines (235 before #153's vanishing block); `chain.rs` `stitch_set` is
+   141. Close by extracting the per-group assembly and the vanishing report
+   from the first and the dedup loop from the second.
+3. **One more hand-built one-diagram `DiagramSet`** (D13).
+   `helas/eval/stitching.rs` `merged_stitched_diagrams_have_equal_amplitudes`
+   assembles `DiagramSet { …, diagrams: vec![m.kept.clone()], mirrored: false }`:
+   add the site to `hygiene/one-diagram-diagramset-built-by-hand`.
+
+## Corrections to the brief
+
+- The brief gives no proc cards for the three run cards; the ones used are in
+  the table above, read from `validation/madgraph/scripts/*.mg5` and
+  `output/dy13_default/Cards/proc_card_mg5.dat`.
+- Disk: the container had 3.2 GB free at the start (other worktrees' finished
+  `target/` dirs hold ~8.5 GB), not the ~24 GB the discipline file states. The
+  main baseline and the final gates were built in `/dev/shm` (tmpfs) rather
+  than the worktree's `target/`, which was deleted before the gates.
+- The three fix commits were made before the gate run below; the gates ran on
+  that tree.
+
+## Gates
+
+Run on `a07ce02c` (lean cargo variables, `CARGO_BUILD_JOBS=3`, target in
+`/dev/shm/kh2-target`, driver `/home/user/wt/kh2-gates.sh`):
+
+| command | tail |
+|---|---|
+| `cargo fmt --all --check` | rc 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | `Finished dev profile … in 1m 36s`, rc 0 |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | `Finished dev profile … in 31.76s`, rc 0 |
+| `cargo test --workspace` | 69 test binaries: 2241 passed, 0 failed, 26 ignored; rc 0. No `#[test]` was added or removed (`git diff 92dee0d7 -- '*.rs'` holds none), so the count is main's |
+| `cargo doc -p vibegraph-lib --no-deps --document-private-items` | 7 warnings, none in a file this branch touches (`configs.rs`, `channel.rs`, `alphas.rs`, `scales.rs`, `lhef/mod.rs`); rc 0 |
+| `pixi run kb-lint` | `1307 concepts, 433 backlog items; 0 errors, 5 warnings` (all backlog items this branch does not touch) |
+| `cargo test -p vibegraph-lib --features extended-validation --test standalone_jamps -- mssm` | the colour change's banked rows: `uux_to_t1t1x_mssm`, `gg_to_t1t1x_mssm`, `mssm_contact_structures_reach_madgraphs_flows` ok (dev profile, not `release-debug`) |
+
+The brief closes no backlog item, so no item file is deleted.
