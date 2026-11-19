@@ -1048,8 +1048,104 @@ impl BlockIteration {
 /// run that accumulates shares holds a whole number of tiles.
 pub(crate) const SHARE_TILE: usize = 256;
 
-/// Run one iteration of every block in a **single** rayon region, scheduled by
-/// `(block, chunk)`.
+/// One chunk of [`adapt_blocks_iteration`]: its points' weighted values, their
+/// bin indices (`ndim` per point) and its share tiles.
+struct ChunkOutput {
+    fvals: Vec<f64>,
+    bins: Vec<u16>,
+    tiles: Vec<f64>,
+}
+
+/// One block's sums over the chunks of an iteration folded in so far, in
+/// point order.
+struct BlockSums {
+    hist: BinHistogram,
+    sum: f64,
+    sum2: f64,
+    accepted: usize,
+    share_sums: Vec<f64>,
+}
+
+impl BlockSums {
+    fn new(grid: &VegasGrid, n_shares: usize) -> Self {
+        BlockSums {
+            hist: BinHistogram::new(grid),
+            sum: 0.0,
+            sum2: 0.0,
+            accepted: 0,
+            share_sums: vec![0.0; 2 * n_shares],
+        }
+    }
+
+    /// Fold in the block's next chunk.
+    fn add(&mut self, chunk: &ChunkOutput, ndim: usize, n_shares: usize) {
+        for tile in chunk.tiles.chunks_exact(2 * n_shares.max(1)) {
+            for (acc, &t) in self.share_sums.iter_mut().zip(tile) {
+                *acc += t;
+            }
+        }
+        for (i, &fval) in chunk.fvals.iter().enumerate() {
+            let fval2 = fval * fval;
+            self.sum += fval;
+            self.sum2 += fval2;
+            self.accepted += usize::from(fval != 0.0);
+            self.hist.add(
+                fval,
+                fval2,
+                chunk.bins[i * ndim..(i + 1) * ndim]
+                    .iter()
+                    .map(|&k| usize::from(k)),
+            );
+        }
+    }
+
+    fn finish(self, neval: usize, n_shares: usize) -> BlockIteration {
+        let (mean, variance) = moments(self.sum, self.sum2, neval);
+        debug_assert_eq!(self.share_sums.len(), 2 * n_shares);
+        BlockIteration {
+            integral: mean,
+            variance,
+            accepted: self.accepted,
+            sum_sq: self.sum2,
+            hist: self.hist.finish(),
+            shares: self
+                .share_sums
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|s| moments(s[0], s[1], neval))
+                .collect(),
+        }
+    }
+}
+
+/// Bytes of share tiles one wave of [`adapt_blocks_iteration`] may hold.
+///
+/// A chunk's tiles are `2 × n_shares` values per [`SHARE_TILE`] points, so an
+/// iteration of many channels over a wide share split holds gigabytes of them
+/// if every chunk is collected before any is folded in.
+const SHARE_WAVE_BYTES: usize = 256 << 20;
+
+/// Tasks per wave of [`adapt_blocks_iteration`]: every task at once where no
+/// share is summed, and otherwise as many as keep the wave's tiles within
+/// `wave_bytes`, but never fewer than the pool has threads.
+fn wave_len(plans: &[BlockPlan], n_shares: usize, tasks: usize, wave_bytes: usize) -> usize {
+    if n_shares == 0 {
+        return tasks.max(1);
+    }
+    let per_task = plans
+        .iter()
+        .map(|p| p.chunk_size.max(1).div_ceil(SHARE_TILE) * 2 * n_shares * size_of::<f64>())
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    (wave_bytes / per_task)
+        .max(rayon::current_num_threads())
+        .max(1)
+}
+
+/// Run one iteration of every block, every block's chunks scheduled together
+/// by `(block, chunk)`.
 ///
 /// Each block's result is bit-for-bit one iteration of the sequential
 /// [`VegasGrid::adapt`] on that block's grid, its single generator standing at
@@ -1069,9 +1165,13 @@ pub(crate) const SHARE_TILE: usize = 256;
 ///   different — grid at the next refinement, and from there a different point
 ///   sequence entirely.
 ///
-/// Scheduling every block's chunks in one region, rather than one region per
-/// block, changes only *when* the work runs: a narrow block alone could not fill
-/// the pool. Nothing about a block's arithmetic can see the difference.
+/// Scheduling every block's chunks together, rather than one region per block,
+/// changes only *when* the work runs: a narrow block alone could not fill the
+/// pool. Nothing about a block's arithmetic can see the difference. The chunks
+/// run in one region where no share is summed, and otherwise in consecutive
+/// waves sized by [`SHARE_WAVE_BYTES`], each folded into its blocks' sums before
+/// the next starts, so the share tiles alive at once are bounded whatever the
+/// number of blocks; a wave boundary moves no point and no sum either.
 ///
 /// `init` builds a block's per-chunk state from `(block, first global point of
 /// the chunk)` — a substream of its own for any coordinates the integrand draws
@@ -1093,6 +1193,25 @@ pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
     plans: &[BlockPlan],
     seed: u64,
     n_shares: usize,
+    init: Init,
+    f: Fp,
+) -> Vec<BlockIteration>
+where
+    Init: Fn(usize, u64) -> S + Sync,
+    Fp: Fn(usize, &mut S, &[f64], &mut [f64]) -> f64 + Sync,
+    S: Send,
+{
+    adapt_blocks_iteration_in_waves(grids, plans, seed, n_shares, SHARE_WAVE_BYTES, init, f)
+}
+
+/// [`adapt_blocks_iteration`] with its waves sized to hold at most
+/// `wave_bytes` of share tiles ([`wave_len`]).
+fn adapt_blocks_iteration_in_waves<S, Init, Fp>(
+    grids: &[VegasGrid],
+    plans: &[BlockPlan],
+    seed: u64,
+    n_shares: usize,
+    wave_bytes: usize,
     init: Init,
     f: Fp,
 ) -> Vec<BlockIteration>
@@ -1128,118 +1247,103 @@ where
         })
         .collect();
 
-    let chunks: Vec<(Vec<f64>, Vec<u16>, Vec<f64>)> = tasks
-        .par_iter()
-        .enumerate()
-        .map(|(task, &(b, c))| {
-            worker_fault::at_task(task);
-            let grid = &grids[b];
-            let plan = &plans[b];
-            let ndim = grid.ndim;
-            assert!(
-                grid.nbins <= usize::from(u16::MAX) + 1,
-                "a chunk carries its bin indices out as u16, so {} bins do not fit",
-                grid.nbins
-            );
-            let chunk_size = plan.chunk_size.max(1);
-            let offset = c * chunk_size;
-            let this_chunk = chunk_size.min(plan.neval - offset);
-            let chunk_first = plan.first_point + offset as u64;
-
-            let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            rng.set_stream(plan.stream);
-            rng.set_word_pos(u128::from(chunk_first) * ndim as u128 * WORDS_PER_DRAW);
-
-            let mut state = init(b, chunk_first);
-            let mut x = vec![0.0_f64; ndim];
-            let mut ks = vec![0_usize; ndim];
-            let mut fvals = Vec::with_capacity(this_chunk);
-            let mut bins = Vec::with_capacity(this_chunk * ndim);
-            let mut parts = vec![0.0_f64; n_shares];
-            let mut tile = vec![0.0_f64; 2 * n_shares];
-            let mut tiles = Vec::with_capacity(this_chunk.div_ceil(SHARE_TILE) * 2 * n_shares);
-            for i in 0..this_chunk {
-                let wgt = grid.draw_point(&mut rng, &mut x, &mut ks);
-                let value = f(b, &mut state, &x, &mut parts);
-                fvals.push(value * wgt);
-                bins.extend(ks.iter().map(|&k| k as u16));
-                if n_shares > 0 {
-                    // A tile sum starts at +0.0 and so never holds -0.0, which
-                    // makes adding a zero point's +0.0 parts an exact no-op:
-                    // skipping it moves no bit.
-                    if value != 0.0 {
-                        for (acc, p) in tile.as_chunks_mut::<2>().0.iter_mut().zip(&mut parts) {
-                            let w = *p * wgt;
-                            acc[0] += w;
-                            acc[1] += w * w;
-                            *p = 0.0;
-                        }
-                    } else {
-                        debug_assert!(
-                            parts.iter().all(|&p| p == 0.0),
-                            "a point of value zero wrote a share"
-                        );
-                    }
-                    if (i + 1) % SHARE_TILE == 0 || i + 1 == this_chunk {
-                        tiles.extend_from_slice(&tile);
-                        tile.iter_mut().for_each(|t| *t = 0.0);
-                    }
-                }
-            }
-            (fvals, bins, tiles)
-        })
-        .collect();
-
-    let mut out = Vec::with_capacity(plans.len());
-    let mut next = 0_usize;
-    for (b, plan) in plans.iter().enumerate() {
+    let run_chunk = |task: usize, (b, c): (usize, usize)| -> ChunkOutput {
+        worker_fault::at_task(task);
         let grid = &grids[b];
+        let plan = &plans[b];
         let ndim = grid.ndim;
-        let nchunks = plan.neval.div_ceil(plan.chunk_size.max(1));
-        let mut hist = BinHistogram::new(grid);
-        let mut sum = 0.0_f64;
-        let mut sum2 = 0.0_f64;
-        let mut accepted = 0_usize;
-        let mut share_sums = vec![0.0_f64; 2 * n_shares];
-        for (_, _, tiles) in &chunks[next..next + nchunks] {
-            for tile in tiles.chunks_exact(2 * n_shares.max(1)) {
-                for (acc, &t) in share_sums.iter_mut().zip(tile) {
-                    *acc += t;
+        assert!(
+            grid.nbins <= usize::from(u16::MAX) + 1,
+            "a chunk carries its bin indices out as u16, so {} bins do not fit",
+            grid.nbins
+        );
+        let chunk_size = plan.chunk_size.max(1);
+        let offset = c * chunk_size;
+        let this_chunk = chunk_size.min(plan.neval - offset);
+        let chunk_first = plan.first_point + offset as u64;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        rng.set_stream(plan.stream);
+        rng.set_word_pos(u128::from(chunk_first) * ndim as u128 * WORDS_PER_DRAW);
+
+        let mut state = init(b, chunk_first);
+        let mut x = vec![0.0_f64; ndim];
+        let mut ks = vec![0_usize; ndim];
+        let mut fvals = Vec::with_capacity(this_chunk);
+        let mut bins = Vec::with_capacity(this_chunk * ndim);
+        let mut parts = vec![0.0_f64; n_shares];
+        let mut tile = vec![0.0_f64; 2 * n_shares];
+        let mut tiles = Vec::with_capacity(this_chunk.div_ceil(SHARE_TILE) * 2 * n_shares);
+        for i in 0..this_chunk {
+            let wgt = grid.draw_point(&mut rng, &mut x, &mut ks);
+            let value = f(b, &mut state, &x, &mut parts);
+            fvals.push(value * wgt);
+            bins.extend(ks.iter().map(|&k| k as u16));
+            if n_shares > 0 {
+                // A tile sum starts at +0.0 and so never holds -0.0, which
+                // makes adding a zero point's +0.0 parts an exact no-op:
+                // skipping it moves no bit.
+                if value != 0.0 {
+                    for (acc, p) in tile.as_chunks_mut::<2>().0.iter_mut().zip(&mut parts) {
+                        let w = *p * wgt;
+                        acc[0] += w;
+                        acc[1] += w * w;
+                        *p = 0.0;
+                    }
+                } else {
+                    debug_assert!(
+                        parts.iter().all(|&p| p == 0.0),
+                        "a point of value zero wrote a share"
+                    );
+                }
+                if (i + 1) % SHARE_TILE == 0 || i + 1 == this_chunk {
+                    tiles.extend_from_slice(&tile);
+                    tile.iter_mut().for_each(|t| *t = 0.0);
                 }
             }
         }
-        for (fvals, bins, _) in &chunks[next..next + nchunks] {
-            for (i, &fval) in fvals.iter().enumerate() {
-                let fval2 = fval * fval;
-                sum += fval;
-                sum2 += fval2;
-                accepted += usize::from(fval != 0.0);
-                hist.add(
-                    fval,
-                    fval2,
-                    bins[i * ndim..(i + 1) * ndim]
-                        .iter()
-                        .map(|&k| usize::from(k)),
-                );
+        ChunkOutput { fvals, bins, tiles }
+    };
+
+    // The chunks run in waves of consecutive tasks, and each wave's results are
+    // folded into their blocks' sums, in task order, before the next wave runs.
+    // A block's chunks are consecutive tasks in ascending chunk order, so every
+    // sum is formed in the point order a single collection of every chunk would
+    // give it; a wave bounds how many chunks' share tiles are alive at once.
+    let wave = wave_len(plans, n_shares, tasks.len(), wave_bytes);
+    let mut out = Vec::with_capacity(plans.len());
+    let mut open: Option<(usize, BlockSums)> = None;
+    let close_through = |end: usize, open: &mut Option<(usize, BlockSums)>, out: &mut Vec<_>| {
+        while out.len() < end {
+            let b = out.len();
+            let sums = match open.take() {
+                Some((ob, sums)) if ob == b => sums,
+                other => {
+                    *open = other;
+                    BlockSums::new(&grids[b], n_shares)
+                }
+            };
+            out.push(sums.finish(plans[b].neval, n_shares));
+        }
+    };
+    for (w, wave_tasks) in tasks.chunks(wave).enumerate() {
+        let first = w * wave;
+        let results: Vec<ChunkOutput> = wave_tasks
+            .par_iter()
+            .enumerate()
+            .map(|(i, &task)| run_chunk(first + i, task))
+            .collect();
+        for (&(b, _), chunk) in wave_tasks.iter().zip(&results) {
+            close_through(b, &mut open, &mut out);
+            if open.as_ref().is_none_or(|(ob, _)| *ob != b) {
+                open = Some((b, BlockSums::new(&grids[b], n_shares)));
+            }
+            if let Some((_, sums)) = open.as_mut() {
+                sums.add(chunk, grids[b].ndim, n_shares);
             }
         }
-        next += nchunks;
-
-        let (mean, variance) = moments(sum, sum2, plan.neval);
-        out.push(BlockIteration {
-            integral: mean,
-            variance,
-            accepted,
-            sum_sq: sum2,
-            hist: hist.finish(),
-            shares: share_sums
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|s| moments(s[0], s[1], plan.neval))
-                .collect(),
-        });
     }
+    close_through(plans.len(), &mut open, &mut out);
     out
 }
 
@@ -2455,6 +2559,134 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Folding the chunks in wave by wave forms every sum in point order: the
+    /// blocks' estimates, histograms and shares come out bit for bit those of
+    /// each block run alone as one chunk, at a wave budget that holds one chunk's
+    /// tiles per thread, five chunks' or every chunk, on one thread and on
+    /// several, with a block of no points between the others. A fold that
+    /// took a block's chunks out of point order, dropped or restarted one, or
+    /// lost or repeated a block at a wave boundary would move a bit or a block.
+    /// What it cannot see is the memory a wave holds; [`wave_len`]'s bound is
+    /// pinned apart.
+    #[test]
+    fn share_waves_move_no_bit() {
+        let seed = 0x5EED_3A7E;
+        let grid = VegasGrid::new(2, 16, 1.5);
+        let nevals = [
+            5 * SHARE_TILE + 13,
+            2 * SHARE_TILE,
+            0,
+            7 * SHARE_TILE + 1,
+            300,
+        ];
+        let plans: Vec<BlockPlan> = nevals
+            .iter()
+            .enumerate()
+            .map(|(b, &neval)| BlockPlan {
+                neval,
+                first_point: 17 * b as u64,
+                stream: 0xC7A0_0100 + b as u64,
+                chunk_size: SHARE_TILE,
+            })
+            .collect();
+        let grids = vec![grid; plans.len()];
+        let parts = |b: usize, u: &[f64], out: &mut [f64]| {
+            if u[1] < 0.25 {
+                return 0.0;
+            }
+            let w = (3.0 * u[0]).exp() * (0.2 + u[1]) * (1 + b) as f64;
+            let frac = [u[0] * u[0], 1.0 - u[0] * u[0], 0.0];
+            for (o, f) in out.iter_mut().zip(frac) {
+                *o += w * f;
+            }
+            w
+        };
+        let run = |nthreads: usize, wave_bytes: usize| {
+            run_with_threads(nthreads, || {
+                let tasks = 18;
+                let wave = wave_len(&plans, 3, tasks, wave_bytes);
+                assert!(
+                    wave < tasks || wave_bytes == usize::MAX,
+                    "waves of {wave} tasks do not split the iteration's {tasks}"
+                );
+                adapt_blocks_iteration_in_waves(
+                    &grids,
+                    &plans,
+                    seed,
+                    3,
+                    wave_bytes,
+                    |_, _| (),
+                    |b, _, u, out| parts(b, u, out),
+                )
+            })
+        };
+        // Each block alone as a single chunk: no wave, no chunk boundary.
+        let alone: Vec<BlockIteration> = plans
+            .iter()
+            .enumerate()
+            .map(|(b, plan)| {
+                let whole = BlockPlan {
+                    chunk_size: plan.neval.max(1).next_multiple_of(SHARE_TILE),
+                    ..*plan
+                };
+                run_with_threads(1, || {
+                    adapt_blocks_iteration_in_waves(
+                        std::slice::from_ref(&grids[b]),
+                        &[whole],
+                        seed,
+                        3,
+                        usize::MAX,
+                        |_, _| (),
+                        |_, _, u, out| parts(b, u, out),
+                    )
+                })
+                .pop()
+                .unwrap()
+            })
+            .collect();
+        let want = format!("{alone:?}");
+        for nthreads in [1, 3] {
+            for wave_bytes in [1, 5 * 2 * 3 * size_of::<f64>(), usize::MAX] {
+                let got = run(nthreads, wave_bytes);
+                assert_eq!(got.len(), plans.len());
+                assert_eq!(
+                    format!("{got:?}"),
+                    want,
+                    "{nthreads} thread(s), waves of {wave_bytes} bytes"
+                );
+            }
+        }
+    }
+
+    /// A wave holds no more share tiles than its budget once the budget covers
+    /// a chunk per thread, every chunk where no share is summed, and at least a
+    /// chunk per thread whatever the budget.
+    #[test]
+    fn a_share_wave_keeps_within_its_budget() {
+        let plans: Vec<BlockPlan> = [SHARE_TILE, 8 * SHARE_TILE]
+            .iter()
+            .map(|&chunk_size| BlockPlan {
+                neval: 100 * chunk_size,
+                first_point: 0,
+                stream: 0,
+                chunk_size,
+            })
+            .collect();
+        let n_shares = 1000;
+        let per_task = 8 * 2 * n_shares * size_of::<f64>();
+        run_with_threads(2, || {
+            assert_eq!(wave_len(&plans, 0, 200, 1), 200);
+            assert_eq!(wave_len(&plans, n_shares, 200, 1), 2);
+            for budget in [10 * per_task, SHARE_WAVE_BYTES] {
+                let wave = wave_len(&plans, n_shares, 200, budget);
+                assert!(
+                    wave >= 2 && wave * per_task <= budget,
+                    "{wave} tasks in {budget} bytes"
+                );
+            }
+        });
     }
 
     /// The block-split adaptation and the sequential one agree bit for bit under
