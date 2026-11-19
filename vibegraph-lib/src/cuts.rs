@@ -106,9 +106,19 @@
 //!   codes `mxx_only_part_antipart` lists join the same list at `pT ≥ 0`
 //!   (`banner.py:4711`), so they too replace a listed leg's class cuts.
 //!
+//! - **pT-ranked cuts** (`ptj1min`–`ptj4max`, `ptl1min`–`ptl4max`,
+//!   `cuts.f:816-871`, `:916-972`): the `n`-th hardest jet-class leg or charged
+//!   lepton between its bounds, `do_cuts` not read, with `cutuse = 0` ([`RankCut`]).
+//!   MadEvent's `τ` floor folds the minima in (`setcuts.f:534-566`, `:639-670`);
+//!   the floor here derives its own bound from them ([`Cuts::shat_min`]), and the
+//!   two cases where MadEvent's floor cuts on its own are refused: `cutuse = 1`
+//!   with a jet bound on, and a ranked class that mixes cut and uncut members
+//!   under a single-leg minimum.
+//!
 //! Cut families implemented here: ŝ window, single-leg pT/E/η (classes
 //! j/b/a/l), the per-PDG pT minimum, pairwise ΔR and invariant mass, `ptll`,
-//! `mmnl`, `htj` and `iht`, and the decay-chain Breit–Wigner windows. Every other
+//! `mmnl`, `htj` and `iht`, the jet and lepton pT ranks, and the decay-chain
+//! Breit–Wigner windows. Every other
 //! `cut=`-tagged parameter is parse-and-detect: [`Cuts::compile`] hard-errors
 //! with [`CutError::UnimplementedCutActive`] if its value deviates from the MG
 //! default, so an active but unimplemented cut is never silently ignored.
@@ -523,6 +533,7 @@ fn limit_regulated(
     infos: &[LegInfo],
     single: &[SingleLegCut],
     pairs: &[PairCut],
+    ranks: &[&RankCut],
     legs: &[ExternalLeg],
     kt_veto: bool,
 ) -> bool {
@@ -530,6 +541,13 @@ fn limit_regulated(
         return true;
     }
     let single_of = |k: usize| single.iter().find(|s| s.idx == infos[k].idx);
+    // A rank minimum that holds every member of the leg's class above it.
+    let rank_floor = |k: usize| {
+        ranks
+            .iter()
+            .filter(|r| r.members.contains(&infos[k].idx))
+            .any(|r| r.every_member_floor() > 0.0)
+    };
     let pair_of = |i: usize, j: usize| {
         pairs
             .iter()
@@ -539,11 +557,12 @@ fn limit_regulated(
         MasslessLimit::FinalCollinear { a, b, .. } => pair_of(infos[a].idx, infos[b].idx)
             .is_some_and(|pc| pc.dr2_min > 0.0 || pc.m2_min > 0.0),
         MasslessLimit::InitialCollinear { leg, .. } => {
-            single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.eta_max >= 0.0)
+            single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.eta_max >= 0.0) || rank_floor(leg)
         }
         MasslessLimit::Soft { leg } => {
             let idx = infos[leg].idx;
             single_of(leg).is_some_and(|s| s.pt_min > 0.0 || s.e_min > 0.0)
+                || rank_floor(leg)
                 || pairs
                     .iter()
                     .filter(|pc| pc.i == idx || pc.j == idx)
@@ -572,13 +591,14 @@ fn refuse_unregulated_limits(
     infos: &[LegInfo],
     single: &[SingleLegCut],
     pairs: &[PairCut],
+    ranks: &[&RankCut],
     legs: &[ExternalLeg],
     kt_veto: bool,
 ) -> Result<(), CutError> {
     match forced
         .massless_limits
         .iter()
-        .find(|&&limit| !limit_regulated(limit, infos, single, pairs, legs, kt_veto))
+        .find(|&&limit| !limit_regulated(limit, infos, single, pairs, ranks, legs, kt_veto))
     {
         Some(&limit) => Err(unregulated_limit_error(limit, infos, legs)),
         None => Ok(()),
@@ -770,6 +790,14 @@ pub enum CutError {
         value: String,
         reason: String,
     },
+    /// A value of an implemented cut parameter whose MadGraph treatment is not
+    /// reproduced at the card's other settings.
+    #[error("run card's {field} = {value} is refused: {reason}")]
+    ValueRefused {
+        field: &'static str,
+        value: String,
+        reason: String,
+    },
     #[error(
         "cut_decays = F would leave final-state leg {leg} (PDG {pdg}) uncut, but it is a \
          massless coloured core parton in a kept diagram: the exemption is IR-unsafe, its \
@@ -930,6 +958,192 @@ struct HtCut {
     iht_max: f64,
 }
 
+/// The transverse-momentum cuts on the pT-ranked members of one class: the
+/// jets (`ptj1min`–`ptj4min`, `ptj1max`–`ptj4max`, `cuts.f:816-871`) or the
+/// charged leptons (`ptl1min`–`ptl4min`, `ptl1max`–`ptl4max`, `cuts.f:916-972`),
+/// copied unchanged into `ptjmin4`/`ptjmax4` and `ptlmin4`/`ptlmax4`
+/// (`setcuts.f:488-496`, `:514-522`).
+///
+/// - **Members** are the jet-class legs (`is_a_j`, `cuts.f:525-529`: gluons and
+///   quarks up to `maxjetflavor`, so a b-class leg is not ranked) or the charged
+///   leptons (`is_a_l`, `cuts.f:925-930`). Neither block reads `do_cuts`: decay
+///   products under `cut_decays = F` and legs above 20 GeV are ranked and cut,
+///   as the run-card template says ("sorted cuts always apply",
+///   `Cards/run_card.dat:102`).
+/// - **Ordering** is by transverse momentum, hardest first (`cuts.f:826-835`,
+///   `:943-952`).
+/// - **Existence**: a positive `pt{N}min` fails every point with fewer than `N`
+///   members (`cuts.f:817-820`, `:934-937`). A maximum alone requires nothing.
+/// - **Bounds**: the `N`-th hardest member, `N ≤ min(members, 4)`, fails below
+///   `pt{N}min` (`<`) and, when `pt{N}max ≥ 0`, above it (`>`); a point fails
+///   when any ranked member fails (`cuts.f:848-864` with `jetor`, which
+///   `setcuts.f:509` sets from `cutuse = 0`, and `:957-965`, where the leptons
+///   have no `cutuse` and always take "any"). `cutuse = 1` with an active jet
+///   bound is refused ([`cutuse_refusal`]).
+#[derive(Clone, Debug, PartialEq)]
+struct RankCut {
+    /// Indices of the class's final legs.
+    members: Vec<usize>,
+    /// `pt1min`–`pt4min`; at or below zero a rank has no minimum.
+    min: [f64; 4],
+    /// `pt1max`–`pt4max`; < 0 = inactive.
+    max: [f64; 4],
+}
+
+impl RankCut {
+    /// The rank cuts of one class, or `None` when no bound is active: the guard
+    /// `cuts.f:920-922` reads before the lepton block. The jet block runs
+    /// unguarded, and with no bound active it rejects nothing.
+    fn of(members: Vec<usize>, min: [f64; 4], max: [f64; 4]) -> Option<RankCut> {
+        let active = min.iter().any(|&m| m > 0.0) || max.iter().any(|&m| m >= 0.0);
+        active.then_some(RankCut { members, min, max })
+    }
+
+    /// Whether some minimum is positive, which also rejects every point at which
+    /// the members carry no transverse momentum.
+    fn has_min(&self) -> bool {
+        self.min.iter().any(|&m| m > 0.0)
+    }
+
+    /// The transverse-momentum minimum every member is held above: of `n ≤ 4`
+    /// members the softest is the `n`-th hardest, held above `pt{n}min`, and a
+    /// positive minimum on a higher rank leaves no point at all. Zero for more
+    /// than four members.
+    fn every_member_floor(&self) -> f64 {
+        let n = self.members.len();
+        if n == 0 || n > 4 {
+            return 0.0;
+        }
+        self.min[n - 1..].iter().fold(0.0f64, |a, &m| a.max(m))
+    }
+
+    /// A lower bound on the members' summed transverse momentum, given each
+    /// member's own transverse-momentum minimum in `own` (one per member, any
+    /// order, `0` for none). The `k`-th hardest member is held above `pt{k}min`
+    /// and above every higher rank's minimum, whose member must exist and be no
+    /// harder; and since every member is above its own minimum, the `k`-th
+    /// hardest is above the `k`-th largest of those minima.
+    fn pt_sum_floor(&self, own: &[f64]) -> f64 {
+        let mut own = own.to_vec();
+        own.sort_by(|a, b| b.total_cmp(a));
+        own.iter()
+            .enumerate()
+            .map(|(k, &a)| {
+                let rank = self
+                    .min
+                    .get(k..)
+                    .map_or(0.0, |m| m.iter().fold(0.0f64, |x, &y| x.max(y)));
+                a.max(rank)
+            })
+            .sum()
+    }
+}
+
+/// The rank cuts of `class`'s members as the card sets them.
+fn rank_cut(rc: &RunCard, infos: &[LegInfo], class: Letter) -> Option<RankCut> {
+    let c = letter_char(class);
+    let bound = |n: usize, side: &str| rc.float(&format!("pt{c}{n}{side}"));
+    let members = infos
+        .iter()
+        .filter(|i| i.letter == Some(class))
+        .map(|i| i.idx)
+        .collect();
+    RankCut::of(
+        members,
+        [1, 2, 3, 4].map(|n| bound(n, "min")),
+        [1, 2, 3, 4].map(|n| bound(n, "max")),
+    )
+}
+
+/// The name of the `n`-th rank minimum of class `c` (`'j'` or `'l'`).
+fn rank_min_name(c: char, n: usize) -> &'static str {
+    const JET: [&str; 4] = ["ptj1min", "ptj2min", "ptj3min", "ptj4min"];
+    const LEPTON: [&str; 4] = ["ptl1min", "ptl2min", "ptl3min", "ptl4min"];
+    if c == 'j' {
+        JET[n - 1]
+    } else {
+        LEPTON[n - 1]
+    }
+}
+
+/// Refuse the card on which MadEvent's `τ` floor from a ranked class can rise
+/// above the cuts.
+///
+/// `setcuts.f:534-566` (jets) and `:639-670` (leptons) add one term per member,
+/// in leg order, to the class's transverse sum: a cut member (`do_cuts`) takes
+/// `max(e{c}, pt{c}, …, pt{k}min, …)` and an uncut one only the rank minima.
+/// With every member cut, or none, that sum is a lower bound on the members'
+/// summed transverse momentum, which `√ŝ` bounds, and the floor cuts nothing.
+/// Where a class mixes the two (decay products under `cut_decays = F`, or a jet
+/// above 20 GeV, beside cut members) with a positive rank minimum and a
+/// positive single-leg minimum, the rank minimum can land on an uncut member's
+/// term while the hardest member is a cut one, counting the hardest member's
+/// bound twice: MadEvent's floor (`myamp.f:569-570`) then removes points that
+/// pass every cut, which is not reproduced.
+fn refuse_rank_smin_overcount(
+    rc: &RunCard,
+    infos: &[LegInfo],
+    r: &RankCut,
+) -> Result<(), CutError> {
+    if !r.has_min() {
+        return Ok(());
+    }
+    let members: Vec<&LegInfo> = infos
+        .iter()
+        .filter(|i| r.members.contains(&i.idx))
+        .collect();
+    let Some(letter) = members.first().and_then(|i| i.letter) else {
+        return Ok(());
+    };
+    let cut = members.iter().filter(|i| i.do_cuts).count();
+    if cut == 0 || cut == members.len() {
+        return Ok(());
+    }
+    let c = letter_char(letter);
+    let single = rc.float(&format!("pt{c}")).max(rc.float(&format!("e{c}")));
+    if single <= 0.0 {
+        return Ok(());
+    }
+    let n = (1..=4).find(|&n| r.min[n - 1] > 0.0).unwrap_or(1);
+    Err(CutError::ValueRefused {
+        field: rank_min_name(c, n),
+        value: r.min[n - 1].to_string(),
+        reason: format!(
+            "this subprocess ranks {cut} cut and {} uncut {} (decay products under \
+             cut_decays = F, or legs above 20 GeV) together, and with pt{c} or e{c} positive \
+             MadGraph's tau floor (setcuts.f smin) can count the hardest one's bound twice and \
+             cut points that pass every cut, which is not reproduced",
+            members.len() - cut,
+            if c == 'j' { "jets" } else { "charged leptons" }
+        ),
+    })
+}
+
+/// The rank cuts on one point ([`RankCut`]).
+fn rank_ok<F: Real>(r: &RankCut, momenta: &[LorentzVector<F>]) -> bool {
+    let n = r.members.len();
+    if r.min[n.min(4)..].iter().any(|&m| m > 0.0) {
+        return false;
+    }
+    // The four hardest transverse momenta in descending order, by insertion.
+    let mut top = [F::zero(); 4];
+    for (k, &i) in r.members.iter().enumerate() {
+        let pt = transverse(momenta[i]);
+        let mut slot = k.min(4);
+        while slot > 0 && pt > top[slot - 1] {
+            if slot < 4 {
+                top[slot] = top[slot - 1];
+            }
+            slot -= 1;
+        }
+        if slot < 4 {
+            top[slot] = pt;
+        }
+    }
+    (0..n.min(4))
+        .all(|k| !(top[k] < c::<F>(r.min[k]) || (r.max[k] >= 0.0 && top[k] > c::<F>(r.max[k]))))
+}
+
 /// A compiled, process-specific cut filter.
 ///
 /// Equality is equality of the filter, not of the process it was compiled for:
@@ -950,6 +1164,10 @@ pub struct Cuts {
     pairs: Vec<PairCut>,
     mmnl: Option<MmnlCut>,
     ht: Option<HtCut>,
+    /// The jets' pT-ranked cuts, `None` when none is active.
+    jet_rank: Option<RankCut>,
+    /// The charged leptons' pT-ranked cuts, `None` when none is active.
+    lepton_rank: Option<RankCut>,
     shat_min_hint: f64,
     /// An upper bound on ŝ (GeV²) the decay-chain windows imply, infinite where
     /// they imply none ([`Cuts::shat_max`]).
@@ -986,23 +1204,6 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "xptb",
     "xpta",
     "xptl",
-    "ptj1min",
-    "ptj1max",
-    "ptj2min",
-    "ptj2max",
-    "ptj3min",
-    "ptj3max",
-    "ptj4min",
-    "ptj4max",
-    "cutuse",
-    "ptl1min",
-    "ptl1max",
-    "ptl2min",
-    "ptl2max",
-    "ptl3min",
-    "ptl3max",
-    "ptl4min",
-    "ptl4max",
     "ht2min",
     "ht3min",
     "ht4min",
@@ -1023,8 +1224,10 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "mxx_min_pdg",
 ];
 
-/// Requirements that read as off at any value at or below zero, so only a
-/// positive value is refused: "at least one jet (photon, b, lepton) with
+/// Cut parameters that read as off at any value at or below zero, so only a
+/// positive value is refused.
+///
+/// `xptj`, `xptb`, `xpta`, `xptl` are "at least one jet (photon, b, lepton) with
 /// `pT > xpt*`". Every MadGraph read of them is guarded by `> 0` or folded
 /// through `max(·, 0)`: the cut itself (`cuts.f:981`, `:994`, `:1007`,
 /// `:1020`), the `smin` hint (`setcuts.f:540`, `:584`, `:591`, `:613`, `:622`,
@@ -1032,7 +1235,28 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
 /// `:760`, `:763`, `:772`) and the reset for a process without the class
 /// (`setcuts.f:835-879`). `reweight.f`, `setscales.f` and `initcluster.f`
 /// declare the common block and read none of the four.
-const NONPOSITIVE_IS_OFF: &[&str] = &["xptj", "xptb", "xpta", "xptl"];
+///
+/// `misset` is the missing-transverse-momentum minimum: `cuts.f:371` fails an
+/// event when `pT(miss) < misset`, never true at a value at or below zero, and
+/// `setcuts.f:776` reports it only when `> 0`. `ptheavy` is guarded `> 0` at
+/// `cuts.f:390` and `setcuts.f:781`. The one other read of `misset`,
+/// `setcuts.f:675`, squares it into the lower limit on ŝ of a process with a
+/// charged lepton; at a negative value that is a floor of `misset²`, 1 GeV² at
+/// the template's `-1`, below every ŝ a lepton pT or pair-mass cut already
+/// leaves, and with those cuts off it removes only ŝ < `misset²`.
+const NONPOSITIVE_IS_OFF: &[&str] = &["xptj", "xptb", "xpta", "xptl", "misset", "ptheavy"];
+
+/// `ht2max`–`ht4max`: an upper bound on the summed pT of the two, three or four
+/// hardest jets, tested as `htjmax4(i).ge.0d0.and.htj.gt.htjmax4(i)`
+/// (`cuts.f:883-884`), so any negative value is off. The sum of
+/// `n` jets' transverse momenta cannot exceed their total energy, which cannot
+/// exceed `sqrt(s_hat)`, and head-on beams collide at `sqrt(s_hat) <= ebeam1 +
+/// ebeam2`: a bound at or above that sum cannot exclude any point either. The
+/// templates that write the "off" value as 100000 land there at any collider
+/// below 50 TeV per beam. `setcuts.f` only copies the bounds (`:502-504`) and
+/// reports them in the grouped-subprocess consistency check when `>= 0`
+/// (`:752-772`); the `smin` hint reads the minima alone.
+const HT_MAXIMA: &[&str] = &["ht2max", "ht3max", "ht4max"];
 
 /// The PDG codes `banner.py:4722` means to refuse a per-PDG cut on: the light
 /// quarks, the b, the charged leptons, the gluon and the photon, whose class
@@ -1584,8 +1808,22 @@ impl Cuts {
 
         let single = single_leg_cuts(rc, &infos, &pdg_pt_min);
         let pairs = pair_cuts(rc, &infos);
+        let jet_rank = rank_cut(rc, &infos, Letter::Jet);
+        let lepton_rank = rank_cut(rc, &infos, Letter::Lepton);
+        let ranks: Vec<&RankCut> = jet_rank.iter().chain(lepton_rank.iter()).collect();
+        for r in &ranks {
+            refuse_rank_smin_overcount(rc, &infos, r)?;
+        }
         if guard {
-            refuse_unregulated_limits(forced, &infos, &single, &pairs, legs, kt_veto_applies(rc))?;
+            refuse_unregulated_limits(
+                forced,
+                &infos,
+                &single,
+                &pairs,
+                &ranks,
+                legs,
+                kt_veto_applies(rc),
+            )?;
         }
         let mmnl_cut = mmnl_cut(rc, &infos);
         let ht = ht_cut(rc, &infos);
@@ -1593,7 +1831,7 @@ impl Cuts {
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
         let two_incoming = incoming.len() == 2;
-        let shat_min_hint = shat_min_hint(rc, legs, &infos, &single)
+        let shat_min_hint = shat_min_hint(rc, legs, &infos, &single, &ranks)
             .max(ht_shat_floor(ht.as_ref()))
             .max(forced_shat_floor(legs, forced, bwcutoff));
         let shat_max_hint = forced_shat_ceiling(finals.len(), forced, bwcutoff);
@@ -1603,6 +1841,8 @@ impl Cuts {
             pairs = pairs.len(),
             mmnl = mmnl_cut.is_some(),
             ht = ht.is_some(),
+            jet_rank = jet_rank.is_some(),
+            lepton_rank = lepton_rank.is_some(),
             sqrt_shat_min = dsqrt_shat,
             sqrt_shat_max = dsqrt_shatmax,
             "compiled cuts"
@@ -1625,6 +1865,8 @@ impl Cuts {
             pairs,
             mmnl: mmnl_cut,
             ht,
+            jet_rank,
+            lepton_rank,
             shat_min_hint,
             shat_max_hint,
             windows,
@@ -1911,6 +2153,11 @@ impl Cuts {
     /// not mean such a configuration passes.
     pub fn rejects_zero_transverse_momentum(&self) -> bool {
         self.single.iter().any(|s| s.pt_min > 0.0)
+            || self
+                .jet_rank
+                .iter()
+                .chain(&self.lepton_rank)
+                .any(RankCut::has_min)
     }
 
     /// Whether the compiled filter admits every point of every phase space: no ŝ
@@ -1935,6 +2182,8 @@ impl Cuts {
             pairs,
             mmnl,
             ht,
+            jet_rank,
+            lepton_rank,
             // A sampling aid derived from the thresholds above; it rejects nothing.
             shat_min_hint: _,
             shat_max_hint: _,
@@ -1951,6 +2200,8 @@ impl Cuts {
             && pairs.is_empty()
             && mmnl.is_none()
             && ht.is_none()
+            && jet_rank.is_none()
+            && lepton_rank.is_none()
             && windows.is_empty()
             && single.iter().all(|s| {
                 let SingleLegCut {
@@ -2080,7 +2331,10 @@ impl Cuts {
             }
         }
 
-        true
+        self.jet_rank
+            .iter()
+            .chain(&self.lepton_rank)
+            .all(|r| rank_ok(r, momenta))
     }
 }
 
@@ -2207,62 +2461,149 @@ fn forced_shat_ceiling(n_final: usize, forced: &ForcedResonances, bwcutoff: f64)
         .fold(0.0f64, f64::max)
 }
 
-/// Upper bounds on one object's (or the missing system's) transverse momentum:
-/// `missetmax` bounds the transverse momentum of the neutrino momentum sum,
-/// `ptj<n>max` and `ptl<n>max` that of the `n`-th hardest jet or lepton.
+/// `missetmax`, the upper bound on the transverse momentum of the neutrino
+/// momentum sum.
 ///
-/// Such a momentum cannot reach half the partonic centre-of-mass energy: in the
-/// partonic rest frame the object's momentum balances the rest of the final
-/// state, so `|p| <= E_object` and `|p| <= E_rest` give `|p| <= sqrt(s_hat)/2`,
-/// and the transverse momentum is boost-invariant along the beam. Head-on beams
-/// collide at `sqrt(s_hat) <= ebeam1 + ebeam2` whatever their masses (`2 sqrt(ebeam1
-/// ebeam2)` for massless proton beams, which is no larger), so a bound at or above
-/// `(ebeam1 + ebeam2) / 2` cannot exclude any point and reads as the default.
-const SINGLE_PT_MAXIMA: &[&str] = &[
-    "missetmax",
-    "ptj1max",
-    "ptj2max",
-    "ptj3max",
-    "ptj4max",
-    "ptl1max",
-    "ptl2max",
-    "ptl3max",
-    "ptl4max",
-];
+/// That momentum cannot reach half the partonic centre-of-mass energy, nor can
+/// any one final-state object's ([`cutuse_refusal`] reads the same ceiling for
+/// `ptj1max`–`ptj4max`): in the partonic rest frame the object's momentum
+/// balances the rest of the final state, so `|p| <= E_object` and `|p| <=
+/// E_rest` give `|p| <= sqrt(s_hat)/2`, and the transverse momentum is
+/// boost-invariant along the beam. Head-on beams collide at `sqrt(s_hat) <=
+/// ebeam1 + ebeam2` whatever their masses (`2 sqrt(ebeam1 ebeam2)` for massless
+/// proton beams, which is no larger), so a bound at or above `(ebeam1 + ebeam2)
+/// / 2` cannot exclude any point and reads as the default.
+const SINGLE_PT_MAXIMA: &[&str] = &["missetmax"];
+
+/// The refusal of `cutuse` at a value other than 0 while a jet rank bound would
+/// cut, `None` otherwise.
+///
+/// `cutuse = 1` sets `jetor` false (`setcuts.f:509`), and `cuts.f:858-861` then
+/// rejects a point only when every ranked jet fails its bound. With every bound
+/// off no ranked jet fails, so no point is rejected and the value is inert. With
+/// one on, `setcuts.f:539-562` still folds `ptj1min`–`ptj4min` into MadEvent's
+/// `τ` floor (`smin`, applied at `myamp.f:569-570`) as though each had to hold,
+/// so the floor itself cuts points the "all fail" rule keeps: the run's σ is
+/// that floor's, which is not reproduced here. A bound is on when its minimum
+/// is positive or its maximum lies in `[0, (ebeam1 + ebeam2) / 2)`
+/// ([`SINGLE_PT_MAXIMA`] argues the ceiling).
+pub(crate) fn cutuse_refusal(rc: &RunCard) -> Option<CutError> {
+    let cutuse = rc.get("cutuse")?;
+    if *cutuse == ParamValue::Int(0) {
+        return None;
+    }
+    let ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
+    let active: Vec<String> = (1..=4)
+        .flat_map(|n| [format!("ptj{n}min"), format!("ptj{n}max")])
+        .filter(|name| {
+            let x = rc.float(name);
+            if name.ends_with("min") {
+                x > 0.0
+            } else {
+                (0.0..ceiling).contains(&x)
+            }
+        })
+        .collect();
+    (!active.is_empty()).then(|| CutError::ValueRefused {
+        field: "cutuse",
+        value: describe(cutuse),
+        reason: format!(
+            "with the jet rank cuts on ({}), MadGraph rejects a point only when every ranked \
+             jet fails its bound, but folds ptj1min-ptj4min into its tau floor as though each \
+             had to hold, and that floor cuts on its own, which is not reproduced; set \
+             cutuse = 0 or turn the jet rank cuts off",
+            active.join(", ")
+        ),
+    })
+}
 
 /// Refuse a run card that activates a cut this crate parses but does not apply,
 /// or a `pt_min_pdg` MadGraph refuses. Reads the run card alone, so callers run
-/// it before any process enumeration. A single-object transverse-momentum
-/// maximum at or above the collider's ceiling reads as its default, and so does
-/// an `xpt*` requirement at or below zero.
+/// it before any process enumeration. A value MadGraph's `cuts.f` provably
+/// ignores reads as the default ([`unimplemented_cut_refusal`]).
 pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
     PdgPtMin::from_card(rc)?;
-    let pt_ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
+    let beam_sum = rc.ebeam1 + rc.ebeam2;
     for &name in UNIMPLEMENTED_CUTS {
-        let (Some(cur), Some(def)) = (rc.get(name), param_default(name)) else {
-            continue;
-        };
-        // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
-        // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
-        // exactly as their LO defaults do.
-        if *cur == def || Some(cur) == decay_cut_reset(name).as_ref() {
-            continue;
+        if let Some(cur) = rc.get(name) {
+            if let Some(refusal) = unimplemented_cut_refusal(name, cur, beam_sum) {
+                return Err(refusal);
+            }
         }
-        if SINGLE_PT_MAXIMA.contains(&name)
-            && matches!(cur, ParamValue::Float(x) if *x >= pt_ceiling)
-        {
-            continue;
-        }
-        if NONPOSITIVE_IS_OFF.contains(&name) && matches!(cur, ParamValue::Float(x) if *x <= 0.0) {
-            continue;
-        }
-        return Err(CutError::UnimplementedCutActive {
-            name: name.to_string(),
-            value: describe(cur),
-            default: describe(&def),
-        });
     }
-    Ok(())
+    cutuse_refusal(rc).map_or(Ok(()), Err)
+}
+
+/// The refusal for one cut parameter in [`UNIMPLEMENTED_CUTS`] at value `cur`,
+/// `None` when the value is one `cuts.f` ignores: the default, the value
+/// `remove_all_cut` resets it to, a single-object pT maximum at or above the
+/// collider's ceiling, a [`NONPOSITIVE_IS_OFF`] parameter at or below zero, an
+/// [`HT_MAXIMA`] bound that is negative or at or above `ebeam1 + ebeam2`.
+/// `beam_sum` is `ebeam1 + ebeam2`.
+pub(crate) fn unimplemented_cut_refusal(
+    name: &str,
+    cur: &ParamValue,
+    beam_sum: f64,
+) -> Option<CutError> {
+    if !UNIMPLEMENTED_CUTS.contains(&name) {
+        return None;
+    }
+    let def = param_default(name)?;
+    // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
+    // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
+    // exactly as their LO defaults do.
+    if *cur == def || Some(cur) == decay_cut_reset(name).as_ref() {
+        return None;
+    }
+    let value = match cur {
+        ParamValue::Float(x) => Some(*x),
+        _ => None,
+    };
+    let inert = value.is_some_and(|x| {
+        (SINGLE_PT_MAXIMA.contains(&name) && x >= 0.5 * beam_sum)
+            || (NONPOSITIVE_IS_OFF.contains(&name) && x <= 0.0)
+            || (HT_MAXIMA.contains(&name) && (x < 0.0 || x >= beam_sum))
+    });
+    if inert {
+        return None;
+    }
+    Some(CutError::UnimplementedCutActive {
+        name: name.to_string(),
+        value: describe(cur),
+        default: describe(&def),
+    })
+}
+
+/// The values of a parameter in [`UNIMPLEMENTED_CUTS`] that compile to the
+/// default cuts, in words; `None` for a name that is not one.
+pub(crate) fn inert_values(name: &str) -> Option<String> {
+    if !UNIMPLEMENTED_CUTS.contains(&name) {
+        return None;
+    }
+    let mut parts = vec!["MadGraph's default".to_string()];
+    if let Some(reset) = decay_cut_reset(name) {
+        parts.push(format!("{} (a decay's reset)", describe(&reset)));
+    }
+    if SINGLE_PT_MAXIMA.contains(&name) {
+        parts.push("at or above (ebeam1 + ebeam2) / 2".to_string());
+    }
+    if NONPOSITIVE_IS_OFF.contains(&name) {
+        parts.push("at or below 0".to_string());
+    }
+    if HT_MAXIMA.contains(&name) {
+        parts.push("below 0, or at or above ebeam1 + ebeam2".to_string());
+    }
+    Some(parts.join("; "))
+}
+
+/// The refusal of a `pt_min_pdg` or `mxx_only_part_antipart` MadGraph refuses.
+pub(crate) fn pdg_cut_refusal(rc: &RunCard) -> Option<CutError> {
+    PdgPtMin::from_card(rc).err()
+}
+
+/// The names of the cut parameters parsed and detected rather than applied.
+pub(crate) fn unimplemented_cut_names() -> &'static [&'static str] {
+    UNIMPLEMENTED_CUTS
 }
 
 fn describe(v: &ParamValue) -> String {
@@ -2441,6 +2782,7 @@ fn shat_min_hint(
     legs: &[ExternalLeg],
     infos: &[LegInfo],
     single: &[SingleLegCut],
+    ranks: &[&RankCut],
 ) -> f64 {
     let dsqrt_shat = rc.float("dsqrt_shat");
     let mut hint = dsqrt_shat * dsqrt_shat;
@@ -2467,7 +2809,23 @@ fn shat_min_hint(
     // Σ over the legs a single-leg cut holds above a transverse threshold. Legs
     // without one contribute nothing, which is what makes the sum a bound rather
     // than an estimate.
-    let pt_sum: f64 = single.iter().map(|c| c.pt_min.max(0.0)).sum();
+    let mut pt_sum: f64 = single.iter().map(|c| c.pt_min.max(0.0)).sum();
+    // A ranked class's members sum to at least its rank floor, which also reads
+    // their single-leg thresholds, so it replaces their share of the sum.
+    for r in ranks {
+        let own: Vec<f64> = r
+            .members
+            .iter()
+            .map(|&idx| {
+                single
+                    .iter()
+                    .find(|c| c.idx == idx)
+                    .map_or(0.0, |c| c.pt_min.max(0.0))
+            })
+            .collect();
+        let own_sum: f64 = own.iter().sum();
+        pt_sum += (r.pt_sum_floor(&own) - own_sum).max(0.0);
+    }
     hint = hint.max(pt_sum * pt_sum);
 
     // Σ over every final-state mass, cut or not: the production threshold.
@@ -2630,6 +2988,10 @@ mod tests {
             "50 = htjmax",
             "1 = ihtmin",
             "50 = ihtmax",
+            "1 = ptl1min",
+            "50 = ptl2max",
+            "1 = ptj1min",
+            "50 = ptj1max",
         ] {
             let cuts = Cuts::compile(&card(&format!("{LEPTON_CUTS_OFF}{on}\n")), &legs).unwrap();
             assert!(!cuts.admits_every_point(), "{on}");
@@ -3256,17 +3618,17 @@ mod tests {
 
     #[test]
     fn unimplemented_active_cut_errors() {
-        let err = Cuts::compile(&card("30 = ptj1min\n"), &dy_legs()).unwrap_err();
+        let err = Cuts::compile(&card("30 = ht2min\n"), &dy_legs()).unwrap_err();
         match err {
-            CutError::UnimplementedCutActive { name, .. } => assert_eq!(name, "ptj1min"),
+            CutError::UnimplementedCutActive { name, .. } => assert_eq!(name, "ht2min"),
             other => panic!("{other}"),
         }
     }
 
     #[test]
     fn unimplemented_cut_at_default_is_ok() {
-        // ptj1min at its default (0) does not trip the detector.
-        assert!(Cuts::compile(&card("0 = ptj1min\n"), &dy_legs()).is_ok());
+        // ht2min at its default (0) does not trip the detector.
+        assert!(Cuts::compile(&card("0 = ht2min\n"), &dy_legs()).is_ok());
     }
 
     #[test]
@@ -3286,28 +3648,19 @@ mod tests {
     fn detection_needs_no_legs() {
         assert!(detect_unimplemented(&card("")).is_ok());
         assert!(matches!(
-            detect_unimplemented(&card("30 = ptj1min\n")),
-            Err(CutError::UnimplementedCutActive { name, .. }) if name == "ptj1min"
+            detect_unimplemented(&card("30 = ht2min\n")),
+            Err(CutError::UnimplementedCutActive { name, .. }) if name == "ht2min"
         ));
     }
 
-    /// The nine single-object transverse-momentum maxima, written out here so
-    /// that membership of `SINGLE_PT_MAXIMA` is checked against an independent list.
-    const NINE_PT_MAXIMA: [&str; 9] = [
-        "missetmax",
-        "ptj1max",
-        "ptj2max",
-        "ptj3max",
-        "ptj4max",
-        "ptl1max",
-        "ptl2max",
-        "ptl3max",
-        "ptl4max",
-    ];
+    /// The unimplemented single-object transverse-momentum maxima, written out
+    /// here so that membership of `SINGLE_PT_MAXIMA` is checked against an
+    /// independent list.
+    const UNIMPLEMENTED_PT_MAXIMA: [&str; 1] = ["missetmax"];
 
     #[test]
     fn unbindable_pt_maxima_read_as_default() {
-        for name in NINE_PT_MAXIMA {
+        for name in UNIMPLEMENTED_PT_MAXIMA {
             let cut = lhc(&format!("1e5 = {name}\n"));
             assert!(detect_unimplemented(&cut).is_ok(), "{name}");
             assert!(Cuts::compile(&cut, &dy_legs()).is_ok(), "{name}");
@@ -3315,12 +3668,12 @@ mod tests {
     }
 
     /// Every other unimplemented cut stays refused at a value no collider can
-    /// bind, so the no-op rule covers exactly `NINE_PT_MAXIMA`.
+    /// bind, so the no-op rule covers exactly `UNIMPLEMENTED_PT_MAXIMA` and `HT_MAXIMA`.
     #[test]
     fn no_other_unimplemented_cut_reads_an_unbindable_value_as_default() {
         let mut refused = 0;
         for &name in UNIMPLEMENTED_CUTS {
-            if NINE_PT_MAXIMA.contains(&name) {
+            if UNIMPLEMENTED_PT_MAXIMA.contains(&name) || HT_MAXIMA.contains(&name) {
                 continue;
             }
             let Ok(cut) = RunCard::parse(&format!("{LHC}1e5 = {name}\n")) else {
@@ -3340,7 +3693,7 @@ mod tests {
 
     #[test]
     fn bindable_pt_maxima_are_refused() {
-        for name in NINE_PT_MAXIMA {
+        for name in UNIMPLEMENTED_PT_MAXIMA {
             let err = detect_unimplemented(&lhc(&format!("500 = {name}\n"))).unwrap_err();
             match err {
                 CutError::UnimplementedCutActive { name: n, value, .. } => {
@@ -3357,18 +3710,18 @@ mod tests {
         assert!(detect_unimplemented(&lhc("6500 = missetmax\n")).is_ok());
         assert!(detect_unimplemented(&lhc("6499.9 = missetmax\n")).is_err());
         let beams = "100 = ebeam1\n50 = ebeam2\n";
-        assert!(detect_unimplemented(&card(&format!("{beams}75 = ptj1max\n"))).is_ok());
-        assert!(detect_unimplemented(&card(&format!("{beams}74.9 = ptj1max\n"))).is_err());
+        assert!(detect_unimplemented(&card(&format!("{beams}75 = missetmax\n"))).is_ok());
+        assert!(detect_unimplemented(&card(&format!("{beams}74.9 = missetmax\n"))).is_err());
     }
 
     #[test]
     fn unbindable_value_does_not_excuse_other_cuts() {
-        match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = ht2max\n")) {
-            Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "ht2max"),
-            Ok(()) => panic!("ht2max = 1e5 is an active partial-sum cut"),
+        match detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = misset\n")) {
+            Err(CutError::UnimplementedCutActive { name, .. }) => assert_eq!(name, "misset"),
+            Ok(()) => panic!("misset = 1e5 is an active cut"),
             Err(other) => panic!("{other}"),
         }
-        assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
+        assert!(detect_unimplemented(&lhc("1e5 = ht2min\n")).is_err());
     }
 
     /// MadGraph never applies `ptonium` or `etaonium` (`banner.py` registers
@@ -4886,6 +5239,396 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ── pT-ranked jet and lepton cuts ──────────────────────────────────────
+
+    /// Every jet, b and lepton threshold of the LO card, switched off, at 13 TeV.
+    fn rank_base(extra: &str) -> RunCard {
+        lhc(&format!(
+            "{LEPTON_CUTS_OFF}0 = ptj\n-1 = etaj\n0 = drjj\n0 = drjl\n0 = ptb\n-1 = etab\n\
+             0 = drbb\n0 = drbj\n0 = drbl\n{extra}"
+        ))
+    }
+
+    /// The point `[b1, b2, finals…]` with each final a massless leg at the
+    /// given transverse momentum, spread in azimuth and rapidity.
+    fn ranked_point(pts: &[f64]) -> Vec<V> {
+        let (b1, b2) = beams(3000.0);
+        let finals = pts
+            .iter()
+            .enumerate()
+            .map(|(k, &pt)| lep(pt, 0.3 * k as f64 - 0.5, 1.1 * k as f64));
+        [b1, b2].into_iter().chain(finals).collect()
+    }
+
+    fn three_jets() -> Vec<ExternalLeg> {
+        legs([21, 21], &[21, 2, 21])
+    }
+
+    #[test]
+    fn the_rank_base_card_admits_every_point() {
+        for set in [three_jets(), dy_legs(), legs([21, 21], &[5, -5])] {
+            let cuts = Cuts::compile(&rank_base(""), &set).unwrap();
+            assert!(cuts.admits_every_point());
+        }
+    }
+
+    /// The `n`-th bound reads the `n`-th hardest jet, whatever leg carries it.
+    #[test]
+    fn jet_rank_cuts_read_the_pt_ordering_not_the_leg_order() {
+        let rc = rank_base("100 = ptj1min\n50 = ptj2min\n80 = ptj2max\n");
+        let cuts = Cuts::compile(&rc, &three_jets()).unwrap();
+        for pts in [
+            [60.0, 150.0, 30.0],
+            [150.0, 60.0, 30.0],
+            [30.0, 60.0, 150.0],
+            [100.0, 80.0, 0.5],
+        ] {
+            assert!(cuts.pass(&ranked_point(&pts)), "{pts:?}");
+        }
+        for pts in [
+            // The hardest below ptj1min.
+            [60.0, 99.9, 30.0],
+            // The second above ptj2max.
+            [150.0, 30.0, 80.1],
+            // The second below ptj2min.
+            [150.0, 49.9, 30.0],
+        ] {
+            assert!(!cuts.pass(&ranked_point(&pts)), "{pts:?}");
+        }
+    }
+
+    /// A positive minimum on a rank the process has no member for fails every
+    /// point; a maximum on one requires nothing.
+    #[test]
+    fn fewer_members_than_the_rank() {
+        let set = legs([21, 21], &[21, 21]);
+        let point = ranked_point(&[300.0, 200.0]);
+        let min3 = Cuts::compile(&rank_base("10 = ptj3min\n"), &set).unwrap();
+        assert!(!min3.pass(&point));
+        assert!(!min3.pass(&ranked_point(&[1e3, 1e3])));
+        assert!(min3.rejects_zero_transverse_momentum());
+        let max3 = Cuts::compile(&rank_base("10 = ptj3max\n"), &set).unwrap();
+        assert!(max3.pass(&point));
+        // `e+ e- > mu+ mu-` has no jet: ptj1min rejects all of it.
+        let no_jet = Cuts::compile(&rank_base("30 = ptj1min\n"), &dy_legs()).unwrap();
+        assert!(!no_jet.pass(&ranked_point(&[100.0, 100.0])));
+    }
+
+    /// The fifth and later jets are ranked but carry no bound.
+    #[test]
+    fn only_four_ranks_carry_bounds() {
+        let set = legs([21, 21], &[21, 21, 21, 21, 21]);
+        let cuts = Cuts::compile(&rank_base("20 = ptj4min\n"), &set).unwrap();
+        assert!(cuts.pass(&ranked_point(&[90.0, 1.0, 50.0, 40.0, 30.0])));
+        assert!(!cuts.pass(&ranked_point(&[90.0, 1.0, 50.0, 19.0, 30.0])));
+    }
+
+    /// The jet family is the jet class: a b above `maxjetflavor` is not ranked,
+    /// and nor is a lepton or a photon.
+    #[test]
+    fn the_jet_family_follows_maxjetflavor() {
+        let set = legs([21, 21], &[5, -5]);
+        let point = ranked_point(&[300.0, 200.0]);
+        let four = Cuts::compile(&rank_base("4 = maxjetflavor\n50 = ptj1min\n"), &set).unwrap();
+        assert!(
+            !four.pass(&point),
+            "no jet-class leg: the existence test fails"
+        );
+        let five = Cuts::compile(&rank_base("5 = maxjetflavor\n50 = ptj1min\n"), &set).unwrap();
+        assert!(five.pass(&point));
+        assert!(!five.pass(&ranked_point(&[40.0, 30.0])));
+        let mixed = legs([21, 21], &[22, 11, 21]);
+        let cuts = Cuts::compile(&rank_base("50 = ptj1min\n0 = pta\n-1 = etaa\n"), &mixed).unwrap();
+        assert!(cuts.pass(&ranked_point(&[10.0, 10.0, 60.0])));
+        assert!(!cuts.pass(&ranked_point(&[100.0, 100.0, 40.0])));
+    }
+
+    /// The lepton family is the charged leptons, ranked with the same rule and
+    /// no `cutuse`.
+    #[test]
+    fn lepton_rank_cuts() {
+        let set = legs([2, -2], &[11, -11, 12, 21]);
+        let rc = rank_base("40 = ptl1min\n10 = ptl2min\n35 = ptl2max\n");
+        let cuts = Cuts::compile(&rc, &set).unwrap();
+        assert!(cuts.pass(&ranked_point(&[20.0, 50.0, 500.0, 500.0])));
+        assert!(cuts.pass(&ranked_point(&[40.0, 35.0, 0.1, 0.1])));
+        // Hardest below 40, whatever the neutrino and the jet carry.
+        assert!(!cuts.pass(&ranked_point(&[39.0, 30.0, 500.0, 500.0])));
+        // Second above 35.
+        assert!(!cuts.pass(&ranked_point(&[50.0, 36.0, 1.0, 1.0])));
+        // Second below 10.
+        assert!(!cuts.pass(&ranked_point(&[50.0, 9.0, 1.0, 1.0])));
+        // One charged lepton fails a second-rank minimum outright.
+        let one = legs([2, -1], &[11, -12]);
+        let cuts = Cuts::compile(&rank_base("10 = ptl2min\n"), &one).unwrap();
+        assert!(!cuts.pass(&ranked_point(&[100.0, 100.0])));
+        // `cutuse` reads the jets only.
+        let rc = rank_base("40 = ptl1min\n1 = cutuse\n");
+        assert!(detect_unimplemented(&rc).is_ok());
+        assert_eq!(
+            Cuts::compile(&rc, &set).unwrap(),
+            Cuts::compile(&rank_base("40 = ptl1min\n"), &set).unwrap()
+        );
+    }
+
+    /// `do_cuts` is not read: a decay product `cut_decays = F` exempts from its
+    /// single-leg cuts is still ranked.
+    #[test]
+    fn rank_cuts_apply_to_exempt_decay_products() {
+        let set = legs([2, -2], &[11, -11]);
+        let rc = rank_base("20 = ptl\n30 = ptl1min\n");
+        let exempt =
+            Cuts::compile_exempting(&rc, &set, &ForcedResonances::none(), 0b11, false).unwrap();
+        // Both below ptl, which the exemption lifts; the hardest above ptl1min.
+        assert!(exempt.pass(&ranked_point(&[5.0, 31.0])));
+        assert!(!exempt.pass(&ranked_point(&[5.0, 29.0])));
+        let cut = Cuts::compile(&rc, &set).unwrap();
+        assert!(!cut.pass(&ranked_point(&[5.0, 31.0])));
+    }
+
+    /// A rank minimum on a class whose members the exemption splits, with a
+    /// single-leg minimum on the cut ones, is refused: MadEvent's τ floor can
+    /// exceed the cuts there. Without the single-leg minimum the floor is a
+    /// bound and the card compiles.
+    #[test]
+    fn a_rank_minimum_over_a_split_exemption_is_refused() {
+        let set = legs([21, 21], &[21, 21]);
+        let forced = ForcedResonances::none();
+        let rc = rank_base("20 = ptj\n50 = ptj1min\n");
+        match Cuts::compile_exempting(&rc, &set, &forced, 0b01, false) {
+            Err(CutError::ValueRefused { field, .. }) => assert_eq!(field, "ptj1min"),
+            other => panic!("{other:?}"),
+        }
+        for mask in [0b00, 0b11] {
+            assert!(Cuts::compile_exempting(&rc, &set, &forced, mask, false).is_ok());
+        }
+        let no_ptj = rank_base("50 = ptj1min\n");
+        assert!(Cuts::compile_exempting(&no_ptj, &set, &forced, 0b01, false).is_ok());
+        let lepton = rank_base("20 = ptl\n50 = ptl2min\n");
+        match Cuts::compile_exempting(&lepton, &legs([2, -2], &[11, -11]), &forced, 0b10, false) {
+            Err(CutError::ValueRefused { field, .. }) => assert_eq!(field, "ptl2min"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// `cutuse = 1` is inert with every jet bound off, and refused by name with
+    /// one on.
+    #[test]
+    fn cutuse_is_refused_only_with_a_jet_rank_bound_on() {
+        let set = three_jets();
+        let default = Cuts::compile(&rank_base(""), &set).unwrap();
+        for extra in ["", "-1 = ptj1min\n", "6500 = ptj1max\n", "1e5 = ptj4max\n"] {
+            let rc = rank_base(&format!("1 = cutuse\n{extra}"));
+            assert!(detect_unimplemented(&rc).is_ok(), "{extra}");
+            if extra.is_empty() || extra.starts_with('-') {
+                assert_eq!(Cuts::compile(&rc, &set).unwrap(), default);
+            }
+        }
+        for extra in [
+            "30 = ptj1min\n",
+            "0 = ptj2max\n",
+            "6499 = ptj3max\n",
+            "1e-9 = ptj4min\n",
+        ] {
+            let rc = rank_base(&format!("1 = cutuse\n{extra}"));
+            match detect_unimplemented(&rc) {
+                Err(CutError::ValueRefused { field, value, .. }) => {
+                    assert_eq!((field, value.as_str()), ("cutuse", "1"), "{extra}");
+                }
+                other => panic!("{extra}: {other:?}"),
+            }
+            let rc = rank_base(&format!("0 = cutuse\n{extra}"));
+            assert!(detect_unimplemented(&rc).is_ok(), "{extra}");
+        }
+    }
+
+    /// A rank floor that holds every member of the leg's class regulates the
+    /// leg's soft and beam-collinear limits; one that holds only the hardest of
+    /// several does not.
+    #[test]
+    fn a_rank_floor_on_every_member_regulates_its_limits() {
+        let limits = [
+            MasslessLimit::InitialCollinear { beam: 0, leg: 2 },
+            MasslessLimit::Soft { leg: 2 },
+        ];
+        for limit in limits {
+            let forced = ForcedResonances {
+                massless_limits: vec![limit],
+                ..ForcedResonances::default()
+            };
+            let one_jet = llj_legs();
+            assert!(Cuts::compile_with(&rank_base(""), &one_jet, &forced).is_err());
+            assert!(Cuts::compile_with(&rank_base("70 = ptj1min\n"), &one_jet, &forced).is_ok());
+            assert!(Cuts::compile_with(&rank_base("70 = ptj1max\n"), &one_jet, &forced).is_err());
+            let two_jets = legs([2, -2], &[-11, 11, 21, 21]);
+            assert!(Cuts::compile_with(&rank_base("70 = ptj1min\n"), &two_jets, &forced).is_err());
+            assert!(Cuts::compile_with(&rank_base("10 = ptj2min\n"), &two_jets, &forced).is_ok());
+        }
+    }
+
+    /// With one jet, the first rank's bounds are that jet's single-leg pT
+    /// bounds: the two cards accept exactly the same points, boundaries
+    /// included (`<` for a minimum, `>` for a maximum on both paths).
+    #[test]
+    fn a_single_jet_rank_cut_is_its_single_leg_cut() {
+        let set = llj_legs();
+        let rank = Cuts::compile(&rank_base("70 = ptj1min\n100 = ptj1max\n"), &set).unwrap();
+        let single = Cuts::compile(&rank_base("70 = ptj\n100 = ptjmax\n"), &set).unwrap();
+        assert_ne!(rank, single);
+        for k in 0..=400 {
+            let pt = 50.0 + 0.125 * k as f64;
+            for lep_pt in [0.5, 30.0, 200.0] {
+                let point = ranked_point(&[lep_pt, lep_pt, pt]);
+                assert_eq!(rank.pass(&point), single.pass(&point), "jet pT {pt}");
+            }
+        }
+        assert!(rank.pass(&ranked_point(&[1.0, 1.0, 70.0])));
+        assert!(rank.pass(&ranked_point(&[1.0, 1.0, 100.0])));
+        assert_eq!(rank.shat_min(), single.shat_min());
+    }
+
+    /// The ŝ floor gains the rank sum where it exceeds the single-leg sum, and
+    /// stays below the ŝ of a configuration that passes. The DY1j bin card
+    /// `ptj = 0.01`, `ptj1min = 100`, `ptj1max = 200` floors at `100²`, the
+    /// `max(ptj, ptj1min)²` of `setcuts.f:540-541`.
+    #[test]
+    fn the_shat_floor_reads_the_rank_minima() {
+        let rc = rank_base("0.01 = ptj\n100 = ptj1min\n200 = ptj1max\n");
+        let cuts = Cuts::compile(&rc, &llj_legs()).unwrap();
+        assert_eq!(cuts.shat_min(), 100.0 * 100.0);
+        let rc = rank_base("40 = ptj\n100 = ptj1min\n");
+        let cuts = Cuts::compile(&rc, &legs([21, 21], &[21, 21])).unwrap();
+        assert_eq!(cuts.shat_min(), 140.0 * 140.0);
+        let rc = rank_base("50 = ptl1min\n30 = ptl2min\n");
+        let cuts = Cuts::compile(&rc, &dy_legs()).unwrap();
+        assert_eq!(cuts.shat_min(), 80.0 * 80.0);
+        // Back to back at 50 and 30 GeV cannot balance; at 50 and 50 the point
+        // passes with ŝ = 100² above the floor.
+        let p = [lep(50.0, 0.0, 0.0), lep(50.0, 0.0, PI)];
+        let point = ranked_point(&[50.0, 50.0]);
+        assert!(cuts.pass(&point));
+        assert!((p[0] + p[1]).m2() >= cuts.shat_min());
+    }
+
+    // ── off sentinels of the rank, missing-energy and HT parameters ───────
+
+    /// The rank minima, `misset` and `ptheavy`: the minima `cuts.f` reads
+    /// behind `> 0` or as a `<` comparison against a transverse momentum.
+    const SENTINEL_MINIMA: [&str; 10] = [
+        "ptj1min", "ptj2min", "ptj3min", "ptj4min", "ptl1min", "ptl2min", "ptl3min", "ptl4min",
+        "misset", "ptheavy",
+    ];
+
+    /// The two of [`SENTINEL_MINIMA`] that are not implemented.
+    const UNIMPLEMENTED_MINIMA: [&str; 2] = ["misset", "ptheavy"];
+
+    /// A value at or below zero is the default's filter on every class.
+    #[test]
+    fn a_nonpositive_rank_minimum_compiles_to_the_default_cuts() {
+        for name in SENTINEL_MINIMA {
+            assert_eq!(
+                NONPOSITIVE_IS_OFF.contains(&name),
+                UNIMPLEMENTED_MINIMA.contains(&name),
+                "{name}"
+            );
+            for value in ["-1", "-0.5", "-100"] {
+                let rc = lhc(&format!("{value} = {name}\n"));
+                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+                for set in xpt_leg_sets() {
+                    let compiled = Cuts::compile(&rc, &set).unwrap();
+                    let default = Cuts::compile(&lhc(""), &set).unwrap();
+                    assert_eq!(compiled, default, "{name} = {value}");
+                }
+            }
+        }
+    }
+
+    /// A positive minimum would cut, and is refused by name.
+    #[test]
+    fn a_positive_unimplemented_minimum_is_refused_by_name() {
+        for name in UNIMPLEMENTED_MINIMA {
+            for value in ["1e-9", "10", "1e5"] {
+                match Cuts::compile(&lhc(&format!("{value} = {name}\n")), &dy_legs()) {
+                    Err(CutError::UnimplementedCutActive { name: n, .. }) => assert_eq!(n, name),
+                    other => panic!("{name} = {value}: {other:?}"),
+                }
+            }
+        }
+    }
+
+    /// The template's off value 100000 sits above `ebeam1 + ebeam2` at any
+    /// collider below 50 TeV per beam; a negative value is `cuts.f`'s own off.
+    #[test]
+    fn an_unbindable_or_negative_ht_maximum_compiles_to_the_default_cuts() {
+        for name in HT_MAXIMA {
+            for value in ["100000", "13000", "-1", "-7"] {
+                let rc = lhc(&format!("{value} = {name}\n"));
+                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+                for set in xpt_leg_sets() {
+                    let compiled = Cuts::compile(&rc, &set).unwrap();
+                    let default = Cuts::compile(&lhc(""), &set).unwrap();
+                    assert_eq!(compiled, default, "{name} = {value}");
+                }
+            }
+        }
+    }
+
+    /// A bound a pair of beams can reach, down to zero, would cut and stays
+    /// refused; the threshold is the beam energy sum, not half of it.
+    #[test]
+    fn a_bindable_ht_maximum_is_refused_by_name() {
+        for name in HT_MAXIMA {
+            for value in ["0", "500", "6500", "12999.9"] {
+                match detect_unimplemented(&lhc(&format!("{value} = {name}\n"))) {
+                    Err(CutError::UnimplementedCutActive { name: n, .. }) => assert_eq!(n, *name),
+                    other => panic!("{name} = {value}: {other:?}"),
+                }
+            }
+        }
+        let beams = "100 = ebeam1\n50 = ebeam2\n";
+        assert!(detect_unimplemented(&card(&format!("{beams}150 = ht2max\n"))).is_ok());
+        assert!(detect_unimplemented(&card(&format!("{beams}149.9 = ht2max\n"))).is_err());
+    }
+
+    /// The other `ht*` parameters share no rule: `ht2min`–`ht4min` read as
+    /// minima against a sum of transverse momenta, and stay refused when
+    /// negative or large.
+    #[test]
+    fn the_ht_minima_stay_refused() {
+        for name in ["ht2min", "ht3min", "ht4min"] {
+            for value in ["-1", "10"] {
+                assert!(
+                    matches!(
+                        detect_unimplemented(&lhc(&format!("{value} = {name}\n"))),
+                        Err(CutError::UnimplementedCutActive { .. })
+                    ),
+                    "{name} = {value}"
+                );
+            }
+        }
+    }
+
+    /// The inert-value description names a rule exactly for the parameters that
+    /// have one.
+    #[test]
+    fn the_inert_value_description_follows_the_rules() {
+        for name in NONPOSITIVE_IS_OFF
+            .iter()
+            .chain(HT_MAXIMA)
+            .chain(SINGLE_PT_MAXIMA)
+        {
+            assert!(UNIMPLEMENTED_CUTS.contains(name), "{name}");
+            assert!(inert_values(name).unwrap().contains("default"));
+        }
+        assert!(inert_values("misset").unwrap().contains("at or below 0"));
+        assert!(inert_values("ht3max").unwrap().contains("ebeam1 + ebeam2"));
+        assert_eq!(
+            inert_values("eta_max_pdg").as_deref(),
+            Some("MadGraph's default")
+        );
+        assert_eq!(inert_values("ptj1"), None);
     }
 
     // ── pt_min_pdg ─────────────────────────────────────────────────────────

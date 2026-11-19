@@ -74,7 +74,7 @@ fn a_refusal_is_the_same_object_with_and_without_the_flag() {
         Case {
             name: "an unimplemented cut",
             proc_card: "import model sm\ngenerate e+ e- > mu+ mu-\n",
-            run_card_extra: "  30 = ptj1min\n",
+            run_card_extra: "  30 = ht2min\n",
             extra_args: &[],
         },
         Case {
@@ -125,7 +125,7 @@ fn the_parity_cases_span_distinct_refusal_kinds() {
     let kinds: Vec<String> = [
         (
             "import model sm\ngenerate e+ e- > mu+ mu-\n",
-            "  30 = ptj1min\n",
+            "  30 = ht2min\n",
             &[][..],
         ),
         (
