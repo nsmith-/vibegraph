@@ -1591,11 +1591,13 @@ fn integrate_hadronic(
     }
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
+    refuse_sampled_fault(&integ)?;
 
     integ.clear_census();
     signals::sampling_started();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
+    refuse_sampled_fault(&integ)?;
     let census = integ.census();
     let multiplicities = multiplicity_totals(&integ, &groups, &per_channel, convergence.iterations);
     if multiplicities.len() > 1 {
@@ -1637,6 +1639,18 @@ fn integrate_hadronic(
         multiplicities,
         configurations,
     }))
+}
+
+/// The refusal a sampled point of `integ` ran into, if any: the points it
+/// weighted zero were ones MadEvent stops on, so the run holds no estimate.
+fn refuse_sampled_fault(integ: &MultiplicitySum) -> Result<(), CliError> {
+    match integ.fault() {
+        Some(fault) => Err(err(
+            ErrorKind::Process,
+            format!("{fault}; the run is refused"),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Each part's own cross section, from its channels' terms.
