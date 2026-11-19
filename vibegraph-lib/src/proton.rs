@@ -107,6 +107,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use rand::SeedableRng;
 use rayon::prelude::*;
@@ -117,7 +118,7 @@ use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
-use crate::coupling::cluster::rewgt::{rewgt, Rewgt, RewgtHistory};
+use crate::coupling::cluster::rewgt::{rewgt, Rewgt, RewgtError, RewgtHistory};
 use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::artifact::diagram_set_digest;
@@ -230,6 +231,12 @@ pub struct Subprocess {
 }
 
 impl Subprocess {
+    /// The subprocess by its PDG codes, `PDG 2 -1 > -11 12 5 -5 21`.
+    pub fn label(&self) -> String {
+        let codes = |c: &[i32]| c.iter().map(i32::to_string).collect::<Vec<_>>().join(" ");
+        format!("PDG {} > {}", codes(&self.incoming), codes(&self.outgoing))
+    }
+
     /// Whether the exchanged beam ordering is part of this subprocess: the card
     /// generated it in both orderings, which requires the two beams to carry
     /// different partons. A card line written in one ordering (`u u~ > e+ e-`)
@@ -297,6 +304,9 @@ pub struct FlavorGroup {
     /// flavour row.
     member_slots: Vec<BeamSlots>,
     spin_color_avg: f64,
+    /// Every member's matrix element vanishes identically at the card
+    /// ([`vanishes_at_card`]).
+    vanishes: bool,
 }
 
 /// One member's luminosity addressing: the [`crate::pdf::flavor_slot`] of each
@@ -393,6 +403,19 @@ pub(crate) fn exchanged_scales(scales: EventScales) -> EventScales {
 }
 
 impl FlavorGroup {
+    /// Whether every member's matrix element vanishes identically at the card:
+    /// each of its diagrams passes through a vertex whose every coupling
+    /// evaluates to exactly zero.
+    ///
+    /// Such members agree with one another at every probe point (`0 = 0`)
+    /// whatever their diagrams, so the group can join crossings of different
+    /// topology — `g u > h+ d` with `u d~ > h+ g` — that share no clustering. The
+    /// group carries no cross section and is never clustered
+    /// ([`ProtonIntegrand`]).
+    pub fn vanishes(&self) -> bool {
+        self.vanishes
+    }
+
     /// The compiled, helicity-pruned amplitude every member shares.
     pub fn evaluator(&self) -> &AmplitudeEvaluator {
         &self.evaluator
@@ -899,6 +922,30 @@ fn s_channel_resonance(model: &UFOModel, evaluated: &EvaluatedModel) -> Option<f
 }
 
 /// Worst relative disagreement between two probe traces.
+/// Whether every diagram of `set` passes through a vertex whose every coupling
+/// is exactly zero at the evaluated card, so that its matrix element vanishes
+/// at every phase-space point. This is read off the couplings, not off sampled
+/// values: a matrix element that is zero only through a cancellation between
+/// diagrams is not counted.
+pub(crate) fn vanishes_at_card(
+    set: &DiagramSet,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> bool {
+    !set.diagrams.is_empty()
+        && set.diagrams.iter().all(|diagram| {
+            diagram.vertices.iter().any(|vertex| {
+                let couplings = &model.vertex_def(vertex.interaction).couplings;
+                !couplings.is_empty()
+                    && couplings.keys().all(|&key| {
+                        let value =
+                            evaluated.coupling(model.bound_coupling(vertex.interaction, key));
+                        value.re == 0.0 && value.im == 0.0
+                    })
+            })
+        })
+}
+
 fn worst_rel(a: &[f64], b: &[f64]) -> f64 {
     a.iter()
         .zip(b)
@@ -1185,6 +1232,10 @@ pub fn derive_flavor_groups(
         }
     }
 
+    let vanishing: Vec<bool> = sets
+        .iter()
+        .map(|set| vanishes_at_card(set, model, evaluated))
+        .collect();
     let mut sets: Vec<Option<DiagramSet>> = sets.into_iter().map(Some).collect();
     let mut compiled: Vec<Option<_>> = compiled.into_iter().map(Some).collect();
     let mut groups = Vec::with_capacity(partition.len());
@@ -1236,6 +1287,21 @@ pub fn derive_flavor_groups(
             .map(|&i| sets[i].clone().expect("member unclaimed"))
             .collect();
         let member_orders = indices.iter().map(|&i| final_orders[i].clone()).collect();
+        let vanishes = indices.iter().all(|&i| vanishing[i]);
+        if vanishes {
+            tracing::debug!(
+                "vanishing at the card: {}",
+                indices
+                    .iter()
+                    .map(|&i| labels[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        debug_assert!(
+            !vanishes || traces[head].iter().all(|&t| t == 0.0),
+            "a group whose couplings vanish at the card has a non-zero probe trace"
+        );
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let representative = sets[head].take().expect("group head unclaimed");
         let pairings = PairingSplit::new(&representative, &cuts, model, evaluated)?;
@@ -1264,9 +1330,23 @@ pub fn derive_flavor_groups(
             members,
             member_slots,
             spin_color_avg,
+            vanishes,
         });
     }
 
+    let vanishing_groups: Vec<&FlavorGroup> = groups.iter().filter(|g| g.vanishes).collect();
+    if !vanishing_groups.is_empty() {
+        tracing::info!(
+            "{} of {} flavour groups ({} subprocesses) have a matrix element that vanishes at \
+             the card; they carry no cross section and are not clustered",
+            vanishing_groups.len(),
+            groups.len(),
+            vanishing_groups
+                .iter()
+                .map(|g| g.members.len())
+                .sum::<usize>()
+        );
+    }
     Ok(FlavorGroups { groups })
 }
 
@@ -1916,6 +1996,20 @@ pub struct OuterPoint {
     pub jac: f64,
 }
 
+/// A refusal a sampled point ran into: something the reference stops the run
+/// on, met where the run cannot return an error. The point carries no weight,
+/// the first refusal is kept ([`ProtonIntegrand::fault`]), and whoever drove
+/// the sampling turns it into the run's error.
+#[derive(Debug, PartialEq, Error)]
+pub enum SampledPointFault {
+    /// `rewgt` refused a member's flavours on the clustering of its group.
+    #[error("matched reweighting of {member} on a sampled point: {error}")]
+    Rewgt { member: String, error: RewgtError },
+    /// The scale prescription refused the point.
+    #[error("per-event scale on a sampled point: {0}")]
+    Scale(ScaleError),
+}
+
 /// A ready-to-integrate hadronic cross section for an arbitrary flavour-decomposed
 /// process at proton beams (`lpp = 1`), sampled by a multichannel map with one
 /// channel per MadGraph configuration at each event's own partonic energy.
@@ -2068,6 +2162,8 @@ pub struct ProtonIntegrand<'a> {
     /// Per-group draws whose `AMP2` carried no probability at all, where the draw
     /// kept the group's fallback channel instead.
     scale_draw_fallbacks: AtomicU64,
+    /// The first refusal a sampled point ran into.
+    fault: OnceLock<SampledPointFault>,
     /// The mean of the mixture estimator `f/g` over the last α-survey — that
     /// survey's estimate of the cross section — and zero before any survey.
     survey_mean: f64,
@@ -2479,6 +2575,7 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_len: 0,
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
+            fault: OnceLock::new(),
             survey_mean: 0.0,
             alpha_floor: Some(DEFAULT_ALPHA_FLOOR),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
@@ -3375,8 +3472,14 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             // A group whose cuts reject the point carries no weight and is not
-            // clustered there.
-            if !self.group_passes(sc, gi) {
+            // clustered there. Nor is a group whose matrix element vanishes at
+            // the card: its members joined on `0 = 0`, so the representative's
+            // diagrams need not be theirs, and reading a member's flavours onto
+            // the representative's clustering can build a vertex none of its
+            // own diagrams has. MadEvent clusters each subprocess on its own
+            // diagrams and weights it by its `|M|² = 0`; nothing it records
+            // depends on that clustering.
+            if g.vanishes() || !self.group_passes(sc, gi) {
                 out.push([None, None]);
                 records.push([None, None]);
                 histories.push([None, None]);
@@ -3464,10 +3567,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// point; here every member carries its own factor, weighted by its own
     /// luminosity, which is that draw's expectation.
     ///
-    /// # Panics
-    ///
-    /// Where `reweight.f` stops the run: a colour structure `ipartupdate` does
-    /// not name.
+    /// Where `reweight.f` would stop the run on a member (a colour structure
+    /// `ipartupdate` does not name), the refusal is kept as the integrand's
+    /// [`fault`](Self::fault) and every factor of the group is zero.
     fn member_rewgts(
         &self,
         gi: usize,
@@ -3476,12 +3578,17 @@ impl<'a> ProtonIntegrand<'a> {
         x: [f64; 2],
     ) -> Vec<f64> {
         let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
-        (0..g.members().len())
-            .map(|i| {
-                self.member_rewgt(gi, g, i, history, x, &mut flavours)
-                    .weight
-            })
-            .collect()
+        let mut factors = Vec::with_capacity(g.members().len());
+        for i in 0..g.members().len() {
+            match self.member_rewgt(gi, g, i, history, x, &mut flavours) {
+                Ok(r) => factors.push(r.weight),
+                Err(fault) => {
+                    self.record_fault(fault);
+                    return vec![0.0; g.members().len()];
+                }
+            }
+        }
+        factors
     }
 
     /// Member `i`'s matched reweighting of group `gi`, with every factor it
@@ -3489,7 +3596,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// that ordering's momentum fractions in clustering order. `flavours` is
     /// scratch space for the member's codes.
     ///
-    /// # Panics
+    /// # Errors
     ///
     /// Where `reweight.f` stops the run: a colour structure `ipartupdate` does
     /// not name.
@@ -3501,7 +3608,7 @@ impl<'a> ProtonIntegrand<'a> {
         history: &RewgtHistory,
         x: [f64; 2],
         flavours: &mut Vec<i64>,
-    ) -> Rewgt {
+    ) -> Result<Rewgt, SampledPointFault> {
         let settings = self
             .scales
             .rewgt_settings()
@@ -3533,7 +3640,10 @@ impl<'a> ProtonIntegrand<'a> {
             |q| alpha_s.eval(q),
             |pdg, x, q2| self.pdf.xfx_q2(pdg as i32, x, q2),
         )
-        .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
+        .map_err(|error| SampledPointFault::Rewgt {
+            member: member.label(),
+            error,
+        })
     }
 
     /// One group's `avg_g · (L_g^direct Θ(q) + L_g^mirror Θ(R q)) · |M_g(q)|²` at
@@ -3627,13 +3737,27 @@ impl<'a> ProtonIntegrand<'a> {
         self.scale_draw_fallbacks.load(Ordering::Relaxed)
     }
 
+    /// The first refusal a sampled point ran into since the integrand was
+    /// built, or `None`. A run that reads one here has had points weighted zero
+    /// that the reference would have stopped on, and is not an estimate of
+    /// anything.
+    pub fn fault(&self) -> Option<&SampledPointFault> {
+        self.fault.get()
+    }
+
+    /// Keep `fault` unless an earlier one is kept already.
+    fn record_fault(&self, fault: SampledPointFault) {
+        let _ = self.fault.set(fault);
+    }
+
     /// The scales at the lab-frame point currently in the frame buffers, in the
     /// sampling channel that drew it, or `None` where the point fell below the
     /// factorisation floor and so carries no weight.
     ///
-    /// Every *other* scale error still stops the run, with the message it had
-    /// before: those say the prescription does not apply to this process, which
-    /// no amount of sampling fixes.
+    /// Every *other* scale error is kept as the integrand's
+    /// [`fault`](Self::fault) and the point carries no weight: those say the
+    /// prescription does not apply to this process, which no amount of
+    /// sampling fixes.
     fn event_scales_in(
         &self,
         sc: &ProtonScratch<'a>,
@@ -3654,10 +3778,14 @@ impl<'a> ProtonIntegrand<'a> {
         lab: &[V],
         channel: SampledChannel,
     ) -> Option<EventScales> {
-        match self
-            .scales_of(sc, &self.scales, lab, channel)
-            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
-        {
+        let point = match self.scales_of(sc, &self.scales, lab, channel) {
+            Ok(point) => point,
+            Err(e) => {
+                self.record_fault(SampledPointFault::Scale(e));
+                return None;
+            }
+        };
+        match point {
             PointScales::Scales(scales) => Some(scales),
             PointScales::Vetoed(veto) => {
                 if veto == ScaleVeto::Degenerate {
@@ -3687,11 +3815,18 @@ impl<'a> ProtonIntegrand<'a> {
         let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(cm[2..].iter().map(components));
-        match self
-            .scales
-            .point_history([components(&cm[0]), components(&cm[1])], &buf, channel)
-            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
-        {
+        let point =
+            match self
+                .scales
+                .point_history([components(&cm[0]), components(&cm[1])], &buf, channel)
+            {
+                Ok(point) => point,
+                Err(e) => {
+                    self.record_fault(SampledPointFault::Scale(e));
+                    return None;
+                }
+            };
+        match point {
             PointHistory::Scales {
                 scales,
                 rewgt,
@@ -4136,15 +4271,25 @@ impl<'a> ProtonIntegrand<'a> {
         // The drawn member's own reweighting, with every factor it took: the
         // event's `<mgrwt>` record is read off it.
         let slot = ordering_slot(ordering);
-        let rewgt = event
+        // The clustering's beams are the representative's partons, at their
+        // sampled fractions in either ordering. A member the reweighting refuses
+        // carries no weight, so no event of it is labelled.
+        let rewgt = match event
             .group_histories
             .get(group)
             .and_then(|h| h[slot].as_ref())
-            .map(|history| {
-                // The clustering's beams are the representative's partons, at
-                // their sampled fractions in either ordering.
-                self.member_rewgt(group, g, member, history, event.x, &mut Vec::new())
-            });
+        {
+            Some(history) => {
+                match self.member_rewgt(group, g, member, history, event.x, &mut Vec::new()) {
+                    Ok(r) => Some(r),
+                    Err(fault) => {
+                        self.record_fault(fault);
+                        return None;
+                    }
+                }
+            }
+            None => None,
+        };
 
         Some(ProtonSelection {
             group,
@@ -7903,6 +8048,167 @@ mod tests {
             for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
                 assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
             }
+        }
+    }
+
+    /// A subprocess vanishes at the card only if *every* diagram passes through a
+    /// vertex whose couplings are all zero. Under the CKM restriction at
+    /// `λ = 0`, `u u~ > w+ w-` keeps its `d`-exchange and `s`-channel diagrams
+    /// while its `s`- and `b`-exchange diagrams vanish: it is not flagged, so
+    /// neither is any group it is in. `u s~ > w+ g`, every diagram through
+    /// `V_us`, is.
+    #[test]
+    fn a_subprocess_with_one_live_diagram_does_not_vanish() {
+        let m = sm_model(SMRestrict::Ckm);
+        let param: crate::ufo::slha::ParamCard =
+            "Block Wolfenstein\n 1 0.0\n".parse().expect("param card");
+        let evaluated = EvaluatedModel::from_model_card(m.clone(), &param).expect("the card binds");
+        let one = |process: &str| {
+            let sets = enumerate(process, &m);
+            assert_eq!(sets.len(), 1, "{process}");
+            sets.into_iter().next().expect("one subprocess")
+        };
+        let per_diagram = |set: &DiagramSet| -> (usize, usize) {
+            let dead = set
+                .diagrams
+                .iter()
+                .filter(|d| {
+                    let mut single = set.clone();
+                    single.diagrams = vec![(*d).clone()];
+                    vanishes_at_card(&single, &m, &evaluated)
+                })
+                .count();
+            (dead, set.diagrams.len())
+        };
+
+        let ww = one("u u~ > w+ w-");
+        let (dead, all) = per_diagram(&ww);
+        assert!(dead > 0 && dead < all, "{dead} of {all} diagrams vanish");
+        assert!(!vanishes_at_card(&ww, &m, &evaluated));
+
+        let wg = one("u s~ > w+ g");
+        let (dead, all) = per_diagram(&wg);
+        assert_eq!(dead, all);
+        assert!(vanishes_at_card(&wg, &m, &evaluated));
+
+        // At the restriction's own λ nothing vanishes.
+        let live = EvaluatedModel::from_model(m.clone());
+        assert!(!vanishes_at_card(&wg, &m, &live));
+    }
+
+    /// `p p > w+ j` under the CKM restriction at `λ = 0` (`lamWS`), matched: every
+    /// subprocess through `V_us` or `V_cd` has a matrix element that vanishes
+    /// identically at the card, so `g u > w+ s` and `u s~ > w+ g` agree at every
+    /// probe point and share a group although their diagrams differ. The
+    /// representative's clustering can merge `w+` with the outgoing quark into an
+    /// `s`-channel `u`; the member `u s~ > w+ g` read onto it puts its gluon there,
+    /// a `u → W⁺ g` vertex `ipartupdate` does not name. MadEvent clusters each
+    /// subprocess on its own diagrams and never builds that vertex. The group
+    /// carries no weight, so its terms are neither scaled nor reweighted, and no
+    /// point may fail on it; the other groups are matched as usual.
+    #[test]
+    fn a_group_joined_on_a_vanishing_matrix_element_is_not_clustered() {
+        let m = sm_model(SMRestrict::Ckm);
+        let param: crate::ufo::slha::ParamCard =
+            "Block Wolfenstein\n 1 0.0\n".parse().expect("param card");
+        let evaluated = EvaluatedModel::from_model_card(m.clone(), &param).expect("the card binds");
+        let card = RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  5.0 = etaj\n  4 = maxjetflavor\n\
+             \x20 1 = ickkw\n  20.0 = xqcut\n",
+        )
+        .expect("matched run card");
+        let groups = derive_flavor_groups(enumerate("p p > w+ j", &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let has = |g: &FlavorGroup, incoming: [i32; 2], outgoing: [i32; 2]| {
+            g.members().iter().any(|s| {
+                let mut a = s.incoming;
+                let mut b = incoming;
+                a.sort_unstable();
+                b.sort_unstable();
+                a == b && s.outgoing == outgoing
+            })
+        };
+        let vanishing = groups
+            .groups()
+            .iter()
+            .position(|g| has(g, [21, 2], [24, 3]) && has(g, [2, -3], [24, 21]))
+            .expect("g u > w+ s and u s~ > w+ g share a group");
+        assert!(groups.groups()[vanishing].vanishes());
+        assert!(groups
+            .groups()
+            .iter()
+            .enumerate()
+            .all(|(gi, g)| g.vanishes() == (gi == vanishing)));
+
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let amps = bind_all(&groups, &evaluated);
+        let mut integ =
+            ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).expect("integrand");
+        integ
+            .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+            .expect("the matched prescription compiles");
+        let mut stream = SubStream::from_stream(0x5EED_57, 3);
+        let (mut events, mut matched, mut clustered) = (0usize, 0usize, 0usize);
+        for trial in 0..20_000 {
+            if events == 200 {
+                break;
+            }
+            let u = stream.uniforms::<f64>(integ.point_ndim());
+            let channel = trial % integ.channel_count();
+            let Some(event) = integ.event_in_channel(channel, &u) else {
+                continue;
+            };
+            events += 1;
+            clustered += usize::from(event.group_scales[vanishing] != [None, None]);
+            clustered += usize::from(event.group_rewgt[vanishing] != [None, None]);
+            matched += event
+                .group_rewgt
+                .iter()
+                .flatten()
+                .filter(|f| f.is_some())
+                .count();
+        }
+        assert_eq!(integ.fault(), None);
+        assert_eq!(events, 200, "too few points inside the cuts");
+        assert_eq!(clustered, 0, "the vanishing group was clustered");
+        assert!(matched > 0, "no other group was reweighted");
+
+        // Clustered anyway, the group reaches the vertex: the refusal is kept as
+        // the integrand's fault and the group's factors are zero, not a panic.
+        let g = &groups.groups()[vanishing];
+        let mut refused = 0usize;
+        for trial in 0..20_000 {
+            let u = stream.uniforms::<f64>(integ.point_ndim());
+            let channel = trial % integ.channel_count();
+            let Some(event) = integ.event_in_channel(channel, &u) else {
+                continue;
+            };
+            let sc = integ.scratch();
+            let fallback = SampledChannel {
+                group: vanishing,
+                channel: 0,
+            };
+            let drawn = integ.scale_channel(sc, &event.cm, fallback, u[integ.point_ndim() - 1]);
+            let Some((_, Some(history), _)) = integ.term_at(sc, &event.cm, drawn) else {
+                continue;
+            };
+            let factors = integ.member_rewgts(vanishing, g, &history, event.x);
+            if integ.fault().is_some() {
+                assert!(factors.iter().all(|&f| f == 0.0));
+                refused += 1;
+                break;
+            }
+        }
+        assert_eq!(refused, 1, "no point reached the unnamed vertex");
+        match integ.fault() {
+            Some(SampledPointFault::Rewgt { member, error }) => {
+                assert_eq!(member, "PDG 2 -3 > 24 21");
+                assert!(matches!(error, RewgtError::UnnamedColourStructure { .. }));
+            }
+            other => panic!("expected the member's refusal, got {other:?}"),
         }
     }
 
