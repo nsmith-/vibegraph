@@ -14,8 +14,8 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-11-18}
 Reported by simshop, which is designing a param-card editor for its New
 sample form and a reweight-hypothesis editor for its generate step. Both need
 to know, for a model and restriction, which parameters a user may set and to
-what. The same no-duplication reasoning as
-[run-card-resolution-not-reported](run-card-resolution-not-reported.md):
+what. It is the model-side counterpart of the `vibegraph run-card` report,
+which gives each run-card key's resolved value and class without sampling:
 vibegraph already decides all of it, so a second reader in simshop would drift.
 
 vibegraph already holds each piece:
