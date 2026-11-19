@@ -33,6 +33,7 @@ pub(crate) mod classes;
 mod matching;
 pub mod process_defaults;
 pub mod report;
+mod scan;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
@@ -682,44 +683,12 @@ impl RunCard {
 
     /// Parse a run card from text.
     pub fn parse(text: &str) -> Result<Self, RunCardError> {
-        let mut written = BTreeSet::new();
-        let mut values = BTreeMap::new();
-        for (name, default) in PARAM_DEFAULTS {
-            values.insert((*name).to_string(), default.to_value());
+        let scanned = scan::scan(text);
+        if let Some(error) = scanned.first_error {
+            return Err(error);
         }
-
-        for (idx, raw) in text.lines().enumerate() {
-            let line_no = idx + 1;
-            let Some((value_tok, name)) = split_line(raw) else {
-                continue;
-            };
-            let Some(canonical) = canonical_name(name) else {
-                return Err(RunCardError::UnknownParam {
-                    name: name.to_string(),
-                    line: line_no,
-                });
-            };
-            let kind = values
-                .get(canonical)
-                .expect("canonical name present")
-                .kind();
-            let parsed = parse_value(value_tok, kind).ok_or_else(|| RunCardError::BadValue {
-                name: name.to_string(),
-                value: value_tok.to_string(),
-                line: line_no,
-            })?;
-            let auto_list =
-                matches!(&parsed, ParamValue::Opaque(v) if v.eq_ignore_ascii_case("auto"));
-            if auto_list {
-                written.remove(canonical);
-            } else {
-                written.insert(canonical.to_string());
-            }
-            values.insert(canonical.to_string(), parsed);
-        }
-
-        let mut card = Self::from_values(values)?;
-        card.written = written;
+        let mut card = Self::from_values(scanned.values)?;
+        card.written = scanned.written;
         Ok(card)
     }
 
