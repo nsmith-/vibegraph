@@ -1157,9 +1157,9 @@ fn refuse_misset_floor(
             reason: format!(
                 "setcuts.f:675 squares it into the lepton term of MadEvent's lower limit on \
                  ŝ, and on this process the lepton cuts leave that term at {term} GeV², below \
-                 misset² = {} GeV², so the limit is raised and removes phase space the cuts \
-                 allow, which is not reproduced; set misset = 0, or a lepton cut (ptl, mmll) \
-                 that fixes the term",
+                 misset² = {} GeV², so the limit is raised above what the cuts imply and can \
+                 remove phase space they allow, which is not reproduced; set misset = 0, or \
+                 raise a lepton cut so that its term exceeds misset²",
                 misset * misset
             ),
         }),
