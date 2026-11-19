@@ -15,19 +15,18 @@
 //! into integration and generation settings. A refusal that needs a process
 //! (the cut compiler's, the phase-space guards) is outside this view.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 use serde_json::{Number, Value};
 
 use super::classes::{FieldClass, Stage, FIELD_CLASSES};
-use super::{
-    canonical_name, param_default, parse_value, split_line, ParamValue, RunCard, RunCardError,
-    PARAM_DEFAULTS,
-};
+pub use super::scan::UnknownKey;
+use super::scan::{scan, Scanned};
+use super::{param_default, ParamValue, RunCard, RunCardError, PARAM_DEFAULTS};
 use crate::cuts::{
-    cutuse_refusal, detect_unimplemented, inert_values, pdg_cut_refusal, unimplemented_cut_names,
-    unimplemented_cut_refusal, CutError,
+    cutuse_refusal, describe, detect_unimplemented, inert_values, pdg_cut_refusal,
+    unimplemented_cut_names, unimplemented_cut_refusal, CutError,
 };
 
 /// How a parameter is treated, in the three words a consumer acts on.
@@ -177,7 +176,6 @@ fn json_value(v: &ParamValue) -> Value {
 /// order. Built from [`FIELD_CLASSES`], [`PARAM_DEFAULTS`] and the cut
 /// compiler's own lists, so it moves with them.
 pub fn classification_table() -> Vec<TableEntry> {
-    let unimplemented: BTreeSet<&str> = unimplemented_cut_names().iter().copied().collect();
     let refusals: BTreeMap<&str, &str> = VALUE_REFUSALS.iter().copied().collect();
     FIELD_CLASSES
         .iter()
@@ -205,7 +203,7 @@ pub fn classification_table() -> Vec<TableEntry> {
                     ),
                 }
             };
-            debug_assert!(!unimplemented.contains(name) || status == Status::Refused);
+            debug_assert!(!unimplemented_cut_names().contains(name) || status == Status::Refused);
             TableEntry {
                 name,
                 stage: (*stage).into(),
@@ -254,19 +252,6 @@ pub struct KeyReport {
     pub note: String,
 }
 
-/// A card line this build does not read.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct UnknownKey {
-    pub name: String,
-    pub line: usize,
-    pub value: String,
-    /// `unknown_name` for a name MadGraph's template does not have,
-    /// `malformed_value` for a known name whose value does not parse, or
-    /// `placeholder` for a `$`-led template line the parser skips, leaving that
-    /// parameter at its default.
-    pub problem: &'static str,
-}
-
 /// A parameter the process, rather than the card, gives a default.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ImpliedDefault {
@@ -291,85 +276,6 @@ pub struct CardReport {
     pub process_defaults: Vec<ImpliedDefault>,
 }
 
-/// The card's lines as the parser reads them: values by canonical name, the
-/// lines they came from, the names written, and every line that did not read.
-struct Scanned {
-    values: BTreeMap<String, ParamValue>,
-    lines: BTreeMap<&'static str, usize>,
-    written: BTreeSet<String>,
-    unknown: Vec<UnknownKey>,
-    first_error: Option<RunCardError>,
-}
-
-fn scan(text: &str) -> Scanned {
-    let mut values: BTreeMap<String, ParamValue> = PARAM_DEFAULTS
-        .iter()
-        .map(|(name, default)| (name.to_string(), default.to_value()))
-        .collect();
-    let mut lines = BTreeMap::new();
-    let mut written = BTreeSet::new();
-    let mut unknown = Vec::new();
-    let mut first_error = None;
-    for (idx, raw) in text.lines().enumerate() {
-        let line_no = idx + 1;
-        let Some((value_tok, name)) = split_line(raw) else {
-            let body = raw.split(['#', '!']).next().unwrap_or("").trim();
-            if let Some((value, name)) = body.rsplit_once('=').filter(|_| body.starts_with('$')) {
-                unknown.push(UnknownKey {
-                    name: name.trim().to_string(),
-                    line: line_no,
-                    value: value.trim().to_string(),
-                    problem: "placeholder",
-                });
-            }
-            continue;
-        };
-        let Some(canonical) = canonical_name(name) else {
-            first_error.get_or_insert(RunCardError::UnknownParam {
-                name: name.to_string(),
-                line: line_no,
-            });
-            unknown.push(UnknownKey {
-                name: name.to_string(),
-                line: line_no,
-                value: value_tok.to_string(),
-                problem: "unknown_name",
-            });
-            continue;
-        };
-        let kind = values[canonical].kind();
-        let Some(parsed) = parse_value(value_tok, kind) else {
-            first_error.get_or_insert(RunCardError::BadValue {
-                name: name.to_string(),
-                value: value_tok.to_string(),
-                line: line_no,
-            });
-            unknown.push(UnknownKey {
-                name: name.to_string(),
-                line: line_no,
-                value: value_tok.to_string(),
-                problem: "malformed_value",
-            });
-            continue;
-        };
-        let auto_list = matches!(&parsed, ParamValue::Opaque(v) if v.eq_ignore_ascii_case("auto"));
-        if auto_list {
-            written.remove(canonical);
-        } else {
-            written.insert(canonical.to_string());
-        }
-        lines.insert(canonical, line_no);
-        values.insert(canonical.to_string(), parsed);
-    }
-    Scanned {
-        values,
-        lines,
-        written,
-        unknown,
-        first_error,
-    }
-}
-
 /// Resolve a card's text and report every parameter.
 ///
 /// `text` is `None` for the card MadGraph would write for the process, which
@@ -383,16 +289,7 @@ pub fn describe_card(
 ) -> CardReport {
     let scanned = match text {
         Some(text) => scan(text),
-        None => {
-            let base = process_default.cloned().unwrap_or_default();
-            Scanned {
-                values: base.values.clone(),
-                lines: BTreeMap::new(),
-                written: base.written.clone(),
-                unknown: Vec::new(),
-                first_error: None,
-            }
-        }
+        None => scan_of_default(process_default),
     };
     let text_given = text.is_some();
 
@@ -400,136 +297,31 @@ pub fn describe_card(
         stage: "parse",
         message: e.to_string(),
     });
-    let mut warnings = Vec::new();
-    let strict = RunCard::resolve_values(scanned.values.clone(), true);
-    let resolved = match strict {
-        Ok((card, w)) => {
-            warnings = w;
-            Some(card)
-        }
-        Err(e) => {
-            refusal.get_or_insert(Refusal {
-                stage: "parse",
-                message: e.to_string(),
-            });
-            RunCard::resolve_values(scanned.values.clone(), false)
-                .ok()
-                .map(|(card, w)| {
-                    warnings = w;
-                    card
-                })
-        }
-    };
-    let resolved = resolved.map(|mut card| {
-        card.written = scanned.written.clone();
-        card
-    });
-
-    let beam_sum = resolved.as_ref().map(|rc| rc.ebeam1 + rc.ebeam2);
+    let (resolved, warnings) = resolve(&scanned, &mut refusal);
     if refusal.is_none() {
-        if let Some(rc) = &resolved {
-            if let Err(e) = detect_unimplemented(rc) {
-                refusal = Some(Refusal {
-                    stage: "cuts",
-                    message: e.to_string(),
-                });
-            } else if let Err(e) = rc.clone().split_as(decay) {
-                refusal = Some(Refusal {
-                    stage: "split",
-                    message: e.to_string(),
-                });
-            }
-        }
+        refusal = resolved.as_ref().and_then(|rc| stage_refusal(rc, decay));
     }
-    let pdg_refusal: Option<CutError> = resolved.as_ref().and_then(pdg_cut_refusal);
-    let cutuse_refused: Option<String> = resolved
-        .as_ref()
-        .and_then(cutuse_refusal)
-        .map(|e| e.to_string());
 
     let table: BTreeMap<&str, TableEntry> = classification_table()
         .into_iter()
         .map(|e| (e.name, e))
         .collect();
-    let values_of = |name: &str| -> ParamValue {
-        resolved
+    let context = KeyContext {
+        scanned: &scanned,
+        resolved: resolved.as_ref(),
+        text_given,
+        beam_sum: resolved.as_ref().map(|rc| rc.ebeam1 + rc.ebeam2),
+        cutuse_refused: resolved
             .as_ref()
-            .and_then(|rc| rc.values.get(name))
-            .or_else(|| scanned.values.get(name))
-            .cloned()
-            .expect("every parameter has a value")
+            .and_then(cutuse_refusal)
+            .map(|e| e.to_string()),
+        pdg_refusal: resolved.as_ref().and_then(pdg_cut_refusal),
     };
     let keys = PARAM_DEFAULTS
         .iter()
-        .map(|(name, _)| {
-            let entry = &table[name];
-            let default = param_default(name).expect("known name");
-            let resolved_value = values_of(name);
-            let card_value = (text_given && scanned.lines.contains_key(name))
-                .then(|| scanned.values[*name].clone());
-            let moved_by_card = card_value.as_ref().is_some_and(|v| *v != default);
-            let moved_by_resolution = match &card_value {
-                Some(v) => *v != resolved_value,
-                None => resolved_value != default,
-            };
-            let mut key_refusal = None;
-            if entry.class == Class::IgnoredPhysics && resolved_value != default {
-                key_refusal = Some(
-                    RunCardError::UnsupportedField {
-                        name: (*name).to_string(),
-                        value: describe(&resolved_value),
-                        default: describe(&default),
-                        why: ignored_physics_why(name),
-                    }
-                    .to_string(),
-                );
-            } else if let Some(beam_sum) = beam_sum {
-                key_refusal = unimplemented_cut_refusal(name, &resolved_value, beam_sum)
-                    .map(|e| e.to_string());
-            }
-            if *name == "cutuse" && cutuse_refused.is_some() {
-                key_refusal = cutuse_refused.clone();
-            }
-            if let Some(CutError::PdgCutRefused { field, .. }) = &pdg_refusal {
-                if field == name {
-                    key_refusal = pdg_refusal.as_ref().map(|e| e.to_string());
-                }
-            }
-            KeyReport {
-                name,
-                stage: entry.stage,
-                class: entry.class,
-                status: entry.status,
-                mg_default: entry.mg_default.clone(),
-                card_value: card_value.as_ref().map(json_value),
-                line: scanned.lines.get(name).copied().filter(|_| text_given),
-                resolved: json_value(&resolved_value),
-                moved_by_card,
-                moved_by_resolution,
-                refusal: key_refusal,
-                note: entry.note.clone(),
-            }
-        })
+        .map(|(name, _)| key_report(name, &table[name], &context))
         .collect();
-
-    let process_defaults = process_default
-        .map(|process| {
-            let template = RunCard::default();
-            PARAM_DEFAULTS
-                .iter()
-                .filter_map(|(name, _)| {
-                    let base = template.values.get(*name)?;
-                    let implied = process.values.get(*name)?;
-                    (base != implied).then(|| ImpliedDefault {
-                        name,
-                        mg_default: json_value(base),
-                        process_default: json_value(implied),
-                        overridden_by_card: text_given && scanned.lines.contains_key(name),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let process_defaults = process_defaults(process_default, &scanned, text_given);
 
     CardReport {
         refusal,
@@ -540,13 +332,151 @@ pub fn describe_card(
     }
 }
 
-fn describe(v: &ParamValue) -> String {
-    match v {
-        ParamValue::Float(x) => x.to_string(),
-        ParamValue::Int(i) => i.to_string(),
-        ParamValue::Bool(b) => b.to_string(),
-        ParamValue::Str(s) | ParamValue::Opaque(s) => format!("'{s}'"),
+/// The values of the card MadGraph would write for the process: no lines, no
+/// unknown names, no error.
+fn scan_of_default(process_default: Option<&RunCard>) -> Scanned {
+    let base = process_default.cloned().unwrap_or_default();
+    Scanned {
+        values: base.values.clone(),
+        lines: BTreeMap::new(),
+        written: base.written.clone(),
+        unknown: Vec::new(),
+        first_error: None,
     }
+}
+
+/// The resolved card and the notices its resolution logged. A card the strict
+/// resolution refuses is resolved again leniently, so the report can read the
+/// rest of it, and the refusal is recorded unless `refusal` already holds one.
+fn resolve(scanned: &Scanned, refusal: &mut Option<Refusal>) -> (Option<RunCard>, Vec<String>) {
+    let (card, warnings) = match RunCard::resolve_values(scanned.values.clone(), true) {
+        Ok(resolved) => (Some(resolved.0), resolved.1),
+        Err(e) => {
+            refusal.get_or_insert(Refusal {
+                stage: "parse",
+                message: e.to_string(),
+            });
+            match RunCard::resolve_values(scanned.values.clone(), false) {
+                Ok((card, warnings)) => (Some(card), warnings),
+                Err(_) => (None, Vec::new()),
+            }
+        }
+    };
+    let card = card.map(|mut card| {
+        card.written = scanned.written.clone();
+        card
+    });
+    (card, warnings)
+}
+
+/// The refusal the cut detector or the settings split gives a resolved card.
+fn stage_refusal(rc: &RunCard, decay: bool) -> Option<Refusal> {
+    if let Err(e) = detect_unimplemented(rc) {
+        return Some(Refusal {
+            stage: "cuts",
+            message: e.to_string(),
+        });
+    }
+    rc.clone().split_as(decay).err().map(|e| Refusal {
+        stage: "split",
+        message: e.to_string(),
+    })
+}
+
+/// What [`key_report`] reads besides the key itself.
+struct KeyContext<'a> {
+    scanned: &'a Scanned,
+    resolved: Option<&'a RunCard>,
+    text_given: bool,
+    /// `ebeam1 + ebeam2` of the resolved card.
+    beam_sum: Option<f64>,
+    cutuse_refused: Option<String>,
+    pdg_refusal: Option<CutError>,
+}
+
+/// One parameter of the resolved card.
+fn key_report(name: &'static str, entry: &TableEntry, cx: &KeyContext<'_>) -> KeyReport {
+    let default = param_default(name).expect("known name");
+    let resolved_value = cx
+        .resolved
+        .and_then(|rc| rc.values.get(name))
+        .or_else(|| cx.scanned.values.get(name))
+        .cloned()
+        .expect("every parameter has a value");
+    let card_value = (cx.text_given && cx.scanned.lines.contains_key(name))
+        .then(|| cx.scanned.values[name].clone());
+    let moved_by_card = card_value.as_ref().is_some_and(|v| *v != default);
+    let moved_by_resolution = match &card_value {
+        Some(v) => *v != resolved_value,
+        None => resolved_value != default,
+    };
+    let mut refusal = None;
+    if entry.class == Class::IgnoredPhysics && resolved_value != default {
+        refusal = Some(
+            RunCardError::UnsupportedField {
+                name: name.to_string(),
+                value: describe(&resolved_value),
+                default: describe(&default),
+                why: ignored_physics_why(name),
+            }
+            .to_string(),
+        );
+    } else if let Some(beam_sum) = cx.beam_sum {
+        refusal = unimplemented_cut_refusal(name, &resolved_value, beam_sum).map(|e| e.to_string());
+    }
+    if name == "cutuse" && cx.cutuse_refused.is_some() {
+        refusal = cx.cutuse_refused.clone();
+    }
+    if let Some(CutError::PdgCutRefused { field, .. }) = &cx.pdg_refusal {
+        if *field == name {
+            refusal = cx.pdg_refusal.as_ref().map(|e| e.to_string());
+        }
+    }
+    KeyReport {
+        name,
+        stage: entry.stage,
+        class: entry.class,
+        status: entry.status,
+        mg_default: entry.mg_default.clone(),
+        card_value: card_value.as_ref().map(json_value),
+        line: cx
+            .scanned
+            .lines
+            .get(name)
+            .copied()
+            .filter(|_| cx.text_given),
+        resolved: json_value(&resolved_value),
+        moved_by_card,
+        moved_by_resolution,
+        refusal,
+        note: entry.note.clone(),
+    }
+}
+
+/// The parameters the process moves from MadGraph's LO template in the default
+/// card it would write.
+fn process_defaults(
+    process_default: Option<&RunCard>,
+    scanned: &Scanned,
+    text_given: bool,
+) -> Vec<ImpliedDefault> {
+    let Some(process) = process_default else {
+        return Vec::new();
+    };
+    let template = RunCard::default();
+    PARAM_DEFAULTS
+        .iter()
+        .filter_map(|(name, _)| {
+            let base = template.values.get(*name)?;
+            let implied = process.values.get(*name)?;
+            (base != implied).then(|| ImpliedDefault {
+                name,
+                mg_default: json_value(base),
+                process_default: json_value(implied),
+                overridden_by_card: text_given && scanned.lines.contains_key(name),
+            })
+        })
+        .collect()
 }
 
 fn ignored_physics_why(name: &str) -> &'static str {

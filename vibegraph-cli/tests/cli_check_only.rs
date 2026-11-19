@@ -66,11 +66,9 @@ fn objects(output: &Output) -> Vec<Value> {
         .collect()
 }
 
-/// A card refused with the same `error_kind` and `message` whether or not the
-/// run was asked to stop before sampling.
-#[test]
-fn a_refusal_is_the_same_object_with_and_without_the_flag() {
-    let cases = [
+/// The cards the parity test runs, each refused by a different rule.
+fn refused_cases() -> [Case<'static>; 4] {
+    [
         Case {
             name: "an unimplemented cut",
             proc_card: "import model sm\ngenerate e+ e- > mu+ mu-\n",
@@ -95,8 +93,14 @@ fn a_refusal_is_the_same_object_with_and_without_the_flag() {
             run_card_extra: "",
             extra_args: &["--target-rel", "2"],
         },
-    ];
-    for case in &cases {
+    ]
+}
+
+/// A card refused with the same `error_kind` and `message` whether or not the
+/// run was asked to stop before sampling.
+#[test]
+fn a_refusal_is_the_same_object_with_and_without_the_flag() {
+    for case in &refused_cases() {
         let tmp = tempfile::tempdir().unwrap();
         let full = run(tmp.path(), case, false);
         let checked = run(tmp.path(), case, true);
@@ -117,46 +121,23 @@ fn a_refusal_is_the_same_object_with_and_without_the_flag() {
     }
 }
 
-/// The three refusal kinds the parity cases span, so the comparison is not
-/// three copies of one path.
+/// The parity cases span at least three refusal kinds, so the comparison is not
+/// copies of one path.
 #[test]
 fn the_parity_cases_span_distinct_refusal_kinds() {
     let tmp = tempfile::tempdir().unwrap();
-    let kinds: Vec<String> = [
-        (
-            "import model sm\ngenerate e+ e- > mu+ mu-\n",
-            "  30 = ht2min\n",
-            &[][..],
-        ),
-        (
-            "import model sm\ngenerate e+ e- > mu+ mu-\nadd process e+ e- > mu+ mu- a\n",
-            "",
-            &[][..],
-        ),
-        (
-            "import model sm\ngenerate e+ e- > mu+ mu-\n",
-            "",
-            &["--target-rel", "2"][..],
-        ),
-    ]
-    .iter()
-    .map(|(proc_card, extra, args)| {
-        let case = Case {
-            name: "",
-            proc_card,
-            run_card_extra: extra,
-            extra_args: args,
-        };
-        last_object(&run(tmp.path(), &case, true))["error_kind"]
-            .as_str()
-            .unwrap()
-            .to_string()
-    })
-    .collect();
-    let mut distinct = kinds.clone();
-    distinct.sort();
-    distinct.dedup();
-    assert_eq!(distinct.len(), 3, "{kinds:?}");
+    let mut kinds: Vec<String> = refused_cases()
+        .iter()
+        .map(|case| {
+            last_object(&run(tmp.path(), case, true))["error_kind"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    kinds.sort();
+    kinds.dedup();
+    assert!(kinds.len() >= 3, "{kinds:?}");
 }
 
 /// A card that passes ends in `ok`, draws no point and writes no artifact.
@@ -216,4 +197,47 @@ fn the_text_mode_prints_check_ok() {
         .expect("spawn vibegraph");
     assert!(output.status.success(), "{}", common::stderr_of(&output));
     assert_eq!(common::stdout_of(&output), "check ok: e+ e- > mu+ mu-\n");
+}
+
+/// At proton beams the check also stops before the survey and the artifact.
+/// Needs the fetched PDF set, which only the banked layer has.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn a_hadronic_card_reports_ok_without_sampling_or_an_artifact() {
+    use common::PdfDataPath;
+
+    let pdf_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf");
+    if !pdf_dir.join("NNPDF23_lo_as_0130_qed").is_dir() {
+        vibegraph::validation::require(
+            "a_hadronic_card_reports_ok_without_sampling_or_an_artifact",
+            "the NNPDF23_lo_as_0130_qed set",
+            pdf_dir.display(),
+        );
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let output = common::vibegraph(tmp.path(), tmp.path())
+        .pdf_data_path(&pdf_dir)
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(common::validation_dir().join("dy13_proc_card.dat"))
+        .arg("--run-card")
+        .arg(common::validation_dir().join("dy13_default_run_card.dat"))
+        .arg("--out")
+        .arg(tmp.path().join("out"))
+        .args(["--neval", "1000", "-j", "1", "--check", "--output-ldjson"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(output.status.success(), "{}", common::stderr_of(&output));
+    let all = objects(&output);
+    let result = all.last().unwrap();
+    assert_eq!(result["check"], "ok", "{result}");
+    assert_eq!(result["process"], "p p > e+ e-");
+    for object in &all {
+        let stage = object["fields"]["stage"].as_str().unwrap_or("");
+        assert!(
+            !["alpha_survey", "vegas"].contains(&stage),
+            "sampled under --check: {object}"
+        );
+    }
+    assert!(!tmp.path().join("out").exists());
 }

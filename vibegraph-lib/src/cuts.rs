@@ -2707,7 +2707,7 @@ pub(crate) fn unimplemented_cut_names() -> &'static [&'static str] {
     UNIMPLEMENTED_CUTS
 }
 
-fn describe(v: &ParamValue) -> String {
+pub(crate) fn describe(v: &ParamValue) -> String {
     match v {
         ParamValue::Float(x) => x.to_string(),
         ParamValue::Int(i) => i.to_string(),
@@ -3797,9 +3797,10 @@ mod tests {
     }
 
     /// At `misset = -1` the term is refused exactly where `misset²` is the
-    /// maximum of the lepton term: a tie (`ptl = 1` on one counted lepton) leaves the floor where it was, and every
-    /// card at or above zero, every card with a lepton cut of a GeV or more, and
-    /// every process with no lepton before its last leg compiles as before.
+    /// maximum of the lepton term: a tie (`ptl = 1` on one counted lepton)
+    /// leaves the floor where it was, and every card at or above zero, every
+    /// card with a lepton cut of a GeV or more, and every process with no lepton
+    /// before its last leg compiles as before.
     #[test]
     fn a_negative_misset_is_refused_where_its_square_is_the_lepton_floor() {
         let compile = |extra: &str, legs: &[ExternalLeg]| Cuts::compile(&lhc(extra), legs);
@@ -5420,6 +5421,42 @@ mod tests {
         ]
     }
 
+    /// Whether a lepton comes before the last final-state leg, the legs the
+    /// lepton term of the ŝ floor reads.
+    fn has_counted_lepton(set: &[ExternalLeg]) -> bool {
+        let finals: Vec<&ExternalLeg> = set.iter().filter(|l| l.is_final).collect();
+        finals[..finals.len() - 1]
+            .iter()
+            .any(|l| matches!(l.pdg.abs(), 11 | 13 | 15))
+    }
+
+    /// `value = name` passes detection and compiles to the default cuts on every
+    /// leg set of [`xpt_leg_sets`]. The one exception is `misset = -100`: its
+    /// square, 10⁴ GeV², exceeds the default lepton term, so a set with a
+    /// counted lepton is refused by name and any other set compiles as default.
+    fn assert_compiles_to_default(name: &str, value: &str) {
+        let rc = lhc(&format!("{value} = {name}\n"));
+        assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+        for set in xpt_leg_sets() {
+            let compiled = Cuts::compile(&rc, &set);
+            if name == "misset" && value == "-100" && has_counted_lepton(&set) {
+                assert!(
+                    matches!(
+                        compiled,
+                        Err(CutError::ValueRefused {
+                            field: "misset",
+                            ..
+                        })
+                    ),
+                    "{name} = {value}: {compiled:?}"
+                );
+                continue;
+            }
+            let default = Cuts::compile(&lhc(""), &set).unwrap();
+            assert_eq!(compiled.unwrap(), default, "{name} = {value}");
+        }
+    }
+
     /// `cuts.f` reads each `xpt*` behind `> 0` and `setcuts.f` through
     /// `max(·, 0)`, so a value at or below zero is the default: it passes
     /// detection and compiles to the default's filter on every class.
@@ -5427,21 +5464,7 @@ mod tests {
     fn a_nonpositive_xpt_compiles_to_the_default_cuts() {
         for name in NONPOSITIVE_IS_OFF {
             for value in ["-1", "0", "-0.5", "-100"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set);
-                    // `misset²` at -100 outweighs a default lepton cut, so a set
-                    // with a counted lepton is refused rather than compiled.
-                    if *name == "misset"
-                        && value == "-100"
-                        && matches!(compiled, Err(CutError::ValueRefused { .. }))
-                    {
-                        continue;
-                    }
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled.unwrap(), default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }
@@ -5751,21 +5774,7 @@ mod tests {
                 "{name}"
             );
             for value in ["-1", "-0.5", "-100"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set);
-                    // `misset²` at -100 outweighs a default lepton cut, so a set
-                    // with a counted lepton is refused rather than compiled.
-                    if name == "misset"
-                        && value == "-100"
-                        && matches!(compiled, Err(CutError::ValueRefused { .. }))
-                    {
-                        continue;
-                    }
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled.unwrap(), default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }
@@ -5789,21 +5798,7 @@ mod tests {
     fn an_unbindable_or_negative_ht_maximum_compiles_to_the_default_cuts() {
         for name in HT_MAXIMA {
             for value in ["100000", "13000", "-1", "-7"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set);
-                    // `misset²` at -100 outweighs a default lepton cut, so a set
-                    // with a counted lepton is refused rather than compiled.
-                    if *name == "misset"
-                        && value == "-100"
-                        && matches!(compiled, Err(CutError::ValueRefused { .. }))
-                    {
-                        continue;
-                    }
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled.unwrap(), default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }
