@@ -65,7 +65,7 @@ use vibegraph::phasespace::maps::{
     MapChoices, MapOptions, PairOrder, RungOrder, SplitAngle, TauMap,
 };
 use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
-use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand};
+use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::support::{check_support, PointCensus};
@@ -1591,13 +1591,13 @@ fn integrate_hadronic(
     }
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
-    refuse_sampled_fault(&integ)?;
+    refuse_sampled_fault(integ.fault())?;
 
     integ.clear_census();
     signals::sampling_started();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
-    refuse_sampled_fault(&integ)?;
+    refuse_sampled_fault(integ.fault())?;
     let census = integ.census();
     let multiplicities = multiplicity_totals(&integ, &groups, &per_channel, convergence.iterations);
     if multiplicities.len() > 1 {
@@ -1641,10 +1641,10 @@ fn integrate_hadronic(
     }))
 }
 
-/// The refusal a sampled point of `integ` ran into, if any: the points it
+/// The refusal a sampled point of an integrand ran into, if any: the points it
 /// weighted zero were ones MadEvent stops on, so the run holds no estimate.
-fn refuse_sampled_fault(integ: &MultiplicitySum) -> Result<(), CliError> {
-    match integ.fault() {
+fn refuse_sampled_fault(fault: Option<&SampledPointFault>) -> Result<(), CliError> {
+    match fault {
         Some(fault) => Err(err(
             ErrorKind::Process,
             format!("{fault}; the run is refused"),
@@ -1793,6 +1793,7 @@ fn integrate_fixed_energy(
     signals::sampling_started();
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
+    refuse_sampled_fault(integ.fault())?;
     let census = integ.census();
     let (configurations, members) = config_share::fixed_energy(
         sets,
