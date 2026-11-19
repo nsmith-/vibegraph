@@ -13,8 +13,9 @@ use std::path::Path;
 
 /// The subcommands the chapter documents, in the script's order. `help` is
 /// clap's own and has no page.
-const COMMANDS: [&str; 5] = [
+const COMMANDS: [&str; 6] = [
     "enumerate",
+    "run-card",
     "integrate",
     "generate",
     "check-events",

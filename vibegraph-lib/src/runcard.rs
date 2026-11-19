@@ -32,6 +32,7 @@ use crate::systematics::request::{RequestError, VariationRequest};
 pub(crate) mod classes;
 mod matching;
 pub mod process_defaults;
+pub mod report;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
@@ -829,7 +830,19 @@ impl RunCard {
         })
     }
 
-    fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+    fn from_values(values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+        Self::resolve_values(values, true).map(|(card, _)| card)
+    }
+
+    /// Resolve a card's values, with the notices the resolution logs.
+    /// `refuse_physics` false skips the refusal of an
+    /// [`classes::FieldClass::IgnoredPhysics`] field off its default, so a
+    /// report can read the rest of a card that carries one.
+    fn resolve_values(
+        mut values: BTreeMap<String, ParamValue>,
+        refuse_physics: bool,
+    ) -> Result<(Self, Vec<String>), RunCardError> {
+        let mut warnings = Vec::new();
         let raw = values
             .get("event_norm")
             .expect("event_norm is a recognized parameter")
@@ -842,7 +855,7 @@ impl RunCard {
             ParamValue::Str(norm.as_str().to_string()),
         );
         let as_parsed = values.clone();
-        matching::resolve(&mut values)?;
+        matching::resolve(&mut values, &mut warnings)?;
         let beam = |name: &str| values.get(name).expect("known param").as_i64();
         if (beam("lpp1"), beam("lpp2")) == (1, 1) {
             resolve_beam_pdf_labels(&mut values)?;
@@ -865,7 +878,9 @@ impl RunCard {
                 }
             }
         }
-        classes::refuse_ignored_physics(&values)?;
+        if refuse_physics {
+            classes::refuse_ignored_physics(&values)?;
+        }
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         let iseed = i("iseed");
@@ -876,7 +891,7 @@ impl RunCard {
         if nevents < 0 {
             return Err(RunCardError::NegativeEventCount { nevents });
         }
-        Ok(RunCard {
+        let card = RunCard {
             iseed,
             lpp1,
             lpp2,
@@ -893,7 +908,8 @@ impl RunCard {
             banner_overrides: matching::banner_overrides(&as_parsed, &values),
             written: BTreeSet::new(),
             values,
-        })
+        };
+        Ok((card, warnings))
     }
 }
 

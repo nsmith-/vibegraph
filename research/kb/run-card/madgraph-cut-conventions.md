@@ -16,6 +16,7 @@ sources:
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L200-L235", title: "MadGraph setcuts.f class membership"}
   - {id: mg-ht, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L517-L913", title: "MadGraph LO cuts.f, the jet and b transverse-momentum lists and the HT cuts"}
   - {id: hm2-onium, resource: "../sprints/cms-gridpack-coverage/sessions/H-M2-report.md", title: "H-M2 report §1, every ptonium/etaonium reader and the measured equality"}
+  - {id: mg-rank, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L816-L972", title: "MadGraph LO cuts.f, the jet and lepton pT-ranked cuts"}
   - {id: mg-ht-defaults, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4401-L4411", title: "MadGraph banner.py, the HT parameters and their defaults"}
 ---
 
@@ -127,14 +128,35 @@ on a given process[^n18-h6][^n18-outcome].
 
 Implemented: the ŝ window; single-leg pT, E, rapidity min and max for classes
 j, b, a, l; pairwise ΔR and invariant mass (min and max) over the class-pair
-tags; `ptll`; `mmnl`; `htjmin`, `htjmax`, `ihtmin`, `ihtmax`; the decay-chain Breit–Wigner windows (`cut_bw` in
+tags; `ptll`; `mmnl`; `htjmin`, `htjmax`, `ihtmin`, `ihtmax`; the pT-ranked
+jet and lepton cuts (below); the decay-chain Breit–Wigner windows (`cut_bw` in
 `myamp.f`: a forced line rejects the point unless `|√p² − M| < bwcutoff·Γ`,
 a positive Γ floored at `M·small_width_treatment`) and `cut_decays`. Under `xqcut > 0` the
 jet thresholds are rewritten first ([run-card/matching-parameters](matching-parameters.md)).
 
-Everything else tagged `cut=` in `banner.py` is **parse-and-detect**:
+**The pT-ranked cuts** (`ptj1min`..`ptj4max`, `ptl1min`..`ptl4max`;
+`cuts.f:816-871` jets, `:916-972` leptons, thresholds copied at
+`setcuts.f:488-496`, `:514-522`[^mg-rank]). The members are the jet-class legs
+(`is_a_j`, so a b-class leg is not ranked) or the charged leptons (`is_a_l`),
+and **`do_cuts` is not read**: decay products under `cut_decays = F` and legs
+above 20 GeV are ranked and cut ("sorted cuts always apply", the run-card
+template). Members are ordered by pT, hardest first. A positive `pt{N}min`
+fails every point with fewer than N members; the N-th hardest of the first
+four fails below its minimum (`<`) or above a maximum that is ≥ 0 (`>`), and a
+point fails when any ranked member fails (`cutuse = 0`, `jetor`,
+`setcuts.f:509`). The leptons have no `cutuse`. MadEvent folds the minima into
+its `τ` floor `smin` (`setcuts.f:534-566`, `:639-670`, applied at
+`myamp.f:569-570`); vibegraph derives its own provable floor from them
+(the k-th hardest member is above the k-th rank minimum and the k-th largest of
+the members' own pT minima). Two cases where MadEvent's floor cuts on its own are
+refused by name: `cutuse = 1` with a jet bound on (the "all fail" rule keeps
+points the floor removes), and a ranked class mixing cut and uncut members with
+a positive single-leg minimum (the per-leg terms can count the hardest member's
+bound twice).
+
+
 `UNIMPLEMENTED_CUTS` lists `misset(max)`, `ptheavy`,
-`xpt{j,b,a,l}`, the leading-object `ptj1..4`/`ptl1..4` min/max and `cutuse`, the
+`xpt{j,b,a,l}`, the
 partial sums `ht2min`..`ht4max`, `ptgmin` (Frixione isolation), `xetamin`/`deltaeta` (VBF),
 `ktdurham`/`dparameter`/`ptlund` (CKKW-L merging) and the per-PDG dictionary
 cuts. `Cuts::compile` returns `CutError::UnimplementedCutActive` when any of
@@ -194,5 +216,6 @@ The parser and defaults are [run-card/run-card-parser-and-defaults](run-card-par
 [^mg-kin]: MadGraph `kin_functions.f:95` (`rap`), `:42` (`R2`), `:164` (`DELTA_PHI`, clamp `:181-182`).
 [^mg-setcuts]: MadGraph `setcuts.f:200-235`, `do_cuts` (`:201-215`) and class membership (`:217-235`).
 [^mg-ht]: MadGraph `cuts.f:521-534` (the lists), `:817` (no jets), `:874-913` (the HT cuts); `setcuts.f:498-507` (the parameters' commons), at the pinned commit.
+[^mg-rank]: MadGraph `cuts.f:816-871` (jets: existence `:817-820`, sort `:826-835`, bounds `:848-864`) and `:916-972` (leptons: guard `:920-922`, existence `:934-937`, bounds `:957-965`); `setcuts.f:488-522` (thresholds, `jetor` `:509`) and `:534-566`, `:639-670` (`smin`), at the pinned commit. MadGraph 3.5.7 has the same blocks 14 lines earlier in `cuts.f`.
 [^mg-ht-defaults]: MadGraph `banner.py:4402-4405` (defaults), `:3858-3873` (`remove_all_cut`); `run_card.dat:102, 218-223` (the template's wording).
 [^hm2-onium]: H-M2 §1: the readers at the pinned commit, and MadGraph seeds 11–15 with the shipped and the default values giving one `run_card.inc`, one σ and bit-identical events per seed.

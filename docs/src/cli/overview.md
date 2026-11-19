@@ -1,6 +1,6 @@
 # Command line
 
-The `vibegraph` binary has five commands. Two of them are the generator, and
+The `vibegraph` binary has six commands. Two of them are the generator, and
 the split between them mirrors MadEvent's survey-and-refine phase followed
 by its event-generation phase:
 
@@ -30,6 +30,11 @@ is used. It is described [below](#enumerating-diagrams). `integrate` takes
 the `diagrams.bin.zst` it writes in place of a proc card, told apart by
 content, and then enumerates nothing and reads no UFO directory: the card and
 the restricted model are the artifact's.
+
+The sixth, **`vibegraph run-card`**, reads a run card and reports what
+`integrate` would make of it, without enumerating or sampling anything: every
+parameter resolved, classified and, where `integrate` would refuse it, the
+refusal ([below](#inspecting-a-run-card)).
 
 The [command reference](reference.md) lists every option of each command;
 this page is about how they fit together. The physics behind each
@@ -88,6 +93,52 @@ from the artifact; nothing is integrated again.
 the conventional `svg/<set>/<diagram>.svg`. `--ranking -` writes to stdout,
 and an existing file is kept unless `--force` is given. The schema is in the
 knowledge bundle (`research/kb/pipeline/ranking-json.md`).
+
+## Inspecting a run card
+
+```sh
+vibegraph run-card run_card.dat --proc-card proc_card.dat --output-ldjson
+```
+
+resolves the card the way `integrate` reads it and reports, in one JSON
+object, every parameter MadGraph's LO template knows. Without `--output-ldjson`
+the same object is printed as indented JSON on stdout. Nothing is enumerated
+unless `--proc-card` is given, and nothing is ever sampled. Per parameter
+(`keys`, in the template's order):
+
+- `mg_default`, MadGraph's LO default, and `card_value` and `line`, what the
+  card writes (`null` for a parameter it leaves out);
+- `resolved`, the value the run reads after MadGraph's own edits of the card
+  (for example `xqcut` rewriting `ptj`), with `moved_by_card` (the card writes a
+  value other than the default) and `moved_by_resolution` (the edits moved it);
+- `class` (`consumed`, `ignored_benign` or `ignored_physics`), `status`
+  (`honoured`, `ignored` or `refused`) and a one-line `note`;
+- `refusal`, the message `integrate` emits for this value of this parameter, or
+  `null`.
+
+The top-level `refusal` is the first refusal `integrate` emits for the whole
+card from the run-card stages (`parse`, `cuts` or `split`): it is a field of the
+report, and the command itself succeeds. A refusal that needs the process (the
+cut compiler's, the phase-space guards) is outside this view, and `integrate
+--check` is the command that reaches it. A line that does not read is listed in
+`unknown_keys` with its line, and the remaining parameters are still resolved.
+`warnings` carries the notices the resolution logs. With `--proc-card`,
+`process_defaults` lists what the process moves from MadGraph's LO template in
+the card `integrate` writes for it when no run card is given (the incoming
+quark's `maxjetflavor`, a decay's removed cuts, matching under jet
+multiplicities), with `overridden_by_card` for those the given card writes
+itself; with no run card the report is of that default card.
+
+```sh
+vibegraph run-card --table > run-card-table.json
+```
+
+prints the table of every known parameter and no card: its `status`, its
+`refused_values` where only some values are refused, and a one-line `note`. It
+is generated from the same lists the parser and the cut compiler hold, so it
+cannot drift from the binary, and it is printed by the binary rather than
+shipped as a separate file so that it is always the table of the binary that
+prints it (`version` names the release).
 
 ## Cards
 
