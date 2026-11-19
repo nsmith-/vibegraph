@@ -31,6 +31,7 @@
 use std::collections::BTreeMap;
 
 use super::diagram::{Diagram, Ray};
+use crate::ufo::weighted::order_weight;
 use crate::ufo::UFOModel;
 
 /// A neighbour of a vertex: an external leg, or another vertex through a propagator.
@@ -201,14 +202,15 @@ pub(crate) fn within_running_budget(
         let Some(&coupling) = def.couplings.values().next() else {
             continue;
         };
-        for (name, &n) in &model.coupling_def(coupling).orders {
+        let orders = &model.coupling_def(coupling).orders;
+        for (name, &n) in orders {
             let total = spent.entry(name.as_str()).or_default();
             *total += n;
             if bounds.get(name).is_some_and(|&b| b >= 0 && *total > b) {
                 return false;
             }
-            weighted += n * i64::from(model.order_hierarchy.get(name).copied().unwrap_or(0));
         }
+        weighted += order_weight(orders, &model.order_hierarchy);
         if max_weighted.is_some_and(|b| b >= 0 && weighted > b) {
             return false;
         }

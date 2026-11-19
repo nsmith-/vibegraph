@@ -71,6 +71,7 @@ use super::diagram::{
     VtxIdx,
 };
 use super::{generate_from_process, DiagramError, DiagramSet, LinePosition, ProcessRole};
+use crate::ufo::weighted::order_weight;
 use crate::ufo::UFOModel;
 
 /// Enumerate a decay-chain process by stitching: one [`DiagramSet`] per core subprocess
@@ -302,10 +303,7 @@ fn chain_sets(
 /// (`HelasMatrixElement.insert_decay_chains`, `helas_objects.py:3986`).
 fn within_orders(diagram: &Diagram, bounds: &[AmplitudeOrder], model: &UFOModel) -> bool {
     let orders = diagram.coupling_orders(model);
-    let weighted: i64 = orders
-        .iter()
-        .map(|(name, &n)| n * model.order_hierarchy.get(name).copied().unwrap_or(0) as i64)
-        .sum();
+    let weighted = order_weight(&orders, &model.order_hierarchy);
     bounds.iter().all(|b| {
         let have = if b.name == "WEIGHTED" {
             weighted
