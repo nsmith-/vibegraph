@@ -524,7 +524,7 @@ impl ChannelHistory {
         (self.point_var_n > 0).then(|| (self.point_var_sum / self.point_var_n as f64).sqrt())
     }
 
-    /// This channel's term: its kept iterations combined under `rule` by
+    /// This channel's term: its kept iterations combined under its rule by
     /// [`combine_iterations`], the arithmetic and the order [`VegasGrid::adapt`]
     /// combines its own iterations in, whatever number of points each drew.
     ///
@@ -546,8 +546,8 @@ impl ChannelHistory {
     /// ones, but an iteration's budget is the same `neval` every iteration, so
     /// any such weight a channel could be given (its α share, say) is one
     /// number for all of its iterations and the weighted mean is the plain one.
-    fn combine(&self, rule: IterationCombination) -> VegasResult {
-        Self::combine_kept(&self.kept, rule)
+    fn combine(&self) -> VegasResult {
+        Self::combine_kept(&self.kept, self.combination)
     }
 
     /// Each share's term over the kept iterations, combined with the weights
@@ -891,12 +891,10 @@ where
 
         // Before the warm-up is over no iteration has been kept, and a combined
         // estimate over nothing is not a number.
-        let estimate = (iteration > warmup).then(|| running_estimate(&channels, combination));
+        let estimate = (iteration > warmup).then(|| running_estimate(&channels));
         // The number the stopping test reads, computed once per iteration and
         // shared with the progress projection so both see the same δ.
-        let scaled = estimate
-            .as_ref()
-            .map(|_| scaled_rel(&channels, combination));
+        let scaled = estimate.as_ref().map(|_| scaled_rel(&channels));
         match &estimate {
             Some(total) => info!(
                 "iteration {iteration}: {:.6e} ± {:.6e} (χ²/dof {:.3}), {iteration_points} points \
@@ -974,7 +972,7 @@ where
             alpha: c.alpha,
             neval: n_j,
             grid,
-            result: c.combine(combination),
+            result: c.combine(),
             shares: c.combine_shares(),
         })
         .collect();
@@ -991,7 +989,7 @@ where
             Budget::Fixed { .. } => None,
         },
         achieved_rel,
-        scaled_rel: scaled_rel(&channels, combination),
+        scaled_rel: scaled_rel(&channels),
         channel_points: channels.iter().map(|c| c.drawn).collect(),
         channel_accepted: channels.iter().map(|c| c.accepted).collect(),
         min_channel_neval,
@@ -1236,8 +1234,8 @@ impl Budget {
 /// The same sum the run's own result is formed from: terms add, their variances
 /// add, and the reported χ²/dof is the mean of the channels' own, undefined
 /// unless every channel's is.
-fn running_estimate(channels: &[ChannelHistory], combination: IterationCombination) -> VegasResult {
-    let terms: Vec<VegasResult> = channels.iter().map(|c| c.combine(combination)).collect();
+fn running_estimate(channels: &[ChannelHistory]) -> VegasResult {
+    let terms: Vec<VegasResult> = channels.iter().map(|c| c.combine()).collect();
     let integral: f64 = terms.iter().map(|t| t.integral).sum();
     let variance: f64 = terms.iter().map(|t| t.std_dev * t.std_dev).sum();
     let chi2_per_dof = (!terms.is_empty())
@@ -1473,11 +1471,11 @@ fn worst_relative_error(outcomes: &[BlockIteration]) -> f64 {
 /// combination a [`Budget::Target`] run accepts. Under
 /// [`IterationCombination::InverseVariance`] the number is still formed, for a
 /// report, and decides nothing.
-fn scaled_rel(channels: &[ChannelHistory], combination: IterationCombination) -> f64 {
+fn scaled_rel(channels: &[ChannelHistory]) -> f64 {
     let mut integral = 0.0_f64;
     let mut variance = 0.0_f64;
     for c in channels {
-        let r = c.combine(combination);
+        let r = c.combine();
         integral += r.integral;
         variance += r.std_dev * r.std_dev * c.stop_scale();
     }
@@ -1776,7 +1774,7 @@ mod tests {
     /// The quoted variance of a channel's combined term, as the stopping sum
     /// reads it before the consistency factor.
     fn quoted_variance(h: &ChannelHistory) -> f64 {
-        h.combine(IterationCombination::Unweighted).std_dev.powi(2)
+        h.combine().std_dev.powi(2)
     }
 
     /// On iterations of equal size and equal quoted error the pooled factor and
@@ -1787,10 +1785,7 @@ mod tests {
         let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
         let scale = h.stop_scale();
         assert!((scale - 7.0 / 3.0).abs() < 1e-12, "{scale}");
-        let chi2 = h
-            .combine(IterationCombination::Unweighted)
-            .chi2_per_dof
-            .expect("three kept iterations");
+        let chi2 = h.combine().chi2_per_dof.expect("three kept iterations");
         assert!(
             (scale / chi2 - 1.0).abs() < 1e-12,
             "{scale} vs χ²/dof {chi2}"
@@ -1836,7 +1831,7 @@ mod tests {
         let mut h = history(&[]);
         h.record(&iteration(1.0, 0.01, 100), 100, true);
         h.record(&iteration(2.0, 0.02, 300), 300, true);
-        let r = h.combine(IterationCombination::Unweighted);
+        let r = h.combine();
         assert_eq!(r.integral, 1.5);
         let quoted = (0.01 + 0.02) / 4.0;
         assert!((quoted_variance(&h) / quoted - 1.0).abs() < 1e-12);
@@ -1885,7 +1880,7 @@ mod tests {
                     counts.push(n as f64);
                 }
             }
-            terms.push(h.combine(IterationCombination::Unweighted).integral);
+            terms.push(h.combine().integral);
             count_weighted.push(
                 h.kept
                     .iter()
@@ -1928,10 +1923,7 @@ mod tests {
         let mixed: Vec<(f64, f64)> = empty.iter().chain(&fired).copied().collect();
         let h = history(&mixed);
 
-        let reported = h
-            .combine(IterationCombination::Unweighted)
-            .chi2_per_dof
-            .expect("eight kept iterations");
+        let reported = h.combine().chi2_per_dof.expect("eight kept iterations");
         assert!(
             reported > 1.0e200 && reported.is_finite(),
             "the pathology this guards against did not reproduce: χ²/dof {reported}"
@@ -1966,7 +1958,7 @@ mod tests {
     /// The relative error the stop reads, with `scale` as the per-channel factor.
     fn widened_rel(channels: &[ChannelHistory], scale: impl Fn(&ChannelHistory) -> f64) -> f64 {
         let (integral, variance) = channels.iter().fold((0.0, 0.0), |(i, v), c| {
-            let r = c.combine(IterationCombination::Unweighted);
+            let r = c.combine();
             (i + r.integral, v + r.std_dev * r.std_dev * scale(c))
         });
         variance.sqrt() / integral

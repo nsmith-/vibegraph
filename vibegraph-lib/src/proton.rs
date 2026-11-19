@@ -2506,14 +2506,15 @@ impl<'a> ProtonIntegrand<'a> {
             );
         }
 
-        let n_out = groups.groups()[0].final_masses().len();
+        let final_masses = groups.groups()[0].final_masses();
+        let n_out = final_masses.len();
         let s_had = sqrt_s_had * sqrt_s_had;
         // The cuts and any whole-state decay window bound τ (`tau_range`), and
         // the map covers every group's range; the incoming partons' masses raise
         // its floor to their production threshold.
         let initial_masses = groups.initial_masses();
         let threshold = initial_masses[0] + initial_masses[1];
-        let one_body_tau = match groups.groups()[0].final_masses()[..] {
+        let one_body_tau = match final_masses[..] {
             [mass] => {
                 let tau = mass * mass / s_had;
                 if !(mass > threshold && tau < 1.0) {
@@ -3089,29 +3090,24 @@ impl<'a> ProtonIntegrand<'a> {
     /// A single outgoing particle of mass `M` fixes `τ = M²/s` whatever `u[0]`:
     /// `∫ dτ δ(τ s − M²) = 1/s` replaces `dτ/du`, so the Jacobian is
     /// `2 y_max/(τ s) = 2 y_max/M²`, in GeV⁻², and the one-body map's own weight
-    /// is `1` ([`DiagramChannel`](crate::phasespace::DiagramChannel)). This is
+    /// is `1` ([`DiagramChannel`]). This is
     /// MadEvent's `sjac = 1/stot` with `τ = pmass(3)²/stot` (`genps.f`).
     fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
-        if let Some(tau) = self.one_body_tau {
-            let sqrt_tau = tau.sqrt();
-            let y_max = -0.5 * tau.ln();
-            let y = (2.0 * u[1] - 1.0) * y_max;
-            return OuterPoint {
-                x1: sqrt_tau * y.exp(),
-                x2: sqrt_tau * (-y).exp(),
-                sqrt_shat: (tau * self.s_had).sqrt(),
-                jac: 2.0 * y_max / (tau * self.s_had),
-            };
-        }
-        let (tau, dtau_du_over_tau) = match (tau_map, &self.tau_mixture) {
-            (TauMap::BreitWigner, Some(mix)) => mix.draw(u[0]),
-            (TauMap::Log | TauMap::BreitWigner, _) => {
-                (log_tau(self.tau_min, self.tau_max, u[0]), self.ln_tau_range)
+        // `dτ/du` over `τ` of the drawn `τ`; `None` where `τ` is fixed.
+        let (tau, dtau_du_over_tau) = match (self.one_body_tau, tau_map, &self.tau_mixture) {
+            (Some(tau), ..) => (tau, None),
+            (None, TauMap::BreitWigner, Some(mix)) => {
+                let (tau, d) = mix.draw(u[0]);
+                (tau, Some(d))
             }
-            (TauMap::InverseSquare, _) => {
+            (None, TauMap::Log | TauMap::BreitWigner, _) => (
+                log_tau(self.tau_min, self.tau_max, u[0]),
+                Some(self.ln_tau_range),
+            ),
+            (None, TauMap::InverseSquare, _) => {
                 let k = 1.0 / self.tau_min - 1.0 / self.tau_max;
                 let tau = 1.0 / (1.0 / self.tau_min - u[0] * k);
-                (tau, tau * k)
+                (tau, Some(tau * k))
             }
         };
         let sqrt_tau = tau.sqrt();
@@ -3121,7 +3117,10 @@ impl<'a> ProtonIntegrand<'a> {
             x1: sqrt_tau * y.exp(),
             x2: sqrt_tau * (-y).exp(),
             sqrt_shat: (tau * self.s_had).sqrt(),
-            jac: dtau_du_over_tau * 2.0 * y_max,
+            jac: match dtau_du_over_tau {
+                Some(d) => d * 2.0 * y_max,
+                None => 2.0 * y_max / (tau * self.s_had),
+            },
         }
     }
 
@@ -7067,6 +7066,15 @@ mod tests {
             assert!(rel < 1e-10, "{got} against {expected}: rel {rel:.3e}");
             assert_eq!(integ.value_in_channel(0, &[1.0 - u[0], u[1]]), got);
         }
+        // The rapidity runs over its whole range `|y| ≤ y_max`, where one parton
+        // carries all of the beam: the pointwise relation above holds on any
+        // sub-range, and the Jacobian is only right if this one is covered.
+        let (lo, hi) = (
+            integ.outer_point(&[0.5, 0.0]),
+            integ.outer_point(&[0.5, 1.0]),
+        );
+        assert!((lo.x1 / tau - 1.0).abs() < 1e-12 && (lo.x2 - 1.0).abs() < 1e-12);
+        assert!((hi.x1 - 1.0).abs() < 1e-12 && (hi.x2 / tau - 1.0).abs() < 1e-12);
     }
 
     /// A single outgoing particle the beams cannot make is refused when the
@@ -7087,6 +7095,61 @@ mod tests {
             }
             Some(e) => panic!("refused for the wrong reason: {e}"),
             None => panic!("a Z at an 80 GeV collider must be refused"),
+        }
+    }
+
+    /// A single outgoing particle's probe point is the collision at rest, `√ŝ`
+    /// at its mass, or 1.2 times the incoming partons' threshold where the mass
+    /// is below it: the beams sum to the one outgoing momentum, each on its own
+    /// mass shell.
+    #[test]
+    fn a_one_body_probe_point_is_the_collision_at_rest() {
+        for (initial, mass, sqrt_shat) in [
+            ([0.0, 0.0], 91.188, 91.188),
+            ([172.5, 172.5], 125.0, 1.2 * 345.0),
+        ] {
+            let points = probe_momenta(initial, &[mass], None, 7);
+            assert_eq!(points.len(), 1);
+            let [p1, p2, out] = points[0][..] else {
+                panic!("a 2 → 1 point has three momenta")
+            };
+            let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * sqrt_shat;
+            assert!(close(out.e(), sqrt_shat), "{} against {sqrt_shat}", out.e());
+            assert!(close(p1.e() + p2.e(), sqrt_shat));
+            assert!(close(p1.px() + p2.px(), 0.0) && close(p1.py() + p2.py(), 0.0));
+            assert!(close(p1.pz() + p2.pz(), 0.0));
+            for (p, m) in [p1, p2].into_iter().zip(initial) {
+                assert!(close((p.e() * p.e() - p.pz() * p.pz()).sqrt(), m), "{m}");
+            }
+        }
+    }
+
+    /// A single outgoing particle lighter than the incoming partons' threshold
+    /// cannot be made: `t t~ > h` is refused when the integrand is built, with
+    /// the threshold it fell short of, and its decomposition still derives, its
+    /// probe point sitting above the threshold.
+    #[test]
+    fn a_one_body_mass_below_the_incoming_threshold_is_refused() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let groups = derive("t t~ > h", &m, &evaluated);
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let refused = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, BEAMS, MU_F).err();
+        let mt = evaluated.mass(m.particle_id("t").expect("the model has a top"));
+        match refused {
+            Some(ProtonError::OneBodyOutOfReach {
+                mass,
+                sqrt_s,
+                threshold,
+                ..
+            }) => {
+                assert!(mass < threshold, "{mass} against {threshold}");
+                assert_eq!(sqrt_s, SQRT_S_HAD);
+                assert!((threshold / (2.0 * mt) - 1.0).abs() < 1e-12);
+            }
+            Some(e) => panic!("refused for the wrong reason: {e}"),
+            None => panic!("an H below the t t~ threshold must be refused"),
         }
     }
 
