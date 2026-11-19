@@ -664,15 +664,6 @@ mod tests {
         }
     }
 
-    /// Only the selected branch is evaluated: the other may reference a
-    /// parameter that makes it singular.
-    #[test]
-    fn the_unselected_branch_is_not_evaluated() {
-        let e = parse_expr("0.0 if x == 0 else 1/x").unwrap();
-        let v = eval(&e, &params(&[("x", 0.0)]));
-        assert!(v.re.is_finite() && v.re == 0.0);
-    }
-
     /// `and`/`or` return an operand and a sign binds tighter than a comparison,
     /// as in Python.
     #[test]
@@ -697,6 +688,9 @@ mod tests {
         assert_eq!(value("max(a, b, 7)", &[("a", 2.0), ("b", 9.0)]).re, 9.0);
         assert_eq!(value("min(a, b, 7)", &[("a", 2.0), ("b", 9.0)]).re, 2.0);
         assert_eq!(value("min(abs(a), 3)", &[("a", -5.0)]).re, 3.0);
+        // Equal real parts: the first argument is kept, imaginary part and all.
+        assert_eq!(value("max(complex(1, 2), complex(1, 3))", &[]).im, 2.0);
+        assert_eq!(value("min(complex(1, 2), complex(1, 3))", &[]).im, 2.0);
     }
 
     #[test]

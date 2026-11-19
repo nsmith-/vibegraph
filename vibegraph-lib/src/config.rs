@@ -441,20 +441,10 @@ mod tests {
     /// The external parameters a card may move: neither locked to zero, fixed
     /// at one, nor merged into another.
     fn free_parameters(model: &UFOModel) -> BTreeSet<String> {
-        let tied: BTreeSet<&String> = model
-            .params
-            .merged
-            .iter()
-            .flat_map(|group| group.iter().skip(1).map(|(name, _)| name))
-            .collect();
         model
             .params
-            .externals
-            .iter()
-            .map(|p| &p.name)
-            .filter(|n| !model.params.zeros.contains(*n) && !model.params.ones.contains(*n))
-            .filter(|n| !tied.contains(n))
-            .cloned()
+            .free_externals()
+            .map(|p| p.name.clone())
             .collect()
     }
 

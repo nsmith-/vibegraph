@@ -21,7 +21,7 @@ use super::{ParsedModel, UFOModel, UfoError};
 
 /// The restriction suffix that applies no restriction card
 /// (`import model <name>-full`).
-pub const FULL_RESTRICTION: &str = "full";
+pub(crate) const FULL_RESTRICTION: &str = "full";
 
 /// What [`UFOModel::with_particle_naming`] reads: which names the particles
 /// answer to, and the model's name for MadGraph's renaming (its directory's base
@@ -111,7 +111,7 @@ impl LoadedModel {
     /// even its `restrict_default.dat`: MadGraph's `import model <name>-full`
     /// (`get_path_restrict`, `import_ufo.py` L223-L224). Identified as
     /// `<name>-full`.
-    pub fn from_dir_full(
+    pub(crate) fn from_dir_full(
         path: &Path,
         naming: ParticleNaming,
         name: &str,
@@ -132,7 +132,7 @@ impl LoadedModel {
     /// The interned SM with no restriction applied (`import model sm-full`):
     /// the pre-restriction parsed model every [`SMRestrict`] variant starts
     /// from, built afresh on each call.
-    pub fn interned_sm_full() -> Result<Self, UfoError> {
+    pub(crate) fn interned_sm_full() -> Result<Self, UfoError> {
         Self::from_restricted(
             sm_parsed_model(),
             ModelNaming::interned_sm(),
