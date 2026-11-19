@@ -27,6 +27,7 @@
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 
 use rand::SeedableRng;
 use thiserror::Error;
@@ -63,6 +64,7 @@ use crate::phasespace::{
     MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, DEFAULT_ALPHA_FLOOR, GEV2_TO_PB,
 };
 use crate::progress;
+use crate::proton::SampledPointFault;
 use crate::runcard::{RunCard, RunCardError};
 use crate::select::select_index;
 use crate::support::{CensusCell, PointCensus};
@@ -1950,6 +1952,8 @@ pub struct FixedBeamIntegrand<'a> {
     /// clustering and coupling solve are skipped and the integral is what it
     /// would be with no prescription installed at all.
     alpha_s_dependent: bool,
+    /// The first refusal a sampled point ran into ([`FixedBeamIntegrand::fault`]).
+    fault: OnceLock<SampledPointFault>,
     /// Whether no leg of any subprocess is polarized, so the matrix element is
     /// summed over every helicity of every external state.
     unpolarized: bool,
@@ -2255,6 +2259,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             scale_draw_fallbacks: AtomicU64::new(0),
             config_weights: None,
             alpha_s_dependent: false,
+            fault: OnceLock::new(),
             unpolarized,
             map_options: MapOptions::default(),
             maps: None,
@@ -2730,20 +2735,30 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// cross section on a process with no `αs` in it: the scale is still resolved
     /// per event for the record, but nothing the integral is built from reads it,
     /// so no clustering runs on the integration path and no point's value moves.
-    fn apply_scale(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) {
+    ///
+    /// `false` where the prescription refused the point: the refusal is kept as
+    /// the integrand's [`fault`](Self::fault), the subprocesses stay at their
+    /// previous coupling, and the caller gives the point no weight.
+    fn apply_scale(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) -> bool {
         if !self.alpha_s_dependent {
-            return;
+            return true;
         }
-        let Some(source) = &self.scales else { return };
+        let Some(source) = &self.scales else {
+            return true;
+        };
         if source.constant_scales().is_some() {
-            return;
+            return true;
         }
         let Some(running) = source.alpha_s() else {
-            return;
+            return true;
         };
-        let scales = self
-            .event_scales_of(sc, source, momenta, channel)
-            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"));
+        let scales = match self.event_scales_of(sc, source, momenta, channel) {
+            Ok(scales) => scales,
+            Err(e) => {
+                self.record_fault(SampledPointFault::Scale(e));
+                return false;
+            }
+        };
         let (last_mu_r, last_alpha_s) = sc.last_coupling.get();
         let alpha_s = if scales.mu_r == last_mu_r {
             last_alpha_s
@@ -2755,6 +2770,20 @@ impl<'a> FixedBeamIntegrand<'a> {
         for sub in &sc.subs {
             sub.set_alpha_s(alpha_s);
         }
+        true
+    }
+
+    /// The first refusal a sampled point ran into since the integrand was
+    /// built, or `None`. A run that reads one here has had points weighted zero
+    /// that the reference would have stopped on, and is not an estimate of
+    /// anything.
+    pub fn fault(&self) -> Option<&SampledPointFault> {
+        self.fault.get()
+    }
+
+    /// Keep `fault` unless an earlier one is kept already.
+    fn record_fault(&self, fault: SampledPointFault) {
+        let _ = self.fault.set(fault);
     }
 
     /// The uniforms the active phase-space map consumes as one mixture: `4n` for
@@ -2805,7 +2834,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         momenta: &[V],
         channel: usize,
     ) -> f64 {
-        self.apply_scale(sc, momenta, channel);
+        if !self.apply_scale(sc, momenta, channel) {
+            return 0.0;
+        }
 
         let weights = self.pairing_weights(sc, ext);
         let mut m2 = 0.0;
@@ -3500,7 +3531,9 @@ impl<'a> FixedBeamIntegrand<'a> {
         // The diagonals are read at the event's own coupling, the one its |M|² was
         // taken at — which is the point's own sampling channel's, since the
         // cluster scale reads it.
-        self.apply_scale(sc, momenta, channel);
+        if !self.apply_scale(sc, momenta, channel) {
+            return None;
+        }
 
         let m2: Vec<f64> = sc
             .subs
@@ -4508,6 +4541,90 @@ mod tests {
         let avg = initial_spin_color_average(rep, m, evaluated);
         let _ = sqrt_s;
         (evals, cuts, masses, avg)
+    }
+
+    /// A per-event scale the prescription refuses on a sampled point is kept as
+    /// the integrand's fault and the point carries no weight: the matrix element
+    /// is zero, no event is selected, and the first refusal is the one kept.
+    ///
+    /// The refusal is built by handing the sampled-point seam momenta with no
+    /// transverse energy under a scale that is a sum of transverse energies,
+    /// which [`ScaleError::DegenerateKinematics`] answers; a sampled point does
+    /// not reach it, so the seam is driven directly. A point with scales is the
+    /// control: it is weighted and records nothing.
+    #[test]
+    fn a_refused_scale_on_a_sampled_point_is_a_fault_and_not_a_panic() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate g g > g g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let card = RunCard::parse(
+            "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n\
+             \x20 False = fixed_ren_scale\n  False = fixed_fac_scale1\n\
+             \x20 False = fixed_fac_scale2\n  3 = dynamical_scale_choice\n\
+             \x20 4 = maxjetflavor\n",
+        )
+        .expect("run card");
+        let rep = &evals[0];
+        let legs = process_external_legs(rep, &m, &evaluated);
+        let cuts = Cuts::compile(&card, &legs).unwrap();
+        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
+            .iter()
+            .map(|&id| evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &m, &evaluated);
+        let bounds: Vec<_> = evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
+            .collect();
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            FixedBeams::massless(500.0),
+            masses,
+            avg,
+        );
+        integ
+            .use_running_coupling(&subprocess_diagrams(&sets), &m, &evaluated, &card)
+            .expect("the closed-form scale compiles");
+
+        let half = 250.0;
+        let sampled = [
+            V::new(half, 0.0, 0.0, half),
+            V::new(half, 0.0, 0.0, -half),
+            V::new(half, half * 0.6, 0.0, half * 0.8),
+            V::new(half, -half * 0.6, 0.0, -half * 0.8),
+        ];
+        let (beams, point) = sampled.split_at(2);
+        let sc = integ.scratch();
+        let ext = integ.externals(point);
+        assert_eq!(beams.len(), 2);
+        assert!(integ.matrix_element_at(sc, &ext, point, 0) > 0.0);
+        assert_eq!(integ.fault(), None);
+
+        let at_rest = vec![V::new(0.0, 0.0, 0.0, 0.0); 2];
+        let ext = integ.externals(&at_rest);
+        assert_eq!(integ.matrix_element_at(sc, &ext, &at_rest, 0), 0.0);
+        assert!(integ.select_event(&at_rest, 0, [0.5; 4]).is_none());
+        let first = integ.fault().expect("the refusal is kept");
+        assert!(
+            matches!(
+                first,
+                SampledPointFault::Scale(ScaleError::DegenerateKinematics { choice: 3, .. })
+            ),
+            "{first:?}"
+        );
+        let kept = first.to_string();
+        assert!(
+            kept.starts_with("per-event scale on a sampled point"),
+            "{kept}"
+        );
+
+        // A later refusal does not replace the first.
+        let _ = integ.matrix_element_at(sc, &ext, &at_rest, 0);
+        assert_eq!(integ.fault().map(ToString::to_string), Some(kept));
     }
 
     /// Diagrams and integration configurations are one numbering apart, and this

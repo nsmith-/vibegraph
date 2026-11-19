@@ -47,7 +47,7 @@ use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
 use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
-use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand};
+use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
 use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
@@ -270,11 +270,11 @@ fn err(msg: impl Into<String>) -> GenerateError {
     GenerateError::Other(msg.into())
 }
 
-/// The refusal a sampled point of `integ` ran into, if any: the points it
+/// The refusal a sampled point of an integrand ran into, if any: the points it
 /// weighted zero were ones the reference stops on, so nothing drawn from it
 /// stands.
-fn refuse_sampled_fault(integ: &MultiplicitySum) -> Result<(), GenerateError> {
-    match integ.fault() {
+fn refuse_sampled_fault(fault: Option<&SampledPointFault>) -> Result<(), GenerateError> {
+    match fault {
         Some(fault) => Err(err(format!("{fault}; the run is refused"))),
         None => Ok(()),
     }
@@ -591,6 +591,7 @@ fn generate_sample(
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
     )?;
+    refuse_sampled_fault(integ.fault())?;
     report_scan(
         &scan,
         artifact,
@@ -651,6 +652,7 @@ fn generate_sample(
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
+    refuse_sampled_fault(integ.fault())?;
     report_resonances(source.tally, summary.drawn);
     if reweight_plan.is_some() {
         source.audit.finish(&options.out)?;
@@ -1154,7 +1156,7 @@ fn generate_proton_sample(
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
     )?;
-    refuse_sampled_fault(&integ)?;
+    refuse_sampled_fault(integ.fault())?;
     report_scan(
         &scan,
         artifact,
@@ -1222,7 +1224,7 @@ fn generate_proton_sample(
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
-    refuse_sampled_fault(&integ)?;
+    refuse_sampled_fault(integ.fault())?;
     report_resonances(source.tally, summary.drawn);
     if reweight_plan.is_some() {
         source.audit.finish(&options.out)?;
