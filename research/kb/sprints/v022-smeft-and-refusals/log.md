@@ -244,3 +244,7 @@ Found, filed in this PR:
   `run-card-value-refusals-hand-listed` and
   `sampled-point-fault-refused-only-at-end`: #159 removes the event file, but
   no card drives a sampled scale fault end to end.
+
+**Merged:** #157 (4d408579), #158 (0f53755b) and #159 (92dee0d7). Main is
+92dee0d7. K-H2 (diagrams, colour, grouping: #146, #147, #150, #153) started
+off it as draft #160.
