@@ -34,8 +34,8 @@
 //! **Blind spots.** A change to |M|² that leaves every probed point unmoved: one
 //! confined to regions the four generic points miss (a single helicity that
 //! vanishes at all of them, a numerically unstable corner). A one-body final
-//! state (`2 → 1`) has no point to probe and records none; such a subprocess is
-//! never integrated.
+//! state (`2 → 1`) has no point to probe and records none, so its matrix
+//! element is not re-checked.
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -158,7 +158,7 @@ fn vector(p: &[f64; 4]) -> LorentzVector<f64> {
 
 /// The external momenta of `PROBE_POINTS` points for a process with
 /// `n_in` incoming legs of the given `masses` (incoming first), or why there are
-/// none: empty for a one-body final state.
+/// none: no points for a one-body final state.
 fn probe_momenta(n_in: usize, masses: &[f64]) -> Result<Vec<Vec<[f64; 4]>>, String> {
     let (m_in, m_out) = masses.split_at(n_in);
     if m_out.len() < 2 {
