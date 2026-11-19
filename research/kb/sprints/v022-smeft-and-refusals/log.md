@@ -206,7 +206,7 @@ b3bc5399.
 | K-H1 model loading | #141, #144, #145 | hygiene-dev, Opus | #157 | d39396d5 | 2238 passed, 0 failed |
 | K-H4 integration | #142, #155 | hygiene-dev, Sonnet | #158 | 67344677 | 2238 passed, 0 failed |
 | K-H3 run card, CLI, batch | #143, #152, #156 | hygiene-dev, Sonnet | #159 | 0e903f8c | 2237 passed, 0 failed |
-| K-H2 diagrams, colour, grouping | #146, #147, #150, #153 | hygiene-dev, Opus | — | — | starts after #157 merges (#157 edits `diagrams/chain.rs` and `diagrams/mod.rs`) |
+| K-H2 diagrams, colour, grouping | #146, #147, #150, #153 | hygiene-dev, Opus | #160 | 73e787f1 | 2241 passed, 0 failed |
 
 For each of #157, #158 and #159:
 - fmt and clippy `-D warnings` are clean and kb-lint has 0 errors, all re-run by the sprint session;
@@ -248,3 +248,25 @@ Found, filed in this PR:
 **Merged:** #157 (4d408579), #158 (0f53755b) and #159 (92dee0d7). Main is
 92dee0d7. K-H2 (diagrams, colour, grouping: #146, #147, #150, #153) started
 off it as draft #160.
+
+**K-H2 (#160, head 73e787f1).** This pass changed no behaviour. On main
+92dee0d7, σ and grid sha256 are bit for bit on llj_mlm, ttx_0j1j_mlm and dy13.
+Those cards contain no decay chain or summed colour index, so the changes are
+pinned by two identity oracles instead:
+- the old and new colour-chain checks give the same verdict on 19 structures;
+- the stitched-set and merge-record digests are identical on 34 cards.
+
+The sprint session re-ran the gates on 73e787f1. fmt and clippy `-D warnings`
+are clean, 2241 tests passed with 0 failed, and kb-lint has 0 errors.
+
+Mutations: one merged test let M2 through, and a new case now catches it. M6
+and M6b are equivalent mutants: no valid diagram pair differs between them.
+
+The agent committed its fixes before running the gates, against the session
+order. The gates passed on that tree.
+
+Found, filed in this PR:
+- `stitch-set-sign-assert-panics`.
+- Evidence added to `diagram-generation-functions-long`: `stitch_set` is 141
+  lines and `derive_flavor_groups` is 268.
+- Evidence added to `one-diagram-diagramset-built-by-hand`: one more site.
