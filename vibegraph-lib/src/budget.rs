@@ -410,6 +410,15 @@ pub struct ConvergenceReport {
     pub effective_points: f64,
 }
 
+/// The weight `rule` gives a kept iteration of quoted variance `variance` in a
+/// channel's combined shares ([`ChannelHistory::combine_shares`]).
+fn iteration_weight(rule: IterationCombination, variance: f64) -> f64 {
+    match rule {
+        IterationCombination::Unweighted => 1.0,
+        IterationCombination::InverseVariance => 1.0 / variance.max(f64::MIN_POSITIVE),
+    }
+}
+
 /// One channel's running record over the iterations of a block-split adaptation.
 struct ChannelHistory {
     alpha: f64,
@@ -441,14 +450,24 @@ struct ChannelHistory {
     kept_nonzero: u64,
     kept_sum: f64,
     kept_sum_sq: f64,
-    /// Per kept iteration, each share's `(integral, variance)`
-    /// ([`ChannelIntegrand::value_in_channel_shared`]).
-    kept_shares: Vec<Vec<(f64, f64)>>,
+    /// The rule [`combine_shares`](Self::combine_shares) weights the kept
+    /// iterations by, fixed for the run so the shares can be folded in as each
+    /// iteration arrives.
+    combination: IterationCombination,
+    /// Per share ([`ChannelIntegrand::value_in_channel_shared`]),
+    /// `(Σ wᵢ Iᵢ,c, Σ wᵢ² σ²ᵢ,c)` over the kept iterations so far, `wᵢ` the
+    /// iteration's weight under [`combination`](Self::combination); empty before
+    /// the first kept iteration. Its size is the share count whatever the number
+    /// of iterations.
+    share_sums: Vec<(f64, f64)>,
+    /// `Σ wᵢ` over the kept iterations so far.
+    share_weight: f64,
 }
 
 impl ChannelHistory {
-    /// A channel of selection weight `alpha` that has drawn nothing yet.
-    fn new(alpha: f64) -> Self {
+    /// A channel of selection weight `alpha` that has drawn nothing yet, its
+    /// shares to be combined under `combination`.
+    fn new(alpha: f64, combination: IterationCombination) -> Self {
         ChannelHistory {
             alpha,
             drawn: 0,
@@ -460,7 +479,9 @@ impl ChannelHistory {
             kept_nonzero: 0,
             kept_sum: 0.0,
             kept_sum_sq: 0.0,
-            kept_shares: Vec::new(),
+            combination,
+            share_sums: Vec::new(),
+            share_weight: 0.0,
         }
     }
 
@@ -478,7 +499,16 @@ impl ChannelHistory {
             self.kept_nonzero += out.accepted as u64;
             self.kept_sum += out.integral * neval as f64;
             self.kept_sum_sq += out.sum_sq;
-            self.kept_shares.push(out.shares.clone());
+            let w = iteration_weight(self.combination, out.variance);
+            if self.share_sums.is_empty() {
+                self.share_sums = vec![(0.0, 0.0); out.shares.len()];
+            }
+            debug_assert_eq!(self.share_sums.len(), out.shares.len());
+            self.share_weight += w;
+            for (acc, &(i, v)) in self.share_sums.iter_mut().zip(&out.shares) {
+                acc.0 += w * i;
+                acc.1 += w * w * v;
+            }
         }
     }
 
@@ -527,30 +557,18 @@ impl ChannelHistory {
     /// [`IterationCombination::InverseVariance`]. A share's variance is
     /// `Σ wᵢ² σ²ᵢ,c / (Σ wᵢ)²` over its own iterations' variances, which under
     /// equal weights is the `Σσᵢ²/k²` the channel quotes. No χ²/dof is formed.
-    fn combine_shares(&self, rule: IterationCombination) -> Vec<VegasResult> {
-        let n_shares = self.kept_shares.first().map_or(0, Vec::len);
-        let weights: Vec<f64> = self
-            .kept
+    ///
+    /// The sums are the ones [`record`](Self::record) folded in iteration
+    /// order, so each term is the one a pass over every kept iteration's shares
+    /// would form, without holding them.
+    fn combine_shares(&self) -> Vec<VegasResult> {
+        let total = self.share_weight;
+        self.share_sums
             .iter()
-            .map(|&(_, v)| match rule {
-                IterationCombination::Unweighted => 1.0,
-                IterationCombination::InverseVariance => 1.0 / v.max(f64::MIN_POSITIVE),
-            })
-            .collect();
-        let total: f64 = weights.iter().sum();
-        (0..n_shares)
-            .map(|c| {
-                let (mut integral, mut variance) = (0.0, 0.0);
-                for (w, shares) in weights.iter().zip(&self.kept_shares) {
-                    let (i, v) = shares[c];
-                    integral += w * i;
-                    variance += w * w * v;
-                }
-                VegasResult {
-                    integral: integral / total,
-                    std_dev: variance.sqrt() / total,
-                    chi2_per_dof: None,
-                }
+            .map(|&(integral, variance)| VegasResult {
+                integral: integral / total,
+                std_dev: variance.sqrt() / total,
+                chi2_per_dof: None,
             })
             .collect()
     }
@@ -742,7 +760,7 @@ where
         .collect();
     let mut channels: Vec<ChannelHistory> = alphas
         .iter()
-        .map(|&alpha| ChannelHistory::new(alpha))
+        .map(|&alpha| ChannelHistory::new(alpha, combination))
         .collect();
 
     if let Budget::Target { .. } = budget {
@@ -957,7 +975,7 @@ where
             neval: n_j,
             grid,
             result: c.combine(combination),
-            shares: c.combine_shares(combination),
+            shares: c.combine_shares(),
         })
         .collect();
     let total = combine_channels(&per_channel, iteration);
@@ -1632,14 +1650,95 @@ mod tests {
             hist: Vec::new(),
             shares: Vec::new(),
         };
-        let mut a = ChannelHistory::new(0.5);
-        let mut b = ChannelHistory::new(0.5);
+        let mut a = ChannelHistory::new(0.5, IterationCombination::Unweighted);
+        let mut b = ChannelHistory::new(0.5, IterationCombination::Unweighted);
         a.record(&block(&[9.0, 9.0, 9.0, 9.0]), 4, false);
         a.record(&block(&[1.0, 1.0, 0.0, 0.0]), 4, true);
         b.record(&block(&[4.0, 0.0]), 2, true);
         let ess = effective_points(&[a, b]);
         let want = 2.5 * 2.5 / 4.125;
         assert!((ess - want).abs() < 1e-12, "{ess} against {want}");
+    }
+
+    /// A channel's combined shares are the weighted mean, over every kept
+    /// iteration's shares formed in one pass at the end, to the bit, under
+    /// either rule; warm-up iterations add nothing; and what the channel holds
+    /// for its shares is one sum pair per share whatever the number of
+    /// iterations it keeps. A fold that weighted, ordered or counted an
+    /// iteration differently from that pass would move a bit; a record that
+    /// kept each iteration's shares would grow. The test cannot see memory held
+    /// anywhere but the channel's own share sums.
+    #[test]
+    fn shares_fold_in_as_iterations_arrive_without_growing() {
+        let n_shares = 5;
+        let iteration = |k: usize| BlockIteration {
+            integral: 1.0 + 0.1 * k as f64,
+            variance: 0.01 * (1 + k % 3) as f64 / 7.0,
+            accepted: 1,
+            sum_sq: 1.0,
+            hist: Vec::new(),
+            shares: (0..n_shares)
+                .map(|c| {
+                    (
+                        0.3 * (c + 1) as f64 / (k + 1) as f64,
+                        1e-3 * (c + k + 1) as f64 / 3.0,
+                    )
+                })
+                .collect(),
+        };
+        for rule in [
+            IterationCombination::Unweighted,
+            IterationCombination::InverseVariance,
+        ] {
+            let mut h = ChannelHistory::new(1.0, rule);
+            h.record(&iteration(99), 10, false);
+            assert!(h.share_sums.is_empty(), "a warm-up iteration was folded in");
+            let mut kept = Vec::new();
+            let mut held = None;
+            for k in 0..40 {
+                let it = iteration(k);
+                h.record(&it, 10, true);
+                kept.push(it);
+                assert_eq!(h.share_sums.len(), n_shares);
+                let cap = *held.get_or_insert(h.share_sums.capacity());
+                assert_eq!(
+                    h.share_sums.capacity(),
+                    cap,
+                    "after {} kept iterations",
+                    k + 1
+                );
+            }
+            let weights: Vec<f64> = kept
+                .iter()
+                .map(|it| match rule {
+                    IterationCombination::Unweighted => 1.0,
+                    IterationCombination::InverseVariance => {
+                        1.0 / it.variance.max(f64::MIN_POSITIVE)
+                    }
+                })
+                .collect();
+            let total: f64 = weights.iter().sum();
+            let got = h.combine_shares();
+            assert_eq!(got.len(), n_shares);
+            for (c, r) in got.iter().enumerate() {
+                let (mut integral, mut variance) = (0.0, 0.0);
+                for (w, it) in weights.iter().zip(&kept) {
+                    let (i, v) = it.shares[c];
+                    integral += w * i;
+                    variance += w * w * v;
+                }
+                assert_eq!(
+                    r.integral.to_bits(),
+                    (integral / total).to_bits(),
+                    "{rule:?} {c}"
+                );
+                assert_eq!(
+                    r.std_dev.to_bits(),
+                    (variance.sqrt() / total).to_bits(),
+                    "{rule:?} {c}"
+                );
+            }
+        }
     }
 
     /// A run with no point of weight has no support at all, and says so as a
@@ -1670,7 +1769,7 @@ mod tests {
     fn history(kept: &[(f64, f64)]) -> ChannelHistory {
         ChannelHistory {
             kept: kept.to_vec(),
-            ..ChannelHistory::new(1.0)
+            ..ChannelHistory::new(1.0, IterationCombination::Unweighted)
         }
     }
 
