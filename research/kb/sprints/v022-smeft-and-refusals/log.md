@@ -77,3 +77,68 @@
 | PR 10, MLM memory growth | no | the GJ-4Jets card. This container has 15 GB RAM against the reported 23.9 GB growth, so the run needs a reduced card or the CERN host. |
 
 After those three come a hygiene pass per merged feature PR, then the release candidate.
+
+## 2026-11-19
+
+**Merged:**
+
+| PR | Sprint PR | Merge commit |
+|---|---|---|
+| #153 | PR 4, MLM merge panic | 74596ba |
+| #152 | PR 5, run-card sentinels, report, table and rank cuts | f78fb60 |
+
+#152 merged over #153 without a re-sync: the two merge cleanly and each had
+its own green CI, banked included; main's own run on f78fb60 tests the pair.
+
+**PR 4 (#153).** The cause was not the bug report's reading (a decay b under
+the five-flavour `p`). At the card ρ_tu = 0 and the CKM is Cabibbo-only, so
+the u-line h± subprocesses vanish identically, and flavour grouping joined
+them on 0 = 0 to live-topology representatives; `rewgt` then built
+`u → h+ g`. A MadGraph 3.5.7 replay of the panic point puts the two
+subprocesses in separate P-dirs and never reaches that merge. The fix skips
+groups whose couplings vanish at the card and turns the remaining sampled-point
+faults into named refusals. No M300 σ: one seed is ≈ 4.2 h here, and the
+release-candidate CERN campaign covers all seven masses end to end (manager,
+2026-11-19).
+
+**PR 5 (#152).** Lepton rank cut: ZH832 at ptl1min = 50, +0.065% (pull 1.2)
+against MadGraph 3.5.7; the ZH gate at ptl1min = 10 against the CERN host's
+3.7.1, pulls 0.06 and −0.16. The DY1j jet-rank bins' +0.2–0.3% is the ℓℓj
+family's existing offset (single-leg control). Brief correction: `ht2max`–
+`ht4max` are off at < 0 or ≥ ebeam1 + ebeam2; the template's own off value
+is −1.
+
+**Manager decisions (2026-11-19):**
+- `misset = −1`'s √ŝ floor is settled in this sprint: proved inert,
+  implemented or refused (PR 12).
+- The fixed-beam sampled-point scale panic is fixed in this sprint as a named
+  refusal (PR 12).
+- PR 10 runs under a hard memory cap well below 15 GB and closes on a bounded
+  full card 244, on the CERN host if needed.
+
+**Started:**
+
+| Sprint PR | PR | Branch | Items |
+|---|---|---|---|
+| PR 10, MLM memory growth (K-G1) | #155 | `sprintk-mlm-memory` | `mlm-photon-four-jet-integrate-memory-grows-unbounded` |
+| PR 12, named refusals (K-N1) | #156 | `sprintk-named-refusals` | `fixed-beam-sampled-point-scale-error-panics`, `misset-negative-sqrt-shat-floor-unapplied` |
+
+PR 12's two items are filed in this record rather than on main; this record
+deletes them when #156 merges.
+
+**Filed from Found sections:**
+- From K-M1:
+  - `fixed-beam-sampled-point-scale-error-panics` (high);
+  - `mlm-vanishing-flavour-groups-still-sampled`;
+  - `flavour-grouping-joins-zero-matrix-elements`;
+  - `sampled-point-fault-refused-only-at-end`;
+  - `reweight-cannot-revive-vanishing-subprocess`;
+  - `madevent-single-point-replay-driver`.
+- From K-C1:
+  - `misset-negative-sqrt-shat-floor-unapplied` (high);
+  - `run-card-value-refusals-hand-listed`;
+  - `run-card-dollar-lines-skipped-silently`.
+- From K-C2:
+  - `madgraph-class-flags-per-pdir`;
+  - `resolve-mom-dead-in-release-builds`;
+  - evidence added to `llj-family-reads-high-vs-seed-records` and `zprime-tt-quoted-error-below-seed-spread`.

@@ -16,3 +16,8 @@ sprint folder). Per-seed σ: 18.946, 18.954, 18.954, 18.909, 18.877 fb, each
 quoted ±0.018–0.019 fb. The comparison with MadGraph used the seed spread, so
 its pull of +0.50 is unaffected. AGENTS.md: few-seed scatter can mislead in
 either direction, so the measurement needs 20+ seeds.
+
+Sprint K evidence (K-C2, 2026-11-18): at `--target-rel 0.001` vibegraph's
+per-seed χ²/dof is 2.65 (DY1j 70to100), 3.81 (ZH832 at ptl1min = 10) and
+2.42 (ZH837), so the quoted error is below the seed spread on those cards too
+([K-C2 report](../../sprints/v022-smeft-and-refusals/sessions/K-C2-report.md)).
