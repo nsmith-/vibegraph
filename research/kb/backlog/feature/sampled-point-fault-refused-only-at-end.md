@@ -12,3 +12,7 @@ tags: [refusal, batch, generate, integrate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-19}
 ---
 Found by K-M1 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-M1-report.md), Found 3).
+
+K-N1 confirms the `generate` half on both paths: `emit_to` renames its
+partial file to `--out` before `refuse_sampled_fault` runs
+([K-N1 report](../../sprints/v022-smeft-and-refusals/sessions/K-N1-report.md), Found).

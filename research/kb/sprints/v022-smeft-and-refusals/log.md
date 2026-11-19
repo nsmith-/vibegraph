@@ -142,3 +142,46 @@ deletes them when #156 merges.
   - `madgraph-class-flags-per-pdir`;
   - `resolve-mom-dead-in-release-builds`;
   - evidence added to `llj-family-reads-high-vs-seed-records` and `zprime-tt-quoted-error-below-seed-spread`.
+
+### 2026-11-19 (later): PR 10 and PR 12 merged
+
+| PR | Sprint PR | Merge commit |
+|---|---|---|
+| #155 | PR 10, MLM memory growth (K-G1) | c1a9531 |
+| #156 | PR 12, named refusals (K-N1) | b3bc539 |
+
+**PR 10.** `ChannelHistory::record` cloned each kept iteration's per-channel
+share vector: 1068 channels × 24,297 shares × 16 B = 396 MiB per iteration
+predicted, 399–420 MiB measured, with heaptrack naming the site. A fixed
+~3.2 GB transient came on top from collecting every chunk's tiles before
+reducing any. After the fix, the full card 244 peaks at 2140 MiB over 181
+iterations, against 23.9 GB by iteration 45 on the CERN host. Card 244 has
+σ = 0 at LO (pta 200 against htjmax 100) and ends in the "none passed the
+cuts" refusal. Brief corrections: the growth scales with channels × shares
+per kept iteration, and the other GJ-4Jets cards converge before it shows.
+Local `validate` was declined; CI's banked run is the gate.
+
+**PR 12.** The fixed-beam scale panic is now the named `SampledPointFault`
+refusal. `misset < 0` can bind: it is refused by name exactly where `misset²`
+is MadGraph's lepton smin term, and the term reproduces MadGraph's printed
+smin on 3 banked runs. It is not implemented, because vibegraph's τ floor is
+not MadGraph's class-by-class smin. Correction to K-C1: a default `mmll` does
+not empty the region, because setcuts.f's loop counts only the first lepton
+of a pair; `ptl` does. Consequence: campaign cards with `misset = -1` and no
+lepton cut ≥ 1 GeV are refused by name. This record deleted
+`fixed-beam-sampled-point-scale-error-panics` and
+`misset-negative-sqrt-shat-floor-unapplied`.
+
+**Filed from Found sections:**
+- From K-G1:
+  - `zero-weight-integrand-runs-to-point-cap`;
+  - `configuration-shares-span-whole-layout`;
+  - `gj4jets-ht40to100-madgraph-sigma-unrecorded`.
+- From K-N1: `misset-floor-smin-unmeasured-in-madgraph`.
+- Evidence added to `sampled-point-fault-refused-only-at-end`.
+- Not filed:
+  - K-G1's `resolve_mom` warning (already `resolve-mom-dead-in-release-builds`);
+  - the worktree submodule git quirk (local tooling);
+  - 0.13% degenerate points on card 244, which the run's own warning reports.
+
+**Remaining:** a hygiene pass per merged feature PR, then the release-candidate head.
