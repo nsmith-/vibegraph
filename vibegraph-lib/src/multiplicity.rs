@@ -1414,8 +1414,7 @@ mod tests {
     }
 
     /// `p p > z` and `p p > z j`: one multiplicity whose phase space is the
-    /// one-body `δ(ŝ − M²)`, which no map here integrates, beside one that is
-    /// integrated.
+    /// one-body `δ(ŝ − M²)`, beside one with a continuous phase space.
     const ONE_BODY_AND_JET: &str = "generate p p > z\nadd process p p > z j\n";
 
     fn one_body_groups(card_text: &str, run_card: &RunCard) -> Result<MultiplicityGroups, String> {

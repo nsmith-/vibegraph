@@ -1030,7 +1030,7 @@ pub(crate) struct BlockIteration {
     /// `hist[dim][bin]` as the grid's [`GridRule`] accumulates it, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
-    /// Per share of [`adapt_blocks_iteration_shared`], its `(estimate,
+    /// Per share of [`adapt_blocks_iteration`], its `(estimate,
     /// variance)` from the same points; empty where no share was asked for.
     pub(crate) shares: Vec<(f64, f64)>,
 }
@@ -1312,17 +1312,15 @@ where
     // give it; a wave bounds how many chunks' share tiles are alive at once.
     let wave = wave_len(plans, n_shares, tasks.len(), wave_bytes);
     let mut out = Vec::with_capacity(plans.len());
-    let mut open: Option<(usize, BlockSums)> = None;
-    let close_through = |end: usize, open: &mut Option<(usize, BlockSums)>, out: &mut Vec<_>| {
+    // The sums of block `out.len()`, once one of its chunks has been folded in:
+    // chunks arrive in block order, so every block before it is finished.
+    let mut open: Option<BlockSums> = None;
+    let close_through = |end: usize, open: &mut Option<BlockSums>, out: &mut Vec<_>| {
         while out.len() < end {
             let b = out.len();
-            let sums = match open.take() {
-                Some((ob, sums)) if ob == b => sums,
-                other => {
-                    *open = other;
-                    BlockSums::new(&grids[b], n_shares)
-                }
-            };
+            let sums = open
+                .take()
+                .unwrap_or_else(|| BlockSums::new(&grids[b], n_shares));
             out.push(sums.finish(plans[b].neval, n_shares));
         }
     };
@@ -1335,12 +1333,8 @@ where
             .collect();
         for (&(b, _), chunk) in wave_tasks.iter().zip(&results) {
             close_through(b, &mut open, &mut out);
-            if open.as_ref().is_none_or(|(ob, _)| *ob != b) {
-                open = Some((b, BlockSums::new(&grids[b], n_shares)));
-            }
-            if let Some((_, sums)) = open.as_mut() {
-                sums.add(chunk, grids[b].ndim, n_shares);
-            }
+            open.get_or_insert_with(|| BlockSums::new(&grids[b], n_shares))
+                .add(chunk, grids[b].ndim, n_shares);
         }
     }
     close_through(plans.len(), &mut open, &mut out);
@@ -2646,6 +2640,44 @@ mod tests {
                 .unwrap()
             })
             .collect();
+        // The comparison above runs the code under test on both sides, so a fault
+        // in how a block's sums are formed or closed is on both. Each block's
+        // points replayed one at a time share nothing with it but the draw.
+        for (b, (plan, got)) in plans.iter().zip(&alone).enumerate() {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(plan.stream);
+            rng.set_word_pos(u128::from(plan.first_point) * 2 * WORDS_PER_DRAW);
+            let (mut x, mut ks) = (vec![0.0; 2], vec![0_usize; 2]);
+            let (mut sum, mut sum2, mut accepted) = (0.0, 0.0, 0_usize);
+            let mut shares = [0.0; 3];
+            for _ in 0..plan.neval {
+                let wgt = grids[b].draw_point(&mut rng, &mut x, &mut ks);
+                let mut out = [0.0; 3];
+                let fval = parts(b, &x, &mut out) * wgt;
+                sum += fval;
+                sum2 += fval * fval;
+                accepted += usize::from(fval != 0.0);
+                for (acc, o) in shares.iter_mut().zip(out) {
+                    *acc += o * wgt;
+                }
+            }
+            assert_eq!(got.accepted, accepted, "block {b}");
+            if plan.neval == 0 {
+                continue;
+            }
+            let rel = |a: f64, b: f64| (a - b).abs() / b.abs().max(f64::MIN_POSITIVE);
+            let (mean, variance) = moments(sum, sum2, plan.neval);
+            assert!(rel(got.integral, mean) < 1e-12, "block {b} integral");
+            assert!(rel(got.variance, variance) < 1e-9, "block {b} variance");
+            assert!(rel(got.sum_sq, sum2) < 1e-12, "block {b} sum of squares");
+            for (c, (&(i, _), &total)) in got.shares.iter().zip(&shares).enumerate() {
+                let mean = total / plan.neval as f64;
+                assert!(
+                    (i - mean).abs() <= 1e-12 * got.integral.abs(),
+                    "block {b} share {c}: {i} against {mean}"
+                );
+            }
+        }
         let want = format!("{alone:?}");
         for nthreads in [1, 3] {
             for wave_bytes in [1, 5 * 2 * 3 * size_of::<f64>(), usize::MAX] {
