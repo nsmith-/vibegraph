@@ -270,6 +270,16 @@ fn err(msg: impl Into<String>) -> GenerateError {
     GenerateError::Other(msg.into())
 }
 
+/// The refusal a sampled point of `integ` ran into, if any: the points it
+/// weighted zero were ones the reference stops on, so nothing drawn from it
+/// stands.
+fn refuse_sampled_fault(integ: &MultiplicitySum) -> Result<(), GenerateError> {
+    match integ.fault() {
+        Some(fault) => Err(err(format!("{fault}; the run is refused"))),
+        None => Ok(()),
+    }
+}
+
 /// Refuse a reweight card on a process one of whose cut filters is
 /// pairing-weighted ([`GenerateError::ReweightPairingWeighted`]); `filters`
 /// pairs each filter with the process line it is named by.
@@ -1144,6 +1154,7 @@ fn generate_proton_sample(
         options.seed ^ SCAN_SEED_OFFSET,
         rule,
     )?;
+    refuse_sampled_fault(&integ)?;
     report_scan(
         &scan,
         artifact,
@@ -1211,6 +1222,7 @@ fn generate_proton_sample(
     };
 
     let summary = emit_to(options, &mut source, &plan, strategy.as_ref())?;
+    refuse_sampled_fault(&integ)?;
     report_resonances(source.tally, summary.drawn);
     if reweight_plan.is_some() {
         source.audit.finish(&options.out)?;
