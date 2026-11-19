@@ -59,7 +59,7 @@ pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
 ];
 
 /// UFO source files [`ParsedModel::parse`] reads when present, falling back to a
-/// built-in default when absent.
+/// built-in default when absent (an unreadable one is refused).
 pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 4] = [
     "coupling_orders.py",
     "propagators.py",
@@ -326,15 +326,28 @@ impl ParsedModel {
         let couplings_src = couplings_src?;
         let params_src = params_src?;
         let vertices_src = vertices_src?;
+        // An optional file that is absent takes its default; one that is present
+        // but unreadable is refused like a required one, never read as absent.
+        let read_optional = |name: &str| -> Result<Option<String>, UfoError> {
+            match read(name) {
+                Ok(src) => Ok(Some(src)),
+                Err(UfoError::Io { cause, .. }) if cause.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            }
+        };
+        let [coupling_orders_file, propagators_file, configuration_file, library_file] =
+            OPTIONAL_SOURCE_FILES;
 
         refuse_conditional_definitions("particles.py", &particles_src, "Particle")?;
         refuse_conditional_definitions("lorentz.py", &lorentz_src, "Lorentz")?;
         refuse_conditional_definitions("couplings.py", &couplings_src, "Coupling")?;
         refuse_conditional_definitions("vertices.py", &vertices_src, "Vertex")?;
 
-        let library = match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[3])) {
-            Ok(src) => FunctionLibrary::parse(&src)?,
-            Err(_) => FunctionLibrary::default(),
+        let library = match read_optional(library_file)? {
+            Some(src) => FunctionLibrary::parse(&src)?,
+            None => FunctionLibrary::default(),
         };
         let (params, variables) = parse_parameters_with_variables(&params_src, &library)?;
         let mut particles: IndexMap<String, Particle> =
@@ -350,9 +363,9 @@ impl ParsedModel {
             .map(|l| (l.name.clone(), l))
             .collect();
 
-        let configuration = match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[2])) {
-            Ok(src) => parse_configuration(&src)?,
-            Err(_) => Default::default(),
+        let configuration = match read_optional(configuration_file)? {
+            Some(src) => parse_configuration(&src)?,
+            None => Default::default(),
         };
         let couplings: IndexMap<String, Coupling> =
             parse_couplings_with(&couplings_src, &configuration, &library)?
@@ -395,35 +408,29 @@ impl ParsedModel {
         // Parse coupling_orders.py for the WEIGHTED order hierarchy and the
         // model's own per-order expansion caps. A file that is absent or
         // declares no order leaves the hierarchy to `default_hierarchy`.
-        let (order_hierarchy, expansion_order) =
-            match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
-                Ok(src) => {
-                    refuse_conditional_definitions(
-                        OPTIONAL_SOURCE_FILES[0],
-                        &src,
-                        "CouplingOrder",
-                    )?;
-                    let (hierarchy, expansion) = parse_coupling_orders(&src)?;
-                    if hierarchy.is_empty() {
-                        (default_hierarchy(&vertices, &couplings), expansion)
-                    } else {
-                        (hierarchy, expansion)
-                    }
+        let (order_hierarchy, expansion_order) = match read_optional(coupling_orders_file)? {
+            Some(src) => {
+                refuse_conditional_definitions(coupling_orders_file, &src, "CouplingOrder")?;
+                let (hierarchy, expansion) = parse_coupling_orders(&src)?;
+                if hierarchy.is_empty() {
+                    (default_hierarchy(&vertices, &couplings), expansion)
+                } else {
+                    (hierarchy, expansion)
                 }
-                Err(_) => (default_hierarchy(&vertices, &couplings), BTreeMap::new()),
-            };
+            }
+            None => (default_hierarchy(&vertices, &couplings), BTreeMap::new()),
+        };
 
-        let propagators: IndexMap<String, Propagator> =
-            match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[1])) {
-                Ok(src) => {
-                    refuse_conditional_definitions(OPTIONAL_SOURCE_FILES[1], &src, "Propagator")?;
-                    parse_propagators(&src)?
-                        .into_iter()
-                        .map(|p| (p.python_name.clone(), p))
-                        .collect()
-                }
-                Err(_) => IndexMap::new(),
-            };
+        let propagators: IndexMap<String, Propagator> = match read_optional(propagators_file)? {
+            Some(src) => {
+                refuse_conditional_definitions(propagators_file, &src, "Propagator")?;
+                parse_propagators(&src)?
+                    .into_iter()
+                    .map(|p| (p.python_name.clone(), p))
+                    .collect()
+            }
+            None => IndexMap::new(),
+        };
         for particle in particles.values() {
             if let Some(name) = &particle.propagator {
                 if !propagators.contains_key(name) {
@@ -2247,19 +2254,8 @@ mod tests {
         parsed.apply_restriction(&card).unwrap();
         let params = &parsed.params;
 
-        let followers: BTreeSet<&String> = params
-            .merged
-            .iter()
-            .flat_map(|group| group.iter().skip(1).map(|(name, _)| name))
-            .collect();
         let free: BTreeMap<String, f64> = params
-            .externals
-            .iter()
-            .filter(|p| {
-                !params.zeros.contains(&p.name)
-                    && !params.ones.contains(&p.name)
-                    && !followers.contains(&p.name)
-            })
+            .free_externals()
             .map(|p| match p.nature {
                 ParamNature::External { default_value, .. } => (p.name.clone(), default_value),
                 _ => unreachable!(),
@@ -2304,5 +2300,41 @@ mod tests {
             .map(|n| n.as_str().unwrap().to_owned())
             .collect();
         assert_eq!(zero, want_zero);
+    }
+
+    /// `charge = Param.<external>.value` is that parameter's default in
+    /// parameters.py, read through [`ParsedModel::parse`]; the antiparticle's
+    /// is its negative.
+    #[test]
+    fn a_charge_naming_a_parameter_reads_its_default_through_parse() {
+        let toy = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/vibegraph_toy_UFO");
+        let tmp = tempfile::tempdir().unwrap();
+        for entry in std::fs::read_dir(&toy).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_file() {
+                std::fs::copy(entry.path(), tmp.path().join(entry.file_name())).unwrap();
+            }
+        }
+        let path = tmp.path().join("particles.py");
+        let particles = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(particles.matches("charge=-1,").count(), 1);
+        std::fs::write(
+            &path,
+            particles.replacen("charge=-1,", "charge=Param.MLT.value,", 1),
+        )
+        .unwrap();
+
+        let parsed = ParsedModel::parse(tmp.path()).unwrap();
+        let charge = |pdg: i64| {
+            parsed
+                .particles
+                .values()
+                .find(|p| p.pdg_code == pdg)
+                .unwrap_or_else(|| panic!("no particle {pdg}"))
+                .charge
+        };
+        // `MLT`'s default, 10.
+        assert_eq!((charge(9000011), charge(-9000011)), (10.0, -10.0));
     }
 }

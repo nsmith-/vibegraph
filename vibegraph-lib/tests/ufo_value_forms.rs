@@ -7,7 +7,7 @@
 
 use num_complex::Complex64;
 use std::collections::HashMap;
-use vibegraph::ufo::{EvaluatedModel, ParsedModel, UFOModel};
+use vibegraph::ufo::{EvaluatedModel, ParsedModel, UFOModel, UfoError};
 
 const PARTICLES: &str = "\
 from object_library import all_particles, Particle
@@ -374,6 +374,26 @@ fn a_particle_charge_that_is_a_parameters_value_loads() {
             &[],
         );
         UFOModel::load(dir.path(), None).unwrap_or_else(|e| panic!("{charge}: {e}"));
+    }
+}
+
+/// An optional source file that is present but unreadable (here, not UTF-8) is
+/// refused naming it, never read as absent: an unreadable `function_library.py`
+/// would otherwise leave a model's own definitions unread.
+#[test]
+fn an_unreadable_optional_source_file_is_refused_naming_it() {
+    for file in [
+        "function_library.py",
+        "configuration.py",
+        "coupling_orders.py",
+        "propagators.py",
+    ] {
+        let dir = model_with(&[], &[]);
+        std::fs::write(dir.path().join(file), b"\xff\xfe not UTF-8\n").unwrap();
+        match ParsedModel::parse(dir.path()) {
+            Err(UfoError::Io { file: path, .. }) => assert!(path.ends_with(file), "{path}"),
+            other => panic!("{file}: {:?}", other.map(|_| ())),
+        }
     }
 }
 

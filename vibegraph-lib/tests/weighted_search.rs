@@ -174,3 +174,52 @@ fn a_final_state_gluon_pair_without_a_qcd_vertex_is_refused() {
         other => panic!("expected NoDiagrams, got {:?}", other.map(|s| s.len())),
     }
 }
+
+/// MadGraph's gluon-free trial lowers its bound by the QCD hierarchy per
+/// removed gluon, and raises `KeyError` on a model whose hierarchy has no QCD
+/// (`diagram_generation.py:2058`); vibegraph refuses it by name.
+///
+/// The toy with its `vw` given the gluon's PDG code, QCD dropped from
+/// `coupling_orders.py` and NP raised to 3: the QED-only vertices put `fw` and
+/// the "gluon" (named `g`, MadGraph's default name for PDG 21) in the lowest
+/// class (2), and the cap, `2 * (2 + 3) = 10`, sits above the start, 4, so the
+/// search trials `fw~ fw > g g` without its gluons.
+#[test]
+fn a_gluon_trial_on_a_model_without_a_qcd_hierarchy_is_refused_by_name() {
+    let toy = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/ufo/vibegraph_toy_weighted_UFO");
+    let tmp = tempfile::tempdir().unwrap();
+    for entry in std::fs::read_dir(&toy).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_file() {
+            std::fs::copy(entry.path(), tmp.path().join(entry.file_name())).unwrap();
+        }
+    }
+    let edit = |file: &str, from: &str, to: &str| {
+        let path = tmp.path().join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.matches(from).count(), 1, "{file}: `{from}`");
+        std::fs::write(&path, text.replacen(from, to, 1)).unwrap();
+    };
+    edit("particles.py", "pdg_code=9000122", "pdg_code=21");
+    edit(
+        "coupling_orders.py",
+        "QCD = CouplingOrder(name='QCD',\n                    expansion_order=99,\n                    hierarchy=1)\n",
+        "",
+    );
+    edit(
+        "coupling_orders.py",
+        "NP = CouplingOrder(name='NP',\n                   expansion_order=99,\n                   hierarchy=1)",
+        "NP = CouplingOrder(name='NP',\n                   expansion_order=99,\n                   hierarchy=3)",
+    );
+    let model = UFOModel::load(tmp.path(), None).expect("the edited toy loads");
+    match try_generate("fw~ fw > g g", &model) {
+        Err(DiagramError::GluonTrialWithoutQcd { process }) => {
+            assert!(process.contains("fw~ fw > g g"), "{process}")
+        }
+        other => panic!(
+            "expected GluonTrialWithoutQcd, got {:?}",
+            other.map(|s| s.len())
+        ),
+    }
+}
