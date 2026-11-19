@@ -18,7 +18,13 @@ use super::{ParamValue, RunCardError};
 ///
 /// Each rewrite is idempotent, so a card resolved twice (a decay's derived
 /// card, say) reads the same values.
-pub(super) fn resolve(values: &mut BTreeMap<String, ParamValue>) -> Result<(), RunCardError> {
+///
+/// Each notice MadGraph logs on the way is logged here too and pushed onto
+/// `warnings`.
+pub(super) fn resolve(
+    values: &mut BTreeMap<String, ParamValue>,
+    warnings: &mut Vec<String>,
+) -> Result<(), RunCardError> {
     let ickkw = int(values, "ickkw");
     if !matches!(ickkw, 0 | 1) {
         return Err(RunCardError::UnsupportedIckkw { ickkw });
@@ -34,6 +40,10 @@ pub(super) fn resolve(values: &mut BTreeMap<String, ParamValue>) -> Result<(), R
             alpsfact = float(values, "alpsfact"),
             "use_syst = T: alpsfact set to 1, as setrun.f does"
         );
+        warnings.push(format!(
+            "use_syst = T: alpsfact {} set to 1, as setrun.f does",
+            float(values, "alpsfact")
+        ));
         values.insert("alpsfact".to_string(), ParamValue::Float(1.0));
     }
 
@@ -47,6 +57,10 @@ pub(super) fn resolve(values: &mut BTreeMap<String, ParamValue>) -> Result<(), R
             "xqcut > 0 with ickkw = 0: applied as a pure cut, which MadGraph calls a \
              potentially inconsistent setup"
         );
+        warnings.push(format!(
+            "xqcut = {xqcut} > 0 with ickkw = 0: applied as a pure cut, which MadGraph calls a \
+             potentially inconsistent setup"
+        ));
     }
 
     let auto = flag(values, "auto_ptj_mjj");

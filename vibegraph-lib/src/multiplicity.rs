@@ -49,7 +49,7 @@ use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::proton::{
     derive_flavor_groups, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
-    ProtonError, ProtonEvent, ProtonIntegrand,
+    ProtonError, ProtonEvent, ProtonIntegrand, SampledPointFault,
 };
 use crate::runcard::RunCard;
 use crate::support::PointCensus;
@@ -764,6 +764,12 @@ impl<'a> MultiplicitySum<'a> {
     /// Every part's [`ProtonIntegrand::census`], added.
     pub fn census(&mut self) -> PointCensus {
         self.parts.iter_mut().map(|p| p.census()).sum()
+    }
+
+    /// The first part's [`ProtonIntegrand::fault`], in part order: a refusal a
+    /// sampled point ran into, which voids the run.
+    pub fn fault(&self) -> Option<&SampledPointFault> {
+        self.parts.iter().find_map(ProtonIntegrand::fault)
     }
 
     /// Start every part's census over from zero.

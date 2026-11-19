@@ -27,6 +27,8 @@ unchecked-study = []
 workspace = true
 
 [dependencies]
+# Run-card reports: parameter values as plain JSON (`runcard::report`).
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 num-traits = "0.2"
 rand = "0.9"
 rand_chacha = "0.9"
@@ -91,7 +93,6 @@ libtest-mimic = "0.7"
 num-bigint = "0.4"
 num-modular = "0.5"
 num-prime = { version = "0.4", default-features = false }
-serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # Fresh scratch directories for tests that write an edited copy of a model; the
 # version the CLI's tests already resolve.
 tempfile = "3"

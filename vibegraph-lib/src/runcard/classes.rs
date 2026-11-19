@@ -26,10 +26,10 @@ use Stage::{Generate, Integrate};
 /// Where a recognized run-card parameter goes.
 pub(crate) enum FieldClass {
     /// Read by this crate. The string names the consumer.
-    Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    Consumed(&'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    IgnoredBenign(&'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///
@@ -69,6 +69,11 @@ const R_CUT_MM: &str = "cuts::pair_mass; the name is built as mm{tag} over the s
                         pair tags";
 const R_UNIMPL: &str = "cuts::detect_unimplemented — parsed and detected rather than applied, \
                         so a value off the default is already a hard error";
+const R_CUT_RANK: &str = "cuts::Cuts::compile's rank block, which cuts the n-th hardest jet or \
+                          charged lepton as cuts.f:816-871 and :916-972 do; the name is built \
+                          as pt{c}{n}min / pt{c}{n}max over the jet and lepton letters";
+const R_CUTUSE: &str = "cuts::detect_unimplemented, which reads it as off while every jet rank \
+                        bound is, and refuses 1 when one is on";
 const R_XPT: &str = "cuts::detect_unimplemented, which reads a value at or below zero as off, \
                      as every guarded MadGraph read does, and refuses a positive one";
 const R_PT_MIN_PDG: &str = "cuts::Cuts::compile's per-PDG single-leg block, and \
@@ -368,23 +373,23 @@ pub(crate) static FIELD_CLASSES: &[(&str, Stage, FieldClass)] = &[
     ("xptb",                    Integrate, Consumed(R_XPT)),
     ("xpta",                    Integrate, Consumed(R_XPT)),
     ("xptl",                    Integrate, Consumed(R_XPT)),
-    ("ptj1min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj1max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj2min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj2max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj3min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj3max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj4min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptj4max",                 Integrate, Consumed(R_UNIMPL)),
-    ("cutuse",                  Integrate, Consumed(R_UNIMPL)),
-    ("ptl1min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl1max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl2min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl2max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl3min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl3max",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl4min",                 Integrate, Consumed(R_UNIMPL)),
-    ("ptl4max",                 Integrate, Consumed(R_UNIMPL)),
+    ("ptj1min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj1max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj2min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj2max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj3min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj3max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj4min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptj4max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("cutuse",                  Integrate, Consumed(R_CUTUSE)),
+    ("ptl1min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl1max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl2min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl2max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl3min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl3max",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl4min",                 Integrate, Consumed(R_CUT_RANK)),
+    ("ptl4max",                 Integrate, Consumed(R_CUT_RANK)),
     ("htjmin",                  Integrate, Consumed(R_CUT_LITERAL)),
     ("htjmax",                  Integrate, Consumed(R_CUT_LITERAL)),
     ("ihtmin",                  Integrate, Consumed(R_CUT_LITERAL)),
