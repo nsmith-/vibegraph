@@ -12,3 +12,5 @@ tags: [dead-code, release, clippy]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-19}
 ---
 Found by K-C2 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-C2-report.md), Found).
+
+**K-H4 (PR #158)** saw the same warning independently under `cargo check --release`; clippy does not report it.

@@ -192,3 +192,55 @@ lepton cut ≥ 1 GeV are refused by name. This record deleted
 - 0 of the 823 per-channel `results.dat` are non-zero.
 
 The integrated run card is pta 200, htjmin 40, htjmax 100, ptj 0, maxjetflavor 5. CMS's build filled in the template's 0 / 0 / −1. So MadGraph agrees σ = 0: the card is defective, and the htj reading is not at fault. `gj4jets-ht40to100-madgraph-sigma-unrecorded` is closed on that evidence. The memory growth on all-zero-weight runs is fixed by #155, and the wasted iterations are `zero-weight-integrand-runs-to-point-cap`.
+
+## 2026-11-19 (later): hygiene passes
+
+The twelve merged feature PRs were grouped into four hygiene passes by code
+area, so related PRs are reviewed together and no two passes edit the same
+files. Each pass committed its findings before any edit and ran one mutation
+per test the PRs added. σ and grid sha256 had to stay bit for bit against main
+b3bc5399.
+
+| pass | PRs reviewed | agent | PR | head | gates (sprint session) |
+|---|---|---|---|---|---|
+| K-H1 model loading | #141, #144, #145 | hygiene-dev, Opus | #157 | d39396d5 | 2238 passed, 0 failed |
+| K-H4 integration | #142, #155 | hygiene-dev, Sonnet | #158 | 67344677 | 2238 passed, 0 failed |
+| K-H3 run card, CLI, batch | #143, #152, #156 | hygiene-dev, Sonnet | #159 | 0e903f8c | 2237 passed, 0 failed |
+| K-H2 diagrams, colour, grouping | #146, #147, #150, #153 | hygiene-dev, Opus | — | — | starts after #157 merges (#157 edits `diagrams/chain.rs` and `diagrams/mod.rs`) |
+
+For each of #157, #158 and #159:
+- fmt and clippy `-D warnings` are clean and kb-lint has 0 errors, all re-run by the sprint session;
+- CI is all-pass including banked, on a head that contains main;
+- the three branches merge cleanly in every pair.
+
+Findings that change behaviour:
+- **#157 H1.** An unreadable or non-UTF-8 optional UFO file used to be read as
+  absent. For SMEFTsim that silently replaced the model's own `sec`/`csc` with
+  the generic complex definitions. The file is now refused by name.
+- **#159 H8.** A `generate` run refused for a sampled-point fault used to leave
+  a complete event file under its final name. That file is now removed with the
+  refusal.
+- **#158 F3.** The configuration shares took a combine rule as an argument
+  instead of using the channel's own rule.
+
+Mutations:
+- **#157:** 47 rows. The merged tests let 3 mutations through, all findings
+  that were then fixed.
+- **#158:** 20 rows. The merged tests let 6 through. Now 18 are caught; the
+  other 2 are one the code never reaches and one that doesn't change the result.
+- **#159:** 72 rows, all caught. Two of the merged misset tests passed a
+  skipped refusal; the replacement tests fail it.
+
+Found, filed in this PR:
+- From K-H4: `amplitude-probe-skips-two-to-one`. Evidence added to
+  `resolve-mom-dead-in-release-builds`.
+- From K-H1: `particle-charge-never-read`,
+  `selector-signed-constraint-arms-untested` and
+  `ufo-tempdir-copy-loop-repeated`. Evidence added to
+  `weighted-order-computed-three-ways` (three sites left) and
+  `diagram-count-test-helper-duplicated` (a fifth copy).
+- From K-H3: `sampled-point-fault-slot-duplicated` and
+  `event-generate-functions-long`. Evidence added to
+  `run-card-value-refusals-hand-listed` and
+  `sampled-point-fault-refused-only-at-end`: #159 removes the event file, but
+  no card drives a sampled scale fault end to end.

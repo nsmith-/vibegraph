@@ -12,3 +12,8 @@ tags: [run-card, classification-table, simshop]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-19}
 ---
 Found by K-C1 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-C1-report.md), Found).
+
+**K-H3 (PR #159), Found 2:** a new `RunCardError` refusal for a consumed
+parameter gets no `VALUE_REFUSALS` row unless one is written by hand, and no
+test notices. A `parameter()` accessor on `RunCardError` plus a test that
+every variant naming a parameter has a row would close it.

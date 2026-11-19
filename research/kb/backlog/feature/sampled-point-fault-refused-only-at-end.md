@@ -16,3 +16,11 @@ Found by K-M1 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-M1-repo
 K-N1 confirms the `generate` half on both paths: `emit_to` renames its
 partial file to `--out` before `refuse_sampled_fault` runs
 ([K-N1 report](../../sprints/v022-smeft-and-refusals/sessions/K-N1-report.md), Found).
+
+**K-H3 (PR #159)** covers part of this. After `emit_to`, `generate` now
+removes the event file when it refuses a sampled-point fault
+(`refuse_emitted_fault`, on both emitting paths), so no complete-looking file
+is left. The run still stops only at the end. K-H3's Found 3 is also part of
+this item's closing test: no committed card makes a sampled point raise a
+scale fault, so deleting the `refuse_sampled_fault(integ.fault())?` call sites
+fails no test.
