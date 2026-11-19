@@ -232,7 +232,7 @@ pub struct Subprocess {
 
 impl Subprocess {
     /// The subprocess by its PDG codes, `PDG 2 -1 > -11 12 5 -5 21`.
-    pub fn label(&self) -> String {
+    fn label(&self) -> String {
         let codes = |c: &[i32]| c.iter().map(i32::to_string).collect::<Vec<_>>().join(" ");
         format!("PDG {} > {}", codes(&self.incoming), codes(&self.outgoing))
     }
@@ -412,7 +412,7 @@ impl FlavorGroup {
     /// topology — `g u > h+ d` with `u d~ > h+ g` — that share no clustering. The
     /// group carries no cross section and is never clustered
     /// ([`ProtonIntegrand`]).
-    pub fn vanishes(&self) -> bool {
+    fn vanishes(&self) -> bool {
         self.vanishes
     }
 
@@ -921,17 +921,12 @@ fn s_channel_resonance(model: &UFOModel, evaluated: &EvaluatedModel) -> Option<f
     (mass > 0.0).then_some(mass)
 }
 
-/// Worst relative disagreement between two probe traces.
 /// Whether every diagram of `set` passes through a vertex whose every coupling
 /// is exactly zero at the evaluated card, so that its matrix element vanishes
 /// at every phase-space point. This is read off the couplings, not off sampled
 /// values: a matrix element that is zero only through a cancellation between
 /// diagrams is not counted.
-pub(crate) fn vanishes_at_card(
-    set: &DiagramSet,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> bool {
+fn vanishes_at_card(set: &DiagramSet, model: &UFOModel, evaluated: &EvaluatedModel) -> bool {
     !set.diagrams.is_empty()
         && set.diagrams.iter().all(|diagram| {
             diagram.vertices.iter().any(|vertex| {
@@ -946,6 +941,7 @@ pub(crate) fn vanishes_at_card(
         })
 }
 
+/// Worst relative disagreement between two probe traces.
 fn worst_rel(a: &[f64], b: &[f64]) -> f64 {
     a.iter()
         .zip(b)

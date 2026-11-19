@@ -445,8 +445,9 @@ fn atom_indices(atom: &ColorAtom) -> Vec<i32> {
 /// in the same position, and a closed loop of generators (`T(a,-1,-2)·T(b,-2,-1)`),
 /// which is a trace and is not read from `T` atoms.
 ///
-/// [`merge_generator_chains`] then reads each chain as the one generator product
-/// it is before the crossing is applied.
+/// The walk along each chain from its `3` slot, which refuses a closed loop, is
+/// [`merge_generator_chains`]'s; it also reads each chain as the one generator
+/// product it is before the crossing is applied.
 fn check_generator_chains(expr: &ColorExpr) -> Result<(), ColorAlgebraError> {
     let links: Vec<(i32, i32)> = expr
         .atoms
@@ -483,28 +484,7 @@ fn check_generator_chains(expr: &ColorExpr) -> Result<(), ColorAlgebraError> {
             ));
         }
     }
-    let mut on_chains = 0;
-    for &(start, mut next) in &links {
-        if start < 0 {
-            continue;
-        }
-        on_chains += 1;
-        while next < 0 {
-            let Some(&(_, j)) = links.iter().find(|&&(i, _)| i == next) else {
-                return refuse(format!(
-                    "summed fundamental index {next} ends a generator chain"
-                ));
-            };
-            next = j;
-            on_chains += 1;
-        }
-    }
-    if on_chains != links.len() {
-        return refuse(
-            "a closed loop of generators over summed fundamental indices (a trace)".into(),
-        );
-    }
-    Ok(())
+    merge_generator_chains(expr).map(drop)
 }
 
 /// Cross-check that each propagator's two endpoints carry mutually-conjugate
@@ -788,19 +768,26 @@ mod tests {
             (
                 "T(1,-1,3)*T(2,-1,4)",
                 &[8, 8, -3, -3][..],
-                "summed fundamental index -1",
+                "summed fundamental index -1 does not join",
             ),
             // Shared with a baryonic invariant.
             (
                 "T(1,2,-1)*Epsilon(-1,3,4)",
                 &[8, 3, 3, 3][..],
-                "summed fundamental index -1",
+                "summed fundamental index -1 does not join",
             ),
             // Shared with an adjoint position.
             (
                 "T(-1,2,-2)*T(1,-2,-1)",
                 &[8, 3, -3][..],
-                "summed fundamental index -1",
+                "summed fundamental index -1 does not join",
+            ),
+            // A link of an open chain whose index is also a generator's adjoint
+            // index: joined 3̄ to 3 once, but carried three times.
+            (
+                "T(-1,2,-1)*T(1,-1,3)",
+                &[8, 3, -3][..],
+                "summed fundamental index -1 does not join",
             ),
         ];
         for (s, colors, why) in cases {
