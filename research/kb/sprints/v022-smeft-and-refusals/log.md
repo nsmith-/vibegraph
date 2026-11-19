@@ -270,3 +270,29 @@ Found, filed in this PR:
 - Evidence added to `diagram-generation-functions-long`: `stitch_set` is 141
   lines and `derive_flavor_groups` is 268.
 - Evidence added to `one-diagram-diagramset-built-by-hand`: one more site.
+
+## 2026-11-19 (evening): release-candidate preparation
+
+**Merged:** #160 (43d2429). All sprint K feature and hygiene PRs are on main,
+and this record has merged main.
+
+**Release preparation:**
+- the version is bumped to 0.2.2 in `Cargo.toml`, `Cargo.lock` and
+  `pixi.toml`;
+- the draft release notes are `docs/release-notes/v0.2.2.md`;
+- every claimed item that closed has had its file deleted;
+- `ufo-coupling-order-expressions-refused` stays open by design (K-U1).
+
+**Release blocker found:**
+- `enumeration-version-unbumped-old-artifacts-accepted`, filed in this PR.
+- A v0.2.1 diagram artifact for the HToAATo4B card passes main's
+  `integrate --check` and integrates to exactly 4× σ: 105.10 ± 0.53 fb,
+  against 26.27 ± 0.13 fb from main's own artifact, same seed.
+- The fix is to bump `ENUMERATION_VERSION` and pin a repeated-decay card in
+  the known-answer set. That is a code PR, proposed to the manager as PR 13.
+- The release notes' "Upgrading" section assumes that PR lands.
+
+**Record correction:** the merge of main into this branch, faaee92d, was
+committed under the harness identity, not Nick's. It was already pushed and is
+not rewritten. When squash-merging this PR, drop the `Co-authored-by` line that
+GitHub adds for it.
