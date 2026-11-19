@@ -176,7 +176,7 @@ lepton cut ≥ 1 GeV are refused by name. This record deleted
 - From K-G1:
   - `zero-weight-integrand-runs-to-point-cap`;
   - `configuration-shares-span-whole-layout`;
-  - `gj4jets-ht40to100-madgraph-sigma-unrecorded`.
+  - `gj4jets-ht40to100-madgraph-sigma-unrecorded`, filed and then closed the same day (below).
 - From K-N1: `misset-floor-smin-unmeasured-in-madgraph`.
 - Evidence added to `sampled-point-fault-refused-only-at-end`.
 - Not filed:
@@ -185,3 +185,10 @@ lepton cut ≥ 1 GeV are refused by name. This record deleted
   - 0.13% degenerate points on card 244, which the run's own warning reports.
 
 **Remaining:** a hygiene pass per merged feature PR, then the release-candidate head.
+
+**Gridpack 244's MadGraph σ.** The CERN host read the cvmfs tarball (MG5_aMC 2.9.13):
+- the banner gives "Integrated weight (pb) : 0";
+- `results.dat` gives a total of 0 over 823 channels, after about 14 CPU-hours;
+- 0 of the 823 per-channel `results.dat` are non-zero.
+
+The integrated run card is pta 200, htjmin 40, htjmax 100, ptj 0, maxjetflavor 5. CMS's build filled in the template's 0 / 0 / −1. So MadGraph agrees σ = 0: the card is defective, and the htj reading is not at fault. `gj4jets-ht40to100-madgraph-sigma-unrecorded` is closed on that evidence. The memory growth on all-zero-weight runs is fixed by #155, and the wasted iterations are `zero-weight-integrand-runs-to-point-cap`.
