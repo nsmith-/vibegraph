@@ -5,7 +5,7 @@ description: "simshop's param-card and reweight-hypothesis editors need each par
 area: feature
 state: open
 priority: medium
-closes_when: "For a model and restriction (e.g. SMEFTsim_topU3l_MwScheme_UFO-massless_VH), vibegraph writes one documented record per external parameter (name, block, code, post-restriction default, class: free / zero / one / merged into X with factor / internal; MASS/DECAY particle and whether it is external in the process; reweight verdict and polynomial entry; binder value constraints) and the default param_card.dat, and a test pins one parameter of each class."
+closes_when: "For a model and restriction (e.g. SMEFTsim_topU3l_MwScheme_UFO-massless_VH), vibegraph writes one documented record per external parameter (name, block, code, post-restriction default, class: free / zero / one / merged into X with factor / internal; MASS/DECAY particle and whether it is external in the process; reweight verdict and polynomial entry; binder value constraints), and, when a process is given, the list of external parameters that enter at least one of its diagrams' couplings; it also writes the default param_card.dat, and a test pins one parameter of each class and the entering list for one SMEFTsim process."
 blocked_by: []
 opened: 2026-11-18
 tags: [cli, model, param-card, reweight, ui, simshop]
@@ -31,6 +31,14 @@ Possible home: a `parameters.json` next to `diagrams.json` from the
 `enumerate` run simshop's check already makes, where the process is known.
 A model-only entry point with no process would also serve; ExternalMass then
 needs the process. Either way the record shape is documented.
+
+Per process, simshop also needs the external parameters (Wilson
+coefficients) that enter at least one diagram's couplings, for a one-click
+SMEFT "full quadratic basis" (SM, ±1 per operator, each pair at (1,1)). A list
+derived from the couplings is enough, even where contributions cancel
+numerically. The reweight polynomial path already collects amplitudes by
+coupling monomial (`reweight/`), so the dependency information exists; no
+command reports it. The user asked for this item in v0.2.3.
 
 Lower priority, same theme: `enumerate --reweight-card`, binding the
 hypotheses at check time as `--param-card` already does, so a bad hypothesis

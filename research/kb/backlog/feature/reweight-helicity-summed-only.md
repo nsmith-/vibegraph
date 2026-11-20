@@ -4,7 +4,7 @@ title: Reweighting is helicity-summed only
 description: generate writes the helicity-summed ratio; MadGraph's default per-event-helicity ratio (change helicity True) is not available.
 area: feature
 state: open
-priority: low
+priority: medium
 closes_when: A per-run option (e.g. --reweight-helicity summed|event) writes the per-helicity ratio, and the gen_reweight_oracle.py rows with change helicity True agree event by event.
 blocked_by: []
 opened: 2026-10-05
@@ -32,3 +32,6 @@ per-helicity ratio, while `generate` writes the helicity-summed one. Sprint G
 left such cards accepted and recorded the divergence in the
 [reweight-card classification](../../events/reweight-card-classification.md);
 whether to refuse them until this item closes is this item's call.
+
+The user asked for this item in v0.2.3 (2026-11-20). Until then simshop shows
+the helicity-aware choice as disabled, marked as coming in a later release.
