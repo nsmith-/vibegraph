@@ -353,3 +353,47 @@ Regressions either one finds go to a patch release.
 - Integration at survey settings follows, 5 seeds each, on every card that
   newly gets past setup, plus g2HDM, ZH 832–838, card 244, HToAATo4B and the
   27 non-adapted fails.
+
+## 2026-11-21: the CERN targeted check, final; the release cut
+
+**Nick (relayed by the CERN host, 2026-11-21):** "let's take the check results
+for now, get a release cut, and use batch". The local targeted check stopped.
+The full 1000-gridpack campaign `v022-1009` runs on the batch proxy with the
+released binary, 5 seeds each.
+
+**Final results on 400c88f9** (the CERN host's report):
+- **Panics: 0**, over 572 setup-pass cards (522 that failed in v0.2.1 plus 50
+  adapted ones) and 81 integration runs.
+- **Card 244:** a named zero-weight refusal at 2.02 GB peak RSS (23.9 GB in
+  v0.2.1). σ = 0 matches MadGraph.
+- **g2HDM 889–895:** no panic. M300 ran 2 VEGAS iterations at 2.2 GB. Its σ is
+  unmeasured (`g2hdm-mlm-sigma-unmeasured`).
+- **ZH 832–838:** 7 of 7 pass at 5 seeds on their unchanged cards.
+- **Seed 1 only**, |pull| < 2 against the gridpack's MadGraph σ:
+  - HToAATo4B 449–451 (not-ok → ok) and 88, 89, 448, 452 (v0.2.1 verdict
+    fails);
+  - SMS-StopStop 110 and 111;
+  - HToUpsilon 146 and 147;
+  - ZPrimeToTT 150 and 151;
+  - HSCP-Stop 177;
+  - DarkPhoton 416 and 420;
+  - Radion 520 and 522;
+  - the ptj1 cards 407 and 412.
+- **Unexplained:**
+  - card 409, DY1j Pt-100to200: +2.7%, pull +4.65, one seed
+    (`dy1j-ptj1-100to200-sigma-reads-high`);
+  - card 157, bstar_tW: "effective 0.0 points" (`bstar-tw-zero-effective-points`).
+- **Still refused, deliberate and named:**
+  - ktdurham = 1;
+  - time_of_flight = 0 (now `time-of-flight-unimplemented`);
+  - small_width_treatment;
+  - misset = 150;
+  - complex_mass_scheme;
+  - the deferred classes: NLO, Majorana, squared orders, polarized decays.
+- **Not run, moved to the batch campaign:** about 120 queued integrations,
+  seeds 2–5, the 182 v0.2.1 timeouts, and the 296 cards that were ok before.
+
+**Gate (sprint.md):** CI is green on main and on the release candidate,
+banked included. The targeted check shows no panics. Each case that still
+fails is deliberate or filed. The four items above are filed in this record,
+and the release notes list 409, g2HDM and `time_of_flight` as known issues.
