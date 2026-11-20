@@ -71,6 +71,7 @@ use super::diagram::{
     VtxIdx,
 };
 use super::{generate_from_process, DiagramError, DiagramSet, LinePosition, ProcessRole};
+use crate::ufo::weighted::order_weight;
 use crate::ufo::UFOModel;
 
 /// Enumerate a decay-chain process by stitching: one [`DiagramSet`] per core subprocess
@@ -92,22 +93,38 @@ pub(crate) fn generate_chain_with_merges(
     process: &SupportedProcess,
     model: &UFOModel,
 ) -> Result<(Vec<DiagramSet>, Vec<Merge>), DiagramError> {
-    let mut merges = Merges(Some(Vec::new()));
+    let mut dropped = Vec::new();
+    let mut collect = |particles_in: &[String],
+                       particles_out: &[String],
+                       polarizations: &[Option<Vec<i32>>],
+                       kept: &Diagram,
+                       merged: &Diagram| {
+        dropped.push(Merge {
+            particles_in: particles_in.to_vec(),
+            particles_out: particles_out.to_vec(),
+            polarizations: polarizations.to_vec(),
+            kept: kept.clone(),
+            merged: merged.clone(),
+        });
+    };
     let position = LinePosition {
         line: 1,
         lines: 1,
         diagrams_before: 0,
     };
-    let sets = chain_sets(process, ChainNode(0), model, position, &mut merges)?;
-    Ok((
-        sets.into_iter().map(|s| s.set).collect(),
-        merges.0.unwrap_or_default(),
-    ))
+    let sets = chain_sets(
+        process,
+        ChainNode(0),
+        model,
+        position,
+        &mut Merges(Some(&mut collect)),
+    )?;
+    Ok((sets.into_iter().map(|s| s.set).collect(), dropped))
 }
 
 /// A stitched diagram dropped because its graph is one already kept, with the
 /// subprocess both belong to.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) struct Merge {
     pub(crate) particles_in: Vec<String>,
     pub(crate) particles_out: Vec<String>,
@@ -116,13 +133,31 @@ pub(crate) struct Merge {
     pub(crate) merged: Diagram,
 }
 
-/// Where dropped stitched diagrams are collected, when anything asks for them.
-struct Merges(Option<Vec<Merge>>);
+/// Told of each stitched diagram dropped as a second way to reach one already kept:
+/// the subprocess's incoming particles, outgoing particles and polarizations, then the
+/// kept diagram and the dropped one.
+type OnMerge<'a> = dyn FnMut(&[String], &[String], &[Option<Vec<i32>>], &Diagram, &Diagram) + 'a;
 
-impl Merges {
-    fn record(&mut self, merge: impl FnOnce() -> Merge) {
-        if let Some(out) = &mut self.0 {
-            out.push(merge());
+/// Where dropped stitched diagrams are reported, when anything asks for them.
+struct Merges<'a>(Option<&'a mut OnMerge<'a>>);
+
+impl Merges<'_> {
+    fn record(
+        &mut self,
+        core: &DiagramSet,
+        particles_out: &[String],
+        polarizations: &[Option<Vec<i32>>],
+        kept: &Diagram,
+        merged: &Diagram,
+    ) {
+        if let Some(on_merge) = &mut self.0 {
+            on_merge(
+                &core.particles_in,
+                particles_out,
+                polarizations,
+                kept,
+                merged,
+            );
         }
     }
 }
@@ -302,10 +337,7 @@ fn chain_sets(
 /// (`HelasMatrixElement.insert_decay_chains`, `helas_objects.py:3986`).
 fn within_orders(diagram: &Diagram, bounds: &[AmplitudeOrder], model: &UFOModel) -> bool {
     let orders = diagram.coupling_orders(model);
-    let weighted: i64 = orders
-        .iter()
-        .map(|(name, &n)| n * model.order_hierarchy.get(name).copied().unwrap_or(0) as i64)
-        .sum();
+    let weighted = order_weight(&orders, &model.order_hierarchy);
     bounds.iter().all(|b| {
         let have = if b.name == "WEIGHTED" {
             weighted
@@ -502,13 +534,7 @@ fn stitch_set(
                                 particles_out.join(" ")
                             ));
                         }
-                        merges.record(|| Merge {
-                            particles_in: core.particles_in.clone(),
-                            particles_out: particles_out.clone(),
-                            polarizations: polarizations.clone(),
-                            kept: diagrams[*kept].clone(),
-                            merged: d.clone(),
-                        });
+                        merges.record(core, &particles_out, &polarizations, &diagrams[*kept], &d);
                     }
                 }
             }
@@ -745,25 +771,21 @@ fn slot_symmetric_key(diagram: &Diagram, model: &UFOModel) -> CanonicalDiagram {
     d.canonical(model)
 }
 
-/// The lowest-numbered external leg on the far side of `ray`.
+/// The lowest-numbered external leg on the far side of `ray`: the leg itself, or the
+/// lowest leg on the side of the propagator at its other endpoint.
 fn lowest_leg_beyond(d: &Diagram, ray: Ray) -> usize {
-    let mut lowest = usize::MAX;
-    let mut stack = vec![ray];
-    while let Some(ray) = stack.pop() {
-        match ray {
-            Ray::Leg(l) => lowest = lowest.min(l.0),
-            Ray::Prop { prop, end } => {
-                let (next, _) = d.props[prop.0].endpoints[1 - end];
-                stack.extend(
-                    d.vertices[next.0]
-                        .rays
-                        .iter()
-                        .filter(|r| !matches!(r, Ray::Prop { prop: p, .. } if *p == prop)),
-                );
-            }
+    match ray {
+        Ray::Leg(l) => l.0,
+        Ray::Prop { prop, end } => {
+            // `legs_on_start_side` marks the side at `endpoints[0]`; the far side of a ray
+            // at `endpoints[end]` is the one at `endpoints[1 - end]`.
+            let far_is_start = end == 1;
+            d.legs_on_start_side(prop)
+                .iter()
+                .position(|&on_start| on_start == far_is_start)
+                .unwrap_or(usize::MAX)
         }
     }
-    lowest
 }
 
 /// `diagram` with its final-state legs relabelled, final-state position `i` moving to

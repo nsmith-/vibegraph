@@ -205,7 +205,14 @@ mod tests {
         }
         let two_args = "from object_library import Function\nsec = Function(name = 'sec', \
                         arguments = ('z','w'), expression = '1./cmath.cos(z)')\n";
-        assert!(FunctionLibrary::parse(two_args).is_err());
+        assert!(
+            matches!(
+                FunctionLibrary::parse(two_args),
+                Err(FunctionLibraryError::UnknownDefinition { ref name, .. }) if name == "sec"
+            ),
+            "{:?}",
+            FunctionLibrary::parse(two_args).map(|_| ())
+        );
     }
 
     #[test]

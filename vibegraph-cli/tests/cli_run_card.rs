@@ -249,21 +249,22 @@ fn the_table_lists_every_parameter() {
         assert!(!p["note"].as_str().unwrap().is_empty(), "{p}");
     }
     let by_name = |n: &str| parameters.iter().find(|p| p["name"] == n).unwrap();
-    assert_eq!(by_name("ptj").status_of(), "honoured");
-    assert_eq!(by_name("ptj1min").status_of(), "honoured");
-    assert_eq!(by_name("ptl4max").status_of(), "honoured");
-    assert_eq!(by_name("misset").status_of(), "refused");
+    let status_of = |n: &str| by_name(n)["status"].as_str().unwrap().to_string();
+    assert_eq!(status_of("ptj"), "honoured");
+    assert_eq!(status_of("ptj1min"), "honoured");
+    assert_eq!(status_of("ptl4max"), "honoured");
+    assert_eq!(status_of("misset"), "refused");
     assert!(by_name("misset")["refused_values"]
         .as_str()
         .unwrap()
         .contains("at or below 0"));
-    assert_eq!(by_name("cutuse").status_of(), "honoured");
+    assert_eq!(status_of("cutuse"), "honoured");
     assert!(by_name("cutuse")["refused_values"]
         .as_str()
         .unwrap()
         .contains("ptj1min"));
-    assert_eq!(by_name("nb_proton1").status_of(), "refused");
-    assert_eq!(by_name("iseed").status_of(), "honoured");
+    assert_eq!(status_of("nb_proton1"), "refused");
+    assert_eq!(status_of("iseed"), "honoured");
     assert!(!result["version"].as_str().unwrap().is_empty());
 
     let text = common::vibegraph(tmp.path(), tmp.path())
@@ -275,16 +276,6 @@ fn the_table_lists_every_parameter() {
     assert_eq!(printed["parameters"], result["parameters"]);
 }
 
-trait StatusOf {
-    fn status_of(&self) -> &str;
-}
-
-impl StatusOf for Value {
-    fn status_of(&self) -> &str {
-        self["status"].as_str().unwrap()
-    }
-}
-
 /// The command needs something to read, and the table takes no card.
 #[test]
 fn the_arguments_are_checked() {
@@ -294,11 +285,21 @@ fn the_arguments_are_checked() {
         .output()
         .unwrap();
     assert!(!none.status.success());
+    assert!(
+        common::stderr_of(&none).contains("the following required arguments were not provided"),
+        "{}",
+        common::stderr_of(&none)
+    );
     let both = common::vibegraph(tmp.path(), tmp.path())
         .args(["run-card", "--table", "run_card.dat"])
         .output()
         .unwrap();
     assert!(!both.status.success());
+    assert!(
+        common::stderr_of(&both).contains("the argument '--table' cannot be used with"),
+        "{}",
+        common::stderr_of(&both)
+    );
     let missing = common::vibegraph(tmp.path(), tmp.path())
         .args(["run-card", "absent.dat"])
         .output()

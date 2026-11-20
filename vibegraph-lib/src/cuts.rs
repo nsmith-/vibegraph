@@ -1066,6 +1066,107 @@ fn rank_min_name(c: char, n: usize) -> &'static str {
     }
 }
 
+/// The lepton term of MadEvent's lower limit on ŝ (`setcuts.f:632-675`) without
+/// its `misset²` argument, `max(smin_p², smin_m, mmnl², ptllmin²)`, or `None`
+/// when the subprocess has no charged lepton among the legs that loop reads (every
+/// final-state leg but the last).
+///
+/// The arithmetic is the Fortran's, leg by leg in process order: each lepton adds
+/// its transverse floor to `smin_p` (the cut ones the larger of `el`, `ptl` and,
+/// by position, `xptl` and the `ptl<n>min`; the uncut ones only the rank
+/// minima), subtracts its mass squared from `smin_m`, and the cut ones add
+/// `mmll²` per pair.
+fn lepton_floor_term(rc: &RunCard, legs: &[ExternalLeg], infos: &[LegInfo]) -> Option<f64> {
+    let counted = infos.split_last().map_or(&[][..], |(_, rest)| rest);
+    let rank_min = |from: usize| {
+        (from..=4)
+            .map(|n| rc.float(&format!("ptl{n}min")))
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let (el, ptl, xptl) = (rc.float("el"), rc.float("ptl"), rc.float("xptl"));
+    let (mut smin_p, mut smin_m) = (0.0_f64, 0.0_f64);
+    let (mut nb_l, mut nb_nocut) = (0usize, 0usize);
+    for info in counted.iter().filter(|i| i.letter == Some(Letter::Lepton)) {
+        nb_l += 1;
+        smin_m -= legs[info.idx].mass.powi(2);
+        let floor = if info.do_cuts {
+            match nb_l {
+                1 => el.max(ptl).max(xptl).max(0.0).max(rank_min(1)),
+                2 | 3 => el.max(ptl).max(0.0).max(rank_min(nb_l)),
+                4 => el.max(ptl).max(rc.float("ptl4min")).max(0.0),
+                _ => el.max(ptl).max(0.0),
+            }
+        } else {
+            nb_nocut += 1;
+            match nb_l {
+                1 => xptl.max(0.0).max(rank_min(1)),
+                2 | 3 => rank_min(nb_l).max(0.0),
+                4 => rc.float("ptl4min").max(0.0),
+                _ => 0.0,
+            }
+        };
+        smin_p += floor;
+    }
+    if nb_l == 0 {
+        return None;
+    }
+    let cut = (nb_l - nb_nocut) as f64;
+    if cut > 0.0 {
+        smin_m += cut * (cut - 1.0) / 2.0 * rc.float("mmll").powi(2);
+    }
+    Some(
+        smin_p
+            .powi(2)
+            .max(smin_m)
+            .max(rc.float("mmnl").powi(2))
+            .max(rc.float("ptllmin").powi(2)),
+    )
+}
+
+/// Refuse a negative `misset` on a subprocess where `setcuts.f:675` makes
+/// `misset²` the lepton term of MadEvent's lower limit on ŝ.
+///
+/// `smin = max(smin_p², smin_m, mmnl², ptllmin², misset²)` is added, with the
+/// other classes' terms, to the limit `myamp.f:569-570` makes the lower edge of
+/// the `τ` draw, so at `misset = -1` (the older template's off value) a process
+/// whose lepton cuts all sit below 1 GeV has its limit raised by up to 1 GeV²
+/// over what the cuts allow. The raise removes whatever phase space the other
+/// cuts leave in that interval, and where they leave some (a two-jet cut whose
+/// `(Σ pT)²` is the limit, a lepton-only process with no cut at all) the cross
+/// section differs from the reference's by that sliver. The limit this crate
+/// floors `τ` at is the largest bound the cuts imply, never above the cuts'
+/// support, and reproducing MadEvent's would mean its whole class-by-class sum
+/// rather than one more argument of a max, so the card is refused where the
+/// term is the maximum.
+///
+/// Where a lepton cut puts any other argument above `misset²` the term drops out
+/// of the max and the negative value is inert. The default `ptl = 10` is one.
+fn refuse_misset_floor(
+    rc: &RunCard,
+    legs: &[ExternalLeg],
+    infos: &[LegInfo],
+) -> Result<(), CutError> {
+    let misset = rc.float("misset");
+    if misset >= 0.0 {
+        return Ok(());
+    }
+    match lepton_floor_term(rc, legs, infos) {
+        Some(term) if misset * misset > term => Err(CutError::ValueRefused {
+            field: "misset",
+            value: misset.to_string(),
+            reason: format!(
+                "setcuts.f:675 squares it into the lepton term of MadEvent's lower limit on \
+                 ŝ, and on this process the lepton cuts leave that term at {term} GeV², below \
+                 misset² = {} GeV², so the limit is raised above what the cuts imply and can \
+                 remove phase space they allow, which is not reproduced; set misset = 0, or \
+                 raise a lepton cut so that its term exceeds misset²",
+                misset * misset
+            ),
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// Refuse the card on which MadEvent's `τ` floor from a ranked class can rise
 /// above the cuts.
 ///
@@ -1240,10 +1341,9 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
 /// event when `pT(miss) < misset`, never true at a value at or below zero, and
 /// `setcuts.f:776` reports it only when `> 0`. `ptheavy` is guarded `> 0` at
 /// `cuts.f:390` and `setcuts.f:781`. The one other read of `misset`,
-/// `setcuts.f:675`, squares it into the lower limit on ŝ of a process with a
-/// charged lepton; at a negative value that is a floor of `misset²`, 1 GeV² at
-/// the template's `-1`, below every ŝ a lepton pT or pair-mass cut already
-/// leaves, and with those cuts off it removes only ŝ < `misset²`.
+/// `setcuts.f:675`, squares it into the lepton term of MadEvent's lower limit
+/// on ŝ, which is not inert at a negative value: [`refuse_misset_floor`] names
+/// the cards where `misset²` is that term's maximum and refuses them.
 const NONPOSITIVE_IS_OFF: &[&str] = &["xptj", "xptb", "xpta", "xptl", "misset", "ptheavy"];
 
 /// `ht2max`–`ht4max`: an upper bound on the summed pT of the two, three or four
@@ -1802,6 +1902,7 @@ impl Cuts {
             })
             .collect();
         pdg_pt_min.refuse_smin_overcount(&infos)?;
+        refuse_misset_floor(rc, legs, &infos)?;
         let finals: Vec<usize> = infos.iter().map(|i| i.idx).collect();
         let bwcutoff = rc.float("bwcutoff");
         let windows = decay_windows(forced, &finals, bwcutoff);
@@ -2606,7 +2707,7 @@ pub(crate) fn unimplemented_cut_names() -> &'static [&'static str] {
     UNIMPLEMENTED_CUTS
 }
 
-fn describe(v: &ParamValue) -> String {
+pub(crate) fn describe(v: &ParamValue) -> String {
     match v {
         ParamValue::Float(x) => x.to_string(),
         ParamValue::Int(i) => i.to_string(),
@@ -3629,6 +3730,115 @@ mod tests {
     fn unimplemented_cut_at_default_is_ok() {
         // ht2min at its default (0) does not trip the detector.
         assert!(Cuts::compile(&card("0 = ht2min\n"), &dy_legs()).is_ok());
+    }
+
+    /// The legs of `outgoing` with the masses `mass` gives each.
+    fn massive_legs(incoming: [i32; 2], outgoing: &[(i32, f64)]) -> Vec<ExternalLeg> {
+        incoming
+            .iter()
+            .map(|&p| ExternalLeg::incoming(p, 0.0))
+            .chain(outgoing.iter().map(|&(p, m)| ExternalLeg::outgoing(p, m)))
+            .collect()
+    }
+
+    const TAU: f64 = 1.777;
+
+    /// The lepton term without `misset²` is the one `setcuts.f:675` computes:
+    /// the loop at `:632` stops one leg short of the last, so a lepton pair
+    /// counts its first lepton alone. The values are the `smin` MadEvent printed
+    /// for the banked runs below, each the maximum of the lepton term, the
+    /// production threshold and `dsqrt_shat²`, and here the lepton term.
+    ///
+    /// The oracle shares the leg-by-leg arithmetic with the code under test, so it
+    /// cannot tell a card whose other classes (jets, photons) add to `smin` from
+    /// one that does not: each run has only leptons.
+    #[test]
+    fn the_lepton_floor_term_is_the_smin_madevent_prints() {
+        let lhc = |extra: &str| card(&format!("{LHC}{extra}"));
+        let term = |text: &str, legs: &[ExternalLeg]| {
+            let rc = lhc(text);
+            let infos = lepton_infos(&rc, legs);
+            lepton_floor_term(&rc, legs, &infos)
+        };
+        // `pp_to_ll_qcd0` (`SubProcesses/P1_qq_ll/G*/run_01_log.txt`):
+        // `Define smin to 100`, at ptl = 10.
+        assert_eq!(term("", &dy_legs()), Some(100.0));
+        // `bbx_to_tapta_ckm_no_b_mass`: `Define smin to 100`, massive taus.
+        let tautau = massive_legs([5, -5], &[(15, TAU), (-15, TAU)]);
+        assert_eq!(term("", &tautau), Some(100.0));
+        // `ee_to_mumu_tata_qcd0_control_20260801`: `Define smin to 900`, the
+        // first three of four leptons at ptl = 10.
+        let four = massive_legs([11, -11], &[(13, 0.0), (-13, 0.0), (15, TAU), (-15, TAU)]);
+        assert_eq!(term("", &four), Some(900.0));
+        // The branches the banked runs do not take, from the Fortran.
+        assert_eq!(term("0 = ptl\n", &dy_legs()), Some(0.0));
+        assert_eq!(term("3 = ptl\n2 = el\n", &four), Some(81.0));
+        assert_eq!(
+            term("0 = ptl\n50 = mmll\n", &four),
+            Some(3.0 * 2500.0 - TAU * TAU)
+        );
+        assert_eq!(term("0 = ptl\n20 = ptl1min\n", &dy_legs()), Some(400.0));
+        // One counted lepton reads the largest of the four rank minima.
+        assert_eq!(term("0 = ptl\n20 = ptl2min\n", &dy_legs()), Some(400.0));
+        assert_eq!(term("0 = ptl\n7 = mmnl\n", &dy_legs()), Some(49.0));
+        assert_eq!(term("0 = ptl\n-6 = ptllmin\n", &dy_legs()), Some(36.0));
+        // No charged lepton before the last leg, no term.
+        assert_eq!(term("", &legs([2, -2], &[21, 21])), None);
+        assert_eq!(term("", &legs([2, 1], &[21, 11])), None);
+    }
+
+    /// The leg classification `Cuts::compile` hands the floor.
+    fn lepton_infos(rc: &RunCard, legs: &[ExternalLeg]) -> Vec<LegInfo> {
+        legs.iter()
+            .enumerate()
+            .filter(|(_, l)| l.is_final)
+            .map(|(idx, l)| classify(idx, l, rc.maxjetflavor))
+            .collect()
+    }
+
+    /// At `misset = -1` the term is refused exactly where `misset²` is the
+    /// maximum of the lepton term: a tie (`ptl = 1` on one counted lepton)
+    /// leaves the floor where it was, and every card at or above zero, every
+    /// card with a lepton cut of a GeV or more, and every process with no lepton
+    /// before its last leg compiles as before.
+    #[test]
+    fn a_negative_misset_is_refused_where_its_square_is_the_lepton_floor() {
+        let compile = |extra: &str, legs: &[ExternalLeg]| Cuts::compile(&lhc(extra), legs);
+        let refused = |extra: &str, legs: &[ExternalLeg]| {
+            matches!(
+                compile(extra, legs),
+                Err(CutError::ValueRefused {
+                    field: "misset",
+                    ..
+                })
+            )
+        };
+        let dy = dy_legs();
+        // Where the term is the maximum.
+        assert!(refused("-1 = misset\n0 = ptl\n", &dy));
+        assert!(refused("-1 = misset\n0.9 = ptl\n", &dy));
+        assert!(refused("-2 = misset\n1.5 = ptl\n", &dy));
+        // Where something else is, or it ties.
+        assert!(compile("-1 = misset\n", &dy).is_ok());
+        assert!(compile("-1 = misset\n1 = ptl\n", &dy).is_ok());
+        // `mmll` pairs only the counted leptons, and the loop at `:632` counts
+        // the first of two.
+        assert!(refused("-1 = misset\n0 = ptl\n50 = mmll\n", &dy));
+        let four = massive_legs([11, -11], &[(13, 0.0), (-13, 0.0), (15, TAU), (-15, TAU)]);
+        assert!(compile("-1 = misset\n0 = ptl\n50 = mmll\n", &four).is_ok());
+        assert!(compile("-1 = misset\n0 = ptl\n1.01 = mmnl\n", &dy).is_ok());
+        assert!(compile("-1 = misset\n0 = ptl\n3 = ptl1min\n", &dy).is_ok());
+        assert!(compile("-1 = misset\n0 = ptl\n2 = ptllmin\n", &dy).is_ok());
+        // Off at zero, and where there is no lepton term.
+        assert!(compile("0 = misset\n0 = ptl\n", &dy).is_ok());
+        assert!(compile("-1 = misset\n0 = ptl\n", &legs([2, -2], &[21, 21])).is_ok());
+        assert!(compile("-1 = misset\n0 = ptl\n", &legs([2, 1], &[21, 11])).is_ok());
+        // The refusal names the term and how to leave it.
+        let message = compile("-1 = misset\n0 = ptl\n", &dy)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("setcuts.f:675"), "{message}");
+        assert!(message.contains("set misset = 0"), "{message}");
     }
 
     #[test]
@@ -5211,6 +5421,42 @@ mod tests {
         ]
     }
 
+    /// Whether a lepton comes before the last final-state leg, the legs the
+    /// lepton term of the ŝ floor reads.
+    fn has_counted_lepton(set: &[ExternalLeg]) -> bool {
+        let finals: Vec<&ExternalLeg> = set.iter().filter(|l| l.is_final).collect();
+        finals[..finals.len() - 1]
+            .iter()
+            .any(|l| matches!(l.pdg.abs(), 11 | 13 | 15))
+    }
+
+    /// `value = name` passes detection and compiles to the default cuts on every
+    /// leg set of [`xpt_leg_sets`]. The one exception is `misset = -100`: its
+    /// square, 10⁴ GeV², exceeds the default lepton term, so a set with a
+    /// counted lepton is refused by name and any other set compiles as default.
+    fn assert_compiles_to_default(name: &str, value: &str) {
+        let rc = lhc(&format!("{value} = {name}\n"));
+        assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
+        for set in xpt_leg_sets() {
+            let compiled = Cuts::compile(&rc, &set);
+            if name == "misset" && value == "-100" && has_counted_lepton(&set) {
+                assert!(
+                    matches!(
+                        compiled,
+                        Err(CutError::ValueRefused {
+                            field: "misset",
+                            ..
+                        })
+                    ),
+                    "{name} = {value}: {compiled:?}"
+                );
+                continue;
+            }
+            let default = Cuts::compile(&lhc(""), &set).unwrap();
+            assert_eq!(compiled.unwrap(), default, "{name} = {value}");
+        }
+    }
+
     /// `cuts.f` reads each `xpt*` behind `> 0` and `setcuts.f` through
     /// `max(·, 0)`, so a value at or below zero is the default: it passes
     /// detection and compiles to the default's filter on every class.
@@ -5218,13 +5464,7 @@ mod tests {
     fn a_nonpositive_xpt_compiles_to_the_default_cuts() {
         for name in NONPOSITIVE_IS_OFF {
             for value in ["-1", "0", "-0.5", "-100"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set).unwrap();
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled, default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }
@@ -5534,13 +5774,7 @@ mod tests {
                 "{name}"
             );
             for value in ["-1", "-0.5", "-100"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set).unwrap();
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled, default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }
@@ -5564,13 +5798,7 @@ mod tests {
     fn an_unbindable_or_negative_ht_maximum_compiles_to_the_default_cuts() {
         for name in HT_MAXIMA {
             for value in ["100000", "13000", "-1", "-7"] {
-                let rc = lhc(&format!("{value} = {name}\n"));
-                assert!(detect_unimplemented(&rc).is_ok(), "{name} = {value}");
-                for set in xpt_leg_sets() {
-                    let compiled = Cuts::compile(&rc, &set).unwrap();
-                    let default = Cuts::compile(&lhc(""), &set).unwrap();
-                    assert_eq!(compiled, default, "{name} = {value}");
-                }
+                assert_compiles_to_default(name, value);
             }
         }
     }

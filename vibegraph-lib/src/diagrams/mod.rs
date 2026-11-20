@@ -853,58 +853,14 @@ fn generate_undecayed(
     };
 
     if auto_weighted {
-        let search = &model.weighted_search;
         let leg_ids: Vec<Vec<i64>> = checked.iter().map(|(_, ids, _)| ids.clone()).collect();
-        let start = i64::from(search.minimum_weighted(&leg_ids, &expanded.schannels.required));
-        let cap = search.maximum_weighted(n_ext);
-
-        // `find_optimal_process_orders`: start at the model's estimate for the legs
-        // (`get_minimum_WEIGHTED`), raise the bound by one (:2111) while it is
-        // below the cap (:2013) and no trial has a diagram, then generate at
-        // the bound the loop stopped at, `max(start, cap)` (:2115, :1683-1686);
-        // its diagrams, if any, are the result.
-        let mut w = start;
-        if gluons_leave_trials(&expanded, model) {
-            let line = process.to_string();
-            let mut trials = GluonFreeTrials::new(&line, &expanded, model);
-            while w < cap {
-                if trials.any_diagram(w)? {
-                    debug!("lowest WEIGHTED order with a gluon-free trial diagram: {w}");
-                    break;
-                }
-                debug!("no gluon-free trial diagram at WEIGHTED {w}, raising the bound");
-                w += 1;
-            }
-            return generate_sets_inner(
-                &expanded,
-                model,
-                Some(w as usize),
-                &cached_topologies,
-                Some(position),
-            );
-        }
-        while w < cap {
-            let sets = generate_sets_inner(
-                &expanded,
-                model,
-                Some(w as usize),
-                &cached_topologies,
-                Some(position),
-            )?;
-            if sets.iter().any(|s| !s.diagrams.is_empty()) {
-                debug!("lowest WEIGHTED order with diagrams: {w}");
-                return Ok(sets);
-            }
-            debug!("no diagrams at WEIGHTED {w}, raising the bound");
-            w += 1;
-        }
-        debug!("no diagrams below the WEIGHTED cap {cap}; generating at {w}");
-        generate_sets_inner(
+        search_weighted(
+            &process.to_string(),
             &expanded,
             model,
-            Some(w as usize),
+            &leg_ids,
             &cached_topologies,
-            Some(position),
+            position,
         )
     } else {
         generate_sets_inner(
@@ -915,6 +871,71 @@ fn generate_undecayed(
             Some(position),
         )
     }
+}
+
+/// MadGraph's automatic WEIGHTED search (`find_optimal_process_orders`) for
+/// `expanded`, whose legs' PDG codes are `leg_ids`: the diagram sets at the
+/// bound the search settles on. `process` names the process in a refusal.
+fn search_weighted(
+    process: &str,
+    expanded: &ExpandedProcess,
+    model: &UFOModel,
+    leg_ids: &[Vec<i64>],
+    cached_topologies: &[Topology],
+    position: LinePosition,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    let search = &model.weighted_search;
+    let start = i64::from(search.minimum_weighted(leg_ids, &expanded.schannels.required));
+    let n_ext = expanded.initial.len() + expanded.final_state.len();
+    let cap = search.maximum_weighted(n_ext);
+
+    // `find_optimal_process_orders`: start at the model's estimate for the legs
+    // (`get_minimum_WEIGHTED`), raise the bound by one (:2111) while it is
+    // below the cap (:2013) and no trial has a diagram, then generate at
+    // the bound the loop stopped at, `max(start, cap)` (:2115, :1683-1686);
+    // its diagrams, if any, are the result.
+    let mut w = start;
+    if gluons_leave_trials(expanded, model) {
+        let mut trials = GluonFreeTrials::new(process, expanded, model);
+        while w < cap {
+            if trials.any_diagram(w)? {
+                debug!("lowest WEIGHTED order with a gluon-free trial diagram: {w}");
+                break;
+            }
+            debug!("no gluon-free trial diagram at WEIGHTED {w}, raising the bound");
+            w += 1;
+        }
+        return generate_sets_inner(
+            expanded,
+            model,
+            Some(w as usize),
+            cached_topologies,
+            Some(position),
+        );
+    }
+    while w < cap {
+        let sets = generate_sets_inner(
+            expanded,
+            model,
+            Some(w as usize),
+            cached_topologies,
+            Some(position),
+        )?;
+        if sets.iter().any(|s| !s.diagrams.is_empty()) {
+            debug!("lowest WEIGHTED order with diagrams: {w}");
+            return Ok(sets);
+        }
+        debug!("no diagrams at WEIGHTED {w}, raising the bound");
+        w += 1;
+    }
+    debug!("no diagrams below the WEIGHTED cap {cap}; generating at {w}");
+    generate_sets_inner(
+        expanded,
+        model,
+        Some(w as usize),
+        cached_topologies,
+        Some(position),
+    )
 }
 
 /// The PDG code MadGraph's automatic WEIGHTED search removes from the final state
