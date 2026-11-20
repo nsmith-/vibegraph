@@ -296,3 +296,34 @@ and this record has merged main.
 committed under the harness identity, not Nick's. It was already pushed and is
 not rewritten. When squash-merging this PR, drop the `Co-authored-by` line that
 GitHub adds for it.
+
+## 2026-11-20: PR 13 and the release-candidate head
+
+**PR 13 (#161), merged as acd0981.** The sprint session made this change
+directly, at the manager's go.
+- `ENUMERATION_VERSION` goes from 2 to 3.
+- The known-answer set gains `h > z z, z > e+ e-, z > e+ e-`: v0.2.1
+  enumerates 4 diagrams for it, main 2.
+- The refusal test pins version 2.
+
+Checks on the PR head:
+- The v0.2.1 diagram and integrate artifacts are refused by name, exit 1, and
+  write no event file.
+- The PR head's own artifact integrates to 26.27 ± 0.13 fb, the same as main's.
+- With the slot-symmetric reordering disabled, the known-answer test fails on
+  the `h > z z` card alone.
+- 2241 passed, 0 failed, and CI is all-pass including banked.
+
+Other artifact types checked: none needed a bump (the #161 description has the
+details).
+
+This record deletes `enumeration-version-unbumped-old-artifacts-accepted`. The
+release notes' "Upgrading" section, which assumed this PR, now holds.
+
+**Card 244 (manager, 2026-11-20).** Closed. MadGraph's σ is 0 too, so
+vibegraph's σ = 0 is parity, not a bug, and the hold on the release candidate
+is lifted.
+
+**Release-candidate head:** this record, with main acd0981 merged. It goes to
+simshop's SMEFT re-scan, then the CERN campaign. There is no tag until both
+pass.
