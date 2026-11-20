@@ -60,7 +60,16 @@ use crate::ufo::{ParsedModel, UfoError};
 /// `2`: the relative Fermi sign orders each fermion pair without reading leg
 /// numbers (`Diagram::fermion_pairing_sign`), which moves `sign` on every
 /// set where two pairings of the same legs interfere.
-pub const ENUMERATION_VERSION: u32 = 2;
+///
+/// `3`: decay-chain stitching keys each stitched diagram slot-symmetrically
+/// (#150). When identical decays sit on a vertex's interchangeable slots
+/// (`h01 > a01 a01, a01 > b b~, a01 > b b~`), version 2 kept every diagram
+/// twice, so its sets carry |M|² exactly 4× too large. Coupling orders are
+/// also spent vertex by vertex in MadGraph's reduction order, and the
+/// automatic `WEIGHTED` search trials each subprocess with its final-state
+/// gluons removed (#141), which can change which diagrams an order-limited
+/// card keeps.
+pub const ENUMERATION_VERSION: u32 = 3;
 
 /// The schema version of a [`DiagramArtifact`].
 ///
@@ -622,13 +631,18 @@ mod tests {
     /// every digest check: the sets digest to what they hold, whatever
     /// enumeration computed them.
     ///
+    /// Version 2 is what v0.2.1 wrote, with repeated identical decays stitched
+    /// twice; it stays in the list whatever the current version is.
+    ///
     /// Cannot detect an enumeration change made without bumping
     /// [`ENUMERATION_VERSION`]; the known-answer test is what sees that.
     #[test]
     fn another_enumeration_version_is_refused_by_name() {
         let dir = scratch();
         let artifact = enumerate(DECAY_CHAIN, EnumerationPool::Serial);
-        for version in [ENUMERATION_VERSION - 1, ENUMERATION_VERSION + 1] {
+        let mut versions = vec![2, ENUMERATION_VERSION - 1, ENUMERATION_VERSION + 1];
+        versions.dedup();
+        for version in versions {
             let mut other = artifact.clone();
             other.enumeration_version = version;
             let path = dir.path().join(format!("e{version}.bin.zst"));
@@ -670,7 +684,9 @@ mod tests {
     /// mirrored sets (`p p > z j`), a polarized leg, and a four-fermion
     /// contact vertex with two fermion-flow groups in one interaction
     /// (SMEFTsim's four-lepton operators, `e+ e- > e+ e-`), a nested decay
-    /// (`t > w+ b, w+ > e+ ve`), and an on-shell s-channel veto (`$ z`). Every
+    /// (`t > w+ b, w+ > e+ ve`), identical decays on one vertex's
+    /// interchangeable slots (`h > z z`, both to `e+ e-`, which version 2
+    /// stitched twice), and an on-shell s-channel veto (`$ z`). Every
     /// tree-level
     /// symmetry factor is 1: each internal vertex of a tree is fixed by the
     /// external legs beneath it, so the only automorphism fixing the legs is
@@ -715,6 +731,12 @@ mod tests {
         ),
         (
             KnownModel::Sm,
+            "generate h > z z, z > e+ e-, z > e+ e-\n",
+            "ca96b2ffd51940b444d30876eb965210780e8f967c9c524e2b1c466c7f540758",
+            "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+        ),
+        (
+            KnownModel::Sm,
             "generate e+ e- > mu+ mu- a $ z\n",
             "44f701aef0e6a4edfa57095ada1bb4826a002d1aaa0b0b0552a41cf1bab87d4c",
             "81ea234ccbc5b4c33146bd6c833adee75a2293f52c900a3fb8fa9842004492b5",
@@ -723,7 +745,7 @@ mod tests {
 
     /// The [`ENUMERATION_VERSION`] the digests of [`KNOWN_ANSWERS`] were
     /// recorded at.
-    const PINNED_ENUMERATION_VERSION: u32 = 2;
+    const PINNED_ENUMERATION_VERSION: u32 = 3;
 
     #[derive(Clone, Copy, Debug)]
     enum KnownModel {
@@ -768,6 +790,7 @@ mod tests {
         let mut mismatches = Vec::new();
         let mut signs = std::collections::BTreeSet::new();
         let mut stitched_identical = false;
+        let mut interchangeable_decays = false;
         let mut contact_flow_groups = std::collections::BTreeSet::new();
         let mut polarized = false;
         let mut mirrored = false;
@@ -804,6 +827,26 @@ mod tests {
                     stitched_identical |= repeated && diagram.provenance.decays.len() > 1;
                     nested |= diagram.provenance.decays.len() > 2;
                     for vertex in &diagram.vertices {
+                        let decayed: Vec<_> = vertex
+                            .rays
+                            .iter()
+                            .filter_map(|r| match r {
+                                crate::diagrams::diagram::Ray::Prop { prop, .. }
+                                    if diagram
+                                        .provenance
+                                        .decays
+                                        .iter()
+                                        .any(|d| d.prop == *prop) =>
+                                {
+                                    Some(diagram.props[prop.0].particle)
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        interchangeable_decays |= decayed
+                            .iter()
+                            .enumerate()
+                            .any(|(i, p)| decayed[i + 1..].contains(p));
                         let fermions = vertex
                             .rays
                             .iter()
@@ -851,6 +894,10 @@ mod tests {
             contact_flow_groups,
             [0, 1].into(),
             "the card set reaches a four-fermion contact in both flow groups"
+        );
+        assert!(
+            interchangeable_decays,
+            "the card set reaches identical decays on one vertex's interchangeable slots"
         );
         assert!(polarized, "the card set reaches a polarized leg");
         assert!(mirrored, "the card set reaches a mirrored set");
