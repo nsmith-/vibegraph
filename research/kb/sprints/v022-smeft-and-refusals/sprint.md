@@ -29,10 +29,24 @@ simshop. It is done when:
   inferred) on the PR's head;
 - every banked σ line is unchanged: bit for bit where the change cannot reach
   it, within error where it can;
-- simshop's SMEFT re-scan at the release candidate leaves no SMEFTsim v3 or v2
-  probe refused except for a named, out-of-scope reason;
-- the CERN host's campaign at the release candidate shows no panics and no
-  unexplained ok → not-ok (`full-cms-campaign-after-v02-cut`).
+- CI is green on main, banked included;
+- the CERN host's targeted check at the release candidate covers the gridpacks
+  that failed in `v021-1009-s1`, run from a local build of the
+  release-candidate head. It must show no panics, and each case that still
+  fails must be deliberate (a named, intended refusal) or deferred to a filed
+  item.
+
+**Release-gate change (Nick, relayed by the manager, 2026-11-20).** The CERN
+host and simshop run only pre-built binaries. They do not test unreleased code,
+and CI is what prevents regressions. So the gate above replaces two earlier
+criteria, which move to after the tag and run on the released binary:
+- simshop's SMEFT re-scan, which must leave no SMEFTsim v3 or v2 probe refused
+  except for a named, out-of-scope reason;
+- the full 1000-gridpack campaign, which must show no panics and no
+  unexplained ok → not-ok. `full-cms-campaign-after-v02-cut` now closes on
+  that campaign.
+
+A regression either one finds goes to a patch release.
 
 Every PR is based on `main`; none is stacked on another. The toolchain pin
 (#135) merges before the sprint branches are cut. The user tags the release.
@@ -181,5 +195,6 @@ Added at the user's request, 2026-11-17. It is a silent wrong answer, so the har
    merges second merges main in.
 3. Wave 2: PR 5.
 4. A hygiene-dev pass per merged feature PR.
-5. Release candidate: simshop's SMEFT re-scan, the CERN host's campaign, then
-   the tag.
+5. Release candidate: CI on main and the CERN host's targeted check, then the
+   tag. After the tag, on the released binary: the full campaign and simshop's
+   SMEFT re-scan.

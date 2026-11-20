@@ -327,3 +327,29 @@ is lifted.
 **Release-candidate head:** this record, with main acd0981 merged. It goes to
 simshop's SMEFT re-scan, then the CERN campaign. There is no tag until both
 pass.
+
+**Release-gate change (Nick, relayed by the manager, 2026-11-20).** The CERN
+host and simshop run only pre-built binaries.
+
+Before the tag:
+- CI on main, banked included;
+- the CERN host's targeted check of the gridpacks that failed in
+  `v021-1009-s1`. It must show no panics, and each case that still fails must
+  be deliberate or deferred.
+
+After the tag, both on the released binary:
+- the full 1000-gridpack campaign;
+- simshop's SMEFT re-scan.
+
+Regressions either one finds go to a patch release.
+`full-cms-campaign-after-v02-cut` now closes on the post-release campaign.
+`sprint.md`'s exit criteria and dispatch step 5 are amended.
+
+**CERN targeted check started (vibegraph-8a), 2026-11-20 about 20:20.**
+- Built from 400c88f9: `cargo build --release`, sha256 `8f14a47d…039cf3`.
+- The setup pass `v022rc-400c88f9-setup` covers 522 cards, about 10 h
+  serially: on 2026-11-17, 511 were refused, 7 panicked and 4 were errors.
+- The 50 adapted verdict fails are added to the setup pass, run unadapted.
+- Integration at survey settings follows, 5 seeds each, on every card that
+  newly gets past setup, plus g2HDM, ZH 832–838, card 244, HToAATo4B and the
+  27 non-adapted fails.
