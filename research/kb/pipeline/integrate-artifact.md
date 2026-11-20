@@ -224,14 +224,16 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    ray order, the Fermi sign, the symmetry factor and the provenance) and the
    diagram artifact's `ProcessFacts`. The known-answer test
    `enumeration_output_matches_the_pinned_version` pins, at the version, the
-   `diagram_set_digest` and the facts' digest of seven cards: Bhabha
+   `diagram_set_digest` and the facts' digest of eight cards: Bhabha
    scattering (both Fermi signs), `e+ e- > z z, z > mu+ mu-` (a decay chain
    with identical fermions across its decays), `p p > z j, z > e+ e-`
    (several subprocesses, mirrored sets), `u u~ > z{0} g` (a polarized leg)
    and SMEFTsim's `e+ e- > e+ e- NP<=1` under `restrict_vg_c4l` (a
    four-fermion contact vertex in both flow groups of one interaction),
-   `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` (a nested decay) and
-   `e+ e- > mu+ mu- a $ z` (an on-shell s-channel veto). Any
+   `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` (a nested decay),
+   `h > z z, z > e+ e-, z > e+ e-` (identical decays on one vertex's
+   interchangeable slots) and `e+ e- > mu+ mu- a $ z` (an on-shell s-channel
+   veto). Any
    change to that output fails it with the digests to re-pin and the
    instruction to bump the version with them. Removing the line sign from
    conversion (`diagram.rs`) moved three of the five digests then pinned,
@@ -240,8 +242,14 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    symmetry factor is 1 (each internal vertex
    of a tree is fixed by the external legs below it, so a graph automorphism
    fixing the legs is the identity), and the test asserts it.
-   **Blind spot:** a change that moves only cards outside the seven passes
+   **Blind spot:** a change that moves only cards outside the set passes
    the test, and an artifact from before it is then read without complaint.
+   This happened once. Stitching identical decays on interchangeable slots
+   once instead of twice moved no card then pinned, so version 2 shipped in
+   v0.2.2's candidate unbumped, and a v0.2.1 artifact for
+   `p p > w± h01, (h01 > a01 a01, a01 > b b~, a01 > b b~)` integrated to
+   exactly 4× σ without complaint. Version 3 bumps it and adds the `h > z z`
+   card; with the slot-symmetric reordering disabled, that card alone moves.
 3. **The embedded bytes** (on read, `IntegrateArtifact::read_hashed`). The
    embedded model must digest to `model.digest` and the sets to
    `diagram_set_digest`; a file that was edited or corrupted is refused by
