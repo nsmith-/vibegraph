@@ -22,3 +22,9 @@ added `ufo::weighted::order_weight` (the per-interaction value for the
 automatic search's cap and start), with the missing-order rule (counts 0,
 joins no class; MadGraph raises `KeyError`, `base_objects.py:897`, `:1448`)
 stated once there. It is the natural single helper for the other three.
+
+**K-H1 (PR #157):** `diagrams/chain.rs` and `diagrams/reduction.rs` now call
+`order_weight`. Three sites are left: the `weighted_fn` closure in
+`generate_sets_inner`, `NegativeOrders::weighted` in `ufo/topo.rs`, and the
+test-only `weighted` in `stitching.rs`, which panics on a missing order.
+Closing them needs an `order_weight` that works on a diagram view.

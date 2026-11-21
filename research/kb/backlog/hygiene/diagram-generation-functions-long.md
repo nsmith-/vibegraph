@@ -16,3 +16,5 @@ sources:
 R-C.17 names the split points; the other long functions (`glue`, `chain_sets`, `stitch_set`, `polynomial_group`, `plan_subprocess`, `build_feyngraph_model`, `extract_process`) are candidates.
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-C](../../sprints/hygiene/sessions/R-C-report.md).
+
+K-H2 (#160, Found 2): `stitch_set` is now 141 lines, and `proton.rs` `derive_flavor_groups` grew to 268 lines (235 before the vanishing-group change). Extract the per-group assembly and the vanishing report from the latter, and the dedup loop from the former.
