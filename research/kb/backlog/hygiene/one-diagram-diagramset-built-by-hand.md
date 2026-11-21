@@ -20,3 +20,5 @@ several amplitude sessions now rely on makes this the common way to read one
 diagram from production.
 
 `renumbering::single_diagram_amplitudes_at` (PR #30) is the natural home for the shared helper.
+
+K-H2 (#160, Found 3): one more site, `helas/eval/stitching.rs` `merged_stitched_diagrams_have_equal_amplitudes`.

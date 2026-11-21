@@ -22,3 +22,9 @@ The ladders are flat, so it is not budget, and it appears under both fixed
 and dynamical scales. Read the M3 ladder against this list.
 
 Detail: [V1 report, Found 2](../../sprints/sigma-calibration-rerecord/sessions/V1-report.md).
+
+Sprint K evidence (K-C2, 2026-11-18): the DY1j single-leg `ptj` 70–100 card
+reads +0.166% against MadGraph 3.5.7 (pull 3.0 by seed spread), and the
+rank-cut form equals the single-leg form on both sides, so the DY1j rank-cut
+offsets of +0.20–0.28% are this family's offset, not the rank cut
+([K-C2 report](../../sprints/v022-smeft-and-refusals/sessions/K-C2-report.md)).
