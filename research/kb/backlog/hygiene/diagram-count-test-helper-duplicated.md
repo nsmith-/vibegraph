@@ -16,3 +16,6 @@ sources:
 Sites: `vibegraph-lib/tests/toy_models.rs` ~:59, `tests/smeftsim.rs` ~:48,
 `tests/diagrams.rs` ~:7, and `tests/weighted_search.rs`. Found in the
 [weighted-cap hygiene review](../../sprints/weighted-cap/sessions/HY1-report.md).
+
+**K-H1 (PR #157):** `tests/negative_orders.rs` (#141) adds a fifth
+`count`/`try_generate` pair.

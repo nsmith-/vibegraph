@@ -5,7 +5,7 @@ description: "The full 199-gridpack campaign was skipped before the v0.2.0 tag (
 area: validation
 state: open
 priority: high
-closes_when: "A full campaign at the v0.2.0 tag's commit is recorded (ok/refused/timeout/panic and |pull| > 5), with no unexplained ok → not-ok against main-202a540-200-pc and no panics, and the performance benchmarks run on the same revision."
+closes_when: "A full campaign on the released v0.2.2 binary, run after the tag, is recorded (ok/refused/timeout/panic and |pull| > 5), with no unexplained ok → not-ok against main-202a540-200-pc and no panics, and the performance benchmarks run on the same revision."
 blocked_by: []
 opened: 2026-11-09
 tags: [cms, gridpacks, campaign, release, performance]
@@ -31,3 +31,11 @@ unexplained ok → not-ok and no panics, not a count of 66. Expected drops:
 The census left 18 cards undecided. Sprint I added
 refusals (the uncut-limit guards, untabulated partons, the zero τ floor) and
 changed the absent-run-card defaults, so every changed outcome needs a reason.
+
+**Rescoped (Nick, relayed by the manager, 2026-11-20).** The CERN host runs
+only pre-built binaries, so the full campaign runs after the v0.2.2 tag, on the
+released binary installed on the proxy. That campaign closes this item. Its
+baseline is the v0.2.1 survey `v021-1009-s1`. Before the tag, the host's
+targeted check (`v022rc-400c88f9-*`) reruns only the cards that failed in that
+survey, so it cannot see an ok → not-ok change. A regression the post-release
+campaign finds goes to a patch release.
