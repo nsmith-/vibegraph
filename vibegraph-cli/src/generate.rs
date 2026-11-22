@@ -328,7 +328,9 @@ fn cli_error(e: GenerateError) -> CliError {
         ),
         e @ (GenerateError::ProcessReparsed { .. }
         | GenerateError::AmplitudeProbe(_)
-        | GenerateError::ColliderEnergyChanged { .. }) => err(ErrorKind::Artifact, e.to_string()),
+        | GenerateError::ColliderEnergyChanged { .. }) => {
+            err(ErrorKind::Artifact, e.to_string()).with_reason(&e)
+        }
         // The artifact is sound, and the scan this run drew missed its accepted
         // region: a run failure that a larger scan fixes.
         e @ GenerateError::NoUsableWeight(_) => err(ErrorKind::Run, format!("{e} (--scan-points)")),
@@ -367,6 +369,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
             ErrorKind::Artifact,
             format!("cannot read {}: {e}", args.artifact.display()),
         )
+        .with_reason(&e)
     })?;
     // `integrate` refuses to bank a cross section of zero, but an artifact from a
     // build without that refusal can hold one, and a zero σ has no maximum

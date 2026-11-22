@@ -47,7 +47,7 @@ use serde_json::{Map, Value};
 use vibegraph::budget::StopReason;
 use vibegraph::hadronic::Observable;
 
-use crate::error::{CliError, ErrorKind};
+use crate::error::{ArtifactReason, CliError, ErrorKind};
 
 /// The ldjson schema's version, on every line.
 ///
@@ -126,6 +126,9 @@ pub(crate) fn text_line(line: std::fmt::Arguments<'_>) {
 struct Refusal {
     error_kind: ErrorKind,
     message: String,
+    /// Why an `artifact` refusal happened; absent for every other kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<ArtifactReason>,
 }
 
 /// Emit `err` as the run's `refusal` object.
@@ -135,6 +138,7 @@ pub(crate) fn refusal(err: &CliError) {
         fields_of(&Refusal {
             error_kind: err.kind(),
             message: err.message().to_string(),
+            reason: err.reason().cloned(),
         }),
     );
 }
@@ -333,6 +337,14 @@ pub(crate) struct IntegrateResult {
     pub(crate) artifact: String,
     /// The artifact's format version.
     pub(crate) format_version: u32,
+    /// The enumeration version of the build that enumerated the artifact's
+    /// diagrams: the number a build reads an artifact's diagrams as valid by.
+    pub(crate) enumeration_version: u32,
+    /// The vibegraph release that wrote the artifact. `integrate` reports its
+    /// own; `inspect` reports `null`, since the artifact does not record its
+    /// writer, and `format_version` with `enumeration_version` name the
+    /// generation instead.
+    pub(crate) vibegraph_version: Option<&'static str>,
     /// The SHA-256 of the diagram sets the run integrated: the digest a
     /// `vibegraph enumerate` run of the same card records.
     pub(crate) diagram_set_digest: String,

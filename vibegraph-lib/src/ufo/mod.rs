@@ -13,6 +13,7 @@ pub mod names;
 pub mod parameters;
 pub mod particles;
 pub(crate) mod propagators;
+pub mod report;
 pub mod slha;
 pub mod sm;
 pub(crate) mod topo;

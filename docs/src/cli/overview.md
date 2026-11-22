@@ -94,6 +94,66 @@ the conventional `svg/<set>/<diagram>.svg`. `--ranking -` writes to stdout,
 and an existing file is kept unless `--force` is given. The schema is in the
 knowledge bundle (`research/kb/pipeline/ranking-json.md`).
 
+## Reporting a model's parameters
+
+```sh
+vibegraph parameters proc_card.dat --out params/
+```
+
+reads the card's `import model` (and its `generate` line, if it has one) and
+writes `parameters.json` and `param_card.dat` into `--out`. `enumerate` writes
+the same two files beside `diagrams.json`, for its own process. Nothing is
+sampled; with no `generate` line nothing is enumerated either, and the report
+is of the restricted model alone.
+
+`param_card.dat` is the card the restriction implies: every external parameter
+at its restricted default, then the computed masses and widths a card also
+lists. Binding it to the model moves nothing.
+
+`parameters.json` is one object, with `schema_version` (`1`), `version` (the
+release that wrote it), `model` (`label`, `digest`), `process` (`null` for a
+model-only report), `entering` and `parameters`. Adding a field keeps the
+version; removing, renaming or re-meaning one bumps it, so a reader ignores
+fields it does not know. `parameters` has one record per external parameter, in
+the model's order, then one per internal mass or width that a `MASS` or `DECAY`
+entry of a card addresses (class `internal`), in PDG order. A record has:
+
+- `name`, `block` (as the model spells it), `code` (the LHA code, a list) and
+  `default`, the value the restricted model takes with no card; for an internal
+  parameter, the value computed from the externals' defaults;
+- `class`, an object tagged by `kind`: `free`, `zero` (the restriction fixed it
+  to zero and removed the vertices it feeds), `one` (left at exactly one, where
+  the restriction fixes it), `merged` with `into` and `factor` (the restriction
+  tied it to `into`: its value is `factor` times `into`'s) or `internal`;
+- `particles`, the particles it is the mass or width of, each with `pdg`,
+  `name`, `role` (`mass` or `width`) and `external_in_process` (whether the
+  particle is an external leg of some diagram; `null` with no process);
+- `constraints`, what the card binder holds the value to, each an object tagged
+  by `kind`: `finite`; `minimum` with `value` (a mass is not negative, unless
+  the particle is a Majorana fermion); `not_auto` (a width is a number);
+  `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
+  `factor`; `leads_group` with `members` (each `name` and `factor`: these are
+  tied to this one and move only with it);
+- `reweight`: `verdict` (`movable`, `locked`, `fixed_one`, `merged`,
+  `strong_coupling`, `external_mass`, or `not_applicable` for an internal
+  parameter), the verdict `generate --reweight` reaches for a `set` of this
+  parameter, `usable_as_coupling` (whether `--reweight-couplings` accepts it)
+  and `polynomial`, with `status` (`no_process`, `independent`, `polynomial`,
+  `not_polynomial` or `not_applicable`) and `max_degree`: whether the
+  process's amplitude is provably a polynomial in this parameter alone, and the
+  highest power of it in any subprocess;
+- `enters`: `null` with no process, otherwise the list of ways the parameter
+  reaches the diagrams, `couplings` (some vertex coupling depends on it, as
+  itself or through a computed parameter) and `masses_widths` (the mass or
+  width of a leg or propagator does).
+
+`external_mass` needs a process, and a verdict without one is never that.
+`entering` is the list of external parameters whose `enters` has `couplings`,
+in the model's order (`null` with no process): the Wilson coefficients to offer
+for a process. A parameter fixed to zero is not listed, since the vertices it
+fed were removed. Where a width is computed rather than read from the
+restriction, it is a field added to its record, not a different record.
+
 ## Inspecting a run card
 
 ```sh

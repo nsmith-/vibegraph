@@ -727,6 +727,7 @@ fn read_input(args: &IntegrateArgs) -> Result<Input, CliError> {
             ErrorKind::Artifact,
             format!("cannot read the diagram artifact {}: {e}", path.display()),
         )
+        .with_reason(&e)
     })?;
     let parsed = parse_proc_card(&artifact.proc_card, &ParsingOptions::default()).map_err(|e| {
         err(
@@ -1308,6 +1309,9 @@ pub(crate) fn result_object(
             .collect(),
         artifact: path.display().to_string(),
         format_version: artifact.format_version,
+        enumeration_version: artifact.enumeration_version,
+        // Only the run that wrote the artifact knows its writer.
+        vibegraph_version: run.is_some().then_some(env!("VIBEGRAPH_VERSION")),
         diagram_set_digest: artifact.diagram_set_digest.clone(),
         param_card: artifact.param_card.is_some(),
         configurations: artifact
