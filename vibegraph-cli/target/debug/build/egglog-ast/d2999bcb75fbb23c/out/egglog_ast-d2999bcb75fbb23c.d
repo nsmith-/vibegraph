@@ -1,0 +1,11 @@
+/home/user/wt/sprintl-reports/vibegraph-cli/target/debug/build/egglog-ast/d2999bcb75fbb23c/out/egglog_ast-d2999bcb75fbb23c.d: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast_helpers.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/span.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/util.rs
+
+/home/user/wt/sprintl-reports/vibegraph-cli/target/debug/build/egglog-ast/d2999bcb75fbb23c/out/libegglog_ast-d2999bcb75fbb23c.rlib: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast_helpers.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/span.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/util.rs
+
+/home/user/wt/sprintl-reports/vibegraph-cli/target/debug/build/egglog-ast/d2999bcb75fbb23c/out/libegglog_ast-d2999bcb75fbb23c.rmeta: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast_helpers.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/span.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/util.rs
+
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/lib.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/generic_ast_helpers.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/span.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egglog-ast-2.0.0/src/util.rs:

@@ -25,6 +25,7 @@ mod logging;
 mod network;
 mod output;
 mod parallel;
+mod parameters;
 mod phase;
 mod ranking;
 mod run_card;
@@ -140,6 +141,10 @@ enum Command {
     /// Resolve a run card and classify each of its parameters, or print the
     /// table of every known run-card parameter, without sampling.
     RunCard(run_card::RunCardArgs),
+    /// Report a model's external parameters (class, default, reweight verdict)
+    /// and, given a process, which of them reach its diagrams; writes the
+    /// default param card.
+    Parameters(parameters::ParametersArgs),
 }
 
 impl Command {
@@ -152,7 +157,8 @@ impl Command {
             Command::Enumerate(_)
             | Command::CheckEvents(_)
             | Command::Inspect(_)
-            | Command::RunCard(_) => false,
+            | Command::RunCard(_)
+            | Command::Parameters(_) => false,
         }
     }
 }
@@ -252,6 +258,7 @@ fn main() -> ExitCode {
         Command::CheckEvents(args) => check::run(&args),
         Command::Inspect(args) => inspect::run(&args),
         Command::RunCard(args) => run_card::run(&args),
+        Command::Parameters(args) => parameters::run(&args),
     };
     // Reported before the display comes down, so the message lands in the
     // scrollback with the rest of the run rather than after its closing line.

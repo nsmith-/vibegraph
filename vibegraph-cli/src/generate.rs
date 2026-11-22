@@ -329,7 +329,9 @@ fn cli_error(e: GenerateError) -> CliError {
         ),
         e @ (GenerateError::ProcessReparsed { .. }
         | GenerateError::AmplitudeProbe(_)
-        | GenerateError::ColliderEnergyChanged { .. }) => err(ErrorKind::Artifact, e.to_string()),
+        | GenerateError::ColliderEnergyChanged { .. }) => {
+            err(ErrorKind::Artifact, e.to_string()).with_reason(&e)
+        }
         // The artifact is sound, and the scan this run drew missed its accepted
         // region: a run failure that a larger scan fixes.
         e @ GenerateError::NoUsableWeight(_) => err(ErrorKind::Run, format!("{e} (--scan-points)")),
@@ -369,6 +371,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
             ErrorKind::Artifact,
             format!("cannot read {}: {e}", args.artifact.display()),
         )
+        .with_reason(&e)
     })?;
     // `integrate` refuses to bank a cross section of zero, but an artifact from a
     // build without that refusal can hold one, and a zero σ has no maximum
@@ -592,6 +595,40 @@ fn output_encoding(out: &std::path::Path) -> Result<OutputEncoding, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ArtifactReason;
+
+    /// A collider energy the cards no longer give, and a recorded card that parses
+    /// to another process, are `artifact` refusals that name their reason with the
+    /// numbers. The first needs proton beams and a parton-density set to reach from
+    /// the command line, so the mapping is pinned where the error is converted.
+    #[test]
+    fn generate_errors_about_the_artifact_carry_their_reason() {
+        let e = cli_error(GenerateError::ColliderEnergyChanged {
+            recorded: 13000.0,
+            rebuilt: 14000.0,
+            beams: [7000.0, 7000.0],
+        });
+        assert_eq!(e.kind(), ErrorKind::Artifact);
+        assert_eq!(
+            e.reason(),
+            Some(&ArtifactReason::ColliderEnergy {
+                recorded: 13000.0,
+                rebuilt: 14000.0,
+                beams: [7000.0, 7000.0]
+            })
+        );
+        let e = cli_error(GenerateError::ProcessReparsed {
+            recorded: "a".into(),
+            reparsed: "b".into(),
+        });
+        assert_eq!(
+            e.reason(),
+            Some(&ArtifactReason::ProcessReparsed {
+                recorded: "a".into(),
+                reparsed: "b".into()
+            })
+        );
+    }
 
     #[test]
     fn the_output_extension_picks_the_encoding_or_is_refused() {

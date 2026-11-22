@@ -55,7 +55,7 @@ use serde_json::{Map, Value};
 use vibegraph::budget::StopReason;
 use vibegraph::hadronic::Observable;
 
-use crate::error::{CliError, ErrorKind};
+use crate::error::{ArtifactReason, CliError, ErrorKind};
 
 /// The ldjson schema's version, on every line.
 ///
@@ -134,6 +134,9 @@ pub(crate) fn text_line(line: std::fmt::Arguments<'_>) {
 struct Refusal {
     error_kind: ErrorKind,
     message: String,
+    /// Why an `artifact` refusal happened; absent for every other kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<ArtifactReason>,
 }
 
 /// Emit `err` as the run's `refusal` object.
@@ -143,6 +146,7 @@ pub(crate) fn refusal(err: &CliError) {
         fields_of(&Refusal {
             error_kind: err.kind(),
             message: err.message().to_string(),
+            reason: err.reason().cloned(),
         }),
     );
 }
@@ -341,6 +345,16 @@ pub(crate) struct IntegrateResult {
     pub(crate) artifact: String,
     /// The artifact's format version.
     pub(crate) format_version: u32,
+    /// The enumeration version of the build that enumerated the artifact's
+    /// diagrams: the number a build reads an artifact's diagrams as valid by.
+    pub(crate) enumeration_version: u32,
+    /// The vibegraph release (crate version) the artifact records as its
+    /// writer; `null` for a format-24 artifact, which records none.
+    pub(crate) writer_version: Option<String>,
+    /// The full version string (release and git description) of the binary
+    /// that ran `integrate`; `null` from `inspect`, which did not write the
+    /// artifact.
+    pub(crate) vibegraph_version: Option<&'static str>,
     /// The SHA-256 of the diagram sets the run integrated: the digest a
     /// `vibegraph enumerate` run of the same card records.
     pub(crate) diagram_set_digest: String,
@@ -396,7 +410,7 @@ mod tests {
     use vibegraph::budget::StopReason;
 
     use super::{ChannelKeyObject, MuF, Refusal, StopReasonName};
-    use crate::error::ErrorKind;
+    use crate::error::{ArtifactReason, ErrorKind};
 
     fn v(x: &impl serde::Serialize) -> Value {
         serde_json::to_value(x).unwrap()
@@ -433,9 +447,22 @@ mod tests {
         assert_eq!(
             v(&Refusal {
                 error_kind: ErrorKind::Support,
-                message: "m".to_string()
+                message: "m".to_string(),
+                reason: None
             }),
             json!({"error_kind": "support", "message": "m"})
+        );
+        assert_eq!(
+            v(&Refusal {
+                error_kind: ErrorKind::Artifact,
+                message: "m".to_string(),
+                reason: Some(ArtifactReason::EnumerationVersion {
+                    found: 2,
+                    expected: 3
+                })
+            }),
+            json!({"error_kind": "artifact", "message": "m",
+                   "reason": {"kind": "enumeration_version", "found": 2, "expected": 3}})
         );
     }
 

@@ -1,6 +1,9 @@
 use super::ast_util::{
-    call_func_name, conditional_definitions, extract_float, extract_name, named_assignments,
-    parse_stmts, FieldError, Fields, UniqueNames,
+    call_func_name, conditional_definitions, extract_float, extract_name, extract_string,
+    named_assignments, parse_stmts, FieldError, Fields, UniqueNames,
+};
+use super::config_eval::{
+    configuration_modules, flatten_branches, select_branch, Configuration, Scope,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::functions::FunctionLibrary;
@@ -21,10 +24,20 @@ pub enum ParameterError {
     #[error("Expression parse error for parameter '{name}': {cause}")]
     ExprParse { name: String, cause: String },
     #[error(
-        "parameter(s) {names} are defined only inside an `if` branch of parameters.py; \
-         which branch runs depends on Python evaluated at import time, which the loader does not run"
+        "parameter(s) {names} are defined under an `if` of parameters.py whose condition is \
+         outside the subset of Python the loader evaluates against configuration.py (integer \
+         and boolean literals, `configuration.<name>` for a name configuration.py binds to one, \
+         `not`, `and`, `or`, `+`, `-`, `*`): MadGraph runs the module as Python, the loader \
+         does not"
     )]
-    ConditionalDefinition { names: String },
+    ConditionOutside { names: String },
+    #[error(
+        "parameter '{parameter}': `value` is a conditional expression whose condition is outside \
+         the subset of Python the loader evaluates against configuration.py (integer and boolean \
+         literals, `configuration.<name>` for a name configuration.py binds to one, `not`, `and`, \
+         `or`, `+`, `-`, `*`)"
+    )]
+    ValueConditionOutside { parameter: String },
     #[error(
         "internal parameter '{user}' references '{name}', which parameters.py does not define"
     )]
@@ -358,11 +371,15 @@ impl ParameterSet {
 /// Parse `parameters.py` content into a [`ParameterSet`].
 #[cfg(test)]
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
-    parse_parameters_with_variables(content, &FunctionLibrary::default()).map(|(set, _)| set)
+    parse_parameters_with_variables(content, &FunctionLibrary::default(), &Configuration::new())
+        .map(|(set, _)| set)
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`], with each
-/// parameter's Python variable mapped to its UFO `name`.
+/// parameter's Python variable mapped to its UFO `name`. The `if` statements
+/// and conditional `value` expressions that test `configuration.py`'s values
+/// are evaluated against `configuration` ([`super::config_eval`]) and the
+/// branch that runs is the one read.
 ///
 /// The `name` is the canonical name, as in MadGraph: a value string refers to
 /// a parameter by it (`model_reader.py` evaluates each one with `param.name`
@@ -372,12 +389,19 @@ pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterE
 pub(crate) fn parse_parameters_with_variables(
     content: &str,
     library: &FunctionLibrary,
+    configuration: &Configuration,
 ) -> Result<(ParameterSet, HashMap<String, String>), ParameterError> {
-    let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
-
-    if let Some(names) = conditional_definitions(&stmts, "Parameter") {
-        return Err(ParameterError::ConditionalDefinition { names });
-    }
+    let parsed = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
+    let modules = configuration_modules(&parsed);
+    let scope = Scope {
+        names: configuration,
+        modules: &modules,
+        bare: false,
+    };
+    let stmts =
+        flatten_branches(&parsed, &scope).map_err(|_| ParameterError::ConditionOutside {
+            names: conditional_definitions(&parsed, "Parameter").unwrap_or_default(),
+        })?;
 
     let mut externals: Vec<Parameter> = Vec::new();
     let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new();
@@ -404,6 +428,11 @@ pub(crate) fn parse_parameters_with_variables(
         }
         let fields = Fields::new("parameter", python_name, &call.keywords);
         let name = fields.str("name")?;
+        let value = select_branch(fields.required("value")?, &scope).map_err(|_| {
+            ParameterError::ValueConditionOutside {
+                parameter: name.clone(),
+            }
+        })?;
         seen.insert(python_name, &name)?;
         variables.insert(python_name.to_owned(), name.clone());
         let is_complex = match fields.str("type")?.as_str() {
@@ -415,9 +444,11 @@ pub(crate) fn parse_parameters_with_variables(
 
         match fields.str("nature")?.as_str() {
             "external" => {
-                let default_value = match fields.required("value").map(extract_name) {
-                    Ok(Some(n)) => *numbers.get(n).ok_or_else(|| unresolved(&name, n))?,
-                    _ => fields.float("value")?,
+                let default_value = match extract_name(value) {
+                    Some(n) => *numbers.get(n).ok_or_else(|| unresolved(&name, n))?,
+                    None => {
+                        extract_float(value).ok_or_else(|| fields.malformed("value", "a number"))?
+                    }
                 };
                 let lha_block = fields.str("lhablock")?;
                 let lha_code = fields.int32_list("lhacode")?;
@@ -432,7 +463,7 @@ pub(crate) fn parse_parameters_with_variables(
                 });
             }
             "internal" => {
-                let expr = match extract_name(fields.required("value")?) {
+                let expr = match extract_name(value) {
                     // The value is a Python name: a `Parameter` object, which MadGraph
                     // writes into the expression as its UFO `name`, or a number.
                     Some(n) => match (variables.get(n), numbers.get(n)) {
@@ -441,7 +472,8 @@ pub(crate) fn parse_parameters_with_variables(
                         (None, None) => return Err(unresolved(&name, n)),
                     },
                     None => {
-                        let expr_str = fields.str("value")?;
+                        let expr_str = extract_string(value)
+                            .ok_or_else(|| fields.malformed("value", "a string"))?;
                         parse_expr(&expr_str)
                             .map(|e| library.resolve(e))
                             .map_err(|e| ParameterError::ExprParse {
@@ -777,18 +809,101 @@ f = Parameter(name = 'f', nature = 'external', type = 'real', value = 0.3, texna
         assert!(g_deps.contains(&"G".to_owned()));
     }
 
-    #[test]
-    fn conditional_definitions_are_refused_by_name_at_any_depth() {
-        let src = r"
+    fn parse_with(src: &str, config: &[(&str, i64)]) -> Result<ParameterSet, ParameterError> {
+        let configuration: Configuration =
+            config.iter().map(|(k, v)| ((*k).to_owned(), *v)).collect();
+        parse_parameters_with_variables(src, &FunctionLibrary::default(), &configuration)
+            .map(|(set, _)| set)
+    }
+
+    const CONDITIONAL: &str = r"
+import configuration
+
 if configuration.a:
-    MW = Parameter(name = 'MW', nature = 'internal', type = 'real', value = '80.0')
+    MW = Parameter(name = 'MW', nature = 'external', type = 'real', value = 80.0, texname = 'MW', lhablock = 'MASS', lhacode = [ 24 ])
 elif configuration.b:
     if configuration.c:
-        MZ = Parameter(name = 'MZ', nature = 'internal', type = 'real', value = '91.0')
+        MW = Parameter(name = 'MW', nature = 'internal', type = 'real', value = '81.0', texname = 'MW')
+    else:
+        MW = Parameter(name = 'MW', nature = 'internal', type = 'real', value = '82.0', texname = 'MW')
+else:
+    MW = Parameter(name = 'MW', nature = 'internal', type = 'real', value = '83.0', texname = 'MW')
+
+G = Parameter(name = 'G', nature = 'internal', type = 'real', value = 'MW' if configuration.a else '1.', texname = 'G')
 ";
-        let err = parse_parameters(src).unwrap_err();
+
+    fn mw_and_g(config: &[(&str, i64)]) -> (bool, f64, f64) {
+        let ps = parse_with(CONDITIONAL, config).unwrap();
+        let values = ps.evaluate(&ParamCard::default());
+        (
+            ps.externals.iter().any(|p| p.name == "MW"),
+            values["MW"].re,
+            values["G"].re,
+        )
+    }
+
+    #[test]
+    fn definitions_under_configuration_flags_follow_the_branch_that_runs() {
+        assert_eq!(
+            mw_and_g(&[("a", 1), ("b", 0), ("c", 0)]),
+            (true, 80.0, 80.0)
+        );
+        assert_eq!(
+            mw_and_g(&[("a", 0), ("b", 1), ("c", 1)]),
+            (false, 81.0, 1.0)
+        );
+        assert_eq!(
+            mw_and_g(&[("a", 0), ("b", 1), ("c", 0)]),
+            (false, 82.0, 1.0)
+        );
+        assert_eq!(
+            mw_and_g(&[("a", 0), ("b", 0), ("c", 0)]),
+            (false, 83.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn a_condition_outside_the_subset_is_refused_by_name() {
+        let err = parse_with(CONDITIONAL, &[("a", 0), ("b", 1)]).unwrap_err();
         assert!(
-            matches!(&err, ParameterError::ConditionalDefinition { names } if names == "'MW', 'MZ'"),
+            matches!(&err, ParameterError::ConditionOutside { names } if names.contains("'MW'")),
+            "{err}"
+        );
+        let err = parse_parameters(CONDITIONAL).unwrap_err();
+        assert!(
+            matches!(err, ParameterError::ConditionOutside { .. }),
+            "{err}"
+        );
+        let src = r"
+import configuration
+X = Parameter(name = 'X', nature = 'internal', type = 'real', value = 'a' if configuration.nope else 'b', texname = 'X')
+";
+        let err = parse_with(src, &[]).unwrap_err();
+        assert!(
+            matches!(&err, ParameterError::ValueConditionOutside { parameter } if parameter == "X"),
+            "{err}"
+        );
+        let src = r"
+import configuration
+if configuration.a > 1:
+    X = Parameter(name = 'X', nature = 'internal', type = 'real', value = '1.', texname = 'X')
+";
+        let err = parse_with(src, &[("a", 3)]).unwrap_err();
+        assert!(
+            matches!(err, ParameterError::ConditionOutside { .. }),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_non_string_value_that_is_not_a_conditional_is_still_refused() {
+        let src = r"
+import configuration
+X = Parameter(name = 'X', nature = 'internal', type = 'real', value = 2 if configuration.a else 3, texname = 'X')
+";
+        let err = parse_with(src, &[("a", 1)]).unwrap_err();
+        assert!(
+            err.to_string().contains("`value` must be a string"),
             "{err}"
         );
     }
@@ -796,12 +911,13 @@ elif configuration.b:
     #[test]
     fn conditional_non_parameter_statements_are_not_refused() {
         let src = r"
+import configuration
 if configuration.a:
     helper = Helper(value = 1.0)
     plain = 1.0
 ZERO = Parameter(name = 'ZERO', nature = 'internal', type = 'real', value = '0.0', texname = '0')
 ";
-        assert_eq!(parse_parameters(src).unwrap().internals.len(), 1);
+        assert_eq!(parse_with(src, &[("a", 1)]).unwrap().internals.len(), 1);
     }
 
     #[test]
