@@ -7,3 +7,7 @@ FFS1 = Lorentz(name='FFS1',
 FFV1 = Lorentz(name='FFV1',
                spins=[2, 2, 3],
                structure='Gamma(3,2,1)')
+
+FFV2 = Lorentz(name='FFV2',
+               spins=[2, 2, 3],
+               structure='Gamma(3,2,-1)*Gamma5(-1,1)')

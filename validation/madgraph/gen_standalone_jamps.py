@@ -116,6 +116,8 @@ class Row:
         """The committed model directory and restrict card, repository-relative,
         looked up the way `build.sh` stages them: an authored card under
         `cards/` first, then the model's own."""
+        if self.restrict is None:
+            return {"dir": f"validation/ufo/{self.model}", "restrict_card": None}
         if self.bundled:
             model_dir = f"research/refs/mg5amcnlo/models/{self.model}"
             return {"dir": model_dir,
@@ -132,6 +134,8 @@ class Row:
             return "sm"
         if self.bundled:
             return f"{self.model}-{self.restrict}"
+        if self.restrict is None:
+            return os.path.join(MODELS_DIR, self.model)
         return os.path.join(MODELS_DIR, self.model) + f"-{self.restrict}"
 
 
@@ -503,6 +507,79 @@ ROWS = {
         # coupling orders the s-channel gluon is its one graph.
         Row("uux_to_t1t1x_mssm", "u u~ > t1 t1~", (2, -2), (1000006, -1000006), 2000.0, 3,
             5302, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True),
+        # Majorana fermions in the toy model, every parameter at its default (no
+        # restrict card). Two final-state `nt`: the s-channel vector reaching the
+        # `nt nt` pair, beside the t- and u-channel scalar on two lines joining a
+        # Dirac lepton to a Majorana end. Widths are zero for the spacelike scalar.
+        Row("ll_to_ntnt_toy_majorana", "lt~ lt > nt nt", (-9000011, 9000011),
+            (9000022, 9000022), 500.0, 3, 5401, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # A Majorana propagator only, on a line whose ends are a lepton and its
+        # antiparticle.
+        Row("ll_to_scscx_toy_majorana", "lt~ lt > sc sc~", (-9000011, 9000011),
+            (9000015, -9000015), 500.0, 3, 5402, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # Two Majorana ends joined through a Dirac propagator: a final-state line
+        # whose vertices each pair a Majorana with the Dirac lepton.
+        Row("scscx_to_ntnt_toy_majorana", "sc sc~ > nt nt", (9000015, -9000015),
+            (9000022, 9000022), 500.0, 3, 5403, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # An initial-state Majorana on a line to a final-state one, and on a line to
+        # a final-state lepton.
+        Row("ntl_to_ntl_toy_majorana", "nt lt > nt lt", (9000022, 9000011),
+            (9000022, 9000011), 500.0, 3, 5404, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # Two initial-state Majoranas annihilating.
+        Row("ntnt_to_llx_toy_majorana", "nt nt > lt lt~", (9000022, 9000022),
+            (9000011, -9000011), 500.0, 3, 5405, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # The vector emitted off the Majorana line of `lt~ lt > nt nt`: Majorana
+        # propagators between the vector vertex and the scalar ones.
+        Row("ll_to_ntntvt_toy_majorana", "lt~ lt > nt nt vt", (-9000011, 9000011),
+            (9000022, 9000022, 9000023), 1000.0, 3, 5406, model="vibegraph_toy_majorana_UFO",
+            zero_widths=True, bank_amps=True),
+        # Neutralinos in the MSSM. Two different Majoranas in the final state: the
+        # s-channel Z on its chiral `n2 n1 Z` vertex, beside t- and u-channel selectrons
+        # on lines joining the electron or positron to a neutralino through a chiral
+        # projector. Widths are zero for the spacelike selectrons.
+        Row("ee_to_n1n2_mssm", "e+ e- > n1 n2", (-11, 11), (1000022, 1000023), 1000.0, 3,
+            5421, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # Two identical neutralinos from a quark pair: the axial `n1 n1 Z` vertex beside
+        # the t- and u-channel squarks.
+        Row("uux_to_n1n1_mssm", "u u~ > n1 n1", (2, -2), (1000022, 1000022), 1000.0, 3,
+            5422, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # A chargino and a neutralino on one line: the s-channel W on the chiral
+        # `x1 n1 W` vertex beside the t- and u-channel squarks, a Dirac end and a
+        # Majorana end.
+        Row("udx_to_x1pn1_mssm", "u d~ > x1+ n1", (2, -1), (1000024, 1000022), 1000.0, 3,
+            5423, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # An initial-state neutralino scattering off an electron: the neutralino line
+        # runs from the initial to the final state through the selectron s- and
+        # u-channels.
+        Row("en1_to_en1_mssm", "e- n1 > e- n1", (11, 1000022), (11, 1000022), 1000.0, 3,
+            5424, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # A Dirac control for the chiral scalar vertex: the charged Higgs pair off a top
+        # pair, the t-channel bottom between two `t~ b H+` vertices whose left- and
+        # right-handed projectors (`FFS1`, `FFS2`) carry different couplings, beside
+        # the neutral s-channel bosons. Widths are zero for the spacelike bottom.
+        Row("ttx_to_hphm_mssm", "t t~ > H+ H-", (6, -6), (37, -37), 1500.0, 3, 5425,
+            model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # Fermion-number violation in the toy diquark model: two particles meeting at
+        # the diquark vertex, beside the vector exchange between their lines.
+        Row("ab_to_ab_toy_fnv", "at bt > at bt", (9000001, 9000003), (9000001, 9000003),
+            500.0, 3, 5411, model="vibegraph_toy_fnv_UFO", zero_widths=True, bank_amps=True),
+        # The diquark produced beside a vector emitted off either incoming line, so a
+        # Dirac propagator sits between the vector vertex and the diquark vertex.
+        Row("ab_to_dqvt_toy_fnv", "at bt > dq vt", (9000001, 9000003), (9000006, 9000023),
+            1000.0, 3, 5412, model="vibegraph_toy_fnv_UFO", zero_widths=True, bank_amps=True),
+        # Two antiparticles in the final state from the same vertex.
+        Row("dqxvt_to_abx_toy_fnv", "dq~ vt > at~ bt~", (-9000006, 9000023), (-9000001, -9000003),
+            1000.0, 3, 5413, model="vibegraph_toy_fnv_UFO", zero_widths=True, bank_amps=True),
     ]
 }
 
