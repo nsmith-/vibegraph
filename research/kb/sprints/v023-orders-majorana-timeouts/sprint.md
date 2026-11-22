@@ -174,6 +174,32 @@ The TpTp item comes first: a zero |M|² on points that pass the cuts may be a si
 - **Which MadGraph first.** The VBS and g2HDM gridpacks were made with MadGraph 2.9.18, the DY1j outlier. vg-validator regenerates σ with MadGraph 3.7.1 on VBS cards 134 and 700 and g2HDM cards 894 (M1000) and 889 (M300). If 3.7.1 agrees with vibegraph, the item becomes a registered 2.9.18 deviation.
 - **Oracle.** Per event (Breit–Wigner window and threshold, width, scale, merge sequence) or per diagram against MadGraph on card 894, before σ. Locally: reduced-budget single seeds only. Every multi-seed σ runs on vg-validator (2.5–8 h per seed on 4 cores).
 
+### PR 13: multicore `generate` (`sprintl-generate`), vg-sprint-L-pipeline, performance-dev, Opus
+
+| Item | Pri |
+|---|---|
+| `two-to-six-samples-serial-unweighting-cost` | medium |
+
+Added on 2026-11-22 by the user's decision. Production `generate -j N` on
+v0.2.2 keeps about one core busy:
+
+| Card | CPUs | Utilisation |
+|---|---|---|
+| DY+jet SMEFT, 868 diagrams (107 s CPU in 111 s wall) | 2 | 48% |
+| ttbar | 2 | 42% |
+| shard | 4 | 26% |
+
+Only the w_max scan runs in parallel; accept/reject advances one random trial at a time.
+
+- **Scale.** `generate -j N` scales accept/reject across N threads.
+- **Determinism.** The output is deterministic for a fixed seed and independent of N. A seed's event stream changes from v0.2.2, even at `-j 1`; the release note says so.
+- **Oracles.**
+  - `-j 1/2/4` give byte-identical LHE on at least two processes, one of them a hadronic multichannel card.
+  - The unweighting and samples gates pass at ≥5 seeds.
+  - Speed-up is measured at -j 2 and -j 4.
+  - The two 2→6 samples cells are run and recorded.
+- **Scope.** generate only: integrate's streams and the artifact format do not change.
+
 ## Dispatch
 
 1. **Inputs:** v022-1009's final verdict table, plus the refusal and timeout breakdown, for PRs 3 and 11.
