@@ -3,7 +3,7 @@ type: Sprint
 title: "Sprint K: v0.2.2, SMEFT models and the largest refusal classes"
 description: "Before v0.2.2: SMEFTsim and the CMS store's SMEFT family load (negative orders, restriction cards), the cheapest UFO and run-card refusal classes close, the MLM matching panic, batch-safe integrate, one-body phase space, the coloured-scalar seagull and mixed-mass subprocess splitting, integrate memory growth on multijet MLM, and the 4× repeated-decay σ."
 status: draft
-active: true
+active: false
 tags: [release, v0.2.2, smeft, smeftsim, ufo, refusals, cms-gridpacks, simshop, sprint-k]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-17}
 sources:
