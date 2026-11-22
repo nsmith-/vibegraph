@@ -90,7 +90,8 @@ pub(crate) struct VertexTerm {
     pub(crate) coupling_id: CouplingId,
 }
 
-/// Whether the vertex's particles, all conjugated, are the same multiset.
+/// Whether the vertex's particles, all conjugated, are the same multiset: the vertex
+/// is its own hermitian-conjugate partner.
 fn self_conjugate_set(model: &UFOModel, id: VertexId) -> bool {
     let particles = &model.vertex_def(id).particles;
     let mut conjugate: Vec<ParticleId> = particles
@@ -107,7 +108,20 @@ fn self_conjugate_set(model: &UFOModel, id: VertexId) -> bool {
 }
 
 /// `term` with each chiral projector of a chain that carries no `Gamma` or `Sigma`
-/// exchanged for the other chirality.
+/// exchanged for the other chirality, and each `Gamma5` of such a chain negated
+/// (`P_L ↔ P_R` is `γ⁵ → −γ⁵`, so `Identity − Gamma5` reads as `2 ProjM` does).
+///
+/// Diagram enumeration matches a vertex to its legs read all-incoming, and MadGraph
+/// binds the same legs read all-outgoing. Where the vertex's particles are not their
+/// own conjugate set (`t~ b H+`, a lepton–neutralino–slepton vertex), the two pick the
+/// two hermitian-conjugate halves of the interaction, and MadGraph evaluates the half
+/// whose structure is the Dirac conjugate `γ⁰Γ†γ⁰` of the one matched here, with the
+/// matched half's coupling. For the vector and tensor structures that conjugate is
+/// the structure itself (`γ^μ`, `γ^μ P_χ`, `γ^μ γ⁵`, `σ^{μν}`, the identity), and the
+/// reversed reading accounts for the rest; a bare projector's is the other chirality,
+/// `γ⁰ P_L† γ⁰ = P_R`. Without the exchange, `t t~ > H+ H-` in the MSSM disagrees with
+/// MadGraph's `AMP()` on its bottom-exchange diagram (overlap 0.85), and every
+/// neutralino–sfermion diagram comes out with the opposite chirality's coupling.
 fn conjugate_standalone_projectors(term: &LorentzTerm) -> LorentzTerm {
     use crate::ufo::lorentz::LorentzOp;
     let chained = term
@@ -122,6 +136,10 @@ fn conjugate_standalone_projectors(term: &LorentzTerm) -> LorentzTerm {
         let swapped = match op {
             LorentzOp::ProjM { i, j } => LorentzOp::ProjP { i: *i, j: *j },
             LorentzOp::ProjP { i, j } => LorentzOp::ProjM { i: *i, j: *j },
+            LorentzOp::Gamma5 { .. } => {
+                out.coeff = -out.coeff;
+                continue;
+            }
             _ => continue,
         };
         *op = swapped;
@@ -185,6 +203,7 @@ impl VertexTerm {
     /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
     ///
     /// result_leg_idx is 0-indexed here
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_ufo(
         model: &UFOModel,
@@ -209,7 +228,7 @@ impl VertexTerm {
 
     /// [`from_ufo`](Self::from_ufo), with every chiral projector of a chain that
     /// carries no gamma exchanged for the other chirality where
-    /// `swap_standalone_chirality` is set.
+    /// `swap_standalone_chirality` is set ([`conjugate_standalone_projectors`]).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_ufo_read(
         model: &UFOModel,
@@ -234,7 +253,13 @@ impl VertexTerm {
             .expr
             .iter()
             .flat_map(split_chained_gamma5)
-            .map(|term| if swap { conjugate_standalone_projectors(&term) } else { term })
+            .map(|term| {
+                if swap {
+                    conjugate_standalone_projectors(&term)
+                } else {
+                    term
+                }
+            })
             .map(|term| {
                 super::root_lorentz::root_term(&term, &lorentz.spins, flow, result_leg_idx, flows)
                     .map_err(|e| e.in_structure(&lorentz.name, &lorentz.structure))
@@ -394,7 +419,7 @@ impl VertexInfo {
         let vertex = model.vertex_def(id);
         let group = vertex_flow_group(model, id, flow_group);
         let flows = &against_arrow(&group.flow, result_leg_idx, flows);
-        let swap = std::env::var_os("VG_HC_SWAP").is_some() && !self_conjugate_set(model, id);
+        let swap = !self_conjugate_set(model, id);
         let terms = vertex
             .couplings
             .keys()

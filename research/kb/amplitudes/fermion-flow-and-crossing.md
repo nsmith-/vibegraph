@@ -115,7 +115,7 @@ photon emission), both in `standalone_jamps`.
 The spinor and variance types these slots carry are described in
 [repr-layer-geometry-and-axes](repr-layer-geometry-and-axes.md). Majorana fermions
 and the UFO `C` operator are refused
-([majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md)).
+([L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md)).
 
 [^n12-causes]: Note 12, root causes 2, 3 and 5.
 [^n35-f1]: Note 35 §F1.

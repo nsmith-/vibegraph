@@ -34,8 +34,11 @@
 //!   ([`CardError::NegativeMass`]): the phase-space, on-shell, cut and
 //!   event-record code downstream of the amplitudes is not validated for one.
 //!   A Majorana fermion's negative mass binds, and the evaluation negates the
-//!   width at its code as MadGraph's Fortran does ([`EvaluatedModel`]); diagram
-//!   generation refuses Majorana fermions, so no amplitude reads it yet.
+//!   width at its code as MadGraph's Fortran does ([`EvaluatedModel`]). Its
+//!   spinors and propagator read the signed mass; the MSSM neutralino `n3`
+//!   (`Mneu3 < 0` in the default card) agrees with MadGraph's `AMP()` per diagram
+//!   as an external leg and as a propagator (`standalone_jamps`'s
+//!   `ee_to_n1n3_mssm` and `x1px1m_to_wpwm_mssm`, at zero widths).
 //!
 //! Every entry refused is reported at once ([`CardError::Several`]).
 

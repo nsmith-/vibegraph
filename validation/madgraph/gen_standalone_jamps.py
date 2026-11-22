@@ -562,6 +562,17 @@ ROWS = {
         Row("en1_to_en1_mssm", "e- n1 > e- n1", (11, 1000022), (11, 1000022), 1000.0, 3,
             5424, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
             bank_amps=True),
+        # A neutralino of negative mass (`Mneu3 < 0` in the default card) on an
+        # external leg, beside the lightest one: its spinors read the signed mass.
+        Row("ee_to_n1n3_mssm", "e+ e- > n1 n3", (-11, 11), (1000022, 1000025), 1000.0, 3,
+            5426, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
+        # Every neutralino, the negative-mass one among them, as the t-channel
+        # propagator between two chiral chargino-neutralino-W vertices, beside the
+        # s-channel photon, Z and Higgs bosons.
+        Row("x1px1m_to_wpwm_mssm", "x1+ x1- > w+ w-", (1000024, -1000024), (24, -24), 1000.0,
+            3, 5427, model="MSSM_SLHA2", restrict="default", bundled=True, zero_widths=True,
+            bank_amps=True),
         # A Dirac control for the chiral scalar vertex: the charged Higgs pair off a top
         # pair, the t-channel bottom between two `t~ b H+` vertices whose left- and
         # right-handed projectors (`FFS1`, `FFS2`) carry different couplings, beside

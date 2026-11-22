@@ -128,6 +128,25 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("ee_to_ttxh_identity", &[3, 4, 1, 2, 0]),
     ("ll_to_qqxs_toy_yukawa", TOY_YUKAWA_GRAPHS),
     ("ll_to_ss_toy_dscalar", &[0, 1, 2, 3]),
+    ("ll_to_ntnt_toy_majorana", &[0, 1, 2]),
+    ("ll_to_scscx_toy_majorana", &[0]),
+    ("scscx_to_ntnt_toy_majorana", &[0, 1]),
+    ("ntl_to_ntl_toy_majorana", &[0, 1, 2]),
+    ("ntnt_to_llx_toy_majorana", &[0, 1, 2]),
+    (
+        "ll_to_ntntvt_toy_majorana",
+        &[1, 0, 3, 2, 5, 4, 8, 7, 6, 9, 10, 11],
+    ),
+    ("ab_to_ab_toy_fnv", &[0, 1]),
+    ("ab_to_dqvt_toy_fnv", &[0, 1]),
+    ("dqxvt_to_abx_toy_fnv", &[0, 1]),
+    ("ee_to_n1n2_mssm", &[0, 1, 2, 3, 4]),
+    ("uux_to_n1n1_mssm", &[0, 1, 2, 3, 4]),
+    ("udx_to_x1pn1_mssm", &[0, 1, 2]),
+    ("en1_to_en1_mssm", &[0, 1, 2, 3, 4]),
+    ("ttx_to_hphm_mssm", &[0, 1, 2, 3, 4]),
+    ("ee_to_n1n3_mssm", &[0, 1, 2, 3, 4]),
+    ("x1px1m_to_wpwm_mssm", &[0, 1, 2, 3, 4, 5, 6, 7]),
     ("sl_to_sl_toy_dscalar", &[0, 1, 2, 3]),
     ("ttx_to_hh_chbox", TTX_TO_HH_GRAPHS),
     ("ht_to_ht_chbox", HT_TO_HT_GRAPHS),
@@ -1443,6 +1462,123 @@ fn rounded_coupling_rows_have_tables() {
             "{key} registers rounded-coupling graphs and has no standalone table"
         );
     }
+}
+
+/// Two final-state Majorana fermions of the toy model: the s-channel vector on the
+/// axial `nt nt vt` vertex, a line with two Majorana ends, beside the t- and
+/// u-channel scalar on two lines each joining a Dirac lepton to a Majorana end. The
+/// t- and u-channel graphs interfere with MadGraph's relative `−1`.
+#[test]
+fn ll_to_ntnt_toy_majorana() {
+    check("ll_to_ntnt_toy_majorana");
+}
+
+/// A Majorana fermion as the t-channel propagator only, between a lepton and its
+/// antiparticle.
+#[test]
+fn ll_to_scscx_toy_majorana() {
+    check("ll_to_scscx_toy_majorana");
+}
+
+/// Two Majorana ends joined through a Dirac propagator, on a final-state line whose
+/// two vertices each pair the lepton with the Majorana fermion.
+#[test]
+fn scscx_to_ntnt_toy_majorana() {
+    check("scscx_to_ntnt_toy_majorana");
+}
+
+/// An initial-state Majorana fermion on a line to a final-state one and on lines to
+/// a final-state lepton.
+#[test]
+fn ntl_to_ntl_toy_majorana() {
+    check("ntl_to_ntl_toy_majorana");
+}
+
+/// Two initial-state Majorana fermions annihilating.
+#[test]
+fn ntnt_to_llx_toy_majorana() {
+    check("ntnt_to_llx_toy_majorana");
+}
+
+/// The vector off the Majorana line: Majorana propagators between the axial vertex
+/// and the scalar ones, and between two axial vertices.
+#[test]
+fn ll_to_ntntvt_toy_majorana() {
+    check("ll_to_ntntvt_toy_majorana");
+}
+
+/// Fermion-number violation: two particles meeting at the diquark vertex, beside the
+/// vector exchange between their lines.
+#[test]
+fn ab_to_ab_toy_fnv() {
+    check("ab_to_ab_toy_fnv");
+}
+
+/// The diquark produced beside a vector off either incoming line: a Dirac propagator
+/// between the vector vertex and the fermion-number-violating one.
+#[test]
+fn ab_to_dqvt_toy_fnv() {
+    check("ab_to_dqvt_toy_fnv");
+}
+
+/// Two antiparticles in the final state from the same vertex.
+#[test]
+fn dqxvt_to_abx_toy_fnv() {
+    check("dqxvt_to_abx_toy_fnv");
+}
+
+/// Two different neutralinos: the chiral `n2 n1 Z` vertex on a final-state line of two
+/// Majorana ends, beside t- and u-channel selectrons on chiral scalar vertices that
+/// join a lepton to a neutralino.
+#[test]
+fn ee_to_n1n2_mssm() {
+    check("ee_to_n1n2_mssm");
+}
+
+/// Two identical neutralinos: the axial `n1 n1 Z` vertex beside t- and u-channel
+/// squarks.
+#[test]
+fn uux_to_n1n1_mssm() {
+    check("uux_to_n1n1_mssm");
+}
+
+/// A chargino and a neutralino on one line, a Dirac end and a Majorana end, through
+/// the chiral `x1 n1 W` vertex and through squarks.
+#[test]
+fn udx_to_x1pn1_mssm() {
+    check("udx_to_x1pn1_mssm");
+}
+
+/// An initial-state neutralino: its line runs from the initial to the final state
+/// through the selectron s- and u-channels and the axial Z vertex.
+#[test]
+fn en1_to_en1_mssm() {
+    check("en1_to_en1_mssm");
+}
+
+/// A neutralino of negative mass (`Mneu3 < 0` in the default card) on an external
+/// leg: its spinors read the signed mass, as MadGraph's `IXXXXX`/`OXXXXX` do.
+#[test]
+fn ee_to_n1n3_mssm() {
+    check("ee_to_n1n3_mssm");
+}
+
+/// Every neutralino as the t-channel propagator between two chiral
+/// chargino–neutralino–W vertices, the negative-mass one among them, beside the
+/// s-channel photon, Z and two neutral Higgs bosons. The two Higgs exchanges are
+/// proportional at every point (both read `s`), so their pairing is the one
+/// enumeration order gives, and the gate holds each against its own graph.
+#[test]
+fn x1px1m_to_wpwm_mssm() {
+    check("x1px1m_to_wpwm_mssm");
+}
+
+/// A Dirac control for the chiral scalar vertex `t~ b H+`, whose two chiralities carry
+/// different couplings: the bottom exchange reads the projectors of the vertex's
+/// hermitian-conjugate partner, as MadGraph does.
+#[test]
+fn ttx_to_hphm_mssm() {
+    check("ttx_to_hphm_mssm");
 }
 
 /// The per-graph gate of `wpwm_to_wpwmz_cw` sees a wrong pairing where the values

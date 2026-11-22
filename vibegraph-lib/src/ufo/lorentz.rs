@@ -762,13 +762,19 @@ mod tests {
         let ffs = || vec![2, 2, 1];
         assert_eq!(parity("Gamma(3,2,1)", ffv()), Some(-1));
         assert_eq!(
-            parity("Gamma(3,2,-1)*ProjM(-1,1) - Gamma(3,2,-1)*ProjP(-1,1)", ffv()),
+            parity(
+                "Gamma(3,2,-1)*ProjM(-1,1) - Gamma(3,2,-1)*ProjP(-1,1)",
+                ffv()
+            ),
             Some(1)
         );
         assert_eq!(parity("Gamma(3,2,-1)*Gamma5(-1,1)", ffv()), Some(1));
         assert_eq!(parity("Gamma5(2,-1)*Gamma(3,-1,1)", ffv()), Some(1));
         assert_eq!(
-            parity("ProjP(2,-1)*Gamma(3,-1,1) - ProjM(2,-1)*Gamma(3,-1,1)", ffv()),
+            parity(
+                "ProjP(2,-1)*Gamma(3,-1,1) - ProjM(2,-1)*Gamma(3,-1,1)",
+                ffv()
+            ),
             Some(1)
         );
         assert_eq!(parity("Gamma(3,2,-1)*ProjM(-1,1)", ffv()), None);

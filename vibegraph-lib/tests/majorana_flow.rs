@@ -31,7 +31,10 @@ fn a_majorana_pair_vertex_odd_under_conjugation_is_refused() {
     assert_eq!(sets[0].diagrams.len(), 3);
 
     let mut vector = toy_majorana();
-    let ffv1 = vector.lorentz.get_index_of("FFV1").expect("FFV1 is in the model");
+    let ffv1 = vector
+        .lorentz
+        .get_index_of("FFV1")
+        .expect("FFV1 is in the model");
     vector.vertices["V_ntntvt"].lorentz = vec![ffv1.into()];
     let err = generate(&vector).expect_err("a vector nt nt vt vertex is refused");
     let message = err.to_string();
