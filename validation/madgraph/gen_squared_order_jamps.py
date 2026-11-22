@@ -69,6 +69,10 @@ class Row:
     # restrict card (`import model <copy>-<restrict>`).
     model: str | None = None
     restrict: str | None = None
+    # MadEvent zeroes t-channel widths and this crate does too; standalone output
+    # does not, so a row with a spacelike massive line sets every width to zero
+    # in the card both sides read.
+    zero_widths: bool = False
 
 
 ROWS = [
@@ -76,7 +80,8 @@ ROWS = [
         SMEFT, "massless"),
     Row("ee_to_ttx_np2", "e+ e- > t t~ NP^2==2", (-11, 11), (6, -6), 500.0, 4, 2602,
         SMEFT, "massless"),
-    Row("uux_to_uux_qcd2", "u u~ > u u~ QCD^2==2", (2, -2), (2, -2), 500.0, 4, 2603),
+    Row("uux_to_uux_qcd2", "u u~ > u u~ QCD^2==2", (2, -2), (2, -2), 500.0, 4, 2603,
+        zero_widths=True),
 ]
 
 DRIVER = """      PROGRAM SQSO_DRIVER
@@ -188,7 +193,6 @@ def build(pdir: str) -> dict:
             "      JAMPD = JAMP\n" + anchor,
             1,
         )
-        decl = "      COMPLEX*16 JAMP(NCOLOR,NAMPSO)"
         m = re.search(r"\n\s*COMPLEX\*16 JAMP\(NCOLOR,NAMPSO\)", src)
         assert m, f"{matrix}: no JAMP declaration"
         src = (
@@ -196,7 +200,6 @@ def build(pdir: str) -> dict:
             + "\n      COMPLEX*16 JAMPD(NCOLOR,NAMPSO)\n      COMMON/SQSO_JAMPS/JAMPD"
             + src[m.end():]
         )
-        del decl
         with open(matrix, "w") as f:
             f.write(src)
     joined = join_continuations(src)
@@ -255,6 +258,11 @@ def bank(row: Row, work: str) -> dict:
     card_path = os.path.join(out, "Cards", "param_card.dat")
     with open(card_path) as f:
         card_text = f.read()
+    if row.zero_widths:
+        card_text = re.sub(r"(?m)^(DECAY\s+\S+\s+)\S+", r"\g<1>0.000000e+00", card_text)
+        card_path = os.path.join(out, "Cards", "param_card_zero_widths.dat")
+        with open(card_path, "w") as f:
+            f.write(card_text)
     masses = mass_block(card_text)
     m_in = [abs(masses.get(abs(p), 0.0)) for p in row.pdgs_in]
     m_out = [abs(masses.get(abs(p), 0.0)) for p in row.pdgs_out]
@@ -285,7 +293,7 @@ def bank(row: Row, work: str) -> dict:
             i, m = int(w[1]) - 1, int(w[2]) - 1
             ip, ih = current
             entries[ip][ih]["jamps"][m][i] = [float(w[3]), float(w[4])]
-    version = run(["mg5_aMC", "--version"]).strip() if False else mg_version()
+    version = mg_version()
     return {
         "key": row.key,
         "process": row.process,
