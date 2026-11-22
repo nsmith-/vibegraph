@@ -307,3 +307,68 @@ fn the_arguments_are_checked() {
     assert!(!missing.status.success());
     assert!(common::stderr_of(&missing).contains("cannot read the run card"));
 }
+
+/// A CMS InputCards-style card carrying each placeholder CMS's gridpack script
+/// substitutes is refused by name by the report and by `integrate`, in both the
+/// `--check` and the full run, and the report marks the key refused.
+#[test]
+fn an_unfilled_placeholder_is_refused_by_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cases = [
+        ("$DEFAULT_PDF_SETS = lhaid", "$DEFAULT_PDF_SETS", "lhaid"),
+        (
+            "$DEFAULT_PDF_MEMBERS = reweight_PDF",
+            "$DEFAULT_PDF_MEMBERS",
+            "reweight_PDF",
+        ),
+        ("$DEFAULT_nPDF_SETS = lhaid", "$DEFAULT_nPDF_SETS", "lhaid"),
+        (
+            "$DEFAULT_nPDF_MEMBERS = reweight_PDF",
+            "$DEFAULT_nPDF_MEMBERS",
+            "reweight_PDF",
+        ),
+    ];
+    for (line, placeholder, name) in cases {
+        let card = format!("{}  {line}  ! CMS template\n", fixed());
+        let result = result_of(&run_card(tmp.path(), &card, &[]));
+        let refusal = &result["refusal"];
+        assert_eq!(refusal["stage"], "parse", "{line}: {result}");
+        let message = refusal["message"].as_str().unwrap();
+        for needle in [placeholder, name, "gridpack_generation.sh", "line 5"] {
+            assert!(
+                message.contains(needle),
+                "{line}: {needle} not in {message}"
+            );
+        }
+        if name == "lhaid" {
+            assert_eq!(key(&result, name)["refusal"], refusal["message"], "{line}");
+        }
+        let unknown = &result["unknown_keys"][0];
+        assert_eq!(unknown["problem"], "placeholder", "{line}");
+
+        let checked = integrate_check(tmp.path(), &card);
+        assert_eq!(checked["kind"], "refusal", "{line}: {checked}");
+        assert!(
+            checked["message"].as_str().unwrap().contains(message),
+            "{line}: {checked}"
+        );
+        let full = common::vibegraph(tmp.path(), tmp.path())
+            .arg("--no-network")
+            .arg("integrate")
+            .arg(tmp.path().join("proc_card.dat"))
+            .arg("--run-card")
+            .arg(tmp.path().join("run_card.dat"))
+            .arg("--out")
+            .arg(tmp.path().join("out_full"))
+            .args(["--neval", "1000", "-j", "1"])
+            .output()
+            .unwrap();
+        assert!(!full.status.success(), "{line}");
+        assert!(
+            common::stderr_of(&full).contains(placeholder),
+            "{line}: {}",
+            common::stderr_of(&full)
+        );
+        assert!(!tmp.path().join("out_full").join("grid.bin.zst").exists());
+    }
+}
