@@ -1,15 +1,13 @@
 //! The accept/reject pass as a replayable source of Les Houches events, and the
 //! record-layer tables an accepted point is labelled from.
 
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
 use tracing::{info, warn};
 
 use super::audit::ReweightAudit;
 use super::MAX_TRIALS_PER_EVENT;
 use crate::coupling::cluster::configs::qcd_order;
 use crate::coupling::scales::MatchedRecord;
-use crate::hadronic::FixedBeamIntegrand;
+use crate::hadronic::{EventSelection, FixedBeamIntegrand};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::{pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord};
 use crate::lhef::emit::{EventSource, WeightedEvent};
@@ -24,7 +22,8 @@ use crate::reweight::engine::Reweighter;
 use crate::runcard::RunCard;
 use crate::systematics::record::{LoRecord, RecordInputs};
 use crate::ufo::UFOModel;
-use crate::unweight::{UnweightStats, Unweighter};
+use crate::unweight::blocks::BlockedPass;
+use crate::unweight::{AcceptedPoint, UnweightStats, Unweighter};
 
 type V = LorentzVector<f64>;
 
@@ -36,18 +35,12 @@ type V = LorentzVector<f64>;
 pub(super) struct SampleSource<'s, 'a> {
     integrand: &'s FixedBeamIntegrand<'a>,
     records: &'s [SubprocessRecord],
-    /// The unweighter as the scan left it, kept so a restart returns the pass to
-    /// its initial state rather than continuing with accumulated statistics.
-    pristine: Unweighter,
-    unweighter: Unweighter,
-    rng: ChaCha8Rng,
-    seed: u64,
+    pass: BlockedPass<Option<FixedBeamPrepared>>,
     /// The card the run was set up from, which supplies the record's scale where
     /// nothing in the matrix element moves with `αs` and so no per-event scale
     /// prescription was installed.
     card: &'s RunCard,
     alpha_qed: f64,
-    momenta: Vec<V>,
     /// The factor from the integrand's natural units to the file's.
     unit: f64,
     /// Per subprocess, its card line's process number (`IDPRUP`).
@@ -78,13 +71,14 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         SampleSource {
             integrand,
             records,
-            pristine: unweighter.clone(),
-            unweighter,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-            seed,
+            pass: BlockedPass::new(
+                unweighter,
+                seed,
+                FIXED_BEAM_EVENT_DRAWS,
+                MAX_TRIALS_PER_EVENT as u64,
+            ),
             card,
             alpha_qed,
-            momenta: Vec::new(),
             unit: integrand.observable().per_natural_unit(),
             process_of,
             resonances,
@@ -96,41 +90,59 @@ impl<'s, 'a> SampleSource<'s, 'a> {
     }
 
     pub(super) fn stats(&self) -> &UnweightStats {
-        self.unweighter.stats()
+        self.pass.stats()
     }
+}
+
+/// The uniforms a fixed-beam event's labels are drawn from
+/// ([`FixedBeamIntegrand::select_event`]).
+const FIXED_BEAM_EVENT_DRAWS: usize = 4;
+
+/// What the worker that accepted a fixed-beam point makes of it: the momenta
+/// rebuilt at the point's coordinates, the labels drawn there, and the scales
+/// its record reports.
+struct FixedBeamPrepared {
+    momenta: Vec<V>,
+    selection: EventSelection,
+    scale: f64,
+    alpha_qcd: f64,
 }
 
 impl EventSource for SampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
-        let point =
-            self.unweighter
-                .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
-        self.integrand
-            .event_in_channel(point.channel, &point.u, &mut self.momenta);
-        let selection = self.integrand.select_event(
-            &self.momenta,
-            point.channel,
-            [
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-            ],
-        )?;
-        let externals: Vec<[f64; 4]> = self
-            .integrand
+        let integrand = self.integrand;
+        let card = self.card;
+        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+            let mut momenta = Vec::new();
+            integrand.event_in_channel(point.channel, &point.u, &mut momenta);
+            let selection =
+                integrand.select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])?;
+            // A point the scale prescription rejects has no scale to report, so
+            // the source stops rather than inventing one, and the strategy
+            // reports a sample it could not fill.
+            let (scale, alpha_qcd) = integrand
+                .record_scales(&momenta, point.channel, &point.u, card)
+                .ok()?;
+            Some(FixedBeamPrepared {
+                momenta,
+                selection,
+                scale,
+                alpha_qcd,
+            })
+        };
+        let (point, prepared) = self.pass.next(integrand, &prepare)?;
+        let FixedBeamPrepared {
+            momenta,
+            selection,
+            scale,
+            alpha_qcd,
+        } = prepared?;
+        let externals: Vec<[f64; 4]> = integrand
             .incoming()
             .iter()
-            .chain(self.momenta.iter())
+            .chain(momenta.iter())
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])
             .collect();
-        // A point the scale prescription rejects has no scale to report, so the
-        // source stops rather than inventing one, and the strategy reports a
-        // sample it could not fill.
-        let (scale, alpha_qcd) = self
-            .integrand
-            .record_scales(&self.momenta, point.channel, &point.u, self.card)
-            .ok()?;
         let header = EventHeader {
             process_id: self.process_of[selection.subprocess],
             // The strategy imposes the file's weight convention; this slot is
@@ -156,7 +168,7 @@ impl EventSource for SampleSource<'_, '_> {
         if let Some(rw) = self.reweighter.as_mut() {
             self.evaluation.clear();
             self.evaluation.extend_from_slice(self.integrand.incoming());
-            self.evaluation.extend_from_slice(&self.momenta);
+            self.evaluation.extend_from_slice(&momenta);
             let m0 = rw.ratios(
                 selection.subprocess,
                 &self.evaluation,
@@ -182,14 +194,13 @@ impl EventSource for SampleSource<'_, '_> {
     }
 
     fn restart(&mut self) {
-        self.unweighter = self.pristine.clone();
-        self.rng = ChaCha8Rng::seed_from_u64(self.seed);
+        self.pass.restart();
         self.tally = ResonanceTally::default();
         self.audit = ReweightAudit::default();
     }
 
     fn sigma_pb(&self) -> f64 {
-        self.unweighter.sigma_from_events() * self.unit
+        self.pass.sigma_from_events() * self.unit
     }
 }
 
@@ -482,10 +493,7 @@ pub(super) struct ProtonSampleSource<'s, 'a> {
     integrand: &'s MultiplicitySum<'a>,
     /// Per part, in the integrand's part order.
     parts: &'s [PartRecords],
-    pristine: Unweighter,
-    pub(super) unweighter: Unweighter,
-    rng: ChaCha8Rng,
-    seed: u64,
+    pass: BlockedPass<Option<ProtonPrepared>>,
     alpha_qed: f64,
     pub(super) tally: ResonanceTally,
     /// The reweighting hypotheses, indexed by concrete subprocess across every
@@ -511,10 +519,12 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         ProtonSampleSource {
             integrand,
             parts,
-            pristine: unweighter.clone(),
-            unweighter,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-            seed,
+            pass: BlockedPass::new(
+                unweighter,
+                seed,
+                PROTON_EVENT_DRAWS,
+                MAX_TRIALS_PER_EVENT as u64,
+            ),
             alpha_qed,
             tally: ResonanceTally::default(),
             reweighter,
@@ -523,37 +533,63 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             records,
         }
     }
+
+    pub(super) fn stats(&self) -> &UnweightStats {
+        self.pass.stats()
+    }
+}
+
+/// The uniforms a proton event's labels are drawn from
+/// ([`ProtonIntegrand::select_event`]).
+const PROTON_EVENT_DRAWS: usize = 5;
+
+/// What the worker that accepted a proton point makes of it: the event rebuilt
+/// at the point's coordinates and the part it belongs to, the labels drawn
+/// there, the record's momenta and the coupling its matrix element ran at.
+struct ProtonPrepared {
+    k: usize,
+    event: ProtonEvent,
+    selection: ProtonSelection,
+    externals: Vec<[f64; 4]>,
+    alpha_qcd: f64,
 }
 
 impl EventSource for ProtonSampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
-        let point =
-            self.unweighter
-                .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
-        let (k, event) = self.integrand.event_in_channel(point.channel, &point.u)?;
-        let integrand: &ProtonIntegrand<'_> = &self.integrand.parts()[k];
+        let sum = self.integrand;
+        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+            let (k, event) = sum.event_in_channel(point.channel, &point.u)?;
+            let integrand: &ProtonIntegrand<'_> = &sum.parts()[k];
+            let selection = integrand.select_event(&event, [u[0], u[1], u[2], u[3], u[4]])?;
+            let externals: Vec<[f64; 4]> = integrand
+                .record_momenta(&event, selection.ordering)
+                .iter()
+                .map(|p| [p.e(), p.px(), p.py(), p.pz()])
+                .collect();
+            // The coupling the matrix element itself ran at, off the PDF set's
+            // own tabulation — the one the densities were fitted with.
+            let alpha_qcd = integrand
+                .alpha_s_source()
+                .map(|source| source.eval(selection.scales.mu_r))
+                .unwrap_or(0.0);
+            Some(ProtonPrepared {
+                k,
+                event,
+                selection,
+                externals,
+                alpha_qcd,
+            })
+        };
+        let (point, prepared) = self.pass.next(sum, &prepare)?;
+        let ProtonPrepared {
+            k,
+            event,
+            selection,
+            externals,
+            alpha_qcd,
+        } = prepared?;
+        let integrand: &ProtonIntegrand<'_> = &sum.parts()[k];
         let part = &self.parts[k];
-        let selection = integrand.select_event(
-            &event,
-            [
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-            ],
-        )?;
-        let externals: Vec<[f64; 4]> = integrand
-            .record_momenta(&event, selection.ordering)
-            .iter()
-            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
-            .collect();
-        // The coupling the matrix element itself ran at, off the PDF set's own
-        // tabulation — the one the densities were fitted with.
-        let alpha_qcd = integrand
-            .alpha_s_source()
-            .map(|source| source.eval(selection.scales.mu_r))
-            .unwrap_or(0.0);
         let member = &integrand.groups().groups()[selection.group].members()[selection.member];
         let header = EventHeader {
             // `IDPRUP` is the member's process number, `@N`: MadEvent writes the
@@ -629,14 +665,13 @@ impl EventSource for ProtonSampleSource<'_, '_> {
     }
 
     fn restart(&mut self) {
-        self.unweighter = self.pristine.clone();
-        self.rng = ChaCha8Rng::seed_from_u64(self.seed);
+        self.pass.restart();
         self.tally = ResonanceTally::default();
         self.audit = ReweightAudit::default();
     }
 
     fn sigma_pb(&self) -> f64 {
-        self.unweighter.sigma_from_events() * GEV2_TO_PB
+        self.pass.sigma_from_events() * GEV2_TO_PB
     }
 }
 

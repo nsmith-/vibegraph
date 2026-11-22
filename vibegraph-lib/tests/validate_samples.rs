@@ -88,7 +88,8 @@ use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
-use vibegraph::unweight::Unweighter;
+use vibegraph::unweight::blocks::BlockedPass;
+use vibegraph::unweight::{AcceptedPoint, UnweightStats, Unweighter};
 use vibegraph::validation::samples::{
     compare, labelling_for, Chi2Column, EventSample, FieldColumn, FieldKind, Spectrum,
 };
@@ -765,24 +766,34 @@ fn generate(
     integ: &FixedBeamIntegrand,
     records: &[SubprocessRecord],
     run_card: &RunCard,
-    uw: &mut Unweighter,
+    uw: &Unweighter,
     seed: u64,
 ) -> EventSample {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut momenta = Vec::new();
+    let budget = (EVENTS_PER_SEED * MAX_TRIALS_PER_EVENT) as u64;
+    // The shipped pass: blocks of trials on the seed's own streams, each accepted
+    // point's momenta, labels and scales built on the worker that accepted it.
+    let prepare = |point: &AcceptedPoint, u: &[f64]| {
+        let mut momenta = Vec::new();
+        integ.event_in_channel(point.channel, &point.u, &mut momenta);
+        let selection = integ.select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])?;
+        let scales = integ
+            .record_scales(&momenta, point.channel, &point.u, run_card)
+            .ok();
+        Some((momenta, selection, scales))
+    };
+    let mut pass = BlockedPass::new(uw.clone(), seed, 4, budget);
     let mut events = Vec::with_capacity(EVENTS_PER_SEED);
     let mut weights = Vec::with_capacity(EVENTS_PER_SEED);
-    let before = uw.stats().clone();
-    let budget = EVENTS_PER_SEED * MAX_TRIALS_PER_EVENT;
-    let mut trials = 0usize;
-    while events.len() < EVENTS_PER_SEED && trials < budget {
-        trials += 1;
-        let Some(point) = uw.trial(integ, &mut rng) else {
-            continue;
+    let mut used = UnweightStats::default();
+    while events.len() < EVENTS_PER_SEED {
+        let Some((point, prepared)) = pass.next(integ, &prepare) else {
+            break;
         };
-        integ.event_in_channel(point.channel, &point.u, &mut momenta);
-        let u = [rng.random(), rng.random(), rng.random(), rng.random()];
-        let Some(selection) = integ.select_event(&momenta, point.channel, u) else {
+        if pass.stats().trials > budget {
+            break;
+        }
+        used = pass.stats().clone();
+        let Some((momenta, selection, scales)) = prepared else {
             continue;
         };
         let beams = integ.incoming();
@@ -791,9 +802,8 @@ fn generate(
             [beams[1].e(), beams[1].px(), beams[1].py(), beams[1].pz()],
         ];
         external.extend(momenta.iter().map(|p| [p.e(), p.px(), p.py(), p.pz()]));
-        let (scale, alpha_qcd) = integ
-            .record_scales(&momenta, point.channel, &point.u, run_card)
-            .expect("an accepted point's scales are the ones its own weight was taken at");
+        let (scale, alpha_qcd) =
+            scales.expect("an accepted point's scales are the ones its own weight was taken at");
         let header = EventHeader {
             process_id: 1,
             weight: point.weight,
@@ -807,9 +817,7 @@ fn generate(
         events.push(event);
         weights.push(point.weight);
     }
-    let after = uw.stats();
-    let weight_sum = after.event_weight_sum - before.event_weight_sum;
-    let sigma_pb = uw.total_w_max() * GEV2_TO_PB * weight_sum / trials as f64;
+    let sigma_pb = uw.total_w_max() * GEV2_TO_PB * used.event_weight_sum / used.trials as f64;
     EventSample {
         events,
         weights,
@@ -973,6 +981,40 @@ fn chi2_cell(cell: &Chi2Column) -> Chi2Cell {
 
 #[test]
 fn unweighted_samples_agree_with_madgraphs_banked_ones() {
+    samples_gate(ROWS);
+}
+
+/// The `2 -> 6` rows, whose `samples` cells the manifest puts in the long
+/// layer for their cost: grids at the budget their `integrals` cells run at,
+/// then three seeds of [`EVENTS_PER_SEED`] events each through the parallel
+/// accept/reject pass. Run with `--ignored --nocapture`, on as many threads as
+/// the host has.
+const LONG_ROWS: &[Row] = &[
+    Row {
+        key: "uux_to_ccx_emmm_qcd0",
+        process: "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+        neval: 600_000,
+        niter: 8,
+        mode: "gate",
+    },
+    Row {
+        key: "bbx_to_ccx_emmm_qcd0",
+        process: "b b~ > c c~ e+ e- mu+ mu- QCD=0",
+        neval: 600_000,
+        niter: 8,
+        mode: "gate",
+    },
+];
+
+#[test]
+#[ignore]
+fn the_long_tier_sample_rows_match_madgraph() {
+    samples_gate(LONG_ROWS);
+}
+
+/// Every row's sample against MadGraph's, over [`GEN_SEEDS`], each row's cell
+/// written whatever it found and the suite failed on any enforced disagreement.
+fn samples_gate(rows: &[Row]) {
     let mut failures: Vec<String> = Vec::new();
     // Columns below the floor on a row the manifest marks informational: reported
     // in full, never enforced, and tracked in the backlog instead.
@@ -980,7 +1022,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Which rows' incoming legs departed from the banked record at all, asserted
     // empty at the end.
     let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
-    for row in ROWS {
+    for row in rows {
         let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
         eprintln!(
@@ -990,11 +1032,19 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             mg.sigma_pb
         );
         with_integrand(row, |integ, records, run_card| {
+            let grids = Stopwatch::start();
             let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
-            let mut uw = Unweighter::scan(
+            let uw = Unweighter::scan(
                 integ,
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
+            );
+            eprintln!(
+                "  grids {}x{} and w_max scan in {:.1} s, acceptance bound {:.3e}",
+                row.neval,
+                row.niter,
+                grids.seconds(),
+                mg.sigma_pb / (uw.total_w_max() * GEV2_TO_PB)
             );
             // Every column is enforced at the row's own mode: the outgoing
             // distributions, the incoming legs and the scales the record reports
@@ -1043,7 +1093,14 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             let mut labelling = None;
             let mut polarized_outside = 0usize;
             for &seed in &GEN_SEEDS {
-                let ours = generate(integ, records, run_card, &mut uw, seed);
+                let generation = Stopwatch::start();
+                let ours = generate(integ, records, run_card, &uw, seed);
+                eprintln!(
+                    "  seed {seed:#010x} | {} events generated in {:.1} s on {} threads",
+                    ours.len(),
+                    generation.seconds(),
+                    rayon::current_num_threads()
+                );
                 for &(_, pdg, allowed) in POLARIZED_LEGS.iter().filter(|l| l.0 == row.key) {
                     let (ours_events, ours_outside) = polarized_leg_count(&ours, pdg, allowed);
                     let (theirs_events, theirs_outside) = polarized_leg_count(&mg, pdg, allowed);
@@ -1198,7 +1255,7 @@ fn probe_samples_p_floor_headroom() {
         let mg = banked_sample(row.key);
         with_integrand(row, |integ, records, run_card| {
             let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
-            let mut uw = Unweighter::scan(
+            let uw = Unweighter::scan(
                 integ,
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
@@ -1206,8 +1263,16 @@ fn probe_samples_p_floor_headroom() {
             let mut labelling = None;
             let mut row_three = (f64::INFINITY, String::new());
             let mut row_five = (f64::INFINITY, String::new());
+            // Each seed's sample cross section, with the Poisson error of a
+            // weighted count, `σ·√Σw²/Σw`.
+            let mut sigmas: Vec<(f64, f64)> = Vec::new();
             for (i, &seed) in HEADROOM_GEN_SEEDS.iter().enumerate() {
-                let ours = generate(integ, records, run_card, &mut uw, seed);
+                let ours = generate(integ, records, run_card, &uw, seed);
+                let (sw, sw2) = ours
+                    .weights
+                    .iter()
+                    .fold((0.0, 0.0), |(a, b), w| (a + w, b + w * w));
+                sigmas.push((ours.sigma_pb, ours.sigma_pb * sw2.sqrt() / sw));
                 let l = *labelling.get_or_insert_with(|| labelling_for(&ours, &mg));
                 let found = compare(&ours, &mg, l);
                 let mut worst = (f64::INFINITY, String::new());
@@ -1235,6 +1300,24 @@ fn probe_samples_p_floor_headroom() {
                     row_five = (worst.0, format!("seed {seed:#010x} {}", worst.1));
                 }
             }
+            let n = sigmas.len() as f64;
+            let mean = sigmas.iter().map(|s| s.0).sum::<f64>() / n;
+            let sd = (sigmas.iter().map(|s| (s.0 - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+            let chi2 = sigmas
+                .iter()
+                .map(|(x, e)| ((x - mean) / e).powi(2))
+                .sum::<f64>()
+                / (n - 1.0);
+            let quoted = (sigmas.iter().map(|s| s.1 * s.1).sum::<f64>()).sqrt() / n;
+            eprintln!(
+                "  SIGMA {:<28} {n}-seed mean {mean:.6e} pb ({:+.3}% of MadGraph's {:.6e}, \
+                 pull {:+.2} on the mean's quoted error) | seed sd {:.3}% | chi2/dof {chi2:.2}",
+                row.key,
+                100.0 * (mean / mg.sigma_pb - 1.0),
+                mg.sigma_pb,
+                (mean - mg.sigma_pb) / quoted,
+                100.0 * sd / mean,
+            );
             eprintln!(
                 "  ROW {:<28} mode {:<4} | 3-seed min p {:.3e} ({:.1}x floor) | \
                  5-seed min p {:.3e} ({:.1}x floor) on {}",
@@ -1508,7 +1591,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
     with_integrand(row, |integ, records, run_card| {
         // 1. The production sampler, pooled over the same seeds the gate uses.
         let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
-        let mut uw = Unweighter::scan(
+        let uw = Unweighter::scan(
             integ,
             channels.iter().map(|c| (&c.grid, c.neval)),
             SCAN_SEED,
@@ -1517,7 +1600,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         let mut ours_tata = Spectrum::new(MLL_EDGES);
         let mut sigma_sum = 0.0;
         for &seed in &GEN_SEEDS {
-            let sample = generate(integ, records, run_card, &mut uw, seed);
+            let sample = generate(integ, records, run_card, &uw, seed);
             sigma_sum += sample.sigma_pb;
             for (event, &w) in sample.events.iter().zip(&sample.weights) {
                 let event = canonical(event, Labelling::Fine);

@@ -68,7 +68,8 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::select::select_index;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
-use vibegraph::unweight::Unweighter;
+use vibegraph::unweight::blocks::BlockedPass;
+use vibegraph::unweight::{AcceptedPoint, UnweightStats, Unweighter};
 
 mod common;
 
@@ -446,7 +447,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
 
             // Each channel's maximum, scanned on its own grid with its own share of
             // the integration budget.
-            let mut uw = Unweighter::scan(
+            let uw = Unweighter::scan(
                 integ,
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
@@ -475,28 +476,38 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
             // Generation: one pass per seed, sharing the scanned maxima.
             let mut sigmas = Vec::new();
             let mut gen_hists: Vec<Hist> = blank();
-            let mut momenta = Vec::new();
+            let mut overall = UnweightStats::default();
+            // The shipped pass: blocks of trials on the seed's own streams, each
+            // accepted point's momenta rebuilt on the worker that accepted it.
+            let prepare = |point: &AcceptedPoint, _: &[f64]| {
+                let mut momenta = Vec::new();
+                integ.event_in_channel(point.channel, &point.u, &mut momenta);
+                observables(&momenta)
+            };
             for &seed in &GEN_SEEDS {
-                let before = uw.stats().clone();
-                let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                for _ in 0..TRIALS_PER_SEED {
-                    if let Some(point) = uw.trial(integ, &mut rng) {
-                        integ.event_in_channel(point.channel, &point.u, &mut momenta);
-                        let x = observables(&momenta);
-                        for (h, v) in gen_hists.iter_mut().zip(x) {
-                            h.fill(v, point.weight);
-                        }
+                let mut pass = BlockedPass::new(uw.clone(), seed, 0, TRIALS_PER_SEED as u64);
+                // Every event whose trial falls inside the seed's budget, and the
+                // statistics as they stood after the last of them.
+                let mut used = UnweightStats::default();
+                while let Some((point, x)) = pass.next(integ, &prepare) {
+                    if pass.stats().trials > TRIALS_PER_SEED as u64 {
+                        break;
+                    }
+                    used = pass.stats().clone();
+                    for (h, v) in gen_hists.iter_mut().zip(x) {
+                        h.fill(v, point.weight);
                     }
                 }
-                let after = uw.stats();
-                let events = after.accepted - before.accepted;
-                let weight = after.event_weight_sum - before.event_weight_sum;
-                let sigma = uw.total_w_max() * GEV2_TO_PB * weight / TRIALS_PER_SEED as f64;
+                let events = used.accepted;
+                let sigma =
+                    uw.total_w_max() * GEV2_TO_PB * used.event_weight_sum / used.trials as f64;
                 eprintln!(
-                    "  seed {seed:#010x} | {events:>6} events, \
+                    "  seed {seed:#010x} | {events:>6} events in {} trials, \
                      eff {:.3e} | sigma(events) = {sigma:.6e} pb",
-                    events as f64 / TRIALS_PER_SEED as f64
+                    used.trials,
+                    used.efficiency()
                 );
+                overall.absorb(&used);
                 if (events as usize) < MIN_EVENTS {
                     failures.push(format!(
                         "[{}] seed {seed:#010x} produced only {events} events",
@@ -506,7 +517,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
                 sigmas.push(sigma);
             }
 
-            let s = uw.stats();
+            let s = &overall;
             eprintln!(
                 "  overall: eff {:.3e} (predicted {predicted_eff:.3e}) | \
                  overweight fraction {:.3e}, weight share {:.3e}, \

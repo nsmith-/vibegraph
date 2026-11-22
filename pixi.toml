@@ -109,6 +109,12 @@ validate-reweight = { cmd = "cargo test -p vibegraph-lib --test reweight_mg_orac
 # report that carries them: `validate` clears the per-category cells first, which
 # is what keeps a stale long-tier measurement from being served as this run's.
 validate-sigma-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture the_long_tier_sigma_rows_match_madgraph"
+# The 2 -> 6 rows' `samples` cells: grids at their `integrals` budget, then three
+# 20 000-event seeds each through the parallel accept/reject pass, compared with
+# MadGraph's banked events. About a quarter of an hour on four cores. Writes both
+# rows' `samples` cells; run it between `validate` and `validation-report`, as
+# validate-sigma-2to6.
+validate-samples-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_samples -- --ignored --nocapture the_long_tier_sample_rows_match_madgraph"
 # The budget ladders behind the enforced cross sections' `neval`, five seeds a
 # rung. Each is what says its row's gate measures an agreement rather than this
 # crate's convergence, and each is too long for the banked layer, so they live
@@ -124,7 +130,7 @@ ladder-recarded = "cargo test -p vibegraph-lib --profile release-debug --feature
 validate-cms-pdfs = { cmd = "bash -c 'export SYSTEMATICS_CMS_PDFS=\"${SYSTEMATICS_CMS_PDFS:-$PWD/validation/pdf/cms}\" && cargo test -p vibegraph-lib --profile release-debug --features extended-validation --lib -- --ignored --nocapture pdf::table_oracle && LHAPDF_DATA_PATH=\"$SYSTEMATICS_CMS_PDFS\" cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_systematics -- --ignored --nocapture cms_arguments_reproduce_madgraphs_weights the_pdfas_member_reads_its_own_coupling_and_clamp'", depends-on = ["fetch-pdf", "fetch-cms-pdfs"] }
 
 # The oracle layer's vibegraph side: the runs too heavy for the banked budget.
-validate-deep = '''printf '%s\n' "The oracle layer runs the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0), measured and reported: pixi run validate-sigma-2to6, then pixi run validation-report to collate their cells" "  - the budget ladders behind the enforced sigma budgets: pixi run ladder-2to6, pixi run ladder-bb, pixi run ladder-recarded" "  - the kT clustering replay against MadGraph's own per-event intermediates: pixi run -e madgraph validate-kt-cluster" "  - CMS's 880-member systematics request (43 sets): the interpolator's table oracle over every member and every one of the 926 weights: pixi run validate-cms-pdfs (fetches the members first)" "Still without a driver: the 2 -> 6 sample rows, the full seed sweep for the multi-channel sigma rows, and the full rooting-soundness sweep over every candidate re-rooting. The ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
+validate-deep = '''printf '%s\n' "The oracle layer runs the long-tier cells of validation/manifest.toml:" "  - the 2 -> 6 sigma rows (uux_to_ccx_emmm_qcd0, bbx_to_ccx_emmm_qcd0), measured and reported: pixi run validate-sigma-2to6, then pixi run validation-report to collate their cells" "  - the 2 -> 6 samples rows, enforced: pixi run validate-samples-2to6, then pixi run validation-report" "  - the budget ladders behind the enforced sigma budgets: pixi run ladder-2to6, pixi run ladder-bb, pixi run ladder-recarded" "  - the kT clustering replay against MadGraph's own per-event intermediates: pixi run -e madgraph validate-kt-cluster" "  - CMS's 880-member systematics request (43 sets): the interpolator's table oracle over every member and every one of the 926 weights: pixi run validate-cms-pdfs (fetches the members first)" "Still without a driver: the full seed sweep for the multi-channel sigma rows, and the full rooting-soundness sweep over every candidate re-rooting. The ignored tests are the closest thing meanwhile:" "  cargo test --workspace --profile release-debug --features vibegraph/extended-validation -- --ignored --nocapture"'''
 
 
 # --- nougat: scientific PDF OCR ---

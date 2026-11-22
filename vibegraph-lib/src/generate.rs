@@ -1246,14 +1246,14 @@ fn generate_proton_sample(
     }
     report(
         artifact,
-        source.unweighter.stats(),
+        source.stats(),
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
         settings.event_norm,
         Observable::CrossSection,
     );
-    report_heaviest(artifact, &integ, source.unweighter.stats());
+    report_heaviest(artifact, &integ, source.stats());
     Ok(summary)
 }
 
