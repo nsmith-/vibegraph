@@ -13,7 +13,7 @@ sources:
 ## Goal and exit criteria
 
 v0.2.2 is tagged on c26980f. Two checks ran on it after release:
-- **The CERN host's batch campaign `v022-1009`, seed 1, against v0.2.1's seed 1.**
+- **`vg-validator`'s batch campaign `v022-1009`, seed 1, against v0.2.1's seed 1.**
   - Pass 230 → 295 and panics 7 → 0.
   - Refusals and timeouts remain the largest non-ok classes: refused 511 → 434, timeouts 182 → 209. The g2HDM cards that panicked now time out, and the retries clear some of the timeouts.
   - The DY1j ptj1 window is resolved, and v0.2.2 is right. On the gridpacks' exact cards, MadGraph 3.7.1 agrees with vibegraph to 0.16% or better in all four bins. The gridpacks' MadGraph 2.9.18 reads 3–8% low in 100–600 GeV and 1.4% high above 600 GeV. That is a registered deviation, with no patch.
@@ -32,7 +32,7 @@ v0.2.3 is tagged when:
 - every banked σ line is unchanged: bit for bit where a change cannot reach it, within the multi-seed criterion where it can;
 - CI is green on main, `banked` included;
 - `release-branch-ci-and-ruleset-missing` is closed, so `release/v0.2` can be cut from the tag;
-- the CERN host's targeted check of v022-1009's failures, built from the release-candidate code, shows no panics, and every case still failing is deliberate, deferred or filed.
+- `vg-validator`'s targeted check of v022-1009's failures, built from the release-candidate code, shows no panics, and every case still failing is deliberate, deferred or filed.
 
 After the tag, two checks run on the released binary: the full batch campaign and simshop's SMEFT re-scan. Regressions they find go to a patch release.
 
@@ -40,23 +40,23 @@ Every PR is based on `main`; none is stacked.
 
 ## Hosts and sessions
 
-Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That container bounded the sprint. Sprint L is about twice sprint K's size, so it runs as two sprint sessions and sends long runs to the CERN host.
+Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That container bounded the sprint. Sprint L is about twice sprint K's size, so it runs as two sprint sessions and sends long runs to `vg-validator`. Names and the message flow are in [session roles](../../workflow/session-roles.md).
 
-- **Session L-A, amplitudes and physics:** PRs 1, 2, 4, 5, 9 and 10. PRs 1 and 10 both change how amplitudes are split, so one session owns both and runs them in order.
-- **Session L-B, refusals, reports and performance:** PRs 3, 3b, 7, 8 and 11. PR 8's parameter report and PR 9's width report share one record shape. L-B lands PR 8 first and L-A builds PR 9 on it.
-- **CERN host, the only place long runs go.** It builds the PR branch locally; batch takes pinned release binaries only. Long runs means:
+- **`vg-sprint-L-physics`, amplitudes and physics:** PRs 1, 2, 4, 5, 9 and 10. PRs 1 and 10 both change how amplitudes are split, so one session owns both and runs them in order.
+- **`vg-sprint-L-pipeline`, refusals, reports and performance:** PRs 3, 3b, 7, 8 and 11. PR 8's parameter report and PR 9's width report share one record shape. vg-sprint-L-pipeline lands PR 8 first, and vg-sprint-L-physics builds PR 9 on it.
+- **`vg-validator`, the only place long runs go.** It builds the PR branch locally; batch takes pinned release binaries only. Long runs means:
   - multi-seed σ gates on cards over about 20 minutes per seed;
   - MadGraph regenerations at the pinned 3.7.1;
   - timed runs on campaign cards (PR 3);
   - anything over 8 GB of memory.
 
-  A sprint session sends the request through the manager. The request names the branch, head SHA, cards, seeds and the expected answer. The sprint session reports the result as host-measured.
+  A sprint session sends the request through `vg-router` to `vg-planner`. The request names the branch, head SHA, cards, seeds and the expected answer. The sprint session reports the result as host-measured.
 - **In each sprint container:** fmt, clippy, the hermetic suite, the touched banked targets, and short MadGraph 3.5.7 checks. Each container still runs one heavy job at a time.
-- **Cross-session edits.** Both sessions file kb items in their own sprint PRs. Neither edits the other's claimed items. The manager merges one PR at a time, checking that a merge doesn't conflict with a PR whose `banked` run is in flight.
+- **Cross-session edits.** Both sessions file kb items in their own sprint PRs. Neither edits the other's claimed items. `vg-planner` merges one PR at a time, checking that a merge doesn't conflict with a PR whose `banked` run is in flight.
 
 ## PRs, items and oracles
 
-### PR 1: squared-order constraints (`sprintl-squared-orders`), L-A, feature-dev, Opus
+### PR 1: squared-order constraints (`sprintl-squared-orders`), vg-sprint-L-physics, feature-dev, Opus
 
 | Item | Pri | Evidence |
 |---|---|---|
@@ -64,9 +64,9 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 
 - **The split.** Split the amplitude by coupling-order class and form only the cross terms the constraint selects. Read MadGraph's squared-order semantics (`==`, `<=`, `>`, interference-only) before writing code. `reweight::poly` already proves each diagram's monomials.
 - **`WEIGHTED==` / `>`.** These need the same split. Take them if they fall out of it; otherwise file them.
-- **Oracles:** |M|² and σ against MadGraph for `e+ e- > t t~ NP^2==1` and `NP^2==2` on banked SMEFTsim rows. The 24 campaign cards go to the CERN host.
+- **Oracles:** |M|² and σ against MadGraph for `e+ e- > t t~ NP^2==1` and `NP^2==2` on banked SMEFTsim rows. The 24 campaign cards go to `vg-validator`.
 
-### PR 2: Majorana and fermion-number violation (`sprintl-majorana`), L-A, feature-dev, Opus, with validation-dev for the oracle
+### PR 2: Majorana and fermion-number violation (`sprintl-majorana`), vg-sprint-L-physics, feature-dev, Opus, with validation-dev for the oracle
 
 | Item | Pri | Evidence |
 |---|---|---|
@@ -76,16 +76,16 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 - **Keep MadGraph's own refusals.** Majorana fermions in four-fermion vertices stay refused, as MadGraph refuses them.
 - **Fallback.** This is sprint-sized. If it runs long, it can move to v0.2.4 without holding the tag.
 
-### PR 3: MLM multijet timeouts, triage (`sprintl-timeout-triage`), L-B, performance-dev, Opus
+### PR 3: MLM multijet timeouts, triage (`sprintl-timeout-triage`), vg-sprint-L-pipeline, performance-dev, Opus
 
 | Item | Pri |
 |---|---|
 | `multijet-mlm-cards-time-out-in-the-gridpack-campaign` | high |
 
 - **Attribute every timeout.** Each timeout that remains after v022-1009's retries is attributed to a phase from a timed run: enumeration, compilation, channel construction or sampling.
-- **Where it runs.** The timed runs are on the CERN host. The triage reads them here, and the dominant causes are filed as their own items.
+- **Where it runs.** The timed runs are on `vg-validator`. The triage reads them here, and the dominant causes are filed as their own items.
 
-### PR 3b: the timeout fixes PR 3 names (`sprintl-timeout-fixes`), L-B, performance-dev, Opus
+### PR 3b: the timeout fixes PR 3 names (`sprintl-timeout-fixes`), vg-sprint-L-pipeline, performance-dev, Opus
 
 | Item | Pri |
 |---|---|
@@ -93,10 +93,10 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 | `zero-weight-integrand-runs-to-point-cap` | medium |
 | What PR 3 files | — |
 
-- **Measure the gain.** Wall time on the named cards, measured on the CERN host.
+- **Measure the gain.** Wall time on the named cards, measured on `vg-validator`.
 - **Prove nothing else moves.** σ bit for bit on the cards the fixes don't reach.
 
-### PR 4: VBS stable-boson σ high (`sprintl-vbs`), L-A, validation-dev, Opus
+### PR 4: VBS stable-boson σ high (`sprintl-vbs`), vg-sprint-L-physics, validation-dev, Opus
 
 | Item | Pri | Evidence |
 |---|---|---|
@@ -104,19 +104,19 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 
 The excess is attributed per event or per diagram against MadGraph, not from σ alone, on one polarised and one unpolarised card. It is then fixed.
 
-### PR 5: multichannel misses a region (`sprintl-multichannel`), L-A, validation-dev, then performance-dev, Opus
+### PR 5: multichannel misses a region (`sprintl-multichannel`), vg-sprint-L-physics, validation-dev, then performance-dev, Opus
 
 | Item | Pri | Evidence |
 |---|---|---|
 | `multichannel-subdominant-channel-carries-dominant-region` | high | TprimeBToTZ M1800 reads about 3% low on 4 of 5 seeds |
 
-Name the region from per-event output. Then reach it on every seed at the campaign budget: at least 5 seeds there, which run on the CERN host.
+Name the region from per-event output. Then reach it on every seed at the campaign budget: at least 5 seeds there, which run on `vg-validator`.
 
 ### PR 6: dropped
 
 The DY1j ptj1 window closed without a code change. Sprint K's close-out kb PR records it, with the MadGraph 3.7.1 evidence, and registers the MadGraph 2.9.18 deviation.
 
-### PR 7: run-card and UFO refusals (`sprintl-refusals`), L-B, feature-dev, Sonnet
+### PR 7: run-card and UFO refusals (`sprintl-refusals`), vg-sprint-L-pipeline, feature-dev, Sonnet
 
 | Item | Pri |
 |---|---|
@@ -127,7 +127,7 @@ The DY1j ptj1 window closed without a code change. Sprint K's close-out kb PR re
 
 Each item gets a CLI refusal test. ctGpatched either enumerates or is refused with MadGraph's reason. dim6top loads.
 
-### PR 8: simshop's check-time reports (`sprintl-reports`), L-B, feature-dev, Sonnet
+### PR 8: simshop's check-time reports (`sprintl-reports`), vg-sprint-L-pipeline, feature-dev, Sonnet
 
 | Item | Pri |
 |---|---|
@@ -136,7 +136,7 @@ Each item gets a CLI refusal test. ctGpatched either enumerates or is refused wi
 
 The record shapes are documented in the ldjson schema as added fields, under schema_version 1.
 
-### PR 9: Auto widths (`sprintl-widths`), L-A, feature-dev, Opus, after PR 8
+### PR 9: Auto widths (`sprintl-widths`), vg-sprint-L-physics, feature-dev, Opus, after PR 8
 
 | Item | Pri |
 |---|---|
@@ -144,7 +144,7 @@ The record shapes are documented in the ldjson schema as added fields, under sch
 
 Two-body tree-level widths for t, W, Z, H and one BSM particle, against MadGraph's MadWidth. The widths are reported through PR 8's record and banked with the run.
 
-### PR 10: helicity-aware reweighting (`sprintl-helicity-reweight`), L-A, feature-dev, Opus, after PR 1
+### PR 10: helicity-aware reweighting (`sprintl-helicity-reweight`), vg-sprint-L-physics, feature-dev, Opus, after PR 1
 
 | Item | Pri |
 |---|---|
@@ -152,7 +152,7 @@ Two-body tree-level widths for t, W, Z, H and one BSM particle, against MadGraph
 
 The `gen_reweight_oracle.py` rows with `change helicity True` must agree event by event. Use PR 1's graded evaluator if it serves.
 
-### PR 11: campaign leftovers (`sprintl-leftovers`), L-B, validation-dev, Sonnet
+### PR 11: campaign leftovers (`sprintl-leftovers`), vg-sprint-L-pipeline, validation-dev, Sonnet
 
 | Item | Pri |
 |---|---|
@@ -168,10 +168,10 @@ The TpTp item comes first: a zero |M|² on points that pass the cuts may be a si
 ## Dispatch
 
 1. **Inputs:** v022-1009's final verdict table, plus the refusal and timeout breakdown, for PRs 3 and 11.
-2. **Wave 1.** L-A runs PRs 1, 2 and 4. L-B runs PRs 3, 7 and 8. Each session runs at most three agents at once and one heavy job.
-3. **Wave 2.** L-A runs PR 10 after PR 1 merges, PR 9 after PR 8 merges, and PR 5. L-B runs PR 3b after PR 3's triage, and PR 11.
+2. **Wave 1.** vg-sprint-L-physics runs PRs 1, 2 and 4. vg-sprint-L-pipeline runs PRs 3, 7 and 8. Each session runs at most three agents at once and one heavy job.
+3. **Wave 2.** vg-sprint-L-physics runs PR 10 after PR 1 merges, PR 9 after PR 8 merges, and PR 5. vg-sprint-L-pipeline runs PR 3b after PR 3's triage, and PR 11.
 4. **Hygiene.** One hygiene-dev pass per merged feature cluster.
-5. **Release candidate.** `release-branch-ci-and-ruleset-missing` is closed by a small hygiene PR and the user's ruleset change. Then CI on main and the CERN host's targeted check on locally built release-candidate code, then the tag. After the tag, on the released binary: the full campaign and simshop's re-scan.
+5. **Release candidate.** `release-branch-ci-and-ruleset-missing` is closed by a small hygiene PR and the user's ruleset change. Then CI on main and `vg-validator`'s targeted check on locally built release-candidate code, then the tag. After the tag, on the released binary: the full campaign and simshop's re-scan.
 
 **If it runs long.** The release can cut after wave 1 plus PR 10. PR 2 (Majorana) or PR 3b (timeout fixes) would then move to v0.2.4.
 
