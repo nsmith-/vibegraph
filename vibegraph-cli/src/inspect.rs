@@ -84,6 +84,7 @@ pub(crate) fn run(args: &InspectArgs) -> Result<(), CliError> {
             ErrorKind::Artifact,
             format!("cannot read {}: {e}", path.display()),
         )
+        .with_reason(&e)
     })?;
     let observable = recorded_observable(&artifact)?;
     if let Some(out) = &args.ranking {
