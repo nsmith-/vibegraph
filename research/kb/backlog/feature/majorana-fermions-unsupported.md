@@ -48,3 +48,5 @@ gridpacks, the largest in-charter group: 11 Majorana (HNL, type-III seesaw,
 dark Higgs, higgsinos, gluinos, NMSSM cascades) and 10 fermion-number-violating
 vertices (RPV single stop, diquarks, leptoquarks). See the
 [refusal census](../../validation/cms-gridpack-refusals-202a540.md).
+
+**Post-release campaign `v022-1009`, seed 1 (v0.2.2, 2026-11-22).** 90 refusals: 53 have a fermion-number-violating vertex (two incoming particles or antiparticles on one line), and 37 are Majorana (30 external, 7 on an internal propagator).
