@@ -520,10 +520,9 @@ fn stitch_set(
                         diagrams.push(d);
                     }
                     Some((kept, sign, first)) => {
-                        assert_eq!(
-                            *sign, d.sign,
-                            "one stitched graph reached twice with opposite signs"
-                        );
+                        if *sign != d.sign {
+                            return Err(opposite_signs_refusal(core, &particles_out));
+                        }
                         if *first != flagged {
                             return Err(format!(
                                 "in {} > {}, one diagram holds two lines either of which is the \
@@ -577,6 +576,17 @@ fn stitch_set(
             mirrored: core.mirrored,
         },
     })
+}
+
+/// The refusal for one stitched graph reached by two routes whose signs differ: the sign is
+/// a property of the graph, so no single amplitude can be assigned to it.
+fn opposite_signs_refusal(core: &DiagramSet, particles_out: &[String]) -> String {
+    format!(
+        "in {} > {}, one stitched diagram is reached by two routes with opposite signs; \
+         its amplitude sign is ambiguous",
+        core.particles_in.join(" "),
+        particles_out.join(" ")
+    )
 }
 
 /// `core` with each `(leg, node, decay)` glued in: the core's leg `leg` and the decay's
@@ -933,6 +943,20 @@ mod tests {
         assert_eq!(a.len(), 6);
         assert_eq!(a[0], [1, 2, 1, 2]);
         assert_eq!(a.iter().unique().count(), 6);
+    }
+
+    #[test]
+    fn opposite_sign_routes_to_one_graph_refuse_by_name() {
+        let core = DiagramSet {
+            particles_in: vec!["u".into(), "u~".into()],
+            particles_out: vec!["t".into(), "t~".into()],
+            polarizations: Vec::new(),
+            diagrams: Vec::new(),
+            mirrored: false,
+        };
+        let msg = opposite_signs_refusal(&core, &["b".into(), "W+".into()]);
+        assert!(msg.contains("u u~ > b W+"), "{msg}");
+        assert!(msg.contains("opposite signs"), "{msg}");
     }
 
     #[test]
