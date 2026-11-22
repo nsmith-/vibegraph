@@ -3,18 +3,18 @@
 //! is left, in order, on a monotone clock, and a run killed inside a phase leaves
 //! that phase's start record in its output.
 //!
-//! Needs the interned SM model and the banked NNPDF set under
-//! `validation/pdf`, as the other proton tests of the default suite do.
+//! The fixed-beam tests need only the interned SM model. The proton test needs
+//! the fetched NNPDF set under `validation/pdf`, which only the banked layer has,
+//! so it runs under `extended-validation`.
 
 #![cfg(unix)]
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use common::PdfDataPath;
 use serde_json::Value;
 
 const EBEAM: f64 = 45.6;
@@ -31,6 +31,7 @@ const FIXED_BEAM_PHASES: [&str; 9] = [
     "bank",
 ];
 
+#[cfg(feature = "extended-validation")]
 const PROTON_PHASES: [&str; 10] = [
     "input",
     "enumerate",
@@ -43,10 +44,6 @@ const PROTON_PHASES: [&str; 10] = [
     "configurations",
     "bank",
 ];
-
-fn pdf_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
-}
 
 fn fixed_beam_integrate(dir: &Path, extra: &[&str]) -> Command {
     let proc_card = dir.join("proc_card.dat");
@@ -160,13 +157,24 @@ fn a_fixed_beam_integration_streams_its_phases_in_order() {
     assert_eq!(size(&objects, "generate", "events_written"), 50);
 }
 
+#[cfg(feature = "extended-validation")]
 #[test]
 fn a_proton_integration_streams_its_phases_in_order() {
+    use common::PdfDataPath;
+
+    let pdf_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf");
+    if !pdf_dir.join("NNPDF23_lo_as_0130_qed").is_dir() {
+        vibegraph::validation::require(
+            "a_proton_integration_streams_its_phases_in_order",
+            "the NNPDF23_lo_as_0130_qed set",
+            pdf_dir.display(),
+        );
+    }
     let tmp = tempfile::tempdir().unwrap();
     let proc_card = tmp.path().join("proc_card.dat");
     std::fs::write(&proc_card, "import model sm\ngenerate p p > e+ e-\n").unwrap();
     let output = common::vibegraph(tmp.path(), tmp.path())
-        .pdf_data_path(pdf_dir())
+        .pdf_data_path(&pdf_dir)
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
