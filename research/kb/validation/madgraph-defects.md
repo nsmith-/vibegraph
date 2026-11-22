@@ -297,6 +297,67 @@ The measurements and their provenance are in the
 [sprint K log](../sprints/v022-smeft-and-refusals/log.md)
 (2026-11-22).
 
+**CMS VBS gridpacks' MadGraph 2.9.18 σ with stable W/Z.** Five CMS gridpacks
+generate `p p > V V j j QED=4 QCD=0` with polarised or unpolarised stable
+bosons (`import model sm`, 4-flavour `p`, a `j` that adds `b b~`), the decays
+left to MadSpin. Their banked MadGraph 2.9.18 production σ reads 3.4%
+(unpolarised) and 6.6% (polarised) below MadGraph 3.7.1 on the same cards. It
+is registered here as a deviation from 2.9.18, not as a vibegraph defect.
+
+| card | process | MG 3.7.1, 5 seeds (pb) | gridpack MG 2.9.18 (pb) | 2.9.18/3.7.1 | vibegraph v0.2.2, 5 seeds (pb) | vg/3.7.1 |
+|---|---|---|---|---|---|---|
+| 134 `VBSWmTZLTo4Jets_5f_LO` | `w-{T} z{0} j j` | 0.054374 ± 0.000099 | 0.05078 ± 0.000191 | 0.934 | 0.055385 ± 0.000074 | 1.0186 |
+| 700 `VBSWpZTo4Jets_5f_LO` | `w+ z j j` | 0.45728 ± 0.00043 | 0.4418 ± 0.00098 | 0.966 | 0.46382 ± 0.00059 | 1.0143 |
+
+The MadGraph 3.7.1 column is the unweighted mean of seeds 1–5 with the error
+of the mean from their spread (sd 0.41% on 134, 0.21% on 700), not MadGraph's
+quoted error: on card 134 the five seeds scatter with χ²/dof 2.45 against
+their quoted errors, so MadGraph under-quotes its σ error there by about 1.6×
+(card 700: χ²/dof 0.60). Cards 135, 698 and 702 (`z{0} w-{0}`, `w-{T} w-{0}`,
+`z{T} w-{T}`) read 12.7%, 10.4% and 3.4% below vibegraph under 2.9.18 and were
+not regenerated with 3.7.1. The further 1.4–1.9% by which vibegraph reads above
+those 3.7.1 runs is MadEvent's default survey, which they also ran: on one
+partonic channel it closes at `hard_survey = 2`
+([madevent-default-survey-bias](madevent-default-survey-bias.md)).
+
+What the 2.9.18 deficit is, and what it is not:
+- **The matrix element agrees.** Per flow and per helicity, MadGraph 3.7.1
+  standalone and vibegraph agree to at most 2.4e-11 of the largest amplitude
+  on one partonic channel of each of the five cards (`u u > w+ z u d`,
+  `d d > w-{T} z{0} d u`, `d d > z{0} w-{0} d u`, `d d > w-{T} w-{0} u u`,
+  `d d > z{T} w-{T} d u`; 3 points at √ŝ = 1.5 TeV, every width zero on both
+  sides). The polarised helicity tables have the same rows on both sides.
+- **It is in 2.9.18's sampling, not its integrand.** MadGraph 3.5.7, whose
+  `sde_strategy = 2` channel weight is 2.9.18's (`get_channel_cut` divides by
+  `((t-M)(t+M))²` with `t` already `p²`; the 3.5.x entry above), sides with
+  2.9.18: on card 700 at 2000 events it gives 0.4277 ± 0.0021 pb, and a local
+  2.9.18 at the same budget gives 0.4288 ± 0.0023 pb (one seed each, quoted
+  errors, which the 3.7.1 seeds above show can be too small), 2.9% below the
+  gridpack's own 2.9.18 at its larger budget. On card 134, 3.5.7 at 2000
+  events gives 0.04784 ± 0.00028 pb, 5.8% below the gridpack's 2.9.18. A σ
+  that moves with the budget by more than its quoted error comes from a
+  sampler that misses part of the integrand; re-combining each channel's
+  iterations with equal weights lifts these runs by 1.7–2.8%. The channel
+  weight is the candidate cause, not a proven one: no 2.9.18 was patched. The
+  `p p > w+ z b b~` part of card 700 shows it most: 3.5.7 gives 0.01284 pb
+  inside the full card and 0.01670 ± 0.000095 pb run alone at 5000 events,
+  against vibegraph's 0.01828 pb (3 seeds).
+- **The configuration draw does not cause it.** At `sde_strategy = 2` the same
+  weight also picks the clustering configuration, and with it the per-event
+  `μF`. vibegraph run on card 700 with 2.9.18's weight in place of 3.7.1's
+  gives 0.4624 ± 0.0017 pb, against 0.4629 ± 0.0013 pb on the same seed.
+
+How the comparison was made: vg-validator's MadGraph 3.7.1 regeneration
+(2026-11-22) ran the gridpacks' own madevent cards with `nevents` 10 000,
+`iseed` 1 to 5, `gridpack` F and `use_syst` F, and MadSpin off, so its σ is the
+production σ. The local MadGraph 3.5.7 (the packaged `madgraph` environment)
+and 2.9.18 (the upstream `2.9.18` branch) points ran rebuilt cards with the
+same essentials (`ebeam` 6800, `lhaid` 325500, `dynamical_scale_choice` −1,
+`sde_strategy` 2, `ptj` 10, `etaj` 6.5, `mmjj` 10, `drjj` 0.4, `maxjetflavor`
+4, `etab` 6.5, `drbj` 0.4, `bwcutoff` 15) and the SM default parameter card the
+gridpacks carry. The measurements are in the
+[L-V1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-V1-report.md).
+
 ## Also bounding how MadGraph numbers are read
 
 - **Measured inconsistencies inside MadEvent**, not located in code: quoted errors
