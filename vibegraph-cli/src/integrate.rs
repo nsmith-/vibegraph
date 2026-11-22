@@ -70,7 +70,7 @@ use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::support::{check_support, zero_coupling_subprocesses, PointCensus, SupportError};
 use vibegraph::systematics::request::VariationRequest;
-use vibegraph::ufo::bind::bind_card;
+use vibegraph::ufo::bind::{bind_card_under, IgnoredBecause};
 use vibegraph::ufo::loaded::LoadedModel;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -1017,7 +1017,8 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     );
     tui::state::describe_process(&process, observable_of(&parsed));
 
-    let (evaluated, moved, param_card) = bind_param_card(args.param_card.as_deref(), &model)?;
+    let (evaluated, moved, param_card) =
+        bind_param_card(args.param_card.as_deref(), &model, &model_id.restrict)?;
     let sets = match sets.or(enumerated) {
         Some(sets) => sets,
         None => generate_from_proc_card_in(&parsed, &model, pool).map_err(enumeration_error)?,
@@ -1404,14 +1405,16 @@ pub(crate) fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
 pub(crate) fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
+    restriction: &str,
 ) -> Result<(EvaluatedModel, Vec<MovedParam>, Option<String>), CliError> {
     let Some(path) = path else {
-        let bound = bind_card(model.clone(), &ParamCard::default()).map_err(|e| {
-            err(
-                ErrorKind::Model,
-                format!("the model's default parameters: {e}"),
-            )
-        })?;
+        let bound =
+            bind_card_under(model.clone(), &ParamCard::default(), restriction).map_err(|e| {
+                err(
+                    ErrorKind::Model,
+                    format!("the model's default parameters: {e}"),
+                )
+            })?;
         return Ok((bound.evaluated, bound.moved, None));
     };
     let text = std::fs::read_to_string(path).map_err(|e| {
@@ -1426,19 +1429,29 @@ pub(crate) fn bind_param_card(
             format!("cannot read the param card {}: {e}", path.display()),
         )
     })?;
-    let bound = bind_card(model.clone(), &card)
+    let bound = bind_card_under(model.clone(), &card, restriction)
         .map_err(|e| err(ErrorKind::Card, format!("{}: {e}", path.display())))?;
     for ignored in &bound.ignored {
-        warn!(
-            "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
-             ignored",
-            path.display(),
-            ignored.block,
-            ignored.pdg,
-            ignored.param,
-            ignored.card,
-            ignored.computed,
-        );
+        match &ignored.why {
+            IgnoredBecause::Computed { param, computed } => warn!(
+                "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
+                 ignored",
+                path.display(),
+                ignored.block,
+                ignored.code,
+                param,
+                ignored.card,
+                computed,
+            ),
+            IgnoredBecause::NoParameter => warn!(
+                "{}: {} {} sets {}, and the model has no parameter there; MadGraph reads only \
+                 the model's own parameters, so the entry is ignored",
+                path.display(),
+                ignored.block,
+                ignored.code,
+                ignored.card,
+            ),
+        }
     }
     Ok((bound.evaluated, bound.moved, Some(text)))
 }

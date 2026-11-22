@@ -379,6 +379,33 @@ fn a_dependent_mass_is_ignored_with_a_warning() {
     assert!(run.record() == default_run().record());
 }
 
+/// A card with a block the model does not define and a `MASS` and a `DECAY`
+/// entry at a code no particle has binds as the default card does, with one
+/// warning per entry naming it and saying it is ignored; the run is the default
+/// run, field for field but for the banked card text.
+#[test]
+fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
+    let run = integrate(
+        "absent",
+        Some("Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n"),
+    );
+    succeeded(&run);
+    let notices = common::stderr_of(&run.output);
+    let warnings: Vec<&str> = notices.lines().filter(|l| l.contains("ignored")).collect();
+    assert_eq!(warnings.len(), 3, "{notices}");
+    for (line, entry) in warnings.iter().zip([
+        "DECAY 1000022 sets 1",
+        "MASS 1000022 sets 500",
+        "nosuch 1 sets 2",
+    ]) {
+        assert!(
+            line.contains(entry) && line.contains("model has no parameter there"),
+            "{entry}: {line}"
+        );
+    }
+    assert!(run.record() == default_run().record());
+}
+
 /// Each card `integrate` refuses, by what its message says; none writes an
 /// artifact.
 #[test]
@@ -400,8 +427,8 @@ fn cards_the_model_cannot_honour_are_refused() {
         ),
         (
             "unknown",
-            "Block NOSUCH\n 1 2.0\n",
-            &["block nosuch code 1", "no parameter there"][..],
+            "Block SMINPUTS\n 99 2.0\n",
+            &["block sminputs code 99", "no parameter there"][..],
         ),
     ] {
         let run = integrate(name, Some(card));

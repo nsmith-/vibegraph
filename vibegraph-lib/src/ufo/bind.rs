@@ -11,7 +11,10 @@
 //!   card to give here.
 //! * A non-zero value for a parameter the restriction fixed to zero is refused:
 //!   the restriction also pruned the vertices that parameter feeds, so the
-//!   model could not honour it.
+//!   model could not honour it. A restriction zeroes parameters and keeps them
+//!   in the model's parameter list, so a block or entry that only the full
+//!   model defines is told from one no version of the model defines, and the
+//!   refusal names the restriction ([`bind_card_under`]).
 //! * A value other than one for a parameter the restriction leaves at exactly
 //!   one is refused: MadGraph fixes such a parameter at import and its
 //!   `param_card_rule.dat` holds every card to it.
@@ -22,8 +25,15 @@
 //!   external parameter (MW in the SM, or a massless particle's `ZERO`) is
 //!   ignored, as MadGraph's Fortran ignores it; one that disagrees with the
 //!   computed value is reported in [`BoundCard::ignored`].
-//! * Any other entry the model has no parameter for is refused, except the
-//!   `QNUMBERS` blocks that declare a new state's quantum numbers.
+//! * An entry in a block no parameter of the model sits in, and a `MASS` or
+//!   `DECAY` entry at a code no particle of the model has, is ignored and
+//!   listed in [`BoundCard::ignored`]: MadGraph reads only the entries the
+//!   model's `ident_card` names (`write_inc_file`, `check_param_card.py`), so
+//!   a card written for a larger model binds. The `QNUMBERS` blocks that
+//!   declare a new state's quantum numbers are not parameters either.
+//! * A code the model has no parameter for inside a block it does define is
+//!   refused: a mistyped code would leave the parameter the card meant at its
+//!   default.
 //! * A decay table is carried, as written, to the event file's `<slha>`
 //!   header ([`EvaluatedModel::decay_tables`]), where MadGraph puts the card
 //!   for a shower to decay from. MadGraph checks neither a table's sum nor its
@@ -65,15 +75,18 @@ pub enum CardError {
     )]
     AutoWidth { pdg: i32 },
     #[error(
-        "the card sets {name} (block {block}, code {code}) to {value:e}, but the model's \
-         restriction fixes it to zero and pruned the vertices it feeds; use a restriction that \
-         keeps {name} free, or leave it at zero"
+        "the card sets {name} (block {block}, code {code}) to {value:e}, but it was removed by \
+         {restriction}, which fixes it to zero and pruned the vertices it feeds; use a \
+         restriction that keeps {name} free, or leave it at zero"
     )]
     RevivesZeroed {
         name: String,
         block: String,
         code: String,
         value: f64,
+        /// What removed it: `restrict_<x>.dat`, or the model's restriction
+        /// when the caller does not name one.
+        restriction: String,
     },
     #[error(
         "the card sets {name} (block {block}, code {code}) to {value:e}, but the model's \
@@ -101,7 +114,8 @@ pub enum CardError {
     },
     #[error(
         "the card sets block {block} code {code} to {value:e}, and the model has no parameter \
-         there"
+         there (block {block} is one the model defines, so a mistyped code is refused rather \
+         than left at its default)"
     )]
     Unknown {
         block: String,
@@ -164,19 +178,28 @@ fn refuse_all(mut errors: Vec<CardError>) -> Result<(), CardError> {
     }
 }
 
-/// A card entry for a mass or width the model computes, which the binding
-/// ignored because its value disagrees with the computed one.
+/// Why a card entry was ignored.
+#[derive(Clone, Debug, PartialEq)]
+pub enum IgnoredBecause {
+    /// The model computes the value from `param` (`MW`, `ZERO`) and the card's
+    /// disagrees with `computed`.
+    Computed { param: String, computed: f64 },
+    /// No parameter of the model sits at the entry: its block is none the model
+    /// defines, or it is a `MASS` or `DECAY` entry at a code no particle has.
+    NoParameter,
+}
+
+/// A card entry the binding ignored.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IgnoredEntry {
-    /// The parameter the model computes the value from (`MW`, `ZERO`).
-    pub param: String,
-    /// `MASS` or `DECAY`.
-    pub block: &'static str,
-    pub pdg: i32,
+    /// The block as the card spells it, lower case (`MASS` and `DECAY` upper
+    /// case for an entry at a particle).
+    pub block: String,
+    /// The entry's code, as [`code_text`] writes it.
+    pub code: String,
     /// The card's value.
     pub card: f64,
-    /// The value the run uses.
-    pub computed: f64,
+    pub why: IgnoredBecause,
 }
 
 /// A model bound to a card: the evaluation, the parameters the card moved off
@@ -334,8 +357,34 @@ fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
     errors
 }
 
+/// A card entry set aside for the evaluation: one the model computes, or one it
+/// has no parameter for.
+enum Aside {
+    Computed {
+        block: &'static str,
+        pdg: i32,
+        param: String,
+        value: f64,
+    },
+    NoParameter {
+        block: String,
+        code: String,
+        value: f64,
+    },
+}
+
+/// Whether some external parameter of `model` sits in `block`, case aside.
+fn defines_block(model: &UFOModel, block: &str) -> bool {
+    model.params.externals.iter().any(|p| {
+        matches!(&p.nature, ParamNature::External { lha_block, .. }
+            if lha_block.eq_ignore_ascii_case(block))
+    })
+}
+
 /// Bind `model` to `card`, refusing what the model cannot honour (see the
-/// module documentation), and record what the card moved.
+/// module documentation), and record what the card moved. A refusal for a
+/// parameter the restriction zeroed says "the model's restriction"; use
+/// [`bind_card_under`] to name it.
 ///
 /// # Errors
 ///
@@ -346,13 +395,35 @@ fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
 /// off a Majorana fermion, listed together; so a card with both kinds of
 /// problem reports its entries' first.
 pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, CardError> {
+    bind_card_named(model, card, "the model's restriction".to_string())
+}
+
+/// [`bind_card`] for a model loaded under the restriction `restriction` (the
+/// `<x>` of `restrict_<x>.dat`), which a refusal of a parameter it zeroed names.
+///
+/// # Errors
+///
+/// As [`bind_card`].
+pub fn bind_card_under(
+    model: Arc<UFOModel>,
+    card: &ParamCard,
+    restriction: &str,
+) -> Result<BoundCard, CardError> {
+    bind_card_named(model, card, format!("restrict_{restriction}.dat"))
+}
+
+fn bind_card_named(
+    model: Arc<UFOModel>,
+    card: &ParamCard,
+    restriction: String,
+) -> Result<BoundCard, CardError> {
     let mut errors: Vec<CardError> = Vec::new();
     for &pdg in card.auto_widths() {
         errors.push(CardError::AutoWidth { pdg });
     }
     errors.extend(unwritable_tables(&model, card.decay_tables()));
 
-    let mut dependents: Vec<(&'static str, i32, String, f64)> = Vec::new();
+    let mut aside: Vec<Aside> = Vec::new();
     for (block, code, value) in card.entries() {
         if !value.is_finite() {
             errors.push(CardError::NonFinite {
@@ -369,6 +440,7 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
                     block: block.to_string(),
                     code: code_text(code),
                     value,
+                    restriction: restriction.clone(),
                 });
             } else if model.params.ones.contains(name) && value != 1.0 {
                 errors.push(CardError::MovesFixedOne {
@@ -383,14 +455,29 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         if block == "qnumbers" || block.starts_with("qnumbers ") {
             continue;
         }
-        let dependent = match (block, code) {
-            ("mass", &[pdg]) => particle_param(&model, block, pdg).map(|p| ("MASS", pdg, p)),
-            ("decay", &[pdg]) => particle_param(&model, block, pdg).map(|p| ("DECAY", pdg, p)),
-            _ => None,
-        };
-        match dependent {
-            Some((block, pdg, param)) => dependents.push((block, pdg, param.to_string(), value)),
-            None => errors.push(CardError::Unknown {
+        match (block, code) {
+            ("mass" | "decay", &[pdg]) => {
+                let label = if block == "mass" { "MASS" } else { "DECAY" };
+                match particle_param(&model, block, pdg) {
+                    Some(param) => aside.push(Aside::Computed {
+                        block: label,
+                        pdg,
+                        param: param.to_string(),
+                        value,
+                    }),
+                    None => aside.push(Aside::NoParameter {
+                        block: label.to_string(),
+                        code: code_text(code),
+                        value,
+                    }),
+                }
+            }
+            _ if !defines_block(&model, block) => aside.push(Aside::NoParameter {
+                block: block.to_string(),
+                code: code_text(code),
+                value,
+            }),
+            _ => errors.push(CardError::Unknown {
                 block: block.to_string(),
                 code: code_text(code),
                 value,
@@ -412,18 +499,30 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
 
     let evaluated = EvaluatedModel::from_model_card(model, card)?;
     refuse_all(negative_masses(&evaluated))?;
-    let ignored = dependents
+    let ignored = aside
         .into_iter()
-        .filter_map(|(block, pdg, param, value)| {
-            let computed = evaluated.param_values.get(&param).map_or(0.0, |v| v.re);
-            let off = (value - computed).abs() > DEPENDENT_TOLERANCE * computed.abs();
-            off.then_some(IgnoredEntry {
-                param,
+        .filter_map(|entry| match entry {
+            Aside::Computed {
                 block,
                 pdg,
+                param,
+                value,
+            } => {
+                let computed = evaluated.param_values.get(&param).map_or(0.0, |v| v.re);
+                let off = (value - computed).abs() > DEPENDENT_TOLERANCE * computed.abs();
+                off.then_some(IgnoredEntry {
+                    block: block.to_string(),
+                    code: pdg.to_string(),
+                    card: value,
+                    why: IgnoredBecause::Computed { param, computed },
+                })
+            }
+            Aside::NoParameter { block, code, value } => Some(IgnoredEntry {
+                block,
+                code,
                 card: value,
-                computed,
-            })
+                why: IgnoredBecause::NoParameter,
+            }),
         })
         .collect();
 
@@ -623,14 +722,12 @@ mod tests {
         assert!(bind("Block MASS\n 4 0.0 # MC\n").unwrap().moved.is_empty());
     }
 
+    /// A code the model lacks inside a block it defines is refused, as a
+    /// mistyped code would leave the parameter meant at its default; the block
+    /// that holds it is one some parameter of the model sits in.
     #[test]
-    fn an_entry_the_model_lacks_is_refused() {
-        for text in [
-            "Block NOSUCH\n 1 2.0\n",
-            "Block MASS\n 99 2.0\n",
-            "Block SMINPUTS\n 9 2.0\n",
-            "DECAY 99 1.0\n",
-        ] {
+    fn an_unknown_code_in_a_defined_block_is_refused() {
+        for text in ["Block SMINPUTS\n 9 2.0\n", "Block YUKAWA\n 99 2.0\n"] {
             assert!(
                 matches!(bind(text), Err(CardError::Unknown { .. })),
                 "{text:?}"
@@ -640,6 +737,33 @@ mod tests {
         assert!(bind("Block QNUMBERS 9000005 # x\n 1 0\n 2 1\n").is_ok());
         assert!(
             bind("Block QNUMBERS 9000005 # x\n 1 0\nBlock QNUMBERS 9000006 # y\n 1 3\n").is_ok()
+        );
+    }
+
+    /// A block no parameter of the model sits in, and a `MASS` or `DECAY` entry
+    /// at a code no particle has, bind as the card without them and are listed.
+    #[test]
+    fn entries_with_no_parameter_are_ignored_and_listed() {
+        let bound = bind(
+            "Block NOSUCH\n 1 2.0\nBlock MASS\n 99 2.0\nBlock ALPHA\n -1.1e-1\nDECAY 99 1.0\n",
+        )
+        .unwrap();
+        assert!(bound.moved.is_empty());
+        assert_same_point(&bound.evaluated, &EvaluatedModel::from_model(sm()));
+        let listed: Vec<(&str, &str, f64, &IgnoredBecause)> = bound
+            .ignored
+            .iter()
+            .map(|e| (e.block.as_str(), e.code.as_str(), e.card, &e.why))
+            .collect();
+        let none = &IgnoredBecause::NoParameter;
+        assert_eq!(
+            listed,
+            [
+                ("alpha", "", -1.1e-1, none),
+                ("DECAY", "99", 1.0, none),
+                ("MASS", "99", 2.0, none),
+                ("nosuch", "1", 2.0, none),
+            ]
         );
     }
 
@@ -663,7 +787,15 @@ mod tests {
         let reported: Vec<(&str, &str, i32, f64)> = bound
             .ignored
             .iter()
-            .map(|e| (e.param.as_str(), e.block, e.pdg, e.card))
+            .map(|e| match &e.why {
+                IgnoredBecause::Computed { param, .. } => (
+                    param.as_str(),
+                    e.block.as_str(),
+                    e.code.parse().unwrap(),
+                    e.card,
+                ),
+                IgnoredBecause::NoParameter => panic!("{e:?}"),
+            })
             .collect();
         assert_eq!(
             reported,
@@ -673,8 +805,10 @@ mod tests {
                 ("MW", "MASS", 24, 80.0)
             ]
         );
-        let mw = &bound.ignored[2];
-        assert_eq!(mw.computed, defaults.param_values["MW"].re);
+        let IgnoredBecause::Computed { computed, .. } = &bound.ignored[2].why else {
+            panic!("{:?}", bound.ignored[2])
+        };
+        assert_eq!(*computed, defaults.param_values["MW"].re);
     }
 
     /// A computed entry within `%e`'s rounding of the computed value (5e-7
@@ -778,10 +912,18 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, texna
         let ignored: Vec<(&str, i32, f64)> = bound
             .ignored
             .iter()
-            .map(|e| (e.param.as_str(), e.pdg, e.card))
+            .map(|e| match &e.why {
+                IgnoredBecause::Computed { param, .. } => {
+                    (param.as_str(), e.code.parse().unwrap(), e.card)
+                }
+                IgnoredBecause::NoParameter => panic!("{e:?}"),
+            })
             .collect();
         assert_eq!(ignored, [("MW", 24, 80.419)]);
-        assert!((bound.ignored[0].computed - 85.03597559307168).abs() < 1e-9);
+        let IgnoredBecause::Computed { computed, .. } = &bound.ignored[0].why else {
+            panic!("{:?}", bound.ignored[0])
+        };
+        assert!((computed - 85.03597559307168).abs() < 1e-9);
     }
 
     /// The toy model's `restrict_all` leaves the colour-octet width `WO8` at

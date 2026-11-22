@@ -178,10 +178,31 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         expect: Error("opened again"),
     },
     Construct {
-        name: "an entry the model has no parameter for (lone values and unknown blocks included)",
-        madgraph: "never read: write_inc_file reads only the model's ident_card (L655)",
-        class: Refused("a mistyped block or code would leave the parameter meant at its default"),
-        example: Text("Block ALPHA\n -1.1e-1\n"),
+        name: "an entry in a block the model does not define (lone values included)",
+        madgraph: "never read: write_inc_file reads only the model's ident_card (L656)",
+        class: IgnoredBenign(
+            "no parameter of the model sits in the block, so nothing the model evaluates \
+             reads the entry; a card written for a larger model carries such blocks, and \
+             the entry is listed in BoundCard::ignored and warned",
+        ),
+        example: Text("Block ALPHA\n -1.1e-1\nBlock NOSUCH\n 1 2.0\n"),
+        expect: Same(Text("")),
+    },
+    Construct {
+        name: "a `MASS` or `DECAY` entry at a code no particle of the model has",
+        madgraph: "never read: write_inc_file reads only the model's ident_card (L656)",
+        class: IgnoredBenign(
+            "the model has no particle there, so no mass or width reads the entry; listed in \
+             BoundCard::ignored and warned",
+        ),
+        example: Text("Block MASS\n 1000022 5.0e2\nDECAY 1000022 1.0\n"),
+        expect: Same(Text("")),
+    },
+    Construct {
+        name: "an entry at a code the model lacks, in a block it does define",
+        madgraph: "never read: write_inc_file reads only the model's ident_card (L656)",
+        class: Refused("a mistyped code would leave the parameter the card meant at its default"),
+        example: Text("Block SMINPUTS\n 99 1.0\n"),
         expect: Error("model has no parameter"),
     },
     Construct {
@@ -318,7 +339,10 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
     Construct {
         name: "a value for a parameter the restriction fixed to zero",
         madgraph: "the parameter and its vertices are gone (fix_parameter_values)",
-        class: Refused("the pruned vertices cannot be restored"),
+        class: Refused(
+            "the pruned vertices cannot be restored; the parameter stays in the model's \
+             list, so the refusal tells it from a block the model never defined",
+        ),
         example: Text("Block MASS\n 4 1.27\n"),
         expect: Error("fixes it to zero"),
     },

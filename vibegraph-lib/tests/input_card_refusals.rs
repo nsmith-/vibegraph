@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::resolve;
-use vibegraph::ufo::bind::bind_card;
+use vibegraph::ufo::bind::{bind_card, bind_card_under, IgnoredBecause};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::{ParsedModel, UFOModel};
@@ -296,8 +296,57 @@ fn a_negative_mass_off_a_majorana_fermion_is_refused() {
 fn every_problem_in_a_card_is_reported_at_once() {
     let message = param_refusal("Block MASS\n 6 x\n 23 y\n");
     assert_mentions(&message, &["line 2", "line 3"]);
-    let message = param_refusal("Block MASS\n 99 1.0\nBlock NOSUCH\n 1 2.0\n");
-    assert_mentions(&message, &["code 99", "block nosuch"]);
+    let message = param_refusal("Block SMINPUTS\n 99 1.0\nBlock YUKAWA\n 98 2.0\n");
+    assert_mentions(
+        &message,
+        &["block sminputs code 99", "block yukawa code 98"],
+    );
+}
+
+/// The four ways a card entry can have no parameter behind it, on the fixture
+/// restricted to zero its whole `NEWCOUP` block (`restrict_test.dat`): a block
+/// the model never defined and a `MASS` at a code no particle has bind, listed
+/// as ignored; an unknown code in a block the model defines is refused as a
+/// typo; and a value for a parameter the restriction zeroed is refused naming
+/// the restriction, which is what tells that block from the undefined one.
+#[test]
+fn an_entry_without_a_parameter_is_ignored_or_refused_by_what_removed_it() {
+    let dir = model_with(&[]);
+    let removed = RESTRICT
+        .replacen(" 1 5.000000e-01 # c1", " 1 0.000000e+00 # c1", 1)
+        .replacen(" 2 5.000000e-01 # c2", " 2 0.000000e+00 # c2", 1)
+        .replacen(" 3 1.000000e+00 # c3", " 3 0.000000e+00 # c3", 1);
+    let restriction = restrict_file(dir.path(), "restrict_test.dat", &removed);
+    let model = UFOModel::load(dir.path(), Some(&restriction)).unwrap();
+    for name in ["c1", "c2", "c3"] {
+        assert!(model.params.zeros.contains(name), "{name}");
+    }
+    let bind = |text: &str| bind_card_under(model.clone(), &text.parse().unwrap(), "test");
+
+    let bound =
+        bind("Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 5.0e2\nDECAY 1000022 1.0\n").unwrap();
+    assert!(bound.moved.is_empty());
+    assert_eq!(bound.ignored.len(), 3, "{:?}", bound.ignored);
+    assert!(bound
+        .ignored
+        .iter()
+        .all(|e| e.why == IgnoredBecause::NoParameter));
+
+    let message = bind("Block MASS\n 9000001 1.0e1\nBlock NEWCOUP\n 99 1.0\n")
+        .err()
+        .expect("an unknown code in a block the model defines binds")
+        .to_string();
+    assert_mentions(&message, &["block newcoup code 99", "no parameter there"]);
+
+    let message = bind("Block NEWCOUP\n 1 0.5\n")
+        .err()
+        .expect("a zeroed parameter is revived")
+        .to_string();
+    assert_mentions(
+        &message,
+        &["c1 (block newcoup, code 1)", "removed by restrict_test.dat"],
+    );
+    assert!(bind("Block NEWCOUP\n 1 0.0\n").unwrap().moved.is_empty());
 }
 
 // ---- restrict card ----

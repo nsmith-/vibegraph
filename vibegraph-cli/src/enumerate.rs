@@ -417,6 +417,7 @@ fn flavour_preview(
     config: &GlobalConfig,
     parsed: &vibegraph::diagrams::SupportedCard,
     model: &std::sync::Arc<UFOModel>,
+    restriction: &str,
     sets: &[DiagramSet],
     facts: Option<&ProcessFacts>,
 ) -> Result<(FlavourPreview, Vec<Option<String>>), CliError> {
@@ -434,7 +435,7 @@ fn flavour_preview(
         card.split()
     };
     let (rc, _) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
-    let (evaluated, _, _) = bind_param_card(args.param_card.as_deref(), model)?;
+    let (evaluated, _, _) = bind_param_card(args.param_card.as_deref(), model, restriction)?;
     let mut preview = FlavourPreview {
         run_card: args.run_card.as_ref().map(|p| p.display().to_string()),
         param_card: args.param_card.as_ref().map(|p| p.display().to_string()),
@@ -533,6 +534,7 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             &config,
             &parsed,
             model,
+            &loaded.identity.restrict,
             &artifact.sets,
             artifact.process_facts.as_ref(),
         )?)
