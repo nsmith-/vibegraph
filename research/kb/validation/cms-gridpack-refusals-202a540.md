@@ -41,7 +41,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 7 | particle charge referencing a parameter | 2 | `ufo-particle-attribute-parameter-references-refused` (closed) | medium |
 | 8 | subprocesses with different outgoing masses | 2 | `mixed-outgoing-mass-subprocesses-not-split`, closed ([K-X1 report](../sprints/v022-smeft-and-refusals/sessions/K-X1-report.md)) | medium |
 | 9 | decay chain without nested parentheses | 2 | [decay-chain-without-nested-parentheses-refused](../backlog/feature/decay-chain-without-nested-parentheses-refused.md) | medium |
-| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md) | medium |
+| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md) | medium |
 | 11 | polarised leg in a non-default `me_frame` | 2 | [me-frame-other-than-partonic-cm-refused](../backlog/feature/me-frame-other-than-partonic-cm-refused.md) | medium |
 | 12 | polarisation on a decayed leg | 1 | [polarized-intermediate-resonances-refused](../backlog/feature/polarized-intermediate-resonances-refused.md) | medium |
 | 13 | σ carried by an effective 1.2 points (TTZ2b) | 1 | [ttz2b-sigma-carried-by-one-point](../backlog/performance/ttz2b-sigma-carried-by-one-point.md) | medium |

@@ -93,7 +93,7 @@ single final-state multiplicity is never assumed at the type level.[^n38-check]
 Some refusals are in scope and open as backlog items:
 
 - squared-order constraints
-  ([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)),
+  ([squared-order-constraints-refused](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md)),
   which the `check.rs` table still marks "not planned"; the PR that lifts the
   refusal updates that line;
 - helicity Monte Carlo, `nhel = 1`
