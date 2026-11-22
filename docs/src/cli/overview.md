@@ -46,7 +46,7 @@ step is the subject of the [guided tour](../guide/01-pipeline.md).
 vibegraph enumerate proc_card.dat --out diagrams/
 ```
 
-writes three things into `--out` (the current directory by default):
+writes these into `--out` (the current directory by default):
 
 - `diagrams.bin.zst`, the diagram artifact: the card, the restricted model it
   was enumerated against, every subprocess's diagrams in enumeration order,
@@ -56,13 +56,16 @@ writes three things into `--out` (the current directory by default):
   configurations (`c0`, `c1`, …, MadGraph's `AMP2` grouping) and the contact
   diagrams that have none; per diagram (`s3.d17`) its propagators, vertices,
   coupling orders, configuration and drawing;
+- `parameters.json` and `param_card.dat`, the model's parameter report and
+  default card, with the parameters entering this process (see
+  [reporting a model's parameters](#reporting-a-models-parameters));
 - `svg/<set>/<diagram>.svg`, one drawing per diagram, its external legs
   labelled with their particle and their index in the subprocess. `--svg`
   selects them: `all`, `none`, or `first=N` per subprocess (the default is
   `first=500`, which draws every diagram of most cards; drawing costs about a
   millisecond and 5 KB per diagram).
 
-It refuses to overwrite any of the three without `--force`, before reading the
+It refuses to overwrite any of these without `--force`, before reading the
 card. Given `--run-card` or `--param-card`, the summary also previews the
 flavour groups `integrate` would form under those cards (the one not given
 takes `integrate`'s default), and records which cards it used; without
@@ -455,8 +458,13 @@ kinds, bumps the version.
   compared with), `multiplicities` (each final-state phase space of a proton run:
   `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
-  path and its `format_version`, the `diagram_set_digest` of the diagrams it
-  integrated, and `param_card` (whether a param card's text is banked).
+  path and its `format_version`, its `enumeration_version` (the enumeration
+  that produced the diagrams it banks, which a build must share to read it),
+  `vibegraph_version` (the release that wrote the artifact: `integrate`
+  reports its own, and `inspect` reports `null`, since the artifact does not
+  record its writer, so `format_version` and `enumeration_version` name the
+  generation), the `diagram_set_digest` of the diagrams it integrated, and
+  `param_card` (whether a param card's text is banked).
   `inspect --output-ldjson` prints the same
   object for a saved artifact, with `stop_reason`, `target_rel`,
   `rel_err_quoted` and `rel_err_scaled` `null`, since the artifact does not
@@ -465,13 +473,26 @@ kinds, bumps the version.
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
   `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries
-  the `artifact` and `summary_path` it wrote, the `svg_dir` (`null` when
+  the `artifact` and `summary_path` it wrote, with the `parameters_path` and
+  `param_card_path` of the files described under
+  [reporting a model's parameters](#reporting-a-models-parameters), the `svg_dir` (`null` when
   nothing was drawn) and the number of `drawings`, and the whole of
   `diagrams.json` under `summary`. `generate -o` writes `.gz` and `.zst`
   names compressed and any other name as plain text, and refuses another
   compression extension (`.xz`, `.bz2`, ...) by name.
 - `refusal`: in place of a result, `error_kind` and `message`. A refused
-  run writes no artifact, so this is its only record.
+  run writes no artifact, so this is its only record. An `artifact` refusal
+  also carries `reason`, an object tagged by `kind`, so a caller never parses
+  the message: `enumeration_version` (`found`, `expected`: the diagrams were
+  enumerated by another version, so integrate again from the cards),
+  `format_version` (`found`, `oldest`, `expected`), `model_digest`
+  (`recorded`, `embedded`) and `diagram_set_digest` (`recorded`, `computed`),
+  both a corrupt or edited file, `collider_energy` (`recorded`, `rebuilt`,
+  `beams`: the cards no longer give the energy the artifact was integrated
+  at), `process_reparsed` (`recorded`, `reparsed`), `unreadable` (not a
+  decodable file) and `other`, for a disagreement the message alone describes.
+  A new reason is a new value of the field, not a new error kind. Other kinds
+  have no `reason`.
 
 Values are at full precision in base units: picobarns and GeV, never an SI
 prefix. The `error_kind` is one of a fixed list, which only a schema version

@@ -573,42 +573,64 @@ mod tests {
         let wt = record(&report, "WT");
         assert!(wt.constraints.contains(&Constraint::NotAuto));
         assert_eq!(wt.block, "DECAY");
+    }
 
-        for (class, verdict) in [
-            (
-                std::mem::discriminant(&ParameterClass::One),
-                ReweightVerdict::FixedOne,
-            ),
-            (
-                std::mem::discriminant(&ParameterClass::Merged {
-                    into: String::new(),
-                    factor: 0.0,
-                }),
-                ReweightVerdict::Merged,
-            ),
-        ] {
-            let found: Vec<_> = report
-                .parameters
-                .iter()
-                .filter(|r| std::mem::discriminant(&r.class) == class)
-                .collect();
-            assert!(!found.is_empty(), "no parameter of class {class:?}");
-            assert!(found.iter().all(|r| r.reweight.verdict == verdict));
+    /// A copy of the SMEFTsim model directory whose `tied` restriction sets `cW` to
+    /// `cG`'s value (a merged pair) and `cH` to one, which no shipped
+    /// restriction does.
+    fn smeft_tied(dir: &std::path::Path, into: &std::path::Path) -> Arc<UFOModel> {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            std::os::unix::fs::symlink(&path, into.join(path.file_name().unwrap())).unwrap();
         }
-        for r in &report.parameters {
-            if let ParameterClass::Merged { into, factor } = &r.class {
-                assert!(r.constraints.contains(&Constraint::TiedTo {
-                    to: into.clone(),
-                    factor: *factor
-                }));
-                let lead = record(&report, into);
-                assert_eq!(lead.class, ParameterClass::Free);
-                assert!(lead
-                    .constraints
-                    .iter()
-                    .any(|c| matches!(c, Constraint::LeadsGroup { .. })));
+        let card = std::fs::read_to_string(dir.join("restrict_massless.dat")).unwrap();
+        let edited = card
+            .replace("    2 0.300000e+00  # cW", "    2 0.200000e+00  # cW")
+            .replace("    3 0.400000e+00  # cH", "    3 1.000000e+00  # cH");
+        assert_ne!(card, edited);
+        std::fs::write(into.join("restrict_tied.dat"), edited).unwrap();
+        UFOModel::load(into, Some(&into.join("restrict_tied.dat"))).unwrap()
+    }
+
+    #[test]
+    fn one_and_merged_classes_have_their_records() {
+        let (dir, _) = smeft();
+        let tmp = tempfile::tempdir().unwrap();
+        let model = smeft_tied(&dir, tmp.path());
+        let report = describe_parameters(&model, None);
+        let ch = record(&report, "cH");
+        assert_eq!(ch.class, ParameterClass::One);
+        assert_eq!(ch.default, 1.0);
+        assert!(ch.constraints.contains(&Constraint::Fixed { value: 1.0 }));
+        assert_eq!(ch.reweight.verdict, ReweightVerdict::FixedOne);
+
+        let cw = record(&report, "cW");
+        assert_eq!(
+            cw.class,
+            ParameterClass::Merged {
+                into: "cG".into(),
+                factor: 1.0
             }
-        }
+        );
+        assert!(cw.constraints.contains(&Constraint::TiedTo {
+            to: "cG".into(),
+            factor: 1.0
+        }));
+        assert_eq!(cw.reweight.verdict, ReweightVerdict::Merged);
+        let cg = record(&report, "cG");
+        assert_eq!(cg.class, ParameterClass::Free);
+        assert!(cg.constraints.contains(&Constraint::LeadsGroup {
+            members: vec![GroupMember {
+                name: "cW".into(),
+                factor: 1.0
+            }]
+        }));
+        assert_eq!(cg.reweight.verdict, ReweightVerdict::Merged);
+
+        let default = std::fs::read_to_string(tmp.path().join("restrict_tied.dat")).unwrap();
+        assert!(default.contains("1.000000e+00  # cH"));
+        let card_text = default_param_card(&model);
+        assert!(card_text.contains("3 1e0 # cH"), "{card_text}");
     }
 
     #[test]
@@ -702,5 +724,65 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains(&"couplings")));
+    }
+
+    /// The entering list against a direct evaluation: moving each non-zero
+    /// external alone and re-evaluating every parameter from scratch moves some
+    /// coupling of the process's vertices exactly for the listed parameters. The
+    /// numeric check cannot see a parameter that enters with a coefficient that
+    /// cancels at the default point, which the symbolic list keeps.
+    #[test]
+    fn the_entering_list_matches_a_numeric_perturbation() {
+        use crate::ufo::expr::eval;
+        let (_, model) = smeft();
+        let process = sets("e+ e- > t t~ NP<=1", &model);
+        let report = describe_parameters(&model, Some(&process));
+        let entering: BTreeSet<&str> = report
+            .entering
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(String::as_str)
+            .collect();
+
+        let mut used = BTreeSet::new();
+        for set in &process {
+            for d in &set.diagrams {
+                for v in &d.vertices {
+                    for &key in model.vertex_def(v.interaction).couplings.keys() {
+                        used.insert(model.bound_coupling(v.interaction, key).index());
+                    }
+                }
+            }
+        }
+        let couplings: Vec<_> = model.couplings.values().collect();
+        let at = |card: &ParamCard| {
+            let values = model.params.evaluate(card);
+            used.iter()
+                .map(|&i| eval(&couplings[i].value, &values))
+                .collect::<Vec<_>>()
+        };
+        let base = at(&ParamCard::default());
+        let mut numeric = BTreeSet::new();
+        for p in &model.params.externals {
+            let ParamNature::External {
+                default_value,
+                lha_block,
+                lha_code,
+            } = &p.nature
+            else {
+                continue;
+            };
+            if model.params.zeros.contains(&p.name) {
+                continue;
+            }
+            let mut card = ParamCard::default();
+            card.insert(lha_block, lha_code.clone(), default_value * 1.37 + 0.31);
+            if at(&card) != base {
+                numeric.insert(p.name.as_str());
+            }
+        }
+        assert_eq!(entering, numeric);
+        assert!(entering.len() > 10, "{entering:?}");
     }
 }

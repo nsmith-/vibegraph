@@ -400,7 +400,7 @@ mod tests {
     use vibegraph::budget::StopReason;
 
     use super::{ChannelKeyObject, MuF, Refusal, StopReasonName};
-    use crate::error::ErrorKind;
+    use crate::error::{ArtifactReason, ErrorKind};
 
     fn v(x: &impl serde::Serialize) -> Value {
         serde_json::to_value(x).unwrap()
@@ -437,9 +437,22 @@ mod tests {
         assert_eq!(
             v(&Refusal {
                 error_kind: ErrorKind::Support,
-                message: "m".to_string()
+                message: "m".to_string(),
+                reason: None
             }),
             json!({"error_kind": "support", "message": "m"})
+        );
+        assert_eq!(
+            v(&Refusal {
+                error_kind: ErrorKind::Artifact,
+                message: "m".to_string(),
+                reason: Some(ArtifactReason::EnumerationVersion {
+                    found: 2,
+                    expected: 3
+                })
+            }),
+            json!({"error_kind": "artifact", "message": "m",
+                   "reason": {"kind": "enumeration_version", "found": 2, "expected": 3}})
         );
     }
 

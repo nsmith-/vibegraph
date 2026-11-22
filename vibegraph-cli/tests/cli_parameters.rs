@@ -87,27 +87,16 @@ fn a_model_only_report_pins_each_class() {
             .filter(|p| p["class"]["kind"] == kind)
             .collect()
     };
-    let one = classes("one");
-    assert!(!one.is_empty());
-    assert!(one.iter().all(|p| p["default"] == 1.0));
-    assert!(one.iter().all(|p| p["reweight"]["verdict"] == "fixed_one"));
-    let merged = classes("merged");
-    assert!(!merged.is_empty());
-    for m in &merged {
-        let into = m["class"]["into"].as_str().unwrap();
-        assert_eq!(record(report, into)["class"], json!({"kind": "free"}));
-        assert_eq!(m["reweight"]["verdict"], "merged");
-    }
     assert_eq!(
-        classes("free").len()
-            + one.len()
-            + merged.len()
-            + classes("zero").len()
-            + classes("internal").len(),
-        report["parameters"].as_array().unwrap().len()
+        classes("free").len() + classes("zero").len() + classes("internal").len(),
+        report["parameters"].as_array().unwrap().len(),
+        "the massless restriction ties and fixes nothing"
     );
+    assert_eq!(report["parameters"].as_array().unwrap().len(), 219);
 
-    let card = std::fs::read_to_string(result["param_card_path"].as_str().unwrap()).unwrap();
+    let card =
+        std::fs::read_to_string(tmp.path().join(result["param_card_path"].as_str().unwrap()))
+            .unwrap();
     assert!(card.contains("Block MASS"), "{card}");
     assert!(report["model"]["digest"].is_string());
 }
@@ -127,8 +116,33 @@ fn the_entering_list_of_a_smeft_process() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    println!("{entering:?}");
-    assert!(!entering.is_empty());
+    let mut sorted = entering.clone();
+    sorted.sort_unstable();
+    assert_eq!(
+        sorted,
+        [
+            "Gf",
+            "LambdaSMEFT",
+            "MW",
+            "MZ",
+            "cHDD",
+            "cHQ1",
+            "cHQ3",
+            "cHWB",
+            "cHe",
+            "cHl1",
+            "cHl3",
+            "cHt",
+            "cQe",
+            "cQl1",
+            "cQl3",
+            "cll1",
+            "ctBRe",
+            "ctWRe",
+            "cte",
+            "ctl"
+        ]
+    );
     for name in &entering {
         let r = record(report, name);
         assert!(r["enters"]
@@ -151,12 +165,83 @@ fn enumerate_writes_the_report_and_card() {
     let tmp2 = tempfile::tempdir().unwrap();
     let enumerated = run(tmp2.path(), "enumerate", &card, &[]);
     let a: Value = serde_json::from_str(
-        &std::fs::read_to_string(enumerated["parameters_path"].as_str().unwrap()).unwrap(),
+        &std::fs::read_to_string(
+            tmp2.path()
+                .join(enumerated["parameters_path"].as_str().unwrap()),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(a, standalone["report"]);
     assert_eq!(
-        std::fs::read_to_string(enumerated["param_card_path"].as_str().unwrap()).unwrap(),
-        std::fs::read_to_string(standalone["param_card_path"].as_str().unwrap()).unwrap()
+        std::fs::read_to_string(
+            tmp2.path()
+                .join(enumerated["param_card_path"].as_str().unwrap())
+        )
+        .unwrap(),
+        std::fs::read_to_string(
+            tmp.path()
+                .join(standalone["param_card_path"].as_str().unwrap())
+        )
+        .unwrap()
     );
+}
+
+/// The `one` and `merged` classes, which no shipped restriction produces: a
+/// copy of the model whose restriction ties `cW` to `cG` and sets `cH` to one.
+#[test]
+fn a_restriction_that_ties_and_fixes_parameters() {
+    let tmp = tempfile::tempdir().unwrap();
+    let models = tmp.path().join("ufo");
+    let model = models.join(MODEL);
+    std::fs::create_dir_all(&model).unwrap();
+    let source = ufo_dir().join(MODEL);
+    for entry in std::fs::read_dir(&source).unwrap() {
+        let path = entry.unwrap().path();
+        std::os::unix::fs::symlink(&path, model.join(path.file_name().unwrap())).unwrap();
+    }
+    let card = std::fs::read_to_string(source.join("restrict_massless.dat")).unwrap();
+    let edited = card
+        .replace("    2 0.300000e+00  # cW", "    2 0.200000e+00  # cW")
+        .replace("    3 0.400000e+00  # cH", "    3 1.000000e+00  # cH");
+    assert_ne!(card, edited);
+    std::fs::write(model.join("restrict_tied.dat"), edited).unwrap();
+
+    std::fs::write(
+        tmp.path().join("proc_card.dat"),
+        format!("import model {MODEL}-tied\n"),
+    )
+    .unwrap();
+    let output = common::vibegraph(tmp.path(), tmp.path())
+        .arg("parameters")
+        .arg("proc_card.dat")
+        .args(["--ufo-dir".as_ref(), models.as_os_str()])
+        .args(["--out", "out", "--output-ldjson"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", common::stdout_of(&output));
+    let stdout = common::stdout_of(&output);
+    let result: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    let report = &result["report"];
+
+    let ch = record(report, "cH");
+    assert_eq!(ch["class"], json!({"kind": "one"}));
+    assert_eq!(ch["default"], 1.0);
+    assert_eq!(ch["reweight"]["verdict"], "fixed_one");
+    assert!(ch["constraints"]
+        .as_array()
+        .unwrap()
+        .contains(&json!({"kind": "fixed", "value": 1.0})));
+
+    let cw = record(report, "cW");
+    assert_eq!(
+        cw["class"],
+        json!({"kind": "merged", "into": "cG", "factor": 1.0})
+    );
+    assert_eq!(cw["reweight"]["verdict"], "merged");
+    let cg = record(report, "cG");
+    assert_eq!(cg["class"], json!({"kind": "free"}));
+    assert!(cg["constraints"].as_array().unwrap().contains(&json!(
+        {"kind": "leads_group", "members": [{"name": "cW", "factor": 1.0}]}
+    )));
 }

@@ -127,7 +127,10 @@ fn results_carry_the_enumeration_version_and_the_writer() {
         .arg("--version")
         .output()
         .unwrap();
-    assert!(common::stdout_of(&version_line).starts_with(env!("VIBEGRAPH_VERSION")));
+    assert_eq!(
+        common::stdout_of(&version_line).lines().next(),
+        Some(format!("vibegraph {}", env!("VIBEGRAPH_VERSION")).as_str())
+    );
 
     let inspected = inspect(&f, &f.artifact_path);
     assert_eq!(inspected["kind"], "result");
@@ -186,23 +189,6 @@ fn an_edited_digest_is_refused_by_reason() {
     assert_eq!(reason["kind"], "diagram_set_digest", "{reason}");
     assert_eq!(reason["computed"], json!(sets));
     assert_ne!(reason["recorded"], json!(sets));
-}
-
-/// A recorded collider energy the cards no longer give is refused with both
-/// energies.
-#[test]
-fn a_changed_collider_energy_is_refused_by_reason() {
-    let f = fixture();
-    let recorded = f.artifact.sqrt_s_had;
-    let stale = edited(&f, "energy.bin.zst", |raw| {
-        let at = find(raw, &recorded.to_le_bytes());
-        raw[at..at + 8].copy_from_slice(&(recorded * 1.5).to_le_bytes());
-    });
-    let refusal = generate(&f, &stale);
-    let reason = reason_of(&refusal);
-    assert_eq!(reason["kind"], "collider_energy", "{refusal}");
-    assert_eq!(reason["recorded"], json!(recorded * 1.5));
-    assert_eq!(reason["rebuilt"], json!(recorded));
 }
 
 /// A file that is not an artifact is `unreadable`; a refusal of another kind
