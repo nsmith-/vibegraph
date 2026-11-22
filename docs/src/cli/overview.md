@@ -165,10 +165,10 @@ value the run binds: `total` to the seven digits MadGraph writes into the card
 it runs from), `channels` (each `daughters`, a list of `pdg` and `name`, and
 `width`, by descending width), `below_qcd_scale` (channels of a coloured
 particle below 0.1 GeV, set to zero as MadGraph sets them), `closed` (channels
-the particle is too light for) and `not_included` (three-body modes through an
-off-shell daughter of a closed channel, each with `daughters` and `through`,
-which MadGraph's default `compute_widths` adds when it estimates them above
-0.25% of the width, and which this width leaves out).
+the particle is too light for) and `not_included`, which is always empty: a
+particle with a mode beyond two bodies is refused rather than bound. The
+`not_auto` constraint is no longer emitted, since `Auto` binds; the schema
+version stays 1.
 
 ## Inspecting a run card
 
@@ -281,17 +281,17 @@ couples the particle to two lighter ones, summed over the open channels at the
 card's other parameters. The run binds that total to the seven digits MadGraph
 writes, the decay table below the `DECAY` line is the computed channels', and
 the artifact banks the card with the computed width written in place of `Auto`,
-so the banked card reproduces the run. Modes beyond two bodies are not
-included: where an off-shell daughter of a closed channel opens a three-body
-mode (`H > W+ e- ve~` through `W-`, for example), `integrate` warns and the
-width's report lists it, because MadGraph's default adds such a mode when it
-estimates it above 0.25% of the width (for the Standard Model Higgs boson at
-125 GeV, its default width is 15% above the two-body one). `Auto` is refused,
-naming why, for a particle whose only modes go beyond two bodies, a channel
-whose coupling runs with `α_s` (MadGraph runs it to the particle's mass first),
-a channel that reads another `Auto` width, a particle whose width is not a free
-parameter of the model, and a decay table below the `Auto` line that lists a
-mode no tree-level vertex gives.
+so the banked card reproduces the run. Only two-body widths are computed, so a
+particle with a three-body mode through a closed two-body channel (`H > W+ e-
+ve~` through an off-shell `W-`, for example) is refused, naming every such mode:
+MadGraph's default may include them, and vibegraph does not. In the Standard
+Model this binds the top quark and the W boson, and refuses the Z boson (for
+`Z > W+ e- ve~` through `W-`, a mode MadGraph's default leaves out at these
+masses: the rule is conservative) and the Higgs boson. `Auto` is also refused,
+naming why, for a channel whose coupling runs with `α_s` (MadGraph runs it to
+the particle's mass first), a channel that reads another `Auto` width, a
+particle whose width is not a free parameter of the model, and a decay table
+below the `Auto` line that lists a mode no tree-level vertex gives.
 `integrate` refuses a card it cannot honour: a
 non-zero value for a parameter the restriction zeroes, a value other than one
 for a parameter the restriction fixes to one, a value that splits two

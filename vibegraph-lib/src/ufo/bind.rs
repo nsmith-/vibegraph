@@ -49,7 +49,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use thiserror::Error;
-use tracing::warn;
 
 use super::parameters::{ParamNature, ParameterSet};
 use super::slha::{code_text, ParamCard};
@@ -555,25 +554,6 @@ fn resolve_auto_widths<'c>(
     }
     refuse_all(errors)?;
 
-    for width in &computed {
-        if !width.not_included.is_empty() {
-            let through: BTreeSet<&str> = width
-                .not_included
-                .iter()
-                .map(|m| m.through.name.as_str())
-                .collect();
-            warn!(
-                "the Auto width of {} is its two-body width, {:e} GeV; {} three-body modes \
-                 through an off-shell {} are not included, which MadGraph's default \
-                 compute_widths adds where it estimates them above {}% of the width",
-                width.particle,
-                width.bound,
-                width.not_included.len(),
-                through.into_iter().collect::<Vec<_>>().join(", "),
-                crate::widths::MADWIDTH_PRECISION * 100.0,
-            );
-        }
-    }
     let values: Vec<(i32, f64)> = computed.iter().map(|w| (w.pdg, w.bound)).collect();
     let tables: Vec<DecayTable> = computed.iter().map(ComputedWidth::decay_table).collect();
     let resolved = card.with_widths_set(&values, &tables);
@@ -747,37 +727,38 @@ mod tests {
         assert_eq!(names.len(), 2);
     }
 
-    /// `DECAY 23 Auto` binds WZ to the computed two-body width, to the digits
+    /// `DECAY 24 Auto` binds WW to the computed two-body width, to the digits
     /// MadGraph writes, records the move and the computed table, and gives the
     /// same evaluation, moves and table as the card with that number and table
     /// typed in.
     #[test]
     fn an_auto_width_binds_like_the_number_it_computes() {
-        let bound = bind("DECAY 23 Auto\n").unwrap();
+        let bound = bind("DECAY 24 Auto\n").unwrap();
         let [width] = bound.auto_widths.as_slice() else {
             panic!("{:?}", bound.auto_widths)
         };
-        assert_eq!(width.param, "WZ");
-        assert_eq!(width.channels.len(), 11);
+        assert_eq!(width.param, "WW");
+        assert_eq!(width.channels.len(), 5);
+        assert!(width.not_included.is_empty());
         assert!((width.bound / width.total - 1.0).abs() < 5e-7);
-        let wz = bound.evaluated.param_values["WZ"].re;
-        assert_eq!(wz, width.bound);
+        let ww = bound.evaluated.param_values["WW"].re;
+        assert_eq!(ww, width.bound);
         assert_eq!(
             bound.moved,
             vec![MovedParam {
-                name: "WZ".to_string(),
+                name: "WW".to_string(),
                 block: "DECAY".to_string(),
-                code: vec![23],
+                code: vec![24],
                 value: width.bound,
             }]
         );
         let table = &bound.evaluated.decay_tables()[0];
-        assert_eq!(table.pdg, 23);
-        assert_eq!(table.channels.len(), 11);
+        assert_eq!(table.pdg, 24);
+        assert_eq!(table.channels.len(), 5);
         let sum: f64 = table.channels.iter().map(|c| c.branching_ratio).sum();
         assert!((sum - 1.0).abs() < 1e-5, "{sum}");
 
-        let mut typed = format!("DECAY 23 {:e}\n", width.bound);
+        let mut typed = format!("DECAY 24 {:e}\n", width.bound);
         for c in &table.channels {
             typed.push_str(&format!(
                 " {:e} 2 {} {}\n",
@@ -792,7 +773,7 @@ mod tests {
             by_hand.evaluated.decay_tables()
         );
 
-        let resolved = crate::widths::resolved_card_text("DECAY 23 Auto\n", &bound.auto_widths);
+        let resolved = crate::widths::resolved_card_text("DECAY 24 Auto\n", &bound.auto_widths);
         let rebound = bind(&resolved).unwrap();
         assert!(rebound.auto_widths.is_empty(), "{resolved}");
         assert_same_point(&bound.evaluated, &rebound.evaluated);
@@ -829,19 +810,36 @@ mod tests {
             why("DECAY 9999 Auto\n"),
             (9999, AutoWidthError::UnknownParticle { pdg: 9999 })
         ));
-        // A top lighter than W + b has no open two-body channel, and decays
-        // through an off-shell W.
-        let (pdg, reason) = why("Block MASS\n 6 80.0\nDECAY 6 Auto\n");
-        assert_eq!(pdg, 6);
-        let AutoWidthError::OnlyBeyondTwoBody { modes, .. } = &reason else {
-            panic!("{reason:?}")
-        };
-        assert!(modes.contains("t > ve b e+"), "{modes}");
+        // A particle with a three-body mode through a closed two-body channel
+        // is refused naming it: a top lighter than W + b (through W+), the Z
+        // (Z > W+ e- ve~ through W-) and the Higgs boson (H > W+ e- ve~
+        // through W-).
+        for (card, pdg, mode) in [
+            (
+                "Block MASS\n 6 80.0\nDECAY 6 Auto\n",
+                6,
+                "t > ve b e+ (through W+)",
+            ),
+            ("DECAY 23 Auto\n", 23, "(through W-)"),
+            ("DECAY 25 Auto\n", 25, "(through W-)"),
+        ] {
+            let (got, reason) = why(card);
+            assert_eq!(got, pdg);
+            let AutoWidthError::BeyondTwoBody { modes, .. } = &reason else {
+                panic!("{reason:?}")
+            };
+            assert!(modes.contains(mode), "{modes}");
+            let text = reason.to_string();
+            assert!(
+                text.contains("two-body widths only") && text.contains("may include such modes"),
+                "{text}"
+            );
+        }
         // A table below the Auto line naming a mode no tree-level vertex gives,
         // or one beyond two bodies.
         for (row, says) in [("2 22 22", "loop-induced"), ("3 5 -5 21", "more than two")] {
-            let (pdg, reason) = why(&format!("DECAY 25 Auto\n 1.0 {row}\n"));
-            assert_eq!(pdg, 25);
+            let (pdg, reason) = why(&format!("DECAY 24 Auto\n 1.0 {row}\n"));
+            assert_eq!(pdg, 24);
             assert!(
                 matches!(reason, AutoWidthError::ModeNotComputed { .. })
                     && reason.to_string().contains(says),
@@ -860,10 +858,10 @@ mod tests {
     /// zero, as MadGraph's stable particle does.
     #[test]
     fn a_given_table_is_replaced_and_a_stable_particle_is_zero() {
-        let bound = bind("DECAY 25 Auto\n 0.5 2 5 -5\n 0.5 2 15 -15\n").unwrap();
+        let bound = bind("DECAY 24 Auto\n 0.5 2 12 -11\n 0.5 2 14 -13\n").unwrap();
         let table = &bound.evaluated.decay_tables()[0];
-        assert_eq!(table.channels[0].daughters, vec![5, -5]);
-        assert!(table.channels[0].branching_ratio > 0.9);
+        assert_eq!(table.channels.len(), 5);
+        assert!(table.channels.iter().all(|c| c.branching_ratio < 0.5));
 
         let light = bind("Block MASS\n 25 1.0\nDECAY 25 Auto\n").unwrap();
         let width = &light.auto_widths[0];

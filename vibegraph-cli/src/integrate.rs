@@ -430,10 +430,11 @@ pub(crate) struct IntegrateArgs {
     /// defaults under its restriction. The artifact records every parameter
     /// the card moves, and `generate` evaluates at those values. A width given
     /// as `Auto` is computed, as MadGraph computes it at launch, at tree level
-    /// from the open two-body channels (modes beyond two bodies are not
-    /// included, with a warning where the model has one), and the artifact banks
-    /// the card with the computed width in place of `Auto`. Refused: an `Auto`
-    /// width that cannot be computed as MadGraph would, a non-zero value for a
+    /// from the open two-body channels, and the artifact banks the card with the
+    /// computed width in place of `Auto` (in the SM, t and W bind). Refused: an
+    /// `Auto` width of a particle with a three-body mode through a closed
+    /// channel (in the SM, Z and H) or that cannot otherwise be computed as
+    /// MadGraph would, a non-zero value for a
     /// parameter the restriction fixed to zero, a value other than one for a parameter it fixed to one, a
     /// move that splits parameters the restriction merged, and an entry the
     /// model has no parameter for. A mass or width the model

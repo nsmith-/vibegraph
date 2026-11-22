@@ -31,13 +31,15 @@
 //! What is not computed, and is reported or refused rather than left out
 //! silently:
 //!
-//! * **Beyond two bodies.** MadWidth's default goes on to three- and four-body
-//!   modes through an off-shell daughter of a closed two-body channel when its
-//!   estimate puts them above 0.25% of the width. Every such three-body mode the
-//!   model's vertices and masses allow is listed as not included
-//!   ([`ComputedWidth::not_included`]); a particle whose only modes are those is
-//!   refused ([`AutoWidthError::OnlyBeyondTwoBody`]), since its two-body width,
-//!   zero, is not MadGraph's.
+//! * **Beyond two bodies.** MadWidth's default (`body_decay=4.0025`) goes on to
+//!   three- and four-body modes through an off-shell daughter of a closed
+//!   two-body channel when its estimate puts them above 0.25% of the width. This
+//!   does not reproduce that estimate: a particle with any three-body mode
+//!   through a closed channel that its vertices and masses allow is refused,
+//!   naming the modes ([`AutoWidthError::BeyondTwoBody`]). The rule is
+//!   conservative: it refuses where MadGraph's estimate adds nothing (the SM Z,
+//!   whose `Z > W+ e- ve~` through `W-` is open but estimated negligible), and
+//!   it cannot tell which of the listed modes MadGraph would add.
 //! * **The running of `α_s`.** MadGraph evaluates the couplings at `α_s` run to
 //!   the parent's mass; a channel whose couplings depend on `α_s` is refused
 //!   ([`AutoWidthError::RunsWithAlphaS`]).
@@ -74,10 +76,6 @@ pub const METHOD: &str = "tree_level_two_body";
 /// The partial width (GeV) below which MadGraph sets a coloured particle's
 /// channel to zero (`do_compute_widths`, `madgraph_interface.py`).
 pub const QCD_SCALE_FLOOR: f64 = 0.1;
-
-/// The relative headroom MadWidth's default leaves before it adds modes beyond
-/// two bodies: the decimal part of `--body_decay=4.0025`.
-pub const MADWIDTH_PRECISION: f64 = 0.0025;
 
 /// One daughter of a channel: its PDG code and the name a process card writes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -132,8 +130,9 @@ pub struct ComputedWidth {
     /// leaves them out.
     pub below_qcd_scale: Vec<PartialWidth>,
     pub closed: Vec<ClosedChannel>,
-    /// Three-body modes MadWidth's default may add and this width does not
-    /// include.
+    /// Three-body modes through an off-shell daughter of a closed channel.
+    /// Empty on every width a card binds: [`compute_width`] refuses a particle
+    /// that has one; [`two_body_width`] lists them.
     pub not_included: Vec<OmittedMode>,
 }
 
@@ -186,10 +185,11 @@ pub enum AutoWidthError {
     )]
     DependsOnAutoWidth { channel: String, width: String },
     #[error(
-        "{particle} has no open two-body channel, and its decays go beyond two bodies ({modes}), \
-         which MadGraph's default computes and this does not; give the width as a number"
+        "{particle} has three-body modes through closed two-body channels ({modes}); vibegraph \
+         computes two-body widths only, and MadGraph's default may include such modes, so give \
+         the width as a number"
     )]
-    OnlyBeyondTwoBody { particle: String, modes: String },
+    BeyondTwoBody { particle: String, modes: String },
     #[error(
         "the card's decay table below the Auto line lists {mode}, which {why}; MadGraph replaces \
          the table with the channels it computes, so drop the row or give the width as a number"
@@ -397,13 +397,52 @@ pub fn madgraph_rounded(value: f64) -> f64 {
         .expect("a formatted finite number parses")
 }
 
-/// The tree-level two-body width of the particle with PDG code `pdg` under
-/// `evaluated`, whose `Auto` widths `auto_params` are not yet known.
+/// The width `DECAY <pdg> Auto` binds: [`two_body_width`], refused when the
+/// particle has a mode beyond two bodies ([`AutoWidthError::BeyondTwoBody`]),
+/// so the result's [`not_included`](ComputedWidth::not_included) is empty.
 ///
 /// # Errors
 ///
 /// [`AutoWidthError`] for a width this cannot compute as MadGraph would.
 pub fn compute_width(
+    model: &Arc<UFOModel>,
+    evaluated: &EvaluatedModel,
+    pdg: i32,
+    auto_params: &BTreeSet<String>,
+) -> Result<ComputedWidth, AutoWidthError> {
+    let width = two_body_width(model, evaluated, pdg, auto_params)?;
+    if width.not_included.is_empty() {
+        return Ok(width);
+    }
+    let modes: Vec<String> = width
+        .not_included
+        .iter()
+        .map(|m| {
+            let names: Vec<&str> = m.daughters.iter().map(|d| d.name.as_str()).collect();
+            format!(
+                "{} > {} (through {})",
+                width.particle,
+                names.join(" "),
+                m.through.name
+            )
+        })
+        .collect();
+    Err(AutoWidthError::BeyondTwoBody {
+        particle: width.particle,
+        modes: modes.join(", "),
+    })
+}
+
+/// The tree-level two-body width of the particle with PDG code `pdg` under
+/// `evaluated`, whose `Auto` widths `auto_params` are not yet known, with the
+/// three-body modes through its closed channels listed in
+/// [`not_included`](ComputedWidth::not_included) rather than refused.
+///
+/// # Errors
+///
+/// [`AutoWidthError`] for a two-body width this cannot compute as MadGraph
+/// would.
+pub fn two_body_width(
     model: &Arc<UFOModel>,
     evaluated: &EvaluatedModel,
     pdg: i32,
@@ -471,16 +510,6 @@ pub fn compute_width(
     }
 
     let modes = three_body_modes(model, evaluated, parent, &closed);
-    if channels.is_empty() && below.is_empty() && !modes.is_empty() {
-        let listed: Vec<String> = modes
-            .iter()
-            .map(|(d, _)| mode_text(model, parent, d))
-            .collect();
-        return Err(AutoWidthError::OnlyBeyondTwoBody {
-            particle: card_name(model, parent),
-            modes: listed.join(", "),
-        });
-    }
 
     channels.sort_by(|x, y| y.width.total_cmp(&x.width));
     let total: f64 = channels.iter().map(|c| c.width).sum();
@@ -573,7 +602,7 @@ fn is_table_row(line: &str) -> bool {
 /// written as MadGraph writes the card it runs from: the computed width on the
 /// `DECAY` line, with a comment saying it was computed and how, the table the
 /// card gave below it replaced by the computed one (each row's partial width as
-/// a comment), and a comment line per mode not included. Binding the result
+/// a comment). Binding the result
 /// gives the same parameters and tables as binding `text`.
 pub fn resolved_card_text(text: &str, computed: &[ComputedWidth]) -> String {
     let mut out = String::new();
@@ -645,15 +674,6 @@ fn width_lines(width: &ComputedWidth) -> String {
             width.particle,
             names.join(" "),
             c.width
-        ));
-    }
-    for m in &width.not_included {
-        let names: Vec<&str> = m.daughters.iter().map(|d| d.name.as_str()).collect();
-        text.push_str(&format!(
-            "#  not included: {} > {} (three-body, through an off-shell {})\n",
-            width.particle,
-            names.join(" "),
-            m.through.name
         ));
     }
     text

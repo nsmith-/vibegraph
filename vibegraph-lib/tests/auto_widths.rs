@@ -11,9 +11,11 @@
 //! and this crate's are `Σ|M|²` from its own vertices: the comparison is per
 //! channel, keyed by the daughters, so a total that agrees while two channels
 //! trade width is caught, and so is a channel either side has and the other
-//! lacks. The default `--body_decay=4.0025` run is banked too, and its modes
-//! beyond two bodies are what the width does not include: every three-body
-//! one must be among the modes the computed width lists as not included.
+//! lacks. The default `--body_decay=4.0025` run is banked too: every three-body
+//! mode it adds must be among the modes the two-body analysis lists
+//! ([`two_body_width`]'s `not_included`), and a particle with any such mode is
+//! refused by binding (`BeyondTwoBody`): the SM top and W bind, the Z, the
+//! Higgs boson and the g2HDM H2, H3 and H+ are refused.
 //!
 //! What the MadGraph rows cannot see: anything the two computations share by
 //! construction. They read the same parameter card, so a wrong parameter
@@ -34,10 +36,12 @@ mod common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use std::collections::BTreeSet;
+
 use vibegraph::ufo::bind::{bind_card, BoundCard, CardError};
 use vibegraph::ufo::slha::ParamCard;
-use vibegraph::ufo::UFOModel;
-use vibegraph::widths::{AutoWidthError, ComputedWidth};
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::widths::{two_body_width, AutoWidthError, ComputedWidth};
 
 fn madgraph_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
@@ -60,6 +64,54 @@ fn width_of(bound: &BoundCard, pdg: i32) -> &ComputedWidth {
         .unwrap_or_else(|| panic!("no computed width for {pdg}"))
 }
 
+/// The `DECAY <pdg> Auto` codes of a card's text.
+fn auto_codes(text: &str) -> Vec<i32> {
+    text.lines()
+        .filter_map(|l| match auto_line(l) {
+            Some(code) => code.parse().ok(),
+            None => None,
+        })
+        .collect()
+}
+
+/// The code of a `DECAY <code> Auto` line.
+fn auto_line(line: &str) -> Option<&str> {
+    let f: Vec<&str> = line.split('#').next()?.split_whitespace().collect();
+    match f.as_slice() {
+        [d, code, v] if d.eq_ignore_ascii_case("decay") && v.eq_ignore_ascii_case("auto") => {
+            Some(code)
+        }
+        _ => None,
+    }
+}
+
+/// `text` with every `Auto` width but `keep`'s set to one.
+fn with_auto_only(text: &str, keep: Option<i32>) -> String {
+    text.lines()
+        .map(|l| match auto_line(l) {
+            Some(code) if code.parse::<i32>().ok() != keep => format!("DECAY {code} 1.0\n"),
+            _ => format!("{l}\n"),
+        })
+        .collect()
+}
+
+/// The two-body width of every `Auto` code of `text`, whether or not binding
+/// would refuse it for a mode beyond two bodies ([`two_body_width`]), at the
+/// card with each `Auto` width set to one, and that evaluation.
+fn two_body(model: &Arc<UFOModel>, text: &str) -> (EvaluatedModel, Vec<ComputedWidth>) {
+    let card: ParamCard = with_auto_only(text, None).parse().unwrap();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
+    let widths = auto_codes(text)
+        .into_iter()
+        .map(|pdg| two_body_width(model, &evaluated, pdg, &BTreeSet::new()).unwrap())
+        .collect();
+    (evaluated, widths)
+}
+
+fn find(widths: &[ComputedWidth], pdg: i32) -> &ComputedWidth {
+    widths.iter().find(|w| w.pdg == pdg).unwrap()
+}
+
 /// The partial width of the open channel into `daughters` (any order), if any.
 fn partial(width: &ComputedWidth, daughters: &[i32]) -> Option<f64> {
     let mut want = daughters.to_vec();
@@ -75,8 +127,8 @@ fn partial(width: &ComputedWidth, daughters: &[i32]) -> Option<f64> {
         .map(|c| c.width)
 }
 
-fn param(bound: &BoundCard, name: &str) -> f64 {
-    bound.evaluated.param_values[name].re
+fn param(evaluated: &EvaluatedModel, name: &str) -> f64 {
+    evaluated.param_values[name].re
 }
 
 // ── MadGraph ─────────────────────────────────────────────────────────────────
@@ -149,11 +201,11 @@ fn key(daughters: impl IntoIterator<Item = i32>) -> Vec<i32> {
 /// Compare every computed width of `bound` with the case's MadGraph rows,
 /// channel by channel; returns the worst relative difference over channels
 /// above [`NEGLIGIBLE`].
-fn compare(case: &Case, bound: &BoundCard) -> f64 {
+fn compare(case: &Case, widths: &[ComputedWidth]) -> f64 {
     let mut worst = 0.0f64;
     for &pdg in &case.auto {
         let mg = &case.two_body[&pdg.to_string()];
-        let ours = width_of(bound, pdg);
+        let ours = find(widths, pdg);
         let ours_by: BTreeMap<Vec<i32>, f64> = ours
             .channels
             .iter()
@@ -240,8 +292,48 @@ fn check_beyond_two_body(case: &Case, pdg: i32, ours: &ComputedWidth) {
     );
 }
 
+/// Binding the card with each of its `Auto` codes alone left `Auto` binds
+/// exactly `binds` and refuses the rest for modes beyond two bodies, naming
+/// every one; a bound width is the two-body one with nothing listed as not
+/// included.
+fn check_decision(model: &Arc<UFOModel>, text: &str, widths: &[ComputedWidth], binds: &[i32]) {
+    for pdg in auto_codes(text) {
+        let two = find(widths, pdg);
+        match bind(model, &with_auto_only(text, Some(pdg))) {
+            Ok(bound) => {
+                let w = width_of(&bound, pdg);
+                println!("{pdg:>3} binds {:e}", w.bound);
+                assert!(binds.contains(&pdg), "{pdg} binds; expected a refusal");
+                assert!(w.not_included.is_empty() && two.not_included.is_empty());
+                assert_eq!(w.total, two.total);
+            }
+            Err(CardError::AutoWidth {
+                pdg: got,
+                reason: reason @ AutoWidthError::BeyondTwoBody { .. },
+            }) => {
+                println!(
+                    "{pdg:>3} refused, {} modes beyond two bodies named",
+                    two.not_included.len()
+                );
+                assert_eq!(got, pdg);
+                assert!(!binds.contains(&pdg), "{pdg} refused: {reason}");
+                assert!(!two.not_included.is_empty());
+                let text = reason.to_string();
+                for m in &two.not_included {
+                    let names: Vec<&str> = m.daughters.iter().map(|d| d.name.as_str()).collect();
+                    let mode = format!("> {} (through {})", names.join(" "), m.through.name);
+                    assert!(text.contains(&mode), "{pdg}: {mode} not named");
+                }
+            }
+            Err(other) => panic!("{pdg}: {other}"),
+        }
+    }
+}
+
 /// The SM top, W, Z and Higgs widths, `import model sm`, against MadGraph's
-/// `compute_widths 6 23 24 25 --body_decay=2`.
+/// `compute_widths 6 23 24 25 --body_decay=2`, channel by channel; and the
+/// binding decision: t and W bind, Z and H are refused for modes beyond two
+/// bodies.
 #[test]
 fn sm_auto_widths_match_madgraph_per_channel() {
     let case = case("sm");
@@ -251,13 +343,16 @@ fn sm_auto_widths_match_madgraph_per_channel() {
         .iter()
         .map(|p| format!("DECAY {p} Auto\n"))
         .collect();
-    let bound = bind(&common::sm_model(), &text).unwrap();
-    let worst = compare(&case, &bound);
+    let model = common::sm_model();
+    let (_, widths) = two_body(&model, &text);
+    let worst = compare(&case, &widths);
     println!("sm: worst per-channel relative difference {worst:.1e}");
+    check_decision(&model, &text, &widths, &[6, 24]);
 }
 
 /// The g2HDM neutral and charged heavy Higgs bosons at M = 1000 GeV against
-/// MadGraph's `compute_widths 35 36 37 --body_decay=2` at the same card.
+/// MadGraph's `compute_widths 35 36 37 --body_decay=2` at the same card; all
+/// three are refused for modes beyond two bodies.
 ///
 /// The model is not in the repository (its UFO carries no licence to vendor
 /// it under), so this runs where `VG_G2HDM_UFO` names the `g2HDM_UFO`
@@ -270,12 +365,16 @@ fn g2hdm_auto_widths_match_madgraph_per_channel() {
     let model = UFOModel::load(std::path::Path::new(&dir), None).unwrap();
     let case = case("g2hdm_m1000");
     let card = std::fs::read_to_string(repo_root().join(case.card.as_deref().unwrap())).unwrap();
-    let bound = bind(&model, &card).unwrap();
-    let worst = compare(&case, &bound);
+    let (_, widths) = two_body(&model, &card);
+    let worst = compare(&case, &widths);
     println!("g2hdm_m1000: worst per-channel relative difference {worst:.1e}");
+    check_decision(&model, &card, &widths, &[]);
 }
 
 // ── Analytic edges ───────────────────────────────────────────────────────────
+//
+// Two-body widths through `two_body_width`, which lists modes beyond two
+// bodies rather than refusing, so the Z and the Higgs boson are reachable.
 
 /// `Γ(H > V V) = δ M_H³ / (32π v²) · √(1-4x) (1-4x+12x²)`, `x = M_V²/M_H²`,
 /// `δ = 2` for `W+ W-` and `1` for the identical `Z Z`.
@@ -291,14 +390,13 @@ fn h_to_vv(m_h: f64, m_v: f64, vev: f64, delta: f64) -> f64 {
 /// it.
 #[test]
 fn identical_daughters_take_the_symmetry_factor() {
-    let bound = bind(
+    let (ev, widths) = two_body(
         &common::sm_model(),
         "Block MASS\n 25 300.0\nDECAY 25 Auto\n",
-    )
-    .unwrap();
-    let h = width_of(&bound, 25);
-    let vev = param(&bound, "vev");
-    let (mz, mw) = (param(&bound, "MZ"), param(&bound, "MW"));
+    );
+    let h = find(&widths, 25);
+    let vev = param(&ev, "vev");
+    let (mz, mw) = (param(&ev, "MZ"), param(&ev, "MW"));
     let zz = partial(h, &[23, 23]).unwrap();
     let ww = partial(h, &[24, -24]).unwrap();
     let (zz_a, ww_a) = (h_to_vv(300.0, mz, vev, 1.0), h_to_vv(300.0, mw, vev, 2.0));
@@ -311,24 +409,20 @@ fn identical_daughters_take_the_symmetry_factor() {
 /// flavour, and `Γ(W+ > e+ ve) = e² M_W / (48π s_w²)`.
 #[test]
 fn massless_daughters_take_the_analytic_width() {
-    let bound = bind(&common::sm_model(), "DECAY 23 Auto\nDECAY 24 Auto\n").unwrap();
-    let (ee, sw, cw) = (
-        param(&bound, "ee"),
-        param(&bound, "sw"),
-        param(&bound, "cw"),
-    );
-    let (mz, mw) = (param(&bound, "MZ"), param(&bound, "MW"));
+    let (ev, widths) = two_body(&common::sm_model(), "DECAY 23 Auto\nDECAY 24 Auto\n");
+    let (ee, sw, cw) = (param(&ev, "ee"), param(&ev, "sw"), param(&ev, "cw"));
+    let (mz, mw) = (param(&ev, "MZ"), param(&ev, "MW"));
     let pi = std::f64::consts::PI;
     let nu = ee * ee * mz / (96.0 * pi * sw * sw * cw * cw);
     let lep = ee * ee * mw / (48.0 * pi * sw * sw);
     for flavour in [12, 14, 16] {
-        let got = partial(width_of(&bound, 23), &[flavour, -flavour]).unwrap();
+        let got = partial(find(&widths, 23), &[flavour, -flavour]).unwrap();
         assert!(
             (got / nu - 1.0).abs() < 1e-12,
             "Z > {flavour}: {got} against {nu}"
         );
     }
-    let got = partial(width_of(&bound, 24), &[12, -11]).unwrap();
+    let got = partial(find(&widths, 24), &[12, -11]).unwrap();
     assert!(
         (got / lep - 1.0).abs() < 1e-12,
         "W+ > e+ ve: {got} against {lep}"
@@ -342,12 +436,11 @@ fn massless_daughters_take_the_analytic_width() {
 fn a_channel_at_threshold_is_closed_and_opens_above_it() {
     let model = common::sm_model();
     let mz = 91.188;
-    let at = bind(
+    let (_, at) = two_body(
         &model,
         &format!("Block MASS\n 25 {}\nDECAY 25 Auto\n", 2.0 * mz),
-    )
-    .unwrap();
-    let h = width_of(&at, 25);
+    );
+    let h = find(&at, 25);
     assert_eq!(partial(h, &[23, 23]), None);
     assert!(h
         .closed
@@ -355,9 +448,9 @@ fn a_channel_at_threshold_is_closed_and_opens_above_it() {
         .any(|c| key(c.daughters.iter().map(|d| d.pdg)) == vec![23, 23]));
 
     let m_h = 2.0 * mz * (1.0 + 1e-6);
-    let above = bind(&model, &format!("Block MASS\n 25 {m_h:e}\nDECAY 25 Auto\n")).unwrap();
-    let zz = partial(width_of(&above, 25), &[23, 23]).unwrap();
-    let analytic = h_to_vv(m_h, mz, param(&above, "vev"), 1.0);
+    let (ev, above) = two_body(&model, &format!("Block MASS\n 25 {m_h:e}\nDECAY 25 Auto\n"));
+    let zz = partial(find(&above, 25), &[23, 23]).unwrap();
+    let analytic = h_to_vv(m_h, mz, param(&ev, "vev"), 1.0);
     println!("H > Z Z a part in 1e6 above threshold: {zz:e}, analytic {analytic:e}");
     assert!(zz > 0.0);
     assert!(
@@ -370,9 +463,9 @@ fn a_channel_at_threshold_is_closed_and_opens_above_it() {
 /// and `H > t t~` at the default masses.
 #[test]
 fn a_closed_channel_is_listed_and_adds_nothing() {
-    let bound = bind(&common::sm_model(), "DECAY 23 Auto\nDECAY 25 Auto\n").unwrap();
+    let (_, widths) = two_body(&common::sm_model(), "DECAY 23 Auto\nDECAY 25 Auto\n");
     for pdg in [23, 25] {
-        let w = width_of(&bound, pdg);
+        let w = find(&widths, pdg);
         assert_eq!(partial(w, &[6, -6]), None);
         assert!(w
             .closed
@@ -380,6 +473,38 @@ fn a_closed_channel_is_listed_and_adds_nothing() {
             .any(|c| key(c.daughters.iter().map(|d| d.pdg)) == vec![-6, 6]));
         let sum: f64 = w.channels.iter().map(|c| c.width).sum();
         assert_eq!(sum, w.total);
+    }
+}
+
+/// The SM particles that bind under `Auto` and those refused, each by name:
+/// the top and the W bind with nothing listed as not included; the Z is
+/// refused for `Z > W+ e- ve~` through `W-` (a mode MadGraph's default leaves
+/// out at these masses, so lifting this refusal is a change of its own), and
+/// the Higgs boson for `H > W+ e- ve~` through `W-` and the like.
+#[test]
+fn sm_top_and_w_bind_and_z_and_higgs_are_refused() {
+    let model = common::sm_model();
+    for pdg in [6, 24] {
+        let bound = bind(&model, &format!("DECAY {pdg} Auto\n")).unwrap();
+        let w = width_of(&bound, pdg);
+        assert!(w.total > 0.0 && w.not_included.is_empty(), "{pdg}: {w:?}");
+    }
+    for (pdg, mode) in [
+        (23, "Z > W+ e- ve~ (through W-)"),
+        (25, "H > W+ e- ve~ (through W-)"),
+    ] {
+        match bind(&model, &format!("DECAY {pdg} Auto\n")) {
+            Err(CardError::AutoWidth {
+                pdg: got,
+                reason: reason @ AutoWidthError::BeyondTwoBody { .. },
+            }) => {
+                assert_eq!(got, pdg);
+                let text = reason.to_string();
+                assert!(text.contains(mode), "{text}");
+                assert!(text.contains("may include such modes"), "{text}");
+            }
+            other => panic!("{pdg}: {:?}", other.map(|b| b.auto_widths)),
+        }
     }
 }
 

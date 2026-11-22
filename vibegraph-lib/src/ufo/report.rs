@@ -592,22 +592,22 @@ mod tests {
     #[test]
     fn an_auto_width_is_reported_on_its_record() {
         let model = crate::ufo::sm::sm_model(crate::ufo::sm::SMRestrict::Default);
-        let card: ParamCard = "DECAY 23 Auto\n".parse().unwrap();
+        let card: ParamCard = "DECAY 24 Auto\n".parse().unwrap();
         let bound = bind_card(model.clone(), &card).unwrap();
         let plain = describe_parameters(&model, None);
         let report = describe_parameters_at(&model, None, &bound.auto_widths);
-        let wz = record(&report, "WZ").computed_width.as_ref().unwrap();
-        assert_eq!(wz, &bound.auto_widths[0]);
-        assert_eq!(wz.pdg, 23);
-        assert_eq!(wz.channels.len(), 11);
+        let ww = record(&report, "WW").computed_width.as_ref().unwrap();
+        assert_eq!(ww, &bound.auto_widths[0]);
+        assert_eq!(ww.pdg, 24);
+        assert_eq!(ww.channels.len(), 5);
         for (a, b) in plain.parameters.iter().zip(&report.parameters) {
-            if a.name != "WZ" {
+            if a.name != "WW" {
                 assert_eq!(a, b);
             }
         }
-        let json = serde_json::to_value(record(&report, "WZ")).unwrap();
+        let json = serde_json::to_value(record(&report, "WW")).unwrap();
         assert_eq!(json["computed_width"]["method"], "tree_level_two_body");
-        assert_eq!(json["computed_width"]["bound"], wz.bound);
+        assert_eq!(json["computed_width"]["bound"], ww.bound);
         assert!(serde_json::to_value(record(&report, "WT")).unwrap()["computed_width"].is_null());
     }
 

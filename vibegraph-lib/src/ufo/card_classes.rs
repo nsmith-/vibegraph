@@ -216,7 +216,7 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         name: "`DECAY <pdg> Auto`",
         madgraph: "MadWidth computes the width at launch (static_check_param_card)",
         class: Consumed("bind_card, as the tree-level two-body width crate::widths computes"),
-        example: Text("DECAY 23 Auto\n"),
+        example: Text("DECAY 24 Auto\n"),
         expect: Differs(Text("")),
     },
     Construct {
