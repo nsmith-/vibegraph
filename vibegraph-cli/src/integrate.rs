@@ -68,7 +68,7 @@ use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
-use vibegraph::support::{check_support, PointCensus};
+use vibegraph::support::{check_support, zero_coupling_subprocesses, PointCensus, SupportError};
 use vibegraph::systematics::request::VariationRequest;
 use vibegraph::ufo::bind::bind_card;
 use vibegraph::ufo::loaded::LoadedModel;
@@ -1098,8 +1098,18 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
     // A cross section no point carries, or only a handful do, is not a result:
     // refused before it is printed or banked, so nothing downstream reads it.
-    check_support(conv, output.census)
-        .map_err(|e| err(ErrorKind::Support, format!("{e}; no artifact was written")))?;
+    check_support(conv, output.census).map_err(|e| {
+        let zero = zero_coupling_subprocesses(&sets, &model, &evaluated);
+        let cause = if matches!(e, SupportError::MatrixElementZero { .. }) && !zero.is_empty() {
+            format!(" ({})", zero.join("; "))
+        } else {
+            String::new()
+        };
+        err(
+            ErrorKind::Support,
+            format!("{e}{cause}; no artifact was written"),
+        )
+    })?;
 
     let observable = output.observable;
     let sigma_pb = output.result.integral * observable.per_natural_unit();

@@ -1,6 +1,6 @@
 ---
 type: Session Brief
-title: "L-V1: campaign leftovers: TpTp zero weight, bstar_tW zero effective points, the stitch assert, the b-quark σ excess"
+title: "L-X1: campaign leftovers: TpTp zero weight, bstar_tW zero effective points, the stitch assert, the b-quark σ excess"
 description: "Trace the TpTp 2Mu2B all-zero integrand to a parameter, coupling or restriction (a possible silent wrong answer) first; then bstar_tW, the decay-chain stitch assert, and attribution of the QCD_bEnriched/WBQ/TCP σ excess."
 status: draft
 agent: validation-dev (Sonnet)
