@@ -42,3 +42,9 @@ the card actually sets, and the value each one takes.
 Cost: 2.5–8 h a seed on 4 cores, with about 3.0–3.4 GB peak RSS at the default
 target. A single high-mass card under a per-event comparison is the affordable
 oracle.
+
+**Claimed for sprint L as a stretch goal** (PR 12, user decision,
+2026-11-22). It does not hold the v0.2.3 tag. It is scheduled after sprint L's
+VBS work (`vbs-stable-boson-sigma-reads-high`), since the two may share a
+cause. Multi-seed σ runs go to the CERN host. Local work is limited to
+reduced-budget single seeds and per-event checks.
