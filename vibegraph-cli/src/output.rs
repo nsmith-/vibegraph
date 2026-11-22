@@ -33,11 +33,19 @@
 //!   with the `diagrams.json` summary nested under `summary`.
 //! - **`refusal`**: in place of a result, once: [`Refusal`]. A refused run
 //!   writes no artifact, so this is the only record of why.
+//! - **`phase`**: a start and an end record for each phase of `integrate` and
+//!   `generate`, whatever the visible level, written and flushed as the phase
+//!   is entered and left ([`crate::phase`]): `event` (`start` or `end`),
+//!   `phase`, `elapsed_s` since the process started; an end adds `wall_s`,
+//!   `outcome` (`ok`, or `failed` when the phase ended in a refusal) and
+//!   `sizes`. A run killed from outside leaves the start of the phase it was
+//!   in as its last `phase` record.
 //!
 //! Values are in base units at full precision: cross sections in pb, widths,
 //! masses and scales in GeV. An undefined value (a χ²/dof over fewer than two
-//! iterations) is `null`. Adding a field to an object keeps the version;
-//! removing, renaming or re-meaning one, or adding an error kind, bumps it.
+//! iterations) is `null`. Adding a field to an object, or a `kind` of object,
+//! keeps the version, so a reader skips kinds it does not know; removing,
+//! renaming or re-meaning a field, or adding an error kind, bumps it.
 
 use std::io::Write;
 use std::sync::OnceLock;

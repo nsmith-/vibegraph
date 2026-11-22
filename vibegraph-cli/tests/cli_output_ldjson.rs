@@ -37,7 +37,7 @@ fn objects(output: &Output) -> Vec<Value> {
             );
             let kind = value["kind"].as_str().unwrap_or_else(|| panic!("{line}"));
             assert!(
-                ["log", "progress", "result", "refusal"].contains(&kind),
+                ["log", "progress", "phase", "result", "refusal"].contains(&kind),
                 "unknown kind {kind}: {line}"
             );
             value

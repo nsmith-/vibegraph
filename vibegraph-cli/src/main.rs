@@ -25,6 +25,7 @@ mod logging;
 mod network;
 mod output;
 mod parallel;
+mod phase;
 mod ranking;
 mod run_card;
 mod si;
@@ -178,6 +179,7 @@ fn main() -> ExitCode {
     // Before the display starts, so its own hook runs first and gives the
     // terminal back before the message is printed.
     exit_on_panic();
+    phase::mark_origin();
     let cli = Cli::parse();
     // `check-events` prints a report a person reads; it has no result object
     // for the stream to carry.

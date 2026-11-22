@@ -424,6 +424,46 @@ result), `artifact` (a saved artifact unreadable or inconsistent), `io`
 inputs were accepted). `check-events` prints a report for a person and
 refuses `--output-ldjson`.
 
+### Phase timing
+
+Under `--output-ldjson`, `integrate` and `generate` also write a `phase`
+object when each phase of the run starts and another when it ends, at any
+verbosity. Each is written and flushed as it happens, so a run killed from
+outside (a batch system's `SIGKILL` at its time limit) still names the phase
+it was in: the last `phase` record without its `end`. A `phase` is a new
+`kind` under `schema_version` 1; a reader skips kinds it does not know.
+
+| field | on | meaning |
+|---|---|---|
+| `event` | both | `start` or `end` |
+| `phase` | both | the phase's name, below |
+| `elapsed_s` | both | seconds since the process started, on a monotonic clock |
+| `wall_s` | end | the phase's own wall time, `elapsed_s` at the end less at the start |
+| `outcome` | end | `ok`, or `failed` when the phase ended in the run's refusal |
+| `sizes` | end | the counts that explain the time, by phase (below); `{}` where none |
+
+`integrate` enters, in order and each at most once: `input` (the card or
+diagram artifact read, the model loaded), `enumerate` (from a proc card;
+`subprocesses`, `diagrams`), `amplitude_probe` (each diagram set compiled
+and evaluated at the probe points the artifact banks; `diagram_sets`), `pdf`
+(proton beams), `compile` (flavour groups and one evaluator per subprocess
+or group, with the cuts; `subprocesses`, `compiled_diagrams`, `helicities`,
+`colour_flows`, and on proton beams `parts` and `flavour_groups`),
+`channels` (the maps and the integrand over its channels; `channels`),
+`alpha_survey` (the channel-weight survey; `points_per_iteration`,
+`iterations`; on fixed-energy beams and decays it also builds the
+per-diagram channel maps), `vegas` (every VEGAS iteration, the warm-up
+included; `iterations`, `points`), `configurations` (the per-configuration
+shares and channel records) and `bank` (the artifact written). The VEGAS
+iterations inside `vegas` are the `progress` objects of the `vegas` stage.
+`--check` ends after `channels`. `generate` enters `input`, `pdf` and
+`generate` (`channels`, `events_written`), the last resolved further by its
+`compile`, `weight_scan` and `unweight` progress stages.
+
+Without `--output-ldjson` the same records are log events: the start at
+`debug`, the end at `info` as `phase vegas: 12.345 s (iterations 3, points
+30000)`. `--log-file` records both.
+
 ## Parallelism
 
 `-j` sets the thread count for the integration. Thread count moves no bit:
