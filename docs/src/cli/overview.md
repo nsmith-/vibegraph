@@ -460,10 +460,12 @@ kinds, bumps the version.
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
   path and its `format_version`, its `enumeration_version` (the enumeration
   that produced the diagrams it banks, which a build must share to read it),
-  `vibegraph_version` (the release that wrote the artifact: `integrate`
-  reports its own, and `inspect` reports `null`, since the artifact does not
-  record its writer, so `format_version` and `enumeration_version` name the
-  generation), the `diagram_set_digest` of the diagrams it integrated, and
+  `writer_version` (the vibegraph release, the crate version, that wrote the
+  artifact; `null` for a format-24 artifact, which predates the field, records
+  no writer and is still read as before; a commit hash is not recorded, so two
+  builds of one source write the same bytes), `vibegraph_version` (the full
+  version string of the binary that ran `integrate`; `null` from `inspect`),
+  the `diagram_set_digest` of the diagrams it integrated, and
   `param_card` (whether a param card's text is banked).
   `inspect --output-ldjson` prints the same
   object for a saved artifact, with `stop_reason`, `target_rel`,

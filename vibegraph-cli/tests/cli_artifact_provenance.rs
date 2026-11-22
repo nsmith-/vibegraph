@@ -137,6 +137,10 @@ fn results_carry_the_enumeration_version_and_the_writer() {
     assert_eq!(inspected["enumeration_version"], json!(ENUMERATION_VERSION));
     assert_eq!(inspected["format_version"], json!(FORMAT_VERSION));
     assert!(inspected["vibegraph_version"].is_null(), "{inspected}");
+    assert_eq!(
+        inspected["writer_version"],
+        json!(env!("CARGO_PKG_VERSION"))
+    );
 }
 
 /// An artifact whose diagrams a version-2 enumeration wrote is refused with
@@ -156,13 +160,65 @@ fn an_enumeration_version_2_artifact_is_refused_by_reason() {
 #[test]
 fn an_unreadable_format_version_is_refused_by_reason() {
     let f = fixture();
-    let old = edited(&f, "f23.bin.zst", |raw| {
-        raw[0..4].copy_from_slice(&(FORMAT_VERSION - 1).to_le_bytes());
+    let newer = edited(&f, "f26.bin.zst", |raw| {
+        raw[0..4].copy_from_slice(&(FORMAT_VERSION + 1).to_le_bytes());
     });
-    let expected = json!({"kind": "format_version", "found": FORMAT_VERSION - 1,
-                          "oldest": FORMAT_VERSION, "expected": FORMAT_VERSION});
-    assert_eq!(reason_of(&inspect(&f, &old)), &expected);
-    assert_eq!(reason_of(&generate(&f, &old)), &expected);
+    let expected = json!({"kind": "format_version", "found": FORMAT_VERSION + 1,
+                          "oldest": 24, "expected": FORMAT_VERSION});
+    assert_eq!(reason_of(&inspect(&f, &newer)), &expected);
+    assert_eq!(reason_of(&generate(&f, &newer)), &expected);
+    let older = edited(&f, "f23.bin.zst", |raw| {
+        raw[0..4].copy_from_slice(&23u32.to_le_bytes());
+    });
+    assert_eq!(
+        reason_of(&inspect(&f, &older)),
+        &json!({"kind": "format_version", "found": 23, "oldest": 24,
+                "expected": FORMAT_VERSION})
+    );
+}
+
+/// A new artifact is format 25 and records the release that wrote it, which
+/// `integrate` and `inspect` both report.
+#[test]
+fn a_new_artifact_records_its_writer() {
+    let f = fixture();
+    assert_eq!(FORMAT_VERSION, 25);
+    assert_eq!(f.artifact.format_version, 25);
+    assert_eq!(
+        f.artifact.writer_version.as_deref(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
+    for result in [f.integrate.clone(), inspect(&f, &f.artifact_path)] {
+        assert_eq!(result["format_version"], json!(25));
+        assert_eq!(result["writer_version"], json!(env!("CARGO_PKG_VERSION")));
+        assert_eq!(result["enumeration_version"], json!(ENUMERATION_VERSION));
+    }
+}
+
+/// A format-24 artifact, made by removing the writer field from a fresh one and
+/// stamping the old version, loads as before: the same cross section, no writer,
+/// and `generate` reads it.
+#[test]
+fn a_format_24_artifact_loads_unchanged_with_no_writer() {
+    let f = fixture();
+    let writer = f.artifact.writer_version.clone().unwrap();
+    let old = edited(&f, "f24.bin.zst", |raw| {
+        raw.truncate(raw.len() - (1 + 8 + writer.len()));
+        raw[0..4].copy_from_slice(&24u32.to_le_bytes());
+    });
+    let loaded = IntegrateArtifact::read_from_path(&old).unwrap();
+    assert_eq!(loaded.format_version, 24);
+    assert_eq!(loaded.writer_version, None);
+    assert_eq!(loaded.sigma_pb.to_bits(), f.artifact.sigma_pb.to_bits());
+    assert_eq!(loaded.process, f.artifact.process);
+
+    let inspected = inspect(&f, &old);
+    assert_eq!(inspected["kind"], "result", "{inspected}");
+    assert_eq!(inspected["format_version"], json!(24));
+    assert!(inspected["writer_version"].is_null(), "{inspected}");
+    assert_eq!(inspected["enumeration_version"], json!(ENUMERATION_VERSION));
+    assert_eq!(inspected["sigma"], f.integrate["sigma"]);
+    assert_eq!(generate(&f, &old)["kind"], "result");
 }
 
 /// An edited digest is a corrupt or edited file, and which digest it was is in

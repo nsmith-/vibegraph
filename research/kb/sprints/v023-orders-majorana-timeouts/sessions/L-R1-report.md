@@ -114,11 +114,7 @@ What each pins, and what it cannot detect:
 
 ## Found
 
-- **Writer version is not in the artifact.** Evidence: `IntegrateArtifact`
-  (format 24) has `format_version` and `enumeration_version` but no release
-  string, so `inspect` cannot report the writer. Closing it needs a field in the
-  next format bump (it refuses existing artifacts, so pair it with another
-  shape change) and then `vibegraph_version` in `inspect`.
+- **Writer version is not in the artifact.** Done in L-R2 (format 25, which still reads 24); see its report.
 - **Collider-energy reason has no end-to-end test.** Needs a proton artifact
   and the NNPDF set; a validation-host CLI test could patch `sqrt_s_had` and
   expect `reason.kind == "collider_energy"`.

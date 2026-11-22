@@ -340,10 +340,12 @@ pub(crate) struct IntegrateResult {
     /// The enumeration version of the build that enumerated the artifact's
     /// diagrams: the number a build reads an artifact's diagrams as valid by.
     pub(crate) enumeration_version: u32,
-    /// The vibegraph release that wrote the artifact. `integrate` reports its
-    /// own; `inspect` reports `null`, since the artifact does not record its
-    /// writer, and `format_version` with `enumeration_version` name the
-    /// generation instead.
+    /// The vibegraph release (crate version) the artifact records as its
+    /// writer; `null` for a format-24 artifact, which records none.
+    pub(crate) writer_version: Option<String>,
+    /// The full version string (release and git description) of the binary
+    /// that ran `integrate`; `null` from `inspect`, which did not write the
+    /// artifact.
     pub(crate) vibegraph_version: Option<&'static str>,
     /// The SHA-256 of the diagram sets the run integrated: the digest a
     /// `vibegraph enumerate` run of the same card records.

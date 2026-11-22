@@ -1204,6 +1204,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
         enumeration_version: ENUMERATION_VERSION,
+        writer_version: Some(vibegraph::artifact::WRITER_VERSION.to_string()),
         process: output.process,
         proc_card,
         model: model_id,
@@ -1310,7 +1311,7 @@ pub(crate) fn result_object(
         artifact: path.display().to_string(),
         format_version: artifact.format_version,
         enumeration_version: artifact.enumeration_version,
-        // Only the run that wrote the artifact knows its writer.
+        writer_version: artifact.writer_version.clone(),
         vibegraph_version: run.is_some().then_some(env!("VIBEGRAPH_VERSION")),
         diagram_set_digest: artifact.diagram_set_digest.clone(),
         param_card: artifact.param_card.is_some(),
