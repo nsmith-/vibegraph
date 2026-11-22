@@ -230,13 +230,15 @@ pub(crate) fn parse_particles_with(
                 let mass_param = fields.reference("mass", "Param", PARAM_REFERENCE)?;
                 let width_param = fields.reference("width", "Param", PARAM_REFERENCE)?;
                 let ghost_number = fields.opt_int32("GhostNumber")?.unwrap_or(0);
-                // Older UFO models (sm) spell it `goldstoneboson`, newer ones `goldstone`.
-                let is_goldstone = kwarg_bool(keywords, "goldstoneboson")
-                    .or_else(|| kwarg_bool(keywords, "goldstone"))
-                    .unwrap_or(false);
+                // Older UFO models (sm) spell it `goldstoneboson`, newer ones `goldstone`,
+                // and some FeynRules exports `GoldstoneBoson`: MadGraph's importer accepts
+                // all three and treats the particle as a Goldstone when any is true.
+                let is_goldstone = ["goldstoneboson", "GoldstoneBoson", "goldstone"]
+                    .iter()
+                    .any(|spelling| kwarg_bool(keywords, spelling) == Some(true));
                 let is_self_conjugate = name == antiname;
                 let line_style = extract_param_ref(keywords, "line");
-                let propagator = extract_param_ref(keywords, "propagator");
+                let propagator = propagator_ref(keywords);
 
                 seen.insert(&python_name, &name)?;
                 by_python_name.insert(python_name.clone(), particles.len());
@@ -355,6 +357,28 @@ fn charge(
     .ok_or_else(malformed)?;
     parameter_value(&variable)
         .map_err(|why| ParticleError::Parse(format!("particle '{particle}': `charge` {why}")))
+}
+
+/// The `propagator` keyword's `Prop.XXX` entry. MadGraph reads a list or a dict
+/// `propagator` as one entry per gauge and takes the first, the unitary-gauge one
+/// (`import_ufo.py`, `add_particle`: `value[0]`).
+fn propagator_ref(keywords: &[ast::Keyword]) -> Option<String> {
+    use super::ast_util::get_kwarg;
+    let first = |expr: &ast::Expr| extract_attr(expr).map(|(_, attr)| attr.to_owned());
+    match get_kwarg(keywords, "propagator")? {
+        ast::Expr::List(ast::ExprList { elts, .. })
+        | ast::Expr::Tuple(ast::ExprTuple { elts, .. }) => elts.first().and_then(first),
+        ast::Expr::Dict(ast::ExprDict { keys, values, .. }) => keys
+            .iter()
+            .zip(values)
+            .find(|(key, _)| {
+                matches!(key, Some(ast::Expr::Constant(ast::ExprConstant {
+                    value: ast::Constant::Int(i), ..
+                })) if i.to_string() == "0")
+            })
+            .and_then(|(_, value)| first(value)),
+        other => first(other),
+    }
 }
 
 /// Extract `Param.XXX` reference from a keyword argument, returning `"XXX"`.
@@ -574,5 +598,48 @@ heco_bar = heco.anti()
             err.contains("'heco'") && err.contains("has no value for n"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn every_spelling_of_the_goldstone_flag_marks_the_particle() {
+        for spelling in ["goldstoneboson", "GoldstoneBoson", "goldstone"] {
+            let src = format!(
+                r#"
+phi__plus__ = Particle(pdg_code = 251,
+                       name = 'phi+',
+                       antiname = 'phi-',
+                       spin = 1,
+                       color = 1,
+                       mass = Param.MW,
+                       width = Param.ZERO,
+                       texname = 'p',
+                       antitexname = 'p',
+                       {spelling} = True,
+                       charge = 1,
+                       GhostNumber = 0)
+"#
+            );
+            let particles = parse_particles(&src).unwrap();
+            assert!(particles[0].is_unphysical(), "{spelling} not recognised");
+        }
+    }
+
+    #[test]
+    fn a_list_or_dict_propagator_is_read_as_its_unitary_gauge_entry() {
+        for form in [
+            "[Prop.U, Prop.F]",
+            "(Prop.U, Prop.F)",
+            "{0: Prop.U, 1: Prop.F}",
+        ] {
+            let src = format!(
+                r#"
+Z = Particle(pdg_code = 23, name = 'Z', antiname = 'Z', spin = 3, color = 1,
+             mass = Param.MZ, width = Param.WZ, texname = 'Z', antitexname = 'Z',
+             charge = 0, GhostNumber = 0, propagator = {form})
+"#
+            );
+            let particles = parse_particles(&src).unwrap();
+            assert_eq!(particles[0].propagator.as_deref(), Some("U"), "{form}");
+        }
     }
 }
