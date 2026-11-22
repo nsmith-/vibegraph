@@ -55,6 +55,7 @@ use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
 use crate::output::{self, GenerateResult};
 use crate::parallel::ParallelArgs;
+use crate::phase::{self, PhaseName};
 use crate::tui;
 
 /// Default output file.
@@ -364,6 +365,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         ));
     }
 
+    let input_phase = phase::start(PhaseName::Input);
     let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact).map_err(|e| {
         err(
             ErrorKind::Artifact,
@@ -482,7 +484,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         )
     })?;
     let reweight = reweight_launches(args, &parsed, &model)?;
+    input_phase.end();
 
+    let pdf_phase = phase::start(PhaseName::Pdf);
     let pdf = if reads_parton_densities(&artifact, &parsed) {
         let tiers = assets::pdf_tiers();
         load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
@@ -505,6 +509,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         }
         _ => None,
     };
+    pdf_phase.end();
     let inputs = InputsRead {
         pdf: pdf.as_ref().map(|p| (p.input.clone(), p.tier)),
         grid_sha256,
@@ -532,7 +537,11 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         artifact_label: args.artifact.display().to_string(),
         on_scan: Some(&tui::state::note_unweighting_efficiency),
     };
+    let mut sample = phase::start(PhaseName::Generate);
+    sample.size("channels", artifact.channels.len());
     let summary = generate(&artifact, &assets, &settings, &options).map_err(cli_error)?;
+    sample.size("events_written", summary.written as usize);
+    sample.end();
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
     output::text_line(format_args!("wrote {}", args.out.display()));
