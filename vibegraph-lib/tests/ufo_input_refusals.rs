@@ -567,8 +567,8 @@ fn a_restrict_card_auto_width_is_refused_naming_the_particle() {
 }
 
 /// `EvaluatedModel::from_model_card` cannot read a width from an `Auto` row,
-/// so it refuses the card with the error `integrate --param-card` gives, naming
-/// the particle, rather than evaluating the width at its default.
+/// which only binding the card computes, so it refuses the card naming the
+/// particle rather than evaluating the width at its default.
 #[test]
 fn evaluating_a_model_at_a_card_with_an_auto_width_is_refused() {
     let dir = model_with(&[]);
@@ -576,7 +576,7 @@ fn evaluating_a_model_at_a_card_with_an_auto_width_is_refused() {
     let card: ParamCard = "DECAY 9000001 Auto\n".parse().unwrap();
     assert_eq!(
         EvaluatedModel::from_model_card(model.clone(), &card).err(),
-        Some(CardError::AutoWidth { pdg: 9000001 })
+        Some(CardError::AutoWidthUnbound { pdg: 9000001 })
     );
     let numeric: ParamCard = "DECAY 9000001 2.5\n".parse().unwrap();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &numeric).unwrap();
