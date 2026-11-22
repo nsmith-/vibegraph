@@ -23,3 +23,5 @@ Born/real/virtual split would attach: the per-diagram provenance slot on the
 diagram container that `helas` receives. No design beyond that exists; a
 first step is a plan note scoping subtraction scheme, virtuals (an external
 one-loop provider or not) and the reference to gate against.
+
+**Post-release campaign `v022-1009`, seed 1 (v0.2.2, 2026-11-22).** 170 of the 435 refused gridpacks are NLO or split-order (`[QCD]`) cards, the largest refusal class.
