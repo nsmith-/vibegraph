@@ -48,3 +48,12 @@ oracle.
 VBS work (`vbs-stable-boson-sigma-reads-high`), since the two may share a
 cause. Multi-seed σ runs go to the CERN host. Local work is limited to
 reduced-budget single seeds and per-event checks.
+
+**MadGraph 3.7.1 check and a second card (2026-11-22, vg-validator).** On the
+gridpack's own cards, MG 3.7.1 agrees with 2.9.18 (M1000 1.0041, M300 1.0000),
+so the M1000 excess is vibegraph's: +2.8% over 3.7.1. Auto widths re-resolved
+by 3.7.1 move Γ(H±) by 0.005%, and the model's Goldstone flag (`goldstone`) is
+read correctly. Card 967 (TCP ALP → ττ, `SM_alp_UFO`, m = 20 GeV, Γ/m = 5%,
+MLM) reads +1.2% (4.4σ) over MG 3.7.1's 1.864e-5 ± 4.6e-8 pb, with the two MG
+versions agreeing. It moves here from `sigma-reads-high-on-mlm-and-wbq-cards`
+as a cheap second probe of a wide s-channel resonance in a decay chain.
