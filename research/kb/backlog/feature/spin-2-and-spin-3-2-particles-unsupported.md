@@ -31,3 +31,5 @@ Majorana item, `majorana-fermions-unsupported.md`.
 
 Adding a spin-2 or spin-3/2 field to the toy UFO would give an oracle row with
 nothing else in the vertex.
+
+**Post-release campaign `v022-1009`, seed 1 (v0.2.2, 2026-11-22).** 28 refusals on a spin-2 or spin-3/2 propagator.
