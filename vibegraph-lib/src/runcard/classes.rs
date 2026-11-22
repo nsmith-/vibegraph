@@ -214,8 +214,10 @@ const R_EVENT_NORM: &str = "lhef::emit::EmitPlan::event_norm, the normalisation 
                             written XWGTUP and the IDWTUP, through GenerateSettings::event_norm; \
                             RunCard::from_values refuses a value outside MadGraph's list at the \
                             parse";
-const P_TIME_OF_FLIGHT: &str = "writes a nonzero VTIMUP for long-lived particles, where this \
-                                crate always writes zero";
+const P_TIME_OF_FLIGHT: &str = "for a value of 0 or more, draws a decay length c*Exp(width/hbar) \
+                                for each particle with a nonzero width and writes it as VTIMUP \
+                                when it exceeds the value (add_time_of_flight); this crate \
+                                writes VTIMUP zero, so only the off value -1 is supported";
 const P_BOOST_EVENT: &str = "boosts the whole event before it is written";
 const P_LHE_VERSION: &str = "the Les Houches format version; the writer emits 3.0 \
                              unconditionally";

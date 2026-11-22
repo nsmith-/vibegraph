@@ -574,6 +574,7 @@ fn stitch_set(
             polarizations,
             diagrams,
             mirrored: core.mirrored,
+            squared_orders: core.squared_orders.clone(),
         },
     })
 }
@@ -953,6 +954,7 @@ mod tests {
             polarizations: Vec::new(),
             diagrams: Vec::new(),
             mirrored: false,
+            squared_orders: None,
         };
         let msg = opposite_signs_refusal(&core, &["b".into(), "W+".into()]);
         assert!(msg.contains("u u~ > b W+"), "{msg}");

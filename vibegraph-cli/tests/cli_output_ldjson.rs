@@ -45,8 +45,9 @@ fn objects(output: &Output) -> Vec<Value> {
         .collect()
 }
 
-/// `result` with the fields that describe how the run ended nulled, which is
-/// what `inspect` prints for them: the artifact does not record them. The run's
+/// `result` with the fields that describe how the run ended nulled, and the
+/// writer's release, which is what `inspect` prints for them: the artifact does
+/// not record them. The run's
 /// own object must carry a value for each of them but the target, which a
 /// fixed budget does not have.
 fn without_run_outcome(result: &Value) -> Value {
@@ -54,11 +55,17 @@ fn without_run_outcome(result: &Value) -> Value {
     for field in ["stop_reason", "rel_err_quoted", "rel_err_scaled"] {
         assert!(!result[field].is_null(), "{field}: {result}");
     }
+    assert_eq!(
+        result["vibegraph_version"],
+        env!("VIBEGRAPH_VERSION"),
+        "{result}"
+    );
     for field in [
         "stop_reason",
         "target_rel",
         "rel_err_quoted",
         "rel_err_scaled",
+        "vibegraph_version",
     ] {
         result[field] = Value::Null;
     }

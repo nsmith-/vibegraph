@@ -27,6 +27,7 @@ use crate::error::{err, CliError, ErrorKind};
 use crate::integrate::{bind_param_card, load_run_card};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
+use crate::parameters;
 
 /// The version of the `diagrams.json` schema.
 ///
@@ -199,6 +200,9 @@ struct EnumerateResult<'a> {
     /// `null` when nothing was drawn.
     svg_dir: Option<String>,
     drawings: usize,
+    /// `parameters.json` and the default `param_card.dat`, beside the summary.
+    parameters_path: String,
+    param_card_path: String,
     summary: &'a Summary,
 }
 
@@ -496,7 +500,15 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     // Refused before the card is read, so a run that would clobber an earlier
     // one spends nothing.
     if !args.force {
-        for path in [&artifact_path, &summary_path, &svg_dir] {
+        let report_path = args.out.join(parameters::REPORT_FILENAME);
+        let card_path = args.out.join(parameters::PARAM_CARD_FILENAME);
+        for path in [
+            &artifact_path,
+            &summary_path,
+            &svg_dir,
+            &report_path,
+            &card_path,
+        ] {
             if path.exists() {
                 return Err(err(
                     ErrorKind::Io,
@@ -591,6 +603,17 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
     let json = serde_json::to_string_pretty(&summary).expect("the summary serializes");
     std::fs::write(&summary_path, json + "\n").map_err(|e| io_error("write", &summary_path, e))?;
+    let (parameters_json, param_card) = parameters::build(
+        model,
+        ModelRef {
+            label: artifact.model.label(),
+            digest: artifact.model.digest.clone(),
+        },
+        Some(artifact.process.clone()),
+        Some(&artifact.sets),
+    );
+    let (parameters_path, param_card_path) =
+        parameters::write(&args.out, &parameters_json, &param_card)?;
     if args.force {
         remove_earlier_drawings(&svg_dir)?;
     }
@@ -617,6 +640,8 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             summary_path: summary_path.display().to_string(),
             svg_dir: (!drawings.is_empty()).then(|| svg_dir.display().to_string()),
             drawings: drawings.len(),
+            parameters_path: parameters_path.display().to_string(),
+            param_card_path: param_card_path.display().to_string(),
             summary: &summary,
         });
         return Ok(());
@@ -654,6 +679,8 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     ));
     line(format!("wrote {}", artifact_path.display()));
     line(format!("wrote {}", summary_path.display()));
+    line(format!("wrote {}", parameters_path.display()));
+    line(format!("wrote {}", param_card_path.display()));
     if !drawings.is_empty() {
         line(format!(
             "wrote {} drawing{} under {}",

@@ -20,8 +20,7 @@
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
 //! | [`DecayOnShellVeto`](Unsupported::DecayOnShellVeto) | `e+ e- > z h, h > e+ e- mu+ mu- $ z` | marking a decay's own propagators, per decay |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators |
-//! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order |
-//! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order |
+//! | [`NegativeSquaredOrder`](Unsupported::NegativeSquaredOrder) | `QCD^2==-1`, `QCD^2>-1` | the resolved target recorded in the artifacts |
 //! | [`LoopSpec`](Unsupported::LoopSpec) | `[QCD]`, `[real=QCD]` | NLO |
 //! | [`PhotonTag`](Unsupported::PhotonTag) | `!a!` | NLO |
 //! | [`ProcessOption`](Unsupported::ProcessOption) | `--diagram_filter`, `--optimize`, `--standalone` | not planned |
@@ -30,9 +29,14 @@
 //! | [`ModelOption`](Unsupported::ModelOption) | `import model X --noprefix`, `add model` | not planned |
 //! | [`Command`](Unsupported::Command) | any other command that could change the card | not planned |
 //!
-//! Two variants are not missing features but MadGraph errors this check is the natural
-//! place to report: [`MixedInitialStates`](Unsupported::MixedInitialStates) and
-//! [`InitialState`](Unsupported::InitialState).
+//! Three variants are not missing features but MadGraph errors this check is the natural
+//! place to report: [`MixedInitialStates`](Unsupported::MixedInitialStates),
+//! [`InitialState`](Unsupported::InitialState) and
+//! [`ChainSquaredOrder`](Unsupported::ChainSquaredOrder).
+//!
+//! Squared-order constraints (`NP^2==1`, `QCD^2<=4`, `aEW=2`, `aS=2`) are supported:
+//! the amplitude is split by coupling order and only the interference terms the
+//! constraint selects enter |M|² ([`SquaredOrder`]).
 //!
 //! What the check cannot decide without a model — names that resolve to no
 //! particle, order names the model does not define, and the same subprocess
@@ -45,8 +49,8 @@ use thiserror::Error;
 
 use super::alias::AliasTable;
 use super::parse::{
-    Command, CouplingOp, LegParticle, LegState, ModelImport, ProcCardAst, ProcessDefinition,
-    ProcessLine,
+    Command, CouplingConstraint, CouplingOp, LegParticle, LegState, ModelImport, ProcCardAst,
+    ProcessDefinition, ProcessLine,
 };
 
 // ── The narrow type ───────────────────────────────────────────────────────────
@@ -114,9 +118,11 @@ pub struct SupportedProcess {
     /// keeps, but whose Breit–Wigner window is vetoed in the integration
     /// configurations that carry them.
     pub(crate) forbidden_onshell_s_channels: Vec<String>,
-    /// Amplitude-level coupling-order constraints, left to right. A
-    /// `WEIGHTED` entry is always `<=` or `=`.
+    /// Amplitude-level coupling-order constraints, left to right.
     pub(crate) orders: Vec<AmplitudeOrder>,
+    /// Squared-order constraints, left to right, as written: bounds on the order
+    /// of the terms of |M|², not of any one diagram.
+    pub(crate) squared_orders: Vec<SquaredOrder>,
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
     /// The overall orders of a decay-chain line (`@1 QED=2`), as upper bounds on
@@ -167,6 +173,31 @@ impl Display for AmplitudeOrder {
     }
 }
 
+/// A squared-order constraint as written: a bound on the coupling order of a
+/// term `A_i A_j*` of |M|², the sum of the two diagrams' orders, rather than on
+/// any one diagram.
+///
+/// `aEW=n` and `aS=n` are MadGraph's spellings of `QED^2=2n` (or `EW^2`) and
+/// `QCD^2=2n`; which order they name depends on the model, so they are kept as
+/// written and resolved where the model is.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SquaredOrder {
+    /// The order name without `^2` (`NP`, `QCD`, `WEIGHTED`), or the alias
+    /// (`aEW`, `aS`) when [`alias`](Self::alias) is set.
+    pub(crate) name: String,
+    pub(crate) op: CouplingOp,
+    pub(crate) value: i64,
+    /// Written as one of MadGraph's `aEW` / `aS` aliases, with no `^2`.
+    pub(crate) alias: bool,
+}
+
+impl Display for SquaredOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let power = if self.alias { "" } else { "^2" };
+        write!(f, "{}{power}{}{}", self.name, self.op, self.value)
+    }
+}
+
 impl Display for SupportedProcess {
     /// The legs, the s-channel restrictions, the coupling-order constraints and
     /// the decays, spelled the way MadGraph's own generate line spells them.
@@ -198,6 +229,9 @@ impl Display for SupportedProcess {
             write!(f, " $$ {}", self.forbidden_s_channels.join(" "))?;
         }
         for order in &self.orders {
+            write!(f, " {order}")?;
+        }
+        for order in &self.squared_orders {
             write!(f, " {order}")?;
         }
         for decay in &self.decays {
@@ -277,28 +311,25 @@ pub enum Unsupported {
          supported"
     )]
     PropagatorPolarization { process: String, leg: String },
-    /// A squared-order constraint, `QCD^2<=4`, and the `aEW` / `aS` spellings
-    /// MadGraph turns into one. It bounds the order of an interference term in
-    /// |M|², a statement about pairs of diagrams; this generator selects
-    /// diagrams by their own orders and squares the whole amplitude.
+    /// A squared-order constraint on a decay-chain line, in its core or in any
+    /// of its decays. A MadGraph error: `do_add` refuses it ("Decay processes
+    /// cannot specify squared orders constraints").
     #[error(
-        "'{process}': squared-order constraint '{constraint}' is not supported: it bounds the \
-         order of interference terms in |M|^2, and this generator selects diagrams by their \
-         coupling orders and squares the whole amplitude. Ask for the amplitude-level order \
-         instead (e.g. 'QED<=n'), which keeps every term a diagram of that order contributes to"
+        "'{process}': the squared-order constraint '{constraint}' is on a decay-chain line; \
+         MadGraph refuses squared-order constraints in decay chains"
     )]
-    SquaredOrder { process: String, constraint: String },
-    /// `WEIGHTED==n` or `WEIGHTED>n`. MadGraph turns an `==` or `>` amplitude
-    /// constraint into a squared-order one as well, which bounds interference
-    /// terms rather than diagrams. `WEIGHTED<=n` and `WEIGHTED=n` are
-    /// supported: they bound each diagram's weighted order, the filter the
-    /// automatic order search uses.
+    ChainSquaredOrder { process: String, constraint: String },
+    /// A negative squared-order value under `==` or `>`. MadGraph resolves a
+    /// negative value against each subprocess's diagrams (`QCD^2<=-1`: up to one
+    /// power past the lowest). Under `<=` the resolution is a fixed point of the
+    /// diagrams it keeps, so an artifact reader derives the same target again;
+    /// under `==` or `>` the lowest-order diagram can be among those dropped,
+    /// and the target is then not recoverable from the recorded diagrams.
     #[error(
-        "'{process}': the WEIGHTED constraint '{constraint}' is not supported: MadGraph reads \
-         '==' and '>' as squared-order constraints on interference terms. 'WEIGHTED<=n' is \
-         supported"
+        "'{process}': the squared-order constraint '{constraint}' has a negative value under \
+         '==' or '>', which is not supported; a negative value is supported under '<='"
     )]
-    WeightedOrder { process: String, constraint: String },
+    NegativeSquaredOrder { process: String, constraint: String },
     /// A loop / perturbation specification, `[QCD]`, `[real=QCD]`.
     #[error(
         "'{process}': '[...]' asks for NLO (or split-order) output, which this LO generator \
@@ -640,7 +671,8 @@ fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
     // The initial leg of a 1 -> n line is the decaying particle, as it is in a
     // decay chain's own decay.
     let decay = def.initial().count() == 1;
-    check_definition(def, &process(), decay, refused);
+    let in_chain = !def.decay_chains.is_empty();
+    check_definition(def, &process(), decay, in_chain, refused);
 }
 
 /// A constraint on the order `name`, in `def` or any of its decays, that is not an
@@ -659,11 +691,13 @@ fn part_bound_other_than_above(def: &ProcessDefinition, name: &str) -> Option<St
 
 /// The features of a definition and of its decays. The number of initial
 /// particles is checked on the line only: a decay has one by construction.
-/// `decay` marks a decay's own definition, whose initial leg is the resonance.
+/// `decay` marks a decay's own definition, whose initial leg is the resonance;
+/// `in_chain` marks the core and the decays of a decay-chain line.
 fn check_definition(
     def: &ProcessDefinition,
     text: &str,
     decay: bool,
+    in_chain: bool,
     refused: &mut Vec<Unsupported>,
 ) {
     let process = || text.to_owned();
@@ -700,14 +734,17 @@ fn check_definition(
             }
         }
     }
-    for order in &def.orders {
-        if order.squared || order.name == "aEW" || order.name == "aS" {
-            refused.push(Unsupported::SquaredOrder {
+    for order in def.orders.iter().filter(|o| is_squared(o)) {
+        if order.value < 0 && matches!(order.op, CouplingOp::ExactEq | CouplingOp::Gt) {
+            refused.push(Unsupported::NegativeSquaredOrder {
                 process: process(),
                 constraint: order.to_string(),
             });
-        } else if order.name == "WEIGHTED" && !matches!(order.op, CouplingOp::Le | CouplingOp::Eq) {
-            refused.push(Unsupported::WeightedOrder {
+        }
+    }
+    if in_chain {
+        for order in def.orders.iter().filter(|o| is_squared(o)) {
+            refused.push(Unsupported::ChainSquaredOrder {
                 process: process(),
                 constraint: order.to_string(),
             });
@@ -721,8 +758,15 @@ fn check_definition(
                 names: decay.forbidden_onsh_s_channels.join(" "),
             });
         }
-        check_definition(decay, text, true, refused);
+        check_definition(decay, text, true, true, refused);
     }
+}
+
+/// Whether a written constraint is a squared-order one: `NAME^2`, or one of
+/// MadGraph's `aEW` / `aS` aliases for `QED^2` / `QCD^2`
+/// (`madgraph_interface.py:4893-4907`).
+fn is_squared(order: &CouplingConstraint) -> bool {
+    order.squared || order.name == "aEW" || order.name == "aS"
 }
 
 /// A decay as its legs spell it, `h > e+ e- mu+ mu-`.
@@ -786,10 +830,22 @@ fn narrow(
     let mut orders: Vec<AmplitudeOrder> = def
         .orders
         .iter()
+        .filter(|o| !is_squared(o))
         .map(|o| AmplitudeOrder {
             name: o.name.clone(),
             op: o.op,
             value: o.value,
+        })
+        .collect();
+    let squared_orders = def
+        .orders
+        .iter()
+        .filter(|o| is_squared(o))
+        .map(|o| SquaredOrder {
+            name: o.name.clone(),
+            op: o.op,
+            value: o.value,
+            alias: !o.squared,
         })
         .collect();
     capped_by_overall(&mut orders, overall);
@@ -802,6 +858,7 @@ fn narrow(
         forbidden_s_channels: def.forbidden_s_channels.clone(),
         forbidden_onshell_s_channels: def.forbidden_onsh_s_channels.clone(),
         orders,
+        squared_orders,
         chain_orders: Vec::new(),
         decays: def
             .decay_chains
@@ -878,13 +935,12 @@ mod tests {
             .map(|u| match u {
                 Unsupported::SetOption { .. } => "set",
                 Unsupported::LoopSpec { .. } => "[]",
-                Unsupported::SquaredOrder { .. } => "^2",
                 Unsupported::MixedInitialStates { .. } => "mixed",
                 Unsupported::LaunchDialogue { .. } => "launch",
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed"]);
+        assert_eq!(kinds, ["set", "launch", "[]", "mixed"]);
     }
 
     /// A decay chain's overall orders fold into every part as the lesser upper
@@ -1085,19 +1141,58 @@ mod tests {
             .any(|u| matches!(u, Unsupported::DecayedPolarization { leg, .. } if leg == "w+{0}")));
     }
 
+    /// `WEIGHTED` under every operator, the squared-order constraints and their
+    /// `aEW` / `aS` aliases reach the narrow type, the squared ones apart from the
+    /// amplitude orders and spelled as written.
     #[test]
-    fn weighted_and_alias_orders() {
-        assert!(check("generate e+ e- > mu+ mu- WEIGHTED<=4").is_ok());
-        assert!(check("generate e+ e- > mu+ mu- WEIGHTED=4").is_ok());
-        for op in ["==", ">"] {
-            assert!(matches!(
-                refused(&format!("generate e+ e- > mu+ mu- WEIGHTED{op}4"))[..],
-                [Unsupported::WeightedOrder { .. }]
-            ));
+    fn weighted_squared_and_alias_orders() {
+        for op in ["<=", "=", "==", ">"] {
+            let card = check(&format!("generate e+ e- > mu+ mu- WEIGHTED{op}4")).unwrap();
+            assert_eq!(card.processes[0].orders.len(), 1, "{op}");
         }
-        assert!(matches!(
-            refused("generate e+ e- > mu+ mu- aEW=1")[..],
-            [Unsupported::SquaredOrder { .. }]
-        ));
+        let card = check("generate e+ e- > mu+ mu- QED<=2 NP^2==1 aEW=2 aS>1").unwrap();
+        let p = &card.processes[0];
+        assert_eq!(p.orders.len(), 1);
+        let written: Vec<String> = p.squared_orders.iter().map(|o| o.to_string()).collect();
+        assert_eq!(written, ["NP^2==1", "aEW=2", "aS>1"]);
+        assert_eq!(p.to_string(), "e+ e- > mu+ mu- QED<=2 NP^2==1 aEW=2 aS>1");
+    }
+
+    /// MadGraph refuses a squared-order constraint anywhere on a decay-chain line
+    /// (`do_add`), and so does the check; a `1 → n` line is not a chain and keeps
+    /// its constraint.
+    #[test]
+    fn a_squared_order_in_a_decay_chain_is_refused() {
+        for card in [
+            "generate e+ e- > t t~ NP^2==1, t > w+ b",
+            "generate e+ e- > t t~, t > w+ b NP^2==1",
+            "generate e+ e- > t t~, t > w+ b aEW=1",
+        ] {
+            assert!(
+                matches!(refused(card)[..], [Unsupported::ChainSquaredOrder { .. }]),
+                "{card}"
+            );
+        }
+        assert!(check("generate t > w+ b NP^2==1").is_ok());
+    }
+
+    /// A negative squared-order value is supported under `<=` and refused under
+    /// `==` and `>`.
+    #[test]
+    fn a_negative_squared_order_is_supported_under_le_only() {
+        assert!(check("generate u u~ > u u~ QCD^2<=-1").is_ok());
+        assert!(check("generate u u~ > u u~ QCD^2=-1").is_ok());
+        for card in [
+            "generate u u~ > u u~ QCD^2==-1",
+            "generate u u~ > u u~ QCD^2>-1",
+        ] {
+            assert!(
+                matches!(
+                    refused(card)[..],
+                    [Unsupported::NegativeSquaredOrder { .. }]
+                ),
+                "{card}"
+            );
+        }
     }
 }

@@ -1,0 +1,1 @@
+{"$message_type":"unused_extern","lint_level":"force-warn","unused_extern_names":["ansi_to_tui","clap","flate2","rand","rand_chacha","ratatui","rayon","serde","signal_hook","statrs","tar","toml","tracing","tracing_subscriber","unicode_width","ureq","zstd"]}

@@ -1,0 +1,3 @@
+cargo:rustc-env=VIBEGRAPH_VERSION=3a850a2-dirty
+cargo:rerun-if-changed=/home/user/vibegraph/.git/HEAD
+cargo:rerun-if-changed=/home/user/vibegraph/.git/refs

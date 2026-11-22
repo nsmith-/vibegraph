@@ -3,9 +3,12 @@
 //! its `refusal` object.
 
 use serde::Serialize;
+use vibegraph::artifact::ArtifactError;
 use vibegraph::cache::lhapdf::LookupError;
 use vibegraph::cache::pinned::EnsureError;
 use vibegraph::cache::store::StoreError;
+use vibegraph::diagrams::artifact::DiagramArtifactError;
+use vibegraph::generate::GenerateError;
 use vibegraph::pdf::select::{PdfSelectError, SelectFailure};
 use vibegraph::systematics::plan::ResolveError;
 
@@ -65,15 +68,166 @@ impl ErrorKind {
     ];
 }
 
+/// Why an `artifact`-kind refusal happened, as a stable name a tool can branch
+/// on, with the numbers or digests that name it.
+///
+/// Carried in the refusal's `reason` object, tagged by `kind`. A reason is never
+/// renamed or given another meaning; a new one is an added value of an existing
+/// field, so it keeps the schema version.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ArtifactReason {
+    /// The diagrams were enumerated by another enumeration version than this
+    /// build's: integrate again from the cards.
+    EnumerationVersion { found: u32, expected: u32 },
+    /// The file's format version is not one this build reads.
+    FormatVersion {
+        found: u32,
+        oldest: u32,
+        expected: u32,
+    },
+    /// The embedded model does not digest to the recorded one: the file is
+    /// corrupt or was edited.
+    ModelDigest { recorded: String, embedded: String },
+    /// The diagram sets do not digest to the recorded digest: the file is
+    /// corrupt or was edited.
+    DiagramSetDigest { recorded: String, computed: String },
+    /// The collider energy the cards now give is not the one the artifact was
+    /// integrated at.
+    ColliderEnergy {
+        recorded: f64,
+        rebuilt: f64,
+        beams: [f64; 2],
+    },
+    /// The recorded proc card parses to another process in this build.
+    ProcessReparsed { recorded: String, reparsed: String },
+    /// The file could not be read or decoded.
+    Unreadable,
+    /// Any other disagreement; the message says which.
+    Other,
+}
+
+impl From<&ArtifactError> for ArtifactReason {
+    fn from(e: &ArtifactError) -> Self {
+        match e {
+            ArtifactError::UnsupportedVersion {
+                found,
+                oldest,
+                expected,
+            } => ArtifactReason::FormatVersion {
+                found: *found,
+                oldest: *oldest,
+                expected: *expected,
+            },
+            ArtifactError::EnumerationVersion { found, expected } => {
+                ArtifactReason::EnumerationVersion {
+                    found: *found,
+                    expected: *expected,
+                }
+            }
+            ArtifactError::ModelDigestMismatch {
+                recorded, embedded, ..
+            } => ArtifactReason::ModelDigest {
+                recorded: recorded.clone(),
+                embedded: embedded.clone(),
+            },
+            ArtifactError::DiagramDigestMismatch { recorded, computed } => {
+                ArtifactReason::DiagramSetDigest {
+                    recorded: recorded.clone(),
+                    computed: computed.clone(),
+                }
+            }
+            ArtifactError::Io { .. } | ArtifactError::Decode(_) | ArtifactError::Zstd(_) => {
+                ArtifactReason::Unreadable
+            }
+            _ => ArtifactReason::Other,
+        }
+    }
+}
+
+impl From<&DiagramArtifactError> for ArtifactReason {
+    fn from(e: &DiagramArtifactError) -> Self {
+        match e {
+            DiagramArtifactError::UnsupportedVersion {
+                found,
+                oldest,
+                expected,
+            } => ArtifactReason::FormatVersion {
+                found: *found,
+                oldest: *oldest,
+                expected: *expected,
+            },
+            DiagramArtifactError::EnumerationVersion { found, expected } => {
+                ArtifactReason::EnumerationVersion {
+                    found: *found,
+                    expected: *expected,
+                }
+            }
+            DiagramArtifactError::ModelDigestMismatch {
+                recorded, embedded, ..
+            } => ArtifactReason::ModelDigest {
+                recorded: recorded.clone(),
+                embedded: embedded.clone(),
+            },
+            DiagramArtifactError::DiagramDigestMismatch { recorded, computed } => {
+                ArtifactReason::DiagramSetDigest {
+                    recorded: recorded.clone(),
+                    computed: computed.clone(),
+                }
+            }
+            DiagramArtifactError::Io { .. }
+            | DiagramArtifactError::Decode(_)
+            | DiagramArtifactError::Zstd(_) => ArtifactReason::Unreadable,
+            _ => ArtifactReason::Other,
+        }
+    }
+}
+
+impl From<&GenerateError> for ArtifactReason {
+    fn from(e: &GenerateError) -> Self {
+        match e {
+            GenerateError::ColliderEnergyChanged {
+                recorded,
+                rebuilt,
+                beams,
+            } => ArtifactReason::ColliderEnergy {
+                recorded: *recorded,
+                rebuilt: *rebuilt,
+                beams: *beams,
+            },
+            GenerateError::ProcessReparsed { recorded, reparsed } => {
+                ArtifactReason::ProcessReparsed {
+                    recorded: recorded.clone(),
+                    reparsed: reparsed.clone(),
+                }
+            }
+            _ => ArtifactReason::Other,
+        }
+    }
+}
+
 /// A command's failure, already phrased for the user: what went wrong and,
 /// where there is one, the file or flag it concerns.
 #[derive(Debug)]
 pub(crate) struct CliError {
     kind: ErrorKind,
     message: String,
+    /// Set on every [`ErrorKind::Artifact`] failure, and on no other.
+    reason: Option<ArtifactReason>,
 }
 
 impl CliError {
+    pub(crate) fn reason(&self) -> Option<&ArtifactReason> {
+        self.reason.as_ref()
+    }
+
+    /// This failure with `reason` as the cause of its artifact refusal.
+    pub(crate) fn with_reason(mut self, reason: impl Into<ArtifactReason>) -> Self {
+        debug_assert_eq!(self.kind, ErrorKind::Artifact);
+        self.reason = Some(reason.into());
+        self
+    }
+
     pub(crate) fn kind(&self) -> ErrorKind {
         self.kind
     }
@@ -96,6 +250,7 @@ pub(crate) fn err(kind: ErrorKind, msg: impl Into<String>) -> CliError {
     CliError {
         kind,
         message: msg.into(),
+        reason: (kind == ErrorKind::Artifact).then_some(ArtifactReason::Other),
     }
 }
 

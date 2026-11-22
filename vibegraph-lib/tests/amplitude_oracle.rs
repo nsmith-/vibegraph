@@ -504,6 +504,7 @@ impl Rounded {
                 polarizations: set.polarizations.clone(),
                 diagrams: diagrams.iter().map(|&d| set.diagrams[d].clone()).collect(),
                 mirrored: set.mirrored,
+                squared_orders: set.squared_orders.clone(),
             };
             parts.push((
                 AmplitudeEvaluator::compile(&subset, model)?,
@@ -1238,6 +1239,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                         polarizations: set.polarizations.clone(),
                         diagrams: vec![d.clone()],
                         mirrored: set.mirrored,
+                        squared_orders: set.squared_orders.clone(),
                     },
                     model.as_ref(),
                 )

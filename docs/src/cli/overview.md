@@ -46,7 +46,7 @@ step is the subject of the [guided tour](../guide/01-pipeline.md).
 vibegraph enumerate proc_card.dat --out diagrams/
 ```
 
-writes three things into `--out` (the current directory by default):
+writes these into `--out` (the current directory by default):
 
 - `diagrams.bin.zst`, the diagram artifact: the card, the restricted model it
   was enumerated against, every subprocess's diagrams in enumeration order,
@@ -56,13 +56,16 @@ writes three things into `--out` (the current directory by default):
   configurations (`c0`, `c1`, …, MadGraph's `AMP2` grouping) and the contact
   diagrams that have none; per diagram (`s3.d17`) its propagators, vertices,
   coupling orders, configuration and drawing;
+- `parameters.json` and `param_card.dat`, the model's parameter report and
+  default card, with the parameters entering this process (see
+  [reporting a model's parameters](#reporting-a-models-parameters));
 - `svg/<set>/<diagram>.svg`, one drawing per diagram, its external legs
   labelled with their particle and their index in the subprocess. `--svg`
   selects them: `all`, `none`, or `first=N` per subprocess (the default is
   `first=500`, which draws every diagram of most cards; drawing costs about a
   millisecond and 5 KB per diagram).
 
-It refuses to overwrite any of the three without `--force`, before reading the
+It refuses to overwrite any of these without `--force`, before reading the
 card. Given `--run-card` or `--param-card`, the summary also previews the
 flavour groups `integrate` would form under those cards (the one not given
 takes `integrate`'s default), and records which cards it used; without
@@ -93,6 +96,66 @@ from the artifact; nothing is integrated again.
 the conventional `svg/<set>/<diagram>.svg`. `--ranking -` writes to stdout,
 and an existing file is kept unless `--force` is given. The schema is in the
 knowledge bundle (`research/kb/pipeline/ranking-json.md`).
+
+## Reporting a model's parameters
+
+```sh
+vibegraph parameters proc_card.dat --out params/
+```
+
+reads the card's `import model` (and its `generate` line, if it has one) and
+writes `parameters.json` and `param_card.dat` into `--out`. `enumerate` writes
+the same two files beside `diagrams.json`, for its own process. Nothing is
+sampled; with no `generate` line nothing is enumerated either, and the report
+is of the restricted model alone.
+
+`param_card.dat` is the card the restriction implies: every external parameter
+at its restricted default, then the computed masses and widths a card also
+lists. Binding it to the model moves nothing.
+
+`parameters.json` is one object, with `schema_version` (`1`), `version` (the
+release that wrote it), `model` (`label`, `digest`), `process` (`null` for a
+model-only report), `entering` and `parameters`. Adding a field keeps the
+version; removing, renaming or re-meaning one bumps it, so a reader ignores
+fields it does not know. `parameters` has one record per external parameter, in
+the model's order, then one per internal mass or width that a `MASS` or `DECAY`
+entry of a card addresses (class `internal`), in PDG order. A record has:
+
+- `name`, `block` (as the model spells it), `code` (the LHA code, a list) and
+  `default`, the value the restricted model takes with no card; for an internal
+  parameter, the value computed from the externals' defaults;
+- `class`, an object tagged by `kind`: `free`, `zero` (the restriction fixed it
+  to zero and removed the vertices it feeds), `one` (left at exactly one, where
+  the restriction fixes it), `merged` with `into` and `factor` (the restriction
+  tied it to `into`: its value is `factor` times `into`'s) or `internal`;
+- `particles`, the particles it is the mass or width of, each with `pdg`,
+  `name`, `role` (`mass` or `width`) and `external_in_process` (whether the
+  particle is an external leg of some diagram; `null` with no process);
+- `constraints`, what the card binder holds the value to, each an object tagged
+  by `kind`: `finite`; `minimum` with `value` (a mass is not negative, unless
+  the particle is a Majorana fermion); `not_auto` (a width is a number);
+  `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
+  `factor`; `leads_group` with `members` (each `name` and `factor`: these are
+  tied to this one and move only with it);
+- `reweight`: `verdict` (`movable`, `locked`, `fixed_one`, `merged`,
+  `strong_coupling`, `external_mass`, or `not_applicable` for an internal
+  parameter), the verdict `generate --reweight` reaches for a `set` of this
+  parameter, `usable_as_coupling` (whether `--reweight-couplings` accepts it)
+  and `polynomial`, with `status` (`no_process`, `independent`, `polynomial`,
+  `not_polynomial` or `not_applicable`) and `max_degree`: whether the
+  process's amplitude is provably a polynomial in this parameter alone, and the
+  highest power of it in any subprocess;
+- `enters`: `null` with no process, otherwise the list of ways the parameter
+  reaches the diagrams, `couplings` (some vertex coupling depends on it, as
+  itself or through a computed parameter) and `masses_widths` (the mass or
+  width of a leg or propagator does).
+
+`external_mass` needs a process, and a verdict without one is never that.
+`entering` is the list of external parameters whose `enters` has `couplings`,
+in the model's order (`null` with no process): the Wilson coefficients to offer
+for a process. A parameter fixed to zero is not listed, since the vertices it
+fed were removed. Where a width is computed rather than read from the
+restriction, it is a field added to its record, not a different record.
 
 ## Inspecting a run card
 
@@ -302,9 +365,12 @@ banked cross section would then describe another matrix element. Both
 artifacts, `diagrams.bin.zst` and `grid.bin.zst`, also record the version of
 the diagram enumeration that produced their diagrams, and a build that
 enumerates differently (a fixed sign, a diagram added or dropped) refuses
-them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`) are a
-hard error: this generator selects diagrams by their coupling orders and squares
-the whole amplitude, so it cannot bound an interference term.
+them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`,
+`QCD^2<=2`, `aS=1`) are honoured by splitting each amplitude by coupling order
+and keeping only the interference terms they select. `integrate` reports the
+cross section of such a selection, which can be negative where only an
+interference term is kept; `generate` refuses that case, since its events would
+carry negative weights.
 
 ## Watching a run
 
@@ -397,8 +463,15 @@ kinds, bumps the version.
   compared with), `multiplicities` (each final-state phase space of a proton run:
   `final_state`, `process_ids`, `final_masses`, `channels` and its σ),
   `channels` (each channel's `key`, `alpha`, `neval` and σ), the `artifact`
-  path and its `format_version`, the `diagram_set_digest` of the diagrams it
-  integrated, and `param_card` (whether a param card's text is banked).
+  path and its `format_version`, its `enumeration_version` (the enumeration
+  that produced the diagrams it banks, which a build must share to read it),
+  `writer_version` (the vibegraph release, the crate version, that wrote the
+  artifact; `null` for a format-24 artifact, which predates the field, records
+  no writer and is still read as before; a commit hash is not recorded, so two
+  builds of one source write the same bytes), `vibegraph_version` (the full
+  version string of the binary that ran `integrate`; `null` from `inspect`),
+  the `diagram_set_digest` of the diagrams it integrated, and
+  `param_card` (whether a param card's text is banked).
   `inspect --output-ldjson` prints the same
   object for a saved artifact, with `stop_reason`, `target_rel`,
   `rel_err_quoted` and `rel_err_scaled` `null`, since the artifact does not
@@ -407,13 +480,26 @@ kinds, bumps the version.
   `events_drawn`, the `output` file, the `artifact` it read, the sample's own
   `sample_sigma` ± `sample_sigma_err`, the integration's `integration_sigma` ±
   `integration_sigma_err`, and the `pull` between them. `enumerate`'s carries
-  the `artifact` and `summary_path` it wrote, the `svg_dir` (`null` when
+  the `artifact` and `summary_path` it wrote, with the `parameters_path` and
+  `param_card_path` of the files described under
+  [reporting a model's parameters](#reporting-a-models-parameters), the `svg_dir` (`null` when
   nothing was drawn) and the number of `drawings`, and the whole of
   `diagrams.json` under `summary`. `generate -o` writes `.gz` and `.zst`
   names compressed and any other name as plain text, and refuses another
   compression extension (`.xz`, `.bz2`, ...) by name.
 - `refusal`: in place of a result, `error_kind` and `message`. A refused
-  run writes no artifact, so this is its only record.
+  run writes no artifact, so this is its only record. An `artifact` refusal
+  also carries `reason`, an object tagged by `kind`, so a caller never parses
+  the message: `enumeration_version` (`found`, `expected`: the diagrams were
+  enumerated by another version, so integrate again from the cards),
+  `format_version` (`found`, `oldest`, `expected`), `model_digest`
+  (`recorded`, `embedded`) and `diagram_set_digest` (`recorded`, `computed`),
+  both a corrupt or edited file, `collider_energy` (`recorded`, `rebuilt`,
+  `beams`: the cards no longer give the energy the artifact was integrated
+  at), `process_reparsed` (`recorded`, `reparsed`), `unreadable` (not a
+  decodable file) and `other`, for a disagreement the message alone describes.
+  A new reason is a new value of the field, not a new error kind. Other kinds
+  have no `reason`.
 
 Values are at full precision in base units: picobarns and GeV, never an SI
 prefix. The `error_kind` is one of a fixed list, which only a schema version

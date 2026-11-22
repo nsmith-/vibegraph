@@ -468,6 +468,7 @@ fn momentum_slashed_chain_is_rooting_invariant() {
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![d.clone()],
                     mirrored: set.mirrored,
+                    squared_orders: set.squared_orders.clone(),
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -574,6 +575,7 @@ fn reversed_dipole_chain_is_rooting_invariant() {
             polarizations: set.polarizations.clone(),
             diagrams: vec![d.clone()],
             mirrored: set.mirrored,
+            squared_orders: set.squared_orders.clone(),
         };
         let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
         clear_root_override();
@@ -742,6 +744,7 @@ fn four_fermion_currents_are_rooting_invariant() {
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
                 mirrored: set.mirrored,
+                squared_orders: set.squared_orders.clone(),
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -875,6 +878,7 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
                 polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
                 mirrored: set.mirrored,
+                squared_orders: set.squared_orders.clone(),
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
@@ -998,6 +1002,7 @@ fn literal_sigma_currents_are_rooting_invariant() {
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![(*diagram).clone()],
                     mirrored: set.mirrored,
+                    squared_orders: set.squared_orders.clone(),
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
