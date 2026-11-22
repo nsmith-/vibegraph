@@ -257,6 +257,46 @@ comparison estimates H hypotheses as setup + H × loop[^rw-results].
 massless case does, so the massive overflow warning never fires[^mg-rambo]. Nothing
 here uses it.
 
+**CMS gridpacks' MadGraph 2.9.18 σ under a leading-jet pT window.** The six
+CMS `DY1jToLL_M-1to10` gridpacks bin `p p > l+ l- j` (5-flavour `j`,
+`sm-ckm_no_b_mass`) by `ptj1min`/`ptj1max`. Their banked MadGraph 2.9.18 σ
+reads 3–8% below MadGraph 3.7.1 in the 100–600 GeV bins, and 1.4% above it in
+the bin above 600 GeV. vibegraph agrees with 3.7.1, so it is registered here as
+a deviation from 2.9.18, not as a vibegraph defect. The cause inside 2.9.18 is
+not located.
+
+| card | ptj1 window (GeV) | MG 3.7.1 (pb) | vibegraph v0.2.2, 5 seeds (pb) | vg/3.7.1 | pull | gridpack MG 2.9.18 (pb) |
+|---|---|---|---|---|---|---|
+| 409 | 100–200 | 5.291 ± 0.0053 | 5.2932 ± 0.0079 | 1.0004 | 0.23 | 5.151 ± 0.027 |
+| 408 | 200–400 | 0.37578 ± 0.00037 | 0.37640 ± 0.00046 | 1.0016 | 1.04 | 0.3452 ± 0.0019 |
+| 410 | 400–600 | 0.016913 ± 0.000019 | 0.016929 ± 0.000027 | 1.0010 | 0.50 | 0.01577 ± 0.000065 |
+| 411 | 600– | 0.002649 ± 0.0000026 | 0.0026489 ± 0.0000023 | 1.0000 | −0.03 | 0.002686 ± 0.000014 |
+
+How the comparison was made:
+- **Same inputs on both sides.** Both sides read the gridpacks' own run, param
+  and proc cards: `lhaid` 325300 (NNPDF31_nnlo_as_0118_mc_hessian_pdfas),
+  `dynamical_scale_choice` −1, `ptj` 0.01, `mmll` 1, `maxjetflavor` 5,
+  `ickkw` 0, `xqcut` 0.
+- **The cards differ only in the window.** Comparing the six cards as key/value
+  sets (151 run-card keys), the only keys that differ are `ptj1min` and
+  `ptj1max`. The proc cards differ only in their `output` line, and the param
+  cards are byte-identical.
+- **The 3.7.1 regeneration.** It ran 50 000 events per card. The run card's
+  `nevents`, `iseed`, `gridpack` and `use_syst` were changed and nothing else;
+  banner checks confirm the window, `lhaid` and the cuts. MadGraph 3.x does not
+  ship the CMS restriction `restrict_ckm_no_b_mass.dat`, so it was copied from
+  the gridpack. Its SHA-256 (`ad6e3eaf…1b05`) is the same in the gridpacks and
+  in vibegraph's embedded copy.
+- **The vibegraph side.** The 5 seeds come from the post-release campaign
+  `v022-1009` on the released binary.
+- **Earlier local agreement.** Before release, sprint K's K-C2 found vibegraph
+  within 0.2–0.3% of MadGraph 3.5.7 in two of these bins, on rebuilt cards that
+  used an LO PDF.
+
+The measurements and their provenance are in the
+[sprint K log](../sprints/v022-smeft-and-refusals/log.md)
+(2026-11-22).
+
 ## Also bounding how MadGraph numbers are read
 
 - **Measured inconsistencies inside MadEvent**, not located in code: quoted errors

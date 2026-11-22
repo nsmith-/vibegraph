@@ -22,3 +22,12 @@ v0.2.1, no card adaptation):
 
 Four of the six involve b quarks in the hard process. A related item is
 [`sigma-reads-above-local-madevent-by-a-few-permille`](sigma-reads-above-local-madevent-by-a-few-permille.md).
+
+**Post-release campaign `v022-1009` (v0.2.2, 5 seeds, unadapted, 2026-11-22).**
+The excess persists, as it was on v0.2.1:
+
+| Gridpacks | vg/MG | mean pull |
+|---|---|---|
+| 188, 189 (QCD_bEnriched) | 1.024 | 7.9 |
+| 260 (WBQ) | 1.027 | 5.0 |
+| 967 / 968 / 969 (TCP) | 1.013 / 1.019 / 1.012 | 5.0 / 5.0 / 3.2 |
