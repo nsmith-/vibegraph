@@ -335,7 +335,10 @@ fn an_unfilled_placeholder_is_refused_by_name() {
         assert_eq!(refusal["stage"], "parse", "{line}: {result}");
         let message = refusal["message"].as_str().unwrap();
         for needle in [placeholder, name, "gridpack_generation.sh", "line 5"] {
-            assert!(message.contains(needle), "{line}: {needle} not in {message}");
+            assert!(
+                message.contains(needle),
+                "{line}: {needle} not in {message}"
+            );
         }
         if name == "lhaid" {
             assert_eq!(key(&result, name)["refusal"], refusal["message"], "{line}");
