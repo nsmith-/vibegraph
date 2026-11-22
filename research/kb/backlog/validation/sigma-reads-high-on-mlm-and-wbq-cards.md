@@ -34,9 +34,9 @@ The excess persists, as it was on v0.2.1:
 
 **TCP ALP (967–969) moved out (sprint L, 2026-11-22).** MadGraph 3.7.1 on
 card 967's own cards gives 1.864e-5 ± 4.6e-8 pb, agreeing with the gridpack's
-2.9.18 (ratio 1.001), so its +1.2% is vibegraph's. It joins sprint L's PR 12
-investigation of excesses on cards with a wide resonance or heavy boson,
-which owns it from here. This item now covers 188/189 and 260 only.
+2.9.18 (ratio 1.001), so its +1.2% is vibegraph's. It moves to
+[`g2hdm-charged-higgs-high-mass-sigma-reads-high`](g2hdm-charged-higgs-high-mass-sigma-reads-high.md)
+(sprint L's PR 12), which owns it from here. This item now covers 188/189 and 260 only.
 
 **First step for 188 and 260.** Their gridpacks are MadGraph 2.4.2 (188) and
 2.9.13 (260). A 3.7.1 regeneration on the exact cards is queued on the
