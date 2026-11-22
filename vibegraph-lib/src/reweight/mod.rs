@@ -154,6 +154,34 @@ pub enum ReweightError {
     NotPolynomial { couplings: String, process: String },
     #[error("{process}: {reason}")]
     NodeSystem { process: String, reason: String },
+    #[error(
+        "{process}: a polarized leg; the per-event-helicity ratio (`change helicity True`, \
+         MadGraph's default) is not taken on polarized processes, write \
+         `change helicity False` for the helicity-summed one"
+    )]
+    HelicityPolarized { process: String },
+    #[error(
+        "{process}: its |M|^2 keeps an interference term without its squares and can be \
+         negative in a helicity combination, where no per-event-helicity ratio is defined"
+    )]
+    HelicitySigned { process: String },
+    #[error(
+        "{process}: fewer than two incoming or three external legs, where the helicity \
+         combinations a hypothesis reaches cannot be probed; write `change helicity False` \
+         for the helicity-summed ratio"
+    )]
+    HelicityUnchecked { process: String },
+    #[error(
+        "launch `{launch}` reaches helicity combination {helicity:?} of {process}, in which \
+         the card's amplitude vanishes: no event is written in it, so per-event-helicity \
+         weights would miss its share of the hypothesis; write `change helicity False` for \
+         the helicity-summed ratio"
+    )]
+    HelicityRevived {
+        launch: String,
+        process: String,
+        helicity: Vec<i32>,
+    },
 }
 
 /// Name each of `names` as an external parameter of `model` that a polynomial can

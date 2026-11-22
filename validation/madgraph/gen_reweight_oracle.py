@@ -27,9 +27,13 @@ What MadGraph's reweight reads, and so what the comparison holds fixed:
   * `alpha_s` from the event's `AQCDUP`, and `SCALUP^2` as the scale argument
     (which no tree-level SM or SMEFTsim coupling reads);
   * the event's own helicities by default (`helicity True`): the ratio of the one
-    helicity configuration written. vibegraph's ratio is helicity-summed, so the
-    card below sets `change helicity False`; both are unbiased for the
-    reweighted cross section, but they differ event by event.
+    helicity configuration written, the event's `SPINUP` looked up in the matrix
+    element's own helicity table. A row with `helicity=False` writes
+    `change helicity False` into both generators' cards, for the
+    helicity-summed ratio; a row with `helicity=True` writes no `change helicity`
+    line into either, so each takes its default, and banks every leg's
+    `SPINUP`. Both ratios are unbiased for the reweighted cross section, but
+    they differ event by event.
 
 Each hypothesis runs in a fresh work area: MadGraph 3.7.1 cannot reuse a
 compiled `rwgt_dir` (`setup_f2py_interface` reads an undefined `opts`), and
@@ -104,6 +108,7 @@ ROWS = {
         nevents=2000,
         bank=200,
         couplings=None,
+        helicity=False,
         hypotheses=[
             ("wz", ["set decay 23 2.6"]),
             ("aew", ["set sminputs 1 130.0"]),
@@ -119,6 +124,7 @@ ROWS = {
         nevents=1000,
         bank=200,
         couplings="ymt",
+        helicity=False,
         hypotheses=ymt_scan(),
     ),
     # The joint path in two couplings: `1, ymt, ymtau, ymt*ymtau`, a 3x3 grid.
@@ -130,6 +136,7 @@ ROWS = {
         nevents=1000,
         bank=200,
         couplings="ymt,ymtau",
+        helicity=False,
         hypotheses=ymt_ymtau_grid(),
     ),
     # SMEFT with one insertion per diagram: a top dipole (a new Lorentz structure),
@@ -145,9 +152,17 @@ ROWS = {
         nevents=1000,
         bank=200,
         couplings="ctWRe,cHt,cHWB",
+        helicity=False,
         hypotheses=smeft_basis(),
     ),
 }
+
+# The ratio in each event's own helicity, MadGraph's default, on the rows above
+# whose hypotheses move the helicity combinations unevenly: the Yukawa diagrams
+# against Higgsstrahlung, the Z's left- and right-handed couplings (`aEWM1` and
+# `MZ` move the weak mixing angle, the width the Z's share against the photon's),
+# and a top dipole, a new Lorentz structure.
+ROWS.update({key + "_hel": dict(ROWS[key], helicity=True) for key in ("ee_tth_ymt", "pp_llj", "ee_ttx_smeft")})
 
 
 def run(cmd, **kw):
@@ -204,6 +219,8 @@ def vibegraph_events(row, work, binary, seed):
         f.write(f"import model {model}\n{row['process']}\n")
     card = os.path.join(work, "reweight_card.dat")
     with open(card, "w") as f:
+        if not row["helicity"]:
+            f.write("change helicity False\n")
         for hid, lines in row["hypotheses"]:
             f.write(f"launch --rwgt_name={hid}\n" + "".join(f" {l}\n" for l in lines))
     run_card = os.path.join(ROOT, row["run_card"])
@@ -250,7 +267,9 @@ def madgraph_weights(row, work, lhe, proc_card, param_card):
         madgraph_input(lhe, proc_card, run_card, param_card, inp)
         card = os.path.join(here, "reweight_card.dat")
         with open(card, "w") as f:
-            f.write("change helicity False\n" f"launch --rwgt_name={hid}\n" + "".join(f" {l}\n" for l in lines))
+            if not row["helicity"]:
+                f.write("change helicity False\n")
+            f.write(f"launch --rwgt_name={hid}\n" + "".join(f" {l}\n" for l in lines))
         code = (
             "import sys, os\n"
             f"sys.path.insert(0, {MG_ROOT!r})\n"
@@ -282,6 +301,7 @@ def events_of(lhe):
             status=[int(p[1]) for p in particles],
             # px py pz E, as written.
             momenta=[[float(x) for x in p[6:10]] for p in particles],
+            spin=[int(float(p[12])) for p in particles],
             vibegraph={k: float(v) for k, v in vg.items()},
         ))
     return events
@@ -360,6 +380,8 @@ def main():
         for k, e in enumerate(banked):
             # vibegraph's own weights are summarised in `full_file`, not banked.
             del e["vibegraph"]
+            if not row["helicity"]:
+                del e["spin"]
             e["madgraph"] = {hid: mg[hid][k] for hid, _ in row["hypotheses"]}
         reference["rows"][key] = dict(
             model=row["model"],
@@ -367,6 +389,7 @@ def main():
             process=row["process"],
             run_card=row["run_card"],
             couplings=row["couplings"].split(",") if row["couplings"] else None,
+            helicity=row["helicity"],
             hypotheses=[dict(id=h, lines=l) for h, l in row["hypotheses"]],
             param_card=param_entries(param_card),
             full_file=summary,

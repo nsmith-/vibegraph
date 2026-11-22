@@ -238,12 +238,26 @@ subprocess flavours must equal the event record's. The run reports how many
 events it checked, per multiplicity and beam ordering. It refuses the file if
 any event fails.
 
-MadGraph's reweight module, by default, takes each event's ratio in the one
-helicity configuration the event records. The ratio here is summed over
-helicities. Both are unbiased for the reweighted cross section, but they differ
-event by event. For an event-by-event comparison, run MadGraph's reweight with
-`change helicity False`: on the same file the two then agree to the printed
+Each ratio is taken, as MadGraph's reweight module takes it by default, in the
+one helicity configuration the event records in `SPINUP`:
+`|M_hyp(λ)|² / |M_card(λ)|²`. A card with `change helicity False`, or
+`--reweight-helicity summed`, asks for the ratio summed over helicities instead.
+Both are unbiased for the reweighted cross section, but they differ event by
+event: the per-event ratio keeps the written helicities distributed as the
+hypothesis would draw them, which matters to a shower or decay with spin
+correlations, at the price of a larger weight spread where a hypothesis moves
+one configuration much more than another. Either way MadGraph's reweight, run
+with the same `change helicity` setting on the same file, agrees to the printed
 digits.
+
+The per-event ratio is refused where it would be wrong or is not MadGraph's: a
+hypothesis that reaches a helicity configuration the card's amplitude vanishes
+in (an electron dipole on massless electrons, say — no event is ever drawn
+there, so the weights would miss that share of the cross section, which MadGraph
+does silently), a polarized leg, a squared-order selection that leaves `|M|²`
+signed, and an event listing two identical outgoing particles under different
+mothers, for which MadGraph switches the per-event ratio off for the rest of the
+file. `change helicity False` serves all of them.
 
 ### The polynomial path
 

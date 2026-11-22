@@ -547,23 +547,30 @@ Options:
           
           The file is written whatever the terminal is showing, which is what makes a run reviewable afterwards at a level nobody chose to watch it at.
 
+      --reweight-helicity <RATIO>
+          The ratio each reweighting weight carries: `event`, the ratio in the helicities the event records (MadGraph's `change helicity True`), or `summed`, the helicity-summed one (`change helicity False`). Without the flag the card's `change helicity` line decides, and without that line MadGraph's default, `event`. A flag the card's line contradicts is refused
+
+          Possible values:
+          - summed: `|M_hyp|² / |M_card|²` summed over helicities (`change helicity False`)
+          - event:  `|M_hyp(λ)|² / |M_card(λ)|²` in the helicities the event records (`change helicity True`, MadGraph's default)
+
       --systematics <ARGUMENTS>
           MadGraph systematics arguments, as one string, replacing the request the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries a weight per scale, PDF and αs variation, as MadGraph's systematics module writes them. Needs an artifact integrated with `use_syst = T`
-
-  -j, --parallel <N>
-          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --tui
           Draw the live status pane even where one would not be drawn by default
 
+  -j, --parallel <N>
+          Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
+
       --no-tui
           Never draw the live status pane; report in plain lines
 
-      --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
-
       --output-ldjson
           Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
+
+      --parallel-diagrams
+          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
 
   -h, --help
           Print help (see a summary with '-h')
