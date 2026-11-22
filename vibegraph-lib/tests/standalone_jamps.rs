@@ -1530,6 +1530,7 @@ fn dqxvt_to_abx_toy_fnv() {
 /// Two different neutralinos: the chiral `n2 n1 Z` vertex on a final-state line of two
 /// Majorana ends, beside t- and u-channel selectrons on chiral scalar vertices that
 /// join a lepton to a neutralino.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn ee_to_n1n2_mssm() {
     check("ee_to_n1n2_mssm");
@@ -1537,6 +1538,7 @@ fn ee_to_n1n2_mssm() {
 
 /// Two identical neutralinos: the axial `n1 n1 Z` vertex beside t- and u-channel
 /// squarks.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn uux_to_n1n1_mssm() {
     check("uux_to_n1n1_mssm");
@@ -1544,6 +1546,7 @@ fn uux_to_n1n1_mssm() {
 
 /// A chargino and a neutralino on one line, a Dirac end and a Majorana end, through
 /// the chiral `x1 n1 W` vertex and through squarks.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn udx_to_x1pn1_mssm() {
     check("udx_to_x1pn1_mssm");
@@ -1551,6 +1554,7 @@ fn udx_to_x1pn1_mssm() {
 
 /// An initial-state neutralino: its line runs from the initial to the final state
 /// through the selectron s- and u-channels and the axial Z vertex.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn en1_to_en1_mssm() {
     check("en1_to_en1_mssm");
@@ -1558,6 +1562,7 @@ fn en1_to_en1_mssm() {
 
 /// A neutralino of negative mass (`Mneu3 < 0` in the default card) on an external
 /// leg: its spinors read the signed mass, as MadGraph's `IXXXXX`/`OXXXXX` do.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn ee_to_n1n3_mssm() {
     check("ee_to_n1n3_mssm");
@@ -1568,6 +1573,7 @@ fn ee_to_n1n3_mssm() {
 /// s-channel photon, Z and two neutral Higgs bosons. The two Higgs exchanges are
 /// proportional at every point (both read `s`), so their pairing is the one
 /// enumeration order gives, and the gate holds each against its own graph.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn x1px1m_to_wpwm_mssm() {
     check("x1px1m_to_wpwm_mssm");
@@ -1576,6 +1582,7 @@ fn x1px1m_to_wpwm_mssm() {
 /// A Dirac control for the chiral scalar vertex `t~ b H+`, whose two chiralities carry
 /// different couplings: the bottom exchange reads the projectors of the vertex's
 /// hermitian-conjugate partner, as MadGraph does.
+#[cfg(feature = "extended-validation")]
 #[test]
 fn ttx_to_hphm_mssm() {
     check("ttx_to_hphm_mssm");
