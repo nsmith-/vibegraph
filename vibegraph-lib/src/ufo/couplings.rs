@@ -1,6 +1,8 @@
 use super::ast_util::{
-    constructor_calls, extract_int, extract_name, extract_str, named_assignments, parse_stmts,
-    FieldError, Fields, UniqueNames,
+    constructor_calls, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
+};
+use super::config_eval::{
+    configuration_modules, eval_int, read_configuration, Configuration, Scope,
 };
 use super::expr::{collect_deps, parse_expr, Expr};
 use super::functions::FunctionLibrary;
@@ -8,7 +10,7 @@ use indexmap::IndexMap;
 use num_complex::Complex64;
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::Index;
 use thiserror::Error;
 
@@ -82,28 +84,10 @@ pub struct Coupling {
     pub(crate) deps: Vec<String>,
 }
 
-/// The module-level names a model's `configuration.py` binds to an integer or
-/// a boolean, as the integer (`True` is 1): the switches a coupling order may
-/// test.
-pub(crate) type Configuration = HashMap<String, i64>;
-
-/// Read `configuration.py`. An assignment that is not an integer or boolean
-/// literal binds nothing here, and a coupling order reading it is refused.
+/// Read `configuration.py`; see [`read_configuration`].
 pub(crate) fn parse_configuration(src: &str) -> Result<Configuration, CouplingError> {
     let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
-    Ok(named_assignments(&stmts)
-        .filter_map(|(name, value)| Some((name.to_owned(), literal_int(value)?)))
-        .collect())
-}
-
-fn literal_int(expr: &ast::Expr) -> Option<i64> {
-    match expr {
-        ast::Expr::Constant(ast::ExprConstant {
-            value: ast::Constant::Bool(b),
-            ..
-        }) => Some(i64::from(*b)),
-        _ => extract_int(expr),
-    }
+    Ok(read_configuration(&stmts))
 }
 
 /// [`parse_couplings_with`] with no `configuration.py` and the SM's function
@@ -122,7 +106,12 @@ pub(crate) fn parse_couplings_with(
     library: &FunctionLibrary,
 ) -> Result<Vec<Coupling>, CouplingError> {
     let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
-    let module_aliases = configuration_aliases(&stmts);
+    let modules = configuration_modules(&stmts);
+    let scope = Scope {
+        names: configuration,
+        modules: &modules,
+        bare: false,
+    };
     let mut result = Vec::new();
 
     // `Coupling.require_args` in UFO's object library
@@ -134,7 +123,7 @@ pub(crate) fn parse_couplings_with(
         let name = fields.str("name")?;
         seen.insert(python_name, &name)?;
         let expr_str = fields.str("value")?;
-        let orders = extract_orders(&fields, &module_aliases, configuration)?;
+        let orders = extract_orders(&fields, &scope)?;
         let python_name = python_name.to_owned();
         let expr = parse_expr(&expr_str)
             .map(|e| library.resolve(e))
@@ -157,35 +146,19 @@ pub(crate) fn parse_couplings_with(
     Ok(result)
 }
 
-/// The local names `couplings.py` binds to the `configuration` module
-/// (`import configuration [as c]`).
-fn configuration_aliases(stmts: &[ast::Stmt]) -> Vec<String> {
-    stmts
-        .iter()
-        .filter_map(|stmt| match stmt {
-            ast::Stmt::Import(ast::StmtImport { names, .. }) => Some(names),
-            _ => None,
-        })
-        .flatten()
-        .filter(|alias| alias.name.as_str() == "configuration")
-        .map(|alias| alias.asname.as_ref().unwrap_or(&alias.name).to_string())
-        .collect()
-}
-
 /// The `order = {'QCD': 1, ...}` dict of a coupling.
 ///
 /// An order is an integer literal (a negative one included: SMEFTsim's vev
-/// insertion is `QED: -1`), or one of the forms a model writes to switch it on
-/// a `configuration.py` flag: `A if configuration.flag else B`,
-/// `not configuration.flag`, and a bare `configuration.flag`, nested freely.
-/// Python's own evaluation is reproduced for these and nothing else.
+/// insertion is `QED: -1`), or an expression in the subset of Python
+/// [`config_eval`](super::config_eval) evaluates over `configuration.py`'s
+/// values.
 fn extract_orders(
     fields: &Fields<'_>,
-    module_aliases: &[String],
-    configuration: &Configuration,
+    scope: &Scope<'_>,
 ) -> Result<BTreeMap<String, i64>, FieldError> {
-    const EXPECTED: &str = "a dict of order names to integers, or to a conditional expression \
-                            over `configuration.<flag>` flags";
+    const EXPECTED: &str = "a dict of order names to integers, or to an expression over \
+                            `configuration.<name>` values built from integers, `not`, \
+                            `and`, `or`, `+`, `-`, `*` and `A if T else B`";
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("order")? else {
         return Err(fields.malformed("order", EXPECTED));
     };
@@ -193,47 +166,13 @@ fn extract_orders(
         .zip(values.iter())
         .map(|(k, v)| {
             let key = k.as_ref().and_then(|e| extract_str(e));
-            let val = order_value(v, module_aliases, configuration);
+            let val = eval_int(v, scope);
             match (key, val) {
                 (Some(key), Some(val)) => Ok((key.to_owned(), val)),
                 _ => Err(fields.malformed("order", EXPECTED)),
             }
         })
         .collect()
-}
-
-/// The integer an order expression evaluates to, or `None` for a form outside
-/// the subset [`extract_orders`] reads.
-fn order_value(
-    expr: &ast::Expr,
-    module_aliases: &[String],
-    configuration: &Configuration,
-) -> Option<i64> {
-    let recurse = |e: &ast::Expr| order_value(e, module_aliases, configuration);
-    match expr {
-        ast::Expr::IfExp(ast::ExprIfExp {
-            test, body, orelse, ..
-        }) => {
-            if recurse(test)? != 0 {
-                recurse(body)
-            } else {
-                recurse(orelse)
-            }
-        }
-        ast::Expr::UnaryOp(ast::ExprUnaryOp {
-            op: ast::UnaryOp::Not,
-            operand,
-            ..
-        }) => Some(i64::from(recurse(operand)? == 0)),
-        ast::Expr::Attribute(ast::ExprAttribute { value, attr, .. }) => {
-            let module = extract_name(value)?;
-            module_aliases
-                .iter()
-                .any(|a| a == module)
-                .then(|| configuration.get(attr.as_str()).copied())?
-        }
-        _ => literal_int(expr),
-    }
 }
 
 #[cfg(test)]

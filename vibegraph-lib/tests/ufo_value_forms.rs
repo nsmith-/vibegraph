@@ -326,6 +326,12 @@ fn a_coupling_order_may_switch_on_a_configuration_flag() {
         ),
         ("configuration.n", "n = 3\n", 3),
         ("-1 if configuration.other else 0", "other = True\n", -1),
+        ("0 + configuration.n", "n = 3\n", 3),
+        (
+            "configuration.inc",
+            "norm = True\ninc = 1 if norm else 0\n",
+            1,
+        ),
     ];
     for (body, config, want) in cases {
         let got =
@@ -345,8 +351,12 @@ fn a_coupling_order_outside_the_read_forms_is_refused() {
         ("2 if configuration.text else 0", Some(CONFIGURATION)),
         ("2 if configuration.flag else 0", None),
         ("2 if flag else 0", Some(CONFIGURATION)),
-        ("1 + 1", Some(CONFIGURATION)),
+        ("1 / 2", Some(CONFIGURATION)),
         ("abs(2)", Some(CONFIGURATION)),
+        (
+            "configuration.inc",
+            Some("norm = 'x'\ninc = 1 if norm else 0\n"),
+        ),
     ] {
         let message = orders_of_gc1(&order(body), config).expect_err(body);
         assert!(
@@ -422,4 +432,68 @@ fn a_particle_charge_naming_nothing_is_refused() {
             "{charge}: {message}"
         );
     }
+}
+
+const PARAMETERS_IMPORTING_CONFIGURATION: &str =
+    "from object_library import all_parameters, Parameter\n";
+
+/// `parameters.py` of the fixture with a leading `import configuration` and
+/// `extra` appended, loaded with `configuration.py` as `config`.
+fn conditional_values(config: &str, extra: &str) -> Result<HashMap<String, Complex64>, String> {
+    let dir = build(
+        &[],
+        &[(
+            "parameters.py",
+            PARAMETERS_IMPORTING_CONFIGURATION,
+            "from object_library import all_parameters, Parameter\nimport configuration\n",
+        )],
+        &[("parameters.py", extra), ("configuration.py", config)],
+    );
+    UFOModel::load(dir.path(), None)
+        .map(|model| EvaluatedModel::from_model(model).param_values)
+        .map_err(|e| e.to_string())
+}
+
+/// MadGraph imports `parameters.py` as Python, so `if configuration.flag:`
+/// around a definition and a `'A' if configuration.flag else 'B'` value both
+/// resolve against `configuration.py`.
+#[test]
+fn definitions_and_values_switched_on_a_configuration_flag_follow_the_flag() {
+    let extra = "
+if configuration.fixed:
+    EWK = Parameter(name = 'EWK', nature = 'external', type = 'real', value = 79.5, texname = 'E',
+                    lhablock = 'NEWCOUP', lhacode = [ 20 ])
+else:
+    EWM1 = Parameter(name = 'EWM1', nature = 'external', type = 'real', value = 128.0, texname = 'E',
+                     lhablock = 'NEWCOUP', lhacode = [ 21 ])
+    EWK = Parameter(name = 'EWK', nature = 'internal', type = 'real', value = '1./EWM1', texname = 'E')
+GS = Parameter(name = 'GS', nature = 'internal', type = 'real',
+               value = 'MS' if configuration.norm else '1.', texname = 'G')
+";
+    let off = conditional_values("fixed = False\nnorm = False\n", extra).unwrap();
+    assert_eq!(off["EWK"], Complex64::new(1.0 / 128.0, 0.0));
+    assert_eq!(off["GS"], Complex64::new(1.0, 0.0));
+    let on = conditional_values("fixed = True\nnorm = True\n", extra).unwrap();
+    assert_eq!(on["EWK"], Complex64::new(79.5, 0.0));
+    assert_eq!(on["GS"], Complex64::new(10.0, 0.0));
+    assert!(!on.contains_key("EWM1"));
+}
+
+#[test]
+fn a_parameter_condition_outside_the_subset_is_refused_by_name() {
+    let extra = "
+GS = Parameter(name = 'GS', nature = 'internal', type = 'real',
+               value = 'MS' if configuration.mystery else '1.', texname = 'G')
+";
+    let message = conditional_values("fixed = False\n", extra).unwrap_err();
+    assert!(
+        message.contains("'GS'") && message.contains("configuration.py"),
+        "{message}"
+    );
+    let extra = "
+if configuration.fixed > 0:
+    GS = Parameter(name = 'GS', nature = 'internal', type = 'real', value = '1.', texname = 'G')
+";
+    let message = conditional_values("fixed = 1\n", extra).unwrap_err();
+    assert!(message.contains("outside the subset"), "{message}");
 }

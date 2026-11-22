@@ -1,7 +1,7 @@
 ---
 type: Sprint
 title: "Sprint L: v0.2.3, squared orders, Majorana, multijet timeouts and simshop's reports"
-description: "Before v0.2.3: squared-order constraints, Majorana and fermion-number-violating processes, the multijet MLM timeouts, the open validation highs (VBS, TprimeB, DY1j ptj1), silent run-card placeholders, and simshop's parameter, width, provenance and reweighting requests."
+description: "Before v0.2.3: squared-order constraints, Majorana and fermion-number-violating processes, the multijet MLM timeouts, the open validation highs (VBS, TprimeB, and the g2HDM charged-Higgs stretch goal), silent run-card placeholders, and simshop's parameter, width, provenance and reweighting requests."
 status: draft
 active: true
 tags: [release, v0.2.3, squared-orders, majorana, mlm, performance, simshop, cms-gridpacks, sprint-l]
@@ -42,7 +42,7 @@ Every PR is based on `main`; none is stacked.
 
 Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That container bounded the sprint. Sprint L is about twice sprint K's size, so it runs as two sprint sessions and sends long runs to `vg-validator`. Names and the message flow are in [session roles](../../workflow/session-roles.md).
 
-- **`vg-sprint-L-physics`, amplitudes and physics:** PRs 1, 2, 4, 5, 9 and 10. PRs 1 and 10 both change how amplitudes are split, so one session owns both and runs them in order.
+- **`vg-sprint-L-physics`, amplitudes and physics:** PRs 1, 2, 4, 5, 9, 10 and the stretch PR 12. PRs 1 and 10 both change how amplitudes are split, so one session owns both and runs them in order.
 - **`vg-sprint-L-pipeline`, refusals, reports and performance:** PRs 3, 3b, 7, 8 and 11. PR 8's parameter report and PR 9's width report share one record shape. vg-sprint-L-pipeline lands PR 8 first, and vg-sprint-L-physics builds PR 9 on it.
 - **`vg-validator`, the only place long runs go.** It builds the PR branch locally; batch takes pinned release binaries only. Long runs means:
   - multi-seed σ gates on cards over about 20 minutes per seed;
@@ -161,9 +161,18 @@ The `gen_reweight_oracle.py` rows with `change helicity True` must agree event b
 | `sigma-reads-high-on-mlm-and-wbq-cards` (QCD_bEnriched 188/189, WBQ 260, TCP 967–969) | medium |
 | The QCD-4Jets item, if sprint K files one after the verdicts | — |
 | `stitch-set-sign-assert-panics` | low |
-| `g2hdm-mlm-sigma-unmeasured` (closes on the batch campaign's workday round) | medium |
 
-The TpTp item comes first: a zero |M|² on points that pass the cuts may be a silent wrong answer behind a named refusal.
+The TpTp item comes first: a zero |M|² on points that pass the cuts may be a silent wrong answer behind a named refusal. `g2hdm-mlm-sigma-unmeasured` was closed by sprint K's close-out (#167): M300 and M450 meet its `closes_when` at 5 seeds.
+
+### PR 12: g2HDM charged-Higgs high-mass σ, stretch (`sprintl-g2hdm`), vg-sprint-L-physics, validation-dev, Opus, after PR 4
+
+| Item | Pri | Evidence |
+|---|---|---|
+| `g2hdm-charged-higgs-high-mass-sigma-reads-high` | high (stretch: does not hold the tag) | M900–M1750 read +2.4% to +4.4% on every seed in v022-1009 (mean pulls 6–8, χ²/dof 0.6–1.9); M300 and M450 pass |
+
+- Added by the user's decision of 2026-11-22. It runs after PR 4, since the two may share a cause.
+- **Which MadGraph first.** The VBS and g2HDM gridpacks were made with MadGraph 2.9.18, the DY1j outlier. vg-validator regenerates σ with MadGraph 3.7.1 on VBS cards 134 and 700 and g2HDM cards 894 (M1000) and 889 (M300). If 3.7.1 agrees with vibegraph, the item becomes a registered 2.9.18 deviation.
+- **Oracle.** Per event (Breit–Wigner window and threshold, width, scale, merge sequence) or per diagram against MadGraph on card 894, before σ. Locally: reduced-budget single seeds only. Every multi-seed σ runs on vg-validator (2.5–8 h per seed on 4 cores).
 
 ## Dispatch
 

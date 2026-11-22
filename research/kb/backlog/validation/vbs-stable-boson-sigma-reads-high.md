@@ -27,3 +27,14 @@ All five cards use stable W/Z, `QED=4 QCD=0`, `etaj = 6.5`, `mmjj = 10` and
 story. Candidates to check: the treatment of t-channel photon exchange at low
 mmjj, the scale choice, and the Γ = 0 versus finite-width handling of
 t-channel bosons.
+
+**Post-release campaign `v022-1009` (v0.2.2, 5 seeds, unadapted, 2026-11-22).**
+The excess persists, as it was on v0.2.1:
+
+| Gridpack | vg/MG | mean pull |
+|---|---|---|
+| 134 | 1.091 | 22.5 |
+| 135 | 1.127 | 17.0 |
+| 698 | 1.104 | 14.3 |
+| 700 | 1.050 | 19.3 |
+| 702 | 1.034 | 5.5 |

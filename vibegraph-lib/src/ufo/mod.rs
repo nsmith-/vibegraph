@@ -3,6 +3,7 @@ pub mod bind;
 #[cfg(test)]
 pub(crate) mod card_classes;
 pub(crate) mod color;
+pub(crate) mod config_eval;
 pub(crate) mod couplings;
 pub(crate) mod expr;
 pub(crate) mod functions;
@@ -19,6 +20,7 @@ pub(crate) mod topo;
 pub(crate) mod vertices;
 pub(crate) mod weighted;
 
+use config_eval::Configuration;
 use couplings::{parse_configuration, parse_couplings_with, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
 use functions::{FunctionLibrary, FunctionLibraryError};
@@ -349,7 +351,12 @@ impl ParsedModel {
             Some(src) => FunctionLibrary::parse(&src)?,
             None => FunctionLibrary::default(),
         };
-        let (params, variables) = parse_parameters_with_variables(&params_src, &library)?;
+        let configuration: Configuration = match read_optional(configuration_file)? {
+            Some(src) => parse_configuration(&src)?,
+            None => Default::default(),
+        };
+        let (params, variables) =
+            parse_parameters_with_variables(&params_src, &library, &configuration)?;
         let mut particles: IndexMap<String, Particle> =
             parse_particles_with(&particles_src, &|variable| {
                 params.default_of_variable(&variables, variable)
@@ -363,10 +370,6 @@ impl ParsedModel {
             .map(|l| (l.name.clone(), l))
             .collect();
 
-        let configuration = match read_optional(configuration_file)? {
-            Some(src) => parse_configuration(&src)?,
-            None => Default::default(),
-        };
         let couplings: IndexMap<String, Coupling> =
             parse_couplings_with(&couplings_src, &configuration, &library)?
                 .into_iter()
