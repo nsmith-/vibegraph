@@ -424,10 +424,25 @@ were retried, and a retry replaces the original per (card, seed):
 | none-ok | 619 | 704 |
 
 - **Panics: 0** in 5000 gridpack-seeds (7 in v0.2.1).
-- **The none-ok 619:** 435 refused, 181 timed out and 3 errored. 178 of the
-  timeouts timed out on all 5 seeds at espresso and, by design, were not
-  retried: VBS 32, GJ-4Jets 13, W/Z/DY + 4 jets about 40, aQGC 7, VBF
-  resonances 20, TT-3Jets 5.
+- **The none-ok 619:** 435 refused, 181 timed out and 3 errored.
+  - **The 3 errors** (443, 444, 782) are model refusals at setup: the gridpack
+    bundles no UFO, and the job wrapper logged the refusal as an error.
+  - **178 of the timeouts** timed out on all 5 seeds at espresso and, by
+    design, were not retried. The final card list (`v022-1009-never-retried.tsv`,
+    committed by sprint L) assigns families by gridpack-name prefix:
+
+    | family | cards |
+    |---|---|
+    | W/Z/DY + 4 jets | 56 |
+    | VBS | 47 |
+    | VBF resonances | 22 |
+    | GJ-4Jets | 19 |
+    | other | 17 |
+    | TT-3Jets | 10 |
+    | aQGC | 7 |
+
+    "Other" is QCD 4–5 jets, older GJets HT/DR cards, TT FCNC (tZq), and
+    VBS-like madspin or QCD cards.
 - **Wall time** against v0.2.1, over 876 matched pairs (Condor wall): geometric
   mean 1.02, no regression.
 - **FAIL reasons** (a card can have several):
