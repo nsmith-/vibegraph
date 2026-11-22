@@ -114,7 +114,7 @@ Local 3.5.7 and 2.9.18 agree with each other, sit below 3.7.1 by 6–12%, and
 sit below the gridpack's own 2.9.18 at its larger budget. The 2.9.18 → 3.x
 step is therefore not one step: 3.5.7 behaves like 2.9.18, 3.7.1 does not.
 The equal-weight column is each channel's refine iterations averaged with equal
-weights (`scripts/ew_recombine.py`, the method of
+weights (`validation/madgraph/ew_recombine.py`, the method of
 [the iteration-weighting bias](../../../validation/madevent-iteration-weighting-bias.md)):
 it lifts 2.9.18 and 3.5.7 by 1.7–2.8%, more than on any 3.7.1 run here.
 
