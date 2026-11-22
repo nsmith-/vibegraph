@@ -24,7 +24,7 @@ use vibegraph::ufo::UFOModel;
 
 use crate::assets;
 use crate::error::{err, CliError, ErrorKind};
-use crate::integrate::{bind_param_card, load_run_card};
+use crate::integrate::{bind_param_card, load_run_card, BoundParamCard};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
 use crate::parameters;
@@ -418,6 +418,7 @@ fn same_subprocess(member: &DiagramSet, set: &DiagramSet) -> bool {
 /// them in enumeration order.
 fn flavour_preview(
     args: &EnumerateArgs,
+    bound: &BoundParamCard,
     config: &GlobalConfig,
     parsed: &vibegraph::diagrams::SupportedCard,
     model: &std::sync::Arc<UFOModel>,
@@ -438,7 +439,7 @@ fn flavour_preview(
         card.split()
     };
     let (rc, _) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
-    let (evaluated, _, _) = bind_param_card(args.param_card.as_deref(), model)?;
+    let evaluated = &bound.evaluated;
     let mut preview = FlavourPreview {
         run_card: args.run_card.as_ref().map(|p| p.display().to_string()),
         param_card: args.param_card.as_ref().map(|p| p.display().to_string()),
@@ -454,7 +455,7 @@ fn flavour_preview(
         preview.beams = "fixed_energy";
         return Ok((preview, group_of));
     }
-    let groups = multiplicity_groups(parsed, model, &evaluated, &rc, args.parallel.enumeration())
+    let groups = multiplicity_groups(parsed, model, evaluated, &rc, args.parallel.enumeration())
         .map_err(|e| err(ErrorKind::Process, e))?;
     for (part, part_groups) in groups.groups.iter().enumerate() {
         for group in part_groups.groups() {
@@ -539,9 +540,15 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
     let model = &loaded.model;
 
-    let preview = if args.run_card.is_some() || args.param_card.is_some() {
+    let bound = if args.run_card.is_some() || args.param_card.is_some() {
+        Some(bind_param_card(args.param_card.as_deref(), model)?)
+    } else {
+        None
+    };
+    let preview = if let Some(bound) = &bound {
         Some(flavour_preview(
             args,
+            bound,
             &config,
             &parsed,
             model,
@@ -609,6 +616,7 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
         },
         Some(artifact.process.clone()),
         Some(&artifact.sets),
+        bound.as_ref().map_or(&[], |b| b.auto_widths.as_slice()),
     );
     let (parameters_path, param_card_path) =
         parameters::write(&args.out, &parameters_json, &param_card)?;

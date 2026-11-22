@@ -379,18 +379,50 @@ fn a_dependent_mass_is_ignored_with_a_warning() {
     assert!(run.record() == default_run().record());
 }
 
+/// `DECAY 24 Auto` integrates to the same artifact, bit for bit but for the
+/// banked card text, as the card it banks: the card with the computed width and
+/// table written in place of `Auto`, as MadGraph writes the card it runs from.
+/// The computed width moves WW off the restriction's default, so the run is not
+/// the default one.
+#[test]
+fn an_auto_width_integrates_as_the_card_it_banks() {
+    let auto = integrate("auto_w", Some("DECAY 24 Auto\n"));
+    succeeded(&auto);
+    let banked = auto.read().param_card.expect("the card is banked");
+    assert!(
+        banked.contains("# WW Auto: tree_level_two_body width computed by vibegraph"),
+        "{banked}"
+    );
+    assert!(banked.lines().any(|l| l.starts_with("#  BR")), "{banked}");
+    let typed = integrate("auto_w_typed", Some(&banked));
+    succeeded(&typed);
+    assert!(typed.read().param_card.as_deref() == Some(banked.as_str()));
+    assert!(auto.record() == typed.record());
+    assert!(auto.record() != default_run().record());
+}
+
 /// Each card `integrate` refuses, by what its message says; none writes an
 /// artifact.
 #[test]
 fn cards_the_model_cannot_honour_are_refused() {
     for (name, card, says) in [
         (
-            "auto",
-            "DECAY 25 Auto\n",
+            "auto_z",
+            "DECAY 23 Auto\n",
             &[
-                "width of particle 25 to Auto",
-                "not supported yet",
-                "give the width",
+                "width of particle 23 to Auto",
+                "Z > W+ e- ve~ (through W-)",
+                "two-body widths only",
+                "may include such modes",
+            ][..],
+        ),
+        (
+            "auto",
+            "DECAY 22 Auto\n",
+            &[
+                "width of particle 22 to Auto",
+                "cannot be computed",
+                "no width parameter",
             ][..],
         ),
         (
