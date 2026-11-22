@@ -6,3 +6,4 @@
 * **Waiting on:** the CERN host's MadGraph 3.7.1 run on DY1j cards 408 and 410 (PR 6), and v022-1009's final verdict table with the refusal and timeout breakdown (PRs 3 and 11).
 * **DY1j closed** (sprint K, from the CERN host's MadGraph 3.7.1 run on cards 408–411). vibegraph agrees with 3.7.1 to 0.16% or better, and MadGraph 2.9.18 is the outlier. PR 6 is dropped. The interim seed-1 refusal counts replace the earlier census counts in PRs 1 and 2.
 * **v0.3 split** decided by the user: `release/v0.2` is cut at the v0.2.3 tag. `release-branch-ci-and-ruleset-missing` is filed and joins the exit criteria.
+* **Session names** (user): the standing sessions are `vg-planner`, `vg-router`, and `vg-validator` (the CERN host). L-A and L-B are `vg-sprint-L-physics` and `vg-sprint-L-pipeline`. Sprint sessions reach the planner through the router ([session roles](../../workflow/session-roles.md)).
