@@ -38,5 +38,11 @@ blocks as benign, with a warning, keeps the typo guard for parameter blocks.
 This is a ruling to make. The DarkPhoton cards run correctly with the entry
 trimmed by hand (0.985 and 0.971 of MadGraph).
 
+The parameter-block side costs cards too. In the v0.2.2 campaign (v022-1009),
+all seven `SM_HeavyN_Gen3Mass_NLO` cards (84, 85, 438–442, `p p > w, (w > l
+hnl)`) were refused: the gridpack card sets `ckmblock` code 1, which that model
+has no parameter for. MadEvent's reader skips that line too. The ruling should
+say whether the typo guard on parameter blocks is worth seven cards.
+
 gpdb's fallback for this refusal is a separate problem:
 [gpdb-compares-sigma-after-physics-changing-patches](../validation/gpdb-compares-sigma-after-physics-changing-patches.md).
