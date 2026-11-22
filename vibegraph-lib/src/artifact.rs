@@ -115,10 +115,25 @@ use crate::vegas::{GridRule, VegasGrid};
 /// its sets, and its amplitude probe recompiles those sets, so it agrees with
 /// itself whatever enumeration wrote them; only integrating again can tell, so
 /// it is refused. [`OLDEST_READABLE_VERSION`] is this version.
-pub const FORMAT_VERSION: u32 = 24;
+///
+/// `25` appends the release of the vibegraph that wrote the file
+/// ([`IntegrateArtifact::writer_version`]): the crate version, which tells a
+/// stale artifact from a current one across releases. A commit hash is left out
+/// on purpose: it would make the bytes of two artifacts differ between commits
+/// even when the physics is identical, which defeats comparing artifact digests
+/// bit for bit between a branch and main. The only change is that one trailing field: a version-24 file
+/// is read as it always was, with no writer recorded, and a version-24 reader
+/// refuses a version-25 file by its version.
+pub const FORMAT_VERSION: u32 = 25;
+
+/// The release recorded as the writer of an artifact this build writes.
+pub const WRITER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] decodes.
 pub(crate) const OLDEST_READABLE_VERSION: u32 = 24;
+
+/// The last format version that records no writer.
+const WRITERLESS_VERSION: u32 = 24;
 
 const ZSTD_LEVEL: i32 = 19;
 
@@ -176,6 +191,10 @@ pub enum ArtifactError {
     EnumerationVersion { found: u32, expected: u32 },
     #[error("cannot rebuild the model embedded in the artifact: {0}")]
     Model(#[from] UfoError),
+    /// The recorded proc card cannot be read back into the squared-order
+    /// selection its diagram sets were formed with.
+    #[error("the artifact's diagram sets: {0}")]
+    Diagrams(#[from] crate::diagrams::DiagramError),
 }
 
 /// A restricted model as an artifact carries it: the parsed model with its
@@ -658,6 +677,10 @@ pub struct IntegrateArtifact {
     /// evaluator's configurations in `AMP2` order followed by its unattributed
     /// entry.
     pub configurations: Vec<ConfigShare>,
+    /// The vibegraph release ([`WRITER_VERSION`]) that wrote the file. Last, so a
+    /// version-24 payload decodes by appending the absent value. `None` for a
+    /// version-24 file, which records no writer.
+    pub writer_version: Option<String>,
 }
 
 /// SHA-256 over every channel's
@@ -698,7 +721,9 @@ impl IntegrateArtifact {
     /// [`format_version`](Self::format_version) that
     /// [`read_from_path`](Self::read_from_path) would refuse.
     pub fn write_to_path(&self, path: &Path, force: bool) -> Result<(), ArtifactError> {
-        if !(OLDEST_READABLE_VERSION..=FORMAT_VERSION).contains(&self.format_version) {
+        // Only the current layout is written: an older version's bytes lack the
+        // trailing writer field this struct serializes.
+        if self.format_version != FORMAT_VERSION {
             return Err(ArtifactError::UnwritableVersion {
                 found: self.format_version,
                 oldest: OLDEST_READABLE_VERSION,
@@ -738,10 +763,10 @@ impl IntegrateArtifact {
             source,
         })?;
         let sha256 = crate::ufo::identity::digest_bytes(&compressed);
-        let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
+        let mut raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         let artifact: Self = match header.format_version {
-            FORMAT_VERSION => {
+            version @ OLDEST_READABLE_VERSION..=FORMAT_VERSION => {
                 let (_, enumeration_version): (u32, u32) =
                     bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
                 if enumeration_version != ENUMERATION_VERSION {
@@ -749,6 +774,10 @@ impl IntegrateArtifact {
                         found: enumeration_version,
                         expected: ENUMERATION_VERSION,
                     });
+                }
+                if version == WRITERLESS_VERSION {
+                    // The trailing `Option` tag of an absent writer.
+                    raw.push(0);
                 }
                 bincode::deserialize(&raw).map_err(ArtifactError::Decode)?
             }
@@ -761,6 +790,8 @@ impl IntegrateArtifact {
             }
         };
         artifact.check_embedded()?;
+        let mut artifact = artifact;
+        artifact.annotate_squared_orders()?;
         Ok((artifact, sha256))
     }
 
@@ -783,6 +814,23 @@ impl IntegrateArtifact {
                 computed,
             });
         }
+        Ok(())
+    }
+
+    /// Derive the sets' squared-order selections again from the recorded card
+    /// ([`DiagramSet::squared_orders`] is not serialized). Only a card with
+    /// squared-order constraints needs the model for it, so only such a card
+    /// rebuilds it here.
+    fn annotate_squared_orders(&mut self) -> Result<(), ArtifactError> {
+        let card = crate::diagrams::parse_proc_card(
+            &self.proc_card,
+            &crate::diagrams::ParsingOptions::default(),
+        )?;
+        if card.processes.iter().all(|p| p.squared_orders.is_empty()) {
+            return Ok(());
+        }
+        let model = self.loaded_model()?;
+        crate::diagrams::squared::annotate_sets(&mut self.sets, &card, &model.model)?;
         Ok(())
     }
 
@@ -831,6 +879,7 @@ mod tests {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             enumeration_version: ENUMERATION_VERSION,
+            writer_version: Some(WRITER_VERSION.to_string()),
             process: "p p > e+ e-".to_string(),
             proc_card: "import model sm\ngenerate p p > e+ e-\n".to_string(),
             model: ModelIdentity::interned_sm(SMRestrict::Default),
@@ -1078,7 +1127,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 22,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1115,7 +1164,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 23,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1540,7 +1589,7 @@ mod tests {
                     ArtifactError::UnsupportedVersion {
                         found,
                         oldest: 24,
-                        expected: 24
+                        expected: 25
                     } if found == version
                 ),
                 "{err}"
@@ -1581,7 +1630,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 16,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1620,7 +1669,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 17,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1736,7 +1785,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 18,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1824,7 +1873,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 19,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"
@@ -1863,7 +1912,7 @@ mod tests {
                 ArtifactError::UnsupportedVersion {
                     found: 21,
                     oldest: 24,
-                    expected: 24
+                    expected: 25
                 }
             ),
             "{err}"

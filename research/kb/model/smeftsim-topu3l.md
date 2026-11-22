@@ -141,7 +141,7 @@ values are the model's defaults ([restrict-card semantics](restriction-semantics
 
 - **Squared-order constraints** (`NP^2==1` for interference only) are not yet
   supported, so every SMEFTsim row compares the full |M|² at `NP<=1`. They are in scope
-  as a [backlog item](../backlog/feature/squared-order-constraints-refused.md).
+  as a [backlog item](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md).
 - **Majorana fermions in four-fermion vertices** are a MadGraph `InvalidModel`; SMEFTsim
   has none.
 

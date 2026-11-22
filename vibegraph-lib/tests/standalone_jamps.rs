@@ -348,6 +348,7 @@ impl GraphLevel {
                         polarizations: set.polarizations.clone(),
                         diagrams: vec![d.clone()],
                         mirrored: set.mirrored,
+                        squared_orders: set.squared_orders.clone(),
                     },
                     model,
                 )
@@ -1702,6 +1703,7 @@ fn probe_one(key: &str) {
                     polarizations: set.polarizations.clone(),
                     diagrams: vec![d.clone()],
                     mirrored: set.mirrored,
+                    squared_orders: set.squared_orders.clone(),
                 },
                 model.as_ref(),
             )

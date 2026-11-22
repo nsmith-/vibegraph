@@ -22,7 +22,7 @@ components, so subtrees without the reweighted couplings are computed once.
 
 The same graded `helas/eval` refactor is what squared-order constraints need
 (complex amplitudes grouped by coupling order; see
-[squared-order constraints](../feature/squared-order-constraints-refused.md)).
+[squared-order constraints](../../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md)).
 It was deferred until the evaluator performance PRs in flight landed; none
 are open now (checked 2026-10-06). The user shelved squared-order constraints
 on 2026-09-25, so this item is the one that motivates the refactor.
