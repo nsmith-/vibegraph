@@ -205,6 +205,18 @@ uux_to_n1n1_mssm: 48 flow entries, G=(-8.7e-18,-1.0), worst flow 4.980e-16, wors
 test result: ok. 14 passed; 0 failed
 ```
 
+The two negative-mass rows (`/home/user/wt/logs/lm1-gate2-jamps.log`, all 91
+`standalone_jamps` tests passing):
+
+```
+ee_to_n1n3_mssm: 48 flow entries, G=(-1.1e-15,-1.0), worst flow 2.590e-14, worst |M|² 1.631e-14; 240 graph entries, worst graph 4.651e-14
+x1px1m_to_wpwm_mssm: 108 flow entries, G=(1.7e-14,-1.0), worst flow 3.253e-13, worst |M|² 1.276e-13; 864 graph entries, worst graph 2.257e-14
+```
+
+The worst entry over the sixteen rows is therefore 3.3e-13 (`x1px1m`'s flow;
+the commit message's "3.3e-14" is the `udx_to_x1pn1` figure and wrong for the
+set), inside the gate's `1e-12` against O(1) for any sign or chirality error.
+
 All sixteen rows, with every other target, on the committed code
 (`/home/user/wt/sprintl-majorana-mg/gate.sh`, logs `/home/user/wt/logs/lm1-gate2-*.log`):
 
