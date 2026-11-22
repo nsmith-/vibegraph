@@ -77,53 +77,87 @@ const NC: i64 = 3;
 /// alongside it, so their values stay readable off the arena after a run. They are
 /// the *same* nodes the JAMPs are built from — referenced, not rebuilt — so no
 /// arithmetic is added and the sharing is unchanged.
+#[cfg(test)]
 pub(crate) fn lower_flows(
     basis: &ColorBasis,
     evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
     configs: &[Vec<(usize, Vec<u8>)>],
 ) -> Ast<Sym> {
+    lower_split_flows(basis, evals, configs, None).0
+}
+
+/// [`lower_flows`] with the JAMPs split by an order class of the diagrams:
+/// `class_of[d]` is diagram `d`'s class, and the `Flows` root carries one JAMP
+/// per `(class, flow)` pair that has a contribution, class-major — MadGraph's
+/// `JAMP(flow, class)` of a process with split orders
+/// (`get_JAMP_lines_split_order`, `export_v4.py:1497`). Each JAMP sums the same
+/// terms the unsplit flow does, restricted to its class's diagrams, so the
+/// unsplit JAMP of a flow is the sum of its classes'.
+///
+/// Returns the AST and, per root JAMP in order, its `(class, flow)`. With no
+/// split (`None`) the lowering is [`lower_flows`]' and every JAMP is
+/// `(0, flow)`.
+pub(crate) fn lower_split_flows(
+    basis: &ColorBasis,
+    evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
+    configs: &[Vec<(usize, Vec<u8>)>],
+    class_of: Option<&[usize]>,
+) -> (Ast<Sym>, Vec<(usize, usize)>) {
     let mut b = AstBuilder::new();
     // One lowered amplitude subtree per (diagram, chain), shared across the flows it
     // contributes to.
     let mut amp_cache: HashMap<(usize, Vec<u8>), NodeId> = HashMap::new();
-    let mut jamps = Vec::with_capacity(basis.elements.len());
-    for elem in &basis.elements {
-        let mut terms = Vec::with_capacity(elem.contributions.len());
-        for contrib in &elem.contributions {
-            let key = (contrib.diagram, contrib.chain.clone());
-            let eval = &evals[&key];
-            let amp = match amp_cache.get(&key) {
-                Some(&n) => n,
-                None => {
-                    let n = lower_diagram_node(&eval.tree, eval.tree.root(), &mut b);
-                    amp_cache.insert(key.clone(), n);
-                    n
+    let n_classes = class_of.map_or(1, |c| c.iter().max().map_or(1, |&m| m + 1));
+    let mut jamps = Vec::with_capacity(basis.elements.len() * n_classes);
+    let mut slots = Vec::with_capacity(basis.elements.len() * n_classes);
+    for class in 0..n_classes {
+        for (flow, elem) in basis.elements.iter().enumerate() {
+            let mut terms = Vec::with_capacity(elem.contributions.len());
+            for contrib in &elem.contributions {
+                if class_of.is_some_and(|c| c[contrib.diagram] != class) {
+                    continue;
                 }
-            };
-            let factor = eval.symmetry_factor * (eval.fermi_sign as f64);
-            let sf = b.add(Op::Coeff, Sym::Coeff(factor), vec![]);
-            // The exact color coefficient with `Nc` evaluated. A unit real coefficient
-            // (`num == den`, not imaginary) is dropped so the single-flow path reduces
-            // to today's color-free lowering.
-            let r = contrib.coeff.eval_nc(NC);
-            let (num, den) = (*r.numer(), *r.denom());
-            let mut factors = Vec::with_capacity(3);
-            if contrib.coeff.imag || num != den {
-                factors.push(b.add(
-                    Op::CoeffRat,
-                    Sym::Rational {
-                        num,
-                        den,
-                        imag: contrib.coeff.imag,
-                    },
-                    vec![],
-                ));
+                let key = (contrib.diagram, contrib.chain.clone());
+                let eval = &evals[&key];
+                let amp = match amp_cache.get(&key) {
+                    Some(&n) => n,
+                    None => {
+                        let n = lower_diagram_node(&eval.tree, eval.tree.root(), &mut b);
+                        amp_cache.insert(key.clone(), n);
+                        n
+                    }
+                };
+                let factor = eval.symmetry_factor * (eval.fermi_sign as f64);
+                let sf = b.add(Op::Coeff, Sym::Coeff(factor), vec![]);
+                // The exact color coefficient with `Nc` evaluated. A unit real
+                // coefficient (`num == den`, not imaginary) is dropped so the
+                // single-flow path reduces to today's color-free lowering.
+                let r = contrib.coeff.eval_nc(NC);
+                let (num, den) = (*r.numer(), *r.denom());
+                let mut factors = Vec::with_capacity(3);
+                if contrib.coeff.imag || num != den {
+                    factors.push(b.add(
+                        Op::CoeffRat,
+                        Sym::Rational {
+                            num,
+                            den,
+                            imag: contrib.coeff.imag,
+                        },
+                        vec![],
+                    ));
+                }
+                factors.push(sf);
+                factors.push(amp);
+                terms.push(reduce_balanced(&mut b, Op::Mul, factors));
             }
-            factors.push(sf);
-            factors.push(amp);
-            terms.push(reduce_balanced(&mut b, Op::Mul, factors));
+            // A class none of whose diagrams reaches this flow has no JAMP here:
+            // its entry would be identically zero.
+            if terms.is_empty() && class_of.is_some() {
+                continue;
+            }
+            jamps.push(sum_or_single(&mut b, terms));
+            slots.push((class, flow));
         }
-        jamps.push(sum_or_single(&mut b, terms));
     }
     let amplitude = if jamps.len() == 1 {
         jamps[0]
@@ -148,7 +182,7 @@ pub(crate) fn lower_flows(
     } else {
         b.add(Op::Configs, Sym::None, bundle)
     };
-    b.finish(root)
+    (b.finish(root), slots)
 }
 
 /// Structure-optimization pass: re-n-aryfy the binary `Add` trees, then

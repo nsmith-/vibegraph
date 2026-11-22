@@ -330,6 +330,12 @@ impl DiagramArtifact {
             &artifact.model.name,
             &artifact.model.restrict,
         )?;
+        let mut artifact = artifact;
+        let card = crate::diagrams::parse_proc_card(
+            &artifact.proc_card,
+            &crate::diagrams::ParsingOptions::default(),
+        )?;
+        crate::diagrams::squared::annotate_sets(&mut artifact.sets, &card, &model.model)?;
         Ok((artifact, model))
     }
 }
