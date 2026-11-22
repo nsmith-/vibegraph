@@ -57,8 +57,8 @@ language:
 | `$ A` on a decay of a chain (`h > e+ e- mu+ mu- $ z`) | refused: the veto marks the core's propagators only; a `$` on the core is supported |
 | overall orders on a decay chain (`@1 QED=2` after the process number) | supported, except beside a part's own `==` or `>` bound on the same order |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
-| squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
-| `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
+| squared-order constraints `NP^2==1`, `QCD^2<=4`, `aEW=2`, `aS=2` | supported (see below); refused on a decay chain, as MadGraph refuses them |
+| `WEIGHTED==n`, `WEIGHTED>n` | supported: the diagrams' weighted order filtered as MadGraph filters it |
 | `[QCD]`, `[real=QCD]`, `!a!` | refused: NLO |
 | `add process` with another final-state multiplicity | supported at proton beams: each multiplicity integrated on its own phase space and the events unweighted together (see below); refused at fixed-energy beams and for a decay |
 | `set` of a physics-bearing option off its default | refused |
@@ -134,10 +134,23 @@ with a warning that it double counts. A subprocess two lines both produce stays
 refused.
 
 A squared-order constraint bounds the order of an *interference* term in
-$|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
-by their own orders and squares the whole amplitude, so it cannot honour one,
-and answering the amplitude-level question instead would return a different
-cross section with nothing to say so.
+$|M|^2$, a statement about pairs of diagrams: `NP^2==1` asks for the terms
+$A_a A_b^*$ whose two diagrams' `NP` orders sum to one, the dimension-six
+interference alone. It is honoured the way MadGraph honours it. Each
+subprocess's diagrams are classed by their orders in the constrained names, the
+amplitude is evaluated class by class (per colour flow and per helicity), and
+$|M|^2$ is formed from only the class pairs the constraint accepts. A diagram
+that pairs with no diagram into an accepted term is dropped at enumeration, and a
+negative value (`QED^2<=-1`, up to one power past the lowest) is resolved against
+each subprocess's own diagrams, both as in MadGraph. `aEW=n` and `aS=n` are
+MadGraph's spellings of `QED^2=2n` and `QCD^2=2n`, `=` reads as `<=`, and a line
+with squared orders but no amplitude order is bounded at the amplitude level by
+its squared values, as MadGraph bounds it.
+
+A selection that keeps an interference term without the squares bounding it
+(`NP^2==1`, `NP^2==2` beside double insertions) has a signed $|M|^2$: its cross
+section integrates normally and can be negative, and `generate` refuses it,
+since its events would need negative weights.
 
 **3. Resolve against the model.** Names are matched case-insensitively and
 canonicalised to the model's spelling, as MadGraph does. A name or PDG code

@@ -38,6 +38,7 @@ mod reduction;
 pub mod resolve;
 pub mod schannel;
 pub(crate) mod selector;
+pub mod squared;
 
 pub use check::{check_supported, SupportedCard, Unsupported};
 use check::{AmplitudeOrder, SupportedLeg, SupportedProcess, UnsupportedCard};
@@ -115,6 +116,23 @@ pub enum DiagramError {
          explicit coupling orders"
     )]
     GluonTrialWithoutQcd { process: String },
+    /// Two process lines share a process number and differ in their
+    /// squared-order constraints. The diagrams record only the number of the
+    /// line they came from, which is what an artifact reader derives each set's
+    /// selection from.
+    #[error(
+        "'{a}' and '{b}' share a process number and differ in their squared-order \
+         constraints; give them different process numbers (@N)"
+    )]
+    MixedSquaredOrders { a: String, b: String },
+    /// A recorded diagram set that the squared-order filter of its own line
+    /// would not leave unchanged: it was not enumerated from that line by this
+    /// build.
+    #[error(
+        "'{process}': the recorded diagrams are not what the line's squared-order \
+         constraints keep; enumerate the proc card again"
+    )]
+    SquaredOrderMismatch { process: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("{0}")]
@@ -144,6 +162,18 @@ pub struct DiagramSet {
     /// (`u u~ > e+ e-`) generates only that one, and its subprocess carries no
     /// luminosity in the other.
     pub mirrored: bool,
+    /// The squared-order selection this subprocess's |M|² is formed with: the
+    /// terms `A_a A_b*` whose summed coupling orders the line's squared-order
+    /// constraints accept ([`squared`]). `None` for a line without any, whose
+    /// |M|² is the whole amplitude squared.
+    ///
+    /// Not serialized: it is a function of the card line, which every artifact
+    /// records, and of the set's own diagrams, so the artifact readers derive
+    /// it again ([`squared::annotate_sets`]) and the bytes of a set — its
+    /// digest, and every artifact of a card without squared orders — are what
+    /// they were before the selection existed.
+    #[serde(skip)]
+    pub squared_orders: Option<squared::SquaredOrders>,
 }
 
 impl DiagramSet {
@@ -184,6 +214,7 @@ impl DiagramSet {
                 .map(|d| chain::relabelled(d, &to, n_in, model))
                 .collect(),
             mirrored: self.mirrored,
+            squared_orders: self.squared_orders.clone(),
         })
     }
 
@@ -342,6 +373,7 @@ pub fn enumerate_lines_in(
     model: &UFOModel,
     pool: EnumerationPool,
 ) -> Result<LineSets, DiagramError> {
+    squared::refuse_mixed_squared_orders(proc_card)?;
     match pool {
         EnumerationPool::Ambient => enumerate(proc_card, model),
         // A pool of its own rather than a serial code path: feyngraph's `par_iter`s
@@ -617,7 +649,14 @@ struct ExpandedProcess {
     /// The coupling-order constraints feyngraph selects on; `WEIGHTED` is not
     /// among them.
     orders: Vec<AmplitudeOrder>,
+    /// `WEIGHTED==n` or `WEIGHTED>n`: MadGraph's `constrained_orders` filter on
+    /// the diagrams' weighted order (`filter_constrained_orders`,
+    /// `base_objects.py:2897-2911`), beside any upper bound.
+    weighted_constraint: Option<(CouplingOp, i64)>,
     schannels: SChannelFilter,
+    /// The line's squared-order constraints, applied to each subprocess's
+    /// diagrams once its other filters have run.
+    squared: Option<squared::SquaredRequest>,
 }
 
 /// A polarized leg of a process line, before a concrete particle is chosen.
@@ -809,13 +848,48 @@ fn generate_undecayed(
              general not gauge invariant"
         );
     }
-    // `WEIGHTED<=n` (the check admits no other comparison) bounds the diagrams'
-    // weighted order; the leftmost constraint wins, as for every order.
-    let explicit_weighted = process
-        .orders
+    let squared = squared::SquaredRequest::resolve(&process.squared_orders, model)?;
+    // MadGraph's `do_add` allows a negative value on one order only, across the
+    // amplitude and the squared-order constraints together.
+    if let Some(sq) = &squared {
+        let negative = process.orders.iter().filter(|o| o.value < 0).count()
+            + sq.constraints().iter().filter(|c| c.value < 0).count();
+        if negative > 1 {
+            return Err(ResolveError::NegativeOrders.into());
+        }
+    }
+    // A line with squared orders and no amplitude-level bound of its own is
+    // bounded by its squared values, MadGraph's `orders == {}` rule; `>` is not
+    // a bound there, as it adds nothing to MadGraph's `orders`.
+    let bounded =
+        |o: &AmplitudeOrder| matches!(o.op, CouplingOp::Le | CouplingOp::Eq | CouplingOp::ExactEq);
+    let mut amplitude_orders = process.orders.clone();
+    if let Some(sq) = squared
+        .as_ref()
+        .filter(|_| !process.orders.iter().any(bounded))
+    {
+        for (name, bound) in sq.implied_amplitude_bounds() {
+            if let Some(value) = bound {
+                amplitude_orders.push(AmplitudeOrder {
+                    name,
+                    op: CouplingOp::Le,
+                    value,
+                });
+            }
+        }
+    }
+    // `WEIGHTED<=n`, `=n` and `==n` bound the diagrams' weighted order from
+    // above (MadGraph's `orders`); `==n` and `>n` also filter on it (its
+    // `constrained_orders`). The leftmost constraint of each kind wins, as for
+    // every order.
+    let explicit_weighted = amplitude_orders
         .iter()
-        .find(|o| o.name == WEIGHTED)
+        .find(|o| o.name == WEIGHTED && bounded(o))
         .map(|o| o.value.max(0) as usize);
+    let weighted_constraint = amplitude_orders
+        .iter()
+        .find(|o| o.name == WEIGHTED && matches!(o.op, CouplingOp::ExactEq | CouplingOp::Gt))
+        .map(|o| (o.op, o.value));
     let expanded = ExpandedProcess {
         initial: legs(&process.initial)?,
         final_state: legs(&process.final_state)?,
@@ -825,13 +899,14 @@ fn generate_undecayed(
             &process.forbidden_particles,
             &aliases,
         )?,
-        orders: process
-            .orders
+        orders: amplitude_orders
             .iter()
             .filter(|o| o.name != WEIGHTED)
             .cloned()
             .collect(),
+        weighted_constraint,
         schannels,
+        squared,
     };
 
     // Generate abstract graph topologies once for this (n_external, n_loops=0) combination.
@@ -846,7 +921,7 @@ fn generate_undecayed(
     // applies them (`Process.check_expansion_orders`) only after
     // `find_optimal_process_orders` has looked at the process's own orders.
     let top_level_decay = n_in == 1 && role == ProcessRole::TopLevel;
-    let auto_weighted = process.orders.is_empty() && !top_level_decay;
+    let auto_weighted = process.orders.is_empty() && expanded.squared.is_none() && !top_level_decay;
     let expanded = ExpandedProcess {
         orders: capped_orders(&expanded.orders, model),
         ..expanded
@@ -1098,7 +1173,9 @@ impl<'a> GluonFreeTrials<'a> {
             final_state: final_state.into_iter().map(|n| vec![n]).collect(),
             forbidden_particles: self.expanded.forbidden_particles.clone(),
             orders: self.expanded.orders.clone(),
+            weighted_constraint: self.expanded.weighted_constraint,
             schannels: self.expanded.schannels.clone(),
+            squared: self.expanded.squared.clone(),
         };
         let max_weighted = usize::try_from(bound).ok();
         let sets = generate_sets_inner(&trial, model, max_weighted, topologies, None)?;
@@ -1348,6 +1425,25 @@ fn generate_sets_inner(
             });
             sel.add_custom_function(weighted_fn);
         }
+        if let Some((op, value)) = process.weighted_constraint {
+            use std::sync::Arc;
+            let hierarchy = model.order_hierarchy.clone();
+            let negative = model.negative_orders.clone();
+            let constraint_fn: Arc<
+                dyn Fn(&feyngraph::diagram::view::DiagramView) -> bool + Send + Sync,
+            > = Arc::new(move |diag_view| {
+                let w: i64 = hierarchy
+                    .iter()
+                    .map(|(coupling, &h)| diag_view.order(coupling) as i64 * h as i64)
+                    .sum::<i64>()
+                    + negative.weighted(diag_view, &hierarchy);
+                match op {
+                    CouplingOp::ExactEq => w == value,
+                    _ => w > value,
+                }
+            });
+            sel.add_custom_function(constraint_fn);
+        }
 
         let in_refs: Vec<&str> = concrete.initial.iter().map(String::as_str).collect();
         let out_refs: Vec<&str> = concrete.final_state.iter().map(String::as_str).collect();
@@ -1387,6 +1483,17 @@ fn generate_sets_inner(
         }
 
         let subprocess = format!("{} > {}", in_refs.join(" "), out_refs.join(" "));
+        let squared_orders = process.squared.as_ref().map(|sq| {
+            let before = diagrams.len();
+            let selection = sq.filter(&mut diagrams, model);
+            if diagrams.len() != before {
+                debug!(
+                    "{subprocess}: the squared-order constraints keep {} of {before} diagrams",
+                    diagrams.len()
+                );
+            }
+            selection
+        });
         if !diagrams.is_empty() {
             info!("{} diagrams for {subprocess}", diagrams.len());
             debug!(
@@ -1403,6 +1510,7 @@ fn generate_sets_inner(
             polarizations,
             diagrams,
             mirrored: false,
+            squared_orders,
         });
         report(candidates, &sets);
     }

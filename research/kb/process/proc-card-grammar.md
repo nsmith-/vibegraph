@@ -142,7 +142,7 @@ orders. [^mg-orders]
   accepted by MadGraph and constrains nothing there: MadGraph validates the aliased name
   `QED` but records the written `EW`, which no SM coupling carries. It is refused here.
 - Squared-order constraints are in scope but not yet supported
-  ([backlog](../backlog/feature/squared-order-constraints-refused.md)). How orders select
+  ([backlog](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md)). How orders select
   diagrams, and the model's own caps, are in [coupling orders](../model/coupling-orders.md).
 
 ## Process numbers and commands

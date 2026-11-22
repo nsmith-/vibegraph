@@ -401,7 +401,7 @@ impl BoundSub<'_> {
             }
         }
         let cf = self.amps[0].amplitude().cf_weights();
-        let n = self.amps[0].amplitude().evaluator().n_flows();
+        let n = self.amps[0].amplitude().evaluator().n_jamps();
         // `T_j = CF · J_j` per helicity combination, the contraction `eval_m2`
         // forms as its `ZTEMP`.
         for (jamps, t) in self.jamps.iter().zip(self.contracted.iter_mut()) {
