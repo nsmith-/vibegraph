@@ -397,3 +397,106 @@ released binary, 5 seeds each.
 banked included. The targeted check shows no panics. Each case that still
 fails is deliberate or filed. The four items above are filed in this record,
 and the release notes list 409, g2HDM and `time_of_flight` as known issues.
+
+## 2026-11-22: post-release campaign `v022-1009` and close-out of its items
+
+v0.2.2 was tagged on c26980f1 and its musl binaries were published. The CERN
+host (vg-validator) ran the full 1009-gridpack campaign on the released
+`x86_64-unknown-linux-musl-v3` binary (sha256 `432ce693…`). It used 5 seeds,
+the same driver and budget as `v021-1009-s1`, and the same pass rule:
+- all 5 seeds target_met;
+- |mean pull| ≤ 3 and every seed ≤ 3;
+- χ²/dof in [0.052, 3.72];
+- the reference is MadGraph σ × `small_width_ratio`;
+- an adapted card fails.
+
+Seed runs that hit the 1200 s espresso cap on a card with at least one ok seed
+were retried, and a retry replaces the original per (card, seed):
+- 155 at the 1 h microcentury cap: 117 became ok;
+- the remaining 38 at the 8 h workday cap: 36 became ok.
+
+**Final verdicts** (v0.2.1 in brackets):
+
+| verdict | v0.2.2 | v0.2.1 |
+|---|---|---|
+| PASS | 303 | 219 |
+| FAIL | 78 | 77 |
+| none-ok | 619 | 704 |
+
+- **Panics: 0** in 5000 gridpack-seeds (7 in v0.2.1).
+- **The none-ok 619:** 435 refused, 181 timed out and 3 errored. 178 of the
+  timeouts timed out on all 5 seeds at espresso and, by design, were not
+  retried: VBS 32, GJ-4Jets 13, W/Z/DY + 4 jets about 40, aQGC 7, VBF
+  resonances 20, TT-3Jets 5.
+- **Wall time** against v0.2.1, over 876 matched pairs (Condor wall): geometric
+  mean 1.02, no regression.
+- **FAIL reasons** (a card can have several):
+
+  | reason | cards |
+  |---|---|
+  | adapted | 44 |
+  | a seed with \|pull\| > 3 | 43 |
+  | \|mean pull\| > 3 | 35 |
+  | χ²/dof out of range | 13 |
+  | 4 of 5 seeds ok | 2 |
+  | target not met | 1 |
+
+**No card that passed on v0.2.1 fails now.** Cards 35, 193, 266 and 271 had
+first read PASS → FAIL. They were artefacts of the espresso cap and pass after
+the retries; 271 reads 9.034 ± 0.078, the same as v0.2.1. So
+`full-cms-campaign-after-v02-cut` closes on this campaign. Its last clause asked
+for performance benchmarks on the same revision. The only measurement of that
+here is the campaign's own wall-time comparison (geometric mean 1.02); no
+separate benchmark run was made.
+
+**Not-pass → PASS.** The headline cases, each from a sprint K PR:
+- HToAATo4B 88, 89, 448, 452, from ratio ≈4.0 to 0.998–1.006 (#150/#161);
+- the UFO-form cards (#145);
+- mixed-mass grouping on ZPrimeToTT, Radion and ZprimeTo2W (#147);
+- DarkPhoton (#142);
+- SMEFTsim ZH 832–838 run unadapted (#152);
+- the colour-fixed stop and HSCP cards (#146), which pass once their capped
+  seeds are retried.
+
+**DY1j leading-jet window (cards 407–412).** In 100–600 GeV vibegraph read 3–9%
+above the gridpacks' MadGraph 2.9.18 σ. The CERN host regenerated the four
+failing bins with MadGraph 3.7.1 on the exact gridpack cards. 3.7.1 agrees with
+v0.2.2 to 0.16% or better (pulls 0.23, 1.04, 0.50, −0.03), so 2.9.18 is the
+outlier. This is registered in
+[madgraph-defects](../../validation/madgraph-defects.md), with the cards, PDF,
+restriction digest and key comparison, and
+`dy1j-ptj1-100to200-sigma-reads-high` closes. v0.2.2's known-issue line on card
+409 is answered by that page; there is no patch release (manager, 2026-11-22).
+
+**g2HDM.** M300 (889) passes: ratio 1.0039, mean pull 0.87, against
+10.04 ± 0.039 pb. M450 (893) passes at 1.0064. That meets
+`g2hdm-mlm-sigma-unmeasured`'s closing condition, so it closes. Above M900 the
+cards read +2.4% to +4.4% on every seed. That is filed as
+`g2hdm-charged-higgs-high-mass-sigma-reads-high` (high).
+
+**Items updated, not filed** (manager, 2026-11-22):
+- `vbs-stable-boson-sigma-reads-high`: the v0.2.2 numbers, still +3.4% to
+  +12.7%;
+- `sigma-reads-high-on-mlm-and-wbq-cards`: QCD_bEnriched, WBQ and TCP, as on
+  v0.2.1;
+- `tptp-integrand-zero-on-every-point`: raised to high, with cards 108 and
+  510–512, which have zero |M|² on 28–46 M points that pass the cuts.
+
+**Refusal classes at seed 1** (435 refused). The counts are added as evidence
+on the class items:
+
+| class | refusals |
+|---|---|
+| NLO | 170 |
+| fermion-number violation | 53 |
+| Majorana | 37 |
+| spin-2/3/2 | 28 |
+| uncut massless collinear or soft limits | 24 |
+| squared orders | 23 |
+| polarized | 23 |
+
+The uncut limits have no item: they are deliberate refusals of cards whose σ
+diverges without a cut. The smaller classes are in the CERN host's breakdown.
+
+The verdict table is exported for simshop as
+`vibegraph-host-models-2026-11-22/gridpacks.sqlite` (sha256 `9dc51362…6dd4`).
