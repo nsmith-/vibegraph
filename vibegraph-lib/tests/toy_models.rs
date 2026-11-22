@@ -788,3 +788,90 @@ fn a_lorentz_index_naming_no_leg_is_refused_at_compile() {
         "{err}"
     );
 }
+
+/// A Goldstone flag on the toy scalar, in each spelling MadGraph's importer
+/// accepts, removes every diagram that holds the scalar; the unflagged model
+/// enumerates them.
+#[test]
+fn a_goldstone_flag_in_any_spelling_removes_the_scalar_from_the_diagrams() {
+    let process = "lt~ lt > qt qt~ NP<=2 NPCP<=2";
+    let plain = diagram_count(&edited_toy_model(&[]), process);
+    assert!(plain > 0, "the unflagged toy model enumerates `{process}`");
+    for spelling in ["goldstoneboson", "GoldstoneBoson", "goldstone"] {
+        let flagged = edited_toy_model(&[(
+            "particles.py",
+            "antitexname='S',",
+            &format!("antitexname='S',\n              {spelling}=True,"),
+        )]);
+        let count = diagram_count(&flagged, process);
+        assert!(
+            count < plain,
+            "{spelling}: {count} diagrams with the scalar flagged, {plain} without"
+        );
+    }
+}
+
+/// A neutral fermion, a charged vector and a charged scalar appended to the toy
+/// model, each coupling the neutral fermion to `lt`: the charged shape of a
+/// Standard-Model W and its Goldstone. The scalar's flag is `{flag}`.
+fn charged_goldstone_particles(flag: &str) -> String {
+    format!(
+        "nt = Particle(pdg_code=9000101, name='nt', antiname='nt~', spin=2, color=1,\n\
+         \x20             mass=Param.MLT, width=Param.ZERO, texname='n', antitexname='n',\n\
+         \x20             charge=0, GhostNumber=0, LeptonNumber=0)\n\
+         nt__tilde__ = nt.anti()\n\
+         ww__plus__ = Particle(pdg_code=9000102, name='ww+', antiname='ww-', spin=3, color=1,\n\
+         \x20                     mass=Param.MVT, width=Param.ZERO, texname='w', antitexname='w',\n\
+         \x20                     charge=1, GhostNumber=0, LeptonNumber=0)\n\
+         ww__minus__ = ww__plus__.anti()\n\
+         pp__plus__ = Particle(pdg_code=9000103, name='pp+', antiname='pp-', spin=1, color=1,\n\
+         \x20                     mass=Param.MVT, width=Param.ZERO, texname='p', antitexname='p',\n\
+         \x20                     {flag}\n\
+         \x20                     charge=1, GhostNumber=0, LeptonNumber=0)\n\
+         pp__minus__ = pp__plus__.anti()"
+    )
+}
+
+const CHARGED_VERTICES: &str = "\
+V_ntltww = Vertex(name='V_ntltww', particles=[P.nt__tilde__, P.lt, P.ww__plus__],
+                  color=['1'], lorentz=[L.FFV1], couplings={(0, 0): C.GC_LV})
+V_ltntww = Vertex(name='V_ltntww', particles=[P.lt__tilde__, P.nt, P.ww__minus__],
+                  color=['1'], lorentz=[L.FFV1], couplings={(0, 0): C.GC_LV})
+V_ntltpp = Vertex(name='V_ntltpp', particles=[P.nt__tilde__, P.lt, P.pp__plus__],
+                  color=['1'], lorentz=[L.FFS1], couplings={(0, 0): C.GC_LS})
+V_ltntpp = Vertex(name='V_ltntpp', particles=[P.lt__tilde__, P.nt, P.pp__minus__],
+                  color=['1'], lorentz=[L.FFS1], couplings={(0, 0): C.GC_LS})";
+
+/// The charged Goldstone enters the diagrams of `lt nt > lt nt` through the
+/// vertices it shares with a W-like vector, and a `GoldstoneBoson` flag removes
+/// exactly those diagrams in every spelling MadGraph's importer accepts, leaving
+/// the vector's.
+///
+/// The parser at a0a6eb4 (`vibegraph-lib/src/ufo/particles.rs` lines 233-235)
+/// reads only `goldstoneboson` and `goldstone`, so the `GoldstoneBoson` case fails
+/// there: the scalar stays in the enumeration and its count equals the unflagged
+/// one.
+#[test]
+fn a_charged_goldstone_flag_removes_its_diagrams_and_keeps_the_vectors() {
+    let process = "lt nt > lt nt";
+    let count = |flag: &str| {
+        let model = try_edited_toy_model(
+            &[],
+            &[
+                ("particles.py", &charged_goldstone_particles(flag)),
+                ("vertices.py", CHARGED_VERTICES),
+            ],
+        )
+        .unwrap_or_else(|e| panic!("load the charged-scalar toy model: {e}"));
+        diagram_count(&model, process)
+    };
+    let plain = count("");
+    for spelling in ["goldstoneboson", "GoldstoneBoson", "goldstone"] {
+        let flagged = count(&format!("{spelling}=True,"));
+        assert!(flagged > 0, "{spelling}: the vector's diagrams are kept");
+        assert!(
+            flagged < plain,
+            "{spelling}: {flagged} diagrams with the scalar flagged, {plain} without"
+        );
+    }
+}

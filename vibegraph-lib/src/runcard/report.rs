@@ -23,7 +23,7 @@ use serde_json::{Number, Value};
 use super::classes::{FieldClass, Stage, FIELD_CLASSES};
 pub use super::scan::UnknownKey;
 use super::scan::{scan, Scanned};
-use super::{param_default, ParamValue, RunCard, RunCardError, PARAM_DEFAULTS};
+use super::{canonical_name, param_default, ParamValue, RunCard, RunCardError, PARAM_DEFAULTS};
 use crate::cuts::{
     cutuse_refusal, describe, detect_unimplemented, inert_values, pdg_cut_refusal,
     unimplemented_cut_names, unimplemented_cut_refusal, CutError,
@@ -423,6 +423,18 @@ fn key_report(name: &'static str, entry: &TableEntry, cx: &KeyContext<'_>) -> Ke
         );
     } else if let Some(beam_sum) = cx.beam_sum {
         refusal = unimplemented_cut_refusal(name, &resolved_value, beam_sum).map(|e| e.to_string());
+    }
+    for key in &cx.scanned.unknown {
+        if key.problem == "placeholder" && canonical_name(&key.name) == Some(name) {
+            refusal = Some(
+                RunCardError::UnfilledPlaceholder {
+                    name: key.name.clone(),
+                    placeholder: key.value.clone(),
+                    line: key.line,
+                }
+                .to_string(),
+            );
+        }
     }
     if name == "cutuse" && cx.cutuse_refused.is_some() {
         refusal = cx.cutuse_refused.clone();

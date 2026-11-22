@@ -16,8 +16,7 @@ pub struct UnknownKey {
     pub value: String,
     /// `unknown_name` for a name MadGraph's template does not have,
     /// `malformed_value` for a known name whose value does not parse, or
-    /// `placeholder` for a `$`-led template line the parser skips, leaving that
-    /// parameter at its default.
+    /// `placeholder` for a `$`-led template line, which the parser refuses.
     pub problem: &'static str,
 }
 
@@ -46,6 +45,11 @@ pub(super) fn scan(text: &str) -> Scanned {
         let Some((value_tok, name)) = split_line(raw) else {
             let body = raw.split(['#', '!']).next().unwrap_or("").trim();
             if let Some((value, name)) = body.rsplit_once('=').filter(|_| body.starts_with('$')) {
+                first_error.get_or_insert(RunCardError::UnfilledPlaceholder {
+                    name: name.trim().to_string(),
+                    placeholder: value.trim().to_string(),
+                    line: line_no,
+                });
                 unknown.push(UnknownKey {
                     name: name.trim().to_string(),
                     line: line_no,

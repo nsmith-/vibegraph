@@ -108,6 +108,18 @@ MLM matching on a 1→n decay is refused permanently: a decay has no incoming
 partons to cluster against ([mlm-not-on-decays](../decisions/mlm-not-on-decays.md)).
 NLO is out of scope ([beyond leading order](beyond-leading-order.md)).
 
+`time_of_flight` at its off value, `-1`, is the only reading supported; any
+value of 0 or more is refused by name. MadGraph reads such a value as a
+threshold in mm: its `add_time_of_flight` step
+(`common_run_interface.py`, `do_add_time_of_flight`) draws, for every event
+particle whose `param_card` width is nonzero, a decay length
+`c * Exp(width / hbar)` with Python's unseeded `random.expovariate` and writes
+it as that particle's `VTIMUP` when it exceeds the threshold. The draw is
+independent of the matrix element, so a cross section is unaffected, but
+matching it needs a width per particle, an event-record RNG stream that leaves
+the unweighting stream untouched, and the run card's value at `generate`, which
+reads none. It is not planned.
+
 ## Deviating from MadGraph
 
 Within scope the goal is parity with MadGraph. Where MadGraph is wrong or

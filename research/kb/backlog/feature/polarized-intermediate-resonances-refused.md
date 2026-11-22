@@ -25,3 +25,5 @@ area; there are no open PRs on the repository now (checked 2026-10-06).
 
 The `check.rs` module table marks the propagator-only codes "(not planned)",
 while the backlog lists them as in scope; one of the two needs correcting.
+
+**Post-release campaign `v022-1009`, seed 1 (v0.2.2, 2026-11-22).** 23 refusals: 14 have a polarized decaying resonance in a decay chain, and 9 have a polarized massive leg with a non-default `me_frame`.
