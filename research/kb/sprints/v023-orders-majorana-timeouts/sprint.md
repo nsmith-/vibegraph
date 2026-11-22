@@ -157,7 +157,9 @@ The `gen_reweight_oracle.py` rows with `change helicity True` must agree event b
 | Item | Pri |
 |---|---|
 | `bstar-tw-zero-effective-points` | medium |
-| The items sprint K files after the v022-1009 verdicts: the TpTp zero |M|², the QCD_bEnriched, WBQ and TCP offsets, and QCD-4Jets | — |
+| `tptp-integrand-zero-on-every-point`, raised from low by sprint K's close-out (cards 108 and 510–512) | high |
+| `sigma-reads-high-on-mlm-and-wbq-cards` (QCD_bEnriched 188/189, WBQ 260, TCP 967–969) | medium |
+| The QCD-4Jets item, if sprint K files one after the verdicts | — |
 | `stitch-set-sign-assert-panics` | low |
 | `g2hdm-mlm-sigma-unmeasured` (closes on the batch campaign's workday round) | medium |
 
