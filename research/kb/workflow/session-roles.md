@@ -35,7 +35,9 @@ documentation. On that reading:
 
 So sprint sessions address reports to the router with a `To: vg-planner` line,
 and the planner sends them instructions the same way. The validator, batch and
-simshop sessions message the planner directly.
+simshop sessions message the planner directly. They can also send through the
+router, with a `To:` line naming one or more sessions, to reach a sprint session.
+The router forwards verbatim and always copies the planner.
 
 ## Resources
 
