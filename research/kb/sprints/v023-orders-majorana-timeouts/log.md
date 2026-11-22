@@ -4,3 +4,5 @@
 * **Plan drafted** by the vibegraph manager session from the user's scope decisions (2026-11-20 to 2026-11-22). It is filed as a draft before any dispatch.
 * **Hosts.** The sprint runs as two sessions, L-A (amplitudes and physics) and L-B (refusals, reports and performance), each in a 4-core, 15 GB container. Long runs go to the CERN host on local branch builds; its batch takes release binaries only.
 * **Waiting on:** the CERN host's MadGraph 3.7.1 run on DY1j cards 408 and 410 (PR 6), and v022-1009's final verdict table with the refusal and timeout breakdown (PRs 3 and 11).
+* **DY1j closed** (sprint K, from the CERN host's MadGraph 3.7.1 run on cards 408–411). vibegraph agrees with 3.7.1 to 0.16% or better, and MadGraph 2.9.18 is the outlier. PR 6 is dropped. The interim seed-1 refusal counts replace the earlier census counts in PRs 1 and 2.
+* **v0.3 split** decided by the user: `release/v0.2` is cut at the v0.2.3 tag. `release-branch-ci-and-ruleset-missing` is filed and joins the exit criteria.
