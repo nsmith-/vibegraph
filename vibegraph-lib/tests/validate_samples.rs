@@ -125,7 +125,7 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// The p-value a column must clear.
 ///
 /// Chosen from the trial count, not from taste. A run takes the smallest p over
-/// every observable of every gating row on every seed: forty-two fixed-beam rows
+/// every observable of every gating row on every seed: forty fixed-beam rows
 /// and four proton ones, three seeds and seven to twenty-one observables each, and
 /// the observables of a `2 → 2` row are heavily correlated (both legs' `pT` are one
 /// number at fixed beams), so the draws from the null distribution number a few
@@ -133,12 +133,12 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// half a spurious failure per run, which would make the gate flap; at `1e-4` it is
 /// around 0.1.
 ///
-/// The measured minimum over every gating row and three seeds is `1.573e-4`
-/// (`ee_to_wpwm`, `pt(w+)`; per-seed `2.727e-2`, `1.116e-2`, `1.573e-4`), with
-/// `ee_to_wpwm_cw` at `7.791e-4`, `ddx_to_epemg` at `1.846e-3` and
-/// `uux_to_ttx_4f` at `2.079e-3` behind it,
-/// against `3.6e-6` and `0` for the two rows that used to disagree.
-/// `ee_to_wpwm` is the row to watch: it sits only `1.6x` above the floor.
+/// The measured minimum over every gating row and three seeds is `2.667e-3`
+/// (`uux_to_ttx_4f`, `y(t)`, seed `0x5a4d0003`), with `ddx_to_epemg` at
+/// `4.267e-3` and `uux_to_epemg` at `5.297e-3` behind it, against `3.6e-6` and
+/// `0` for the two rows that used to disagree. `ee_to_wpwm` and `ee_to_wpwm_cw`
+/// are not among them: their KS columns are informational ([`KS_INFO_ROWS`]),
+/// reading `5.742e-5` and `8.025e-5` on seed `0x5a4d0003`.
 /// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
 /// measures the reference's own sample, and its manifest note carries the
 /// measurement and the diagnosis.
@@ -158,14 +158,14 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// reference's sample rather than this side's — see the `ee_to_mumua` `samples`
 /// note in `validation/manifest.toml`.
 ///
-/// Two extra seeds do not move it. `probe_samples_p_floor_headroom` repeats the
-/// whole comparison over [`GEN_SEEDS`] plus two more: the five-seed minimum over
-/// the gating rows is the same `1.573e-4` on the same `ee_to_wpwm` `pt(w+)` and
-/// the same seed, with the two new seeds reading `4.765e-2` and `1.962e-2` on
-/// that row. Fifteen of the thirty-two gating rows move their own minimum
-/// downward, none below `5.483e-3`.
+/// Two extra seeds move it, as they are expected to.
+/// `probe_samples_p_floor_headroom` repeats the whole comparison over
+/// [`GEN_SEEDS`] plus two more: six of the forty gating rows move their own
+/// minimum downward, `ud_to_epemud_qcd0` to `4.880e-4` (`m(e+,u)`, seed
+/// `0x5a4d0005`, `4.9x` the floor; its three-seed minimum is `1.939e-2`) and
+/// the other five no lower than `1.196e-2`.
 ///
-/// That is the reading this floor is built to give, and it is why `1.6x` above
+/// That is the reading this floor is built to give, and it is why `4.9x` above
 /// it is not a margin running out. The statistic is the smallest of some
 /// hundreds of draws from a distribution that is uniform when the two samples
 /// agree, so its distance from the floor is set by how many draws are taken:

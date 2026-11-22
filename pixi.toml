@@ -111,8 +111,9 @@ validate-reweight = { cmd = "cargo test -p vibegraph-lib --test reweight_mg_orac
 validate-sigma-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture the_long_tier_sigma_rows_match_madgraph"
 # The 2 -> 6 rows' `samples` cells: grids at their `integrals` budget, then three
 # 20 000-event seeds each through the parallel accept/reject pass, compared with
-# MadGraph's banked events. About a quarter of an hour on four cores. Writes both
-# rows' `samples` cells; run it between `validate` and `validation-report`, as
+# MadGraph's banked events. About an hour on four cores, most of it the
+# bbx row's accept/reject at its 353 trials an event. Writes both rows'
+# `samples` cells; run it between `validate` and `validation-report`, as
 # validate-sigma-2to6.
 validate-samples-2to6 = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_samples -- --ignored --nocapture the_long_tier_sample_rows_match_madgraph"
 # The budget ladders behind the enforced cross sections' `neval`, five seeds a
