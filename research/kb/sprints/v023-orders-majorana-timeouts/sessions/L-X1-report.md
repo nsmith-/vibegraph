@@ -241,3 +241,20 @@ above shows no banked model does.
   refusal does not name the subprocess that carries the weight. Naming the top
   subprocess by weight share would have shortened this diagnosis from hours to
   minutes.
+
+## Manager addenda (after the session)
+
+- **The card 157 reconstruction matches the gridpack (host-measured).** The validator diffed
+  `cards/157/` at ff19928 against the staged campaign cards.
+  - proc_card is identical, apart from the order of `QED=0 QCD=0` and the gridpack's trailing `output` line.
+  - All 29 param_card entries and all 34 run_card entries set here have equal values in the gridpack's cards.
+  - The gridpack's cards also carry zero masses and widths, the internal MW, QNUMBERS blocks and template-default run-card entries.
+- **Enumerate diff (host-measured).**
+  - The 49 released PASS/FAIL cards on MSSM_SLHA2, NMSSMHET and loop_sm_twoscalar have identical diagram sets on v0.2.2 and ff19928, so the fix moves no released verdict.
+  - Bprime cards 156, 877 and 878 go from 396 to 198 diagrams; every removed diagram has a phi± propagator.
+- **The store models are not the gridpacks' bundled models.** I computed the validator's model-identity
+  hash (sha256 over the sorted lines `relpath<TAB>sha256(file)\n`, *.py only) on the current CMS-store tarballs:
+  - `Bprime_no_b_mass`: 48f991df0791 (store) against 3f142c212e44 (gridpack).
+  - `eVLQS012_v8_4FNS_UFO`: 2d5c0dc08a52 (store) against 0f2b2b305ab1 (gridpack).
+
+  The TpTp and bstar conclusions stand on the gridpacks' bundled models: the validator confirmed the zero coupling and ran the enumerate diff on them, and the 157 gate runs on them too. This session's local reduced-budget 157 run (2.18 ± 0.39 fb) used the store model, so it is indicative only. **Found:** the CMS-store tarball and a gridpack's bundled UFO can differ under the same model name, so a local reproduction of a campaign card should use the bundled copy.
