@@ -394,15 +394,23 @@ fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
     succeeded(&run);
     let notices = common::stderr_of(&run.output);
     let warnings: Vec<&str> = notices.lines().filter(|l| l.contains("ignored")).collect();
-    assert_eq!(warnings.len(), 3, "{notices}");
-    for (line, entry) in warnings.iter().zip([
+    assert_eq!(warnings.len(), 4, "{notices}");
+    assert!(
+        warnings
+            .iter()
+            .any(|l| l.contains("decay table (1 channels) below DECAY 1000022")),
+        "{notices}"
+    );
+    for entry in [
         "DECAY 1000022 sets 1",
         "MASS 1000022 sets 500",
         "nosuch 1 sets 2",
-    ]) {
+    ] {
         assert!(
-            line.contains(entry) && line.contains("model has no parameter there"),
-            "{entry}: {line}"
+            warnings
+                .iter()
+                .any(|l| l.contains(entry) && l.contains("model has no parameter there")),
+            "{entry}: {notices}"
         );
     }
     assert!(run.record() == default_run().record());

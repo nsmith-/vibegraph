@@ -64,19 +64,42 @@ All hermetic, debug build.
   warnings on stderr and the artifact record equals the default run's.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo fmt
   --all` applied; `pixi run kb-lint` -> `0 errors, 5 warnings` (pre-existing).
-- `cargo test --workspace` (log `lx2-full.log`): 19 suites `ok`, then
-  `committed_cli_reference_matches_the_binary` FAILED: I had hand-edited the
-  generated `docs/src/cli/reference.md`, which `scripts/gen-cli-docs.sh`
-  builds from the `--param-card` doc comment in `integrate.rs`. I reverted that
-  edit (`git checkout`), so the file is the committed one again, but I have
-  **not re-run** it, and cargo stopped at that binary, so the suites after
-  `cli_reference_docs` in cargo's order did not run. The gate is therefore not
-  fully green on this commit. Needed from the manager (cores permitting):
-  update the `--param-card` doc comment (integrate.rs, ~L429-435: "and an entry
-  the model has no parameter for" -> a code the model lacks inside a defined
-  block; ignored: an undefined block and an absent-particle MASS/DECAY),
-  run `scripts/gen-cli-docs.sh`, then `cargo test --workspace --no-fail-fast`.
-  I did not do it because the manager asked for no further cargo runs.
+- First `cargo test --workspace` (before the follow-up): 19 suites `ok`, then
+  `committed_cli_reference_matches_the_binary` FAILED, because I had hand-edited
+  the generated `docs/src/cli/reference.md`. Fixed properly in the follow-up:
+  the `--param-card` doc comment in `integrate.rs` is updated and
+  `scripts/gen-cli-docs.sh` regenerated the file.
+- Follow-up (commits `45e38a9d` and merge `9bf5f34f`): a decay table below a
+  `DECAY` line at an absent code is now ignored with that entry
+  (`IgnoredBecause::NoParticleTable`, warned, not carried to the `<slha>`
+  header; `ParamCard::without_decay_tables`). Tests:
+  `a_decay_table_for_an_absent_particle_is_ignored` (bind.rs: the table is
+  listed with 2 channels and sum 1.0, the table at code 6 is still carried, the
+  table at -24 still refused), the classification row's example now carries a
+  table (`Same` against the empty card, so a carried table would fail it), and
+  the CLI test counts four warnings.
+- Main merged (`origin/main` 4b132cc, squared orders). One conflict: main had
+  appended the HNL `ckmblock` note to the backlog item this session deletes;
+  resolved as deleted (the ruling answers that note). One missing
+  `squared_orders: None` in a literal PR 11 added
+  (`diagrams/chain.rs`, `opposite_sign_routes_to_one_graph_refuse_by_name`),
+  `None` being what main's own test literals use.
+- Hermetic suite with reference data hidden (`research/refs/mg5amcnlo`,
+  `validation/madgraph/output`, `validation/pdf/NNPDF23_lo_as_0130_qed` moved
+  to the scratchpad by `lx2-hidden.sh`, restored by its EXIT trap; confirmed
+  back with `ls -d` afterwards): `cargo test --workspace --no-fail-fast` ->
+  68 suites `ok`, 1 FAILED: `cli_param_card::
+  entries_the_model_has_no_parameter_for_are_ignored_with_warnings`, my own
+  test still expecting 3 warnings where the table adds a fourth (the
+  behaviour was right). Fixed; `cargo test -p vibegraph --test cli_param_card`
+  -> `9 passed; 0 failed` (run with the data back in place, not re-run hidden;
+  the test reads none of it).
+- `cargo fmt --all --check` OK; `cargo clippy --workspace --all-targets -- -D
+  warnings` clean, and clean again with `--features
+  vibegraph/extended-validation,vibegraph-lib/extended-validation`;
+  `pixi run kb-lint` -> `1351 concepts, 462 backlog items; 0 errors, 5 warnings`.
+- Not re-run after the last test fix: the full workspace suite (only the one
+  file changed, a test).
 
 **No banked sigma moves.** The change only turns entries that were refused into
 ignored ones; evaluation (`EvaluatedModel::from_model_card`) and every consumed
@@ -94,9 +117,8 @@ I did not run `validate` (CI's banked job does).
   particle.
 - Case 4 is exercised on a toy restriction and the SM's zeroed charm mass; the
   real HNL restrictions are not loaded here.
-- A decay *table* under an absent particle's `DECAY` line is still refused
-  (`DecayTableParticle`): the ruling covers entries, not tables, and no test
-  here has a gridpack card with one.
+- The ignored table is dropped from the `<slha>` header, which MadGraph would
+  copy verbatim; no test compares the header with MadGraph's for such a card.
 
 ## Validator request (manager sends; not run here)
 
@@ -108,15 +130,10 @@ Branch `sprintl-leftovers` at the commit of this session.
    rows' other cards.
 2. The DarkPhoton cards named in the item, untrimmed (MASS 1000022 present):
    they should bind with that entry ignored and the MZd of the card used; compare
-   with the hand-trimmed runs (0.985 and 0.971 of MG). If a card carries a
-   decay table under 1000022, expect `DecayTableParticle` (see above).
+   with the hand-trimmed runs (0.985 and 0.971 of MG). A decay table under 1000022 is ignored too.
 
 ## Found
 
-- A `DECAY <absent pdg>` line followed by a decay table is refused
-  (`DecayTableParticle`) although the entry itself now binds. Close by
-  deciding whether gridpack cards carry such tables; if so, carry or drop
-  them as MadGraph's header does.
 - `bind_card_under` names `restrict_<x>.dat` from the directive's variant;
   for an explicit `--restrict` path override the label is the variant, not the
   file. Close by passing the file name from `LoadedModel`.
