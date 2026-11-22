@@ -336,6 +336,10 @@ impl DiagramArtifact {
             &crate::diagrams::ParsingOptions::default(),
         )?;
         crate::diagrams::squared::annotate_sets(&mut artifact.sets, &card, &model.model)?;
+        if let Some(facts) = artifact.process_facts.as_mut() {
+            crate::config::set_interference_facts(facts, &card, &artifact.sets, &model.model)
+                .map_err(|e| DiagramArtifactError::Facts(e.into()))?;
+        }
         Ok((artifact, model))
     }
 }
@@ -373,9 +377,10 @@ mod tests {
     /// its rebuilt model gives every particle of every set the same id under the
     /// same name as the model the sets were enumerated against.
     ///
-    /// Cannot detect a field serde skips on both sides symmetrically (none is
-    /// marked to be skipped), nor a difference in the rebuilt model outside its
-    /// particle table and names.
+    /// Cannot detect a field serde skips on both sides symmetrically (the one
+    /// marked to be skipped, the squared-order selection, has its own round
+    /// trip below), nor a difference in the rebuilt model outside its particle
+    /// table and names.
     #[test]
     fn round_trip_preserves_sets_digest_and_model() {
         let dir = scratch();
@@ -438,6 +443,35 @@ mod tests {
                 original.model.particle_names().resolve(alias),
                 "{alias}"
             );
+        }
+    }
+
+    /// The squared-order selection is not serialized and the reader derives it
+    /// again from the recorded card: a card with squared orders reads back with
+    /// the selection it was enumerated with, set by set, and a card without
+    /// reads back with none. Without the derivation the first comparison fails,
+    /// since the bytes carry no selection.
+    #[test]
+    fn round_trip_derives_the_squared_order_selection() {
+        let dir = scratch();
+        for (card, selected) in [
+            (
+                "generate u u~ > u u~ QCD^2==2 @1\nadd process d d~ > d d~ @2\n",
+                [true, false],
+            ),
+            ("generate u u~ > u u~ aS=1\n", [true, true]),
+        ] {
+            let path = dir.path().join("diagrams.bin.zst");
+            let artifact = enumerate(card, EnumerationPool::Serial);
+            artifact.write_to_path(&path, true).unwrap();
+            let (read, _) = DiagramArtifact::read_from_path(&path).unwrap();
+            assert_eq!(read.sets.len(), artifact.sets.len(), "{card}");
+            for (i, (a, b)) in artifact.sets.iter().zip(&read.sets).enumerate() {
+                assert_eq!(a.squared_orders, b.squared_orders, "{card}: set {i}");
+                if i < selected.len() {
+                    assert_eq!(b.squared_orders.is_some(), selected[i], "{card}: set {i}");
+                }
+            }
         }
     }
 

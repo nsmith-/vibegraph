@@ -314,15 +314,24 @@ pub fn process_facts(
         .iter()
         .any(|p| !p.forbidden_onshell_s_channels.is_empty());
     let qcd_free = parsed.processes.iter().all(bounds_qcd_at_zero);
-    facts.interference = parsed.processes.iter().any(prints_squared_orders);
-    let single = if qcd_free || facts.interference {
-        single_color(sets, model)?
-    } else {
-        false
-    };
-    facts.qcd_free_single_color = qcd_free && single;
-    facts.interference_single_color = facts.interference && single;
+    facts.qcd_free_single_color = qcd_free && single_color(sets, model)?;
+    set_interference_facts(&mut facts, parsed, sets, model)?;
     Ok(facts)
+}
+
+/// Set the [`ProcessFacts::interference`] and
+/// [`ProcessFacts::interference_single_color`] of `facts` from the card and its
+/// sets. They are not serialized, so a diagram artifact's reader sets them here
+/// again from the card it records.
+pub(crate) fn set_interference_facts(
+    facts: &mut ProcessFacts,
+    parsed: &SupportedCard,
+    sets: &[DiagramSet],
+    model: &UFOModel,
+) -> Result<(), ColorAlgebraError> {
+    facts.interference = parsed.processes.iter().any(prints_squared_orders);
+    facts.interference_single_color = facts.interference && single_color(sets, model)?;
+    Ok(())
 }
 
 /// Whether a process line bounds `QCD` at 0 in MadGraph's `orders`, which
@@ -643,10 +652,8 @@ mod tests {
             .iter()
             .any(|p| !p.forbidden_onshell_s_channels.is_empty());
         let qcd_free = parsed.processes.iter().all(bounds_qcd_at_zero);
-        facts.interference = parsed.processes.iter().any(prints_squared_orders);
-        let single = (qcd_free || facts.interference) && single_color(&sets, model).unwrap();
-        facts.qcd_free_single_color = qcd_free && single;
-        facts.interference_single_color = facts.interference && single;
+        facts.qcd_free_single_color = qcd_free && single_color(&sets, model).unwrap();
+        set_interference_facts(&mut facts, parsed, &sets, model).unwrap();
         facts
     }
 

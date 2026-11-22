@@ -1690,6 +1690,32 @@ mod tests {
     use super::audit::ReweightAudit;
     use super::*;
 
+    /// A selection that keeps the QCD-electroweak interference alone has a
+    /// signed |M|² and is refused by name; the pure-QCD square and a card with
+    /// no squared order are not.
+    #[test]
+    fn a_signed_squared_order_selection_is_refused() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let sets = |card: &str| {
+            let parsed = parse_proc_card(card, &ParsingOptions::default()).unwrap();
+            generate_from_proc_card(&parsed, &model).unwrap()
+        };
+        let signed = refuse_signed_matrix_elements(&sets("generate u u~ > u u~ QCD^2==2"), &model);
+        assert!(
+            matches!(signed, Err(GenerateError::SignedMatrixElement { .. })),
+            "{signed:?}"
+        );
+        for card in ["generate u u~ > u u~ QCD^2==4", "generate u u~ > u u~"] {
+            assert!(
+                refuse_signed_matrix_elements(&sets(card), &model).is_ok(),
+                "{card}"
+            );
+        }
+    }
+
     /// A sampled-point fault read after the event file is in place refuses the
     /// run and takes the file with it; with no fault the file stays.
     #[test]

@@ -102,7 +102,7 @@ pub struct AmplitudeEvaluator {
     /// Per colour flow `i`, the JAMP pairs `(x, y)` of that flow whose classes'
     /// term is selected: MadGraph's `JAMP2(i) = Σ_{M,N} |Re JAMP(i,M)·JAMP(i,N)*|`
     /// over the selected class pairs. Empty without a split.
-    jamp2_pairs: Vec<(usize, usize, usize)>,
+    jamp2_pairs: Vec<Jamp2Pair>,
     /// The colour rep and direction of every external leg, in process order — the
     /// legs `color_flow_tags` was derived and checked against.
     leg_colors: Vec<LegColor>,
@@ -486,7 +486,7 @@ impl AmplitudeEvaluator {
 
     /// The JAMP pairs `(x, y, flow)` MadGraph's split `JAMP2(flow)` sums
     /// `|Re J_x J_y*|` over; empty without a squared-order split.
-    pub(crate) fn jamp2_pairs(&self) -> &[(usize, usize, usize)] {
+    pub(crate) fn jamp2_pairs(&self) -> &[Jamp2Pair] {
         &self.jamp2_pairs
     }
 
@@ -746,6 +746,9 @@ impl AmplitudeEvaluator {
     }
 }
 
+/// Two JAMPs `(x, y)` of one colour flow whose term `JAMP2(flow)` sums.
+type Jamp2Pair = (usize, usize, usize);
+
 /// How a subprocess's JAMPs are split by coupling order, and which class pairs
 /// its |M|² keeps: MadGraph's split-order matrix element
 /// (`get_split_orders_mapping` and `set_chosen_SO_index`, `export_v4.py:1171`).
@@ -789,7 +792,7 @@ impl OrderSplit {
         cf: &[Ratio<i64>],
         n_flows: usize,
         slots: &[(usize, usize)],
-    ) -> (Vec<Ratio<i64>>, Vec<(usize, usize, usize)>) {
+    ) -> (Vec<Ratio<i64>>, Vec<Jamp2Pair>) {
         let n = self.classes.len();
         let keep = |a: usize, b: usize| self.selected[a * n + b];
         let mut weights = Vec::with_capacity(slots.len() * slots.len());

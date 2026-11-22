@@ -107,14 +107,18 @@ pub struct ProcessFacts {
     /// than `WEIGHTED`, which MadGraph's process string prints with `^2`: its
     /// interference defaults, `use_syst = F`, `systematics_program = none`,
     /// `dynamical_scale_choice = 3` and `sde_strategy = 2`
-    /// (`banner.py:4969-4988`).
+    /// (`banner.py:4969-4988`). Not serialized: a diagram artifact's reader
+    /// derives it again from the card it records, so artifacts of cards without
+    /// squared orders keep their bytes.
+    #[serde(skip)]
     pub interference: bool,
     /// With [`interference`](Self::interference): the colour basis of every
     /// subprocess has a single power of `Nc` (MadGraph's `single_color`). Its
     /// single-colour block then sets `sde_strategy` back to 1 where some line
     /// does not bound `QCD` at 0, or the final state is all leptons and photons
     /// from partonic beams (`banner.py:4993-5014`). Not computed without
-    /// interference.
+    /// interference. Not serialized, as [`interference`](Self::interference).
+    #[serde(skip)]
     pub interference_single_color: bool,
 }
 
