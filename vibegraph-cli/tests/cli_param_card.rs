@@ -388,17 +388,23 @@ fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
     let run = integrate(
         "absent",
         Some(
-            "Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n 1.0 2 11 -11\n",
+            "Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n 1.0 2 11 -11\nDECAY 1000023 Auto\n",
         ),
     );
     succeeded(&run);
     let notices = common::stderr_of(&run.output);
     let warnings: Vec<&str> = notices.lines().filter(|l| l.contains("ignored")).collect();
-    assert_eq!(warnings.len(), 4, "{notices}");
+    assert_eq!(warnings.len(), 5, "{notices}");
     assert!(
         warnings
             .iter()
             .any(|l| l.contains("decay table (1 channels) below DECAY 1000022")),
+        "{notices}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|l| l.contains("DECAY 1000023 Auto is for a particle the model does not have")),
         "{notices}"
     );
     for entry in [
@@ -416,18 +422,50 @@ fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
     assert!(run.record() == default_run().record());
 }
 
+/// `DECAY 24 Auto` integrates to the same artifact, bit for bit but for the
+/// banked card text, as the card it banks: the card with the computed width and
+/// table written in place of `Auto`, as MadGraph writes the card it runs from.
+/// The computed width moves WW off the restriction's default, so the run is not
+/// the default one.
+#[test]
+fn an_auto_width_integrates_as_the_card_it_banks() {
+    let auto = integrate("auto_w", Some("DECAY 24 Auto\n"));
+    succeeded(&auto);
+    let banked = auto.read().param_card.expect("the card is banked");
+    assert!(
+        banked.contains("# WW Auto: tree_level_two_body width computed by vibegraph"),
+        "{banked}"
+    );
+    assert!(banked.lines().any(|l| l.starts_with("#  BR")), "{banked}");
+    let typed = integrate("auto_w_typed", Some(&banked));
+    succeeded(&typed);
+    assert!(typed.read().param_card.as_deref() == Some(banked.as_str()));
+    assert!(auto.record() == typed.record());
+    assert!(auto.record() != default_run().record());
+}
+
 /// Each card `integrate` refuses, by what its message says; none writes an
 /// artifact.
 #[test]
 fn cards_the_model_cannot_honour_are_refused() {
     for (name, card, says) in [
         (
-            "auto",
-            "DECAY 25 Auto\n",
+            "auto_z",
+            "DECAY 23 Auto\n",
             &[
-                "width of particle 25 to Auto",
-                "not supported yet",
-                "give the width",
+                "width of particle 23 to Auto",
+                "Z > W+ e- ve~ (through W-)",
+                "two-body widths only",
+                "may include such modes",
+            ][..],
+        ),
+        (
+            "auto",
+            "DECAY 22 Auto\n",
+            &[
+                "width of particle 22 to Auto",
+                "cannot be computed",
+                "no width parameter",
             ][..],
         ),
         (

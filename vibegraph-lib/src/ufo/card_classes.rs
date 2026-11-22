@@ -236,10 +236,10 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
     },
     Construct {
         name: "`DECAY <pdg> Auto`",
-        madgraph: "MadWidth computes the width at launch",
-        class: Refused("no width is computed here"),
-        example: Text("DECAY 23 Auto\n"),
-        expect: Error("computes at launch"),
+        madgraph: "MadWidth computes the width at launch (static_check_param_card)",
+        class: Consumed("bind_card, as the tree-level two-body width crate::widths computes"),
+        example: Text("DECAY 24 Auto\n"),
+        expect: Differs(Text("")),
     },
     Construct {
         name: "a `DECAY` line with fields after the width",
@@ -553,7 +553,7 @@ pub(crate) const RESTRICT_CARD: &[Construct] = &[
     Construct {
         name: "`DECAY <pdg> Auto`",
         madgraph: "kept free and written as Auto for MadWidth (modify_autowidth, L2386)",
-        class: Refused("no width is computed here"),
+        class: Refused("a restriction's default is a number, which nothing computes at load"),
         example: Edits(&[("DECAY   6 1.491500E+00", "DECAY   6 Auto")]),
         expect: Error("computes at launch"),
     },

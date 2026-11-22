@@ -420,16 +420,39 @@ impl ParamCard {
         &self.decay_tables
     }
 
-    /// The card without the decay tables of the particles `drop` selects.
-    pub(crate) fn without_decay_tables(&self, drop: impl Fn(i32) -> bool) -> ParamCard {
+    /// The card without the decay tables and `Auto` widths of the particles
+    /// `drop` selects.
+    pub(crate) fn without_absent_decays(&self, drop: impl Fn(i32) -> bool) -> ParamCard {
         let mut card = self.clone();
         card.decay_tables.retain(|t| !drop(t.pdg));
+        card.auto_widths.retain(|&pdg| !drop(pdg));
         card
     }
 
     /// Add `table` to the card's decay tables.
     pub(crate) fn push_decay_table(&mut self, table: DecayTable) {
         self.decay_tables.push(table);
+    }
+
+    /// The card with each `(pdg, width)` of `widths` written as a number on its
+    /// `DECAY` line, in place of the `Auto` there: the code leaves
+    /// [`auto_widths`](Self::auto_widths), and the table below the line, if the
+    /// card gives one, is replaced by `tables`' table for that code, or dropped
+    /// when `tables` has none or an empty one.
+    pub(crate) fn with_widths_set(&self, widths: &[(i32, f64)], tables: &[DecayTable]) -> Self {
+        let mut card = self.clone();
+        for &(pdg, width) in widths {
+            card.auto_widths.retain(|&c| c != pdg);
+            card.insert("decay", vec![pdg], width);
+            card.decay_tables.retain(|t| t.pdg != pdg);
+        }
+        card.decay_tables.extend(
+            tables
+                .iter()
+                .filter(|t| !t.channels.is_empty() && widths.iter().any(|&(pdg, _)| pdg == t.pdg))
+                .cloned(),
+        );
+        card
     }
 }
 

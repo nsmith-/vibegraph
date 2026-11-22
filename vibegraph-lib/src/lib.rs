@@ -33,3 +33,4 @@ pub mod unweight;
 #[cfg(feature = "extended-validation")]
 pub mod validation;
 pub mod vegas;
+pub mod widths;
