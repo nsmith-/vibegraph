@@ -387,7 +387,9 @@ fn a_dependent_mass_is_ignored_with_a_warning() {
 fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
     let run = integrate(
         "absent",
-        Some("Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n"),
+        Some(
+            "Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n 1.0 2 11 -11\n",
+        ),
     );
     succeeded(&run);
     let notices = common::stderr_of(&run.output);

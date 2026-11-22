@@ -29,7 +29,8 @@
 //!   `DECAY` entry at a code no particle of the model has, is ignored and
 //!   listed in [`BoundCard::ignored`]: MadGraph reads only the entries the
 //!   model's `ident_card` names (`write_inc_file`, `check_param_card.py`), so
-//!   a card written for a larger model binds. The `QNUMBERS` blocks that
+//!   a card written for a larger model binds; a decay table below such a
+//!   `DECAY` line goes with it. The `QNUMBERS` blocks that
 //!   declare a new state's quantum numbers are not parameters either.
 //! * A code the model has no parameter for inside a block it does define is
 //!   refused: a mistyped code would leave the parameter the card meant at its
@@ -187,6 +188,9 @@ pub enum IgnoredBecause {
     /// No parameter of the model sits at the entry: its block is none the model
     /// defines, or it is a `MASS` or `DECAY` entry at a code no particle has.
     NoParameter,
+    /// The decay table below a `DECAY` line at a code no particle of the model
+    /// has; [`IgnoredEntry::card`] is the sum of its branching ratios.
+    NoParticleTable { channels: usize },
 }
 
 /// A card entry the binding ignored.
@@ -371,6 +375,19 @@ enum Aside {
         code: String,
         value: f64,
     },
+    Table {
+        pdg: i32,
+        channels: usize,
+        branching: f64,
+    },
+}
+
+/// Whether `model` has a physical particle with the positive code `|pdg|`.
+fn has_particle(model: &UFOModel, pdg: i32) -> bool {
+    model
+        .particles
+        .values()
+        .any(|p| p.pdg_code == i64::from(pdg).abs() && !p.is_unphysical())
 }
 
 /// Whether some external parameter of `model` sits in `block`, case aside.
@@ -421,9 +438,26 @@ fn bind_card_named(
     for &pdg in card.auto_widths() {
         errors.push(CardError::AutoWidth { pdg });
     }
-    errors.extend(unwritable_tables(&model, card.decay_tables()));
-
+    // A table below a `DECAY` line at a code no particle has is part of that
+    // ignored entry; the others are held to what the header can write.
+    let (absent, present): (Vec<&DecayTable>, Vec<&DecayTable>) = card
+        .decay_tables()
+        .iter()
+        .partition(|t| !has_particle(&model, t.pdg));
+    errors.extend(unwritable_tables(
+        &model,
+        &present.into_iter().cloned().collect::<Vec<_>>(),
+    ));
+    let card = &card.without_decay_tables(|pdg| !has_particle(&model, pdg));
     let mut aside: Vec<Aside> = Vec::new();
+    for table in absent {
+        aside.push(Aside::Table {
+            pdg: table.pdg,
+            channels: table.channels.len(),
+            branching: table.channels.iter().map(|c| c.branching_ratio).sum(),
+        });
+    }
+
     for (block, code, value) in card.entries() {
         if !value.is_finite() {
             errors.push(CardError::NonFinite {
@@ -522,6 +556,16 @@ fn bind_card_named(
                 code,
                 card: value,
                 why: IgnoredBecause::NoParameter,
+            }),
+            Aside::Table {
+                pdg,
+                channels,
+                branching,
+            } => Some(IgnoredEntry {
+                block: "DECAY".to_string(),
+                code: pdg.to_string(),
+                card: branching,
+                why: IgnoredBecause::NoParticleTable { channels },
             }),
         })
         .collect();
@@ -740,6 +784,38 @@ mod tests {
         );
     }
 
+    /// A decay table below a `DECAY` line at a code no particle has is ignored
+    /// with the line, listed once with its channel count, and not carried; a
+    /// table at a code the model has is carried as before.
+    #[test]
+    fn a_decay_table_for_an_absent_particle_is_ignored() {
+        let bound =
+            bind("DECAY 1000022 1.0\n 0.6 2 11 -11\n 0.4 2 13 -13\nDECAY 6 1.5\n 1.0 2 5 24\n")
+                .unwrap();
+        assert_eq!(bound.evaluated.decay_tables().len(), 1);
+        assert_eq!(bound.evaluated.decay_tables()[0].pdg, 6);
+        let table = bound
+            .ignored
+            .iter()
+            .find(|e| matches!(e.why, IgnoredBecause::NoParticleTable { .. }))
+            .expect("the table is listed");
+        assert_eq!(
+            (table.block.as_str(), table.code.as_str()),
+            ("DECAY", "1000022")
+        );
+        assert_eq!(table.why, IgnoredBecause::NoParticleTable { channels: 2 });
+        assert!((table.card - 1.0).abs() < 1e-12);
+        assert!(bound
+            .ignored
+            .iter()
+            .any(|e| e.why == IgnoredBecause::NoParameter));
+        // An antiparticle's code the model has is still refused.
+        assert!(matches!(
+            bind("DECAY -24 2.085\n 1.0 2 11 -12\n"),
+            Err(CardError::DecayTableParticle { pdg: -24 })
+        ));
+    }
+
     /// A block no parameter of the model sits in, and a `MASS` or `DECAY` entry
     /// at a code no particle has, bind as the card without them and are listed.
     #[test]
@@ -794,7 +870,7 @@ mod tests {
                     e.code.parse().unwrap(),
                     e.card,
                 ),
-                IgnoredBecause::NoParameter => panic!("{e:?}"),
+                _ => panic!("{e:?}"),
             })
             .collect();
         assert_eq!(
@@ -916,7 +992,7 @@ v = Parameter(name = 'v', nature = 'external', type = 'real', value = 0.8, texna
                 IgnoredBecause::Computed { param, .. } => {
                     (param.as_str(), e.code.parse().unwrap(), e.card)
                 }
-                IgnoredBecause::NoParameter => panic!("{e:?}"),
+                _ => panic!("{e:?}"),
             })
             .collect();
         assert_eq!(ignored, [("MW", 24, 80.419)]);

@@ -430,9 +430,12 @@ pub(crate) struct IntegrateArgs {
     /// the card moves, and `generate` evaluates at those values. Refused: a
     /// width given as `Auto`, a non-zero value for a parameter the restriction
     /// fixed to zero, a value other than one for a parameter it fixed to one, a
-    /// move that splits parameters the restriction merged, and an entry the
-    /// model has no parameter for. A mass or width the model
-    /// computes (MW in the SM) is ignored, with a warning when it disagrees.
+    /// move that splits parameters the restriction merged, and a code the model
+    /// has no parameter for inside a block it does define. A mass or width the
+    /// model computes (MW in the SM) is ignored, with a warning when it
+    /// disagrees; so is an entry in a block the model does not define, and a
+    /// `MASS` or `DECAY` entry (with its decay table) at a code no particle of
+    /// the model has, as MadGraph reads only the model's own parameters.
     #[arg(long)]
     pub(crate) param_card: Option<PathBuf>,
 
@@ -1442,6 +1445,13 @@ pub(crate) fn bind_param_card(
                 param,
                 ignored.card,
                 computed,
+            ),
+            IgnoredBecause::NoParticleTable { channels } => warn!(
+                "{}: the decay table ({} channels) below DECAY {} is for a particle the model does \
+                 not have, so the table is ignored",
+                path.display(),
+                channels,
+                ignored.code,
             ),
             IgnoredBecause::NoParameter => warn!(
                 "{}: {} {} sets {}, and the model has no parameter there; MadGraph reads only \

@@ -189,13 +189,14 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
         expect: Same(Text("")),
     },
     Construct {
-        name: "a `MASS` or `DECAY` entry at a code no particle of the model has",
+        name:
+            "a `MASS` or `DECAY` entry (and its decay table) at a code no particle of the model has",
         madgraph: "never read: write_inc_file reads only the model's ident_card (L656)",
         class: IgnoredBenign(
-            "the model has no particle there, so no mass or width reads the entry; listed in \
-             BoundCard::ignored and warned",
+            "the model has no particle there, so no mass or width reads the entry, and the \
+             header carries no table for it; listed in BoundCard::ignored and warned",
         ),
-        example: Text("Block MASS\n 1000022 5.0e2\nDECAY 1000022 1.0\n"),
+        example: Text("Block MASS\n 1000022 5.0e2\nDECAY 1000022 1.0\n 1.0 2 11 -11\n"),
         expect: Same(Text("")),
     },
     Construct {

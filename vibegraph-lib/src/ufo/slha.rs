@@ -420,6 +420,13 @@ impl ParamCard {
         &self.decay_tables
     }
 
+    /// The card without the decay tables of the particles `drop` selects.
+    pub(crate) fn without_decay_tables(&self, drop: impl Fn(i32) -> bool) -> ParamCard {
+        let mut card = self.clone();
+        card.decay_tables.retain(|t| !drop(t.pdg));
+        card
+    }
+
     /// Add `table` to the card's decay tables.
     pub(crate) fn push_decay_table(&mut self, table: DecayTable) {
         self.decay_tables.push(table);
