@@ -132,6 +132,42 @@ Branch `sprintl-leftovers` at the commit of this session.
    they should bind with that entry ignored and the MZd of the card used; compare
    with the hand-trimmed runs (0.985 and 0.971 of MG). A decay table under 1000022 is ignored too.
 
+## Merge of main with Auto widths (e99f8ba2)
+
+Conflicts in `bind.rs`, `enumerate.rs`, `integrate.rs`, `cli_param_card.rs`
+and `reference.md`; both behaviours kept.
+- `bind_card_named` drops, before anything else reads the card, the decay
+  tables and `Auto` widths at codes no model particle has
+  (`ParamCard::without_absent_decays`), listing each as an ignored entry
+  (`NoParticleTable`, `NoParticleAuto`). Everything else follows PR 9's path
+  unchanged: `auto_width_params`, `resolve_auto_widths`, `BoundCard::auto_widths`.
+- `DECAY <code> Auto` at a code the model has is computed (PR 9). At an absent
+  code PR 9 refused it (`UnknownParticle`); I chose to ignore it, because
+  the ruling's case 2 covers a `DECAY` entry at an absent code and MadGraph
+  reads only the model's own parameters. A negative code whose positive is a
+  model particle (`DECAY -24 Auto`) is still refused by PR 9's check. PR 9's
+  test that `DECAY 9999 Auto` is refused is replaced by
+  `an_auto_width_at_an_absent_code_is_ignored_and_at_a_present_one_computed`
+  (absent alone moves nothing and is listed; absent beside `DECAY 24 Auto`
+  gives the same width, moves and table as `DECAY 24 Auto` alone); the
+  several-refusals test now pairs `DECAY 22 Auto` with `DECAY -23 Auto`.
+- `bind_param_card` now returns PR 9's `BoundParamCard` and takes the
+  restriction name; `enumerate` binds once and passes the result (so
+  `flavour_preview` lost its restriction argument), and `parameters.rs`, new
+  from PR 9, passes `identity.restrict`. The CLI test also puts `DECAY
+  1000023 Auto` in the absent-entries card (5 warnings).
+- `docs/src/cli/reference.md` regenerated with `scripts/gen-cli-docs.sh`.
+
+Gates at `9e7c72a2` (the merge commit):
+- Hidden-data run (the three directories moved out by `lx2-hidden.sh`, then
+  restored and confirmed with `ls -d`): `cargo test --workspace --no-fail-fast`
+  -> rc 0, 70 suites `ok`, 0 FAILED.
+- `cargo fmt --all --check` OK; `cargo clippy --workspace --all-targets -- -D
+  warnings` clean, and clean with `--features
+  vibegraph/extended-validation,vibegraph-lib/extended-validation`;
+  `pixi run kb-lint` -> `1352 concepts, 461 backlog items; 0 errors, 5 warnings`.
+- Nothing changed after the hidden-data run except this report.
+
 ## Found
 
 - `bind_card_under` names `restrict_<x>.dat` from the directive's variant;
