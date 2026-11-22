@@ -6,9 +6,14 @@
 //! check around it that a run at a card must pass first, and the record of
 //! what the card moved:
 //!
-//! * `DECAY <pdg> Auto` is refused: MadGraph computes such a width at launch
-//!   (MadWidth) and writes the number into the card it runs from, which is the
-//!   card to give here.
+//! * `DECAY <pdg> Auto` binds the width to its tree-level two-body value,
+//!   computed from the model at the card's other parameters
+//!   ([`crate::widths`]), as MadGraph computes it at launch (MadWidth) and
+//!   writes the number into the card it runs from: the bound value is that
+//!   number, to the seven digits MadGraph writes, and the table below the
+//!   `DECAY` line is the computed channels' ([`BoundCard::auto_widths`]). A width
+//!   that cannot be computed as MadGraph would is refused naming why
+//!   ([`CardError::AutoWidth`]).
 //! * A non-zero value for a parameter the restriction fixed to zero is refused:
 //!   the restriction also pruned the vertices that parameter feeds, so the
 //!   model could not honour it.
@@ -39,14 +44,18 @@
 //!
 //! Every entry refused is reported at once ([`CardError::Several`]).
 
+use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use thiserror::Error;
+use tracing::warn;
 
 use super::parameters::{ParamNature, ParameterSet};
 use super::slha::{code_text, ParamCard};
 use super::{EvaluatedModel, UFOModel};
 use crate::artifact::{DecayTable, MovedParam};
+use crate::widths::{check_given_table, compute_width, AutoWidthError, ComputedWidth};
 
 /// How far a card's entry for a computed mass or width may sit from the value
 /// the model computes, relative, before it is reported. MadGraph writes those
@@ -58,12 +67,14 @@ const DEPENDENT_TOLERANCE: f64 = 1e-6;
 #[derive(Clone, Debug, PartialEq, Error)]
 pub enum CardError {
     #[error(
-        "the card sets the width of particle {pdg} to Auto, which MadGraph computes at launch; \
-         computing Auto widths is not supported yet, so give the width as a number, or use the \
-         param_card.dat MadGraph wrote for the run (a gridpack's Cards/param_card.dat), where \
-         it has been computed"
+        "the card sets the width of particle {pdg} to Auto, which cannot be computed: {reason}"
     )]
-    AutoWidth { pdg: i32 },
+    AutoWidth { pdg: i32, reason: AutoWidthError },
+    #[error(
+        "the card sets the width of particle {pdg} to Auto, which only binding the card \
+         (bind_card) computes; this evaluation reads numbers only"
+    )]
+    AutoWidthUnbound { pdg: i32 },
     #[error(
         "the card sets {name} (block {block}, code {code}) to {value:e}, but the model's \
          restriction fixes it to zero and pruned the vertices it feeds; use a restriction that \
@@ -188,6 +199,11 @@ pub struct BoundCard {
     /// default, in the model's external order.
     pub moved: Vec<MovedParam>,
     pub ignored: Vec<IgnoredEntry>,
+    /// The widths the card set to `Auto`, as computed, in card order. Each
+    /// bound value is also in [`moved`](Self::moved) where it differs from the
+    /// default, and its decay table in the evaluation's
+    /// [`decay_tables`](EvaluatedModel::decay_tables).
+    pub auto_widths: Vec<ComputedWidth>,
 }
 
 /// The external parameter at `block` (case-insensitive) and `code`, with its
@@ -347,9 +363,7 @@ fn merge_splits(params: &ParameterSet, card: &ParamCard) -> Vec<CardError> {
 /// problem reports its entries' first.
 pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, CardError> {
     let mut errors: Vec<CardError> = Vec::new();
-    for &pdg in card.auto_widths() {
-        errors.push(CardError::AutoWidth { pdg });
-    }
+    let auto_params = auto_width_params(&model, card, &mut errors);
     errors.extend(unwritable_tables(&model, card.decay_tables()));
 
     let mut dependents: Vec<(&'static str, i32, String, f64)> = Vec::new();
@@ -400,6 +414,9 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
     errors.extend(merge_splits(&model.params, card));
     refuse_all(errors)?;
 
+    let (card, auto_widths) = resolve_auto_widths(&model, card, &auto_params)?;
+    let card = card.as_ref();
+
     let moved = bound_externals(&model.params, card)
         .filter(|b| b.value != b.default)
         .map(|b| MovedParam {
@@ -431,7 +448,137 @@ pub fn bind_card(model: Arc<UFOModel>, card: &ParamCard) -> Result<BoundCard, Ca
         evaluated,
         moved,
         ignored,
+        auto_widths,
     })
+}
+
+/// The width parameter of each code `card` sets to `Auto`, refusing a code that
+/// is not a physical particle's or whose width is not a free parameter.
+fn auto_width_params(
+    model: &UFOModel,
+    card: &ParamCard,
+    errors: &mut Vec<CardError>,
+) -> BTreeSet<String> {
+    let mut params = BTreeSet::new();
+    for &pdg in card.auto_widths() {
+        let refuse = |reason| CardError::AutoWidth { pdg, reason };
+        let particle = model
+            .particles
+            .values()
+            .find(|p| pdg > 0 && p.pdg_code == i64::from(pdg) && !p.is_unphysical());
+        let Some(particle) = particle else {
+            errors.push(refuse(AutoWidthError::UnknownParticle { pdg }));
+            continue;
+        };
+        let not_free = |why| {
+            refuse(AutoWidthError::NotFree {
+                particle: particle.name.clone(),
+                param: particle.width_param.clone(),
+                why,
+            })
+        };
+        let name = match external_at(model, "decay", &[pdg]) {
+            Some((name, _)) if name == particle.width_param => name,
+            _ if particle.width_param == "ZERO" => {
+                errors.push(not_free("the particle has no width parameter"));
+                continue;
+            }
+            _ => {
+                errors.push(not_free("the model computes it from other parameters"));
+                continue;
+            }
+        };
+        let why = if model.params.zeros.contains(name) {
+            Some("the restriction fixes it to zero")
+        } else if model.params.ones.contains(name) {
+            Some("the restriction fixes it to one")
+        } else if model
+            .params
+            .merged
+            .iter()
+            .any(|g| g.iter().any(|(n, _)| n == name))
+        {
+            Some("the restriction ties it to other parameters")
+        } else {
+            None
+        };
+        match why {
+            Some(why) => errors.push(not_free(why)),
+            None => {
+                params.insert(name.to_string());
+            }
+        }
+    }
+    params
+}
+
+/// `card` with every `Auto` width replaced by its computed value and decay
+/// table, and the computed widths; `card` itself when it has none.
+///
+/// The widths are computed at the card's other parameters with each `Auto`
+/// width at its restricted default: no computed channel reads one
+/// ([`AutoWidthError::DependsOnAutoWidth`]), so the value is a placeholder.
+fn resolve_auto_widths<'c>(
+    model: &Arc<UFOModel>,
+    card: &'c ParamCard,
+    auto_params: &BTreeSet<String>,
+) -> Result<(Cow<'c, ParamCard>, Vec<ComputedWidth>), CardError> {
+    if card.auto_widths().is_empty() {
+        return Ok((Cow::Borrowed(card), Vec::new()));
+    }
+    let placeholders: Vec<(i32, f64)> = card
+        .auto_widths()
+        .iter()
+        .map(|&pdg| {
+            let default = external_at(model, "decay", &[pdg]).map_or(0.0, |(_, d)| d);
+            (pdg, default)
+        })
+        .collect();
+    let provisional =
+        EvaluatedModel::from_model_card(model.clone(), &card.with_widths_set(&placeholders, &[]))?;
+    refuse_all(negative_masses(&provisional))?;
+
+    let mut errors = Vec::new();
+    let mut computed = Vec::new();
+    for &pdg in card.auto_widths() {
+        let width =
+            compute_width(model, &provisional, pdg, auto_params).and_then(|width| {
+                match card.decay_tables().iter().find(|t| t.pdg == pdg) {
+                    Some(table) => check_given_table(model, &width, table).map(|()| width),
+                    None => Ok(width),
+                }
+            });
+        match width {
+            Ok(width) => computed.push(width),
+            Err(reason) => errors.push(CardError::AutoWidth { pdg, reason }),
+        }
+    }
+    refuse_all(errors)?;
+
+    for width in &computed {
+        if !width.not_included.is_empty() {
+            let through: BTreeSet<&str> = width
+                .not_included
+                .iter()
+                .map(|m| m.through.name.as_str())
+                .collect();
+            warn!(
+                "the Auto width of {} is its two-body width, {:e} GeV; {} three-body modes \
+                 through an off-shell {} are not included, which MadGraph's default \
+                 compute_widths adds where it estimates them above {}% of the width",
+                width.particle,
+                width.bound,
+                width.not_included.len(),
+                through.into_iter().collect::<Vec<_>>().join(", "),
+                crate::widths::MADWIDTH_PRECISION * 100.0,
+            );
+        }
+    }
+    let values: Vec<(i32, f64)> = computed.iter().map(|w| (w.pdg, w.bound)).collect();
+    let tables: Vec<DecayTable> = computed.iter().map(ComputedWidth::decay_table).collect();
+    let resolved = card.with_widths_set(&values, &tables);
+    refuse_all(merge_splits(&model.params, &resolved))?;
+    Ok((Cow::Owned(resolved), computed))
 }
 
 /// Bind `model` at the parameters an integration recorded: each one's value,
@@ -600,15 +747,130 @@ mod tests {
         assert_eq!(names.len(), 2);
     }
 
+    /// `DECAY 23 Auto` binds WZ to the computed two-body width, to the digits
+    /// MadGraph writes, records the move and the computed table, and gives the
+    /// same evaluation, moves and table as the card with that number and table
+    /// typed in.
     #[test]
-    fn an_auto_width_is_refused() {
-        let err = bind("DECAY 25 Auto\n").err().unwrap();
-        assert_eq!(err, CardError::AutoWidth { pdg: 25 });
-        let text = err.to_string();
-        assert!(
-            text.contains("not supported yet") && text.contains("give the width"),
-            "{text}"
+    fn an_auto_width_binds_like_the_number_it_computes() {
+        let bound = bind("DECAY 23 Auto\n").unwrap();
+        let [width] = bound.auto_widths.as_slice() else {
+            panic!("{:?}", bound.auto_widths)
+        };
+        assert_eq!(width.param, "WZ");
+        assert_eq!(width.channels.len(), 11);
+        assert!((width.bound / width.total - 1.0).abs() < 5e-7);
+        let wz = bound.evaluated.param_values["WZ"].re;
+        assert_eq!(wz, width.bound);
+        assert_eq!(
+            bound.moved,
+            vec![MovedParam {
+                name: "WZ".to_string(),
+                block: "DECAY".to_string(),
+                code: vec![23],
+                value: width.bound,
+            }]
         );
+        let table = &bound.evaluated.decay_tables()[0];
+        assert_eq!(table.pdg, 23);
+        assert_eq!(table.channels.len(), 11);
+        let sum: f64 = table.channels.iter().map(|c| c.branching_ratio).sum();
+        assert!((sum - 1.0).abs() < 1e-5, "{sum}");
+
+        let mut typed = format!("DECAY 23 {:e}\n", width.bound);
+        for c in &table.channels {
+            typed.push_str(&format!(
+                " {:e} 2 {} {}\n",
+                c.branching_ratio, c.daughters[0], c.daughters[1]
+            ));
+        }
+        let by_hand = bind(&typed).unwrap();
+        assert_same_point(&bound.evaluated, &by_hand.evaluated);
+        assert_eq!(bound.moved, by_hand.moved);
+        assert_eq!(
+            bound.evaluated.decay_tables(),
+            by_hand.evaluated.decay_tables()
+        );
+
+        let resolved = crate::widths::resolved_card_text("DECAY 23 Auto\n", &bound.auto_widths);
+        let rebound = bind(&resolved).unwrap();
+        assert!(rebound.auto_widths.is_empty(), "{resolved}");
+        assert_same_point(&bound.evaluated, &rebound.evaluated);
+        assert_eq!(bound.moved, rebound.moved);
+        assert_eq!(
+            bound.evaluated.decay_tables(),
+            rebound.evaluated.decay_tables()
+        );
+    }
+
+    /// Each `Auto` width that cannot be computed as MadGraph would is refused,
+    /// naming why, and every one is listed at once.
+    #[test]
+    fn auto_widths_that_cannot_be_computed_are_refused_naming_why() {
+        let why = |text: &str| match bind(text) {
+            Err(CardError::AutoWidth { pdg, reason }) => (pdg, reason),
+            other => panic!("{text:?}: {:?}", other.map(|b| b.auto_widths)),
+        };
+        assert!(matches!(
+            why("DECAY 22 Auto\n"),
+            (
+                22,
+                AutoWidthError::NotFree {
+                    why: "the particle has no width parameter",
+                    ..
+                }
+            )
+        ));
+        assert!(matches!(
+            why("DECAY -24 Auto\n"),
+            (-24, AutoWidthError::UnknownParticle { pdg: -24 })
+        ));
+        assert!(matches!(
+            why("DECAY 9999 Auto\n"),
+            (9999, AutoWidthError::UnknownParticle { pdg: 9999 })
+        ));
+        // A top lighter than W + b has no open two-body channel, and decays
+        // through an off-shell W.
+        let (pdg, reason) = why("Block MASS\n 6 80.0\nDECAY 6 Auto\n");
+        assert_eq!(pdg, 6);
+        let AutoWidthError::OnlyBeyondTwoBody { modes, .. } = &reason else {
+            panic!("{reason:?}")
+        };
+        assert!(modes.contains("t > ve b e+"), "{modes}");
+        // A table below the Auto line naming a mode no tree-level vertex gives,
+        // or one beyond two bodies.
+        for (row, says) in [("2 22 22", "loop-induced"), ("3 5 -5 21", "more than two")] {
+            let (pdg, reason) = why(&format!("DECAY 25 Auto\n 1.0 {row}\n"));
+            assert_eq!(pdg, 25);
+            assert!(
+                matches!(reason, AutoWidthError::ModeNotComputed { .. })
+                    && reason.to_string().contains(says),
+                "{row}: {reason}"
+            );
+        }
+        match bind("DECAY 22 Auto\nDECAY 9999 Auto\n") {
+            Err(CardError::Several(all)) => assert_eq!(all.len(), 2),
+            other => panic!("{:?}", other.map(|b| b.auto_widths)),
+        }
+    }
+
+    /// A table the card gives below an `Auto` line, naming channels the
+    /// computation has, is replaced by the computed one, as MadGraph replaces
+    /// it; a particle with no channel open and none beyond two bodies binds to
+    /// zero, as MadGraph's stable particle does.
+    #[test]
+    fn a_given_table_is_replaced_and_a_stable_particle_is_zero() {
+        let bound = bind("DECAY 25 Auto\n 0.5 2 5 -5\n 0.5 2 15 -15\n").unwrap();
+        let table = &bound.evaluated.decay_tables()[0];
+        assert_eq!(table.channels[0].daughters, vec![5, -5]);
+        assert!(table.channels[0].branching_ratio > 0.9);
+
+        let light = bind("Block MASS\n 25 1.0\nDECAY 25 Auto\n").unwrap();
+        let width = &light.auto_widths[0];
+        assert_eq!((width.total, width.bound), (0.0, 0.0));
+        assert!(width.channels.is_empty() && width.not_included.is_empty());
+        assert_eq!(light.evaluated.param_values["WH"].re, 0.0);
+        assert!(light.evaluated.decay_tables().is_empty());
     }
 
     /// The default restriction fixes the charm mass to zero; a card giving it a

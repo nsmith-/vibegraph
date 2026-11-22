@@ -107,7 +107,10 @@ reads the card's `import model` (and its `generate` line, if it has one) and
 writes `parameters.json` and `param_card.dat` into `--out`. `enumerate` writes
 the same two files beside `diagrams.json`, for its own process. Nothing is
 sampled; with no `generate` line nothing is enumerated either, and the report
-is of the restricted model alone.
+is of the restricted model alone. With `--param-card`, `parameters` binds that
+card as `integrate` does (and refuses what `integrate` refuses), and each width
+the card sets to `Auto` carries its computation on its record; `enumerate`
+does the same with its own `--param-card`.
 
 `param_card.dat` is the card the restriction implies: every external parameter
 at its restricted default, then the computed masses and widths a card also
@@ -133,8 +136,7 @@ entry of a card addresses (class `internal`), in PDG order. A record has:
   particle is an external leg of some diagram; `null` with no process);
 - `constraints`, what the card binder holds the value to, each an object tagged
   by `kind`: `finite`; `minimum` with `value` (a mass is not negative, unless
-  the particle is a Majorana fermion); `not_auto` (a width is a number);
-  `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
+  the particle is a Majorana fermion); `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
   `factor`; `leads_group` with `members` (each `name` and `factor`: these are
   tied to this one and move only with it);
 - `reweight`: `verdict` (`movable`, `locked`, `fixed_one`, `merged`,
@@ -154,8 +156,19 @@ entry of a card addresses (class `internal`), in PDG order. A record has:
 `entering` is the list of external parameters whose `enters` has `couplings`,
 in the model's order (`null` with no process): the Wilson coefficients to offer
 for a process. A parameter fixed to zero is not listed, since the vertices it
-fed were removed. Where a width is computed rather than read from the
-restriction, it is a field added to its record, not a different record.
+fed were removed.
+
+`computed_width` is `null` unless the report was made at a card that sets the
+parameter's width to `Auto`. Then it has `pdg`, `particle`, `param`, `method`
+(`tree_level_two_body`), `total` (the sum of the channels, GeV), `bound` (the
+value the run binds: `total` to the seven digits MadGraph writes into the card
+it runs from), `channels` (each `daughters`, a list of `pdg` and `name`, and
+`width`, by descending width), `below_qcd_scale` (channels of a coloured
+particle below 0.1 GeV, set to zero as MadGraph sets them), `closed` (channels
+the particle is too light for) and `not_included` (three-body modes through an
+off-shell daughter of a closed channel, each with `daughters` and `through`,
+which MadGraph's default `compute_widths` adds when it estimates them above
+0.25% of the width, and which this width leaves out).
 
 ## Inspecting a run card
 
@@ -262,8 +275,24 @@ every edit MadGraph applied before the run. The artifact records each
 parameter the card moved off the defaults, and `generate` takes no param card:
 it evaluates at the recorded values, and writes the card it evaluated at into
 the event file's `<slha>` header block, where a shower reads masses and widths.
-`integrate` refuses a card it cannot honour: a width given as `Auto` (MadGraph
-computes those at launch and writes the number into the card it ran with), a
+A width given as `Auto` is computed, as MadGraph computes it at launch: the
+tree-level two-body width, from every three-point vertex of the model that
+couples the particle to two lighter ones, summed over the open channels at the
+card's other parameters. The run binds that total to the seven digits MadGraph
+writes, the decay table below the `DECAY` line is the computed channels', and
+the artifact banks the card with the computed width written in place of `Auto`,
+so the banked card reproduces the run. Modes beyond two bodies are not
+included: where an off-shell daughter of a closed channel opens a three-body
+mode (`H > W+ e- ve~` through `W-`, for example), `integrate` warns and the
+width's report lists it, because MadGraph's default adds such a mode when it
+estimates it above 0.25% of the width (for the Standard Model Higgs boson at
+125 GeV, its default width is 15% above the two-body one). `Auto` is refused,
+naming why, for a particle whose only modes go beyond two bodies, a channel
+whose coupling runs with `α_s` (MadGraph runs it to the particle's mass first),
+a channel that reads another `Auto` width, a particle whose width is not a free
+parameter of the model, and a decay table below the `Auto` line that lists a
+mode no tree-level vertex gives.
+`integrate` refuses a card it cannot honour: a
 non-zero value for a parameter the restriction zeroes, a value other than one
 for a parameter the restriction fixes to one, a value that splits two
 parameters the restriction merged, and an entry the model has no parameter
