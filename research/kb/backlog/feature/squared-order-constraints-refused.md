@@ -35,3 +35,5 @@ its monomial components would also serve one-evaluation-per-event reweighting.
 **Campaign count (2026-11-17).** The CERN host's 1009-gridpack survey refuses
 21 cards on squared orders. Three more, retried with a longer setup time, are
 refused on interference-order bounds of the form `M3^2==1` and `T6^2==1`.
+
+**Post-release campaign `v022-1009`, seed 1 (v0.2.2, 2026-11-22).** 23 refusals (`QCD^2==2`, `M2^2==1`, …). Three VBS_WZ squared-order cards (724, 727, 728) now get past setup and time out instead; 725 is refused.
