@@ -1,0 +1,24 @@
+# MadGraph5 batch script: e+ e- > t t~ NP^2==1
+# in SMEFTsim_topU3l_MwScheme (UFO v3.0.2), restricted by restrict_massless.dat.
+#
+# Why this exact process:
+#   The capstone row's process (ee_to_ttx_smeft) under a squared-order constraint:
+#   the dimension-six interference alone: the terms of |M|^2 whose two
+#   diagrams' NP orders sum to one, SM x NP^1. It is signed, point by point.
+#   The line has no amplitude order, so MadGraph bounds it at NP<=1
+#   (madgraph_interface.py:4994-4999). Every other choice -- model, restrict card,
+#   beams -- is the capstone's, so the two rows differ only in the selection.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/.
+import model validation/ufo/SMEFTsim_topU3l_MwScheme_UFO-massless
+display interactions
+generate e+ e- > t t~ NP^2==1
+output ee_to_ttx_np1 -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

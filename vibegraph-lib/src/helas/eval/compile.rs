@@ -19,6 +19,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use tracing::{debug, info, info_span, trace};
 
+use crate::diagrams::squared::SquaredOrders;
 use crate::diagrams::{Diagram, DiagramSet};
 use crate::helas::color::flow_tags::{
     color_flow_tags, select_flow, select_flow_reached_by, ColorFlowTags, LeadingColorFlows,
@@ -83,8 +84,25 @@ pub struct AmplitudeEvaluator {
     /// single-color-structure processes.
     n_flows: usize,
     /// Exact color-factor matrix `CF_{ij}` (row-major, `cf_matrix[i*n_flows + j]`),
-    /// evaluated at `Nc = 3`. `BoundAmplitude::bind` resolves it to the scalar field.
+    /// evaluated at `Nc = 3`.
     cf_matrix: Vec<Ratio<i64>>,
+    /// The squared-order split of the JAMPs, when the subprocess's squared-order
+    /// selection keeps some interference terms out of |M|²; `None` when |M|² is
+    /// the whole amplitude squared.
+    split: Option<OrderSplit>,
+    /// Per JAMP of the compiled root, its `(order class, colour flow)`: one per
+    /// flow, class 0, without a split.
+    jamp_slots: Vec<(usize, usize)>,
+    /// The weights `|M|²` contracts the root's JAMPs with (row-major over
+    /// `jamp_slots`): `CF` of the two JAMPs' flows where the squared-order
+    /// selection keeps their classes' term, zero where it does not. Without a
+    /// split it is `cf_matrix`. `BoundAmplitude::bind` resolves it to the scalar
+    /// field.
+    jamp_cf: Vec<Ratio<i64>>,
+    /// Per colour flow `i`, the JAMP pairs `(x, y)` of that flow whose classes'
+    /// term is selected: MadGraph's `JAMP2(i) = Σ_{M,N} |Re JAMP(i,M)·JAMP(i,N)*|`
+    /// over the selected class pairs. Empty without a split.
+    jamp2_pairs: Vec<Jamp2Pair>,
     /// The colour rep and direction of every external leg, in process order — the
     /// legs `color_flow_tags` was derived and checked against.
     leg_colors: Vec<LegColor>,
@@ -175,7 +193,29 @@ impl AmplitudeEvaluator {
         } = Configurations::group(set, model, &evals);
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
         let config_ends = config_ends(&config_spans);
-        let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
+        let split = OrderSplit::of(set, model);
+        let (lowered, jamp_slots) = lower::lower_split_flows(
+            &basis,
+            &evals,
+            &configs,
+            split.as_ref().map(|s| &s.class_of[..]),
+        );
+        let symbolic = lower::optimize(lowered);
+        let (jamp_cf, jamp2_pairs) = match &split {
+            None => (basis.cf_matrix.clone(), Vec::new()),
+            Some(split) => split.weights(&basis.cf_matrix, n_flows, &jamp_slots),
+        };
+        if let Some(split) = &split {
+            info!(
+                "{}: |M|² split into {} coupling-order classes ({} JAMPs), {} of {} class \
+                 pairs selected",
+                split.selection,
+                split.classes.len(),
+                jamp_slots.len(),
+                split.selected.iter().filter(|&&s| s).count(),
+                split.selected.len()
+            );
+        }
         let folded = Folded::build(&symbolic);
         let program = folded.program();
         info!("compiled evaluator: {} ops", program.instrs.len());
@@ -211,6 +251,10 @@ impl AmplitudeEvaluator {
             polarizations,
             n_flows,
             cf_matrix: basis.cf_matrix,
+            split,
+            jamp_slots,
+            jamp_cf,
+            jamp2_pairs,
             leg_colors,
             flow_fingerprints,
             color_flow_tags,
@@ -295,6 +339,12 @@ impl AmplitudeEvaluator {
             self.helicities.len(),
             "helicity weights must cover the surviving combinations"
         );
+        if self.is_signed() {
+            // MadGraph draws `∝ DABS(TS(I))` (`matrix_madevent_group_v4.inc:198-207`),
+            // the only distribution a signed per-combination |M_c|² defines.
+            let moduli: Vec<f64> = hel_m2.iter().map(|t| t.abs()).collect();
+            return select_index(&moduli, u).map(|c| self.helicities[c].as_slice());
+        }
         select_index(hel_m2, u).map(|c| self.helicities[c].as_slice())
     }
 
@@ -412,6 +462,45 @@ impl AmplitudeEvaluator {
     /// `cf_matrix[i*n_flows + j]`, evaluated at `Nc = 3`).
     pub fn cf_matrix(&self) -> &[Ratio<i64>] {
         &self.cf_matrix
+    }
+
+    /// The number of JAMPs the compiled root carries: [`n_flows`](Self::n_flows)
+    /// without a squared-order split, one per `(order class, flow)` pair with a
+    /// contribution under one.
+    pub fn n_jamps(&self) -> usize {
+        self.jamp_slots.len()
+    }
+
+    /// Per JAMP of the compiled root, its `(order class, colour flow)`.
+    pub fn jamp_slots(&self) -> &[(usize, usize)] {
+        &self.jamp_slots
+    }
+
+    /// The exact weights |M|² contracts the root's JAMPs with, row-major over
+    /// [`jamp_slots`](Self::jamp_slots): the colour factor of the two JAMPs'
+    /// flows where the squared-order selection keeps their classes' term, zero
+    /// where it drops it. [`cf_matrix`](Self::cf_matrix) without a split.
+    pub fn jamp_cf(&self) -> &[Ratio<i64>] {
+        &self.jamp_cf
+    }
+
+    /// The JAMP pairs `(x, y, flow)` MadGraph's split `JAMP2(flow)` sums
+    /// `|Re J_x J_y*|` over; empty without a squared-order split.
+    pub(crate) fn jamp2_pairs(&self) -> &[Jamp2Pair] {
+        &self.jamp2_pairs
+    }
+
+    /// The squared-order selection and the order classes the JAMPs are split
+    /// into (per class, its orders in the selection's names), when |M|² keeps
+    /// only some of the interference terms.
+    pub fn order_classes(&self) -> Option<(&SquaredOrders, &[Vec<i64>])> {
+        self.split.as_ref().map(|s| (&s.selection, &s.classes[..]))
+    }
+
+    /// Whether |M|² can be negative: the squared-order selection keeps an
+    /// interference term without both squares that bound it.
+    pub fn is_signed(&self) -> bool {
+        self.split.as_ref().is_some_and(|s| s.signed)
     }
 
     /// Return the per-flow Les Houches `(color, anticolor)` line labels, in the
@@ -654,6 +743,73 @@ impl AmplitudeEvaluator {
     #[cfg(test)]
     pub(crate) fn zeroamp_node_reduction(&self) -> (usize, usize) {
         (self.zeroamp_nodes_before, self.zeroamp_nodes_after)
+    }
+}
+
+/// Two JAMPs `(x, y)` of one colour flow whose term `JAMP2(flow)` sums.
+type Jamp2Pair = (usize, usize, usize);
+
+/// How a subprocess's JAMPs are split by coupling order, and which class pairs
+/// its |M|² keeps: MadGraph's split-order matrix element
+/// (`get_split_orders_mapping` and `set_chosen_SO_index`, `export_v4.py:1171`).
+#[derive(Debug, Clone)]
+struct OrderSplit {
+    selection: SquaredOrders,
+    /// Per class, the orders in the selection's names, ascending.
+    classes: Vec<Vec<i64>>,
+    /// Per diagram, its class.
+    class_of: Vec<usize>,
+    /// Row-major over the classes: whether the term of the two is kept.
+    selected: Vec<bool>,
+    signed: bool,
+}
+
+impl OrderSplit {
+    /// The split of `set`'s amplitude, or `None` when it needs none: no
+    /// squared-order selection, or one that keeps every term, whose |M|² is the
+    /// whole amplitude squared and is formed as such.
+    fn of(set: &DiagramSet, model: &UFOModel) -> Option<Self> {
+        let selection = set.squared_orders.clone()?;
+        let (class_of, classes) = selection.classes(&set.diagrams, model);
+        let selected = selection.selected_pairs(&classes);
+        if selected.iter().all(|&s| s) {
+            return None;
+        }
+        let signed = selection.is_signed(&classes);
+        Some(OrderSplit {
+            selection,
+            classes,
+            class_of,
+            selected,
+            signed,
+        })
+    }
+
+    /// The JAMP contraction weights and the `JAMP2` pairs for JAMPs laid out as
+    /// `slots`, from the colour basis's `cf` over `n_flows` flows.
+    fn weights(
+        &self,
+        cf: &[Ratio<i64>],
+        n_flows: usize,
+        slots: &[(usize, usize)],
+    ) -> (Vec<Ratio<i64>>, Vec<Jamp2Pair>) {
+        let n = self.classes.len();
+        let keep = |a: usize, b: usize| self.selected[a * n + b];
+        let mut weights = Vec::with_capacity(slots.len() * slots.len());
+        let mut pairs = Vec::new();
+        for (x, &(ca, fa)) in slots.iter().enumerate() {
+            for (y, &(cb, fb)) in slots.iter().enumerate() {
+                weights.push(if keep(ca, cb) {
+                    cf[fa * n_flows + fb]
+                } else {
+                    Ratio::from_integer(0)
+                });
+                if fa == fb && keep(ca, cb) {
+                    pairs.push((x, y, fa));
+                }
+            }
+        }
+        (weights, pairs)
     }
 }
 

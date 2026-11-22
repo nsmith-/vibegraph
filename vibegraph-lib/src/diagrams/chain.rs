@@ -575,6 +575,7 @@ fn stitch_set(
             polarizations,
             diagrams,
             mirrored: core.mirrored,
+            squared_orders: core.squared_orders.clone(),
         },
     })
 }

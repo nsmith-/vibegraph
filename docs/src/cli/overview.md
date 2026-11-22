@@ -363,9 +363,12 @@ banked cross section would then describe another matrix element. Both
 artifacts, `diagrams.bin.zst` and `grid.bin.zst`, also record the version of
 the diagram enumeration that produced their diagrams, and a build that
 enumerates differently (a fixed sign, a diagram added or dropped) refuses
-them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`) are a
-hard error: this generator selects diagrams by their coupling orders and squares
-the whole amplitude, so it cannot bound an interference term.
+them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`,
+`QCD^2<=2`, `aS=1`) are honoured by splitting each amplitude by coupling order
+and keeping only the interference terms they select. `integrate` reports the
+cross section of such a selection, which can be negative where only an
+interference term is kept; `generate` refuses that case, since its events would
+carry negative weights.
 
 ## Watching a run
 

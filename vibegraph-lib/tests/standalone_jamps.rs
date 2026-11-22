@@ -329,6 +329,7 @@ impl GraphLevel {
                         polarizations: set.polarizations.clone(),
                         diagrams: vec![d.clone()],
                         mirrored: set.mirrored,
+                        squared_orders: set.squared_orders.clone(),
                     },
                     model,
                 )

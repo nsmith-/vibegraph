@@ -456,6 +456,7 @@ fn merged_stitched_diagrams_have_equal_amplitudes() {
                 polarizations: m.polarizations.clone(),
                 diagrams: vec![m.kept.clone()],
                 mirrored: false,
+                squared_orders: None,
             };
             let momenta = point(&set, &evaluated);
             let a = single_diagram_amplitudes(&set, &m.kept, &model, &evaluated, &momenta);

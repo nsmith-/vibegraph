@@ -72,6 +72,14 @@ pub enum ResolveError {
     AmbiguousPolarization(String),
     #[error("decay processes cannot carry {0}")]
     DecayConstraint(&'static str),
+    /// `aEW` / `aS` written on a model that defines an order of that name:
+    /// MadGraph then reads it as an amplitude order on the model's own order
+    /// rather than as its squared-order alias, a reading nothing here pins.
+    #[error(
+        "'{0}' is both MadGraph's squared-order alias and an order the model defines; write \
+         the constraint on the order itself"
+    )]
+    AliasIsAModelOrder(String),
     #[error("processes with different numbers of initial particles cannot be combined")]
     MixedInitialStates,
 }
