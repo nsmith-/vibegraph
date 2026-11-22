@@ -10,7 +10,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
 PR 12 of [sprint L](../sprint.md), a stretch goal that does not hold the v0.2.3
 tag, on branch `sprintl-g2hdm` off main 8093df4. It runs after PR 4 (VBS,
-[L-V1](L-V1.md)): read L-V1's report first, since the two may share a cause.
+session `L-V1`): read its report first, since the two may share a cause.
 
 Read the item (`pixi run backlog --item g2hdm-charged-higgs-high-mass-sigma-reads-high`)
 and [bit-exact amplitude debugging](../../../validation/bit-exact-amplitude-debugging.md).
