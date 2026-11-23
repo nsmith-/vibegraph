@@ -1,53 +1,46 @@
 ---
 type: Backlog Item
-title: "A subdominant channel's map alone reaches a region of the dominant diagram, and its grid never adapts there"
-description: "TprimeBToTZ M1800 reads ~3% low with a small quoted error on 4 of 5 seeds: only channel 4 (diagram share 0.6%) maps onto a large-|M|² corner of configuration 2, and it samples it as rare heavy points."
+title: "A transfer bound cut the dominant channel's b-collinear corner out of its map"
+description: "TprimeBToTZ M1800: configuration 2's spine bounded its b̄ rung at −ptj² though the b̄ is uncut, so only channels 4 and 1 reached |t_b| < 100 GeV², as rare heavy points; seeds that missed them read ~5% low with small errors. Rung bounds now follow what a single-leg side proves; the item stays open for a same-scheme MadGraph reference."
 area: validation
 state: open
 priority: high
-closes_when: "The region is named from per-event output. Multichannel integration then reaches it on every seed at the campaign budget (neval 120000, target_rel 0.01): ≥ 5 seeds, unweighted mean within MadGraph's error, scatter χ²/dof in band, and the quoted errors calibrated. Banked rows are unchanged within error."
+closes_when: "Multichannel integration reaches the region on every seed at the campaign budget (neval 120000, target_rel 0.01): ≥ 5 seeds, the unweighted mean within the error of MadGraph's σ with the complex-mass scheme off (the scheme vibegraph runs), scatter χ²/dof in band, and the quoted errors calibrated. Banked rows are unchanged within error."
 blocked_by: []
 opened: 2026-11-17
-tags: [sampling, multichannel, vegas, sigma, error-estimate, confidently-wrong, cms-gridpacks]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-11-17}
+tags: [sampling, multichannel, phase-space, sigma, error-estimate, confidently-wrong, cms-gridpacks]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Reported by the CERN host from its v0.2.1 gridpack check campaign, on gridpack
-126: `TprimeBToTZ_LH_twentypctLO_M1800`.
+Reported by the CERN host on gridpack 126, `TprimeBToTZ_LH_twentypctLO_M1800`.
+The card runs `p p > z tt bb j / bp x y QED=1 QCD=1` with
+`VLQ_v4_4FNS_UFO-3rdL_noCKM` and lhaid 325500
+(`NNPDF31_nnlo_as_0118_nf_4_mc_hessian`). The b quark is uncut: `ptb` is 0 and
+`maxjetflavor` is 4.
 
-**Card.** The process is `p p > z tt bb j / bp x y QED=1 QCD=1`, with
-`VLQ_v4_4FNS_UFO-3rdL_noCKM` and `lhaid 325500`. MadGraph's σ is 2.504e-4 ±
-2.3e-6 pb.
+**The miss.** At campaign budget, seeds fall into two populations:
+- low: σ about 2.40e-4, small quoted errors;
+- high: σ 2.47–2.55e-4.
 
-**Seed spread.** At `--neval 120000 --target-rel 0.01 -j 4`, seed 1 hits and
-seeds 2–4 read low, stopping at 6 iterations. The `inspect --ranking` output
-puts the missing ~5% on configuration 2, the dominant diagram (share 0.637).
-That diagram's extra σ on the hit seed comes from points drawn in channel 4,
-which carries propagators tp, tp~ and W−. On seed 1 channel 4 gives 2.32e-5 pb;
-on the misses it gives 3.4–5.2e-6. Its inter-iteration χ²/dof is 190–5500.
-Seed 5 misses another way, with an excess in channel 1 (χ²/dof 211).
+Budget moves seeds from low to high and never back, so the low seeds were
+confidently wrong.
 
-The region is **not yet named**. The host's guess is the below-peak tail of the
-broad T′ (Γ/M = 20%).
+**The region and mechanism** (sprint L PR 5, from a per-point probe):
+- The missed weight is configuration 2's own collinear corner: g → b b̄ with
+  the b̄ along the gluon beam, at |t_b| < 100 GeV². It is not a T′ tail.
+- `spine_chain` bounded every spacelike rung at t ≤ −ptj² (the largest
+  single-leg pT cut on any leg), even where the rung's side is the uncut b̄.
+  Configuration 2's own channel therefore had zero density where its |M|²
+  peaks, and only channels 4 and 1 reached the corner, as rare heavy points.
+- The candidate fixes recorded here before (α weighting, budget floors,
+  drawing in channel 4 with configuration 2's weight) could not have closed
+  it: the channel that owned the corner had no density there.
 
-**Knob sweep, 5 seeds each:**
+**The fix.** A peripheral rung whose side is a single final leg is now bounded
+by that leg's own pT_min², or not at all if the leg is uncut. The bound is
+proven: for an end rung, p_i⁺ ≤ p_a⁺ gives |t| ≥ p_Ti². At campaign budget,
+20 seeds now sit in one population (mean 2.5214e-4, scatter χ²/dof 1.54).
 
-| variant | hits | mean/MG | scatter χ²/dof | cost |
-|---|---|---|---|---|
-| base | 1/5 | 0.969 | 29.6 | 1× |
-| `--min-iters 20` | 2.5/5 | 0.981 | | 2.4× |
-| `--alpha-floor 1e-3` | 2.5/5 | 0.981 | | 1.1× |
-| `--neval 480k` | 4/5 | 0.990 | 108 | 2.5× |
-| `--neval 1.92M` | 5/5 | 1.004 | 9.8 | 12× |
-
-The seeds that hit change with the knob, which AGENTS.md treats as the
-signature of a bug. Channel 4's α is already 0.014–0.045, so an α floor cannot
-help. Even at 16× the evaluations the quoted errors are understated.
-
-**Candidate fixes:**
-- weight the α survey by each channel's measured variance contribution;
-- give each channel an adaptation-budget floor;
-- draw in channel 4 with the dominant diagram's multichannel weight.
-
-The artifacts are on the CERN host in `/home/ncsmith/bench-v0.2.0/diag-tprime/`.
-A related one-point σ is
-[`ttz2b-sigma-carried-by-one-point`](../performance/ttz2b-sigma-carried-by-one-point.md).
+**What is left.** The closing comparison needs MadGraph's σ in vibegraph's
+scheme. The gridpack's 2.504e-4 is in the complex-mass scheme, which
+vibegraph's campaign run had stripped. vg-validator's same-scheme MadGraph
+3.7.1 run is queued.
