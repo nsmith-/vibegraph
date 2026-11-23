@@ -642,3 +642,4 @@ Ready-to-file items. The manager files them; none is created here.
 
 - Card 636: vg-validator found the gridpack's MadGraph 2.9.18 σ is 2.222e-15 ± 4.2e-18 pb, so vg/MG ≈ 0.99 and the value is not a silent wrong answer. Draft item 7 was filed as `vbf-radion-1800-iterations-inconsistent` (validation, low): convergence and timeout only.
 - PR 3b (planner ruling): items 1 and 2 plus `amplitude-probe-compiles-each-set-twice`. Items 3–6 go to the next sprint.
+- Stall census (vg-validator, 2026-11-23): 6 of the 178 never-retried cards (VBS 136, 724, 726, 727, 728; VBF 290) carry a batch-slot stall signature: 290 refuses on the released binary in 16.6 s, and the VBS_WZ five are expected to refuse at parse (local check on 136 and 726 pending). The genuine counts are VBS 42 and VBF resonances 21, 172 in all. Only 290 was in this sample, so the per-family verdicts above stand. See the [sprint log](../log.md) (2026-11-23).

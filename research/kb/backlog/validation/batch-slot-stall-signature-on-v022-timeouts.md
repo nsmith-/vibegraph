@@ -31,3 +31,11 @@ environment-caused, not as cost.
 
 Evidence: the "Card 290 and card 722" section of
 [the phase sample](../../sprints/v023-orders-majorana-timeouts/v022-1009-phase-sample.md).
+
+**Census (2026-11-23).** The signature reduces to a sys share above 25%
+(stdout and stage rows are empty for every killed job). 39 of 1105 timeout
+attempts carry it, on 11 cards, and so do 63 refusals. 36 attempts are
+reclassified as environmental, including 6 of the 178 never-retried cards.
+The account is in the [sprint L log](../../sprints/v023-orders-majorana-timeouts/log.md)
+(2026-11-23). Still open: local confirmation on 136 and 726, and the
+slot-side cause.
