@@ -47,5 +47,7 @@ multi-jet MLM sampling-cost items simshop's production timeouts hit
 `mlm-matrix-element-evaluated-twice-per-group`) are scheduled for the first
 sprint after the split and are not backported, including their byte-identical
 parts. Until a v0.3 release, simshop works around them with relaxed
-`--target-rel` on large cards, wider slots and a deadline stop. The branch's CI and
+`--target-rel` on large cards, wider slots and a deadline stop. Within
+v0.3, the one-group-per-point MLM evaluation lands before lane batching,
+because it changes the per-point structure lanes batch over. The branch's CI and
 ruleset setup is `release-branch-ci-and-ruleset-missing`.

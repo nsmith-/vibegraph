@@ -6,7 +6,7 @@ area: performance
 state: blocked
 priority: medium
 closes_when: "integrate runs lane-batched end to end (sampler draw, map, cuts, scales and clustering, αs, PDFs, matrix element, weight), each stage lane-batched or behind a scalar gather where that stage's item recorded so, on every banked row including the clustered and MLM rows; a per-point test gives lane and scalar weights from the same draws agreeing within a stated tolerance at the algorithm's own error scale; a lanes4 σ gate against the scalar path over ≥5 seeds (unweighted mean, spread, χ²/dof) passes; the x86-64-v3 release asset uses it at N = 4; and whether the baseline asset batches too is decided."
-blocked_by: [per-point-chain-f64-only, per-point-branches-f64-only, lane-eval-shares-one-alpha-s, sampler-draw-not-lane-generic, jet-clustering-f64-only, pdf-lookup-f64-only]
+blocked_by: [per-point-chain-f64-only, per-point-branches-f64-only, lane-eval-shares-one-alpha-s, sampler-draw-not-lane-generic, jet-clustering-f64-only, pdf-lookup-f64-only, mlm-every-group-matrix-element-evaluated-per-point]
 opened: 2026-09-23
 tags: [simd, lanes, release, x86-64-v3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -53,3 +53,8 @@ ulp-exact; then σ over ≥5 seeds by unweighted mean, spread and χ²/dof
 ([seed sweeps](../../validation/seed-sweeps-and-budget-ladders.md)). Scalar by
 design: `generate`'s per-accepted-event work (accept/reject, helicity, colour
 and resonance choice for the record, LHE writing), a few percent of points.
+
+It also waits on
+[mlm-every-group-matrix-element-evaluated-per-point](mlm-every-group-matrix-element-evaluated-per-point.md)
+(decided 2026-11-23): that change sets the per-point structure lanes batch over,
+so it lands first rather than being retrofitted into lane code.
