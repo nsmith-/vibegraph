@@ -37,6 +37,10 @@ feyngraph = { git = "https://github.com/nsmith-/feyngraph.git", rev = "f15ceb3b2
 indexmap = { version = "2.14.0", features = ["serde"] }
 num-complex = "0.4.6"
 num-rational = "0.4"
+# The conserved-number null space of a model's vertex table is solved exactly,
+# over big rationals, whatever the model's size.
+num-bigint = "0.4"
+num-integer = "0.1"
 peg = "0.8.6"
 rustpython-parser = "0.3"
 thiserror = "2.0.18"
@@ -88,9 +92,9 @@ libm = "0.2"
 libtest-mimic = "0.7"
 # The finite-field reconstruction study (tests/finite_field_msq.rs): word-sized
 # modular arithmetic, a primality test to pick its primes, and the big integers
-# Chinese remaindering lifts the residues into. Versions are the ones the
-# dependency graph already resolves `num-modular` to.
-num-bigint = "0.4"
+# Chinese remaindering lifts the residues into (`num-bigint`, a regular
+# dependency). Versions are the ones the dependency graph already resolves
+# `num-modular` to.
 num-modular = "0.5"
 num-prime = { version = "0.4", default-features = false }
 # Fresh scratch directories for tests that write an edited copy of a model; the

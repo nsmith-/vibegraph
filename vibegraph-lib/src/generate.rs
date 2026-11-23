@@ -29,10 +29,11 @@ use crate::artifact::{channel_map_digest, IntegrateArtifact};
 use crate::cuts::{Cuts, ForcedResonances};
 use crate::diagrams::{forbidden_onshell_ids, DiagramSet, SupportedCard};
 use crate::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, InitialState, Observable,
+    compile_classes, compile_subprocesses_with, initial_spin_color_average, process_external_legs,
+    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, HadronicError, InitialState,
+    Observable,
 };
-use crate::helas::eval::BoundAmplitude;
+use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::lhef::build::SubprocessRecord;
 use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
@@ -40,7 +41,7 @@ use crate::lhef::emit::{
 use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
-    multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
+    multiplicity_groups_of_with, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
@@ -345,7 +346,25 @@ pub fn check_amplitude_probe(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<(), GenerateError> {
-    amplitude_probe::check(&artifact.amplitude_probe, &artifact.sets, model, evaluated)?;
+    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
+    let compiled = compile_classes(&refs, model, evaluated);
+    check_amplitude_probe_compiled(artifact, &compiled, evaluated)
+}
+
+/// [`check_amplitude_probe`] through evaluators compiled already: `compiled[k]`
+/// is what [`compile_class`](crate::hadronic::compile_class) made of the
+/// artifact's set `k` under `evaluated`.
+fn check_amplitude_probe_compiled(
+    artifact: &IntegrateArtifact,
+    compiled: &[Result<AmplitudeEvaluator, HadronicError>],
+    evaluated: &EvaluatedModel,
+) -> Result<(), GenerateError> {
+    amplitude_probe::check_compiled(
+        &artifact.amplitude_probe,
+        &artifact.sets,
+        compiled,
+        evaluated,
+    )?;
     let points: usize = artifact
         .amplitude_probe
         .iter()
@@ -407,7 +426,14 @@ pub fn generate(
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
     refuse_signed_matrix_elements(&artifact.sets, assets.model)?;
     check_collider_energy(artifact, assets.card)?;
-    check_amplitude_probe(artifact, assets.model, assets.evaluated)?;
+    // Each set is compiled once, for the probe and the integrand alike. One the
+    // probe could not compile is compiled again where the integrand needs it, to
+    // be refused there as it would be without the probe.
+    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
+    let compiled = compile_classes(&refs, assets.model, assets.evaluated);
+    check_amplitude_probe_compiled(artifact, &compiled, assets.evaluated)?;
+    let precompiled: Vec<Option<AmplitudeEvaluator>> =
+        compiled.into_iter().map(Result::ok).collect();
     if assets.card.is_decay() && settings.systematics.enabled {
         warn!(
             "use_syst = T on a decay: no <mgrwt> record and no systematics weights are written, \
@@ -421,9 +447,9 @@ pub fn generate(
                  generate with",
             ));
         };
-        generate_proton_sample(artifact, assets, settings, options, set, pdf)
+        generate_proton_sample(artifact, assets, settings, options, set, pdf, precompiled)
     } else {
-        generate_sample(artifact, assets, settings, options)
+        generate_sample(artifact, assets, settings, options, precompiled)
     }
 }
 
@@ -486,6 +512,7 @@ fn generate_sample(
     assets: &GenerateAssets<'_>,
     settings: &GenerateSettings,
     options: &GenerateOptions<'_>,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
 ) -> Result<EmitSummary, GenerateError> {
     let GenerateAssets {
         card: parsed,
@@ -502,7 +529,7 @@ fn generate_sample(
     refuse_exchanged_beam_orderings(sets).map_err(err)?;
     let evals = {
         let _group = crate::progress::enter_group(crate::multiplicity::sole_group(sets, None));
-        compile_subprocesses(sets, model, evaluated)
+        compile_subprocesses_with(sets, precompiled, model, evaluated)
     }
     .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
@@ -1067,6 +1094,7 @@ fn generate_proton_sample(
     options: &GenerateOptions<'_>,
     set: &PdfSet,
     pdf: &PdfMember,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
 ) -> Result<EmitSummary, GenerateError> {
     let GenerateAssets {
         card: parsed,
@@ -1080,8 +1108,9 @@ fn generate_proton_sample(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
-    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of(
+    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of_with(
         artifact.sets.clone(),
+        precompiled,
         &forbidden_onshell(parsed, model)?,
         model,
         evaluated,
@@ -2000,7 +2029,7 @@ mod tests {
         let opts = ParsingOptions::default();
         let parsed = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
         let sets = generate_from_proc_card(&parsed, &model).unwrap();
-        let evals = compile_subprocesses(&sets, &model, &evaluated).unwrap();
+        let evals = crate::hadronic::compile_subprocesses(&sets, &model, &evaluated).unwrap();
         let bounds: Vec<_> = evals
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))

@@ -54,7 +54,7 @@ use crate::error::{err, pdf_error_kind, systematics_error_kind, CliError, ErrorK
 use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
 use crate::output::{self, GenerateResult};
-use crate::parallel::ParallelArgs;
+use crate::parallel::ThreadArgs;
 use crate::phase::{self, PhaseName};
 use crate::tui;
 
@@ -241,7 +241,7 @@ pub(crate) struct GenerateArgs {
     pub(crate) systematics: Option<String>,
 
     #[command(flatten)]
-    pub(crate) parallel: ParallelArgs,
+    pub(crate) parallel: ThreadArgs,
 }
 
 /// `--scan-points` accepts a per-channel count or the word that ties the scan to

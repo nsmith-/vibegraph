@@ -173,7 +173,7 @@ evaluator at a time and the compile phase holds all of them. Removing the
 probe therefore does not lower the peak: see card 37.
 
 This is the existing
-[amplitude-probe-compiles-each-set-twice](../../../backlog/performance/amplitude-probe-compiles-each-set-twice.md)
+`amplitude-probe-compiles-each-set-twice` (closed by [L-T3](L-T3-report.md))
 (priority low, "seconds per run"). The evidence here makes it a
 timeout cause: see Found.
 
