@@ -279,7 +279,30 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::LONG_VERSION;
+    use super::{Cli, LONG_VERSION};
+    use clap::Parser;
+
+    /// `generate` enumerates nothing, so the enumeration's pool flag is not one
+    /// of its arguments, while the commands that enumerate take it and every one
+    /// takes `-j`.
+    #[test]
+    fn only_the_enumerating_commands_take_parallel_diagrams() {
+        let parse = |args: &[&str]| Cli::try_parse_from([&["vibegraph"], args].concat());
+        let refused = parse(&["generate", "grid.bin", "--parallel-diagrams"])
+            .err()
+            .expect("generate refuses --parallel-diagrams");
+        assert_eq!(refused.kind(), clap::error::ErrorKind::UnknownArgument);
+        assert!(parse(&["generate", "grid.bin", "-j", "2"]).is_ok());
+        for command in [
+            &["enumerate", "card.dat"][..],
+            &["integrate", "card.dat"],
+            &["parameters", "card.dat"],
+        ] {
+            let mut args = command.to_vec();
+            args.extend(["-j", "2", "--parallel-diagrams"]);
+            assert!(parse(&args).is_ok(), "{command:?}");
+        }
+    }
 
     /// The bare-binary distribution carries its license notices nowhere but
     /// here; each required element must survive in the `--version` text.

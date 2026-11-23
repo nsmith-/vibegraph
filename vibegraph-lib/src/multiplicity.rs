@@ -44,12 +44,13 @@ use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
 };
 use crate::hadronic::{combine_channels, ChannelIntegration};
+use crate::helas::eval::AmplitudeEvaluator;
 use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::progress::{self, Group};
 use crate::proton::{
-    derive_flavor_groups, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
+    derive_flavor_groups_with, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
     ProtonError, ProtonEvent, ProtonIntegrand, SampledPointFault,
 };
 use crate::runcard::RunCard;
@@ -61,7 +62,7 @@ use crate::vegas::{GridRule, IterationCombination, VegasResult};
 /// Split a proc card's enumeration by final-state multiplicity, in increasing
 /// order of outgoing legs, each part keeping the enumeration's own order.
 ///
-/// Empty sets are dropped, as [`derive_flavor_groups`]
+/// Empty sets are dropped, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
 /// drops them; an enumeration with no diagram at all comes back whole, as one
 /// part, for that function to refuse by name.
 ///
@@ -69,17 +70,28 @@ use crate::vegas::{GridRule, IterationCombination, VegasResult};
 /// accepts it, and warned about: the higher multiplicities then overlap the
 /// lower ones' radiation and the sum double counts it.
 pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<DiagramSet>> {
-    let mut parts: Vec<(usize, Vec<DiagramSet>)> = Vec::new();
+    split_by_multiplicity_of(sets, |s| s, card)
+}
+
+/// [`split_by_multiplicity`] over items that each carry a set, `set_of` reading
+/// it.
+fn split_by_multiplicity_of<T>(
+    sets: Vec<T>,
+    set_of: impl Fn(&T) -> &DiagramSet,
+    card: &RunCard,
+) -> Vec<Vec<T>> {
+    let mut parts: Vec<(usize, Vec<T>)> = Vec::new();
     let mut empty = Vec::new();
-    for set in sets {
+    for item in sets {
+        let set = set_of(&item);
         if set.diagrams.is_empty() {
-            empty.push(set);
+            empty.push(item);
             continue;
         }
         let n_out = set.particles_out.len();
         match parts.iter_mut().find(|(n, _)| *n == n_out) {
-            Some((_, part)) => part.push(set),
-            None => parts.push((n_out, vec![set])),
+            Some((_, part)) => part.push(item),
+            None => parts.push((n_out, vec![item])),
         }
     }
     if parts.is_empty() {
@@ -109,7 +121,7 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// A subprocess joins the first part whose leading subprocess has its incoming
 /// masses, in beam order, and its outgoing masses slot by slot once its legs are
 /// paired with the leader's by content ([`final_masses_against`]), which is the
-/// pairing [`derive_flavor_groups`] applies. So two lines listing the same final
+/// pairing [`derive_flavor_groups`](crate::proton::derive_flavor_groups) applies. So two lines listing the same final
 /// state in different orders (`p p > w+ j` and `add process p p > j w-`) share a
 /// part, while two whose massive legs sit in slots the content pairing cannot
 /// line up do not: `u u~ > ta+ vt d u~` and `u u~ > e+ ve ta- vt~` hold the same
@@ -123,19 +135,32 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// (`group_subprocs.py`, `find_process_classes`) lists every leg's mass in the
 /// process's own leg order, so such subprocesses never share a `P` directory.
 ///
-/// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
+/// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
 /// compares them: two subprocesses share a part only when every outgoing mass is
 /// the same value, which it is when the legs read equal parameters. So no part
 /// this returns is one the decomposition refuses for its masses. A name the model
 /// does not know keys as NaN, apart from every mass the model has, for the
 /// decomposition to refuse by name, and an empty part comes back whole, as one
 /// part, for the same reason.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn split_by_external_masses(
     part: Vec<DiagramSet>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Vec<Vec<DiagramSet>> {
+    split_by_external_masses_of(part, |s| s, model, evaluated, card)
+}
+
+/// [`split_by_external_masses`] over items that each carry a set, `set_of`
+/// reading it.
+fn split_by_external_masses_of<T>(
+    part: Vec<T>,
+    set_of: impl Fn(&T) -> &DiagramSet,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Vec<Vec<T>> {
     let mass = |name: &String| {
         model
             .particle_id(name)
@@ -150,17 +175,17 @@ pub(crate) fn split_by_external_masses(
     if part.is_empty() {
         return vec![part];
     }
-    let mut parts: Vec<(Vec<u64>, Vec<u64>, Vec<DiagramSet>)> = Vec::new();
-    for set in part {
-        let k_in = incoming(&set);
-        match parts
-            .iter_mut()
-            .find(|(lead_in, lead_out, p)| *lead_in == k_in && *lead_out == outgoing(&p[0], &set))
-        {
-            Some((_, _, p)) => p.push(set),
+    let mut parts: Vec<(Vec<u64>, Vec<u64>, Vec<T>)> = Vec::new();
+    for item in part {
+        let set = set_of(&item);
+        let k_in = incoming(set);
+        match parts.iter_mut().find(|(lead_in, lead_out, p)| {
+            *lead_in == k_in && *lead_out == outgoing(set_of(&p[0]), set)
+        }) {
+            Some((_, _, p)) => p.push(item),
             None => {
-                let k_out = outgoing(&set, &set);
-                parts.push((k_in, k_out, vec![set]));
+                let k_out = outgoing(set, set);
+                parts.push((k_in, k_out, vec![item]));
             }
         }
     }
@@ -207,19 +232,40 @@ pub fn multiplicity_groups_of(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
 ) -> Result<MultiplicityGroups, String> {
+    let precompiled = sets.iter().map(|_| None).collect();
+    multiplicity_groups_of_with(sets, precompiled, forbidden, model, evaluated, rc)
+}
+
+/// [`multiplicity_groups_of`], with `precompiled[k]` the evaluator of `sets[k]`
+/// where the caller compiled one already, as [`derive_flavor_groups_with`]
+/// takes them.
+pub fn multiplicity_groups_of_with(
+    sets: Vec<DiagramSet>,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    forbidden: &[i64],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+) -> Result<MultiplicityGroups, String> {
+    debug_assert_eq!(sets.len(), precompiled.len());
+    let items: Vec<(DiagramSet, Option<AmplitudeEvaluator>)> =
+        sets.into_iter().zip(precompiled).collect();
+    fn set_of(item: &(DiagramSet, Option<AmplitudeEvaluator>)) -> &DiagramSet {
+        &item.0
+    }
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
     };
     let mut dropped_one_body: Option<String> = None;
     let mut all_parts = Vec::new();
-    for multiplicity in split_by_multiplicity(sets, rc) {
-        let parts = split_by_external_masses(multiplicity, model, evaluated, rc);
+    for multiplicity in split_by_multiplicity_of(items, set_of, rc) {
+        let parts = split_by_external_masses_of(multiplicity, set_of, model, evaluated, rc);
         if parts.len() > 1 {
             tracing::info!(
                 "the {}-leg final states have {} different sets of external masses; each is \
                  integrated over channels of its own and the cross sections are summed",
-                parts[0][0].particles_out.len(),
+                parts[0][0].0.particles_out.len(),
                 parts.len()
             );
         }
@@ -228,7 +274,12 @@ pub fn multiplicity_groups_of(
     let labels = group_labels(
         &all_parts
             .iter()
-            .map(|part| (set_process_ids(part), part[0].particles_out.len()))
+            .map(|part| {
+                (
+                    set_process_ids(part.iter().map(|(s, _)| s)),
+                    part[0].0.particles_out.len(),
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let count = all_parts.len() as u64;
@@ -239,7 +290,7 @@ pub fn multiplicity_groups_of(
             label: labels[k].clone(),
             channels: None,
         });
-        let groups = match derive_flavor_groups(part, model, evaluated, rc) {
+        let groups = match derive_flavor_groups_with(part, model, evaluated, rc) {
             Ok(groups) => groups,
             Err(ProtonError::OneBodyCutToZero { process }) => {
                 tracing::warn!(
@@ -269,9 +320,9 @@ pub fn multiplicity_groups_of(
 
 /// The process numbers (`@N`) the diagrams of `sets` carry, each once, in
 /// increasing order.
-fn set_process_ids(sets: &[DiagramSet]) -> Vec<u32> {
+fn set_process_ids<'a>(sets: impl IntoIterator<Item = &'a DiagramSet>) -> Vec<u32> {
     let mut ids: Vec<u32> = sets
-        .iter()
+        .into_iter()
         .flat_map(|s| s.diagrams.iter().map(|d| d.provenance.process))
         .collect();
     ids.sort_unstable();

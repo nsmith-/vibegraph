@@ -43,7 +43,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::diagrams::DiagramSet;
-use crate::hadronic::{compile_class, HadronicError};
+#[cfg(doc)]
+use crate::hadronic::compile_class;
+use crate::hadronic::{compile_classes, HadronicError};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo::rambo_massive;
@@ -239,15 +241,15 @@ fn evaluate(
         .collect()
 }
 
-fn compile(
-    set: &DiagramSet,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> Result<AmplitudeEvaluator, ProbeError> {
-    compile_class(set, model, evaluated).map_err(|source| ProbeError::Compile {
+/// The probe's refusal for a set [`compile_class`] refused, `source`.
+fn compile_refusal(set: &DiagramSet, source: &HadronicError) -> ProbeError {
+    ProbeError::Compile {
         label: set.label(),
-        source,
-    })
+        source: match source {
+            HadronicError::Compile(why) => HadronicError::Compile(why.clone()),
+            other => HadronicError::Compile(other.to_string()),
+        },
+    }
 }
 
 /// Compile every set of `sets` and bank |M|² at its probe points under
@@ -257,9 +259,28 @@ pub fn measure(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<Vec<SetProbe>, ProbeError> {
-    sets.iter()
-        .map(|set| {
-            let evaluator = compile(set, model, evaluated)?;
+    let refs: Vec<&DiagramSet> = sets.iter().collect();
+    let compiled = compile_classes(&refs, model, evaluated);
+    measure_compiled(sets, compiled, evaluated).map(|(probes, _)| probes)
+}
+
+/// [`measure`] through evaluators compiled already: `compiled[k]` is what
+/// [`compile_class`] made of `sets[k]` under `evaluated`. The sets are probed
+/// across the rayon pool, and the evaluators come back in set order for the
+/// integrand to use. The refusal is the first in set order, the one probing the
+/// sets one after another meets.
+pub fn measure_compiled(
+    sets: &[DiagramSet],
+    compiled: Vec<Result<AmplitudeEvaluator, HadronicError>>,
+    evaluated: &EvaluatedModel,
+) -> Result<(Vec<SetProbe>, Vec<AmplitudeEvaluator>), ProbeError> {
+    use rayon::prelude::*;
+    debug_assert_eq!(sets.len(), compiled.len());
+    let probed: Vec<Result<(SetProbe, AmplitudeEvaluator), ProbeError>> = compiled
+        .into_par_iter()
+        .zip(sets.par_iter())
+        .map(|(compiled, set)| {
+            let evaluator = compiled.map_err(|source| compile_refusal(set, &source))?;
             let masses: Vec<f64> = evaluator
                 .external_particles()
                 .iter()
@@ -271,15 +292,20 @@ pub fn measure(
                     why,
                 })?;
             let m2 = evaluate(&evaluator, evaluated, &momenta);
-            Ok(SetProbe {
+            let probe = SetProbe {
                 points: momenta
                     .into_iter()
                     .zip(m2)
                     .map(|(momenta, m2)| ProbePoint { momenta, m2 })
                     .collect(),
-            })
+            };
+            Ok((probe, evaluator))
         })
-        .collect()
+        .collect();
+    probed
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|v| v.into_iter().unzip())
 }
 
 /// Recompute every banked point of `banked` with `m2_of(set index, momenta)` and
@@ -342,9 +368,22 @@ pub fn check(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<(), ProbeError> {
-    check_with(banked, sets, |k, points| {
-        let evaluator = compile(&sets[k], model, evaluated)?;
-        Ok(evaluate(&evaluator, evaluated, points))
+    let refs: Vec<&DiagramSet> = sets.iter().collect();
+    let compiled = compile_classes(&refs, model, evaluated);
+    check_compiled(banked, sets, &compiled, evaluated)
+}
+
+/// [`check`] through evaluators compiled already: `compiled[k]` is what
+/// [`compile_class`] made of `sets[k]` under `evaluated`.
+pub fn check_compiled(
+    banked: &[SetProbe],
+    sets: &[DiagramSet],
+    compiled: &[Result<AmplitudeEvaluator, HadronicError>],
+    evaluated: &EvaluatedModel,
+) -> Result<(), ProbeError> {
+    check_with(banked, sets, |k, points| match &compiled[k] {
+        Ok(evaluator) => Ok(evaluate(evaluator, evaluated, points)),
+        Err(source) => Err(compile_refusal(&sets[k], source)),
     })
 }
 
@@ -495,7 +534,9 @@ mod tests {
         let f = fixture(CARD);
         let banked = probe(&f);
         let moved = |k: usize, points: &[Vec<[f64; 4]>]| {
-            let evaluator = compile(&f.sets[k], &f.model.model, &f.evaluated)?;
+            let evaluator =
+                crate::hadronic::compile_class(&f.sets[k], &f.model.model, &f.evaluated)
+                    .map_err(|source| compile_refusal(&f.sets[k], &source))?;
             Ok(evaluate(&evaluator, &f.evaluated, points)
                 .into_iter()
                 .map(|m2| m2 * (1.0 + 1e-9))

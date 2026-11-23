@@ -3598,6 +3598,7 @@ dependencies = [
  "nalgebra",
  "num-bigint",
  "num-complex",
+ "num-integer",
  "num-modular",
  "num-prime",
  "num-rational",

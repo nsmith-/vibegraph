@@ -694,6 +694,54 @@ pub(crate) fn compile_class(
     Ok(evaluator)
 }
 
+/// [`compile_class`] over every one of `sets`, across the rayon pool: one
+/// result per set, in set order, each the evaluator the set compiles to on its
+/// own, so the order and the thread a set is compiled on change nothing. It
+/// reports no progress: the workers are in no progress group, so the caller
+/// reports, on its own thread, as it takes the results.
+pub fn compile_classes(
+    sets: &[&DiagramSet],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
+    use rayon::prelude::*;
+    let span = tracing::Span::current();
+    sets.par_iter()
+        .map(|set| {
+            let _entered = span.enter();
+            compile_class(set, model, evaluated)
+        })
+        .collect()
+}
+
+/// `precompiled[k]` where it holds an evaluator of `sets[k]`, compiled under
+/// `evaluated`, and [`compile_class`] of `sets[k]` across the rayon pool
+/// ([`compile_classes`]) where it holds none: one result per set, in set order.
+pub(crate) fn complete_compiles(
+    sets: &[&DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
+    debug_assert_eq!(sets.len(), precompiled.len());
+    let missing: Vec<&DiagramSet> = sets
+        .iter()
+        .zip(&precompiled)
+        .filter(|(_, e)| e.is_none())
+        .map(|(s, _)| *s)
+        .collect();
+    let mut compiled = compile_classes(&missing, model, evaluated).into_iter();
+    precompiled
+        .into_iter()
+        .map(|e| match e {
+            Some(e) => Ok(e),
+            None => compiled
+                .next()
+                .expect("one compile per set without an evaluator"),
+        })
+        .collect()
+}
+
 /// Number of spin (helicity / polarization) states of a particle, from its UFO
 /// spin code (`2s+1`) and whether it is massless. A massless vector has no
 /// longitudinal mode, so it carries two states rather than three.
@@ -1067,13 +1115,27 @@ pub fn compile_subprocesses(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
-    let total = sets.iter().filter(|s| !s.diagrams.is_empty()).count() as u64;
-    let mut evals = Vec::new();
-    for set in sets {
-        if set.diagrams.is_empty() {
-            continue;
-        }
-        evals.push(compile_class(set, model, evaluated)?);
+    compile_subprocesses_with(sets, sets.iter().map(|_| None).collect(), model, evaluated)
+}
+
+/// [`compile_subprocesses`], taking `precompiled[k]` as the evaluator of
+/// `sets[k]` where it holds one ([`complete_compiles`]): an evaluator
+/// [`compile_class`] built from that set under `evaluated`.
+pub fn compile_subprocesses_with(
+    sets: &[DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
+    let (kept, precompiled): (Vec<&DiagramSet>, Vec<Option<AmplitudeEvaluator>>) = sets
+        .iter()
+        .zip(precompiled)
+        .filter(|(s, _)| !s.diagrams.is_empty())
+        .unzip();
+    let total = kept.len() as u64;
+    let mut evals = Vec::with_capacity(kept.len());
+    for evaluator in complete_compiles(&kept, precompiled, model, evaluated) {
+        evals.push(evaluator?);
         progress::step(progress::stage::COMPILE, evals.len() as u64, Some(total));
     }
     if evals.is_empty() {

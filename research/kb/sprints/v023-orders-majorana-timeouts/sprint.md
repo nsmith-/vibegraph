@@ -89,12 +89,18 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 
 | Item | Pri |
 |---|---|
-| `mlm-vanishing-flavour-groups-still-sampled` | medium |
-| `zero-weight-integrand-runs-to-point-cap` | medium |
-| What PR 3 files | — |
+| `enumeration-hands-flavour-violating-subprocesses-to-feyngraph` | high |
+| `set-compilation-loops-are-serial` | high |
+| `amplitude-probe-compiles-each-set-twice` | high |
+| `generate-parallel-diagrams-is-a-no-op` (if it fits) | low |
 
-- **Measure the gain.** Wall time on the named cards, measured on `vg-validator`.
-- **Prove nothing else moves.** σ bit for bit on the cards the fixes don't reach.
+Scope from PR 3's triage (the L-T2 report, `sessions/L-T2-report.md` on PR 3's branch), ruled 2026-11-23. The enumerate scaling the user approved is folded in: enumeration uses the cores by default.
+
+- **Order-preserving only.** Every change keeps the sampling order. σ, grids and diagram sets are bit for bit against main.
+- **The flavour prune reads conservation from the model.** Subprocesses in models that violate the number (CKM, FCNC, RPV, LQ) are left alone. A test on a flavour-violating model pins pruned against unpruned diagram sets.
+- **Host-side enumerate diff.** v0.2.2 against this PR's head, on every released v022-1009 card that enumerates within the cap. The sets are identical card for card.
+- **Measure the gain.** Cards 58, 15, 1009 and 65 are re-run on `vg-validator` with the phase instrument. DY+0–3j at `-j 2` with no flag enumerates in ≈14 s or less, and small processes are no slower.
+- The sampling-schedule, memory and profile items PR 3 files go to the next sprint. So do the two MLM items, which are not the cause on any sampled card.
 
 ### PR 14: run-global progress for `--output-ldjson` (`sprintl-progress`), vg-sprint-L-pipeline, feature-dev, Sonnet
 

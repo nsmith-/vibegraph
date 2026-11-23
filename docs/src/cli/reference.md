@@ -102,7 +102,7 @@ Options:
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+          Enumerate every process line's diagrams across the worker pool. Without it, a line large enough to gain is enumerated across the pool and a smaller one on one thread, where the fan-out is a slowdown. Timing only: the artifact is identical either way
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
@@ -161,7 +161,7 @@ Options:
           Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+          Enumerate every process line's diagrams across the worker pool. Without it, a line large enough to gain is enumerated across the pool and a smaller one on one thread, where the fan-out is a slowdown. Timing only: the artifact is identical either way
 
       --no-network
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
@@ -228,7 +228,7 @@ Options:
           Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+          Enumerate every process line's diagrams across the worker pool. Without it, a line large enough to gain is enumerated across the pool and a smaller one on one thread, where the fan-out is a slowdown. Timing only: the artifact is identical either way
 
       --no-network
           Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
@@ -392,7 +392,7 @@ Options:
           Worker threads (default: the smallest of the CPUs the process may run on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any thread count produces byte-identical output
 
       --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
+          Enumerate every process line's diagrams across the worker pool. Without it, a line large enough to gain is enumerated across the pool and a smaller one on one thread, where the fan-out is a slowdown. Timing only: the artifact is identical either way
 
       --map-split-angle <SPLIT_ANGLE>
           How each 2-body split of the decay tree draws its decay angle.
@@ -571,9 +571,6 @@ Options:
 
       --output-ldjson
           Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
-
-      --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
 
   -h, --help
           Print help (see a summary with '-h')
