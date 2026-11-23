@@ -446,6 +446,114 @@ reweight_mg_oracle: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 
 (hidden directory entries left: 0)
 ```
 
+## Follow-up 2: decay chains, validated per event (option a)
+
+A production-plus-decay-chain card with distinct daughters passes the plan
+checks and, by default, reweights per event; no MadGraph row covered that. Option
+(a) was cheap — the row was green on its first run, about 15 minutes of wall
+time in all — so decay chains stay in per-event mode, now validated.
+
+**MadGraph on a decay-chain event** (3.7.1). The reweight module rebuilds the
+process from the banner's proc card, decay chain included (the standalone
+`rw_me` here is `P1_epem_zz_z_mupmum_z_epem`, 73 `NHEL` rows), and indexes it by
+its Fortran PDG order (`get_pdg_order`, `reweight_interface.py` L2298),
+which lists the decay-chain matrix element's flattened finals; that same order
+is `orig_order` (L2324-L2333) and the helicity table is that matrix element's
+`NHEL` (L2303-L2312). The event's tag and order come from its status ±1 lines
+only (`get_tag_and_order`, `lhe_parser.py` L2255-L2269), so the decay daughters
+are matched by PDG code into the flattened order; `get_helicity` skips every
+intermediate (`else: #intermediate`, L2462), so a resonance's helicity (written
+9 by both generators) never enters. vibegraph's reweighter is compiled from the
+decay-chain diagram set and handed the externals' combination in its own leg
+order, which the oracle test rebuilds by PDG code from the banked record as
+MadGraph does.
+
+**Row** `ee_zz_chain_hel`: `e+ e- > z z, z > mu+ mu-, z > e+ e-`, the
+fixed-energy e+e- card, `aew` (`sminputs 1 130`), `mz` (`mass 23 91`), `wz`
+(`decay 23 2.6`), no `change helicity` line on either side.
+
+```
+$ VG_MG5_ROOT=…-mg/mg5amcnlo VIBEGRAPH_BIN=…-mg/vibegraph-branch2 flock heavy.lock \
+    python validation/madgraph/gen_reweight_oracle.py --work …-mg/oracle ee_zz_chain_hel
+== ee_zz_chain_hel: generate e+ e- > z z, z > mu+ mu-, z > e+ e-
+    INFO reweight: 3 hypotheses, each ratio in each event's own helicity
+    INFO reweight: 1 subprocess(es), 4 evaluations per event: 3 evaluated directly
+    INFO reweight: card-point |M|^2 checked against the integrand on 1000 events (part 0 direct 1000); largest relative deviation 0.0e0; beyond 1e-9: 0; flavour mismatches: 0; non-finite weights: 0
+    INFO reweight: 1000 events weighted in their own helicity; card-point |M|^2 in it checked against the integrand's, largest relative deviation 0.0e0, beyond 1e-9: 0; refused: 0; identical outgoing particles under different mothers: 0
+        aew: 1000 events, largest |w_vg/w_mg - 1| 3.17e-08, 0 beyond 2e-7
+         mz: 1000 events, largest |w_vg/w_mg - 1| 4.15e-08, 0 beyond 2e-7
+         wz: 1000 events, largest |w_vg/w_mg - 1| 3.77e-08, 0 beyond 2e-7
+$ cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture
+ee_zz_chain_hel [exact]      aew: 200 events, largest |w/w_MG - 1| 1.16e-8, 0 beyond 2e-7, largest |w/w_summed - 1| 3.82e-1
+ee_zz_chain_hel [exact]       mz: 200 events, largest |w/w_MG - 1| 1.77e-8, 0 beyond 2e-7, largest |w/w_summed - 1| 7.32e-2
+ee_zz_chain_hel [exact]       wz: 200 events, largest |w/w_MG - 1| 1.73e-8, 0 beyond 2e-7, largest |w/w_summed - 1| 2.14e-14
+(the [default] path: the same three lines)
+test result: ok. 1 passed; 0 failed
+```
+
+Tolerance 2e-7, measured 4.15e-8 full file and 1.77e-8 banked (≥ 4.8×
+headroom). `aew` and `mz` move the per-event weights off the summed ones by
+0.38 and 0.073; `wz` does not (2e-14): the process has no photon, so the width
+scales both Z propagators the same way in every combination. That hypothesis is
+a check on the propagators, not on the helicity mapping.
+
+Mutation (`…-mg/mutation_daughter.py`: the first decayed Z's daughters' labels
+swapped, mu+ against mu-, on 6-leg subprocesses only, so the other rows are
+unaffected and the failure is this row's):
+
+```
+$ cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture
+   ee_zz_chain_hel [exact]      aew: 200 events, largest |w/w_MG - 1| 1.03e-1, 200 beyond 2e-7, …
+   ee_zz_chain_hel [exact]       mz: 200 events, largest |w/w_MG - 1| 2.11e-2, 200 beyond 2e-7, …
+   ee_zz_chain_hel [exact]       wz: 200 events, largest |w/w_MG - 1| 1.73e-8, 0 beyond 2e-7, …
+   test reweighting_matches_madgraphs_reweight_module_event_by_event ... FAILED
+   assertion `left == right` failed: ee_zz_chain_hel [exact] aew: per-event-helicity weights beyond 2e-7 of MadGraph's (largest 1.03e-1)
+   test result: FAILED. 0 passed; 1 failed
+== restored engine.rs: sha256 c6f5e14114a110a0 (original c6f5e14114a110a0): identical
+```
+
+**What decay-chain cards do:** they reweight per event (MadGraph's default),
+unless a record lists identical outgoing particles under different mothers;
+those are refused, with both remedies. Docs say the same (the guide's
+reweighting section).
+
+**Blind spots of this row.** One decay chain at fixed beams, through Z's only:
+no coloured or massive-fermion decays (a top chain's `b W` helicities, a W's
+flavours), no proton-beam chain, and no decay chain whose resonances
+vibegraph writes differently from MadGraph (that matters only for the
+different-mothers case, which is refused). `wz` cannot see a helicity error.
+Both generators read the same SPINUP labels.
+
+### Gates, re-run after follow-up 2
+
+```
+$ cargo fmt --all --check
+rc=0
+$ cargo clippy --workspace --all-targets -- -D warnings
+rc=0
+$ cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture
+rc=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+42 _hel lines (incl. ee_zz_chain_hel), 0 with any event beyond 2e-7
+$ cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_reweight_proton --test cli_reweight_helicity -- --nocapture --test-threads 1
+rc=0
+test cli_a_default_per_event_refusal_names_both_remedies ... ok
+test cli_reweight_helicity_follows_the_card_and_the_flag ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+test hadronic_reweighting_is_taken_in_the_drawn_subprocess ... Audit { events: 5000, terms: [(0, "direct", 2486), (0, "exchanged", 2514)], largest: 0.0, m2_mismatches: 0, flavour_mismatches: 0, non_finite: 0 }
+ INFO reweight: 5000 events weighted in their own helicity; card-point |M|^2 in it checked against the integrand's, largest relative deviation 0.0e0, beyond 1e-9: 0; refused: 0; identical outgoing particles under different mothers: 0
+test matched_mixed_multiplicity_reweighting_is_taken_in_the_drawn_subprocess ... Audit { events: 3000, terms: [(0, "direct", 901), (0, "exchanged", 953), (1, "direct", 381), (1, "exchanged", 398), (2, "direct", 212), (2, "exchanged", 155)], largest: 6.6e-16, m2_mismatches: 0, flavour_mismatches: 0, 
+ INFO reweight: 3000 events weighted in their own helicity; card-point |M|^2 in it checked against the integrand's, largest relative deviation 0.0e0, beyond 1e-9: 0; refused: 0; identical outgoing particles under different mothers: 0
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 46.41s
+$ …-mg/hermetic.sh   (three paths moved aside, cargo test --workspace, restored)
+rc=0
+MARKER rc=0
+74 binaries, passed 2290 failed 0 ignored 26
+cli_reweight_helicity: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+reweight_mg_oracle: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+(hidden directory entries left: 0)
+```
+
 ## vg-validator requests
 
 None: every oracle here ran locally in minutes.
@@ -469,6 +577,11 @@ None: every oracle here ran locally in minutes.
 
 ## Found
 
+- **Per-event-helicity decay chains are validated on one Z row only.** A top
+  chain (`e+ e- > t t~, t > b e+ ve, t~ > b~ e- ve~` with a top-dipole or
+  Yukawa-type hypothesis) and a proton-beam chain would cover coloured and
+  massive-fermion decays and both beam orderings. Close: two more
+  `gen_reweight_oracle.py` rows.
 - **Summed reweighting differs from MadGraph on records with identical
   outgoing particles under different mothers.** MadGraph evaluates such an
   event in every leg order the mothers allow and averages

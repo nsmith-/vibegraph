@@ -164,6 +164,28 @@ ROWS = {
 # and a top dipole, a new Lorentz structure.
 ROWS.update({key + "_hel": dict(ROWS[key], helicity=True) for key in ("ee_tth_ymt", "pp_llj", "ee_ttx_smeft")})
 
+# A production-plus-decay-chain process with distinct daughters, in each event's
+# own helicity: MadGraph rebuilds the decay-chain matrix element from the
+# banner's proc card and reads the daughters' SPINUP in its flattened final
+# order, the intermediates' skipped. `aEWM1` and `MZ` move the Z's left- and
+# right-handed couplings apart at both the production and the decay vertices,
+# the width the Z propagators.
+ROWS["ee_zz_chain_hel"] = dict(
+    model="sm",
+    process="generate e+ e- > z z, z > mu+ mu-, z > e+ e-",
+    run_card="validation/madgraph/onshell_ee_run_card.dat",
+    budget=("20000", "4"),
+    nevents=1000,
+    bank=200,
+    couplings=None,
+    helicity=True,
+    hypotheses=[
+        ("aew", ["set sminputs 1 130.0"]),
+        ("mz", ["set mass 23 91.0"]),
+        ("wz", ["set decay 23 2.6"]),
+    ],
+)
+
 
 def run(cmd, **kw):
     r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, **kw)

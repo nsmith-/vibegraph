@@ -263,6 +263,13 @@ for the rest of the file. Every one of these refusals says how to get the
 helicity-summed ratio, which serves them all: add `change helicity False` to the
 reweight card, or pass `--reweight-helicity summed`.
 
+A decay-chain card (`e+ e- > z z, z > mu+ mu-, z > e+ e-`) reweights per event
+like any other, the decay daughters' recorded helicities selecting the
+configuration and the intermediates' (recorded as summed) entering nothing, as
+in MadGraph's reweight module, which rebuilds the same decay-chain matrix
+element; only a decay chain whose records list identical outgoing particles
+under different mothers needs `change helicity False`.
+
 **Changed in 0.2.3.** Two consequences of the per-event ratio becoming the
 default, for cards that ran before it:
 
