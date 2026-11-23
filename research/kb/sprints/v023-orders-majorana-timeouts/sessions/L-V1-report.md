@@ -10,9 +10,10 @@ Worktree `/home/user/wt/sprintl-vbs`, branch `sprintl-vbs` off main `b2434a0`,
 with `origin/main` (`a0a6eb4`, kb only) merged as `773f913` before the process
 rule against further merges. No source code changes: the diff is the MadGraph
 2.9.18 deviation entry, a row on the MadEvent default-survey page and this
-report. The item file `vbs-stable-boson-sigma-reads-high` is not deleted: its
-residual is attributed on reduced channels, and the full-card confirmation is
-request R1.
+report. The item file `vbs-stable-boson-sigma-reads-high` is deleted: R1
+confirmed the attribution on the full card 700. On card 134 the same effects
+account for most of the excess, and the remaining 0.6% is filed as new work
+(see R1 and Found).
 
 ## Three MadGraph versions, and where each came from
 
@@ -211,8 +212,50 @@ share. It is not a vibegraph excess: on the reproducing channel vibegraph agrees
 with MadEvent run at `hard_survey = 2` to 0.16 ± 0.17% (polarised channel:
 0.21 ± 0.18%), and with MadEvent's own default runs re-combined with equal
 weights to 0.05 ± 0.37% (0.63 ± 0.59%). The size predicted
-for the full cards is the 1.3–1.9% measured; it is confirmed only when the
-long-run host repeats its 3.7.1 seeds at `hard_survey = 2` (request R1).
+for the full cards is the 1.3–1.9% measured. The full-card test is R1 below:
+it confirms the attribution on card 700 and leaves 0.6% open on card 134.
+
+## R1: the full cards at `hard_survey = 2`
+
+vg-validator ran request R1 on 2026-11-23. Setup:
+- MadGraph 3.7.1, the gridpack madevent cards plus `hard_survey = 2`;
+- `nevents` 10 000, `iseed` 1–5, a fresh directory per seed, MadSpin off;
+- `min_events` 10000 on every seed (from `Source/run_config.inc`).
+
+The equal-weight (EW) column comes from
+`validation/madgraph/ew_recombine.py`, and the host's own tool agreed to every
+printed digit. The vibegraph values are the v0.2.2 five-seed means. No change
+merged since then can move them: the cards use the SM model with plain
+`QED`/`QCD` bounds, no squared orders, no Auto widths and no reweighting.
+
+| card | MG reported, 5 seeds (sd) | MG χ²/dof | MG EW (sd) | vibegraph | vg / reported | vg / EW |
+|---|---|---|---|---|---|---|
+| 700 `w+ z j j` | 0.46248 (0.00138) | 1.61 | 0.46395 (0.00182) | 0.46382 | 1.0028 ± 0.0013 | **0.9997 ± 0.0017** |
+| 134 `w-{T} z{0} j j` | 0.054916 (0.000069) | 0.33 | 0.055038 (0.000166) | 0.055385 | 1.0086 ± 0.0006 | **1.0064 ± ~0.0025** |
+
+The ratio errors use the MadGraph standard error of the mean. On 134, the
+±0.0025 also includes vibegraph's own five-seed spread.
+
+- **Card 700 confirms the attribution.** The default survey's −1.4% is
+  removed by `hard_survey = 2`, and the remaining +0.3% by the equal-weight
+  lift. Against the equal-weight σ, vibegraph agrees to 0.03%.
+- **Card 134 misses the prediction** (0.05539 within about 0.4%).
+  - The survey effect is confirmed: `hard_survey = 2` lifts MadGraph by 1.0%
+    over the default survey, and equal weighting by 0.2% more.
+  - vibegraph still sits **0.64% ± ~0.25%** above MadGraph's equal-weight σ.
+  - MadGraph's χ²/dof of 0.33 on this card is itself a warning: its quoted
+    errors look over-quoted, or five seeds understate its spread.
+  - **The residual is not localised.** MadGraph groups 134 into two
+    subprocess directories: the light-quark group `P1_qq_wmTz0qq` (96.9% of σ)
+    and the b b̄ group `P1_qq_wmTz0bbx` (3.1%). For the b b̄ group alone to
+    carry +0.6% of the total, it would need +20%. So the residual most likely
+    sits in the light-quark group, or is spread through it. vibegraph's 134
+    artifacts are no longer on the host, so vibegraph's side of the split is
+    not measured.
+
+So the VBS excess is attributed on the full card 700. On 134 the same two
+effects account for 1.2 of its 1.9%, and the remaining 0.6% is open: see
+Found.
 
 ## What each test cannot see
 
@@ -277,6 +320,20 @@ pixi run kb-lint
   v0.2.2's five seeds and with the 4× rung on the reduced channel, but its
   iterations scatter beyond their errors. Closing: the per-channel iteration
   scatter on this card at the campaign budget.
+- **Card 134 (polarised `w-{T} z{0} j j`) leaves +0.64% ± ~0.25% over
+  MadGraph at `hard_survey = 2` with equal weighting.** Card 700 closes under
+  the same treatment. The plan, in order:
+  1. a per-subprocess-group comparison: vibegraph's σ summed into
+     MadGraph's two groups (the b b̄ final states against the light quarks),
+     from a vibegraph run of 134 on current main, against MadGraph's per-group
+     σ (the host's `R1_perP_hs2.txt`);
+  2. then a per-flow and per-helicity standalone table on the subprocesses
+     that carry it, which so far is checked on one channel only;
+  3. only then a budget question. A comparison between two budget rungs needs
+     the measured seed spread, from 20 or more seeds on both rungs.
+  MadGraph's χ²/dof of 0.33 here argues for more MadGraph seeds as well, if
+  the residual turns out to be spread evenly.
+  Closes when the residual is attributed, or registered with its size.
 - **gfortran rejects `'$)'` edit descriptors** in MadGraph 3.5.7 and 2.9.18
   `symmetry.f` (MadEvent fails with `could not convert string to float: '#7'`).
   Local MadEvent comparisons on those versions need the comma fix above.
