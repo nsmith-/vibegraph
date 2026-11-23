@@ -572,9 +572,6 @@ Options:
       --output-ldjson
           Report on `stdout` as line-delimited JSON: one object per log event and progress event, then the result or refusal. The live status pane is never drawn
 
-      --parallel-diagrams
-          Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
-
   -h, --help
           Print help (see a summary with '-h')
 ```
