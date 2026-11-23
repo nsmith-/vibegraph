@@ -24,9 +24,10 @@ use vibegraph::ufo::UFOModel;
 
 use crate::assets;
 use crate::error::{err, CliError, ErrorKind};
-use crate::integrate::{bind_param_card, load_run_card};
+use crate::integrate::{bind_param_card, load_run_card, BoundParamCard};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
+use crate::parameters;
 
 /// The version of the `diagrams.json` schema.
 ///
@@ -199,6 +200,9 @@ struct EnumerateResult<'a> {
     /// `null` when nothing was drawn.
     svg_dir: Option<String>,
     drawings: usize,
+    /// `parameters.json` and the default `param_card.dat`, beside the summary.
+    parameters_path: String,
+    param_card_path: String,
     summary: &'a Summary,
 }
 
@@ -414,6 +418,7 @@ fn same_subprocess(member: &DiagramSet, set: &DiagramSet) -> bool {
 /// them in enumeration order.
 fn flavour_preview(
     args: &EnumerateArgs,
+    bound: &BoundParamCard,
     config: &GlobalConfig,
     parsed: &vibegraph::diagrams::SupportedCard,
     model: &std::sync::Arc<UFOModel>,
@@ -434,7 +439,7 @@ fn flavour_preview(
         card.split()
     };
     let (rc, _) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
-    let (evaluated, _, _) = bind_param_card(args.param_card.as_deref(), model)?;
+    let evaluated = &bound.evaluated;
     let mut preview = FlavourPreview {
         run_card: args.run_card.as_ref().map(|p| p.display().to_string()),
         param_card: args.param_card.as_ref().map(|p| p.display().to_string()),
@@ -450,7 +455,7 @@ fn flavour_preview(
         preview.beams = "fixed_energy";
         return Ok((preview, group_of));
     }
-    let groups = multiplicity_groups(parsed, model, &evaluated, &rc, args.parallel.enumeration())
+    let groups = multiplicity_groups(parsed, model, evaluated, &rc, args.parallel.enumeration())
         .map_err(|e| err(ErrorKind::Process, e))?;
     for (part, part_groups) in groups.groups.iter().enumerate() {
         for group in part_groups.groups() {
@@ -495,7 +500,15 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     // Refused before the card is read, so a run that would clobber an earlier
     // one spends nothing.
     if !args.force {
-        for path in [&artifact_path, &summary_path, &svg_dir] {
+        let report_path = args.out.join(parameters::REPORT_FILENAME);
+        let card_path = args.out.join(parameters::PARAM_CARD_FILENAME);
+        for path in [
+            &artifact_path,
+            &summary_path,
+            &svg_dir,
+            &report_path,
+            &card_path,
+        ] {
             if path.exists() {
                 return Err(err(
                     ErrorKind::Io,
@@ -527,9 +540,15 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
     let model = &loaded.model;
 
-    let preview = if args.run_card.is_some() || args.param_card.is_some() {
+    let bound = if args.run_card.is_some() || args.param_card.is_some() {
+        Some(bind_param_card(args.param_card.as_deref(), model)?)
+    } else {
+        None
+    };
+    let preview = if let Some(bound) = &bound {
         Some(flavour_preview(
             args,
+            bound,
             &config,
             &parsed,
             model,
@@ -589,6 +608,18 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
     let json = serde_json::to_string_pretty(&summary).expect("the summary serializes");
     std::fs::write(&summary_path, json + "\n").map_err(|e| io_error("write", &summary_path, e))?;
+    let (parameters_json, param_card) = parameters::build(
+        model,
+        ModelRef {
+            label: artifact.model.label(),
+            digest: artifact.model.digest.clone(),
+        },
+        Some(artifact.process.clone()),
+        Some(&artifact.sets),
+        bound.as_ref().map_or(&[], |b| b.auto_widths.as_slice()),
+    );
+    let (parameters_path, param_card_path) =
+        parameters::write(&args.out, &parameters_json, &param_card)?;
     if args.force {
         remove_earlier_drawings(&svg_dir)?;
     }
@@ -615,6 +646,8 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
             summary_path: summary_path.display().to_string(),
             svg_dir: (!drawings.is_empty()).then(|| svg_dir.display().to_string()),
             drawings: drawings.len(),
+            parameters_path: parameters_path.display().to_string(),
+            param_card_path: param_card_path.display().to_string(),
             summary: &summary,
         });
         return Ok(());
@@ -652,6 +685,8 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     ));
     line(format!("wrote {}", artifact_path.display()));
     line(format!("wrote {}", summary_path.display()));
+    line(format!("wrote {}", parameters_path.display()));
+    line(format!("wrote {}", param_card_path.display()));
     if !drawings.is_empty() {
         line(format!(
             "wrote {} drawing{} under {}",

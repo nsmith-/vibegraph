@@ -192,7 +192,11 @@ pub fn resolve_couplings(model: &UFOModel, names: &[String]) -> Result<Vec<Strin
 /// width's linear shift, is a function of `aS` and of most Wilson coefficients —
 /// is movable: the per-event coupling update recomputes `aS`'s dependents from
 /// each bound point's own parameters, the hypothesis's included.
-fn check_movable(model: &UFOModel, name: String, line: usize) -> Result<String, ReweightError> {
+pub(crate) fn check_movable(
+    model: &UFOModel,
+    name: String,
+    line: usize,
+) -> Result<String, ReweightError> {
     if model.params.zeros.contains(&name) {
         return Err(ReweightError::Locked { line, name });
     }

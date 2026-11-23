@@ -291,11 +291,6 @@ impl<'a> Fields<'a> {
         i32::try_from(self.int(field)?).map_err(|_| self.malformed(field, "an integer"))
     }
 
-    /// A required number ([`extract_float`]).
-    pub(crate) fn float(&self, field: &'static str) -> Result<f64, FieldError> {
-        extract_float(self.required(field)?).ok_or_else(|| self.malformed(field, "a number"))
-    }
-
     /// A required list of integer literals that each fit an `i32`
     /// (`lhacode = [ 3 ]`, `spins = [ 2, 2, 3 ]`).
     pub(crate) fn int32_list(&self, field: &'static str) -> Result<Vec<i32>, FieldError> {

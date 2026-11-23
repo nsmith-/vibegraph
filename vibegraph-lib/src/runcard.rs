@@ -182,6 +182,18 @@ pub enum RunCardError {
     },
     #[error("unknown run-card parameter '{name}' (line {line}) — check for a typo")]
     UnknownParam { name: String, line: usize },
+    #[error(
+        "run card line {line} sets '{name}' to the unfilled placeholder '{placeholder}': this is a \
+         template, not a run card. CMS's gridpack_generation.sh substitutes the $DEFAULT_PDF_SETS \
+         and $DEFAULT_nPDF_SETS placeholders with the recommended PDF set and deletes the \
+         $DEFAULT_PDF_MEMBERS and $DEFAULT_nPDF_MEMBERS lines when it builds a gridpack; fill \
+         '{name}' in with a value, as that script would, before running"
+    )]
+    UnfilledPlaceholder {
+        name: String,
+        placeholder: String,
+        line: usize,
+    },
     #[error("malformed value '{value}' for parameter '{name}' (line {line})")]
     BadValue {
         name: String,

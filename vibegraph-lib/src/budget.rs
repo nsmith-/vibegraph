@@ -1434,10 +1434,12 @@ pub(crate) fn sequential_channel_reference(
     (integral, last)
 }
 
-/// `Δσ/σ` of a result, `∞` for a vanishing integral.
+/// `Δσ/|σ|` of a result, `∞` for a vanishing integral. The modulus, because a
+/// squared-order selection that keeps an interference term alone can integrate
+/// to a negative cross section.
 fn rel_of(r: &VegasResult) -> f64 {
-    if r.integral > 0.0 {
-        r.std_dev / r.integral
+    if r.integral.abs() > 0.0 {
+        r.std_dev / r.integral.abs()
     } else {
         f64::INFINITY
     }
@@ -1479,8 +1481,8 @@ fn scaled_rel(channels: &[ChannelHistory]) -> f64 {
         integral += r.integral;
         variance += r.std_dev * r.std_dev * c.stop_scale();
     }
-    if integral > 0.0 {
-        variance.sqrt() / integral
+    if integral.abs() > 0.0 {
+        variance.sqrt() / integral.abs()
     } else {
         f64::INFINITY
     }

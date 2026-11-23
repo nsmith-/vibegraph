@@ -115,6 +115,7 @@ impl PairingSplit {
                         .map(|(d, _)| d.clone())
                         .collect(),
                     mirrored: set.mirrored,
+                    squared_orders: set.squared_orders.clone(),
                 };
                 compile_class(&subset, model, evaluated)
             })

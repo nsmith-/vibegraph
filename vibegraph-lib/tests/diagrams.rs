@@ -129,39 +129,67 @@ fn test_forbidden_u_propagator_in_uux_to_gg() {
     );
 }
 
-/// A squared-order constraint is refused rather than dropped.
+/// A squared-order constraint keeps the diagrams MadGraph keeps and records the
+/// selection the subprocess's |M|² is formed with.
 ///
-/// `NP^2==1` is how MadGraph is asked for the dimension-six *interference* alone,
-/// and it is the first thing a SMEFT user types. It bounds the order of a term in
-/// |M|², which is a statement about pairs of diagrams and not about any one of
-/// them, so this generator cannot honour it — and answering the amplitude-level
-/// question instead would hand back a cross section that is not the one asked for,
-/// with nothing on screen to say so.
-///
-/// The unconstrained control is what makes this a test of the refusal rather than
-/// of the process string: the same legs without the `^2` enumerate normally.
+/// `u u~ > u u~` has two gluon diagrams (QCD 2) and four electroweak ones (QED 2,
+/// QCD 0). `QCD^2==2` is the QCD-electroweak interference: every diagram pairs
+/// with one of the other kind into it, so all six stay. `QCD^2==4` is the pure-QCD
+/// square: an electroweak diagram makes no term of order 4 with anything and is
+/// dropped (`apply_squared_order_constraints`). `aS=1` is MadGraph's `QCD^2<=2`.
+/// `QCD^2<=-1` is "the lowest power only", resolved against the diagrams' lowest
+/// QCD order, 0, into `QCD^2<=0`. The same counts from MadGraph 3.5.7's standalone
+/// output are pinned by the per-class oracle in `squared_orders.rs`.
 #[test]
-fn a_squared_order_constraint_is_a_hard_error() {
-    let opts = ParsingOptions::default();
-    let model = common::sm_model();
+fn squared_order_constraints_select_diagrams_as_madgraph_does() {
+    let cases: [(&str, usize, &str); 5] = [
+        ("generate u u~ > u u~ QCD^2==2", 6, "QCD^2==2"),
+        ("generate u u~ > u u~ QCD^2==4", 2, "QCD^2==4"),
+        ("generate u u~ > u u~ aS=1", 6, "QCD^2<=2"),
+        ("generate u u~ > u u~ aS<=2 QCD^2==4", 6, "QCD^2<=4"),
+        ("generate u u~ > u u~ QCD^2<=-1", 4, "QCD^2<=0"),
+    ];
+    for (card, n, selection) in cases {
+        let sets = enumerate(card).unwrap_or_else(|e| panic!("{card}: {e}"));
+        assert_eq!(total_diagrams(&sets), n, "{card}");
+        let recorded = sets[0]
+            .squared_orders
+            .as_ref()
+            .expect("a selection is recorded");
+        assert_eq!(recorded.to_string(), selection, "{card}");
+    }
+    // A line with no squared order records none.
+    let plain = enumerate("generate u u~ > u u~").unwrap();
+    assert!(plain[0].squared_orders.is_none());
+    // The squared value bounds a line with no amplitude order: `NP^2==1` is
+    // `NP<=1` at the amplitude level, so `QED^2==4` alone keeps QED-2 diagrams
+    // only and the gluon exchanges, QED 0 and of no partner at order 4, go.
+    let ew = enumerate("generate u u~ > u u~ QED^2==4").unwrap();
+    assert_eq!(total_diagrams(&ew), 4);
+}
 
-    let text = match parse_proc_card("generate e+ e- > mu+ mu- QED^2==2", &opts) {
-        Err(e) => e.to_string(),
-        Ok(card) => panic!(
-            "a squared-order constraint was accepted: {}",
-            card.processes[0]
-        ),
-    };
-    assert!(text.contains("QED^2==2"), "{text}");
-    assert!(text.contains("QED<=n"), "{text}");
+/// `WEIGHTED==n` and `WEIGHTED>n` filter the diagrams' weighted order, MadGraph's
+/// `constrained_orders`. On `u u~ > u u~` the gluon exchanges weigh 2 and the
+/// electroweak ones 4.
+#[test]
+fn weighted_exact_and_lower_bounds_filter_the_weighted_order() {
+    for (card, n) in [
+        ("generate u u~ > u u~ WEIGHTED==4", 4),
+        ("generate u u~ > u u~ WEIGHTED>2", 4),
+        ("generate u u~ > u u~ WEIGHTED==2", 2),
+        ("generate u u~ > u u~ WEIGHTED<=2", 2),
+    ] {
+        let sets = enumerate(card).unwrap_or_else(|e| panic!("{card}: {e}"));
+        assert_eq!(total_diagrams(&sets), n, "{card}");
+    }
+}
 
-    let control = parse_proc_card("generate e+ e- > mu+ mu- QED<=2", &opts).unwrap();
-    assert!(
-        total_diagrams(
-            &vibegraph::diagrams::generate_from_proc_card(&control, model.as_ref())
-                .expect("the same legs without the `^2` enumerate")
-        ) > 0
-    );
+/// A squared-order selection none of whose terms any diagram can make leaves
+/// the line without diagrams, which is MadGraph's `NoDiagramException`.
+#[test]
+fn a_squared_order_no_term_meets_leaves_no_diagrams() {
+    let err = enumerate("generate e+ e- > mu+ mu- QED^2==2").unwrap_err();
+    assert!(err.contains("no diagrams"), "{err}");
 }
 
 fn enumerate(card: &str) -> Result<Vec<vibegraph::diagrams::DiagramSet>, String> {

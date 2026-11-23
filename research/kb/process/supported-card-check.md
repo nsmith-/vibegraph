@@ -66,7 +66,7 @@ restrict and reweight cards have the same classification
 
 | Variant | Card feature | Status |
 |---|---|---|
-| `SquaredOrder` | `QCD^2<=4`, `NP^2==1`, `aEW`, `aS` | in scope, not yet supported ([backlog](../backlog/feature/squared-order-constraints-refused.md)) |
+| `SquaredOrder` | `QCD^2<=4`, `NP^2==1`, `aEW`, `aS` | in scope, not yet supported ([backlog](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md)) |
 | `WeightedOrder` | `WEIGHTED==n`, `WEIGHTED>n` | needs the same amplitude split as squared orders (same item) |
 | `ChainOrders` | an overall chain order that a part also bounds with `==` or `>` | [backlog](../backlog/feature/chain-orders-exact-lower-bound-refused.md) |
 | `DecayedPolarization` | `p p > w+{0} w-, w+ > e+ ve`; `t{L} > w+ b` | [backlog](../backlog/feature/polarized-intermediate-resonances-refused.md) |

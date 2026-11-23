@@ -570,9 +570,9 @@ fn resolve_bra_ket<F: Real>(
         (WaveformSlot::FermionIn(fi), WaveformSlot::FermionOut(fo)) => (*fo, *fi, true),
         _ => panic!(
             "internal invariant: a fermion bilinear needs exactly one ket and one bra leg; \
-             diagram generation refuses Majorana fermions and fermion-number-violating \
-             vertices (`Diagram::check_fermion_flow`), so every fermion line reaching the \
-             evaluator has a ket at one end and a bra at the other"
+             diagram generation gives every fermion line a particle end and an \
+             antiparticle end (`Diagram::orient_fermion_lines`), so every fermion line \
+             reaching the evaluator has a ket at one end and a bra at the other"
         ),
     }
 }

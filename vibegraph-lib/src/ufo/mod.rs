@@ -3,6 +3,7 @@ pub mod bind;
 #[cfg(test)]
 pub(crate) mod card_classes;
 pub(crate) mod color;
+pub(crate) mod config_eval;
 pub(crate) mod couplings;
 pub(crate) mod expr;
 pub(crate) mod functions;
@@ -13,12 +14,14 @@ pub mod names;
 pub mod parameters;
 pub mod particles;
 pub(crate) mod propagators;
+pub mod report;
 pub mod slha;
 pub mod sm;
 pub(crate) mod topo;
 pub(crate) mod vertices;
 pub(crate) mod weighted;
 
+use config_eval::Configuration;
 use couplings::{parse_configuration, parse_couplings_with, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
 use functions::{FunctionLibrary, FunctionLibraryError};
@@ -220,8 +223,10 @@ pub enum UfoError {
         propagator: String,
     },
     #[error(
-        "the restrict card sets the width of particle {pdg} to Auto, which MadGraph computes at \
-         launch; computing Auto widths is not supported yet, so give the width as a number"
+        "the restrict card sets the width of particle {pdg} to Auto, which MadGraph keeps free and \
+         computes at launch; a restriction's default here is a number, so give the width as a \
+         number in the restrict card and as Auto in the param card (DECAY {pdg} Auto), which \
+         computes it"
     )]
     RestrictAutoWidth { pdg: i32 },
     #[error(
@@ -349,7 +354,12 @@ impl ParsedModel {
             Some(src) => FunctionLibrary::parse(&src)?,
             None => FunctionLibrary::default(),
         };
-        let (params, variables) = parse_parameters_with_variables(&params_src, &library)?;
+        let configuration: Configuration = match read_optional(configuration_file)? {
+            Some(src) => parse_configuration(&src)?,
+            None => Default::default(),
+        };
+        let (params, variables) =
+            parse_parameters_with_variables(&params_src, &library, &configuration)?;
         let mut particles: IndexMap<String, Particle> =
             parse_particles_with(&particles_src, &|variable| {
                 params.default_of_variable(&variables, variable)
@@ -363,10 +373,6 @@ impl ParsedModel {
             .map(|l| (l.name.clone(), l))
             .collect();
 
-        let configuration = match read_optional(configuration_file)? {
-            Some(src) => parse_configuration(&src)?,
-            None => Default::default(),
-        };
         let couplings: IndexMap<String, Coupling> =
             parse_couplings_with(&couplings_src, &configuration, &library)?
                 .into_iter()
@@ -473,7 +479,9 @@ impl ParsedModel {
     ///
     /// The card is refused, every problem listed at once ([`UfoError::Several`]): a width
     /// given as `Auto` ([`UfoError::RestrictAutoWidth`]: MadGraph keeps such a
-    /// width free and computes it at launch, and nothing here computes one); an
+    /// width free and computes it at launch, `import_ufo.py` `modify_autowidth`;
+    /// here a restriction's default is a number, and a param card's `Auto` is
+    /// what computes one); an
     /// external parameter the card gives no value for
     /// ([`UfoError::RestrictMissing`], which MadGraph refuses too); and a value
     /// that is not finite ([`UfoError::RestrictNonFinite`]). MadGraph's spellings
@@ -1147,15 +1155,16 @@ impl EvaluatedModel {
     ///
     /// # Errors
     ///
-    /// [`CardError::AutoWidth`](bind::CardError::AutoWidth) if the card gives a
-    /// width as `Auto`: MadGraph computes such a width at launch, nothing here
-    /// computes one, and the parameter's default is not what the card means.
+    /// [`CardError::AutoWidthUnbound`](bind::CardError::AutoWidthUnbound) if the
+    /// card gives a width as `Auto`: [`bind::bind_card`] computes such a width,
+    /// this evaluation does not, and the parameter's default is not what the
+    /// card means.
     pub fn from_model_card(
         model: Arc<UFOModel>,
         param_card: &ParamCard,
     ) -> Result<Self, bind::CardError> {
         if let Some(&pdg) = param_card.auto_widths().first() {
-            return Err(bind::CardError::AutoWidth { pdg });
+            return Err(bind::CardError::AutoWidthUnbound { pdg });
         }
         Ok(Self::evaluate_at(model, param_card))
     }

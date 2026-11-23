@@ -37,15 +37,15 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 3 | model without `coupling_orders.py` (`QAD`) | 2 | `coupling-orders-not-inferred-without-coupling-orders-py` (closed) | high |
 | 4 | `ptj4min = -1` | 2 | `ptj-n-min-nonpositive-refused`, closed | medium |
 | 5 | negative coupling order (onia_sm) | 2 | `negative-ufo-coupling-orders-refused`, closed by #141 | medium |
-| 6 | coupling order as a Python expression (dim6top) | 2 | [ufo-coupling-order-expressions-refused](../backlog/feature/ufo-coupling-order-expressions-refused.md) | medium |
+| 6 | coupling order as a Python expression (dim6top) | 2 | ufo-coupling-order-expressions-refused (closed: [L-U1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-U1-report.md)) | medium |
 | 7 | particle charge referencing a parameter | 2 | `ufo-particle-attribute-parameter-references-refused` (closed) | medium |
 | 8 | subprocesses with different outgoing masses | 2 | `mixed-outgoing-mass-subprocesses-not-split`, closed ([K-X1 report](../sprints/v022-smeft-and-refusals/sessions/K-X1-report.md)) | medium |
 | 9 | decay chain without nested parentheses | 2 | [decay-chain-without-nested-parentheses-refused](../backlog/feature/decay-chain-without-nested-parentheses-refused.md) | medium |
-| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md) | medium |
+| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md) | medium |
 | 11 | polarised leg in a non-default `me_frame` | 2 | [me-frame-other-than-partonic-cm-refused](../backlog/feature/me-frame-other-than-partonic-cm-refused.md) | medium |
 | 12 | polarisation on a decayed leg | 1 | [polarized-intermediate-resonances-refused](../backlog/feature/polarized-intermediate-resonances-refused.md) | medium |
 | 13 | σ carried by an effective 1.2 points (TTZ2b) | 1 | [ttz2b-sigma-carried-by-one-point](../backlog/performance/ttz2b-sigma-carried-by-one-point.md) | medium |
-| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md) | high (planned after v0.2, user, 2026-11-07) |
+| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md) | high (planned after v0.2, user, 2026-11-07) |
 | 15 | `xqcut` with a resolved `ptj` below it | 3 | [mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md) | medium (user, 2026-11-07; was low) |
 | 16 | spin-2 propagator (bulk graviton) | 2 | [spin-2-and-spin-3-2-particles-unsupported](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md) | low (descoped by user decision) |
 | 17 | clustering scale with a four-line vertex | 1 | [clustering-scale-contact-vertex-refused](../backlog/feature/clustering-scale-contact-vertex-refused.md) | low |
