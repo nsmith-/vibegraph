@@ -370,6 +370,28 @@ pixi run kb-lint
      - 134 has no decay chain, so a decay-side explanation on 967 would not
        carry over to it. The two diagnoses stay separate even though they
        share this entry.
+     - **Generator cuts.** Each side read the same unpatched run card, and
+       MadGraph's `cuts.f` is the stock template on all three cards.
+       - 134 and 700 share identical cuts: `ptj` 10, `etaj` 6.5, `drjj` 0.4,
+         `mmjj` 10, `ptb` 0, `etab` 6.5, `drbj` 0.4, no lepton cuts,
+         `auto_ptj_mjj` False, `cut_decays` False, `bwcutoff` 15. A
+         cut-definition mismatch would hit both, and 700 closes, so for 134
+         it is weak: only a difference in how many events sit near those
+         edges could separate the two cards.
+       - 967 differs in three ways the control cannot see:
+         - MLM matching (`ickkw` 1, `xqcut` 10, `auto_ptj_mjj` True,
+           `maxjetflavor` 4), a kT cut on every jet–jet and jet–beam pair;
+         - a jet-HT window `htjmin` 100 / `htjmax` 400, summed over jets
+           only (`is_a_j`: quarks with pdg ≤ 4 and gluons). The taus are
+           excluded, despite the card's "ht_400toInf" label;
+         - the s-channel `alp > ta+ ta-` window at `bwcutoff` 15.
+         There are no lepton or tau cuts (`cut_decays` False). `ptj` is 10,
+         `etaj` 5, and the scale is `dynamical_scale_choice` −1.
+       - Reading 967's subprocess pattern against the cuts: the `alp j`
+         (2→2) and `alp j j` (2→3) families see the HT window and the xqcut
+         very differently. A mismatch in the HT object selection, its upper
+         edge, or the kT measure would split those two families. An offset
+         uniform across both points back at the decay chain.
   2. **Then a per-flow and per-helicity standalone table** on the subprocesses
      that carry the residual. So far that is checked on one VBS channel only,
      and on no ALP channel.
