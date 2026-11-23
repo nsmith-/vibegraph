@@ -102,6 +102,19 @@ Scope from PR 3's triage (the L-T2 report, `sessions/L-T2-report.md` on PR 3's b
 - **Measure the gain.** Cards 58, 15, 1009 and 65 are re-run on `vg-validator` with the phase instrument. DY+0–3j at `-j 2` with no flag enumerates in ≈14 s or less, and small processes are no slower.
 - The sampling-schedule, memory and profile items PR 3 files go to the next sprint. So do the two MLM items, which are not the cause on any sampled card.
 
+### PR 14: run-global progress for `--output-ldjson` (`sprintl-progress`), vg-sprint-L-pipeline, feature-dev, Sonnet
+
+| Item | Pri |
+|---|---|
+| `ldjson-progress-has-no-run-global-position` | medium |
+
+Added on 2026-11-22 from a downstream consumer's need, after PR 3a's phase records landed.
+
+- **Per-group extras.** Every stage that repeats per multiplicity or flavour group carries `group`, `groups`, `label` and `channels` on its `progress` records.
+- **Run-global position.** A run-global `phase`/`phases` comes from the phase instrument and never goes backwards.
+- **Additive only.** Extras only, under `schema_version` 1. No existing field changes meaning. Documented next to the progress record.
+- **Acceptance (hermetic).** `p p > e+ e-` plus `add process p p > e+ e- j` on sm-no_b_mass gives the two α surveys as group 1 of 2 and 2 of 2, with a non-decreasing global position. A single-group run gives 1 of 1.
+
 ### PR 4: VBS stable-boson σ high (`sprintl-vbs`), vg-sprint-L-physics, validation-dev, Opus
 
 | Item | Pri | Evidence |

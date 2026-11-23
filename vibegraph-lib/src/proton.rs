@@ -125,8 +125,8 @@ use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
-    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
+    bind_vetoes, drawn_helicity, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2,
+    vetoed_of, zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_configuration_weights, compile_scale_source,
@@ -695,6 +695,19 @@ impl FlavorGroups {
         &self.groups
     }
 
+    /// The process numbers (`@N`) of every subprocess, each once, in
+    /// increasing order.
+    pub fn process_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .groups
+            .iter()
+            .flat_map(|g| g.members().iter().map(|m| m.process))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
     /// The pole masses of the two incoming legs in beam order, which every group
     /// shares ([`derive_flavor_groups`] refuses a decomposition where they differ).
     pub fn initial_masses(&self) -> [f64; 2] {
@@ -1130,7 +1143,14 @@ pub fn derive_flavor_groups_with(
     let mut compiled = Vec::with_capacity(sets.len());
     let mut one_body: Option<(String, bool)> = None;
     let mut massless_one_body: Option<String> = None;
+    // The compiles ran on the pool; their progress is reported here, in set
+    // order on this thread, so it carries this thread's group and rises.
     for ((set, process), evaluator) in sets.iter().zip(&labels).zip(evaluators) {
+        progress::step(
+            progress::stage::COMPILE,
+            compiled.len() as u64,
+            Some(sets.len() as u64),
+        );
         let evaluator = evaluator?;
         if evaluator.n_in() != 2 {
             return Err(ProtonError::NotTwoIncoming {
@@ -1872,6 +1892,14 @@ pub struct ProtonSelection {
     /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
     /// ordering's beam helicities are already swapped.
     pub helicity: Vec<i32>,
+    /// The same helicities in the group representative's leg order, the order
+    /// [`ProtonEvent::cm`] holds the momenta in for either beam ordering: the
+    /// combination the drawn member's amplitude carries at those momenta.
+    pub cm_helicity: Vec<i32>,
+    /// The `|M|²` of that combination alone at those momenta, off the
+    /// representative's diagonal the draw was made from, at the drawn term's
+    /// coupling.
+    pub helicity_m2: f64,
     /// Index into the group **representative's** colour-flow basis — the indexing
     /// the draw is made in, off the representative's `JAMP2`.
     ///
@@ -4272,11 +4300,11 @@ impl<'a> ProtonIntegrand<'a> {
                 mask_zeroed(vetoed_of(&sc.vetoed, group), argument, &mut amp2);
             }
         }
-        let drawn = match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2)
-        {
-            Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
-            None => eval.select_helicity(&hel_m2, u[2])?,
-        };
+        let (drawn, helicity_m2) =
+            match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2) {
+                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[2])?,
+                None => drawn_helicity(eval, &hel_m2, u[2])?,
+            };
         let (_, order) = g.event_legs(member, ordering);
         if let Some(table) = self.resonances.get(group) {
             let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
@@ -4312,6 +4340,8 @@ impl<'a> ProtonIntegrand<'a> {
             member,
             ordering,
             helicity: order.iter().map(|&leg| drawn[leg]).collect(),
+            cm_helicity: drawn.to_vec(),
+            helicity_m2,
             flow: color.flow,
             config: color.config,
             leading: color.leading,

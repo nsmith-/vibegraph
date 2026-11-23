@@ -49,7 +49,7 @@ use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
-use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
+use crate::reweight::engine::{HelicityRatio, ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
 use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
@@ -527,8 +527,11 @@ fn generate_sample(
     refuse_mixed_multiplicity(sets).map_err(err)?;
     refuse_one_body_final_state(sets).map_err(err)?;
     refuse_exchanged_beam_orderings(sets).map_err(err)?;
-    let evals = compile_subprocesses_with(sets, precompiled, model, evaluated)
-        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let evals = {
+        let _group = crate::progress::enter_group(crate::multiplicity::sole_group(sets, None));
+        compile_subprocesses_with(sets, precompiled, model, evaluated)
+    }
+    .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
         sets,
         &evals,
@@ -753,13 +756,13 @@ fn reweight_plan(
     let n = launches.len();
     let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
-    report_reweighting(n, &plan.summary());
+    report_reweighting(n, plan.helicity(), &plan.summary());
     Ok(plan)
 }
 
 /// One line per distinct subprocess plan: how many subprocesses share it, how
 /// many amplitude evaluations an event costs, and what serves the hypotheses.
-fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
+fn report_reweighting(hypotheses: usize, helicity: HelicityRatio, summary: &[SubprocessSummary]) {
     let mut lines: Vec<(String, usize)> = Vec::new();
     for sub in summary {
         let mut parts: Vec<String> = sub
@@ -790,7 +793,11 @@ fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
             None => lines.push((line, 1)),
         }
     }
-    info!("reweight: {hypotheses} hypotheses");
+    let ratio = match helicity {
+        HelicityRatio::Summed => "helicity-summed",
+        HelicityRatio::Event => "in each event's own helicity",
+    };
+    info!("reweight: {hypotheses} hypotheses, each ratio {ratio}");
     for (line, count) in lines {
         info!("reweight: {count} subprocess(es), {line}");
     }
@@ -1718,6 +1725,7 @@ fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
 mod tests {
     use super::audit::ReweightAudit;
     use super::*;
+    use crate::reweight::engine::CardPoint;
 
     /// A selection that keeps the QCD-electroweak interference alone has a
     /// signed |M|² and is refused by name; the pure-QCD square and a card with
@@ -1804,11 +1812,14 @@ mod tests {
         let mut clean = ReweightAudit::default();
         clean.check(
             (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
+            Ok(CardPoint {
+                m2: 1.0,
+                helicity_m2: None,
+            }),
+            (1.0, 1.0),
             &[],
             &record,
-            (&[2.0], &launches),
+            (&[2.0], &launches, HelicityRatio::Summed),
         );
         clean.finish(&out).unwrap();
         assert!(out.exists());
@@ -1816,17 +1827,122 @@ mod tests {
         let mut refused = ReweightAudit::default();
         refused.check(
             (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
+            Ok(CardPoint {
+                m2: 1.0,
+                helicity_m2: None,
+            }),
+            (1.0, 1.0),
             &[],
             &record,
-            (&[f64::NAN], &launches),
+            (&[f64::NAN], &launches, HelicityRatio::Summed),
         );
         let why = refused.finish(&out).unwrap_err().to_string();
         assert!(
             why.contains("non-finite") && why.contains("`zero`"),
             "{why}"
         );
+        assert!(!out.exists(), "{why}");
+    }
+
+    /// Both ways back to the helicity-summed ratio.
+    fn assert_remedies(why: &str) {
+        assert!(
+            why.contains("`change helicity False`") && why.contains("`--reweight-helicity summed`"),
+            "{why}"
+        );
+    }
+
+    /// Under the per-event-helicity ratio, an event the reweighter refuses and
+    /// an event whose record MadGraph would read in more than one leg order
+    /// each refuse the file, by name.
+    #[test]
+    fn a_refused_helicity_removes_its_file() {
+        use crate::lhef::record::{LheParticle, STATUS_INCOMING, STATUS_OUTGOING};
+        use crate::reweight::engine::HelicityRefusal;
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("events.lhe");
+        let launches = vec![Launch {
+            id: "a".to_string(),
+            info: String::new(),
+            values: Vec::new(),
+        }];
+        let particle = |pdg, status, mothers| LheParticle {
+            pdg,
+            status,
+            mothers,
+            color: [0, 0],
+            momentum: [1.0, 0.0, 0.0, 1.0],
+            mass: 0.0,
+            lifetime: 0.0,
+            spin: 1.0,
+        };
+        let record = |mothers: [[i32; 2]; 2]| crate::lhef::record::LheEvent {
+            process_id: 1,
+            weight: 1.0,
+            scale: 0.0,
+            alpha_qed: 0.0,
+            alpha_qcd: 0.0,
+            particles: vec![
+                particle(11, STATUS_INCOMING, [0, 0]),
+                particle(-11, STATUS_INCOMING, [0, 0]),
+                particle(1, STATUS_OUTGOING, mothers[0]),
+                particle(1, STATUS_OUTGOING, mothers[1]),
+            ],
+            trailer: Vec::new(),
+            source: None,
+        };
+        let event = HelicityRatio::Event;
+        let card = |helicity_m2| {
+            Ok(CardPoint {
+                m2: 2.0,
+                helicity_m2: Some(helicity_m2),
+            })
+        };
+        let check = |audit: &mut ReweightAudit, m0, mothers| {
+            audit.check(
+                (0, BeamOrdering::Direct),
+                m0,
+                (2.0, 1.0),
+                &[11, -11, 1, 1],
+                &record(mothers),
+                (&[1.0], &launches, event),
+            )
+        };
+
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut clean = ReweightAudit::default();
+        check(&mut clean, card(1.0), [[1, 2], [1, 2]]);
+        clean.finish(&out).unwrap();
+
+        let mut refused = ReweightAudit::default();
+        check(
+            &mut refused,
+            Err(HelicityRefusal::Unrecorded),
+            [[1, 2], [1, 2]],
+        );
+        let why = refused.finish(&out).unwrap_err().to_string();
+        assert!(
+            why.contains("in their own helicity") && why.contains("SPINUP 9"),
+            "{why}"
+        );
+        assert_remedies(&why);
+        assert!(!out.exists(), "{why}");
+
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut ambiguous = ReweightAudit::default();
+        check(&mut ambiguous, card(1.0), [[1, 2], [5, 5]]);
+        let why = ambiguous.finish(&out).unwrap_err().to_string();
+        assert!(why.contains("different mothers"), "{why}");
+        assert_remedies(&why);
+        assert!(!out.exists(), "{why}");
+
+        // The card point's |M|^2 in the event's helicity is the integrand's.
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut other = ReweightAudit::default();
+        check(&mut other, card(0.5), [[1, 2], [1, 2]]);
+        let why = other.finish(&out).unwrap_err().to_string();
+        assert!(why.contains("another helicity"), "{why}");
+        assert_remedies(&why);
         assert!(!out.exists(), "{why}");
     }
 

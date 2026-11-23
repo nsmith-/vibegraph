@@ -681,6 +681,24 @@ impl AmplitudeEvaluator {
         dropped
     }
 
+    /// Per helicity combination this evaluator carries, whether it contributes at
+    /// `evaluated`: over threshold at some point of the probe set
+    /// [`prune_zero_helicities`](Self::prune_zero_helicities) reads, by its
+    /// criterion. `None` where that method does not prune (a process that is not
+    /// 2 → n with `n ≥ 2`), which has no probe set to read.
+    pub(crate) fn contributing_helicities(&self, evaluated: &EvaluatedModel) -> Option<Vec<bool>> {
+        if self.n_ext <= 3 || self.n_in != 2 {
+            return None;
+        }
+        let mut good = vec![false; self.helicities.len()];
+        let bound = BoundAmplitude::<f64>::bind(self, evaluated);
+        let mut scratch = bound.scratch_space();
+        for p in &self.generic_probe_points(evaluated) {
+            bound.mark_contributing_helicities(p, HEL_PRUNE_REL, &mut scratch, &mut good);
+        }
+        Some(good)
+    }
+
     /// A deterministic set of generic on-shell partonic-CM probe points: two incoming
     /// legs along ±z at two energy scales, the outgoing legs from seeded massive RAMBO.
     /// Two scales guard against a kinematic coincidence at one energy; the non-round

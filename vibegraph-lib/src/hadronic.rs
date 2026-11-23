@@ -696,24 +696,20 @@ pub(crate) fn compile_class(
 
 /// [`compile_class`] over every one of `sets`, across the rayon pool: one
 /// result per set, in set order, each the evaluator the set compiles to on its
-/// own, so the order and the thread a set is compiled on change nothing. Each
-/// compile reports one [`progress::stage::COMPILE`] step.
+/// own, so the order and the thread a set is compiled on change nothing. It
+/// reports no progress: the workers are in no progress group, so the caller
+/// reports, on its own thread, as it takes the results.
 pub fn compile_classes(
     sets: &[&DiagramSet],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
     use rayon::prelude::*;
-    let total = sets.len() as u64;
-    let done = AtomicU64::new(0);
     let span = tracing::Span::current();
     sets.par_iter()
         .map(|set| {
             let _entered = span.enter();
-            let compiled = compile_class(set, model, evaluated);
-            let n = done.fetch_add(1, Ordering::Relaxed) + 1;
-            progress::step(progress::stage::COMPILE, n, Some(total));
-            compiled
+            compile_class(set, model, evaluated)
         })
         .collect()
 }
@@ -1136,9 +1132,12 @@ pub fn compile_subprocesses_with(
         .zip(precompiled)
         .filter(|(s, _)| !s.diagrams.is_empty())
         .unzip();
-    let evals = complete_compiles(&kept, precompiled, model, evaluated)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
+    let total = kept.len() as u64;
+    let mut evals = Vec::with_capacity(kept.len());
+    for evaluator in complete_compiles(&kept, precompiled, model, evaluated) {
+        evals.push(evaluator?);
+        progress::step(progress::stage::COMPILE, evals.len() as u64, Some(total));
+    }
     if evals.is_empty() {
         return Err(HadronicError::NoSubprocess);
     }
@@ -1682,6 +1681,21 @@ pub(crate) fn share_offsets(n_configs: impl IntoIterator<Item = usize>) -> Vec<u
 /// `JAMP2` written into `jamp2` in the whole amplitude's flow indexing (flows it
 /// does not reach at zero). `None` where no line is zeroed, leaving `jamp2` the
 /// caller's.
+/// The helicity combination drawn off `hel_m2` from `u`
+/// ([`AmplitudeEvaluator::select_helicity`]), and its entry in `hel_m2`.
+pub(crate) fn drawn_helicity<'e>(
+    eval: &'e AmplitudeEvaluator,
+    hel_m2: &[f64],
+    u: f64,
+) -> Option<(&'e [i32], f64)> {
+    let drawn = eval.select_helicity(hel_m2, u)?;
+    let c = eval
+        .helicities()
+        .iter()
+        .position(|h| h.as_slice() == drawn)?;
+    Some((drawn, hel_m2[c]))
+}
+
 pub(crate) fn zeroed_diagonals<'a>(
     vetoed: Option<&BoundVetoed<'a>>,
     main: &BoundSubprocess<'a>,
@@ -2184,6 +2198,9 @@ pub struct EventSelection {
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
+    /// The `|M|²` of that helicity combination alone, off the diagonal it was
+    /// drawn from, at the event's coupling.
+    pub helicity_m2: f64,
     /// Index into the subprocess's colour-flow basis, and so into its
     /// [`ColorFlowTags`](crate::helas::color::flow_tags::ColorFlowTags) table.
     pub flow: usize,
@@ -3633,17 +3650,19 @@ impl<'a> FixedBeamIntegrand<'a> {
             let outgoing: Vec<[f64; 4]> = momenta.iter().map(components).collect();
             table.mask_unadmitted(&mut amp2, &outgoing);
         }
-        let helicity =
+        let (helicity, helicity_m2) =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, subprocess), sub, &ext, &mut jamp2) {
-                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
-                None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
+                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[1])?,
+                None => drawn_helicity(eval, &hel_m2, u[1])?,
             };
+        let helicity = helicity.to_vec();
         // Matching is refused at fixed beams, so the configuration is always drawn.
         let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]], None)?;
 
         Some(EventSelection {
             subprocess,
             helicity,
+            helicity_m2,
             flow: color.flow,
             config: color.config,
             leading: color.leading,
