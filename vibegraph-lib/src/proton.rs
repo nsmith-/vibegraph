@@ -411,8 +411,8 @@ impl FlavorGroup {
     /// whatever their diagrams, so the group can join crossings of different
     /// topology — `g u > h+ d` with `u d~ > h+ g` — that share no clustering. The
     /// group carries no cross section and is never clustered
-    /// ([`ProtonIntegrand`]).
-    fn vanishes(&self) -> bool {
+    /// ([`ProtonIntegrand`]), so no event is ever drawn from it.
+    pub(crate) fn vanishes(&self) -> bool {
         self.vanishes
     }
 
