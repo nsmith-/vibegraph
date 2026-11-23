@@ -38,7 +38,7 @@ use crate::lhef::build::SubprocessRecord;
 use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
-use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
+use crate::lhef::resonance::{MemberLines, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups_of_with, multiplicity_maps, refuse_exchanged_beam_orderings,
@@ -1536,9 +1536,11 @@ fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma
 /// Every flavour group's resonance lines, and the PDG code each line carries in
 /// each of the group's members (`[group][member][config][line]`).
 ///
-/// A group's lines are its representative's; a member's line is the same
-/// flavour or its antiparticle ([`member_line_pdg`]), resolved here once so a
-/// member whose resonance neither describes is refused before any event is drawn.
+/// A group's lines are its representative's; a member's line carries the code
+/// the member's own diagrams put on it ([`MemberLines::resolve`]), resolved here
+/// once so a member whose line neither its diagrams nor its legs name is refused
+/// before any event is drawn. A group whose matrix element vanishes at the card
+/// is never drawn, so its members resolve nothing and hold no codes.
 #[allow(clippy::type_complexity)]
 fn group_resonances(
     groups: &FlavorGroups,
@@ -1557,28 +1559,37 @@ fn group_resonances(
             bwcutoff,
         )
         .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
+        if group.vanishes() {
+            tables.push(table);
+            pdgs.push(vec![Vec::new(); group.members().len()]);
+            continue;
+        }
         let mut members = Vec::with_capacity(group.members().len());
-        for member in group.members() {
+        for (m, member) in group.members().iter().enumerate() {
+            let own = MemberLines::new(&group.member_diagram_set(m).diagrams, model, evaluated)
+                .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
             let mut configs = Vec::with_capacity(group.evaluator().n_configs());
             for config in 0..group.evaluator().n_configs() {
-                let lines = table
-                    .lines(config)
-                    .iter()
-                    .map(|line| {
-                        member_line_pdg(line, table.outgoing(), &member.outgoing, model).ok_or_else(
-                            || {
-                                err(format!(
-                                    "the resonance {} of {} has no flavour in the subprocess \
-                                     with outgoing {:?} that shares its matrix element",
-                                    line.pdg,
-                                    group.diagram_set().label(),
-                                    member.outgoing
-                                ))
-                            },
-                        )
+                let lines = table.lines(config);
+                let codes = own
+                    .resolve(lines, table.outgoing(), &member.outgoing, model)
+                    .into_iter()
+                    .zip(lines)
+                    .map(|(code, line)| {
+                        code.ok_or_else(|| {
+                            err(format!(
+                                "the resonance {} of {} has no flavour in the subprocess with \
+                                 outgoing {:?} that shares its matrix element: none of that \
+                                 subprocess's diagrams carries the line, and its legs do not \
+                                 name it",
+                                line.pdg,
+                                group.diagram_set().label(),
+                                member.outgoing
+                            ))
+                        })
                     })
                     .collect::<Result<Vec<i32>, _>>()?;
-                configs.push(lines);
+                configs.push(codes);
             }
             members.push(configs);
         }
@@ -2010,6 +2021,125 @@ mod tests {
         }
         assert!(mixed > 0, "no group joins up- and down-type quarks");
         assert!(quark_lines > 0, "no quark line reached");
+    }
+
+    /// The flavour groups of a card at the SM's defaults or under `restrict`
+    /// with `param_card`, every group's resonance lines and each member's codes.
+    #[allow(clippy::type_complexity)]
+    fn resolved_groups(
+        restrict: crate::ufo::sm::SMRestrict,
+        param_card: Option<&str>,
+        card: &str,
+    ) -> (
+        Arc<UFOModel>,
+        FlavorGroups,
+        Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), GenerateError>,
+    ) {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::proton::derive_flavor_groups;
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::sm_model;
+
+        let model = sm_model(restrict);
+        let evaluated = match param_card {
+            Some(text) => {
+                EvaluatedModel::from_model_card(model.clone(), &text.parse::<ParamCard>().unwrap())
+                    .unwrap()
+            }
+            None => EvaluatedModel::from_model(model.clone()),
+        };
+        let parsed = parse_proc_card(card, &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&parsed, &model).unwrap();
+        let groups = derive_flavor_groups(sets, &model, &evaluated, &RunCard::default()).unwrap();
+        let resolved = group_resonances(&groups, &model, &evaluated, 15.0);
+        (model, groups, resolved)
+    }
+
+    /// `g u > w+ d` and `g d~ > w+ u~` share one matrix element (the second is
+    /// the CP image of `g d > w- u`, and the polarization sum hides the
+    /// chirality), so they form one live group whose `s`-channel quark is `u` in
+    /// one member and `d~` in the other. Their legs below the line carry charge
+    /// `+2/3` and `+1/3`, so the legs alone name no flavour for the second
+    /// member; each member's own diagram carries its incoming quark there.
+    ///
+    /// MadGraph 3.5.7 `output madevent` of the same two lines writes `SPROP = 2`
+    /// on that line in `g u > w+ d`'s `configs.inc` and `SPROP = -1` in
+    /// `g d~ > w+ u~`'s.
+    #[test]
+    fn a_live_groups_quark_line_carries_each_members_own_flavour() {
+        use crate::lhef::resonance::member_line_pdg;
+        use crate::ufo::sm::SMRestrict;
+
+        let (model, groups, resolved) = resolved_groups(
+            SMRestrict::Default,
+            None,
+            "generate g u > w+ d\nadd process g d~ > w+ u~",
+        );
+        assert_eq!(
+            groups.groups().len(),
+            1,
+            "the two subprocesses form one group"
+        );
+        let group = &groups.groups()[0];
+        assert!(!group.vanishes());
+        let (tables, pdgs) = resolved.expect("every member names its resonance lines");
+        let table = &tables[0];
+        let mut quark_lines = 0;
+        let mut legs_alone_fail = 0;
+        for (member, configs) in group.members().iter().zip(&pdgs[0]) {
+            for (config, member_lines) in configs.iter().enumerate() {
+                for (line, &pdg) in table.lines(config).iter().zip(member_lines) {
+                    if line.pdg.abs() <= 4 {
+                        quark_lines += 1;
+                        assert_eq!(pdg, member.incoming[1], "{member:?} config {config}");
+                        if member_line_pdg(line, table.outgoing(), &member.outgoing, &model)
+                            .is_none()
+                        {
+                            legs_alone_fail += 1;
+                        }
+                    } else {
+                        assert_eq!((line.pdg, pdg), (24, 24), "{member:?} config {config}");
+                    }
+                }
+            }
+        }
+        assert_eq!(quark_lines, 2, "one s-channel quark line per member");
+        assert_eq!(
+            legs_alone_fail, 1,
+            "the legs alone name no flavour for g d~ > w+ u~"
+        );
+    }
+
+    /// With the Cabibbo angle at zero (`restrict_ckm`, `lamWS = 0`),
+    /// `g u > w+ s` and `g s~ > w+ u~` vanish at the card and form one group on
+    /// `0 = 0`, whose `s`-channel quark is `u` in one and `s~` in the other: the
+    /// shape of g2HDM's `g u > h+ d` with `g d~ > h+ u~` where H± has no `u d`
+    /// coupling. Such a group is never drawn, so it resolves no codes, and the
+    /// run's live group resolves as usual.
+    #[test]
+    fn a_group_that_vanishes_at_the_card_resolves_no_resonance_codes() {
+        use crate::ufo::sm::SMRestrict;
+
+        let (_, groups, resolved) = resolved_groups(
+            SMRestrict::Ckm,
+            Some("Block Wolfenstein\n    1 0.000000e+00 # lamWS\n"),
+            "define q = u s~\ndefine qq = s u~\n\
+             generate g q > w+ qq, w+ > e+ ve\n\
+             add process g u > w+ d, w+ > e+ ve",
+        );
+        let (_, pdgs) = resolved.expect("a vanishing group never blocks generation");
+        let vanishing: Vec<usize> = (0..groups.groups().len())
+            .filter(|&g| groups.groups()[g].vanishes())
+            .collect();
+        assert_eq!(vanishing.len(), 1, "one group vanishes at the card");
+        let dead = &groups.groups()[vanishing[0]];
+        assert_eq!(dead.members().len(), 2, "{:?}", dead.members());
+        assert!(pdgs[vanishing[0]].iter().all(Vec::is_empty));
+        for (g, group) in groups.groups().iter().enumerate() {
+            if !group.vanishes() {
+                assert!(pdgs[g].iter().all(|configs| !configs.is_empty()));
+            }
+        }
     }
 
     /// [`EventSource::restart`] promises the identical sequence follows, and a

@@ -338,9 +338,99 @@ fn timelike_lines(
     Ok(lines)
 }
 
+/// The timelike lines of every diagram of one member of a flavour group, its
+/// outgoing legs in the representative's positions: what the member's own
+/// event record reads its intermediate codes from.
+///
+/// MadGraph writes each matrix element's own `s`-channel code for a
+/// configuration (`sprop(numproc, …)` in `configs.inc`, from that matrix
+/// element's diagram, `export_v4.py:5527-5537`; read by `addmothers.f:196-197`),
+/// so a member of a group carries the code its own diagram puts on the line,
+/// whatever the representative's is.
+#[derive(Clone, Debug)]
+pub struct MemberLines {
+    diagrams: Vec<Vec<ResonanceLine>>,
+}
+
+impl MemberLines {
+    /// The lines of each of the member's `diagrams`.
+    pub fn new(
+        diagrams: &[Diagram],
+        model: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Result<Self, LhefError> {
+        let diagrams = diagrams
+            .iter()
+            .map(|d| timelike_lines(d, model, evaluated))
+            .collect::<Result<_, _>>()?;
+        Ok(MemberLines { diagrams })
+    }
+
+    /// The member's code on each of `lines`, one configuration's lines of the
+    /// representative, whose outgoing legs are `representative` where the
+    /// member's are `member`.
+    ///
+    /// A line takes the code the member's own diagrams with the configuration's
+    /// lines put on it: diagrams with one line on each of its leg sets, of the
+    /// same mass, width and colour up to conjugation. Where those diagrams name
+    /// different codes for the line, or the member has no such diagram, the
+    /// line takes [`member_line_pdg`]'s code, and only one those diagrams name
+    /// where there are any. `None` for a line neither settles.
+    pub fn resolve(
+        &self,
+        lines: &[ResonanceLine],
+        representative: &[i32],
+        member: &[i32],
+        model: &UFOModel,
+    ) -> Vec<Option<i32>> {
+        let own: Vec<Vec<i32>> = self
+            .diagrams
+            .iter()
+            .filter_map(|diagram| same_lines(lines, diagram))
+            .collect();
+        lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let mut codes: Vec<i32> = own.iter().map(|codes| codes[i]).collect();
+                codes.sort_unstable();
+                codes.dedup();
+                match codes.as_slice() {
+                    [code] => Some(*code),
+                    _ => member_line_pdg(line, representative, member, model)
+                        .filter(|code| codes.is_empty() || codes.contains(code)),
+                }
+            })
+            .collect()
+    }
+}
+
+/// The codes of `diagram`'s lines in the order of `lines`, where the diagram has
+/// exactly those lines: one on each leg set, of the same mass, width and colour
+/// up to conjugation.
+fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<i32>> {
+    if lines.len() != diagram.len() {
+        return None;
+    }
+    lines
+        .iter()
+        .map(|line| {
+            diagram
+                .iter()
+                .find(|own| {
+                    own.slots == line.slots
+                        && own.mass == line.mass
+                        && own.width == line.width
+                        && own.color.abs() == line.color.abs()
+                })
+                .map(|own| own.pdg)
+        })
+        .collect()
+}
+
 /// The PDG code a line of a flavour group's representative carries in one of
 /// the group's members, whose outgoing legs are `member` where the
-/// representative's are `representative`.
+/// representative's are `representative`, read off the legs alone.
 ///
 /// A group joins subprocesses that share a matrix element, and those need not
 /// differ only by conjugation: a QCD matrix element is blind to quark flavour, so
@@ -728,6 +818,77 @@ mod tests {
                 "{member:?}"
             );
         }
+    }
+
+    /// A member takes the code its own diagram puts on a line, where the legs
+    /// alone would name the representative's. Two degenerate colour triplets
+    /// with a width (the shape of MSSM's `ul` and `cl` in
+    /// `e+ e- > ul ul~, ul > d x1+` against the same process for `cl`; the SM's
+    /// `u` and `c` codes stand in for them, with a squark's mass and width) have
+    /// the same mass, width and colour, and their legs below carry the same
+    /// charge, so the charge rule keeps the representative's code for the other
+    /// member. MadGraph keeps the two in separate matrix elements for exactly
+    /// this reason (`helas_objects.py:206-215`) and writes each its own code.
+    #[test]
+    fn a_member_line_takes_its_own_diagrams_code() {
+        let model = sm_model(SMRestrict::Default);
+        let squark = |pdg: i32, slots: u64| ResonanceLine {
+            slots,
+            pdg,
+            color: 3,
+            mass: 561.119,
+            width: 5.477195,
+            forced: true,
+        };
+        let photon = ResonanceLine {
+            slots: 0b1111,
+            pdg: 22,
+            color: 1,
+            mass: 0.0,
+            width: 0.0,
+            forced: false,
+        };
+        let z = ResonanceLine {
+            pdg: 23,
+            mass: 91.188,
+            width: 2.441404,
+            ..photon
+        };
+        // Outgoing `d W+ d~ W-` against `s W+ s~ W-`.
+        let (rep, member) = ([1, 24, -1, -24], [3, 24, -3, -24]);
+        let lines = [squark(2, 0b0011), squark(-2, 0b1100), photon];
+        assert_eq!(member_line_pdg(&lines[0], &rep, &member, &model), Some(2));
+        let own = MemberLines {
+            diagrams: vec![
+                vec![squark(4, 0b0011), squark(-4, 0b1100), photon],
+                vec![squark(4, 0b0011), squark(-4, 0b1100), z],
+            ],
+        };
+        assert_eq!(
+            own.resolve(&lines, &rep, &member, &model),
+            [Some(4), Some(-4), Some(22)]
+        );
+        // A member without a diagram of the configuration's lines falls back on
+        // its legs.
+        let unmatched = MemberLines {
+            diagrams: vec![vec![squark(4, 0b0011), z]],
+        };
+        assert_eq!(
+            unmatched.resolve(&lines, &rep, &member, &model),
+            [Some(2), Some(-2), Some(22)]
+        );
+        // Where the member's matching diagrams disagree on a line, only a code
+        // one of them carries is taken, and the legs' code here is none of them.
+        let split = MemberLines {
+            diagrams: vec![
+                vec![squark(4, 0b0011), squark(-4, 0b1100), photon],
+                vec![squark(6, 0b0011), squark(-4, 0b1100), photon],
+            ],
+        };
+        assert_eq!(
+            split.resolve(&lines, &rep, &member, &model),
+            [None, Some(-4), Some(22)]
+        );
     }
 
     /// A member of a flavour group names the representative's line, or its

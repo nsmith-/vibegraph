@@ -217,6 +217,14 @@ pub(super) struct ResonanceTally {
     /// Events whose intermediates could not be given a colour their daughters
     /// fit, written without them rather than with a wrong one.
     refused: u64,
+    /// Events whose subprocess holds no code for an intermediate it would
+    /// write, written without them rather than with the representative's.
+    unresolved: u64,
+}
+
+/// The code `pdgs[config][line]`, `None` where the table holds none.
+fn member_code(pdgs: &[Vec<i32>], config: usize, line: usize) -> Option<i32> {
+    pdgs.get(config)?.get(line).copied()
 }
 
 /// One event's record, with the resonances of its configuration as status-2
@@ -243,15 +251,24 @@ pub(super) fn event_record(
         return record.event(externals, helicity, flow, header).ok();
     };
     let lines = table.lines(config);
-    let intermediates: Vec<Intermediate> = table
+    let intermediates: Option<Vec<Intermediate>> = table
         .on_shell(config, &externals[record.n_in()..])
         .into_iter()
-        .map(|i| Intermediate {
-            pdg: pdgs.map_or(lines[i].pdg, |p| p[config][i]),
-            color: lines[i].color,
-            slots: lines[i].slots,
+        .map(|i| {
+            Some(Intermediate {
+                pdg: match pdgs {
+                    Some(p) => member_code(p, config, i)?,
+                    None => lines[i].pdg,
+                },
+                color: lines[i].color,
+                slots: lines[i].slots,
+            })
         })
         .collect();
+    let Some(intermediates) = intermediates else {
+        tally.unresolved += 1;
+        return record.event(externals, helicity, flow, header).ok();
+    };
     match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
         Ok(event) => Some(event),
         Err(LhefError::IntermediateColor { .. } | LhefError::IntermediateNesting { .. }) => {
@@ -288,15 +305,21 @@ pub(super) fn matched_event_record(
     let intermediates: Vec<Intermediate> = match (resonances, config) {
         (Some((table, pdgs)), Some(config)) if leading => {
             let lines = table.lines(config);
-            table
+            let resolved: Option<Vec<Intermediate>> = table
                 .clustered_on_shell(config, &matched.on_shell, n_in)
                 .into_iter()
-                .map(|i| Intermediate {
-                    pdg: pdgs[config][i],
-                    color: lines[i].color,
-                    slots: lines[i].slots,
+                .map(|i| {
+                    Some(Intermediate {
+                        pdg: member_code(pdgs, config, i)?,
+                        color: lines[i].color,
+                        slots: lines[i].slots,
+                    })
                 })
-                .collect()
+                .collect();
+            resolved.unwrap_or_else(|| {
+                tally.unresolved += 1;
+                Vec::new()
+            })
         }
         (Some(_), Some(_)) => {
             tally.subleading += 1;
@@ -333,6 +356,13 @@ pub(super) fn report_resonances(tally: ResonanceTally, written: usize) {
             "resonances: {} of {written} events list no intermediate record because a \
              resonance's daughters leave colour lines that do not fit it",
             tally.refused
+        );
+    }
+    if tally.unresolved > 0 {
+        warn!(
+            "resonances: {} of {written} events list no intermediate record because their \
+             subprocess names no code for a resonance of its configuration",
+            tally.unresolved
         );
     }
 }
