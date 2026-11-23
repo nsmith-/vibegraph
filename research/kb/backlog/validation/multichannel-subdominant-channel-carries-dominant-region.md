@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "A transfer bound cut the dominant channel's b-collinear corner out of its map"
-description: "TprimeBToTZ M1800: configuration 2's spine bounded its b̄ rung at −ptj² though the b̄ is uncut, so only channels 4 and 1 reached |t_b| < 100 GeV², as rare heavy points; seeds that missed them read ~5% low with small errors. Rung bounds now follow what a single-leg side proves; the item stays open for a same-scheme MadGraph reference."
+description: "TprimeBToTZ M1800: an uncut b̄'s rung was bounded at −ptj², so most seeds missed its collinear corner and read ~5% low. Fixed; open until a same-scheme MadGraph σ confirms."
 area: validation
 state: open
 priority: high
