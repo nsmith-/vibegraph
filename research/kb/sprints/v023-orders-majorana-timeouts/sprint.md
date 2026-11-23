@@ -94,7 +94,7 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 | `amplitude-probe-compiles-each-set-twice` | high |
 | `generate-parallel-diagrams-is-a-no-op` (if it fits) | low |
 
-Scope from PR 3's triage ([L-T2 report](sessions/L-T2-report.md) on PR 3's branch), ruled 2026-11-23. The enumerate scaling the user approved is folded in: enumeration uses the cores by default.
+Scope from PR 3's triage (the L-T2 report, `sessions/L-T2-report.md` on PR 3's branch), ruled 2026-11-23. The enumerate scaling the user approved is folded in: enumeration uses the cores by default.
 
 - **Order-preserving only.** Every change keeps the sampling order. σ, grids and diagram sets are bit for bit against main.
 - **The flavour prune reads conservation from the model.** Subprocesses in models that violate the number (CKM, FCNC, RPV, LQ) are left alone. A test on a flavour-violating model pins pruned against unpruned diagram sets.
