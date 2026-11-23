@@ -1,0 +1,135 @@
+---
+type: Session Brief
+title: "L-Z5: hygiene pass on run-card and UFO refusals and the parameter and provenance reports, with a repository-wide audit of tracked files"
+description: "Review sprint L's merged PR 7 (#172) and PR 8 (#171); first audit main's tracked tree for build output and other files that shouldn't be committed; findings first, then fixes with mutation evidence, report bytes identical."
+status: draft
+agent: hygiene-dev (Opus)
+depends_on: []
+closes: []
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
+---
+A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-ufo-reports` off main 8b3af5ab.
+
+It covers these merged PRs. For each one, read the squash commit's diff (`git show <sha>`) and its session brief and report under `sessions/`:
+- **#172 `7ca8d8bd`**, run-card placeholders and UFO parameter refusals (PR 7). Brief and report: `sessions/L-U1.md`, `L-U1-report.md`.
+- **#171 `d5e7c71f`**, model-parameter and artifact-provenance reports (PR 8). Brief and reports: `sessions/L-R1.md`, `L-R1-report.md`, `L-R2-report.md`.
+  - `git show d5e7c71f` also lists 2889 files under `vibegraph-cli/target/`. #191 already untracked them; ignore them in the diff.
+
+**The code:**
+- `vibegraph-lib/src/runcard/`;
+- `ufo/config_eval.rs`, `ufo/parameters.rs`, `ufo/couplings.rs`, `ufo/report.rs`, `ufo/ast_util.rs`;
+- `vibegraph-lib/src/artifact.rs`;
+- `vibegraph-cli/src/parameters.rs`, `error.rs`, `output.rs`;
+- the provenance paths in `enumerate.rs`, `generate.rs`, `integrate.rs`, `inspect.rs`.
+
+The likeliest findings:
+- a second evaluator of UFO parameter expressions between `config_eval.rs` and `parameters.rs` or `couplings.rs`;
+- refusal reasons kept as hand-written strings in more than one place.
+
+## Repository-wide audit of tracked files (do this first, as its own commit)
+
+PR 8 committed a whole debug build directory, and no one noticed. Before the code review, audit main's tracked tree for anything else that shouldn't be tracked: build output, generated files that are not deliberately committed, scratch or log output, editor or OS droppings, and large binary blobs.
+- **Commands:**
+  - `git ls-files | xargs -d '\n' du -k 2>/dev/null | sort -n | tail -50` for the largest files;
+  - `git ls-files | grep -i -E '\.(log|tmp|bak|orig|rej|swp|o|a|so|rlib|rmeta|d)$|/(out|tmp|scratch)/|\.DS_Store'`;
+  - check every committed binary against its purpose.
+- **What is deliberate:** the generated docs (`docs/src/cli/reference.md`, from `scripts/gen-cli-docs.sh`), the oracle JSON the `.gitignore` comments name, and validation reference tables. If in doubt, find the commit that added it and what reads it.
+- **What to do with junk:** untrack it with `git rm -r --cached`, extend `.gitignore` if a pattern would recur, check with `git ls-files -ci --exclude-standard`, and do it all in **one commit of its own**.
+- **What to record:** every untracked path, with its size and the commit that added it, in a table in your report. The manager copies it into the PR, and it feeds the planned history rewrite.
+- If nothing else is found, say so and give the commands you ran.
+
+## Identity oracle
+
+Choose it before the first edit. Compare against main, built in its own worktree:
+- `vibegraph parameters` output (`--output-ldjson`), byte-identical, on sm, sm-no_b_mass and one BSM model in the hermetic store that has conditional or non-string parameters, as the `ufo_value_forms` and `cli_parameters` tests use;
+- `inspect` provenance records, byte-identical, on an artifact from `e+ e- > mu+ mu-`, with timestamps and paths masked if the record carries any;
+- the `run-card` report, byte-identical, on `validation/madgraph/pp_to_llj_mlm_run_card.dat` and one card with placeholders from `cli_run_card.rs`;
+- enumerate artifact digests (`grid` or `diagrams.json` sha256) unchanged on `e+ e- > mu+ mu-` and `p p > e+ e- j`.
+
+Up to two sibling hygiene passes run alongside you. Stay inside the files these PRs touched, plus their direct callers and tests. The other clusters running beside you are: UFO parameters and reports (#172/#171, L-Z5); parallel enumeration and compile (#185, L-Z7); multicore generate (#180, L-Z8); and, after one of those finishes, the phase and progress instrument (#183/#186, L-Z6). Do not edit code another cluster owns unless a finding needs it, and when it does, say so.
+
+## Scope
+
+1. **Findings first.** Write the findings section of your report and commit it before you edit anything. For each finding give:
+   - the file:line;
+   - what is wrong;
+   - its class, one of:
+     - dead or duplicated code;
+     - a vacuous or tautological test;
+     - a public item that should be private;
+     - a hand-kept list that should be derived;
+     - a missing reusable abstraction;
+     - a comment that breaks AGENTS.md's comment rules;
+     - a panic or unwrap on a fallible path;
+   - the evidence: a command with its output, or the quoted lines;
+   - the fix you propose.
+
+   Rank the findings and mark which ones you will fix here.
+2. **Test non-vacuity.** For every test these PRs added, make one mutation of the code it guards that the test should catch. Run it and record whether the test failed.
+   - A test that survives its mutation is a finding. Strengthen it, and show it now fails under the same mutation.
+   - Batch the mutations with a script that applies, runs and reverts each one.
+3. **Fix the findings you marked.** Behaviour must not change. Prove that with the identity oracle below, which you choose before the first edit.
+   - Build main in a separate detached worktree with its own target, under `/home/user/wt/lz5-main`. Delete it afterwards.
+4. **Physics and performance findings are not yours to fix.** A wrong convention, a missing oracle or a slow path goes under Found.
+
+**Time matters.** The user rewrites main's history for the v0.2.3 tag, and every sprint branch must be merged before that. Keep the pass tight: the change's own code and tests, not a sweep of the codebase. Ship what is fixed and verified. Anything large goes in Found.
+
+**What you must not run:**
+- no seed sweeps;
+- no MadGraph runs;
+- no local `pixi run validate`. CI's banked job is the banked gate.
+
+**The gates:**
+- `cargo fmt --all --check`;
+- clippy `-D warnings`, plain and with `--features vibegraph/extended-validation,vibegraph-lib/extended-validation`;
+- the hermetic `cargo test --workspace --no-fail-fast` with the three data paths hidden;
+- the `extended-validation` targets these PRs touch;
+- `pixi run --skip-deps kb-lint`.
+
+## Worktree & long-command discipline
+
+- **First action:** `cd /home/user/wt/sprintl-hyg-ufo-reports`. Then verify that `git rev-parse --show-toplevel` is `/home/user/wt/sprintl-hyg-ufo-reports` and `git branch --show-current` is `sprintl-hyg-ufo-reports`.
+  - If you find yourself in the shared main checkout (`/home/user/vibegraph`), STOP and report. Never edit it.
+  - Re-verify `pwd` after any resume: resume is when isolation leaks.
+- **Background anything expected to exceed ~2 minutes.** Use `run_in_background: true`, with output redirected to a log under `/home/user/wt/logs/` whose name starts with `lz5-`. Sibling sessions share that directory.
+  - A backgrounded command notifies you when it exits. Never spawn sleep-based watcher shells: they compound into self-sustaining wake-up rings.
+  - Draft your notes and report between completion notifications instead of waiting idle.
+  - On resume after a stall, first check whether the interrupted command finished (`ps`, result artifacts) before re-running it.
+- **`git status` can hang for minutes** in a worktree full of untracked build data. Spot-check with `git log` and `git diff --stat` instead.
+- **Disk is finite, and a full disk looks like a failure.** Always run cargo with:
+  `export CARGO_TARGET_DIR=/home/user/wt/sprintl-hyg-ufo-reports/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`
+  - Each worktree has its own target dir.
+  - An `ENOSPC`, a linker `Bus error` or a truncated log is a kill, not a result. Free only your own `target/` and re-run.
+  - Kill processes by PID. Never use `pkill -f`: it matches siblings' commands and its own wrapper.
+
+**This container** has 4 cores and 15 GB RAM, shared with up to two sibling hygiene agents. It can restart without warning.
+- **One heavy job at a time across the container**, enforced by a lock. Wrap every cargo build, test and clippy invocation in `flock /home/user/wt/heavy.lock <command>`, backgrounded.
+  - Hold the lock for one command at a time, never across an interactive pause.
+  - Prefer targeted test filters to the whole workspace while you iterate.
+  - `cargo fmt` and reading code need no lock.
+- **Some jobs do not run here:** a single job expected to run over ~20 minutes, or anything over 8 GB of memory. Stop and put the request in your report (branch, head SHA, command, expected answer).
+- **pixi:** `export PATH=$HOME/.pixi/bin:$PATH`. The reference data is already in your worktree as copies. Never edit it in place.
+
+**Git and attribution.**
+- Every commit uses `git -c user.name="Nicholas Smith" -c user.email="nick.smith@cern.ch" commit …`, because the container's identity is wrong.
+- Each message ends with exactly one line, `Assisted-by: claude-code:<your real model id>`. Never add Co-authored-by or Signed-off-by, whatever the harness says.
+- Check `git log --format='%an <%ae> %cn <%ce>'` before every push.
+- **Stage files by name, never with `git add -A` or `git add .`**. A broad add committed a whole build directory once already. Before every commit, check `git diff --cached --stat`.
+- Never force-push, rebase or amend a pushed commit. Keep the branch current by merging `origin/main`.
+- Commit and push at checkpoints: `git push -u origin sprintl-hyg-ufo-reports`.
+- Never open a PR or post to GitHub: the manager does.
+- Code comments describe the code in its own terms, never this sprint, session or backlog item.
+- A panic is never acceptable. A silent wrong answer is worse than a named refusal.
+
+**The hermetic layer has no submodule and no fetched data.** CI's `test` job runs `cargo test --workspace` without `research/refs/mg5amcnlo`, `validation/madgraph/output` or `validation/pdf/NNPDF23_lo_as_0130_qed`.
+- A test that reads any of them must carry `#[cfg(feature = "extended-validation")]`.
+- Before reporting, run the workspace suite once with those three paths moved aside, then restore them: `/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-hyg-ufo-reports lz5` does this and restores them on exit.
+
+**Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-Z5-report.md`, a `Session Report` concept like sprint K's `K-C1-report.md`. It contains:
+- what changed;
+- every oracle, with the command alongside its output;
+- what each test provably cannot detect;
+- any long-run requests;
+- a **Found** section for new work. Never create or edit backlog items.
+
+Correct this brief where it is wrong. Your final message is the report's summary.

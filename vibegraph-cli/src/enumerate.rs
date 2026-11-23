@@ -23,7 +23,7 @@ use vibegraph::runcard::BeamMode;
 use vibegraph::ufo::UFOModel;
 
 use crate::assets;
-use crate::error::{err, CliError, ErrorKind};
+use crate::error::{err, io_error, CliError, ErrorKind};
 use crate::integrate::{bind_param_card, load_run_card, BoundParamCard};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
@@ -261,13 +261,6 @@ fn is_drawing_name(set: &str, name: &str) -> bool {
 fn is_set_name(name: &str) -> bool {
     name.strip_prefix('s')
         .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()))
-}
-
-fn io_error(what: &str, path: &Path, e: std::io::Error) -> CliError {
-    err(
-        ErrorKind::Io,
-        format!("cannot {what} {}: {e}", path.display()),
-    )
 }
 
 /// Remove the drawings an earlier run wrote under `svg/`: every

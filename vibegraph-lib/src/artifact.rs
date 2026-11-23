@@ -121,9 +121,9 @@ use crate::vegas::{GridRule, VegasGrid};
 /// stale artifact from a current one across releases. A commit hash is left out
 /// on purpose: it would make the bytes of two artifacts differ between commits
 /// even when the physics is identical, which defeats comparing artifact digests
-/// bit for bit between a branch and main. The only change is that one trailing field: a version-24 file
-/// is read as it always was, with no writer recorded, and a version-24 reader
-/// refuses a version-25 file by its version.
+/// bit for bit between a branch and main. The only change is that one trailing
+/// field: a version-24 file is read as it always was, with no writer recorded,
+/// and a version-24 reader refuses a version-25 file by its version.
 pub const FORMAT_VERSION: u32 = 25;
 
 /// The release recorded as the writer of an artifact this build writes.
@@ -157,8 +157,8 @@ pub enum ArtifactError {
         expected: u32,
     },
     #[error(
-        "refusing to write artifact format version {found}: this build reads versions \
-         {oldest}..={expected}"
+        "refusing to write artifact format version {found}: this build writes only version \
+         {expected} (it reads {oldest}..={expected})"
     )]
     UnwritableVersion {
         found: u32,
@@ -717,9 +717,9 @@ impl IntegrateArtifact {
     }
 
     /// Serialize and write to `path`, refusing to overwrite an existing file
-    /// unless `force` is set, and refusing a
-    /// [`format_version`](Self::format_version) that
-    /// [`read_from_path`](Self::read_from_path) would refuse.
+    /// unless `force` is set, and refusing any
+    /// [`format_version`](Self::format_version) but [`FORMAT_VERSION`], the only
+    /// layout this struct serializes.
     pub fn write_to_path(&self, path: &Path, force: bool) -> Result<(), ArtifactError> {
         // Only the current layout is written: an older version's bytes lack the
         // trailing writer field this struct serializes.
@@ -1434,15 +1434,21 @@ mod tests {
     }
 
     #[test]
-    fn write_refuses_a_version_this_build_cannot_read() {
+    fn write_refuses_every_version_but_the_current_one() {
         let dir = scratch_dir("unwritable");
-        for version in [OLDEST_READABLE_VERSION - 1, FORMAT_VERSION + 1] {
+        // The writerless version is readable but not writable: its layout lacks
+        // the trailing writer field.
+        for version in [
+            OLDEST_READABLE_VERSION - 1,
+            WRITERLESS_VERSION,
+            FORMAT_VERSION + 1,
+        ] {
             let mut artifact = sample_artifact();
             artifact.format_version = version;
             let path = dir.join(format!("v{version}.bin.zst"));
             let err = artifact
                 .write_to_path(&path, true)
-                .expect_err("an unreadable version is not written");
+                .expect_err("only the current version is written");
             assert!(
                 matches!(
                     err,

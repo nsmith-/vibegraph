@@ -3,7 +3,7 @@ use super::ast_util::{
     named_assignments, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::config_eval::{
-    configuration_modules, flatten_branches, select_branch, Configuration, Scope,
+    config_subset, configuration_modules, flatten_branches, select_branch, Configuration, Scope,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::functions::FunctionLibrary;
@@ -25,17 +25,15 @@ pub enum ParameterError {
     ExprParse { name: String, cause: String },
     #[error(
         "parameter(s) {names} are defined under an `if` of parameters.py whose condition is \
-         outside the subset of Python the loader evaluates against configuration.py (integer \
-         and boolean literals, `configuration.<name>` for a name configuration.py binds to one, \
-         `not`, `and`, `or`, `+`, `-`, `*`): MadGraph runs the module as Python, the loader \
-         does not"
+         outside the subset of Python the loader evaluates against configuration.py ({}): \
+         MadGraph runs the module as Python, the loader does not",
+        config_subset!()
     )]
     ConditionOutside { names: String },
     #[error(
         "parameter '{parameter}': `value` is a conditional expression whose condition is outside \
-         the subset of Python the loader evaluates against configuration.py (integer and boolean \
-         literals, `configuration.<name>` for a name configuration.py binds to one, `not`, `and`, \
-         `or`, `+`, `-`, `*`)"
+         the subset of Python the loader evaluates against configuration.py ({})",
+        config_subset!()
     )]
     ValueConditionOutside { parameter: String },
     #[error(

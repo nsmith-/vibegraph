@@ -6,17 +6,28 @@
 //! `'A' if configuration.flag else 'B'` as a value. The loader does not run
 //! Python: it evaluates this subset and refuses anything else by name.
 //!
-//! The subset is integer-valued (`True` is 1, `False` is 0): integer and
-//! boolean literals, unary `-` and `not`, `+`, `-` and `*`, `and`/`or` with
-//! Python's operand-returning semantics, the conditional expression
-//! `A if T else B`, `configuration.<name>` (through any alias the file binds the
-//! module to), and, in `configuration.py` itself, a bare name bound earlier.
+//! The subset is integer-valued (`True` is 1, `False` is 0) and is the forms
+//! [`config_subset!`] lists, which every refusal of a form outside it quotes:
+//! `and`/`or` follow Python's operand-returning semantics, `configuration.<name>`
+//! resolves through any alias the file binds the module to, and, in
+//! `configuration.py` itself, a bare name bound earlier is read too.
 
 use std::collections::HashMap;
 
 use rustpython_parser::ast;
 
 use super::ast_util::{extract_int, extract_name, named_assignments};
+
+/// The forms [`eval_int`] evaluates, as a refusal names them. A macro so that a
+/// `&'static str` message can `concat!` it.
+macro_rules! config_subset {
+    () => {
+        "integer and boolean literals, `configuration.<name>` for a name \
+         configuration.py binds to one, unary `-`, `+` and `not`, binary `+`, `-` \
+         and `*`, `and`, `or`, and `A if T else B`"
+    };
+}
+pub(crate) use config_subset;
 
 /// The module-level names a model's `configuration.py` binds, as integers
 /// (`True` is 1): the switches a definition or value may test.
@@ -219,6 +230,9 @@ mod tests {
             ("configuration.t and configuration.f", 0),
             ("configuration.f or 7", 7),
             ("configuration.t and 4", 4),
+            // Python stops at the first operand that decides: not the last one.
+            ("configuration.f and 4", 0),
+            ("configuration.t or 9", 1),
             ("3 if configuration.f else 4 if configuration.t else 5", 4),
             ("0 + configuration.t", 1),
             ("not configuration.f", 1),
@@ -247,7 +261,7 @@ mod tests {
             bare: false,
         };
         let stmts = parse_stmts(
-            "if configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\nelse:\n    s = 4\n",
+            "if configuration.a:\n    z = 9\nif configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\nelse:\n    s = 4\n",
         )
         .unwrap();
         let flat = flatten_branches(&stmts, &scope).unwrap();
