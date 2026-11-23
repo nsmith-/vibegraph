@@ -38,7 +38,7 @@ use crate::lhef::build::SubprocessRecord;
 use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
-use crate::lhef::resonance::{MemberLines, SubprocessResonances};
+use crate::lhef::resonance::{LineCode, MemberCode, MemberLines, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
     multiplicity_groups_of_with, multiplicity_maps, refuse_exchanged_beam_orderings,
@@ -1533,21 +1533,27 @@ fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma
         .collect()
 }
 
-/// Every flavour group's resonance lines, and the PDG code each line carries in
-/// each of the group's members (`[group][member][config][line]`).
+/// Every flavour group's resonance lines, and the PDG code and colour each line
+/// carries in each of the group's members (`[group][member][config][line]`).
 ///
 /// A group's lines are its representative's; a member's line carries the code
 /// the member's own diagrams put on it ([`MemberLines::resolve`]), resolved here
-/// once so a member whose line neither its diagrams nor its legs name is refused
-/// before any event is drawn. A group whose matrix element vanishes at the card
-/// is never drawn, so its members resolve nothing and hold no codes.
+/// once, before any event is drawn. A member none of whose lines sits on a
+/// line's legs with its mass and width does not have that line's pole in its
+/// matrix element; it holds [`LineCode::NONE`] for the line, as MadGraph's
+/// `sprop` does for a matrix element without it, and an event that would list
+/// the line is written without intermediates. A line with a width whose
+/// member's diagrams carry it under several codes, none of which its legs name,
+/// refuses the run: it can be written on its Breit–Wigner, and no one code for it
+/// is right. A group whose matrix element vanishes at the card is never drawn, so
+/// its members resolve nothing and hold no codes.
 #[allow(clippy::type_complexity)]
 fn group_resonances(
     groups: &FlavorGroups,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), GenerateError> {
+) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<LineCode>>>>), GenerateError> {
     let mut tables = Vec::with_capacity(groups.groups().len());
     let mut pdgs = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
@@ -1575,20 +1581,21 @@ fn group_resonances(
                     .resolve(lines, table.outgoing(), &member.outgoing, model)
                     .into_iter()
                     .zip(lines)
-                    .map(|(code, line)| {
-                        code.ok_or_else(|| {
-                            err(format!(
-                                "the resonance {} of {} has no flavour in the subprocess with \
-                                 outgoing {:?} that shares its matrix element: none of that \
-                                 subprocess's diagrams carries the line, and its legs do not \
-                                 name it",
-                                line.pdg,
-                                group.diagram_set().label(),
-                                member.outgoing
-                            ))
-                        })
+                    .map(|(code, line)| match code {
+                        MemberCode::Code(code) => Ok(code),
+                        MemberCode::Absent => Ok(LineCode::NONE),
+                        MemberCode::Ambiguous if !(line.width > 0.0) => Ok(LineCode::NONE),
+                        MemberCode::Ambiguous => Err(err(format!(
+                            "the resonance {} of {} has no single flavour in the subprocess \
+                             with outgoing {:?} that shares its matrix element: that \
+                             subprocess's diagrams carry the line under several codes, and \
+                             its legs name none of them",
+                            line.pdg,
+                            group.diagram_set().label(),
+                            member.outgoing
+                        ))),
                     })
-                    .collect::<Result<Vec<i32>, _>>()?;
+                    .collect::<Result<Vec<LineCode>, _>>()?;
                 configs.push(codes);
             }
             members.push(configs);
@@ -2008,12 +2015,21 @@ mod tests {
             }
             for (member, configs) in group.members().iter().zip(members) {
                 for (config, member_lines) in configs.iter().enumerate() {
-                    for (line, &pdg) in table.lines(config).iter().zip(member_lines) {
+                    for (line, code) in table.lines(config).iter().zip(member_lines) {
                         if is_quark(line.pdg) {
                             quark_lines += 1;
-                            assert_eq!(pdg, member.outgoing[2], "{member:?} config {config}");
+                            let quark = member.outgoing[2];
+                            assert_eq!(
+                                (code.pdg, code.color),
+                                (quark, 3 * quark.signum()),
+                                "{member:?} config {config}"
+                            );
                         } else {
-                            assert_eq!((line.pdg, pdg), (21, 21), "{member:?} config {config}");
+                            assert_eq!(
+                                (line.pdg, code.pdg),
+                                (21, 21),
+                                "{member:?} config {config}"
+                            );
                         }
                     }
                 }
@@ -2033,7 +2049,7 @@ mod tests {
     ) -> (
         Arc<UFOModel>,
         FlavorGroups,
-        Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), GenerateError>,
+        Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<LineCode>>>>), GenerateError>,
     ) {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::proton::derive_flavor_groups;
@@ -2060,7 +2076,8 @@ mod tests {
     /// chirality), so they form one live group whose `s`-channel quark is `u` in
     /// one member and `d~` in the other. Their legs below the line carry charge
     /// `+2/3` and `+1/3`, so the legs alone name no flavour for the second
-    /// member; each member's own diagram carries its incoming quark there.
+    /// member; each member's own diagram carries its incoming quark there, in
+    /// its own colour representation (the `d~` line an anti-triplet).
     ///
     /// MadGraph 3.5.7 `output madevent` of the same two lines writes `SPROP = 2`
     /// on that line in `g u > w+ d`'s `configs.inc` and `SPROP = -1` in
@@ -2088,17 +2105,22 @@ mod tests {
         let mut legs_alone_fail = 0;
         for (member, configs) in group.members().iter().zip(&pdgs[0]) {
             for (config, member_lines) in configs.iter().enumerate() {
-                for (line, &pdg) in table.lines(config).iter().zip(member_lines) {
+                for (line, code) in table.lines(config).iter().zip(member_lines) {
                     if line.pdg.abs() <= 4 {
                         quark_lines += 1;
-                        assert_eq!(pdg, member.incoming[1], "{member:?} config {config}");
+                        let quark = member.incoming[1];
+                        assert_eq!(
+                            (code.pdg, code.color),
+                            (quark, 3 * quark.signum()),
+                            "{member:?} config {config}"
+                        );
                         if member_line_pdg(line, table.outgoing(), &member.outgoing, &model)
                             .is_none()
                         {
                             legs_alone_fail += 1;
                         }
                     } else {
-                        assert_eq!((line.pdg, pdg), (24, 24), "{member:?} config {config}");
+                        assert_eq!((line.pdg, code.pdg), (24, 24), "{member:?} config {config}");
                     }
                 }
             }

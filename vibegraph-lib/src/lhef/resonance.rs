@@ -338,6 +338,38 @@ fn timelike_lines(
     Ok(lines)
 }
 
+/// A line's code and colour representation in one member's record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LineCode {
+    pub pdg: i32,
+    /// The SU(3) representation of the line as it flows towards the final
+    /// state, in the UFO's code: a member carrying the representative's
+    /// antiparticle carries the conjugate representation.
+    pub color: i32,
+}
+
+impl LineCode {
+    /// What a member holds for a line it does not carry: MadGraph's `sprop = 0`
+    /// for a matrix element without the configuration's `s`-channel line
+    /// (`export_v4.py:5530-5535`), which `addmothers.f:195-197` never writes as
+    /// one.
+    pub const NONE: LineCode = LineCode { pdg: 0, color: 0 };
+}
+
+/// What a member's own diagrams say about one line of the representative's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemberCode {
+    /// The member carries the line with this code.
+    Code(LineCode),
+    /// No diagram of the member has a line on the line's legs with its mass,
+    /// width and colour, so the line's pole is not in the member's matrix
+    /// element.
+    Absent,
+    /// The member's diagrams carry the line under several codes, and the legs
+    /// below it name none of them.
+    Ambiguous,
+}
+
 /// The timelike lines of every diagram of one member of a flavour group, its
 /// outgoing legs in the representative's positions: what the member's own
 /// event record reads its intermediate codes from.
@@ -370,20 +402,19 @@ impl MemberLines {
     /// representative, whose outgoing legs are `representative` where the
     /// member's are `member`.
     ///
-    /// A line takes the code the member's own diagrams with the configuration's
-    /// lines put on it: diagrams with one line on each of its leg sets, of the
-    /// same mass, width and colour up to conjugation. Where those diagrams name
-    /// different codes for the line, or the member has no such diagram, the
-    /// line takes [`member_line_pdg`]'s code, and only one those diagrams name
-    /// where there are any. `None` for a line neither settles.
+    /// A line takes the code and colour of the member's diagrams with the
+    /// configuration's lines (one on each of its leg sets, of the same mass,
+    /// width and colour up to conjugation), and failing such a diagram, of any
+    /// member line on its legs with its mass, width and colour. Where those name
+    /// several codes, the line takes [`member_line_pdg`]'s if it is one of them.
     pub fn resolve(
         &self,
         lines: &[ResonanceLine],
         representative: &[i32],
         member: &[i32],
         model: &UFOModel,
-    ) -> Vec<Option<i32>> {
-        let own: Vec<Vec<i32>> = self
+    ) -> Vec<MemberCode> {
+        let own: Vec<Vec<LineCode>> = self
             .diagrams
             .iter()
             .filter_map(|diagram| same_lines(lines, diagram))
@@ -392,23 +423,51 @@ impl MemberLines {
             .iter()
             .enumerate()
             .map(|(i, line)| {
-                let mut codes: Vec<i32> = own.iter().map(|codes| codes[i]).collect();
-                codes.sort_unstable();
+                let mut codes: Vec<LineCode> = if own.is_empty() {
+                    self.diagrams
+                        .iter()
+                        .flatten()
+                        .filter(|other| same_line(line, other))
+                        .map(line_code)
+                        .collect()
+                } else {
+                    own.iter().map(|codes| codes[i]).collect()
+                };
+                codes.sort_unstable_by_key(|c| (c.pdg, c.color));
                 codes.dedup();
                 match codes.as_slice() {
-                    [code] => Some(*code),
+                    [] => MemberCode::Absent,
+                    [code] => MemberCode::Code(*code),
                     _ => member_line_pdg(line, representative, member, model)
-                        .filter(|code| codes.is_empty() || codes.contains(code)),
+                        .and_then(|pdg| codes.iter().find(|c| c.pdg == pdg))
+                        .map_or(MemberCode::Ambiguous, |c| MemberCode::Code(*c)),
                 }
             })
             .collect()
     }
 }
 
-/// The codes of `diagram`'s lines in the order of `lines`, where the diagram has
+/// A line's own code and colour.
+fn line_code(line: &ResonanceLine) -> LineCode {
+    LineCode {
+        pdg: line.pdg,
+        color: line.color,
+    }
+}
+
+/// Whether `other` is a line on `line`'s legs with its mass, width and colour up
+/// to conjugation.
+fn same_line(line: &ResonanceLine, other: &ResonanceLine) -> bool {
+    other.slots == line.slots
+        && other.mass == line.mass
+        && other.width == line.width
+        && other.color.abs() == line.color.abs()
+}
+
+/// The codes and colours of `diagram`'s lines in the order of `lines`, where the diagram has
 /// exactly those lines: one on each leg set, of the same mass, width and colour
 /// up to conjugation.
-fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<i32>> {
+fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<LineCode>> {
     if lines.len() != diagram.len() {
         return None;
     }
@@ -417,13 +476,8 @@ fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<
         .map(|line| {
             diagram
                 .iter()
-                .find(|own| {
-                    own.slots == line.slots
-                        && own.mass == line.mass
-                        && own.width == line.width
-                        && own.color.abs() == line.color.abs()
-                })
-                .map(|own| own.pdg)
+                .find(|own| same_line(line, own))
+                .map(line_code)
         })
         .collect()
 }
@@ -835,7 +889,7 @@ mod tests {
         let squark = |pdg: i32, slots: u64| ResonanceLine {
             slots,
             pdg,
-            color: 3,
+            color: 3 * pdg.signum(),
             mass: 561.119,
             width: 5.477195,
             forced: true,
@@ -864,21 +918,30 @@ mod tests {
                 vec![squark(4, 0b0011), squark(-4, 0b1100), z],
             ],
         };
+        use MemberCode::{Absent, Ambiguous};
+        let code = |pdg: i32| {
+            MemberCode::Code(LineCode {
+                pdg,
+                color: if pdg == 22 { 1 } else { 3 * pdg.signum() },
+            })
+        };
         assert_eq!(
             own.resolve(&lines, &rep, &member, &model),
-            [Some(4), Some(-4), Some(22)]
+            [code(4), code(-4), code(22)]
         );
-        // A member without a diagram of the configuration's lines falls back on
-        // its legs.
+        // A member without a diagram of the configuration's lines reads each line
+        // off any of its lines on the same legs, and has none where no line of
+        // its carries those legs with that mass: here no `photon` on all four.
         let unmatched = MemberLines {
             diagrams: vec![vec![squark(4, 0b0011), z]],
         };
         assert_eq!(
             unmatched.resolve(&lines, &rep, &member, &model),
-            [Some(2), Some(-2), Some(22)]
+            [code(4), Absent, Absent]
         );
         // Where the member's matching diagrams disagree on a line, only a code
-        // one of them carries is taken, and the legs' code here is none of them.
+        // one of them carries is taken, and the legs' code here is none of them;
+        // the legs' code settles it where it is one of them.
         let split = MemberLines {
             diagrams: vec![
                 vec![squark(4, 0b0011), squark(-4, 0b1100), photon],
@@ -887,7 +950,21 @@ mod tests {
         };
         assert_eq!(
             split.resolve(&lines, &rep, &member, &model),
-            [None, Some(-4), Some(22)]
+            [Ambiguous, code(-4), code(22)]
+        );
+        assert_eq!(
+            split.resolve(&lines, &rep, &rep, &model),
+            [Ambiguous, code(-4), code(22)]
+        );
+        let with_rep = MemberLines {
+            diagrams: vec![
+                vec![squark(2, 0b0011), squark(-4, 0b1100), photon],
+                vec![squark(6, 0b0011), squark(-4, 0b1100), photon],
+            ],
+        };
+        assert_eq!(
+            with_rep.resolve(&lines, &rep, &rep, &model),
+            [code(2), code(-4), code(22)]
         );
     }
 
