@@ -40,12 +40,14 @@ pub(crate) enum PhaseName {
     Input,
     /// Enumerating the proc card's diagrams.
     Enumerate,
-    /// Compiling each diagram set to record its amplitude probe.
+    /// Compiling each diagram set, once for the run and across the pool, and
+    /// recording its amplitude probe through the evaluator.
     AmplitudeProbe,
     /// Locating and reading the parton densities.
     Pdf,
-    /// Splitting the sets into flavour groups and compiling one evaluator per
-    /// subprocess, with the cuts and the checks that read them.
+    /// Splitting the sets into flavour groups over the evaluators the probe
+    /// compiled (compiling again only a set whose outgoing legs a group
+    /// reorders), with the cuts and the checks that read them.
     Compile,
     /// Building the phase-space maps and the integrand over its channels. On
     /// fixed-energy beams and decays the per-diagram channel maps themselves are

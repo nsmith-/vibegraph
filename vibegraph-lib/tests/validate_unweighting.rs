@@ -68,7 +68,8 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::select::select_index;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
-use vibegraph::unweight::Unweighter;
+use vibegraph::unweight::blocks::BlockedPass;
+use vibegraph::unweight::{AcceptedPoint, UnweightStats, Unweighter};
 
 mod common;
 
@@ -87,12 +88,10 @@ const SCAN_SEED: u64 = 0x5CA7_0FF0;
 /// Independent generation seeds. The spread across them is what the σ comparison
 /// is made against.
 ///
-/// Five, AGENTS.md's standard, because the σ comparison is a *pull* on a
-/// four-seed mean and the mean's own error is estimated from the same four
-/// draws: at four seeds the worst reading here was `|pull| 1.98` against
-/// [`SIGMA_PULL_LIMIT`], and the fifth seed moves it to `1.56` without moving
-/// any relative distance by more than `0.14 %`. What the extra seed buys is the
-/// error on the mean, not the mean.
+/// Five, AGENTS.md's standard, because the σ comparison is a *pull* on the
+/// seed mean and the mean's own error is estimated from the same draws: with
+/// four, one unusually tight spread is enough to inflate a pull. What a fifth
+/// seed buys is the error on the mean, not the mean.
 const GEN_SEEDS: [u64; 5] = [
     0xE7E7_0001,
     0xE7E7_0002,
@@ -117,17 +116,23 @@ const MIN_BIN_EVENTS: f64 = 25.0;
 /// VEGAS integral, in units of the combined error and as a relative deviation.
 ///
 /// Measured over [`GEN_SEEDS`] on the five rows below, worst first: `|pull|`
-/// `1.56` (`ee_to_tatah` against VEGAS) and `|rel|` `0.577 %` (`ee_to_mumua`
-/// against the weighted reference), so the two bounds clear their readings by
-/// `2.2x` and `5.2x`.
+/// `2.50` and `|rel|` `0.350 %`, both `ee_to_tatah` against VEGAS, so the two
+/// bounds clear their readings by `1.4x` and `8.6x`. That pull's denominator is
+/// the five seeds' own spread, which on this row read `0.07 %` against the
+/// `0.3 %` the binomial scale of a 150 000-trial seed at its `43 %`
+/// acceptance gives; against the weighted reference the same mean reads
+/// `+1.00`. Twenty seeds put the per-seed spread back at `0.31 %` and read
+/// `rel −0.311 %`, pull `−2.01` against VEGAS and `+0.140 %`, `+1.16` against
+/// the weighted reference: the five-seed spread was a narrow draw, and the
+/// offset against VEGAS is the one recorded below.
 ///
 /// The pull is the statistic to watch rather than the relative distance. Its
 /// denominator carries the seed mean's own error, which falls as `1/√n` in the
 /// seed count and in the trials a seed spends, so a residual that is not Monte
 /// Carlo grows the pull without bound while `rel` stays where it is — the reading
 /// `validate_sigma`'s `PULL_REPORTED_NOT_ASSERTED` exists to refuse. What the
-/// rows show at five seeds is `rel` against VEGAS of `−0.141`, `+0.039`,
-/// `−0.110`, `−0.358` and `−0.325 %`, four of five negative: a single pass over
+/// rows show at five seeds is `rel` against VEGAS of `−0.140`, `+0.097`,
+/// `−0.108`, `−0.350` and `+0.274 %`, three of five negative: a single pass over
 /// the frozen grids is not the estimator VEGAS quotes, which averages its
 /// iterations, each drawn on the grid as it stood at that iteration, so the two
 /// are not expected to agree exactly. The
@@ -142,8 +147,8 @@ const SIGMA_REL_LIMIT: f64 = 0.03;
 /// comparison is about seventy-five judged bins across five rows, so the largest
 /// of that many standard normal draws sits near `2.7` and a per-bin bound of `5`
 /// is a false-positive rate rather than a tolerance. Measured over [`GEN_SEEDS`]
-/// the worst readings are χ²/dof `1.25` and a bin pull of `2.54`, both on
-/// `ee_to_tatah`'s `cos θ`, clearing the bounds by `2.4x` and `2.0x`. A bound of
+/// the worst readings are χ²/dof `1.15` and a bin pull of `2.34`, both on
+/// `ee_to_mumua`'s `cos θ`, clearing the bounds by `2.6x` and `2.1x`. A bound of
 /// this kind is *supposed* to sit near twice its extremum; more room would mean
 /// it had stopped rejecting.
 const SHAPE_CHI2_LIMIT: f64 = 3.0;
@@ -446,7 +451,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
 
             // Each channel's maximum, scanned on its own grid with its own share of
             // the integration budget.
-            let mut uw = Unweighter::scan(
+            let uw = Unweighter::scan(
                 integ,
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
@@ -475,28 +480,38 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
             // Generation: one pass per seed, sharing the scanned maxima.
             let mut sigmas = Vec::new();
             let mut gen_hists: Vec<Hist> = blank();
-            let mut momenta = Vec::new();
+            let mut overall = UnweightStats::default();
+            // The shipped pass: blocks of trials on the seed's own streams, each
+            // accepted point's momenta rebuilt on the worker that accepted it.
+            let prepare = |point: &AcceptedPoint, _: &[f64]| {
+                let mut momenta = Vec::new();
+                integ.event_in_channel(point.channel, &point.u, &mut momenta);
+                observables(&momenta)
+            };
             for &seed in &GEN_SEEDS {
-                let before = uw.stats().clone();
-                let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                for _ in 0..TRIALS_PER_SEED {
-                    if let Some(point) = uw.trial(integ, &mut rng) {
-                        integ.event_in_channel(point.channel, &point.u, &mut momenta);
-                        let x = observables(&momenta);
-                        for (h, v) in gen_hists.iter_mut().zip(x) {
-                            h.fill(v, point.weight);
-                        }
+                let mut pass = BlockedPass::new(uw.clone(), seed, 0, TRIALS_PER_SEED as u64);
+                // Every event whose trial falls inside the seed's budget, and the
+                // statistics as they stood after the last of them.
+                let mut used = UnweightStats::default();
+                while let Some((point, x)) = pass.next(integ, &prepare) {
+                    if pass.stats().trials > TRIALS_PER_SEED as u64 {
+                        break;
+                    }
+                    used = pass.stats().clone();
+                    for (h, v) in gen_hists.iter_mut().zip(x) {
+                        h.fill(v, point.weight);
                     }
                 }
-                let after = uw.stats();
-                let events = after.accepted - before.accepted;
-                let weight = after.event_weight_sum - before.event_weight_sum;
-                let sigma = uw.total_w_max() * GEV2_TO_PB * weight / TRIALS_PER_SEED as f64;
+                let events = used.accepted;
+                let sigma =
+                    uw.total_w_max() * GEV2_TO_PB * used.event_weight_sum / used.trials as f64;
                 eprintln!(
-                    "  seed {seed:#010x} | {events:>6} events, \
+                    "  seed {seed:#010x} | {events:>6} events in {} trials, \
                      eff {:.3e} | sigma(events) = {sigma:.6e} pb",
-                    events as f64 / TRIALS_PER_SEED as f64
+                    used.trials,
+                    used.efficiency()
                 );
+                overall.absorb(&used);
                 if (events as usize) < MIN_EVENTS {
                     failures.push(format!(
                         "[{}] seed {seed:#010x} produced only {events} events",
@@ -506,7 +521,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
                 sigmas.push(sigma);
             }
 
-            let s = uw.stats();
+            let s = &overall;
             eprintln!(
                 "  overall: eff {:.3e} (predicted {predicted_eff:.3e}) | \
                  overweight fraction {:.3e}, weight share {:.3e}, \

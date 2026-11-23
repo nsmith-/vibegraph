@@ -89,12 +89,18 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 
 | Item | Pri |
 |---|---|
-| `mlm-vanishing-flavour-groups-still-sampled` | medium |
-| `zero-weight-integrand-runs-to-point-cap` | medium |
-| What PR 3 files | — |
+| `enumeration-hands-flavour-violating-subprocesses-to-feyngraph` | high |
+| `set-compilation-loops-are-serial` | high |
+| `amplitude-probe-compiles-each-set-twice` | high |
+| `generate-parallel-diagrams-is-a-no-op` (if it fits) | low |
 
-- **Measure the gain.** Wall time on the named cards, measured on `vg-validator`.
-- **Prove nothing else moves.** σ bit for bit on the cards the fixes don't reach.
+Scope from PR 3's triage (the L-T2 report, `sessions/L-T2-report.md` on PR 3's branch), ruled 2026-11-23. The enumerate scaling the user approved is folded in: enumeration uses the cores by default.
+
+- **Order-preserving only.** Every change keeps the sampling order. σ, grids and diagram sets are bit for bit against main.
+- **The flavour prune reads conservation from the model.** Subprocesses in models that violate the number (CKM, FCNC, RPV, LQ) are left alone. A test on a flavour-violating model pins pruned against unpruned diagram sets.
+- **Host-side enumerate diff.** v0.2.2 against this PR's head, on every released v022-1009 card that enumerates within the cap. The sets are identical card for card.
+- **Measure the gain.** Cards 58, 15, 1009 and 65 are re-run on `vg-validator` with the phase instrument. DY+0–3j at `-j 2` with no flag enumerates in ≈14 s or less, and small processes are no slower.
+- The sampling-schedule, memory and profile items PR 3 files go to the next sprint. So do the two MLM items, which are not the cause on any sampled card.
 
 ### PR 14: run-global progress for `--output-ldjson` (`sprintl-progress`), vg-sprint-L-pipeline, feature-dev, Sonnet
 
@@ -186,6 +192,32 @@ The TpTp item comes first: a zero |M|² on points that pass the cuts may be a si
 - Added by the user's decision of 2026-11-22. It runs after PR 4, since the two may share a cause.
 - **Which MadGraph first.** The VBS and g2HDM gridpacks were made with MadGraph 2.9.18, the DY1j outlier. vg-validator regenerates σ with MadGraph 3.7.1 on VBS cards 134 and 700 and g2HDM cards 894 (M1000) and 889 (M300). If 3.7.1 agrees with vibegraph, the item becomes a registered 2.9.18 deviation.
 - **Oracle.** Per event (Breit–Wigner window and threshold, width, scale, merge sequence) or per diagram against MadGraph on card 894, before σ. Locally: reduced-budget single seeds only. Every multi-seed σ runs on vg-validator (2.5–8 h per seed on 4 cores).
+
+### PR 13: multicore `generate` (`sprintl-generate`), vg-sprint-L-pipeline, performance-dev, Opus
+
+| Item | Pri |
+|---|---|
+| `two-to-six-samples-serial-unweighting-cost` | medium |
+
+Added on 2026-11-22 by the user's decision. Production `generate -j N` on
+v0.2.2 keeps about one core busy:
+
+| Card | CPUs | Utilisation |
+|---|---|---|
+| DY+jet SMEFT, 868 diagrams (107 s CPU in 111 s wall) | 2 | 48% |
+| ttbar | 2 | 42% |
+| shard | 4 | 26% |
+
+Only the w_max scan runs in parallel; accept/reject advances one random trial at a time.
+
+- **Scale.** `generate -j N` scales accept/reject across N threads.
+- **Determinism.** The output is deterministic for a fixed seed and independent of N. A seed's event stream changes from v0.2.2, even at `-j 1`; the release note says so.
+- **Oracles.**
+  - `-j 1/2/4` give byte-identical LHE on at least two processes, one of them a hadronic multichannel card.
+  - The unweighting and samples gates pass at ≥5 seeds.
+  - Speed-up is measured at -j 2 and -j 4.
+  - The two 2→6 samples cells are run and recorded.
+- **Scope.** generate only: integrate's streams and the artifact format do not change.
 
 ## Dispatch
 
