@@ -262,6 +262,16 @@ pub enum GenerateError {
          cut_decays = T, or generate without the reweight card"
     )]
     ReweightPairingWeighted { process: String },
+    /// A subprocess whose squared-order selection keeps an interference term
+    /// without the squares that bound it: its |M|² is signed, and an unweighted
+    /// sample of a signed integrand needs negative-weight events, which this
+    /// generator does not write.
+    #[error(
+        "'{process}': the squared-order constraints {selection} keep interference terms whose \
+         sign follows the kinematics, so events would carry negative weights, which the \
+         unweighting does not produce; the cross section from `integrate` is complete"
+    )]
+    SignedMatrixElement { process: String, selection: String },
     /// Any other refusal, as a message for whoever ran the generation.
     #[error("{0}")]
     Other(String),
@@ -395,6 +405,7 @@ pub fn generate(
     options: &GenerateOptions<'_>,
 ) -> Result<EmitSummary, GenerateError> {
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
+    refuse_signed_matrix_elements(&artifact.sets, assets.model)?;
     check_collider_energy(artifact, assets.card)?;
     check_amplitude_probe(artifact, assets.model, assets.evaluated)?;
     if assets.card.is_decay() && settings.systematics.enabled {
@@ -414,6 +425,25 @@ pub fn generate(
     } else {
         generate_sample(artifact, assets, settings, options)
     }
+}
+
+/// Refuse a sample of subprocesses whose |M|² can be negative
+/// ([`GenerateError::SignedMatrixElement`]).
+fn refuse_signed_matrix_elements(
+    sets: &[DiagramSet],
+    model: &UFOModel,
+) -> Result<(), GenerateError> {
+    for set in sets {
+        if let Some(selection) = &set.squared_orders {
+            if selection.is_signed_on(&set.diagrams, model) {
+                return Err(GenerateError::SignedMatrixElement {
+                    process: set.label(),
+                    selection: selection.to_string(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Whether a generation from `artifact`, whose recorded proc card parses to
@@ -1659,6 +1689,32 @@ fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
 mod tests {
     use super::audit::ReweightAudit;
     use super::*;
+
+    /// A selection that keeps the QCD-electroweak interference alone has a
+    /// signed |M|² and is refused by name; the pure-QCD square and a card with
+    /// no squared order are not.
+    #[test]
+    fn a_signed_squared_order_selection_is_refused() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let sets = |card: &str| {
+            let parsed = parse_proc_card(card, &ParsingOptions::default()).unwrap();
+            generate_from_proc_card(&parsed, &model).unwrap()
+        };
+        let signed = refuse_signed_matrix_elements(&sets("generate u u~ > u u~ QCD^2==2"), &model);
+        assert!(
+            matches!(signed, Err(GenerateError::SignedMatrixElement { .. })),
+            "{signed:?}"
+        );
+        for card in ["generate u u~ > u u~ QCD^2==4", "generate u u~ > u u~"] {
+            assert!(
+                refuse_signed_matrix_elements(&sets(card), &model).is_ok(),
+                "{card}"
+            );
+        }
+    }
 
     /// A sampled-point fault read after the event file is in place refuses the
     /// run and takes the file with it; with no fault the file stays.

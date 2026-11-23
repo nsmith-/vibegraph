@@ -45,8 +45,10 @@
 //!   `drjj`, a cut on jet pairs, is hidden on a card with fewer than two jets
 //!   and reads back at 0.4 there, a value that then cuts nothing; zeroing it
 //!   is exact wherever it is read.
-//! - **Interference** (`:4969-4991`, the `^2` syntax): unreachable, since the
-//!   proc card refuses squared-order constraints.
+//! - **Interference** (`:4969-4991`, the `^2` syntax): see
+//!   [`ProcessFacts::interference`]. Reproduced for squared-order constraints
+//!   written on the card; MadGraph also prints the squared order an amplitude
+//!   `==` or `>` implies, which is not reproduced.
 //! - **`sde_strategy`** (`:4993-5014`, `:5055-5059`): see
 //!   [`ProcessFacts::qcd_free_single_color`]. Reproduced.
 //! - **Polarized-frame display** (`:5026-5040`): display only; `me_frame` keeps
@@ -101,6 +103,23 @@ pub struct ProcessFacts {
     /// Some process line forbids an on-shell s-channel (`$`), which forces
     /// `sde_strategy = 1`.
     pub onshell_veto: bool,
+    /// Some process line carries a squared-order constraint on an order other
+    /// than `WEIGHTED`, which MadGraph's process string prints with `^2`: its
+    /// interference defaults, `use_syst = F`, `systematics_program = none`,
+    /// `dynamical_scale_choice = 3` and `sde_strategy = 2`
+    /// (`banner.py:4969-4988`). Not serialized: a diagram artifact's reader
+    /// derives it again from the card it records, so artifacts of cards without
+    /// squared orders keep their bytes.
+    #[serde(skip)]
+    pub interference: bool,
+    /// With [`interference`](Self::interference): the colour basis of every
+    /// subprocess has a single power of `Nc` (MadGraph's `single_color`). Its
+    /// single-colour block then sets `sde_strategy` back to 1 where some line
+    /// does not bound `QCD` at 0, or the final state is all leptons and photons
+    /// from partonic beams (`banner.py:4993-5014`). Not computed without
+    /// interference. Not serialized, as [`interference`](Self::interference).
+    #[serde(skip)]
+    pub interference_single_color: bool,
 }
 
 const PARTONS: [i64; 12] = [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 21, 22];
@@ -254,8 +273,15 @@ pub(super) fn apply(values: &mut BTreeMap<String, ParamValue>, facts: &ProcessFa
         set("pdgs_for_merging_cut", ParamValue::Opaque(pdgs));
     }
 
-    if facts.qcd_free_single_color {
-        let jet_ids = |id: i64| id == 21 || (1..=maxjetflavor).contains(&id);
+    if facts.interference {
+        set("use_syst", ParamValue::Bool(false));
+        set("systematics_program", ParamValue::Str("none".to_string()));
+        set("dynamical_scale_choice", ParamValue::Int(3));
+        set("SDE_strategy", ParamValue::Int(2));
+    }
+
+    let jet_ids = |id: i64| id == 21 || (1..=maxjetflavor).contains(&id);
+    let pure_lepton_from_partons = || {
         let pure_lepton = facts
             .core_legs
             .iter()
@@ -264,9 +290,16 @@ pub(super) fn apply(values: &mut BTreeMap<String, ParamValue>, facts: &ProcessFa
             .core_legs
             .iter()
             .all(|legs| legs[..2].iter().all(|id| jet_ids(id.abs())));
-        if !(pure_lepton && proton_initial) {
-            set("SDE_strategy", ParamValue::Int(2));
-        }
+        pure_lepton && proton_initial
+    };
+    if facts.interference_single_color
+        && (!facts.qcd_free_single_color || pure_lepton_from_partons())
+    {
+        set("SDE_strategy", ParamValue::Int(1));
+    }
+
+    if facts.qcd_free_single_color && !pure_lepton_from_partons() {
+        set("SDE_strategy", ParamValue::Int(2));
     }
 
     if facts.non_qcd_gluon_emission {

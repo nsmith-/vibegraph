@@ -76,6 +76,7 @@ use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, Chi2PerDof, GridRule, VegasResult};
+use vibegraph::widths::{resolved_card_text, ComputedWidth};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -428,9 +429,14 @@ pub(crate) struct IntegrateArgs {
 
     /// SLHA `param_card.dat` to evaluate the model at; absent → the model's
     /// defaults under its restriction. The artifact records every parameter
-    /// the card moves, and `generate` evaluates at those values. Refused: a
-    /// width given as `Auto`, a non-zero value for a parameter the restriction
-    /// fixed to zero, a value other than one for a parameter it fixed to one, a
+    /// the card moves, and `generate` evaluates at those values. A width given
+    /// as `Auto` is computed, as MadGraph computes it at launch, at tree level
+    /// from the open two-body channels, and the artifact banks the card with the
+    /// computed width in place of `Auto` (in the SM, t and W bind). Refused: an
+    /// `Auto` width of a particle with a three-body mode through a closed
+    /// channel (in the SM, Z and H) or that cannot otherwise be computed as
+    /// MadGraph would, a non-zero value for a
+    /// parameter the restriction fixed to zero, a value other than one for a parameter it fixed to one, a
     /// move that splits parameters the restriction merged, and an entry the
     /// model has no parameter for. A mass or width the model
     /// computes (MW in the SM) is ignored, with a warning when it disagrees.
@@ -1024,7 +1030,12 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     );
     tui::state::describe_process(&process, observable_of(&parsed));
 
-    let (evaluated, moved, param_card) = bind_param_card(args.param_card.as_deref(), &model)?;
+    let BoundParamCard {
+        evaluated,
+        moved,
+        text: param_card,
+        ..
+    } = bind_param_card(args.param_card.as_deref(), &model)?;
     let sets = match sets.or(enumerated) {
         Some(sets) => sets,
         None => {
@@ -1410,14 +1421,25 @@ pub(crate) fn channel_key_object(key: ChannelKey) -> ChannelKeyObject {
     }
 }
 
-/// The model evaluated at `--param-card`, the parameters the card moved off
-/// the restricted defaults, and the card's text; the defaults, none moved and
-/// no text without a card. The defaults are bound like a card, so what binding
-/// refuses of them (a negative mass) is refused without a card too.
+/// A `--param-card` bound to the model.
+pub(crate) struct BoundParamCard {
+    pub(crate) evaluated: EvaluatedModel,
+    /// The parameters the card moved off the restricted defaults.
+    pub(crate) moved: Vec<MovedParam>,
+    /// The card's text, with each `Auto` width written as computed
+    /// ([`resolved_card_text`]); `None` without a card.
+    pub(crate) text: Option<String>,
+    /// The widths the card set to `Auto`, as computed.
+    pub(crate) auto_widths: Vec<ComputedWidth>,
+}
+
+/// The model evaluated at `--param-card`: the defaults, none moved and no text
+/// without a card. The defaults are bound like a card, so what binding refuses
+/// of them (a negative mass) is refused without a card too.
 pub(crate) fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
-) -> Result<(EvaluatedModel, Vec<MovedParam>, Option<String>), CliError> {
+) -> Result<BoundParamCard, CliError> {
     let Some(path) = path else {
         let bound = bind_card(model.clone(), &ParamCard::default()).map_err(|e| {
             err(
@@ -1425,7 +1447,12 @@ pub(crate) fn bind_param_card(
                 format!("the model's default parameters: {e}"),
             )
         })?;
-        return Ok((bound.evaluated, bound.moved, None));
+        return Ok(BoundParamCard {
+            evaluated: bound.evaluated,
+            moved: bound.moved,
+            text: None,
+            auto_widths: Vec::new(),
+        });
     };
     let text = std::fs::read_to_string(path).map_err(|e| {
         err(
@@ -1453,7 +1480,28 @@ pub(crate) fn bind_param_card(
             ignored.computed,
         );
     }
-    Ok((bound.evaluated, bound.moved, Some(text)))
+    for width in &bound.auto_widths {
+        info!(
+            "{}: DECAY {} Auto: {} = {} GeV, the tree-level two-body width over {} open \
+             channels",
+            path.display(),
+            width.pdg,
+            width.param,
+            width.bound,
+            width.channels.len(),
+        );
+    }
+    let text = if bound.auto_widths.is_empty() {
+        text
+    } else {
+        resolved_card_text(&text, &bound.auto_widths)
+    };
+    Ok(BoundParamCard {
+        evaluated: bound.evaluated,
+        moved: bound.moved,
+        text: Some(text),
+        auto_widths: bound.auto_widths,
+    })
 }
 
 /// Proton beams (`lpp = 1`): load the PDF set and integrate over the flavour

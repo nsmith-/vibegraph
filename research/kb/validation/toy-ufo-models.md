@@ -147,7 +147,7 @@ from `Diagram::check_fermion_flow`) fires.
 The Majorana `lt~ lt > sc sc~` refusal is stricter than the evaluator needs:
 the line has a particle end and an antiparticle end, so a Dirac evaluation
 could be right, but nothing validates it (see
-[Majorana fermions](../backlog/feature/majorana-fermions-unsupported.md)).
+[Majorana fermions](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md)).
 
 ## Blind spots of the colour oracles
 

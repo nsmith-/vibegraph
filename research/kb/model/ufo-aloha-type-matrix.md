@@ -25,7 +25,7 @@ string. [^n09-ufo] [^ufo-paper]
 | Code | Field | Status here |
 |---|---|---|
 | 1 | scalar | supported |
-| 2 | Dirac fermion (4-component spinor leg) | supported; Majorana is not ([backlog](../backlog/feature/majorana-fermions-unsupported.md)) |
+| 2 | Dirac fermion (4-component spinor leg) | supported; Majorana is not ([L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md)) |
 | 3 | vector | supported |
 | 4 | spin-3/2 | no wavefunction or propagator ([backlog](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md)) |
 | 5 | spin-2 | no wavefunction or propagator (same item) |
