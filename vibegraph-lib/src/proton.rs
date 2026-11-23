@@ -125,8 +125,8 @@ use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, drawn_helicity, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2,
-    vetoed_of, zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
+    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
+    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_configuration_weights, compile_scale_source,
@@ -4302,8 +4302,8 @@ impl<'a> ProtonIntegrand<'a> {
         }
         let (drawn, helicity_m2) =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2) {
-                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[2])?,
-                None => drawn_helicity(eval, &hel_m2, u[2])?,
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
+                None => eval.select_helicity(&hel_m2, u[2])?,
             };
         let (_, order) = g.event_legs(member, ordering);
         if let Some(table) = self.resonances.get(group) {
