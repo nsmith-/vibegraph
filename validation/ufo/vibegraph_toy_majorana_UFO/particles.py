@@ -2,8 +2,8 @@
 antiparticle, so `name` and `antiname` agree and there is no `anti()` line), a
 neutral vector `vt` and a charged scalar `sc`.
 
-The model is a refusal fixture: `nt` reaches a diagram as an external leg
-(`lt~ lt > nt nt`) and as an internal propagator only (`lt~ lt > sc sc~`).
+`nt` reaches a diagram as an external leg (`lt~ lt > nt nt`) and as an
+internal propagator only (`lt~ lt > sc sc~`).
 """
 
 from __future__ import division
