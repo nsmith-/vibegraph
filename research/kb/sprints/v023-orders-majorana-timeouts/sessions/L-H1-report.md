@@ -345,6 +345,107 @@ combination and the integrand's are the same arithmetic on the same
 couplings, unlike the summed value, whose sum runs over differently pruned
 combination sets. The mutation above shows the check is not vacuous.
 
+## Follow-up: every event-mode refusal names the way back
+
+The user approved the per-event default on the condition that every refusal it
+raises names its reason and both remedies. `reweight::SUMMED_REMEDY`
+("add `change helicity False` to the reweight card (or pass
+`--reweight-helicity summed`) for the helicity-summed ratio") ends every one:
+`HelicityPolarized`, `HelicitySigned`, `HelicityUnchecked` (decays and 2 → 1),
+`HelicityRevived`; `HelicityRefusal::{Unrecorded, Unknown, ZeroAtCard}`; and the
+audit's file refusals (refused events, different mothers, and the internal
+helicity mismatch). None of these paths can tell a card that reached event mode
+by default from one with `change helicity True`, so all carry the hint, and
+each says the ratio is MadGraph's default without a `change helicity` line.
+Nothing falls back to the summed ratio silently.
+
+**Brief correction.** The follow-up lists "decays" among plan-time refusals and
+asks for a refused decay-chain card. Plan time refuses 1 → n decays
+(`HelicityUnchecked`), not decay chains: a decay chain is reweighted per event
+unless a record lists identical outgoing particles under different mothers,
+which the audit refuses. The test uses such a card (`e+ e- > z z, z > mu+ mu-`,
+every event ambiguous), and the release note says which decay chains need the
+line.
+
+Tests: `engine::tests::every_per_event_helicity_refusal_names_both_remedies`
+(every variant's text), the audit test's three refusals
+(`assert_remedies`), and `cli_reweight_helicity::cli_a_default_per_event_refusal_names_both_remedies`
+(hermetic): the decay-chain card without the line is refused, the stderr is
+asserted to contain "different mothers", "add `change helicity False` to the
+reweight card" and "`--reweight-helicity summed`", the file is removed; with
+`change helicity False` it runs, and byte-equals the `--reweight-helicity summed`
+run.
+
+The same card against main (`…-mg/decay_bfb.sh`; main's binary integrates, both
+generate from that grid, seed 20261005, 500 events, `mz` and `wz` hypotheses):
+
+```
+$ sha256sum main.lhe branch.lhe flag.lhe
+d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  main.lhe      (main 4b132cc, change helicity False)
+d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  branch.lhe    (this branch, change helicity False)
+d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  flag.lhe      (this branch, no line, --reweight-helicity summed)
+events: 500, wgt lines: 1000, intermediates (status 2) in event 1: 2
+$ vibegraph generate grid --seed 20261005 --nevents 500 --reweight-card rw_default.dat -o default.lhe
+exit status 1
+ INFO reweight: 2 hypotheses, each ratio in each event's own helicity
+ INFO reweight: 500 events weighted in their own helicity; … refused: 0; identical outgoing particles under different mothers: 500
+ERROR 500 of 500 events list two identical outgoing particles under different mothers, where MadGraph turns the per-event-helicity ratio (its default without a `change helicity` line) off for the rest of its file; add `change helicity False` to the reweight card (or pass `--reweight-helicity summed`) for the helicity-summed ratio, so the weights in default.lhe are wrong and removed it; first: part 0 Direct: two outgoing -13 under different mothers
+ls: cannot access 'default.lhe': No such file or directory
+```
+
+Mutation (`…-mg/mutation_hint.sh`, `{SUMMED_REMEDY}` dropped from the
+different-mothers refusal):
+
+```
+$ cargo test -p vibegraph --test cli_reweight_helicity
+test cli_reweight_helicity_follows_the_card_and_the_flag ... ok
+test cli_a_default_per_event_refusal_names_both_remedies ... FAILED
+thread 'cli_a_default_per_event_refusal_names_both_remedies' panicked at vibegraph-cli/tests/cli_reweight_helicity.rs:197:5:
+the refusal does not name both remedies:
+ERROR 200 of 200 events list two identical outgoing particles under different mothers, where MadGraph turns the per-event-helicity ratio (its default without a `change helicity` line) off for the rest of its file, so the weights in /tmp/…/default.lhe are wrong and removed it; first: part 0 Direct: two outgoing -13 under different mothers
+test result: FAILED. 1 passed; 1 failed
+== restored audit.rs: sha256 c206c34158d95e39 (original c206c34158d95e39)
+```
+
+**Release notes** (also in `docs/src/guide/11-unweighting-events.md`,
+"Changed in 0.2.3"):
+
+1. Reweight weights change by default: a card without `change helicity` now
+   writes the per-event-helicity ratio, with the same events and the same σ in
+   expectation but a larger spread. `change helicity False` (or
+   `--reweight-helicity summed`) restores the old output byte for byte.
+2. Cards on decays, 2 → 1 processes, polarized legs or a signed `|M|²`, and
+   decay chains whose records list identical particles under different
+   mothers, now need `change helicity False` (or `--reweight-helicity summed`)
+   to reweight.
+
+### Gates, re-run
+
+```
+$ cargo fmt --all --check
+rc=0
+$ cargo clippy --workspace --all-targets -- -D warnings
+rc=0
+$ cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture
+rc=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+36 _hel lines, 0 with any event beyond 2e-7
+$ cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_reweight_proton -- --nocapture --test-threads 1
+rc=0
+test hadronic_reweighting_is_taken_in_the_drawn_subprocess ... Audit { events: 5000, terms: [(0, "direct", 2486), (0, "exchanged", 2514)], largest: 0.0, m2_mismatches: 0, flavour_mismatches: 0, non_finite: 0 }
+ INFO reweight: 5000 events weighted in their own helicity; card-point |M|^2 in it checked against the integrand's, largest relative deviation 0.0e0, beyond 1e-9: 0; refused: 0; identical outgoing particles under different mothers: 0
+test matched_mixed_multiplicity_reweighting_is_taken_in_the_drawn_subprocess ... Audit { events: 3000, terms: [(0, "direct", 901), (0, "exchanged", 953), (1, "direct", 381), (1, "exchanged", 398), (2, "direct", 212), (2, "exchanged", 155)], largest: 6.6e-16, m2_mismatches: 0, flavour_mismatches: 0, 
+ INFO reweight: 3000 events weighted in their own helicity; card-point |M|^2 in it checked against the integrand's, largest relative deviation 0.0e0, beyond 1e-9: 0; refused: 0; identical outgoing particles under different mothers: 0
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 46.19s
+$ …-mg/hermetic.sh   (three paths moved aside, cargo test --workspace, restored)
+rc=0
+MARKER rc=0
+74 binaries, passed 2290 failed 0 ignored 26
+cli_reweight_helicity: test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+reweight_mg_oracle: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+(hidden directory entries left: 0)
+```
+
 ## vg-validator requests
 
 None: every oracle here ran locally in minutes.

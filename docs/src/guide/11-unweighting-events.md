@@ -250,14 +250,30 @@ one configuration much more than another. Either way MadGraph's reweight, run
 with the same `change helicity` setting on the same file, agrees to the printed
 digits.
 
-The per-event ratio is refused where it would be wrong or is not MadGraph's: a
-hypothesis that reaches a helicity configuration the card's amplitude vanishes
-in (an electron dipole on massless electrons, say — no event is ever drawn
+The per-event ratio is refused, never replaced by the summed one silently,
+where it would be wrong or is not MadGraph's: a hypothesis that reaches a
+helicity configuration the card's amplitude vanishes in (no event is ever drawn
 there, so the weights would miss that share of the cross section, which MadGraph
 does silently), a polarized leg, a squared-order selection that leaves `|M|²`
-signed, and an event listing two identical outgoing particles under different
-mothers, for which MadGraph switches the per-event ratio off for the rest of the
-file. `change helicity False` serves all of them.
+signed, a decay or a 2 → 1 process, an event with no recorded helicity or with
+a configuration the card's `|M|²` vanishes in, and an event listing two
+identical outgoing particles under different mothers (a decay chain such as
+`e+ e- > z z, z > mu+ mu-`), for which MadGraph switches the per-event ratio off
+for the rest of the file. Every one of these refusals says how to get the
+helicity-summed ratio, which serves them all: add `change helicity False` to the
+reweight card, or pass `--reweight-helicity summed`.
+
+**Changed in 0.2.3.** Two consequences of the per-event ratio becoming the
+default, for cards that ran before it:
+
+- A reweight card without a `change helicity` line now writes different
+  weights: the same events and the same reweighted cross section in
+  expectation, with a larger spread. `change helicity False` (or
+  `--reweight-helicity summed`) restores the earlier output byte for byte.
+- A card on a decay, a 2 → 1 process, a polarized leg or a signed `|M|²`, or on
+  a decay chain whose records list identical particles under different mothers,
+  is refused until it says `change helicity False` (or the run passes
+  `--reweight-helicity summed`).
 
 ### The polynomial path
 

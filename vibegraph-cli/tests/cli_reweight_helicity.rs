@@ -158,3 +158,71 @@ fn cli_reweight_helicity_follows_the_card_and_the_flag() {
         assert!(!run.lhe.exists());
     }
 }
+
+/// A decay-chain card whose records list identical outgoing particles under
+/// different mothers (two Z's, each to `mu+ mu-`) reaches the per-event ratio by
+/// default, with no `change helicity` line, and is refused with both ways back
+/// to the helicity-summed ratio named; the same card with
+/// `change helicity False` runs.
+#[test]
+fn cli_a_default_per_event_refusal_names_both_remedies() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("proc_card.dat"),
+        "import model sm\ngenerate e+ e- > z z, z > mu+ mu-\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("run_card.dat"), fixed_beams(125.0, 125.0)).unwrap();
+    let integrate = vibegraph(dir, dir)
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(dir.join("proc_card.dat"))
+        .arg("--run-card")
+        .arg(dir.join("run_card.dat"))
+        .arg("--out")
+        .arg(dir.join("grid"))
+        .args(["--fixed-budget", "--neval", "4000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(integrate.status.success(), "{}", stderr_of(&integrate));
+    let grid = dir.join("grid").join("grid.bin.zst");
+
+    let refused = generate(dir, &grid, "default", LAUNCHES, None);
+    assert!(
+        !refused.status,
+        "the default per-event ratio ran:\n{}",
+        refused.log
+    );
+    assert!(
+        refused.log.contains("different mothers")
+            && refused
+                .log
+                .contains("add `change helicity False` to the reweight card")
+            && refused.log.contains("`--reweight-helicity summed`"),
+        "the refusal does not name both remedies:\n{}",
+        refused.log
+    );
+    assert!(!refused.lhe.exists(), "a refused file is removed");
+
+    let summed = generate(
+        dir,
+        &grid,
+        "summed",
+        &format!("change helicity False\n{LAUNCHES}"),
+        None,
+    );
+    assert!(summed.status, "{}", summed.log);
+    assert!(
+        summed.log.contains("each ratio helicity-summed"),
+        "{}",
+        summed.log
+    );
+    let flag = generate(dir, &grid, "flag", LAUNCHES, Some("summed"));
+    assert!(flag.status, "{}", flag.log);
+    assert_eq!(
+        std::fs::read(&summed.lhe).unwrap(),
+        std::fs::read(&flag.lhe).unwrap(),
+        "the line and the flag ask for the same file"
+    );
+}

@@ -7,7 +7,7 @@ use super::{err, GenerateError};
 use crate::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
 use crate::proton::BeamOrdering;
 use crate::reweight::engine::{CardPoint, HelicityRatio, HelicityRefusal};
-use crate::reweight::Launch;
+use crate::reweight::{Launch, SUMMED_REMEDY};
 
 /// How far the reweighter's card-point `|M|²` may sit from the integrand's, relative.
 ///
@@ -204,20 +204,22 @@ impl ReweightAudit {
         }
         let why = if self.helicity_refused > 0 {
             format!(
-                "{} of {} events cannot be weighted in their own helicity",
+                "{} of {} events cannot be weighted in their own helicity (MadGraph's default \
+                 without a `change helicity` line); {SUMMED_REMEDY}",
                 self.helicity_refused, self.in_helicity
             )
         } else if self.ambiguous > 0 {
             format!(
                 "{} of {} events list two identical outgoing particles under different \
-                 mothers, where MadGraph turns the per-event-helicity ratio off for the rest \
-                 of its file; reweight with `change helicity False`",
+                 mothers, where MadGraph turns the per-event-helicity ratio (its default \
+                 without a `change helicity` line) off for the rest of its file; \
+                 {SUMMED_REMEDY}",
                 self.ambiguous, self.in_helicity
             )
         } else if self.helicity_mismatches > 0 {
             format!(
                 "reweighting evaluated {} of {} events in another helicity than the integrand \
-                 drew them in",
+                 drew them in; {SUMMED_REMEDY}",
                 self.helicity_mismatches, self.in_helicity
             )
         } else if self.m2_mismatches + self.flavour_mismatches > 0 {

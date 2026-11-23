@@ -53,7 +53,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
 use super::poly::{PolyAnalysis, Support};
-use super::{Launch, ReweightError};
+use super::{Launch, ReweightError, SUMMED_REMEDY};
 use crate::lhef::record::SPIN_UNKNOWN;
 
 /// Largest condition number of the node system accepted. Past it the node values'
@@ -111,17 +111,20 @@ pub struct CardPoint {
 pub enum HelicityRefusal {
     #[error(
         "the event records no helicity for some leg (SPINUP 9), and the per-event-helicity \
-         ratio is taken in the recorded one"
+         ratio is taken in the recorded one; {}",
+        SUMMED_REMEDY
     )]
     Unrecorded,
     #[error(
         "the event's helicities {helicity:?} are not a combination the subprocess's \
-         amplitude carries"
+         amplitude carries; {}",
+        SUMMED_REMEDY
     )]
     Unknown { helicity: Vec<i32> },
     #[error(
         "|M|^2 at the card's parameters is {value:e} in the event's helicities {helicity:?}, \
-         where no ratio is defined (MadGraph stops on such an event)"
+         where no per-event-helicity ratio is defined (MadGraph stops on such an event); {}",
+        SUMMED_REMEDY
     )]
     ZeroAtCard { helicity: Vec<i32>, value: f64 },
 }
@@ -2260,5 +2263,41 @@ launch --rwgt_name=aew
         );
         assert!(plan_for("launch\n set ctWRe 1\n", event).is_ok());
         assert!(plan_for("launch\n set cHtbRe 1\n", summed).is_ok());
+    }
+
+    /// Every refusal of the per-event-helicity ratio names both ways back to the
+    /// helicity-summed one: a card without `change helicity` reaches the ratio
+    /// by default, and that card ran before the ratio existed.
+    #[test]
+    fn every_per_event_helicity_refusal_names_both_remedies() {
+        let process = || "u d~ > t b~".to_string();
+        let texts = [
+            ReweightError::HelicityPolarized { process: process() }.to_string(),
+            ReweightError::HelicitySigned { process: process() }.to_string(),
+            ReweightError::HelicityUnchecked { process: process() }.to_string(),
+            ReweightError::HelicityRevived {
+                launch: "a".into(),
+                process: process(),
+                helicity: vec![1, -1],
+            }
+            .to_string(),
+            HelicityRefusal::Unrecorded.to_string(),
+            HelicityRefusal::Unknown {
+                helicity: vec![1, -1],
+            }
+            .to_string(),
+            HelicityRefusal::ZeroAtCard {
+                helicity: vec![1, -1],
+                value: 0.0,
+            }
+            .to_string(),
+        ];
+        for text in texts {
+            assert!(
+                text.contains("`change helicity False`")
+                    && text.contains("`--reweight-helicity summed`"),
+                "{text}"
+            );
+        }
     }
 }

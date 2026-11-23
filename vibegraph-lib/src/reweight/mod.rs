@@ -58,6 +58,12 @@ use crate::ufo::UFOModel;
 
 use self::card::{Change, ReweightCard};
 
+/// How a refusal of the per-event-helicity ratio tells the user to get the
+/// helicity-summed one instead, which every such refusal carries: the ratio is
+/// MadGraph's default, so a card without `change helicity` reaches it too.
+pub const SUMMED_REMEDY: &str = "add `change helicity False` to the reweight card (or pass \
+     `--reweight-helicity summed`) for the helicity-summed ratio";
+
 /// One resolved hypothesis.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Launch {
@@ -155,27 +161,32 @@ pub enum ReweightError {
     #[error("{process}: {reason}")]
     NodeSystem { process: String, reason: String },
     #[error(
-        "{process}: a polarized leg; the per-event-helicity ratio (`change helicity True`, \
-         MadGraph's default) is not taken on polarized processes, write \
-         `change helicity False` for the helicity-summed one"
+        "{process}: a polarized leg, on which the per-event-helicity ratio (`change helicity \
+         True`, MadGraph's default without the line) is not taken; {}",
+        SUMMED_REMEDY
     )]
     HelicityPolarized { process: String },
     #[error(
         "{process}: its |M|^2 keeps an interference term without its squares and can be \
-         negative in a helicity combination, where no per-event-helicity ratio is defined"
+         negative in a helicity combination, where no per-event-helicity ratio (MadGraph's \
+         default without a `change helicity` line) is defined; {}",
+        SUMMED_REMEDY
     )]
     HelicitySigned { process: String },
     #[error(
-        "{process}: fewer than two incoming or three external legs, where the helicity \
-         combinations a hypothesis reaches cannot be probed; write `change helicity False` \
-         for the helicity-summed ratio"
+        "{process}: a decay or 2 -> 1 process (fewer than two incoming or three external \
+         legs), where the helicity combinations a hypothesis reaches cannot be probed for \
+         the per-event-helicity ratio (MadGraph's default without a `change helicity` \
+         line); {}",
+        SUMMED_REMEDY
     )]
     HelicityUnchecked { process: String },
     #[error(
         "launch `{launch}` reaches helicity combination {helicity:?} of {process}, in which \
          the card's amplitude vanishes: no event is written in it, so per-event-helicity \
-         weights would miss its share of the hypothesis; write `change helicity False` for \
-         the helicity-summed ratio"
+         weights (MadGraph's default without a `change helicity` line) would miss its share \
+         of the hypothesis; {}",
+        SUMMED_REMEDY
     )]
     HelicityRevived {
         launch: String,

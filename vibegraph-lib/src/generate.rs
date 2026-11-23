@@ -1812,6 +1812,14 @@ mod tests {
         assert!(!out.exists(), "{why}");
     }
 
+    /// Both ways back to the helicity-summed ratio.
+    fn assert_remedies(why: &str) {
+        assert!(
+            why.contains("`change helicity False`") && why.contains("`--reweight-helicity summed`"),
+            "{why}"
+        );
+    }
+
     /// Under the per-event-helicity ratio, an event the reweighter refuses and
     /// an event whose record MadGraph would read in more than one leg order
     /// each refuse the file, by name.
@@ -1885,6 +1893,7 @@ mod tests {
             why.contains("in their own helicity") && why.contains("SPINUP 9"),
             "{why}"
         );
+        assert_remedies(&why);
         assert!(!out.exists(), "{why}");
 
         std::fs::write(&out, "<LesHouchesEvents>").unwrap();
@@ -1892,6 +1901,7 @@ mod tests {
         check(&mut ambiguous, card(1.0), [[1, 2], [5, 5]]);
         let why = ambiguous.finish(&out).unwrap_err().to_string();
         assert!(why.contains("different mothers"), "{why}");
+        assert_remedies(&why);
         assert!(!out.exists(), "{why}");
 
         // The card point's |M|^2 in the event's helicity is the integrand's.
@@ -1900,6 +1910,7 @@ mod tests {
         check(&mut other, card(0.5), [[1, 2], [1, 2]]);
         let why = other.finish(&out).unwrap_err().to_string();
         assert!(why.contains("another helicity"), "{why}");
+        assert_remedies(&why);
         assert!(!out.exists(), "{why}");
     }
 
