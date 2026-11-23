@@ -137,9 +137,9 @@ no log survives. Re-run on the validator host with the released
 - It exits 1 in 16.6 s (user 10.2 s, sys 0.22 s, 123 MB). Its refusal
   record is identical to 4aab24fb's.
 
-So the batch timeout is not a vibegraph verdict; the batch environment
-stalled it. This is filed as
-[`batch-slot-stalls-early-refusing-cards`](../../backlog/validation/batch-slot-stalls-early-refusing-cards.md).
+So 290's v022-1009 timeout is environmental, not a vibegraph verdict. The
+batch runs carry a stall signature: a high sys share and empty stdout. This is filed as
+[`batch-slot-stall-signature-on-v022-timeouts`](../../backlog/validation/batch-slot-stall-signature-on-v022-timeouts.md).
 
 **Card 722** (ZZ_TT_madspin). All five v022-1009 seeds timed out after
 1243–1272 s wall, at 4826–4915 user-s and 1–22 sys-s (3.85 cores busy).

@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
-title: "A batch slot stalled card 290 for 20 minutes when the binary refuses it in 16 s"
-description: "v022-1009's card 290 timed out on all 5 batch seeds with 40–55% sys CPU, ~690 MB RSS and empty stdout, yet the same release binary on identical inputs refuses it in 16.6 s; the batch environment, not vibegraph, caused it."
+title: "v022-1009 batch timeouts show a stall signature: high sys CPU, empty stdout, on a card that refuses in 16 s"
+description: "Card 290 timed out on 5 batch seeds at 40–55% sys CPU with empty stdout; the same release binary on the same inputs refuses it in 16.6 s. Cause and reach unmeasured."
 area: validation
 state: open
 priority: medium
-closes_when: "The stall's cause on the batch slot (model store vs bundled UFO, cvmfs PDF access, or stage-in) is identified from a re-run with stdout and a trace captured, and the v022-1009 timeouts sharing its signature (high sys share, empty stdout) are listed and re-classified."
+closes_when: "A census of v022-1009 timeouts lists those with the signature (sys share > 25% plus empty stdout or no stage rows) by family; signature cards are re-classified where a re-run finishes or refuses within the cap; and the slot-side cause is identified from a re-run with stdout and a trace captured, or the item records why it cannot be."
 blocked_by: []
 opened: 2026-11-23
 tags: [batch, harness, timeout, cms-gridpacks]
@@ -19,7 +19,7 @@ Card 290 (VBFWto2Q, `loop_sm`) timed out on all five v022-1009 seeds.
   same staged inputs, refuses it as a named `process` refusal (a massless
   spacelike propagator with the beam uncut) in 16.6 s at 123 MB.
 
-Candidates:
+This is an observed signature, not a diagnosis. Candidates:
 - the batch job read `loop_sm` from the template's model store rather than
   the bundled directory;
 - cvmfs PDF access;
