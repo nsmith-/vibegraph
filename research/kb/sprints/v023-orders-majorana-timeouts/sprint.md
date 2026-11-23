@@ -96,6 +96,19 @@ Sprint K ran in one 4-core, 15 GB container, with one heavy job at a time. That 
 - **Measure the gain.** Wall time on the named cards, measured on `vg-validator`.
 - **Prove nothing else moves.** σ bit for bit on the cards the fixes don't reach.
 
+### PR 14: run-global progress for `--output-ldjson` (`sprintl-progress`), vg-sprint-L-pipeline, feature-dev, Sonnet
+
+| Item | Pri |
+|---|---|
+| `ldjson-progress-has-no-run-global-position` | medium |
+
+Added on 2026-11-22 from a downstream consumer's need, after PR 3a's phase records landed.
+
+- **Per-group extras.** Every stage that repeats per multiplicity or flavour group carries `group`, `groups`, `label` and `channels` on its `progress` records.
+- **Run-global position.** A run-global `phase`/`phases` comes from the phase instrument and never goes backwards.
+- **Additive only.** Extras only, under `schema_version` 1. No existing field changes meaning. Documented next to the progress record.
+- **Acceptance (hermetic).** `p p > e+ e-` plus `add process p p > e+ e- j` on sm-no_b_mass gives the two α surveys as group 1 of 2 and 2 of 2, with a non-decreasing global position. A single-group run gives 1 of 1.
+
 ### PR 4: VBS stable-boson σ high (`sprintl-vbs`), vg-sprint-L-physics, validation-dev, Opus
 
 | Item | Pri | Evidence |
