@@ -358,6 +358,43 @@ probe's own compile runs across four cores (2.88 → 0.85 s), so probe and
 compile together drop 6.07 → 0.89 s. The old `enumerate` here is the old
 default single-thread walk.
 
+## Merge with #186
+
+origin/main b4e284a3 (PR 14, run-global progress) merged at e47435fa, with
+conflicts in `vibegraph-cli/src/integrate.rs`, `vibegraph-lib/src/generate.rs`
+and `vibegraph-lib/src/multiplicity.rs`, resolved by keeping both sides:
+
+- `multiplicity_groups_of_with` takes #186's shape (all parts first, then one
+  `progress::enter_group` scope per part with its `group_labels` label) over
+  this branch's (set, evaluator) items, and calls `derive_flavor_groups_with`
+  inside the scope. `set_process_ids` takes any iterator of sets, so the
+  labels are read without cloning.
+- The fixed-energy compile in `integrate` and `generate` is
+  `compile_subprocesses_with(…, precompiled, …)` inside #186's
+  `sole_group` scope.
+- **Progress under the pool.** #186's group is thread-local, so records from
+  pool workers would carry no group. `compile_classes` therefore reports no
+  progress; `derive_flavor_groups_with` and `compile_subprocesses_with`
+  report one `compile` step per set on the calling thread, inside the group
+  scope, as each takes its compile results in set order (before each set and
+  once at the end, and after each set, as on main). Each group's records come
+  from one thread in one loop, so `(phase, group, done)` rises by
+  construction; nothing interleaves. The probe phase's compiles report no
+  progress, as main's probe did not.
+- No phase was added, removed or merged, so `integrate_phases` and
+  `generate_phases` are unchanged.
+- The merge brought back `generate`'s `--parallel-diagrams` entry from main's
+  generated CLI chapter; it was regenerated (`scripts/gen-cli-docs.sh`).
+
+Gates on the merged head: `cargo test --workspace --no-fail-fast` exit 0
+(`cli_progress_position` 5 ok, `cli_phase_timing` 4 ok, `cli_reference_docs`
+1 ok, after the regeneration), fmt clean, both clippy runs clean, kb-lint 0
+errors. The bit-for-bit gate re-run on the merged head (dev, `gate2.sh`,
+the commands above, head only) gives at `-j1` and `-j4` ee→μμ
+2029.5243067486113 ± 2.5946227539670867, grid af585cd04a180de8, and DY 0–2j
+MLM 1063.0574890622572 ± 9.205000902959013, grid afd7adaf4b388939: the
+values recorded before the merge.
+
 ## Validator host request (draft)
 
 - **Enumerate diff.** Branch `sprintl-timeout-fixes`, head SHA as pushed. For
