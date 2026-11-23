@@ -415,3 +415,67 @@ Scratch, all under `/home/user/wt/sprintl-g2hdm-mg/`:
 
 The extra worktree `/home/user/wt/lg1-pre` and its target directory are
 removed at the end of the session.
+
+## Addendum: F1 on main, and R3 seed 1
+
+**F1 reproduces on main b4e284a3** (`vibegraph --version`: `v0.2.2-17-gb4e284a3`;
+detached worktree, own target directory, reconstructed cards).
+
+Card 894, the full card:
+
+```
+vibegraph integrate cards/proc_card.dat --run-card cards/run_card.dat --param-card cards/param_894.dat \
+    --ufo-dir ufo --seed 1 --fixed-budget --niter 1 --neval 20000 -j 4      # 28m34s
+σ = 51.8 ± 4.2 fb
+vibegraph generate runs/main_proc_card/grid.bin.zst --seed 2 --nevents 300 -j 4    # exit 1
+ERROR the resonance 2 of g u > e+ ve b b~ d has no flavour in the subprocess with outgoing [-11, 12, 5, -5, -2] that shares its matrix element
+```
+
+It is a named refusal with exit code 1, not a panic, and it comes before any
+event is drawn.
+
+The minimal reproduction takes seconds: one vanishing line beside one live line.
+
+```
+import model g2HDM_UFO
+define q = u d~
+define qq = d u~
+generate g q > h+ qq QCD=99, (h+ > t b~, (t > w+ b, w+ > e+ ve))
+add process c b~ > h+ QCD=99, (h+ > t b~, (t > w+ b, w+ > e+ ve))
+```
+
+- `integrate` (same flags, 894 param card): σ = 2.37 ± 0.20 fb, and it logs
+  "1 of 1 flavour groups (2 subprocesses) have a matrix element that vanishes at
+  the card; they carry no cross section and are not clustered".
+- `generate` then refuses with the same message.
+- The first line on its own is refused by `integrate`, with "every one of the
+  20000 points … has zero weight", because with only ρ_tc and ρ_tt non-zero and
+  V_td = V_ts = 0 the H± u d̄ coupling vanishes.
+
+**Diagnosis.** The two subprocesses `g u > h+ d` and `g d~ > h+ u~` form one
+flavour group: their matrix elements are equal because both are zero at the
+card. The group's diagrams carry a massless s-channel quark line, `u` in the
+representative and `d~` in the member. Neither is the other's flavour or
+conjugate, so `member_line_pdg` (`vibegraph-lib/src/lhef/resonance.rs:356`)
+returns `None`. `group_resonances` (`vibegraph-lib/src/generate.rs:1514`; the
+call is at `:1539` and the message at `:1542`) then refuses the whole run. It
+does so for a group that integration already set aside as carrying no cross
+section.
+
+**Open question for whoever takes it.** This session did not test whether a
+non-vanishing group with such a line is also refused. That needs a model where
+the two members' amplitudes are equal and non-zero.
+
+**To close.** Skip resonance resolution for groups whose matrix element vanishes
+at the card, since they never produce an event. For live groups, derive a
+member's line flavour from the member's own legs below the line. Add a test on
+the five-line card above. No fix was made in this session.
+
+**R3 seed 1 (vg-validator; one seed).** MadGraph 3.7.1 at `hard_survey = 2` on
+894 gives σ = 0.046501 ± 0.000129 pb.
+- Against the default-survey reference 0.04654 ± 0.00013 that is −0.09%: no
+  survey lift on this card.
+- The predicted post-fix vibegraph, 0.9697 × 0.047645 = 0.046201 pb, reads
+  0.9935 against it, with about 0.3–0.6% one-seed MadGraph error and this
+  session's ±0.4%.
+- Seeds 2–5 and V1 are pending.
