@@ -5,7 +5,7 @@ description: "PR 13's 2→6 pricing probe measured 353 trials per event against 
 area: validation
 state: open
 priority: medium
-closes_when: "The probe is rerun printing σ/Σw_max and the per-channel peak-to-w_max ratios on both tips (or on the tip that recorded 2.244e-2), the cause is named (grids, the scan, or the earlier measurement), and the 2→6 samples cell's trial budget is confirmed or re-set."
+closes_when: "The probe is rerun printing σ/Σw_max and the per-channel peak-to-w_max ratios on both tips (or on the tip that recorded 2.244e-2), the cause is named (grids, the scan, or the earlier measurement), and the 2→6 samples cell's trial budget and its beam pz tolerance are confirmed or re-set."
 blocked_by: []
 opened: 2026-11-22
 tags: [two-to-six, unweighting, samples-gate, acceptance]
@@ -18,3 +18,10 @@ Sprint L's PR 13 measured the acceptance with `probe_2to6_sample_cost` at
 gate's realised efficiencies match their predictions, e.g. 0.432 against 0.438.
 So the drop comes from upstream of accept/reject. Related:
 [`bbx-drifts-from-madevent-with-budget`](bbx-drifts-from-madevent-with-budget.md).
+
+**The row's margins are thin** (vg-validator, on the samples pass at
+5b546464). Trials per event were 355–363, 89–91% of the 400 budget. The worst
+beam-2 `pz` deviation was 4.43e-9 against the 5.00e-9 tolerance, 89% of it.
+The row passes, but a slightly different maximum or seed could tip either.
+Whatever this item finds about the acceptance should also re-set or justify
+both margins.
