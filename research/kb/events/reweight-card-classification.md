@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "Every reweight-card construct is classified: consumed, benign or refused"
-description: "REWEIGHT_CARD (reweight/classes.rs) lists each command and option MadGraph's reweight module accepts, with its class and an example the test parses and resolves; change helicity False and three inert change options are accepted, a command after done, a parameter fixed to one and a split merge are refused."
+description: "REWEIGHT_CARD (reweight/classes.rs) lists each command and option MadGraph's reweight module accepts, with its class and an example the test parses and resolves; change helicity selects the ratio (True, MadGraph's default without the line, or False) and three inert change options are accepted; a change helicity after the first launch, a command after done, a parameter fixed to one and a split merge are refused."
 status: draft
 tags: [reweight, classification, hard-errors, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
@@ -47,8 +47,10 @@ on the same test model. Every line the parser refuses is reported at once
 | mass of an external particle | momenta moved to the new shell | refused (`ExternalMass`, in the engine) |
 | `set` before the first `launch` | a `launch` inserted, with a warning | refused |
 | a param-card path | that card is the hypothesis | refused |
-| `change helicity False` | the helicity-summed ratio | benign: the ratio `generate` writes |
-| `change helicity True` | the ratio in the event's own helicity (MadGraph's default) | refused |
+| `change helicity False` | the helicity-summed ratio | consumed (`HelicityRatio::Summed`) |
+| `change helicity True` | the ratio in the event's own helicity (MadGraph's default) | consumed (`HelicityRatio::Event`) |
+| no `change helicity` line | the ratio in the event's own helicity | benign: the same as `True` |
+| `change helicity` after the first `launch` | applies to the launches after it only | refused |
 | `change output default` | weights added to the events | benign |
 | `change output 2.0` / `unweight` | one file per hypothesis | refused |
 | `change rwgt_dir`, `change multicore` | MadGraph's working directory and parallelism | benign |
@@ -71,13 +73,14 @@ one is gone and a merged member is its group's first times a factor; moving
 either alone changes nothing in MadGraph's weight. `bind_card` already holds a
 param card to both rules; the reweight resolver did not.
 
-**MadGraph's default helicity treatment is not refused.** A card with no
-`change helicity` line asks MadGraph for the per-helicity ratio, and
-`generate` writes the helicity-summed one. Both are unbiased for σ, and the
-summed ratio is the documented behaviour
-([reweight-helicity-summed-only](../backlog/feature/reweight-helicity-summed-only.md)).
-Refusing every card without `change helicity False` is a decision for that
-item; this table records the divergence and accepts the explicit line.
+**A card without `change helicity` asks for MadGraph's default.** MadGraph
+starts with `helicity_reweighting = True` (`reweight_interface.py` L112), so
+such a card's weights are the ratio in each event's own helicity, and
+`generate` writes that ratio (`ReweightCard::helicity`); a card that relied on
+the helicity-summed ratio says `change helicity False`, or the run passes
+`--reweight-helicity summed`. Each `launch` reweights the file as MadGraph reads
+it, so a `change helicity` line after the first `launch` would split the
+launches between the two ratios, and is refused.
 
 ## Tests and their blind spots
 
