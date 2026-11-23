@@ -387,6 +387,18 @@ pixi run kb-lint
          - the s-channel `alp > ta+ ta-` window at `bwcutoff` 15.
          There are no lepton or tau cuts (`cut_decays` False). `ptj` is 10,
          `etaj` 5, and the scale is `dynamical_scale_choice` −1.
+       - **The first candidate on 967 is the scale**, ahead of xqcut and the
+         HT window. 967 runs MLM with `dynamical_scale_choice` −1, which is
+         MadGraph's clustering scale and also sets αs per event. The uux
+         samples row (PR 13) shows a systematic SCALUP/AQCDUP offset against
+         MadGraph, and at αs² to αs³ a few-percent scale difference is easily
+         0.5% of σ.
+         - The oracle needs no sampling. Evaluate vibegraph's event scales at
+           MadGraph's own momenta, flavours and colour flows, and compare per
+           event with MadGraph's SCALUP and AQCDUP.
+         - The uux scale item names this oracle as its first step. It tests
+           967 as well, provided the events from the 967 `hard_survey = 2`
+           seeds are kept; vg-validator keeps them.
        - Reading 967's subprocess pattern against the cuts: the `alp j`
          (2→2) and `alp j j` (2→3) families see the HT window and the xqcut
          very differently. A mismatch in the HT object selection, its upper
