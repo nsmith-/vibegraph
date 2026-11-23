@@ -4,7 +4,7 @@ pub mod bind;
 pub(crate) mod card_classes;
 pub(crate) mod color;
 pub(crate) mod config_eval;
-pub mod conserved;
+pub(crate) mod conserved;
 pub(crate) mod couplings;
 pub(crate) mod expr;
 pub(crate) mod functions;
@@ -650,7 +650,7 @@ impl ParsedModel {
 impl UFOModel {
     /// The additive quantum numbers the model's vertices conserve
     /// ([`conserved`]).
-    pub fn conserved_numbers(&self) -> &conserved::ConservedNumbers {
+    pub(crate) fn conserved_numbers(&self) -> &conserved::ConservedNumbers {
         &self.conserved
     }
 
