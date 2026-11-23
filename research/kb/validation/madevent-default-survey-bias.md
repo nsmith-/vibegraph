@@ -45,6 +45,9 @@ fresh directories, each compared with an adaptation-free or vibegraph value.
 | `pp_to_llj_xqcut_only` (20 seeds) | +0.08 %; equal-weight −0.26 % | −0.005 % |
 | `ee_to_mumua` (39 seeds) | −0.95 % | −0.66 % (−14σ) |
 | top-free `u u~ > w+ b w- b~ / t t~` (20 seeds) | −2.03 % | −0.68 % (−6σ) |
+| VBS `u u > w+ z u d QED=4 QCD=0`, CMS card 700's cuts, 5 seeds each ([L-V1](../sprints/v023-orders-majorana-timeouts/sessions/L-V1-report.md)) | −1.31 % (−6σ) | −0.16 % (−0.9σ) |
+| VBS full card 700 `p p > w+ z j j`, 5 seeds ([L-V1, R1](../sprints/v023-orders-majorana-timeouts/sessions/L-V1-report.md)) | −1.41 % | −0.29 % (equal-weight +0.03 %) |
+| VBS full card 134 `p p > w-{T} z{0} j j`, 5 seeds ([L-V1, R1](../sprints/v023-orders-majorana-timeouts/sessions/L-V1-report.md)) | −1.83 % | −0.85 % (equal-weight −0.63 %, unattributed) |
 
 - **What `hard_survey = 2` fixes.** It closes the rows where MadEvent missed
   through its survey grid or through a long refine chain. The run-time cost is
