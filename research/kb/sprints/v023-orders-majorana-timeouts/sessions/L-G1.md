@@ -45,11 +45,18 @@ measured on v0.2.2.
     - The weighted mean of r = |M|²_fix/|M|²_main over those events estimates
       σ_fix/σ_main. Report it with its error, plus the median, spread and sign
       of r.
-    - vg-validator may already measure this for 894 and 889 in census step 2b.
-      If so, the manager forwards it; check it rather than redo it.
-    - If neither vibegraph nor vg-validator has a way to evaluate given
-      momenta, a reduced-budget σ on each build is the fallback. Its error must
-      be small enough to resolve the effect.
+    - The released CLI has no way to evaluate given momenta (vg-validator
+      checked), so census 2b does not size g2HDM and this session owns it.
+      Evaluate through the library API instead: read the momenta and flavours
+      from the main run's LHE events and evaluate the bound amplitude on each
+      build.
+      - The harness is test-only or a scratch binary, never a CLI feature.
+        Commit it only if it becomes a lasting oracle.
+      - Building two versions of the library means two worktrees or two
+        `git archive` trees, each with its own target directory.
+    - The fallback, only if that proves impractical: a reduced-budget σ on
+      each build, with an error small enough to resolve the effect. Say why
+      you fell back.
 - **Then re-read the item's excess on post-fix code** before attributing
   anything else. The other candidate is MadEvent's default-survey bias, which
   vg-validator's R3 (`hard_survey = 2`) tests. The two causes are independent;
