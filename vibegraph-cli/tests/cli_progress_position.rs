@@ -193,9 +193,16 @@ fn assert_position_matches_the_phase_records(objects: &[Value], complete: bool) 
         } else {
             assert_eq!(phases_started(objects, at), 0, "{o}");
         }
-        if let Some(phases) = fields["phases"].as_u64() {
-            phases_seen.insert(phases);
-        }
+        match fields["phases"].as_u64() {
+            Some(phases) => phases_seen.insert(phases),
+            None => {
+                assert!(
+                    phases_seen.is_empty(),
+                    "a progress object lost `phases` after {phases_seen:?}: {o}"
+                );
+                false
+            }
+        };
     }
     assert_eq!(phases_seen.len(), 1, "{phases_seen:?}");
     let phases = *phases_seen.first().unwrap();

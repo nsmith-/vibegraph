@@ -604,8 +604,8 @@ phases it executes, each object also carries `phases`, that count:
 `generate` knows its count before it starts. `integrate` knows whether it
 reads the density set only once its run card is resolved, and a default run
 card is read off the card's own enumeration, so objects written before that
-(the `ufo_load` and `enumerate` stages) carry `phase` and no `phases`. Once
-`phases` appears it does not change. A run that is refused, or stopped by a
+(the `ufo_load` and `enumerate` stages) carry `phase` and no `phases`. Every
+object after the first that carries `phases` carries the same `phases`. A run that is refused, or stopped by a
 signal, ends at a phase no later than `phases`.
 
 **The group.** A card whose lines differ in final-state multiplicity or in

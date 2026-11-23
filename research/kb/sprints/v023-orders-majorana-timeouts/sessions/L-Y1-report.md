@@ -86,6 +86,16 @@ default run card resolves, so nothing needs fetched data. They check:
 - ordering: with the extras removed, each stage's key set is the pre-existing
   one, and the stage and phase order is pinned.
 
+**Oracle for "`phases` never changes".** `assert_position_matches_the_phase_records`
+in `cli_progress_position.rs` pins that one value of `phases` is ever seen and
+that once it has appeared, every later progress object carries it. Mutation, run
+by hand: `run` was temporarily changed to delete `phases` from the last progress
+object of each stream. `cargo test -p vibegraph --test cli_progress_position`
+then failed 4 of 5 tests (the single-group, check, generate and two-group
+tests), each with `a progress object lost `phases` after {N}`; the fifth, which
+does not call the helper, passed. The mutation was reverted and the file
+restored byte for byte before the commit.
+
 **σ and grid, against main** (both binaries dev profile, `-j 1`, seed 5,
 `--fixed-budget --neval 3000 --niter 3`, `--no-tui`; main built in a detached
 worktree of abc3b31 with its own target, removed afterwards):
