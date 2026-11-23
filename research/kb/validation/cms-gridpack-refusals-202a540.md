@@ -64,7 +64,7 @@ medium (2026-11-07).
 ## Timeouts and panics
 
 All 37 timeouts are at the 600 s limit, triaged by
-[multijet-mlm-cards-time-out-in-the-gridpack-campaign](../backlog/performance/multijet-mlm-cards-time-out-in-the-gridpack-campaign.md)
+`multijet-mlm-cards-time-out-in-the-gridpack-campaign`, closed by the [L-T2 report](../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md)
 (high): DYBto2LB-4Jets ×2, DYJets_HT ×2, DYto2L-4Jets ×2, GJ-4Jets ×4,
 GJets-4Jets ×2, GJets_HT-100to200, QCD-5Jets ×2, TT-3Jets ×2, TTto2L2Nu-3Jets,
 TTto4Q-3Jets, VBS_WPMZTo4Q ×2, WBtoLNuB-4Jets ×2, WWjj_SS_ewk, Wto2Q-3Jets ×2,
