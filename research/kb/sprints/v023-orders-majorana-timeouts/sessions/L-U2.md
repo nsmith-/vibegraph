@@ -38,21 +38,21 @@ The model-reproduction files are in `/tmp/claude-0/lp/z512/` (models `sm_if`, `s
 
 ## Scope
 
-1. **An out-of-subset `if` with no `Parameter` definition under it, in any branch, does not refuse the model.**
-   - It binds nothing the loader reads, so skipping it matches v0.2.2 and cannot change any parameter's value.
-   - Check what such an `if` *can* bind. If a plain name bound under it is read later by a `Parameter`'s value expression or by `configuration`-dependent code the loader evaluates, the model must still be refused, by name. Pin that case with a test.
-2. **A refused out-of-subset `if` names exactly the `Parameter`s defined under that `if`** (every branch of it). It must not name those under other `if`s, and the list is never empty. Pin that with a model that has two `if`s: one within the subset, one outside it.
-3. **Keep the in-subset behaviour unchanged.** That covers L-U1's `configuration`-flag branches, `ufo_value_forms` and the dim6top and ctGpatched paths.
-4. **Write the release note** in `docs/release-notes/v0.2.3.md`, in that file's style. It says that a `configuration` `if` binding no parameter loads as in v0.2.2, and that the refusal names the parameters under the failing `if`.
+1. **Pin v0.2.2's behaviour exactly.** An `if` with no `Parameter` definition in any of its branches is skipped, whatever its condition.
+   - Find and quote v0.2.2's code (`git show v0.2.2:vibegraph-lib/src/ufo/parameters.rs`) so the restored behaviour is the released one, not a guess.
+   - Suppose a plain name bound under such an `if` is read later by a `Parameter`'s value. Check what v0.2.2 does with that. The result must be a named refusal (an unknown name in the expression, for example), never a silent value. Pin it with a test.
+2. **Keep `sm_ifp` refused, naming `'extra'` alone.** A refused out-of-subset `if` names exactly the `Parameter`s defined under that `if`, across all its branches: never those under other `if`s, and never an empty list. Assert the name appears in the message, so the empty-name bug cannot come back. Pin it with a model that has two `if`s, one within the subset and one outside it.
+3. **An in-subset `if` that holds `Parameter`s keeps today's evaluation.** That is PR 7's feature: L-U1's `configuration`-flag branches, `ufo_value_forms`, and the dim6top and ctGpatched paths. No test may weaken it.
+4. **Release note:** none is needed. The regression was never released. The manager's PR says "fixes an unreleased regression from v0.2.3 development". You may add one line to `docs/release-notes/v0.2.3.md` only if that file already lists PR 7's configuration support and the line would otherwise be wrong.
 
 ## Tests and oracles
 
 - **Hermetic tests** (no submodule; build the model in a temp dir, as `ufo_value_forms.rs` does). For each one, show that the test fails on main's code (stash the fix, or apply a one-line revert) and passes with the fix:
-  - (a) the definition-free `if` model loads;
+  - (a) the `sm_if` shape loads: a configuration-dependent, out-of-subset condition with a plain assignment inside;
   - (b) the two-`if` model's refusal names only the failing `if`'s parameters;
-  - (c) a name bound under an out-of-subset `if` and read by a `Parameter` is still refused.
+  - (c) a name bound under a skipped `if` and read by a `Parameter` is a named refusal, as v0.2.2 gives.
 - **The binary oracle:** enumerate `sm_if` with this branch's binary and with v0.2.2. The `diagrams.json` must be identical (the diagram content; mask the version fields). `sm_ctl` must be byte-identical to main.
-- **Identity on unaffected models:** `vibegraph parameters` output is byte-identical to main on sm, sm-no_b_mass and the dim6top and ctGpatched models (L-Z5 used the copies L-U1 unpacked; find them via the L-U1 and L-Z5 reports).
+- **Identity on unaffected models:** `vibegraph parameters` output for `sm` is byte-identical to main, so the fix moves no loaded model. Also check is byte-identical to main on sm, sm-no_b_mass and the dim6top and ctGpatched models (L-Z5 used the copies L-U1 unpacked; find them via the L-U1 and L-Z5 reports).
 
 **The gates:**
 - `cargo fmt --all --check`;
