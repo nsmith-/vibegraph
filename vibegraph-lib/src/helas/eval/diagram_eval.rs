@@ -200,9 +200,8 @@ fn split_chained_gamma5(term: &LorentzTerm) -> Vec<LorentzTerm> {
 }
 
 impl VertexTerm {
-    /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
-    ///
-    /// result_leg_idx is 0-indexed here
+    /// [`from_ufo_read`](Self::from_ufo_read) with the vertex's own chirality, the
+    /// reading of a vertex whose particles are their own conjugate set.
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_ufo(
@@ -226,11 +225,12 @@ impl VertexTerm {
         )
     }
 
-    /// [`from_ufo`](Self::from_ufo), with every chiral projector of a chain that
-    /// carries no gamma exchanged for the other chirality where
+    /// Generate a VertexTerm from a UFO vertex definition, given the model and the
+    /// desired index of the result leg (0-indexed), with every chiral projector of a
+    /// chain that carries no gamma exchanged for the other chirality where
     /// `swap_standalone_chirality` is set ([`conjugate_standalone_projectors`]).
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn from_ufo_read(
+    fn from_ufo_read(
         model: &UFOModel,
         lorentz_id: LorentzId,
         _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed

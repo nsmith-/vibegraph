@@ -1335,26 +1335,6 @@ struct TensorTerm {
     reversed_order: bool,
 }
 
-/// The spinor index pair `(row, column)` of an operator the tensor path can place on a
-/// fermion line, or `None`.
-///
-/// A `Sigma` is here as a carrier of the shared indices, never as a factor beside them:
-/// it *is* the two gammas already contracted, so a line spells its rank-2 slot either
-/// with two adjacent `Gamma`s or with one `Sigma` (see [`SharedCarrier`]). `C` carries a
-/// spinor pair too and is deliberately absent — charge conjugation is not supported
-/// anywhere in the rooting.
-fn spinor_pair(op: &LorentzOp) -> Option<(isize, isize)> {
-    match op {
-        LorentzOp::Gamma { i, j, .. }
-        | LorentzOp::Sigma { i, j, .. }
-        | LorentzOp::Identity { i, j }
-        | LorentzOp::ProjM { i, j }
-        | LorentzOp::ProjP { i, j }
-        | LorentzOp::Gamma5 { i, j } => Some((*i, *j)),
-        _ => None,
-    }
-}
-
 /// Recognise a cyclic term as a tensor⊗tensor four-fermion structure.
 ///
 /// `Ok(None)` for a term whose index graph is a tree — the rooted contraction handles
@@ -1383,7 +1363,7 @@ fn cyclic_tensor_term(
     if spins.len() != 4 || spins.iter().any(|&s| s != 2) {
         return refuse("not a four-fermion vertex");
     }
-    if term.ops.iter().any(|op| spinor_pair(op).is_none()) {
+    if term.ops.iter().any(|op| op.spinor_pair().is_none()) {
         return refuse(
             "an operator outside the fermion-line set (Gamma/ProjM/ProjP/Gamma5/Identity)",
         );
@@ -1397,21 +1377,21 @@ fn cyclic_tensor_term(
         let start = term
             .ops
             .iter()
-            .position(|op| spinor_pair(op).is_some_and(|(i, _)| i == leg as isize));
+            .position(|op| op.spinor_pair().is_some_and(|(i, _)| i == leg as isize));
         let Some(start) = start.filter(|k| !used.contains(k)) else {
             continue;
         };
         let mut chain = vec![start];
-        let mut cursor = spinor_pair(&term.ops[start]).unwrap().1;
+        let mut cursor = term.ops[start].spinor_pair().unwrap().1;
         while cursor < 0 {
             let next = term.ops.iter().enumerate().find(|(k, op)| {
-                spinor_pair(op).is_some_and(|(i, _)| i == cursor) && !chain.contains(k)
+                op.spinor_pair().is_some_and(|(i, _)| i == cursor) && !chain.contains(k)
             });
             let Some((next, _)) = next else {
                 return refuse("a summed spinor index with no continuing operator");
             };
             chain.push(next);
-            cursor = spinor_pair(&term.ops[next]).unwrap().1;
+            cursor = term.ops[next].spinor_pair().unwrap().1;
         }
         used.extend(chain.iter().copied());
         lines.push((chain, leg, cursor as usize));
