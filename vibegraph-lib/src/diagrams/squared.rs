@@ -23,7 +23,7 @@
 //!    ([`SquaredOrders::selected_pairs`]).
 //!
 //! What reaches the evaluator is a [`SquaredOrders`] on the subprocess's
-//! [`DiagramSet`](super::DiagramSet): the constraints with any negative target
+//! [`DiagramSet`]: the constraints with any negative target
 //! already resolved, which is what the selection at evaluation time reads.
 
 use serde::{Deserialize, Serialize};
@@ -115,12 +115,12 @@ impl SquaredOrders {
     /// summed signed powers, `WEIGHTED` being each order's power times its
     /// hierarchy (`Diagram.calculate_orders`, `base_objects.py:2638-2657`). An
     /// order the diagram does not carry is zero (`Diagram.get_order`).
-    pub fn diagram_orders(&self, diagram: &Diagram, model: &UFOModel) -> Vec<i64> {
+    fn diagram_orders(&self, diagram: &Diagram, model: &UFOModel) -> Vec<i64> {
         orders_of(&self.constraints, diagram, model)
     }
 
     /// Whether the term of two diagrams (or classes) of these orders is selected.
-    pub fn accepts(&self, a: &[i64], b: &[i64]) -> bool {
+    fn accepts(&self, a: &[i64], b: &[i64]) -> bool {
         self.constraints
             .iter()
             .zip(a.iter().zip(b))
@@ -130,7 +130,11 @@ impl SquaredOrders {
     /// The diagrams' order classes: per diagram, the index of its class, and the
     /// distinct order vectors in ascending order. The JAMPs are split one per
     /// class, as MadGraph's `get_split_orders_mapping` splits them.
-    pub fn classes(&self, diagrams: &[Diagram], model: &UFOModel) -> (Vec<usize>, Vec<Vec<i64>>) {
+    pub(crate) fn classes(
+        &self,
+        diagrams: &[Diagram],
+        model: &UFOModel,
+    ) -> (Vec<usize>, Vec<Vec<i64>>) {
         let orders: Vec<Vec<i64>> = diagrams
             .iter()
             .map(|d| self.diagram_orders(d, model))
@@ -147,7 +151,7 @@ impl SquaredOrders {
 
     /// The class pairs whose terms enter |M|², row-major over `keys`
     /// (`selected[a * n + b]`). Symmetric, since a term's order is a sum.
-    pub fn selected_pairs(&self, keys: &[Vec<i64>]) -> Vec<bool> {
+    pub(crate) fn selected_pairs(&self, keys: &[Vec<i64>]) -> Vec<bool> {
         let n = keys.len();
         let mut out = vec![false; n * n];
         for a in 0..n {
@@ -162,17 +166,15 @@ impl SquaredOrders {
     /// moduli only when the selected pairs are every pair of some set of classes,
     /// `|Σ_{a∈T} A_a|²`. Any other selection keeps an interference term without
     /// the squares that bound it, and its sign is the kinematics'.
-    pub fn is_signed(&self, keys: &[Vec<i64>]) -> bool {
+    pub(crate) fn is_signed(&self, keys: &[Vec<i64>]) -> bool {
         let n = keys.len();
         let selected = self.selected_pairs(keys);
         let in_t: Vec<bool> = (0..n).map(|a| selected[a * n + a]).collect();
         (0..n).any(|a| (0..n).any(|b| selected[a * n + b] != (in_t[a] && in_t[b])))
     }
-}
 
-impl SquaredOrders {
     /// [`is_signed`](Self::is_signed) over the classes of `diagrams`.
-    pub fn is_signed_on(&self, diagrams: &[Diagram], model: &UFOModel) -> bool {
+    pub(crate) fn is_signed_on(&self, diagrams: &[Diagram], model: &UFOModel) -> bool {
         let (_, keys) = self.classes(diagrams, model);
         self.is_signed(&keys)
     }
@@ -347,17 +349,10 @@ impl SquaredRequest {
             // and over the list it pairs against, which are the same list here.
             let lowest = orders.iter().map(|o| o[k]).min().unwrap_or(0);
             constraints[k].value = 2 * lowest + 2 * (-constraints[k].value - 1);
-            let resolved = SquaredRequest {
-                constraints: constraints.clone(),
-            };
+            let c = &constraints[k];
             let keep: Vec<bool> = orders
                 .iter()
-                .map(|a| {
-                    orders.iter().any(|b| {
-                        let c = &resolved.constraints[k];
-                        c.op.accepts(a[k] + b[k], c.value)
-                    })
-                })
+                .map(|a| orders.iter().any(|b| c.op.accepts(a[k] + b[k], c.value)))
                 .collect();
             retain(diagrams, &mut orders, &keep);
         }
@@ -393,7 +388,7 @@ pub(crate) fn refuse_mixed_squared_orders(card: &SupportedCard) -> Result<(), Di
 /// diagrams were not filtered with.
 ///
 /// [`Provenance::process`]: super::diagram::Provenance
-pub fn annotate_sets(
+pub(crate) fn annotate_sets(
     sets: &mut [DiagramSet],
     card: &SupportedCard,
     model: &UFOModel,
