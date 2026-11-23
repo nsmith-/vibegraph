@@ -695,6 +695,19 @@ impl FlavorGroups {
         &self.groups
     }
 
+    /// The process numbers (`@N`) of every subprocess, each once, in
+    /// increasing order.
+    pub fn process_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .groups
+            .iter()
+            .flat_map(|g| g.members().iter().map(|m| m.process))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
     /// The pole masses of the two incoming legs in beam order, which every group
     /// shares ([`derive_flavor_groups`] refuses a decomposition where they differ).
     pub fn initial_masses(&self) -> [f64; 2] {
