@@ -269,7 +269,7 @@ impl Drop for LdjsonEvent {
             if line.is_empty() {
                 continue;
             }
-            let fields = match serde_json::from_slice(line) {
+            let mut fields = match serde_json::from_slice(line) {
                 Ok(serde_json::Value::Object(fields)) => fields,
                 // The formatter writes one object per event; anything else is
                 // kept as the event's message rather than dropped.
@@ -284,6 +284,9 @@ impl Drop for LdjsonEvent {
                     fields
                 }
             };
+            if self.kind == "progress" {
+                crate::phase::annotate(&mut fields);
+            }
             emit_object(self.kind, fields);
         }
     }

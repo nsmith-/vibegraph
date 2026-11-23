@@ -11,9 +11,17 @@
 //! at `debug` and the end, with its wall time and sizes, at `info`, so
 //! `--log-file` holds both.
 //!
+//! Every `progress` object under `--output-ldjson` is stamped with the run's
+//! position in this same sequence ([`annotate`]): `phase`, the 1-based count of
+//! phases entered so far, and `phases`, the count the run executes once the run
+//! has said which phases those are ([`plan`]). The count of phases entered never
+//! decreases, so `phase` is non-decreasing across the stream, and `phases` is
+//! written once and not changed.
+//!
 //! The records time the CLI's own calls and touch nothing they time: no random
 //! number is drawn, and no input of a phase is read or changed.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -101,8 +109,69 @@ pub(crate) struct Phase {
     ended: bool,
 }
 
+/// How many phases the run has entered.
+static ENTERED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many phases the run executes; 0 until [`plan`] has said.
+static PLANNED: AtomicUsize = AtomicUsize::new(0);
+
+/// The phases `integrate` executes, in order, given what is known once the run
+/// card is resolved: whether it enumerates the card itself (it reads an
+/// artifact's diagram sets otherwise), whether its beams are protons, and
+/// whether `--check` stops it after the channels are built. A run that is
+/// refused or stopped ends at one of these, never past them.
+pub(crate) fn integrate_phases(enumerates: bool, proton: bool, check: bool) -> Vec<PhaseName> {
+    let mut phases = vec![PhaseName::Input];
+    if enumerates {
+        phases.push(PhaseName::Enumerate);
+    }
+    phases.push(PhaseName::AmplitudeProbe);
+    if proton {
+        phases.push(PhaseName::Pdf);
+    }
+    phases.extend([PhaseName::Compile, PhaseName::Channels]);
+    if !check {
+        phases.extend([
+            PhaseName::AlphaSurvey,
+            PhaseName::Vegas,
+            PhaseName::Configurations,
+            PhaseName::Bank,
+        ]);
+    }
+    phases
+}
+
+/// The phases `generate` executes, in order. It enters the density phase
+/// whether or not the artifact reads any.
+pub(crate) fn generate_phases() -> Vec<PhaseName> {
+    vec![PhaseName::Input, PhaseName::Pdf, PhaseName::Generate]
+}
+
+/// Fix the number of phases the run executes. Called once, as soon as the
+/// run knows them; progress written before then carries `phase` alone.
+pub(crate) fn plan(phases: &[PhaseName]) {
+    PLANNED.store(phases.len(), Ordering::Relaxed);
+}
+
+/// Stamp the `fields` of a `progress` object with the run's position: `phase`
+/// once a phase has been entered, `phases` once the run is planned.
+pub(crate) fn annotate(object: &mut Map<String, Value>) {
+    let Some(Value::Object(fields)) = object.get_mut("fields") else {
+        return;
+    };
+    let entered = ENTERED.load(Ordering::Relaxed);
+    let planned = PLANNED.load(Ordering::Relaxed);
+    if entered > 0 {
+        fields.insert("phase".to_string(), Value::from(entered));
+    }
+    if planned > 0 {
+        fields.insert("phases".to_string(), Value::from(planned));
+    }
+}
+
 /// Enter `name`: its start record is written and flushed before this returns.
 pub(crate) fn start(name: PhaseName) -> Phase {
+    ENTERED.fetch_add(1, Ordering::Relaxed);
     let started = elapsed();
     debug!(phase = name.as_str(), "phase {}: started", name.as_str());
     if output::mode() == Mode::Ldjson {
@@ -188,6 +257,35 @@ mod tests {
         let a = elapsed();
         let b = elapsed();
         assert!(b >= a && a >= 0.0);
+    }
+
+    /// The counts a run is planned with: a proton run adds the density phase,
+    /// an artifact's run drops enumeration, and `--check` stops after the
+    /// channels.
+    #[test]
+    fn the_planned_phases_follow_the_run_s_mode() {
+        use PhaseName::*;
+        assert_eq!(
+            integrate_phases(true, false, false),
+            [
+                Input,
+                Enumerate,
+                AmplitudeProbe,
+                Compile,
+                Channels,
+                AlphaSurvey,
+                Vegas,
+                Configurations,
+                Bank
+            ]
+        );
+        assert_eq!(integrate_phases(true, true, false).len(), 10);
+        assert_eq!(integrate_phases(false, true, false).len(), 9);
+        assert_eq!(
+            integrate_phases(true, true, true),
+            [Input, Enumerate, AmplitudeProbe, Pdf, Compile, Channels]
+        );
+        assert_eq!(generate_phases(), [Input, Pdf, Generate]);
     }
 
     #[test]

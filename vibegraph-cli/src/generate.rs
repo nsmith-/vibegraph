@@ -365,6 +365,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         ));
     }
 
+    phase::plan(&phase::generate_phases());
     let input_phase = phase::start(PhaseName::Input);
     let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact).map_err(|e| {
         err(
