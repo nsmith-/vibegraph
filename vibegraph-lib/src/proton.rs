@@ -1873,6 +1873,11 @@ pub struct ProtonEvent {
     pub cm: Vec<V>,
 }
 
+/// The uniforms [`ProtonIntegrand::select_event`] draws an event's labels from:
+/// the flavour group, the `(flavour, beam ordering)` pair inside it, the
+/// helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 5;
+
 /// The discrete labels an accepted hadronic event carries besides its momenta.
 ///
 /// Every one of them is summed over in the cross section, so none is a sampling
@@ -4226,7 +4231,11 @@ impl<'a> ProtonIntegrand<'a> {
     /// caller may skip it entirely and integrate the same number.
     ///
     /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+    pub fn select_event(
+        &self,
+        event: &ProtonEvent,
+        u: [f64; SELECT_EVENT_DRAWS],
+    ) -> Option<ProtonSelection> {
         let sc = self.scratch();
         assert_eq!(
             event.group_scales.len(),

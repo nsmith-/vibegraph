@@ -7,7 +7,9 @@ use super::audit::ReweightAudit;
 use super::MAX_TRIALS_PER_EVENT;
 use crate::coupling::cluster::configs::qcd_order;
 use crate::coupling::scales::MatchedRecord;
-use crate::hadronic::{EventSelection, FixedBeamIntegrand};
+use crate::hadronic::{
+    EventSelection, FixedBeamIntegrand, SELECT_EVENT_DRAWS as FIXED_BEAM_EVENT_DRAWS,
+};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::{pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord};
 use crate::lhef::emit::{EventSource, WeightedEvent};
@@ -17,7 +19,10 @@ use crate::lhef::LhefError;
 use crate::multiplicity::MultiplicitySum;
 use crate::pdf::PdfMember;
 use crate::phasespace::GEV2_TO_PB;
-use crate::proton::{BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection};
+use crate::proton::{
+    BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection,
+    SELECT_EVENT_DRAWS as PROTON_EVENT_DRAWS,
+};
 use crate::reweight::engine::Reweighter;
 use crate::runcard::RunCard;
 use crate::systematics::record::{LoRecord, RecordInputs};
@@ -35,7 +40,7 @@ type V = LorentzVector<f64>;
 pub(super) struct SampleSource<'s, 'a> {
     integrand: &'s FixedBeamIntegrand<'a>,
     records: &'s [SubprocessRecord],
-    pass: BlockedPass<Option<FixedBeamPrepared>>,
+    pass: BlockedPass<Option<FixedBeamPrepared>, FIXED_BEAM_EVENT_DRAWS>,
     /// The card the run was set up from, which supplies the record's scale where
     /// nothing in the matrix element moves with `αs` and so no per-event scale
     /// prescription was installed.
@@ -71,12 +76,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         SampleSource {
             integrand,
             records,
-            pass: BlockedPass::new(
-                unweighter,
-                seed,
-                FIXED_BEAM_EVENT_DRAWS,
-                MAX_TRIALS_PER_EVENT as u64,
-            ),
+            pass: BlockedPass::new(unweighter, seed, MAX_TRIALS_PER_EVENT as u64),
             card,
             alpha_qed,
             unit: integrand.observable().per_natural_unit(),
@@ -94,10 +94,6 @@ impl<'s, 'a> SampleSource<'s, 'a> {
     }
 }
 
-/// The uniforms a fixed-beam event's labels are drawn from
-/// ([`FixedBeamIntegrand::select_event`]).
-const FIXED_BEAM_EVENT_DRAWS: usize = 4;
-
 /// What the worker that accepted a fixed-beam point makes of it: the momenta
 /// rebuilt at the point's coordinates, the labels drawn there, and the scales
 /// its record reports.
@@ -112,11 +108,10 @@ impl EventSource for SampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let integrand = self.integrand;
         let card = self.card;
-        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+        let prepare = |point: &AcceptedPoint, u| {
             let mut momenta = Vec::new();
             integrand.event_in_channel(point.channel, &point.u, &mut momenta);
-            let selection =
-                integrand.select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])?;
+            let selection = integrand.select_event(&momenta, point.channel, u)?;
             // A point the scale prescription rejects has no scale to report, so
             // the source stops rather than inventing one, and the strategy
             // reports a sample it could not fill.
@@ -546,7 +541,7 @@ pub(super) struct ProtonSampleSource<'s, 'a> {
     integrand: &'s MultiplicitySum<'a>,
     /// Per part, in the integrand's part order.
     parts: &'s [PartRecords],
-    pass: BlockedPass<Option<ProtonPrepared>>,
+    pass: BlockedPass<Option<ProtonPrepared>, PROTON_EVENT_DRAWS>,
     alpha_qed: f64,
     pub(super) tally: ResonanceTally,
     /// The reweighting hypotheses, indexed by concrete subprocess across every
@@ -572,12 +567,7 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         ProtonSampleSource {
             integrand,
             parts,
-            pass: BlockedPass::new(
-                unweighter,
-                seed,
-                PROTON_EVENT_DRAWS,
-                MAX_TRIALS_PER_EVENT as u64,
-            ),
+            pass: BlockedPass::new(unweighter, seed, MAX_TRIALS_PER_EVENT as u64),
             alpha_qed,
             tally: ResonanceTally::default(),
             reweighter,
@@ -591,10 +581,6 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         self.pass.stats()
     }
 }
-
-/// The uniforms a proton event's labels are drawn from
-/// ([`ProtonIntegrand::select_event`]).
-const PROTON_EVENT_DRAWS: usize = 5;
 
 /// What the worker that accepted a proton point makes of it: the event rebuilt
 /// at the point's coordinates and the part it belongs to, the labels drawn
@@ -610,10 +596,10 @@ struct ProtonPrepared {
 impl EventSource for ProtonSampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let sum = self.integrand;
-        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+        let prepare = |point: &AcceptedPoint, u| {
             let (k, event) = sum.event_in_channel(point.channel, &point.u)?;
             let integrand: &ProtonIntegrand<'_> = &sum.parts()[k];
-            let selection = integrand.select_event(&event, [u[0], u[1], u[2], u[3], u[4]])?;
+            let selection = integrand.select_event(&event, u)?;
             let externals: Vec<[f64; 4]> = integrand
                 .record_momenta(&event, selection.ordering)
                 .iter()
