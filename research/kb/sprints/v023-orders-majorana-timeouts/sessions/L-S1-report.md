@@ -350,6 +350,16 @@ the r1 runs. This head predates the phase records.
   file is written. A cheap process like this one is bound by output, so the
   -j 8 number will depend more on the writer than on sampling.
 
+**Re-checked after the merge with main.** Main dfdf85d4 includes PR 10, which
+changes per-event helicity reweighting. On the merged head 0baf1703 (release,
+`v0.2.2-23-g0baf1703`), the event sha256s are unchanged from the table above:
+- card A at `-j 1`: `3b6467b394d7ea56…`;
+- card A at `-j 4`: `3b6467b394d7ea56…`;
+- card B at `-j 1`: `2c5a8ad8933c78dd…`.
+
+Neither card uses a reweight card, so PR 10's changes do not reach these
+event streams.
+
 ## Validator-host request
 
 - Branch `sprintl-generate`, the final commit of this session.
