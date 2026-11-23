@@ -20,4 +20,5 @@ gridpack's 2.9.13 value 0.6851. The excess is the
 [default-survey bias](../../validation/madevent-default-survey-bias.md), the
 same class as the VBS finding. With three MadGraph seeds, and MadGraph's own
 χ²/dof still 8 at `hard_survey = 2` (its quoted errors are under-stated),
-this is *consistent*, not a calibrated pass. This item now covers 188/189 only.
+this is *consistent*, not a calibrated pass. It moves 260 out of
+[`sigma-reads-high-on-mlm-and-wbq-cards`](../../backlog/validation/sigma-reads-high-on-mlm-and-wbq-cards.md).
