@@ -88,6 +88,7 @@ use crate::output::{
     ModelRef, MuF, MultiplicityResult,
 };
 use crate::parallel::ParallelArgs;
+use crate::phase::{self, Phase, PhaseName};
 use crate::si::{fmt_si_measured, GEV, PICOBARN};
 use crate::signals;
 use crate::tui;
@@ -976,6 +977,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         info!("VEGAS grid rule: {grid_rule:?}");
     }
 
+    let input_phase = phase::start(PhaseName::Input);
     let Input {
         parsed,
         proc_card,
@@ -984,6 +986,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         facts,
         config,
     } = read_input(args)?;
+    input_phase.end();
     let process = process_string(&parsed)?;
     let (model, model_id) = (loaded.model.clone(), loaded.identity.clone());
     let pool = args.parallel.enumeration();
@@ -1003,8 +1006,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
                 )
             });
         }
+        let mut enumeration = phase::start(PhaseName::Enumerate);
         let lines = enumerate_lines_in(&parsed, &model, pool).map_err(enumeration_error)?;
         let facts = process_facts(&parsed, &model, &lines, pool).map_err(default_card_error)?;
+        size_sets(&mut enumeration, &lines.sets);
+        enumeration.end();
         enumerated = Some(lines.sets);
         Ok(facts)
     })?;
@@ -1032,16 +1038,26 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     } = bind_param_card(args.param_card.as_deref(), &model)?;
     let sets = match sets.or(enumerated) {
         Some(sets) => sets,
-        None => generate_from_proc_card_in(&parsed, &model, pool).map_err(enumeration_error)?,
+        None => {
+            let mut enumeration = phase::start(PhaseName::Enumerate);
+            let sets =
+                generate_from_proc_card_in(&parsed, &model, pool).map_err(enumeration_error)?;
+            size_sets(&mut enumeration, &sets);
+            enumeration.end();
+            sets
+        }
     };
     // Each set is compiled once, across the pool, for the probe and the integrand
-    // alike.
+    // alike, so the probe's phase holds the run's compiles.
+    let mut probe_phase = phase::start(PhaseName::AmplitudeProbe);
     let set_refs: Vec<&DiagramSet> = sets.iter().collect();
     let compiled = compile_classes(&set_refs, &model, &evaluated);
     let (amplitude_probe, evaluators) =
         amplitude_probe::measure_compiled(&sets, compiled, &evaluated)
             .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
     let precompiled: Vec<Option<AmplitudeEvaluator>> = evaluators.into_iter().map(Some).collect();
+    probe_phase.size("diagram_sets", sets.len());
+    probe_phase.end();
 
     let process_label = process.clone();
     let output = match rc.beam_mode() {
@@ -1235,6 +1251,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
 
     report_configurations(&output.configurations, sigma_pb, observable);
 
+    let bank = phase::start(PhaseName::Bank);
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
         enumeration_version: ENUMERATION_VERSION,
@@ -1280,6 +1297,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     artifact
         .write_to_path(&out_path, args.force)
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
+    bank.end();
     output::text_line(format_args!("wrote {}", out_path.display()));
     output::result(&result_object(
         &artifact,
@@ -1525,11 +1543,13 @@ fn integrate_proton(
     network: NetworkPolicy,
     systematics: Option<&VariationRequest>,
 ) -> Result<Option<RunOutput>, CliError> {
+    let pdf_phase = phase::start(PhaseName::Pdf);
     let tiers = assets::pdf_tiers();
     let fetch = assets::pdf_fetch(network);
     let loaded = load_for_run_card(rc, &tiers, &fetch)
         .map_err(|e| err(pdf_error_kind(&e), e.to_string()))?
         .expect("a proton-beam card reads a density or is refused");
+    pdf_phase.end();
     let LoadedPdf {
         set,
         member,
@@ -1600,6 +1620,7 @@ fn integrate_hadronic(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
+    let mut compile = phase::start(PhaseName::Compile);
     let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of_with(
         sets.to_vec(),
         precompiled,
@@ -1617,6 +1638,23 @@ fn integrate_hadronic(
             )
         })?;
     }
+    compile.size("parts", groups.len());
+    compile.size(
+        "flavour_groups",
+        groups.iter().map(|part| part.groups().len()).sum(),
+    );
+    compile.size(
+        "subprocesses",
+        groups.iter().map(FlavorGroups::subprocess_count).sum(),
+    );
+    size_evaluators(
+        &mut compile,
+        groups
+            .iter()
+            .flat_map(|part| part.groups().iter().map(|g| g.evaluator())),
+    );
+    compile.end();
+    let mut channels_phase = phase::start(PhaseName::Channels);
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
         .map(|part| {
@@ -1664,20 +1702,29 @@ fn integrate_hadronic(
     integ.set_alpha_floor(args.alpha_floor.0);
 
     tui::state::note_channels(integ.channel_count());
+    channels_phase.size("channels", integ.channel_count());
+    channels_phase.end();
 
     let budget = args.budget()?;
     if args.check {
         return Ok(None);
     }
     let n_survey = survey_points(args.neval);
+    let mut survey = phase::start(PhaseName::AlphaSurvey);
+    survey.size("points_per_iteration", n_survey);
+    survey.size("iterations", ADAPT_ITERS);
     integ.adapt_alphas(seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
     refuse_sampled_fault(integ.fault())?;
+    survey.end();
 
     integ.clear_census();
     signals::sampling_started();
+    let vegas = phase::start(PhaseName::Vegas);
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
     refuse_sampled_fault(integ.fault())?;
+    end_vegas(vegas, &convergence);
+    let configurations_phase = phase::start(PhaseName::Configurations);
     let census = integ.census();
     let multiplicities = multiplicity_totals(&integ, &groups, &per_channel, convergence.iterations);
     if multiplicities.len() > 1 {
@@ -1702,6 +1749,7 @@ fn integrate_hadronic(
             bank_channel(key, c, Some(sampler), members, Observable::CrossSection)
         })
         .collect();
+    configurations_phase.end();
     Ok(Some(RunOutput {
         process,
         observable: Observable::CrossSection,
@@ -1719,6 +1767,39 @@ fn integrate_hadronic(
         multiplicities,
         configurations,
     }))
+}
+
+/// Record the subprocess and diagram counts of `sets` on `phase`.
+fn size_sets(phase: &mut Phase, sets: &[DiagramSet]) {
+    phase.size(
+        "subprocesses",
+        sets.iter().filter(|s| !s.diagrams.is_empty()).count(),
+    );
+    phase.size("diagrams", sets.iter().map(|s| s.diagrams.len()).sum());
+}
+
+/// Record the compiled diagrams, helicity combinations and colour flows summed
+/// over `evaluators` on `phase`.
+fn size_evaluators<'a>(
+    phase: &mut Phase,
+    evaluators: impl Iterator<Item = &'a vibegraph::helas::eval::AmplitudeEvaluator>,
+) {
+    let (mut diagrams, mut helicities, mut flows) = (0, 0, 0);
+    for e in evaluators {
+        diagrams += e.n_diagrams();
+        helicities += e.helicities().len();
+        flows += e.n_flows();
+    }
+    phase.size("compiled_diagrams", diagrams);
+    phase.size("helicities", helicities);
+    phase.size("colour_flows", flows);
+}
+
+/// End the VEGAS phase with the iterations and points it spent.
+fn end_vegas(mut phase: Phase, convergence: &ConvergenceReport) {
+    phase.size("iterations", convergence.iterations);
+    phase.size("points", convergence.points as usize);
+    phase.end();
 }
 
 /// The refusal a sampled point of an integrand ran into, if any: the points it
@@ -1800,6 +1881,7 @@ fn integrate_fixed_energy(
     refuse_mixed_multiplicity(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_one_body_final_state(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_exchanged_beam_orderings(sets).map_err(|e| err(ErrorKind::Process, e))?;
+    let mut compile = phase::start(PhaseName::Compile);
     let evals = compile_subprocesses_with(sets, precompiled, model, evaluated).map_err(|e| {
         err(
             ErrorKind::Process,
@@ -1846,6 +1928,10 @@ fn integrate_fixed_energy(
             format!("failed to compile the pairing amplitudes: {e}"),
         )
     })?;
+    compile.size("subprocesses", evals.len());
+    size_evaluators(&mut compile, evals.iter());
+    compile.end();
+    let mut channels_phase = phase::start(PhaseName::Channels);
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
@@ -1860,21 +1946,30 @@ fn integrate_fixed_energy(
         .use_running_coupling(&subprocess_diagrams(sets), model, evaluated, rc)
         .map_err(|e| err(ErrorKind::Card, format!("run card scale prescription: {e}")))?;
     tui::state::note_channels(diagrams.len());
+    channels_phase.size("channels", diagrams.len());
+    channels_phase.end();
     let budget = args.budget()?;
     if args.check {
         return Ok(None);
     }
     let n_survey = survey_points(args.neval);
+    let mut survey = phase::start(PhaseName::AlphaSurvey);
+    survey.size("points_per_iteration", n_survey);
+    survey.size("iterations", ADAPT_ITERS);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
+    survey.end();
     // A process with no diagram to map keeps flat RAMBO, which draws its angles
     // isotropically and has no chain: the legacy choices describe it exactly.
     let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
     integ.clear_census();
     signals::sampling_started();
+    let vegas = phase::start(PhaseName::Vegas);
     let (per_channel, result, convergence) =
         integ.adapt_grids_budget(budget, args.allocation(), seed, &tui::stop_signal());
     refuse_sampled_fault(integ.fault())?;
+    end_vegas(vegas, &convergence);
+    let configurations_phase = phase::start(PhaseName::Configurations);
     let census = integ.census();
     let (configurations, members) = config_share::fixed_energy(
         sets,
@@ -1883,6 +1978,7 @@ fn integrate_fixed_energy(
         &per_channel,
         initial.observable().per_natural_unit(),
     );
+    configurations_phase.end();
     Ok(Some(RunOutput {
         process,
         observable: initial.observable(),

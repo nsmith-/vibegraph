@@ -28,6 +28,6 @@ The full idm card cannot settle it yet:
 
 Medium, not high: the offset is not confirmed. If ≥ 5 MadGraph seeds keep it,
 it is a silent wrong σ and the priority rises. The timeout is in
-[multijet-mlm-cards-time-out-in-the-gridpack-campaign](../performance/multijet-mlm-cards-time-out-in-the-gridpack-campaign.md),
+the closed timeout triage ([L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md)),
 whose census lists idm_dilepton_mH110. idm_mH80, a panic in that campaign, now
 times out too.
