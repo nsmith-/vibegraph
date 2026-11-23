@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "The 2→6 uux samples row's SCALUP and AQCDUP spectra sit off MadEvent's, while every per-event scale given the channel matches"
-description: "On uux_to_ccx_emmm_qcd0, both the serial and the blocked sampler give SCALUP and AQCDUP KS p down to 1e-5 against MadEvent's sample (D 0.025–0.031); the kinematics pass, so the configuration each scale reads is the suspect."
+description: "On uux_to_ccx_emmm_qcd0 the serial and blocked samplers both give SCALUP/AQCDUP KS p down to 1e-5 against MadEvent (D 0.025–0.031) while kinematics pass; the configuration each scale reads is the suspect."
 area: validation
 state: open
 priority: high
