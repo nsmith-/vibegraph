@@ -399,11 +399,14 @@ The two passes are indistinguishable and both miss MadGraph's scale spectrum
 (`D` 0.025–0.031), so the disagreement is in the scale the record reports. The
 row's scale columns are now informational (`SCALE_INFO_ROWS` in
 `validate_samples.rs`, with `every_demoted_row_is_a_gated_row` failing on a key
-that names no row; checked by mutating the key). The first step toward a fix is a
-per-event oracle: evaluate `record_scales` at the momenta, flavours and colour
-flow of MadGraph's own banked events
-(`validation/madgraph/output/uux_to_ccx_emmm_qcd0/Events/run_01/unweighted_events.lhe.gz`)
-and compare `SCALUP`/`AQCDUP` event by event, by topology.
+that names no row; checked by mutating the key). The offset is tracked as
+`two-to-six-scale-spectrum-offset-vs-madevent`. The scale computation itself is
+already pinned: `validate_kt_cluster.rs` reproduces every merge and both scales
+of all 20000 of this row's MadGraph events given MadGraph's channel and carried
+flags. What is unpinned is which configuration each event's scale is read from
+(the channel draw against MadGraph's realised channels, and stale resonance
+flags on some events), so the item starts from a per-event comparison of that
+choice on the instrumented dump.
 
 Seed 3's low `n_eff` (8252) is one event at `w/w_max = 168.5` in the blocked
 pass, carrying about 0.8% of the seed's weight; its other heaviest weights match
