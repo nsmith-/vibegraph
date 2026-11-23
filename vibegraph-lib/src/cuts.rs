@@ -2074,7 +2074,8 @@ impl Cuts {
     /// alike, so its size moves only the efficiency — and the well-posedness of a
     /// draw whose pole would otherwise sit on the transfer's own rounding noise.
     /// As a *support bound* it also caps each rung's transfer at `t ≤ −floor`,
-    /// above which the channel's density is exactly zero. The estimator is then
+    /// above which the channel's density is exactly zero, lowered per rung to what
+    /// a single-leg side of its line proves ([`Cuts::single_leg_transfer_bound`]). The estimator is then
     /// unbiased only while the channel set as a whole covers every point the cuts
     /// accept: past three outgoing legs, where the floor is a scale rather than a
     /// bound, that is what the coverage gates check, not something the floor
@@ -2216,6 +2217,31 @@ impl Cuts {
                     .map_or(0.0, |c| c.pt_min.max(c.e_min).max(0.0))
             })
             .sum()
+    }
+
+    /// The transfer (GeV²) a peripheral line provably carries when `slots`, one
+    /// side of it, is a single final-state leg: the square of that leg's
+    /// single-leg transverse-momentum threshold, zero for a leg with none.
+    /// `None` for a side of several legs (or of none), whose transverse
+    /// momentum no single-leg cut holds up.
+    ///
+    /// Under pairing-weighted filters it is the weakest of the members' bounds.
+    pub(crate) fn single_leg_transfer_bound(&self, slots: u64) -> Option<f64> {
+        if slots.count_ones() != 1 {
+            return None;
+        }
+        if self.is_pairing_weighted() {
+            return self
+                .pairings
+                .iter()
+                .map(|p| p.cuts.single_leg_transfer_bound(slots))
+                .reduce(|a, b| Some(a?.min(b?)))
+                .flatten();
+        }
+        let k = slots.trailing_zeros() as usize;
+        let idx = *self.finals.get(k)?;
+        let pt = self.pt_min_of(idx);
+        Some(pt * pt)
     }
 
     /// The lower bound on one pair's invariant mass², from its own thresholds.
@@ -3567,6 +3593,21 @@ mod tests {
             }
         }
         assert!(accepted > 1000, "only {accepted} accepted points");
+    }
+
+    #[test]
+    fn a_single_leg_side_bounds_the_transfer_at_its_own_threshold() {
+        // llj final-state order: l+, l-, j at ptl = 10, ptj = 20.
+        let llj = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
+        assert_eq!(llj.single_leg_transfer_bound(0b100), Some(400.0));
+        assert_eq!(llj.single_leg_transfer_bound(0b001), Some(100.0));
+        assert_eq!(llj.single_leg_transfer_bound(0b011), None);
+        assert_eq!(llj.single_leg_transfer_bound(0), None);
+
+        // A leg with no threshold proves nothing, and says so with a zero.
+        let free = Cuts::compile(&card("0 = ptl\n"), &llj_legs()).unwrap();
+        assert_eq!(free.single_leg_transfer_bound(0b010), Some(0.0));
+        assert_eq!(free.single_leg_transfer_bound(0b100), Some(400.0));
     }
 
     #[test]
