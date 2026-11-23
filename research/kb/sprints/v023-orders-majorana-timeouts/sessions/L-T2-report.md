@@ -637,3 +637,8 @@ Ready-to-file items. The manager files them; none is created here.
   the validator request).
 - The phase instrument has no per-iteration rate on `alpha_survey`. If wanted,
   it belongs with the instrument on PR 3a, not here.
+
+## Manager addenda
+
+- Card 636: vg-validator found the gridpack's MadGraph 2.9.18 σ is 2.222e-15 ± 4.2e-18 pb, so vg/MG ≈ 0.99 and the value is not a silent wrong answer. Draft item 7 was filed as `vbf-radion-1800-iterations-inconsistent` (validation, low): convergence and timeout only.
+- PR 3b (planner ruling): items 1 and 2 plus `amplitude-probe-compiles-each-set-twice`. Items 3–6 go to the next sprint.
