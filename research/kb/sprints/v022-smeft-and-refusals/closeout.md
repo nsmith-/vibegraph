@@ -70,6 +70,7 @@ These are filed, and most are in sprint L's plan:
 - **The refusal classes behind 435 refusals:** NLO, Majorana and
   fermion-number violation, spin-2/3/2, squared orders, polarized.
 - **178 cards that time out on every seed.**
+  Correction 2026-11-23: 6 of these 178 (VBS 136, 724, 726, 727, 728; VBF 290) carry a batch-slot stall signature: 290 refuses in 16.6 s on the released binary, and the VBS_WZ cards are refused at parse (local check pending), so they are not timeouts; see the [sprint L log](../v023-orders-majorana-timeouts/log.md) (2026-11-23).
 
 ## Lessons
 
