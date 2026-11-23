@@ -196,7 +196,7 @@ pub(crate) trait ChannelBounds {
     /// [`Cuts::energy_floor`].
     fn energy_floor(&self, slots: u64) -> f64;
     /// [`Cuts::single_leg_transfer_bound`].
-    fn single_leg_transfer_bound(&self, slots: u64) -> Option<f64>;
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64>;
     /// [`Cuts::bwcutoff`].
     fn bwcutoff(&self) -> f64;
     /// [`tau_range`] at hadronic invariant `s`.
@@ -213,8 +213,8 @@ impl ChannelBounds for Cuts {
     fn energy_floor(&self, slots: u64) -> f64 {
         Cuts::energy_floor(self, slots)
     }
-    fn single_leg_transfer_bound(&self, slots: u64) -> Option<f64> {
-        Cuts::single_leg_transfer_bound(self, slots)
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        Cuts::single_leg_transfer_bound(self, slots, products)
     }
     fn bwcutoff(&self) -> f64 {
         Cuts::bwcutoff(self)
@@ -249,10 +249,10 @@ impl ChannelBounds for UnionBounds<'_> {
     fn energy_floor(&self, slots: u64) -> f64 {
         self.weakest(|c| c.energy_floor(slots))
     }
-    fn single_leg_transfer_bound(&self, slots: u64) -> Option<f64> {
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
         self.0
             .iter()
-            .map(|c| c.single_leg_transfer_bound(slots))
+            .map(|c| c.single_leg_transfer_bound(slots, products))
             .reduce(|a, b| Some(a?.min(b?)))
             .expect("bounds over at least one filter")
     }
@@ -372,7 +372,8 @@ impl MapChoices {
             PairOrder::Ordered => channel,
             PairOrder::Symmetric => channel.with_symmetric_pairs(),
         };
-        channel.with_side_transfer_bounds(&|slots| cuts.single_leg_transfer_bound(slots))
+        let products = forced.iter().fold(0u64, |m, l| m | l.slots);
+        channel.with_side_transfer_bounds(&|slots| cuts.single_leg_transfer_bound(slots, products))
     }
 
     /// One line naming each choice and whether the rule or the caller made it.
