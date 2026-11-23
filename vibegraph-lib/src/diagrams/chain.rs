@@ -111,6 +111,7 @@ pub(crate) fn generate_chain_with_merges(
         line: 1,
         lines: 1,
         diagrams_before: 0,
+        pool: super::EnumerationPool::Serial,
     };
     let sets = chain_sets(
         process,

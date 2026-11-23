@@ -540,18 +540,75 @@ fn a_truncation_share_outside_the_unit_interval_is_refused() {
     }
 }
 
-/// The per-channel scans run in parallel, and each is a function of its own two
-/// streams and of nothing another channel touches — so the maxima, and with them
-/// every accepted event, must not depend on how many threads found them.
+/// Neither the scan nor the accept/reject pass depends on the thread count.
+///
+/// The per-channel scans are each a function of their own two streams, and the
+/// accept/reject trials run in fixed-size blocks, each on streams placed by the
+/// seed and its block index alone, taken in block order. So the file — every
+/// event, its labels and the sample statistics the header records — must be the
+/// same bytes at any `-j`. The sample spans many blocks and, at four threads,
+/// several batches of them, so a block taken out of order, a statistic merged in
+/// completion order, or speculative work past the last event leaking into the
+/// file would each show here.
+///
+/// The sample statistics are in the header; that they are also equal is the
+/// part a comparison of events alone could not see.
 #[test]
-fn the_scan_does_not_depend_on_the_thread_count() {
+fn the_sample_does_not_depend_on_the_thread_count() {
     let run = run();
-    let (one, _) = run.generate_with(&["-j", "1"], SEED_A, "threads-1.lhe");
-    let (many, _) = run.generate_with(&["-j", "16"], SEED_A, "threads-16.lhe");
-    assert_eq!(
-        one, many,
-        "`generate -j 1` and `-j 16` wrote different samples"
+    let files: Vec<(String, String, Vec<String>)> = ["1", "2", "4", "16"]
+        .iter()
+        .map(|j| {
+            let output = run.dir.join(format!("threads-{j}.lhe"));
+            let out = run
+                .generate_cmd("buffer", SEED_A, NEVENTS, &output)
+                .args(["-j", j])
+                .output()
+                .expect("spawn vibegraph");
+            assert!(
+                out.status.success(),
+                "vibegraph generate -j {j} failed:\n{}",
+                common::stderr_of(&out)
+            );
+            // The pass's own statistics as the run reports them: trials,
+            // acceptance, overweights and the sample's cross section.
+            let stats: Vec<String> = common::stderr_of(&out)
+                .lines()
+                .filter(|l| {
+                    ["sampling:", "overweight:", "from the sample"]
+                        .iter()
+                        .any(|k| l.contains(k))
+                })
+                .map(|l| l.split_once(' ').map_or(l, |(_, rest)| rest).to_string())
+                .collect();
+            assert_eq!(
+                stats.len(),
+                3,
+                "-j {j} reported:\n{}",
+                common::stderr_of(&out)
+            );
+            (
+                j.to_string(),
+                std::fs::read_to_string(&output).expect("read the event file"),
+                stats,
+            )
+        })
+        .collect();
+    let (_, one, one_stats) = &files[0];
+    assert!(
+        one.contains("<event>"),
+        "the -j 1 file holds no events to compare"
     );
+    for (j, file, stats) in &files[1..] {
+        assert!(
+            file == one,
+            "`generate -j 1` and `-j {j}` wrote different samples"
+        );
+        assert_eq!(
+            stats, one_stats,
+            "`-j 1` and `-j {j}` report different statistics"
+        );
+    }
 }
 
 /// A scan budget that is not a positive count is a refusal, not a fallback: the

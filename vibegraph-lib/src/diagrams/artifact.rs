@@ -248,6 +248,14 @@ impl DiagramArtifact {
     /// [`format_version`](Self::format_version) that
     /// [`read_from_path`](Self::read_from_path) would refuse.
     pub fn write_to_path(&self, path: &Path, force: bool) -> Result<(), DiagramArtifactError> {
+        let encoded = self.encode()?;
+        Self::write_encoded(&encoded, path, force)
+    }
+
+    /// The bytes [`write_to_path`](Self::write_to_path) writes, refusing a
+    /// [`format_version`](Self::format_version) that
+    /// [`read_from_path`](Self::read_from_path) would refuse.
+    pub fn encode(&self) -> Result<Vec<u8>, DiagramArtifactError> {
         if !(OLDEST_READABLE_DIAGRAM_VERSION..=DIAGRAM_FORMAT_VERSION)
             .contains(&self.format_version)
         {
@@ -257,15 +265,23 @@ impl DiagramArtifact {
                 expected: DIAGRAM_FORMAT_VERSION,
             });
         }
+        let raw = bincode::serialize(self).map_err(DiagramArtifactError::Encode)?;
+        zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).map_err(DiagramArtifactError::Zstd)
+    }
+
+    /// Write bytes [`encode`](Self::encode) produced to `path`, refusing to
+    /// overwrite an existing file unless `force` is set.
+    pub fn write_encoded(
+        encoded: &[u8],
+        path: &Path,
+        force: bool,
+    ) -> Result<(), DiagramArtifactError> {
         if !force && path.exists() {
             return Err(DiagramArtifactError::AlreadyExists {
                 path: path.display().to_string(),
             });
         }
-        let raw = bincode::serialize(self).map_err(DiagramArtifactError::Encode)?;
-        let compressed =
-            zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).map_err(DiagramArtifactError::Zstd)?;
-        std::fs::write(path, compressed).map_err(|source| DiagramArtifactError::Io {
+        std::fs::write(path, encoded).map_err(|source| DiagramArtifactError::Io {
             path: path.display().to_string(),
             source,
         })
