@@ -18,6 +18,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use super::parameters::{ParamNature, ParameterSet};
+use super::particles::Particle;
 use super::slha::code_text;
 use super::{EvaluatedModel, UFOModel};
 use crate::diagrams::DiagramSet;
@@ -167,6 +168,18 @@ pub struct ParameterReport {
     pub entering: Option<Vec<String>>,
 }
 
+/// The model's physical particles (one per particle-antiparticle pair, by its
+/// positive PDG code), in PDG order.
+fn physical_particles(model: &UFOModel) -> Vec<&Particle> {
+    let mut particles: Vec<_> = model
+        .particles
+        .values()
+        .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
+        .collect();
+    particles.sort_by_key(|p| p.pdg_code);
+    particles
+}
+
 fn particles_of(
     model: &UFOModel,
     param: &str,
@@ -174,13 +187,7 @@ fn particles_of(
 ) -> Vec<ParticleRole> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
-    let mut particles: Vec<_> = model
-        .particles
-        .values()
-        .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
-        .collect();
-    particles.sort_by_key(|p| p.pdg_code);
-    for p in particles {
+    for p in physical_particles(model) {
         for (role, name) in [("mass", &p.mass_param), ("width", &p.width_param)] {
             if name == param && seen.insert((p.pdg_code, role)) {
                 out.push(ParticleRole {
@@ -374,17 +381,18 @@ fn polynomial_of(
     PolynomialEntry { status, max_degree }
 }
 
-/// The report for `model`, and with `sets` (the process's enumerated
-/// subprocesses) the parameters that reach its diagrams.
-///
-/// Records come in the model's external order, then the internal masses and
-/// widths a `MASS` or `DECAY` entry addresses, in PDG order.
-pub fn describe_parameters(model: &Arc<UFOModel>, sets: Option<&[DiagramSet]>) -> ParameterReport {
+/// [`describe_parameters_at`] with no computed widths.
+fn describe_parameters(model: &Arc<UFOModel>, sets: Option<&[DiagramSet]>) -> ParameterReport {
     describe_parameters_at(model, sets, &[])
 }
 
-/// [`describe_parameters`], with each width of `computed` (those a card set to
-/// `Auto`, as binding it computed them) on its parameter's record.
+/// The report for `model`, and with `sets` (the process's enumerated
+/// subprocesses) the parameters that reach its diagrams, with each width of
+/// `computed` (those a card set to `Auto`, as binding it computed them) on its
+/// parameter's record.
+///
+/// Records come in the model's external order, then the internal masses and
+/// widths a `MASS` or `DECAY` entry addresses, in PDG order.
 pub fn describe_parameters_at(
     model: &Arc<UFOModel>,
     sets: Option<&[DiagramSet]>,
@@ -447,13 +455,7 @@ pub fn describe_parameters_at(
 
     let evaluated = EvaluatedModel::from_model(model.clone());
     let mut internal_seen: BTreeSet<String> = BTreeSet::new();
-    let mut physical: Vec<_> = model
-        .particles
-        .values()
-        .filter(|p| p.pdg_code > 0 && !p.is_unphysical())
-        .collect();
-    physical.sort_by_key(|p| p.pdg_code);
-    for p in physical {
+    for p in physical_particles(model) {
         for (block, name) in [("MASS", &p.mass_param), ("DECAY", &p.width_param)] {
             if name == "ZERO"
                 || params.externals.iter().any(|e| &e.name == name)
@@ -669,6 +671,19 @@ mod tests {
         assert!(card_text.contains("3 1e0 # cH"), "{card_text}");
     }
 
+    /// A Majorana fermion's mass may bind negative, so it carries no minimum; a
+    /// Dirac fermion's does.
+    #[test]
+    fn a_majorana_mass_has_no_minimum() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/vibegraph_toy_majorana_UFO");
+        let model = UFOModel::load(&dir, None).unwrap();
+        let report = describe_parameters(&model, None);
+        let minimum = Constraint::Minimum { value: 0.0 };
+        assert!(!record(&report, "MNT").constraints.contains(&minimum));
+        assert!(record(&report, "MLT").constraints.contains(&minimum));
+    }
+
     #[test]
     fn internal_masses_are_listed_with_their_computed_value() {
         let model = crate::ufo::sm::sm_model(crate::ufo::sm::SMRestrict::Default);
@@ -751,7 +766,6 @@ mod tests {
         let process = sets("e+ e- > t t~ NP<=1", &model);
         let report = describe_parameters(&model, Some(&process));
         let entering = report.entering.as_ref().unwrap();
-        println!("{entering:?}");
         let has = |n: &str| entering.iter().any(|e| e == n);
         assert!(has("cHW") || has("cHWB") || has("cHl3"), "{entering:?}");
         assert!(!entering.iter().any(|n| n == "MC"));
