@@ -145,7 +145,7 @@ fn split_by_multiplicity_of<T>(
 ///
 /// The items of `part` each carry a set, which `set_of` reads, so whatever
 /// travels with a set (its evaluator) is split with it.
-fn split_by_external_masses<T>(
+pub(crate) fn split_by_external_masses<T>(
     part: Vec<T>,
     set_of: impl Fn(&T) -> &DiagramSet,
     model: &UFOModel,
