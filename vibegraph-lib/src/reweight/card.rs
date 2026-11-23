@@ -16,10 +16,16 @@
 //! address names is resolved against a model later ([`super::resolve`]); this layer
 //! only reads the card.
 //!
-//! Of MadGraph's `change` options, the ones that select what this reweighting
-//! already does (`change helicity False`, `change output default`) or that only
-//! direct MadGraph's own working files (`change rwgt_dir`, `change multicore`)
-//! are accepted and read no further. Everything else MadGraph's reweight module
+//! `change helicity` selects the ratio each weight carries
+//! ([`HelicityRatio`]): `False` the helicity-summed one, `True` the one in each
+//! event's own helicity, which is also MadGraph's default for a card without
+//! the line ([`ReweightCard::helicity`]). MadGraph runs each `launch` as it
+//! reads it, so a `change helicity` after the first `launch` would apply to the
+//! later launches only, and is refused. Of the other `change` options, the ones
+//! that select what this reweighting already does (`change output default`) or
+//! that only direct MadGraph's own working files (`change rwgt_dir`,
+//! `change multicore`) are accepted and read no further. Everything else
+//! MadGraph's reweight module
 //! understands — the other `change` options, a param-card path in place of
 //! `set` lines, `scan:` values, a command after `done` — is refused with the
 //! line it appeared on rather than skipped: a skipped directive would write
@@ -28,6 +34,8 @@
 
 use std::fmt;
 use std::str::FromStr;
+
+use super::engine::HelicityRatio;
 
 /// One parameter change of a `launch` block.
 #[derive(Clone, Debug, PartialEq)]
@@ -92,10 +100,27 @@ pub(crate) struct LaunchSpec {
     pub(crate) changes: Vec<Change>,
 }
 
-/// A parsed reweight card: its `launch` blocks in card order.
+/// A parsed reweight card: its `launch` blocks in card order, and the ratio its
+/// `change helicity` line asks for.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReweightCard {
     pub(crate) launches: Vec<LaunchSpec>,
+    /// The last `change helicity` value, `None` without the line.
+    pub(crate) helicity: Option<HelicityRatio>,
+}
+
+impl ReweightCard {
+    /// The ratio the card asks for: its `change helicity` line's, or without
+    /// one MadGraph's default, the ratio in each event's own helicity
+    /// (`self.helicity_reweighting = True`, `reweight_interface.py` L112).
+    pub fn helicity(&self) -> HelicityRatio {
+        self.helicity.unwrap_or(HelicityRatio::Event)
+    }
+
+    /// The card's `change helicity` value, `None` where it has no such line.
+    pub fn stated_helicity(&self) -> Option<HelicityRatio> {
+        self.helicity
+    }
 }
 
 /// Why a reweight card was refused.
@@ -140,8 +165,9 @@ fn several(errors: &[CardError]) -> String {
 }
 
 /// What a `change` line asks for, by MadGraph's option name
-/// (`ReweightInterface.do_change`, `madgraph/interface/reweight_interface.py`).
-fn change(args: &[&str]) -> Result<(), ChangeRefusal> {
+/// (`ReweightInterface.do_change`, `madgraph/interface/reweight_interface.py`):
+/// the ratio for `change helicity`, nothing for the other accepted options.
+fn change(args: &[&str]) -> Result<Option<HelicityRatio>, ChangeRefusal> {
     use ChangeRefusal::{Malformed, Unsupported};
     let Some(option) = args.first().map(|o| o.to_ascii_lowercase()) else {
         return Err(Malformed("`change` needs an option and a value".into()));
@@ -152,19 +178,16 @@ fn change(args: &[&str]) -> Result<(), ChangeRefusal> {
     };
     match option.as_str() {
         "helicity" => match value.as_str() {
-            "false" | "f" | "0" | ".false." | "off" | "no" | "n" => Ok(()),
-            "true" | "t" | "1" | ".true." | "on" | "yes" | "y" => Err(Unsupported(
-                "the ratio in each event's own helicity, MadGraph's default; only the \
-                 helicity-summed ratio (`change helicity False`) is written",
-            )),
+            "false" | "f" | "0" | ".false." | "off" | "no" | "n" => Ok(Some(HelicityRatio::Summed)),
+            "true" | "t" | "1" | ".true." | "on" | "yes" | "y" => Ok(Some(HelicityRatio::Event)),
             _ => Err(Malformed(format!("`{value}` is not a boolean"))),
         },
-        "output" if value == "default" => Ok(()),
+        "output" if value == "default" => Ok(None),
         "output" => Err(Unsupported(
             "one event file per hypothesis; only weights added to the events are written",
         )),
         // MadGraph's own working directory and parallelism: neither reaches a weight.
-        "rwgt_dir" | "multicore" => Ok(()),
+        "rwgt_dir" | "multicore" => Ok(None),
         "model" | "process" => Err(Unsupported(
             "reweighting evaluates the generated process in the generated model; a \
              different model or process is not available",
@@ -202,6 +225,7 @@ impl FromStr for ReweightCard {
 
     fn from_str(text: &str) -> Result<Self, CardError> {
         let mut launches: Vec<LaunchSpec> = Vec::new();
+        let mut helicity: Option<HelicityRatio> = None;
         let mut errors: Vec<CardError> = Vec::new();
         // `done`, `exit` or `quit` and its line, once seen.
         let mut ended: Option<(String, usize)> = None;
@@ -252,7 +276,12 @@ impl FromStr for ReweightCard {
                     }
                 }
                 "change" => match change(&tokens[1..]) {
-                    Ok(()) => {}
+                    Ok(Some(_)) if !launches.is_empty() => errors.push(unsupported(
+                        "MadGraph runs each `launch` as it reads it, so the line would apply \
+                         to the launches after it only; put it before the first `launch`",
+                    )),
+                    Ok(Some(ratio)) => helicity = Some(ratio),
+                    Ok(None) => {}
                     Err(ChangeRefusal::Unsupported(reason)) => errors.push(unsupported(reason)),
                     Err(ChangeRefusal::Malformed(reason)) => errors.push(malformed(reason)),
                 },
@@ -267,7 +296,7 @@ impl FromStr for ReweightCard {
         }
         match errors.len() {
             0 if launches.is_empty() => Err(CardError::Empty),
-            0 => Ok(ReweightCard { launches }),
+            0 => Ok(ReweightCard { launches, helicity }),
             1 => Err(errors.remove(0)),
             _ => Err(CardError::Several(errors)),
         }
@@ -436,7 +465,8 @@ done
         for (text, line) in [
             ("change model sm-full\nlaunch\n", 1),
             ("launch\n change process p p > e+ e-\n", 2),
-            ("change helicity True\nlaunch\n", 1),
+            ("launch\nchange helicity True\n", 2),
+            ("launch\n set ymt 1\nchange helicity False\n", 3),
             ("change output 2.0\nlaunch\n", 1),
             ("change mode LO\nlaunch\n", 1),
             ("change nosuch 1\nlaunch\n", 1),
@@ -449,6 +479,36 @@ done
                 other => panic!("{text}: {other:?}"),
             }
         }
+    }
+
+    /// `change helicity` selects the ratio; without the line the card asks for
+    /// MadGraph's default, the ratio in each event's own helicity. The last line
+    /// before the first `launch` wins, as MadGraph reads them in order.
+    #[test]
+    fn change_helicity_selects_the_ratio() {
+        let ratio = |text: &str| {
+            let card: ReweightCard = text.parse().unwrap();
+            (card.stated_helicity(), card.helicity())
+        };
+        let (summed, event) = (HelicityRatio::Summed, HelicityRatio::Event);
+        assert_eq!(ratio("launch\n"), (None, event));
+        assert_eq!(
+            ratio("change helicity False\nlaunch\n"),
+            (Some(summed), summed)
+        );
+        assert_eq!(
+            ratio("change helicity .true.\nlaunch\n"),
+            (Some(event), event)
+        );
+        assert_eq!(
+            ratio("change helicity True\nchange helicity F\nlaunch\n"),
+            (Some(summed), summed)
+        );
+        // Another option after the first launch is still accepted.
+        assert_eq!(ratio("launch\nchange output default\n"), (None, event));
+        assert!("change helicity maybe\nlaunch\n"
+            .parse::<ReweightCard>()
+            .is_err());
     }
 
     /// Only a `scan:` value is a scan; a parameter whose name contains `scan`

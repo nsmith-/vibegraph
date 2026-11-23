@@ -125,8 +125,8 @@ use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
-    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
+    bind_vetoes, drawn_helicity, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2,
+    vetoed_of, zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
@@ -1851,6 +1851,14 @@ pub struct ProtonSelection {
     /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
     /// ordering's beam helicities are already swapped.
     pub helicity: Vec<i32>,
+    /// The same helicities in the group representative's leg order, the order
+    /// [`ProtonEvent::cm`] holds the momenta in for either beam ordering: the
+    /// combination the drawn member's amplitude carries at those momenta.
+    pub cm_helicity: Vec<i32>,
+    /// The `|M|²` of that combination alone at those momenta, off the
+    /// representative's diagonal the draw was made from, at the drawn term's
+    /// coupling.
+    pub helicity_m2: f64,
     /// Index into the group **representative's** colour-flow basis — the indexing
     /// the draw is made in, off the representative's `JAMP2`.
     ///
@@ -4251,11 +4259,11 @@ impl<'a> ProtonIntegrand<'a> {
                 mask_zeroed(vetoed_of(&sc.vetoed, group), argument, &mut amp2);
             }
         }
-        let drawn = match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2)
-        {
-            Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
-            None => eval.select_helicity(&hel_m2, u[2])?,
-        };
+        let (drawn, helicity_m2) =
+            match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2) {
+                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[2])?,
+                None => drawn_helicity(eval, &hel_m2, u[2])?,
+            };
         let (_, order) = g.event_legs(member, ordering);
         if let Some(table) = self.resonances.get(group) {
             let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
@@ -4291,6 +4299,8 @@ impl<'a> ProtonIntegrand<'a> {
             member,
             ordering,
             helicity: order.iter().map(|&leg| drawn[leg]).collect(),
+            cm_helicity: drawn.to_vec(),
+            helicity_m2,
             flow: color.flow,
             config: color.config,
             leading: color.leading,
