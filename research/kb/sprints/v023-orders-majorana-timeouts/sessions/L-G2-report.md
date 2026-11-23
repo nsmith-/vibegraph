@@ -397,3 +397,73 @@ here.
   - *To close:* a small authored UFO with two degenerate widthful coloured
     scalars decaying to SM quarks and leptons, and a comparison of its event
     records against MadEvent's.
+
+## Addendum: the planner's condition on the `sprop = 0` path
+
+The planner accepted both deviations. One condition came with the first:
+before merge, the path where a member does not carry a widthful line the
+representative carries must be driven through the event writer. Commit
+3e83cf86 does that.
+
+- **The per-member mapping is factored out.** `group_resonances` now calls
+  `member_line_codes(own, table, config, member, model, label)`, and the tests
+  call the same function.
+- **The warnings are factored out.** `report_resonances` emits what
+  `resonance_warnings(tally, written)` returns, so a test can read the count.
+
+**Event-path test.**
+`generate::tests::a_member_without_a_widthful_line_writes_no_intermediate_and_counts_it`.
+The fixture is the real compiled SM subprocess
+`e+ e- > t t~, t > b e+ ve, t~ > b~ mu- vm~`: its `SubprocessRecord`, its
+`SubprocessResonances`, and a point with both tops and both `W`s inside their
+windows.
+
+- *Control:* the representative's own codes through
+  `member_line_codes` → `source::event_record` list `[-24, -6, 6, 24]` and no
+  warning. This shows the top would be written.
+- *Member without the top:* the member is built from the representative's
+  diagram lines with every `6` line removed (`MemberLines::from_diagram_lines`,
+  `cfg(test)`).
+  - `member_line_codes` returns `Ok` with `LineCode::NONE` on the top.
+  - `event_record` writes the event with no status-2 line at all (no top, no
+    substitute) and its six outgoing legs.
+  - The warnings are exactly `["resonances: 1 of 1 events list no
+    intermediate record because their subprocess names no code for a
+    resonance of its configuration"]`.
+
+The event loses every intermediate, not only the top. That is the existing
+fallback, the same as the colour refusal.
+
+**Refusal test.**
+`generate::tests::a_widthful_line_under_several_codes_the_legs_cannot_tell_apart_is_refused`.
+The member's diagrams carry the top under codes `2` and `4`, and the legs name
+`6`. `member_line_codes` refuses with "the resonance 6 of e+ e- > b e+ ve b~
+mu- vm~ has no single flavour …". With codes `2` and `6`, the legs' `6` is
+taken.
+
+Mutations (each applied, run, reverted by `mut.sh`):
+
+| mutation | event-path test | refusal test |
+|---|---|---|
+| a line the member lacks refuses the run (`MemberCode::Absent => Err(…)`) | **FAILED**: `a line the member does not carry does not refuse the run: Other("no line 6")` | ok |
+| a line the member lacks takes the representative's code (`Absent => Ok(LineCode { pdg: line.pdg, color: line.color })`) | **FAILED**: `left: LineCode { pdg: 6, color: 3 }`, `right: LineCode { pdg: 0, color: 0 }` | ok |
+| the writer substitutes the representative's code where the member has none (`member_code(…).unwrap_or(lines[i]…)` in `event_record`) | **FAILED**: `no intermediate, and no substitute for the top`, `left: [-24, -6, 6, 24]`, `right: []` | ok |
+| an ambiguous widthful line holds no code instead of refusing (`Ambiguous => Ok(LineCode::NONE)`) | ok | **FAILED**: `called Result::unwrap_err() on an Ok value` |
+
+Driver: `/home/user/wt/sprintl-generate-resonance-mg/lg2/{mut.sh,mut.py}`,
+results in `mut.txt`, logs in `/home/user/wt/logs/lg2-mut-*.log`. Each
+mutation ran `cargo test -p vibegraph-lib --lib --
+generate::tests::a_member_without_a_widthful_line
+generate::tests::a_widthful_line_under_several`. The tree was reverted with
+`git checkout vibegraph-lib/src` after each, and `vibegraph-lib` was clean at
+the end.
+
+On the head after 3e83cf86 (`/home/user/wt/sprintl-generate-resonance-mg/lg2/final.sh`):
+
+- `cargo fmt --all --check` rc 0.
+- clippy `-D warnings` rc 0, both plain and with extended-validation.
+- `cargo test -p vibegraph-lib --lib -- lhef::resonance generate::`: 27
+  passed.
+- The four byte-identity rows regenerated with this head's binary
+  (`vibegraph-head2`) are identical to base: the same four sha256 prefixes as
+  the table above.
