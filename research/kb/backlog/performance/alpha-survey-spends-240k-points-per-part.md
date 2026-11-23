@@ -20,3 +20,6 @@ point costs what a VEGAS warm-up point costs (195: 2.29 against 2.19 ms;
 Related: [`mass-split-parts-thin-the-per-group-budget`](../performance/mass-split-parts-thin-the-per-group-budget.md),
 [`adapt-survey-bounds-untested-at-hundreds-of-channels`](../performance/adapt-survey-bounds-untested-at-hundreds-of-channels.md).
 Evidence: [L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md), [phase sample](../../sprints/v023-orders-majorana-timeouts/v022-1009-phase-sample.md).
+
+Production evidence: on simshop's e+e- + 4j MLM run (v0.2.2, 2 CPUs) the
+α survey alone took about 2 h of an 8 h slot.

@@ -27,3 +27,10 @@ Per-point cost is the other factor:
 [`mlm-matrix-element-evaluated-twice-per-group`](../performance/mlm-matrix-element-evaluated-twice-per-group.md). Related:
 [`niter-3-campaigns-have-no-chi2-check`](../validation/niter-3-campaigns-have-no-chi2-check.md). Evidence:
 [L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md), [phase sample](../../sprints/v023-orders-majorana-timeouts/v022-1009-phase-sample.md).
+
+**Production evidence (simshop, 2026-11-22/23).** Two v0.2.2 `integrate`
+runs with `--target-rel 0.001` on 2 CPUs were killed at an 8 h batch limit.
+e+e- + 3j MLM ran about 23 min per VEGAS iteration and reached iteration 21
+of 127 (about 48 h projected, 56k CPU-s spent). e+e- + 4j MLM (260
+subprocesses, 10 310 diagrams) finished the α survey at about 2 h, and its
+first VEGAS iteration had not finished 6 h later (peak RSS 2 GB).
