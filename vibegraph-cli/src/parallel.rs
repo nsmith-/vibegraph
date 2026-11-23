@@ -6,9 +6,11 @@
 //!
 //! What it currently buys differs by command: `integrate` spends nearly all of its
 //! time in the per-channel VEGAS adaptations, which run on the pool. `generate`
-//! replays frozen grids through a serial accept/reject pass, so the flag sizes its
-//! pool and changes nothing else; it is accepted there so a driver can set one
-//! thread count for a whole pipeline.
+//! compiles its subprocesses on the pool and replays frozen grids through a
+//! serial accept/reject pass; it takes the flag so a driver can set one thread
+//! count for a whole pipeline. It enumerates nothing (the diagram sets are the
+//! artifact's), so it takes `-j` alone ([`ThreadArgs`]) and refuses
+//! `--parallel-diagrams` as an unknown argument.
 //!
 //! Without `-j` the pool is sized to what the process may use, which is the
 //! smallest of the CPUs it is allowed to run on (the affinity mask), the CPU
@@ -28,13 +30,12 @@
 //! single-threaded validation run a measurement of the numbers the parallel
 //! command produces.
 //!
-//! Diagram enumeration is the exception, and runs on one thread whatever `-j`
-//! says. feyngraph parallelises the topology search and the per-assignment
-//! diagram construction internally, but those sections are short and contended:
-//! a 2→3 process enumerates *slower* on sixteen threads than on one, and only a
-//! process large enough for enumeration to cost seconds gains from the fan-out.
-//! `--parallel-diagrams` hands it the pool for that case. See
-//! [`EnumerationPool`] for the measurements.
+//! Diagram enumeration decides per process-line walk: a walk large enough to
+//! gain from the pool ([`vibegraph::diagrams::AUTO_PARALLEL_COST`]) assigns its
+//! subprocesses across it, and a smaller one runs on one thread, since
+//! feyngraph's internal fan-out is short and contended: a 2→3 process
+//! enumerates *slower* on sixteen threads than on one. `--parallel-diagrams`
+//! hands every walk the pool. See [`EnumerationPool`] for the measurements.
 
 use clap::Args;
 use vibegraph::diagrams::EnumerationPool;
@@ -88,18 +89,27 @@ fn default_threads(
     }
 }
 
-/// The `-j/--parallel` flag, shared by every command that enumerates or integrates.
+/// The `-j/--parallel` flag alone, for a command that enumerates nothing.
 #[derive(Args, Debug, Clone, Copy)]
-pub(crate) struct ParallelArgs {
+pub(crate) struct ThreadArgs {
     /// Worker threads (default: the smallest of the CPUs the process may run
     /// on, its cgroup CPU quota and `$OMP_NUM_THREADS`). Results do not depend on it: any
     /// thread count produces byte-identical output.
     #[arg(long = "parallel", short = 'j', value_name = "N")]
     pub(crate) parallel: Option<usize>,
+}
 
-    /// Enumerate diagrams on the worker pool too, instead of on one thread. Pays
-    /// off only for processes whose enumeration costs seconds; below that the
-    /// fan-out is a slowdown. Timing only: the artifact is identical either way.
+/// The `-j/--parallel` flag and the enumeration's own, shared by every command
+/// that enumerates.
+#[derive(Args, Debug, Clone, Copy)]
+pub(crate) struct ParallelArgs {
+    #[command(flatten)]
+    pub(crate) threads: ThreadArgs,
+
+    /// Enumerate every process line's diagrams across the worker pool. Without
+    /// it, a line large enough to gain is enumerated across the pool and a
+    /// smaller one on one thread, where the fan-out is a slowdown. Timing only:
+    /// the artifact is identical either way.
     #[arg(long = "parallel-diagrams")]
     pub(crate) parallel_diagrams: bool,
 }
@@ -110,10 +120,17 @@ impl ParallelArgs {
         if self.parallel_diagrams {
             EnumerationPool::Ambient
         } else {
-            EnumerationPool::Serial
+            EnumerationPool::Auto
         }
     }
 
+    /// Size the global rayon pool ([`ThreadArgs::install`]).
+    pub(crate) fn install(&self) -> Result<(), String> {
+        self.threads.install()
+    }
+}
+
+impl ThreadArgs {
     /// Size the global rayon pool, before anything touches it.
     ///
     /// A number the platform cannot honour is a refusal rather than a silent
@@ -192,12 +209,12 @@ mod tests {
     }
 
     #[test]
-    fn enumeration_is_serial_unless_the_flag_asks_otherwise() {
+    fn enumeration_decides_per_walk_unless_the_flag_asks_otherwise() {
         let off = ParallelArgs {
-            parallel: Some(16),
+            threads: ThreadArgs { parallel: Some(16) },
             parallel_diagrams: false,
         };
-        assert_eq!(off.enumeration(), EnumerationPool::Serial);
+        assert_eq!(off.enumeration(), EnumerationPool::Auto);
         assert_eq!(
             ParallelArgs {
                 parallel_diagrams: true,

@@ -4,6 +4,7 @@ pub mod bind;
 pub(crate) mod card_classes;
 pub(crate) mod color;
 pub(crate) mod config_eval;
+pub mod conserved;
 pub(crate) mod couplings;
 pub(crate) mod expr;
 pub(crate) mod functions;
@@ -293,6 +294,9 @@ pub struct UFOModel {
     pub(crate) negative_orders: topo::NegativeOrders,
     /// The names a card may write for the particles; see [`names`].
     pub(crate) names: ParticleNames,
+    /// The additive quantum numbers every vertex enumeration builds diagrams
+    /// from conserves, read off the restricted vertex table.
+    pub(crate) conserved: conserved::ConservedNumbers,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -625,8 +629,10 @@ impl ParsedModel {
         };
 
         let names = ParticleNames::of_model(particle_codes(&self.particles));
+        let conserved = conserved::ConservedNumbers::of_vertices(&self.particles, &self.vertices);
         Ok(UFOModel {
             names,
+            conserved,
             particles: self.particles,
             lorentz: self.lorentz,
             couplings: self.couplings,
@@ -642,6 +648,12 @@ impl ParsedModel {
 }
 
 impl UFOModel {
+    /// The additive quantum numbers the model's vertices conserve
+    /// ([`conserved`]).
+    pub fn conserved_numbers(&self) -> &conserved::ConservedNumbers {
+        &self.conserved
+    }
+
     /// The vertices that survive unitary gauge, the set MadGraph's default `sm`
     /// import holds and diagram enumeration is built from.
     pub fn unitary_gauge_vertices(&self) -> impl Iterator<Item = (&String, &Vertex)> {

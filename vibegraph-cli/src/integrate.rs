@@ -48,13 +48,13 @@ use vibegraph::diagrams::{
 };
 use vibegraph::generate::refuse_single_particle_et;
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs,
+    compile_classes, compile_subprocesses_with, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, subprocess_diagrams, ChannelIntegration, FixedBeamIntegrand,
     InitialState, Observable,
 };
-use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::multiplicity::{
-    multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
+    multiplicity_groups_of_with, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use vibegraph::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
@@ -1034,18 +1034,33 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         Some(sets) => sets,
         None => generate_from_proc_card_in(&parsed, &model, pool).map_err(enumeration_error)?,
     };
-    let amplitude_probe = amplitude_probe::measure(&sets, &model, &evaluated)
-        .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
+    // Each set is compiled once, across the pool, for the probe and the integrand
+    // alike.
+    let set_refs: Vec<&DiagramSet> = sets.iter().collect();
+    let compiled = compile_classes(&set_refs, &model, &evaluated);
+    let (amplitude_probe, evaluators) =
+        amplitude_probe::measure_compiled(&sets, compiled, &evaluated)
+            .map_err(|e| err(ErrorKind::Process, e.to_string()))?;
+    let precompiled: Vec<Option<AmplitudeEvaluator>> = evaluators.into_iter().map(Some).collect();
 
     let process_label = process.clone();
     let output = match rc.beam_mode() {
-        _ if parsed.is_decay() => {
-            integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
-        }
+        _ if parsed.is_decay() => integrate_fixed_energy(
+            args,
+            &parsed,
+            &sets,
+            precompiled,
+            &model,
+            &evaluated,
+            &rc,
+            process,
+            seed,
+        )?,
         BeamMode::Proton => integrate_proton(
             args,
             &parsed,
             &sets,
+            precompiled,
             &model,
             &evaluated,
             &rc,
@@ -1058,9 +1073,17 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
                 .as_ref()
                 .filter(|_| generate_settings.systematics.enabled),
         )?,
-        BeamMode::FixedEnergy => {
-            integrate_fixed_energy(args, &parsed, &sets, &model, &evaluated, &rc, process, seed)?
-        }
+        BeamMode::FixedEnergy => integrate_fixed_energy(
+            args,
+            &parsed,
+            &sets,
+            precompiled,
+            &model,
+            &evaluated,
+            &rc,
+            process,
+            seed,
+        )?,
     };
 
     let Some(output) = output else {
@@ -1493,6 +1516,7 @@ fn integrate_proton(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
     sets: &[DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -1518,6 +1542,7 @@ fn integrate_proton(
         args,
         parsed,
         sets,
+        precompiled,
         model,
         evaluated,
         rc,
@@ -1561,6 +1586,7 @@ fn integrate_hadronic(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
     sets: &[DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -1574,8 +1600,9 @@ fn integrate_hadronic(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
-    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of(
+    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of_with(
         sets.to_vec(),
+        precompiled,
         &forbidden_onshell(parsed, model)?,
         model,
         evaluated,
@@ -1763,6 +1790,7 @@ fn integrate_fixed_energy(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
     sets: &[DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -1772,7 +1800,7 @@ fn integrate_fixed_energy(
     refuse_mixed_multiplicity(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_one_body_final_state(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_exchanged_beam_orderings(sets).map_err(|e| err(ErrorKind::Process, e))?;
-    let evals = compile_subprocesses(sets, model, evaluated).map_err(|e| {
+    let evals = compile_subprocesses_with(sets, precompiled, model, evaluated).map_err(|e| {
         err(
             ErrorKind::Process,
             format!("failed to compile subprocesses: {e}"),

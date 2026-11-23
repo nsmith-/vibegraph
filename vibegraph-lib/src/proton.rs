@@ -129,12 +129,12 @@ use crate::hadronic::{
     zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
-    boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
-    components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
-    process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
-    ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
-    RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto, SubprocessProto,
-    SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    boost_z, channel_diagrams, compile_configuration_weights, compile_scale_source,
+    complete_compiles, components, constant_scale_report, initial_spin_color_average,
+    make_subs_scale_aware, process_external_legs, refuse_polarized_frame, report_channel_maps,
+    BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError, PointHistory,
+    PointScales, RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto,
+    SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -1082,10 +1082,29 @@ pub fn derive_flavor_groups(
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Result<FlavorGroups, ProtonError> {
-    let sets: Vec<DiagramSet> = sets
+    derive_flavor_groups_with(
+        sets.into_iter().map(|s| (s, None)).collect(),
+        model,
+        evaluated,
+        card,
+    )
+}
+
+/// [`derive_flavor_groups`], each set paired with its evaluator where the caller
+/// compiled one already: what [`compile_class`](crate::hadronic::compile_class) builds from that set under
+/// `evaluated`. A set whose outgoing legs the decomposition reorders is
+/// compiled again in its new order; every other one is compiled only where it
+/// comes without an evaluator, the missing ones across the rayon pool.
+pub fn derive_flavor_groups_with(
+    sets: Vec<(DiagramSet, Option<AmplitudeEvaluator>)>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Result<FlavorGroups, ProtonError> {
+    let (sets, mut precompiled): (Vec<DiagramSet>, Vec<Option<AmplitudeEvaluator>>) = sets
         .into_iter()
-        .filter(|s| !s.diagrams.is_empty())
-        .collect();
+        .filter(|(s, _)| !s.diagrams.is_empty())
+        .unzip();
     if sets.is_empty() {
         return Err(ProtonError::NoSubprocess);
     }
@@ -1095,22 +1114,24 @@ pub fn derive_flavor_groups(
         content_ordered(sets, model, evaluated, card)?
             .into_iter()
             .unzip();
+    for (evaluator, order) in precompiled.iter_mut().zip(&final_orders) {
+        if order.iter().enumerate().any(|(i, &j)| i != j) {
+            *evaluator = None;
+        }
+    }
     let labels: Vec<String> = sets.iter().map(label).collect();
     let processes: Vec<u32> = sets
         .iter()
         .map(|s| s.diagrams[0].provenance.process)
         .collect();
 
+    let set_refs: Vec<&DiagramSet> = sets.iter().collect();
+    let evaluators = complete_compiles(&set_refs, precompiled, model, evaluated);
     let mut compiled = Vec::with_capacity(sets.len());
     let mut one_body: Option<(String, bool)> = None;
     let mut massless_one_body: Option<String> = None;
-    for (set, process) in sets.iter().zip(&labels) {
-        progress::step(
-            progress::stage::COMPILE,
-            compiled.len() as u64,
-            Some(sets.len() as u64),
-        );
-        let evaluator = compile_class(set, model, evaluated)?;
+    for ((set, process), evaluator) in sets.iter().zip(&labels).zip(evaluators) {
+        let evaluator = evaluator?;
         if evaluator.n_in() != 2 {
             return Err(ProtonError::NotTwoIncoming {
                 process: process.clone(),
@@ -1172,7 +1193,7 @@ pub fn derive_flavor_groups(
         PROBE_SEED,
     );
     let traces: Vec<Vec<f64>> = compiled
-        .iter()
+        .par_iter()
         .map(|(evaluator, ..)| {
             let bound = BoundAmplitude::<f64>::bind(evaluator, evaluated);
             let mut scratch = bound.scratch_space();
@@ -4602,7 +4623,7 @@ mod tests {
     use crate::artifact::SamplerTopology;
     use crate::budget::sequential_channel_reference;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use crate::hadronic::{channel_share, CHANNEL_STREAM_BASE, VEGAS_NBINS};
+    use crate::hadronic::{channel_share, compile_class, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
     use crate::phasespace::DiagramChannel;

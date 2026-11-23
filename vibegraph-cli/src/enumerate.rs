@@ -15,9 +15,9 @@ use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::artifact::DiagramArtifact;
 use vibegraph::diagrams::diagram::OnShell;
 use vibegraph::diagrams::draw::DiagramDrawer;
-use vibegraph::diagrams::{DiagramSet, ParsingOptions};
+use vibegraph::diagrams::{forbidden_onshell_ids, DiagramSet, ParsingOptions};
 use vibegraph::helas::eval::config_groups;
-use vibegraph::multiplicity::multiplicity_groups;
+use vibegraph::multiplicity::multiplicity_groups_of;
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::BeamMode;
 use vibegraph::ufo::UFOModel;
@@ -455,7 +455,10 @@ fn flavour_preview(
         preview.beams = "fixed_energy";
         return Ok((preview, group_of));
     }
-    let groups = multiplicity_groups(parsed, model, evaluated, &rc, args.parallel.enumeration())
+    // The sets just enumerated, which are what enumerating the card again gives.
+    let forbidden =
+        forbidden_onshell_ids(parsed, model).map_err(|e| err(ErrorKind::Process, e.to_string()))?;
+    let groups = multiplicity_groups_of(sets.to_vec(), &forbidden, model, evaluated, &rc)
         .map_err(|e| err(ErrorKind::Process, e))?;
     for (part, part_groups) in groups.groups.iter().enumerate() {
         for group in part_groups.groups() {

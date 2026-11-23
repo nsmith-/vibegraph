@@ -139,6 +139,9 @@ pub enum DiagramError {
     Convert(#[from] ConvertError),
     #[error("cannot build the enumeration worker pool: {0}")]
     Pool(#[from] rayon::ThreadPoolBuildError),
+    /// feyngraph refused to assign particles to the line's cached topologies.
+    #[error("'{subprocess}': feyngraph cannot assign the line's topologies: {why}")]
+    TopologyAssignment { subprocess: String, why: String },
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -294,26 +297,49 @@ pub fn parse_proc_card(
 
 /// How much of the ambient rayon pool enumeration may spread over.
 ///
-/// feyngraph parallelises the topology search and the per-assignment diagram
-/// construction internally, so whatever pool enumeration runs on is the pool
-/// those loops use.
+/// A line's walk hands its surviving subprocesses to feyngraph in batches, each
+/// batch across the pool, and feyngraph parallelises the topology assignment of
+/// each subprocess internally on whatever pool it runs on. The sets come back in
+/// the walk's order and the logs are written in it, so the pool changes the
+/// timing and nothing else.
 ///
-/// Which one is faster depends on the process: the fan-out is over topologies and
-/// particle assignments whose bodies are short and share their output container,
-/// so a small enumeration spends more on contention than it saves (`p p > j j j`
-/// on 16 threads: 0.14 s against 0.08 s on one), while a large one is dominated by
-/// the fan-out and gains (`p p > e+ e- j j j`: 3.4 s against 8.9 s). [`Serial`] is
-/// the default because the small case is the common one and the large case is the
-/// one worth passing a flag for.
+/// Which one is faster depends on the walk: feyngraph's internal fan-out is over
+/// topologies whose bodies are short and allocate, so a small enumeration spends
+/// more on contention than it saves (`p p > j j j` on 16 threads: 0.14 s against
+/// 0.08 s on one), while a walk of many subprocesses is dominated by them.
+/// [`Auto`] decides per walk, from the walk's size before it starts
+/// ([`AUTO_PARALLEL_COST`]).
 ///
-/// [`Serial`]: EnumerationPool::Serial
+/// [`Auto`]: EnumerationPool::Auto
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum EnumerationPool {
-    /// One thread, whatever the caller's pool is sized to.
+    /// The caller's pool for a walk whose candidate assignments times its tree
+    /// topologies reach [`AUTO_PARALLEL_COST`], one thread for a smaller one.
     #[default]
+    Auto,
+    /// One thread, whatever the caller's pool is sized to.
     Serial,
     /// The caller's pool, however many threads it was sized to.
     Ambient,
+}
+
+/// The size of a walk, its candidate assignments times the tree topologies of
+/// its leg count, from which [`EnumerationPool::Auto`] runs it on the caller's
+/// pool rather than on one thread.
+pub const AUTO_PARALLEL_COST: u64 = 1 << 20;
+
+/// Surviving subprocesses handed to feyngraph per batch, per worker thread.
+const BATCH_PER_THREAD: usize = 16;
+
+/// A one-thread pool for the walks [`EnumerationPool::Auto`] keeps serial, built
+/// once per process.
+fn serial_pool() -> Result<&'static rayon::ThreadPool, DiagramError> {
+    static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
+    if let Some(pool) = POOL.get() {
+        return Ok(pool);
+    }
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
+    Ok(POOL.get_or_init(|| pool))
 }
 
 /// High-level entry point: expand and generate diagrams for every process of a
@@ -375,14 +401,14 @@ pub fn enumerate_lines_in(
 ) -> Result<LineSets, DiagramError> {
     squared::refuse_mixed_squared_orders(proc_card)?;
     match pool {
-        EnumerationPool::Ambient => enumerate(proc_card, model),
+        EnumerationPool::Ambient | EnumerationPool::Auto => enumerate(proc_card, model, pool),
         // A pool of its own rather than a serial code path: feyngraph's `par_iter`s
         // are internal, and one thread is the only way to keep them off the
         // caller's pool without forking the enumeration itself.
         EnumerationPool::Serial => rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .build()?
-            .install(|| enumerate(proc_card, model)),
+            .install(|| enumerate(proc_card, model, pool)),
     }
 }
 
@@ -554,9 +580,15 @@ pub(crate) struct LinePosition {
     lines: usize,
     /// Diagrams the card's earlier lines produced.
     diagrams_before: usize,
+    /// The pool the line's walks may spread over.
+    pool: EnumerationPool,
 }
 
-fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<LineSets, DiagramError> {
+fn enumerate(
+    proc_card: &SupportedCard,
+    model: &UFOModel,
+    pool: EnumerationPool,
+) -> Result<LineSets, DiagramError> {
     let _span = info_span!("enumerate").entered();
     let started = Instant::now();
     let mut sets: Vec<DiagramSet> = Vec::new();
@@ -587,6 +619,7 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<LineSets, Di
             line: index + 1,
             lines: proc_card.processes.len(),
             diagrams_before: sets.iter().map(|s| s.diagrams.len()).sum(),
+            pool,
         };
         let process_sets = generate_from_process(process, model, ProcessRole::TopLevel, position)?;
         if process_sets.iter().all(|s| s.diagrams.is_empty()) {
@@ -944,6 +977,7 @@ fn generate_undecayed(
             explicit_weighted,
             &cached_topologies,
             Some(position),
+            position.pool,
         )
     }
 }
@@ -971,7 +1005,7 @@ fn search_weighted(
     // its diagrams, if any, are the result.
     let mut w = start;
     if gluons_leave_trials(expanded, model) {
-        let mut trials = GluonFreeTrials::new(process, expanded, model);
+        let mut trials = GluonFreeTrials::new(process, expanded, model, position.pool);
         while w < cap {
             if trials.any_diagram(w)? {
                 debug!("lowest WEIGHTED order with a gluon-free trial diagram: {w}");
@@ -986,6 +1020,7 @@ fn search_weighted(
             Some(w as usize),
             cached_topologies,
             Some(position),
+            position.pool,
         );
     }
     while w < cap {
@@ -995,6 +1030,7 @@ fn search_weighted(
             Some(w as usize),
             cached_topologies,
             Some(position),
+            position.pool,
         )?;
         if sets.iter().any(|s| !s.diagrams.is_empty()) {
             debug!("lowest WEIGHTED order with diagrams: {w}");
@@ -1010,6 +1046,7 @@ fn search_weighted(
         Some(w as usize),
         cached_topologies,
         Some(position),
+        position.pool,
     )
 }
 
@@ -1057,15 +1094,22 @@ struct GluonFreeTrials<'a> {
     process: &'a str,
     expanded: &'a ExpandedProcess,
     model: &'a UFOModel,
+    pool: EnumerationPool,
     topologies: HashMap<usize, Vec<Topology>>,
 }
 
 impl<'a> GluonFreeTrials<'a> {
-    fn new(process: &'a str, expanded: &'a ExpandedProcess, model: &'a UFOModel) -> Self {
+    fn new(
+        process: &'a str,
+        expanded: &'a ExpandedProcess,
+        model: &'a UFOModel,
+        pool: EnumerationPool,
+    ) -> Self {
         GluonFreeTrials {
             process,
             expanded,
             model,
+            pool,
             topologies: HashMap::new(),
         }
     }
@@ -1178,7 +1222,7 @@ impl<'a> GluonFreeTrials<'a> {
             squared: self.expanded.squared.clone(),
         };
         let max_weighted = usize::try_from(bound).ok();
-        let sets = generate_sets_inner(&trial, model, max_weighted, topologies, None)?;
+        let sets = generate_sets_inner(&trial, model, max_weighted, topologies, None, self.pool)?;
         Ok(sets.iter().any(|s| !s.diagrams.is_empty()))
     }
 }
@@ -1232,174 +1276,70 @@ fn generate_topologies(n_ext: usize, topo_model: &feyngraph::model::Model) -> Ve
         .collect()
 }
 
-/// Whether `initial` with its legs' `polarizations` (incoming first) is `set`'s
-/// initial state with the two beams exchanged, and a different state from it.
+/// Whether `initial` with its legs' `polarizations` (incoming first) is the
+/// initial state `set_in` with polarizations `set_pol` with the two beams
+/// exchanged, and a different state from it.
 fn is_exchanged_ordering(
-    set: &DiagramSet,
+    set_in: &[String],
+    set_pol: &[Option<Vec<i32>>],
     initial: &[String],
     polarizations: &[Option<Vec<i32>>],
 ) -> bool {
     let [a, b] = initial else {
         return false;
     };
-    let [sa, sb] = set.particles_in.as_slice() else {
+    let [sa, sb] = set_in else {
         return false;
     };
     let (pa, pb) = (&polarizations[0], &polarizations[1]);
-    let (spa, spb) = (&set.polarizations[0], &set.polarizations[1]);
+    let (spa, spb) = (&set_pol[0], &set_pol[1]);
     (a, pa) == (sb, spb) && (b, pb) == (sa, spa) && (a, pa) != (b, pb)
 }
 
-/// Inner generation loop: expand aliases, deduplicate mirror processes, and call
-/// feyngraph for each concrete subprocess.  `max_weighted` (when `Some`) adds an
-/// extra diagram filter that rejects any diagram whose WEIGHTED order exceeds the
-/// given bound.
-///
-/// `cached_topologies` must be pre-computed by the caller via `generate_topologies`.
-/// Coupling constraints are enforced during particle assignment, not topology
-/// generation, so no topology filtering is needed here.
-fn generate_sets_inner(
-    process: &ExpandedProcess,
-    model: &UFOModel,
+/// A walk's surviving assignment, waiting for its topology assignment.
+struct Pending {
+    concrete: ConcreteProcess,
+    polarizations: Vec<Option<Vec<i32>>>,
+    mirrored: bool,
+}
+
+/// What topology assignment made of one [`Pending`] assignment, with the
+/// counts its log lines report.
+struct Assigned {
+    set: DiagramSet,
+    /// Diagrams before the s-channel restrictions.
+    enumerated: usize,
+    /// Diagrams before the squared-order constraints, when the line has some.
+    before_squared: Option<usize>,
+    elapsed: f64,
+}
+
+/// What every assignment of one walk shares.
+struct Walk<'a> {
+    process: &'a ExpandedProcess,
+    model: &'a UFOModel,
     max_weighted: Option<usize>,
-    cached_topologies: &[Topology],
-    position: Option<LinePosition>,
-) -> Result<Vec<DiagramSet>, DiagramError> {
-    let mut sets = Vec::new();
-    // The `<=` bounds MadGraph spends vertex by vertex while it builds a diagram
-    // (`reduce_orders`); the leftmost constraint on an order wins. They drop
-    // diagrams the total-sum selection keeps only where a vertex carries a
-    // negative power ([`reduction`]).
-    let mut budgets: std::collections::BTreeMap<String, i64> = Default::default();
-    for o in &process.orders {
-        if matches!(o.op, CouplingOp::Le | CouplingOp::Eq) {
-            budgets.entry(o.name.clone()).or_insert(o.value);
-        }
-    }
-    // Candidate assignments seen, and the two prefilters' kills: what the
-    // enumeration paid for the assignments it never handed to feyngraph.
-    let mut candidates = 0usize;
-    let mut duplicates = 0usize;
-    let mut charge_kills = 0usize;
-    let mut dropped_polarizations = 0usize;
-    // Deduplicate on (sorted initial, sorted final): a concrete subprocess is
-    // identified by the *unordered* content of each side, so a card whose
-    // final-state slots draw on intersecting alias sets (`p p > j j`) yields
-    // `g u > g u` once rather than once per ordering.  `g u > u g` is the same
-    // subprocess: dPhi_n is integrated over the whole labelled region and every
-    // run-card cut is a per-class one, so a permutation of the outgoing legs
-    // relabels the integral without moving it, and enumerating both would add
-    // its term twice.  Sorting is in the key only — the surviving representative
-    // keeps the order the expansion emitted it in.
-    //
-    // Distinct final-state *content* never collapses, which is what
-    // deduplicating on the initial state alone would get wrong: it would
-    // silently drop subprocesses like `g d > e+ e- d` when the first
-    // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
-    // diagrams at the active WEIGHTED bound.
-    //
-    // A duplicate whose incoming legs are an enumerated set's exchanged is that
-    // set's mirrored beam ordering: it is not enumerated again, and the set
-    // records that its line generated both orderings. MadGraph does the same
-    // within one process definition (`generate_multi_amplitudes`, the
-    // `collect_mirror_procs` branch), and only there: a line written in one
-    // ordering generates no mirror.
-    let mut seen_processes: std::collections::HashSet<SubprocessKey> =
-        std::collections::HashSet::new();
-    let mut enumerated_at: HashMap<SubprocessKey, usize> = HashMap::new();
+    cached_topologies: &'a [Topology],
+    budgets: std::collections::BTreeMap<String, i64>,
+}
 
-    // Each leg independently takes each of its particles; the Cartesian product
-    // over the legs, initial side outermost, is the concrete subprocess list.
-    // For `p p > e+ e-` this yields 9 × 9 = 81 candidates.
-    let initial_combos: Vec<Vec<String>> = process
-        .initial
-        .iter()
-        .cloned()
-        .multi_cartesian_product()
-        .collect();
-    let final_combos: Vec<Vec<String>> = process
-        .final_state
-        .iter()
-        .cloned()
-        .multi_cartesian_product()
-        .collect();
-
-    let total = (initial_combos.len() * final_combos.len()) as u64;
-    // A trial enumeration (`position` is `None`) is not the line's walk, so it
-    // reports no progress.
-    let report = |done: usize, sets: &[DiagramSet]| {
-        let Some(position) = position else {
-            return;
-        };
-        progress::enumeration(
-            done as u64,
-            total,
-            (position.line as u64, position.lines as u64),
-            sets.len() as u64,
-            (position.diagrams_before + sets.iter().map(|s| s.diagrams.len()).sum::<usize>())
-                as u64,
-        );
-    };
-    report(0, &sets);
-    'assignments: for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
-        candidates += 1;
-        if candidates.is_multiple_of(PRUNED_REPORT_INTERVAL) {
-            report(candidates, &sets);
-        }
-        let concrete = ConcreteProcess {
-            initial,
-            final_state,
-            forbidden_particles: process.forbidden_particles.clone(),
-            orders: process.orders.clone(),
-        };
-
-        let mut polarizations = Vec::with_capacity(process.polarizations.len());
-        for (name, pol) in concrete
-            .initial
-            .iter()
-            .chain(&concrete.final_state)
-            .zip(&process.polarizations)
-        {
-            match pol {
-                None => polarizations.push(None),
-                Some(pol) => match concrete_polarization(model, name, pol)? {
-                    Some(h) => polarizations.push(Some(h)),
-                    None => {
-                        dropped_polarizations += 1;
-                        continue 'assignments;
-                    }
-                },
-            }
-        }
-
-        let key = subprocess_key(&concrete.initial, &concrete.final_state, &polarizations);
-        if !seen_processes.insert(key.clone()) {
-            if let Some(&at) = enumerated_at.get(&key) {
-                let set: &mut DiagramSet = &mut sets[at];
-                if is_exchanged_ordering(set, &concrete.initial, &polarizations) {
-                    set.mirrored = true;
-                }
-            }
-            duplicates += 1;
-            continue;
-        }
-
-        // Charge conservation: skip subprocesses that can't conserve electric charge.
-        // This fast O(n) check prunes the majority of alias-expanded candidates before
-        // the expensive topology-assignment step (e.g. ~90% of pp→qq~4l subprocesses).
-        let particle_charge =
-            |name: &str| -> f64 { model.particles.get(name).map(|p| p.charge).unwrap_or(0.0) };
-        let q_in: f64 = concrete.initial.iter().map(|p| particle_charge(p)).sum();
-        let q_out: f64 = concrete
-            .final_state
-            .iter()
-            .map(|p| particle_charge(p))
-            .sum();
-        if (q_in - q_out).abs() > 1e-6 {
-            charge_kills += 1;
-            continue;
-        }
-
+impl Walk<'_> {
+    /// Assign the cached topologies to one subprocess and convert and filter
+    /// its diagrams. Touches nothing but its own assignment, so any number of
+    /// them run at once.
+    fn assign(&self, pending: Pending) -> Result<Assigned, DiagramError> {
+        let Walk {
+            process,
+            model,
+            max_weighted,
+            cached_topologies,
+            ref budgets,
+        } = *self;
+        let Pending {
+            concrete,
+            polarizations,
+            mirrored,
+        } = pending;
         let mut sel = build_selector(&concrete, &model.negative_orders);
 
         // WEIGHTED coupling-order filter: reject diagrams whose weighted sum, each
@@ -1451,11 +1391,14 @@ fn generate_sets_inner(
 
         let generator =
             DiagramGenerator::new(&in_refs, &out_refs, 0, model.topo.clone(), Some(sel))?;
-        // assign_topologies only errors on n_external/n_loops mismatch, which can't
-        // happen here since cached_topologies was built for the same n_ext and n_loops=0.
+        // The cached topologies were built for this line's leg count at tree level,
+        // which is all `assign_topologies` checks.
         let container = generator
             .assign_topologies(cached_topologies)
-            .expect("topology cache n_external/n_loops mismatch — impossible by construction");
+            .map_err(|e| DiagramError::TopologyAssignment {
+                subprocess: format!("{} > {}", in_refs.join(" "), out_refs.join(" ")),
+                why: e.to_string(),
+            })?;
 
         // Module boundary: convert feyngraph's borrowed views into owned, UFO-resolved
         // diagrams here and drop the container. feyngraph views never escape `diagrams/`.
@@ -1465,7 +1408,7 @@ fn generate_sets_inner(
             .collect::<Result<Vec<_>, _>>()?;
         if !model.negative_orders.is_empty() {
             diagrams.retain(|d| {
-                reduction::within_running_budget(d, model, &budgets, max_weighted.map(|w| w as i64))
+                reduction::within_running_budget(d, model, budgets, max_weighted.map(|w| w as i64))
             });
         }
         let enumerated = diagrams.len();
@@ -1473,47 +1416,325 @@ fn generate_sets_inner(
         for diagram in &diagrams {
             diagram.check_fermion_flow(model)?;
         }
-        if diagrams.len() != enumerated {
-            debug!(
-                "{} > {}: the s-channel restrictions keep {} of {enumerated} diagrams",
-                in_refs.join(" "),
-                out_refs.join(" "),
-                diagrams.len()
-            );
-        }
-
-        let subprocess = format!("{} > {}", in_refs.join(" "), out_refs.join(" "));
+        let mut before_squared = None;
         let squared_orders = process.squared.as_ref().map(|sq| {
-            let before = diagrams.len();
-            let selection = sq.filter(&mut diagrams, model);
-            if diagrams.len() != before {
-                debug!(
-                    "{subprocess}: the squared-order constraints keep {} of {before} diagrams",
-                    diagrams.len()
-                );
-            }
-            selection
+            before_squared = Some(diagrams.len());
+            sq.filter(&mut diagrams, model)
         });
-        if !diagrams.is_empty() {
-            info!("{} diagrams for {subprocess}", diagrams.len());
+        Ok(Assigned {
+            set: DiagramSet {
+                particles_in: concrete.initial,
+                particles_out: concrete.final_state,
+                polarizations,
+                diagrams,
+                mirrored,
+                squared_orders,
+            },
+            enumerated,
+            before_squared,
+            elapsed: started.elapsed().as_secs_f64(),
+        })
+    }
+}
+
+/// Log what [`Walk::assign`] made of one assignment, as the walk reaches it.
+fn report_assigned(assigned: &Assigned, model: &UFOModel) {
+    let set = &assigned.set;
+    let subprocess = format!(
+        "{} > {}",
+        set.particles_in.join(" "),
+        set.particles_out.join(" ")
+    );
+    let after_schannels = assigned.before_squared.unwrap_or(set.diagrams.len());
+    if after_schannels != assigned.enumerated {
+        debug!(
+            "{subprocess}: the s-channel restrictions keep {after_schannels} of {} diagrams",
+            assigned.enumerated
+        );
+    }
+    if let Some(before) = assigned.before_squared {
+        if set.diagrams.len() != before {
             debug!(
-                "{subprocess}: enumerated in {:.3} s",
-                started.elapsed().as_secs_f64()
+                "{subprocess}: the squared-order constraints keep {} of {before} diagrams",
+                set.diagrams.len()
             );
-            report_vertex_assignments(&subprocess, &diagrams, model);
+        }
+    }
+    if !set.diagrams.is_empty() {
+        info!("{} diagrams for {subprocess}", set.diagrams.len());
+        debug!("{subprocess}: enumerated in {:.3} s", assigned.elapsed);
+        report_vertex_assignments(&subprocess, &set.diagrams, model);
+    }
+}
+
+/// Inner generation loop: expand aliases, deduplicate mirror processes, and call
+/// feyngraph for each concrete subprocess.  `max_weighted` (when `Some`) adds an
+/// extra diagram filter that rejects any diagram whose WEIGHTED order exceeds the
+/// given bound.
+///
+/// `cached_topologies` must be pre-computed by the caller via `generate_topologies`.
+/// Coupling constraints are enforced during particle assignment, not topology
+/// generation, so no topology filtering is needed here.
+///
+/// `pool` decides whether the walk's subprocesses are assigned across the
+/// caller's pool ([`EnumerationPool`]); the sets are the same either way.
+fn generate_sets_inner(
+    process: &ExpandedProcess,
+    model: &UFOModel,
+    max_weighted: Option<usize>,
+    cached_topologies: &[Topology],
+    position: Option<LinePosition>,
+    pool: EnumerationPool,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    let threads = rayon::current_num_threads();
+    let candidates = process
+        .initial
+        .iter()
+        .chain(&process.final_state)
+        .fold(1u64, |n, leg| n.saturating_mul(leg.len() as u64));
+    let cost = candidates.saturating_mul(cached_topologies.len() as u64);
+    let parallel = threads > 1
+        && match pool {
+            EnumerationPool::Serial => false,
+            EnumerationPool::Ambient => true,
+            EnumerationPool::Auto => position.is_some() && cost >= AUTO_PARALLEL_COST,
+        };
+    if !parallel && threads > 1 && pool != EnumerationPool::Ambient {
+        // feyngraph's internal fan-out would otherwise run on the caller's pool.
+        let serial = serial_pool()?;
+        return serial.install(|| {
+            walk_assignments(process, model, max_weighted, cached_topologies, position, 1)
+        });
+    }
+    let batch = if parallel {
+        BATCH_PER_THREAD * threads
+    } else {
+        1
+    };
+    walk_assignments(
+        process,
+        model,
+        max_weighted,
+        cached_topologies,
+        position,
+        batch,
+    )
+}
+
+/// [`generate_sets_inner`]'s walk, handing feyngraph `batch` surviving
+/// subprocesses at a time, across the pool when there is more than one.
+fn walk_assignments(
+    process: &ExpandedProcess,
+    model: &UFOModel,
+    max_weighted: Option<usize>,
+    cached_topologies: &[Topology],
+    position: Option<LinePosition>,
+    batch: usize,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    let mut sets = Vec::new();
+    // The `<=` bounds MadGraph spends vertex by vertex while it builds a diagram
+    // (`reduce_orders`); the leftmost constraint on an order wins. They drop
+    // diagrams the total-sum selection keeps only where a vertex carries a
+    // negative power ([`reduction`]).
+    let mut budgets: std::collections::BTreeMap<String, i64> = Default::default();
+    for o in &process.orders {
+        if matches!(o.op, CouplingOp::Le | CouplingOp::Eq) {
+            budgets.entry(o.name.clone()).or_insert(o.value);
+        }
+    }
+    let walk = Walk {
+        process,
+        model,
+        max_weighted,
+        cached_topologies,
+        budgets,
+    };
+    // Candidate assignments seen, and the prefilters' kills: what the
+    // enumeration paid for the assignments it never handed to feyngraph.
+    let mut candidates = 0usize;
+    let mut duplicates = 0usize;
+    let mut charge_kills = 0usize;
+    let mut flavour_kills = 0usize;
+    let mut dropped_polarizations = 0usize;
+    // Deduplicate on (sorted initial, sorted final): a concrete subprocess is
+    // identified by the *unordered* content of each side, so a card whose
+    // final-state slots draw on intersecting alias sets (`p p > j j`) yields
+    // `g u > g u` once rather than once per ordering.  `g u > u g` is the same
+    // subprocess: dPhi_n is integrated over the whole labelled region and every
+    // run-card cut is a per-class one, so a permutation of the outgoing legs
+    // relabels the integral without moving it, and enumerating both would add
+    // its term twice.  Sorting is in the key only — the surviving representative
+    // keeps the order the expansion emitted it in.
+    //
+    // Distinct final-state *content* never collapses, which is what
+    // deduplicating on the initial state alone would get wrong: it would
+    // silently drop subprocesses like `g d > e+ e- d` when the first
+    // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
+    // diagrams at the active WEIGHTED bound.
+    //
+    // A duplicate whose incoming legs are an enumerated set's exchanged is that
+    // set's mirrored beam ordering: it is not enumerated again, and the set
+    // records that its line generated both orderings. MadGraph does the same
+    // within one process definition (`generate_multi_amplitudes`, the
+    // `collect_mirror_procs` branch), and only there: a line written in one
+    // ordering generates no mirror.
+    let mut seen_processes: std::collections::HashSet<SubprocessKey> =
+        std::collections::HashSet::new();
+    // A surviving assignment's place in the walk: in `sets` once assigned, in
+    // `pending` (offset by `sets.len()`) while it waits for its batch.
+    let mut enumerated_at: HashMap<SubprocessKey, usize> = HashMap::new();
+    let mut pending: Vec<Pending> = Vec::with_capacity(batch);
+
+    // Each leg independently takes each of its particles; the Cartesian product
+    // over the legs, initial side outermost, is the concrete subprocess list.
+    // For `p p > e+ e-` this yields 9 × 9 = 81 candidates.
+    let initial_combos: Vec<Vec<String>> = process
+        .initial
+        .iter()
+        .cloned()
+        .multi_cartesian_product()
+        .collect();
+    let final_combos: Vec<Vec<String>> = process
+        .final_state
+        .iter()
+        .cloned()
+        .multi_cartesian_product()
+        .collect();
+
+    let total = (initial_combos.len() * final_combos.len()) as u64;
+    // A trial enumeration (`position` is `None`) is not the line's walk, so it
+    // reports no progress.
+    let report = |done: usize, sets: &[DiagramSet]| {
+        let Some(position) = position else {
+            return;
+        };
+        progress::enumeration(
+            done as u64,
+            total,
+            (position.line as u64, position.lines as u64),
+            sets.len() as u64,
+            (position.diagrams_before + sets.iter().map(|s| s.diagrams.len()).sum::<usize>())
+                as u64,
+        );
+    };
+    // Assign every pending subprocess, across the pool when there are several,
+    // and append them to `sets` in walk order. The first failure in walk order is
+    // the walk's, as it is when they are assigned one at a time.
+    let flush = |pending: &mut Vec<Pending>,
+                 sets: &mut Vec<DiagramSet>,
+                 done: usize|
+     -> Result<(), DiagramError> {
+        let assigned: Vec<Result<Assigned, DiagramError>> = if pending.len() > 1 {
+            use rayon::prelude::*;
+            let span = tracing::Span::current();
+            pending
+                .par_drain(..)
+                .map(|p| {
+                    let _entered = span.enter();
+                    walk.assign(p)
+                })
+                .collect()
+        } else {
+            pending.drain(..).map(|p| walk.assign(p)).collect()
+        };
+        for assigned in assigned {
+            let assigned = assigned?;
+            report_assigned(&assigned, model);
+            sets.push(assigned.set);
+            report(done, sets);
+        }
+        Ok(())
+    };
+    report(0, &sets);
+    'assignments: for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
+        candidates += 1;
+        if candidates.is_multiple_of(PRUNED_REPORT_INTERVAL) {
+            report(candidates, &sets);
+        }
+        let concrete = ConcreteProcess {
+            initial,
+            final_state,
+            forbidden_particles: process.forbidden_particles.clone(),
+            orders: process.orders.clone(),
+        };
+
+        let mut polarizations = Vec::with_capacity(process.polarizations.len());
+        for (name, pol) in concrete
+            .initial
+            .iter()
+            .chain(&concrete.final_state)
+            .zip(&process.polarizations)
+        {
+            match pol {
+                None => polarizations.push(None),
+                Some(pol) => match concrete_polarization(model, name, pol)? {
+                    Some(h) => polarizations.push(Some(h)),
+                    None => {
+                        dropped_polarizations += 1;
+                        continue 'assignments;
+                    }
+                },
+            }
         }
 
-        enumerated_at.insert(key, sets.len());
-        sets.push(DiagramSet {
-            particles_in: concrete.initial,
-            particles_out: concrete.final_state,
+        let key = subprocess_key(&concrete.initial, &concrete.final_state, &polarizations);
+        if !seen_processes.insert(key.clone()) {
+            if let Some(&at) = enumerated_at.get(&key) {
+                let exchanged = |set_in: &[String], set_pol: &[Option<Vec<i32>>]| {
+                    is_exchanged_ordering(set_in, set_pol, &concrete.initial, &polarizations)
+                };
+                match at.checked_sub(sets.len()) {
+                    None => {
+                        let set = &mut sets[at];
+                        if exchanged(&set.particles_in, &set.polarizations) {
+                            set.mirrored = true;
+                        }
+                    }
+                    Some(waiting) => {
+                        let p = &mut pending[waiting];
+                        if exchanged(&p.concrete.initial, &p.polarizations) {
+                            p.mirrored = true;
+                        }
+                    }
+                }
+            }
+            duplicates += 1;
+            continue;
+        }
+
+        // Charge conservation: skip subprocesses that can't conserve electric charge.
+        // This fast O(n) check prunes the majority of alias-expanded candidates before
+        // the expensive topology-assignment step (e.g. ~90% of pp→qq~4l subprocesses).
+        let particle_charge =
+            |name: &str| -> f64 { model.particles.get(name).map(|p| p.charge).unwrap_or(0.0) };
+        let q_in: f64 = concrete.initial.iter().map(|p| particle_charge(p)).sum();
+        let q_out: f64 = concrete
+            .final_state
+            .iter()
+            .map(|p| particle_charge(p))
+            .sum();
+        if (q_in - q_out).abs() > 1e-6 {
+            charge_kills += 1;
+            continue;
+        }
+        // Every additive number the model's vertices conserve: an assignment that
+        // breaks one has no diagram ([`crate::ufo::conserved`]).
+        if !flavour_balanced(model, &concrete.initial, &concrete.final_state) {
+            flavour_kills += 1;
+            continue;
+        }
+
+        enumerated_at.insert(key, sets.len() + pending.len());
+        pending.push(Pending {
+            concrete,
             polarizations,
-            diagrams,
             mirrored: false,
-            squared_orders,
         });
-        report(candidates, &sets);
+        if pending.len() >= batch {
+            flush(&mut pending, &mut sets, candidates)?;
+        }
     }
+    flush(&mut pending, &mut sets, candidates)?;
     report(candidates, &sets);
 
     // Reported only for the pass that found something: under the automatic
@@ -1522,12 +1743,30 @@ fn generate_sets_inner(
     if sets.iter().any(|s| !s.diagrams.is_empty()) {
         debug!(
             "{candidates} alias-expanded assignments: {duplicates} duplicate, {charge_kills} \
-             charge-violating, {dropped_polarizations} with no helicity left, {} enumerated",
+             charge-violating, {flavour_kills} violating another conserved number, \
+             {dropped_polarizations} with no helicity left, {} enumerated",
             sets.len()
         );
     }
 
     Ok(sets)
+}
+
+/// Whether the incoming `initial` and outgoing `final_state` balance in every
+/// additive number the model conserves. A name the model does not know
+/// balances, for feyngraph to refuse.
+fn flavour_balanced(model: &UFOModel, initial: &[String], final_state: &[String]) -> bool {
+    let conserved = model.conserved_numbers();
+    if conserved.is_empty() {
+        return true;
+    }
+    let ids = |names: &[String]| -> Option<Vec<crate::ufo::particles::ParticleId>> {
+        names.iter().map(|n| model.particle_id(n)).collect()
+    };
+    match (ids(initial), ids(final_state)) {
+        (Some(i), Some(f)) => conserved.balanced(&i, &f),
+        _ => true,
+    }
 }
 
 /// Every diagram's vertices and internal lines, one line each.
@@ -1645,6 +1884,137 @@ mod tests {
                 "expansion_order = {expansion} must not cap"
             );
         }
+    }
+
+    /// Every set, byte for byte as the artifact serializes it, with the fields
+    /// the serialization skips.
+    fn rendered(sets: &[DiagramSet]) -> (Vec<u8>, String) {
+        let bytes = bincode::serialize(sets).expect("the sets serialize");
+        (bytes, format!("{sets:?}"))
+    }
+
+    fn sets_in(card: &str, model: &UFOModel, pool: EnumerationPool) -> Vec<DiagramSet> {
+        let card = parse_proc_card(card, &ParsingOptions::default()).unwrap();
+        generate_from_proc_card_in(&card, model, pool).unwrap()
+    }
+
+    /// Several walks, each with several batches of subprocesses, a decay chain, a
+    /// polarized leg and both mirrored and unmirrored sets.
+    const PARALLEL_CARD: &str = "\
+define p = g u c d s u~ c~ d~ s~
+define j = p
+generate p p > e+ e- j j
+add process p p > w+ j, w+ > e+ ve
+add process u u~ > z{0} g
+add process p p > mu+ mu- j";
+
+    /// Walks assigned across a four-thread pool give the sets a one-thread walk
+    /// gives, byte for byte and in the same order, under every pool choice. It
+    /// cannot see an output the scheduling changes only on another thread count.
+    #[test]
+    fn a_parallel_walk_gives_the_serial_walk_byte_for_byte() {
+        let model = sm_model(SMRestrict::NoBMass);
+        let serial = sets_in(PARALLEL_CARD, &model, EnumerationPool::Serial);
+        assert!(serial.len() > BATCH_PER_THREAD * 4, "{} sets", serial.len());
+        assert!(serial.iter().any(|s| s.mirrored));
+        assert!(serial.iter().any(|s| !s.mirrored));
+        let four = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        for pool in [EnumerationPool::Ambient, EnumerationPool::Auto] {
+            let parallel = four.install(|| sets_in(PARALLEL_CARD, &model, pool));
+            assert!(rendered(&parallel) == rendered(&serial), "{pool:?}");
+        }
+    }
+
+    /// A refusal raised while subprocesses are assigned across the pool is the
+    /// refusal the serial walk raises: the first in walk order, whichever thread
+    /// finishes first. With custom propagators on both `u` and `d`,
+    /// `u u~ > w+ w-` exchanges a `d` and `d d~ > w+ w-` a `u`, both in one
+    /// batch; the walk reaches `u u~` first, so the refusal names `d`.
+    #[test]
+    fn a_refusal_inside_the_pool_is_the_serial_refusal() {
+        use crate::ufo::propagators::Propagator;
+        let mut parsed = sm_parsed_model();
+        parsed.propagators.insert(
+            "F1".to_owned(),
+            Propagator {
+                python_name: "F1".to_owned(),
+                name: "F1".to_owned(),
+                numerator: "complex(0,1)*(PSlash(1,2,id)+Mass(id)*Identity(1,2))".to_owned(),
+                denominator: Some("P('mu', id) * P('mu', id)".to_owned()),
+            },
+        );
+        for quark in ["u", "d"] {
+            parsed.particles.get_mut(quark).expect("quark").propagator = Some("F1".to_owned());
+        }
+        let restrict = SMRestrict::Default
+            .restrict_card_text()
+            .parse()
+            .expect("parse the interned SM restrict card");
+        let model = parsed.into_model(Some(&restrict)).expect("build the model");
+        let card = parse_proc_card(
+            "define p = g u d u~ d~\ngenerate p p > w+ w- QED<=2",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let refusal = |pool| match generate_from_proc_card_in(&card, &model, pool) {
+            Ok(_) => panic!("a propagating custom quark must be refused"),
+            Err(e) => e.to_string(),
+        };
+        let serial = refusal(EnumerationPool::Serial);
+        assert!(serial.contains("'d'"), "{serial}");
+        let four = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        for _ in 0..8 {
+            assert_eq!(four.install(|| refusal(EnumerationPool::Ambient)), serial);
+        }
+    }
+
+    /// The conserved-number prune hands feyngraph fewer subprocesses and drops
+    /// none that has a diagram: with the prune and with no conserved number at
+    /// all, the sets are identical, on the diagonal model, where it prunes, and
+    /// on the CKM restriction, where the generation numbers are not conserved.
+    /// It cannot see an assignment that has diagrams only on a card this one
+    /// does not reach.
+    #[test]
+    fn the_flavour_prune_drops_no_subprocess_with_a_diagram() {
+        let card = "\
+define p = g u c d s u~ c~ d~ s~
+define j = p
+define l+ = e+ mu+
+define vl = ve vm
+generate p p > l+ vl j
+add process p p > e+ e- j j";
+        for variant in [SMRestrict::NoBMass, SMRestrict::Ckm] {
+            let model = sm_model(variant);
+            let mut unpruned = (*model).clone();
+            unpruned.conserved = crate::ufo::conserved::ConservedNumbers::none();
+            let pruned = sets_in(card, &model, EnumerationPool::Serial);
+            let all = sets_in(card, &unpruned, EnumerationPool::Serial);
+            assert!(!pruned.is_empty());
+            assert!(rendered(&pruned) == rendered(&all), "{variant:?}");
+        }
+        let diagonal = sm_model(SMRestrict::NoBMass);
+        let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(!flavour_balanced(
+            &diagonal,
+            &names(&["u", "c~"]),
+            &names(&["e+", "ve", "g"])
+        ));
+        assert!(!flavour_balanced(
+            &diagonal,
+            &names(&["u", "d~"]),
+            &names(&["mu+", "ve", "g"])
+        ));
+        assert!(flavour_balanced(
+            &sm_model(SMRestrict::Ckm),
+            &names(&["u", "s~"]),
+            &names(&["e+", "ve", "g"])
+        ));
     }
 
     /// The pool is a scheduling choice and nothing else: enumeration order and
