@@ -1,4 +1,4 @@
-/target
+target/
 /research/refs/papers/
 # pixi environments
 .pixi/*
