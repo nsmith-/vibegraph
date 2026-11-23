@@ -500,8 +500,11 @@ fn generate_sample(
     refuse_mixed_multiplicity(sets).map_err(err)?;
     refuse_one_body_final_state(sets).map_err(err)?;
     refuse_exchanged_beam_orderings(sets).map_err(err)?;
-    let evals = compile_subprocesses(sets, model, evaluated)
-        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let evals = {
+        let _group = crate::progress::enter_group(crate::multiplicity::sole_group(sets, None));
+        compile_subprocesses(sets, model, evaluated)
+    }
+    .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
         sets,
         &evals,
