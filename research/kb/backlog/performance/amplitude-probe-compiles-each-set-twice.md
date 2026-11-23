@@ -4,7 +4,7 @@ title: "The amplitude probe compiles every diagram set a second time in integrat
 description: "amplitude_probe compiles each set itself (compile_class) independently of the evaluators the integrand already built; on the largest cards that is seconds per run."
 area: performance
 state: open
-priority: low
+priority: high
 closes_when: "The probe evaluates through the evaluators the run already compiled (fixed-energy and proton paths), and the saving is measured on p p > e+ e- j j j."
 blocked_by: []
 opened: 2026-11-10
@@ -19,3 +19,7 @@ flavour groups are formed. By the enumerate design's measurements that is up
 to 2–3 s on the largest cards. The fixed-energy path already holds an
 evaluator per subprocess; the proton path compiles inside
 `derive_flavor_groups` and does not expose them.
+
+**Raised to high (sprint L, 2026-11-23).** Campaign card 65 (Zto2Q-4Jets) spent 1077 s of its 1200 s cap in the probe; see
+[`set-compilation-loops-are-serial`](set-compilation-loops-are-serial.md) and the
+[L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md).
