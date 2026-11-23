@@ -398,6 +398,18 @@ impl MemberLines {
         Ok(MemberLines { diagrams })
     }
 
+    /// The lines of each diagram, for a test to build a member from.
+    #[cfg(test)]
+    pub(crate) fn diagram_lines(&self) -> &[Vec<ResonanceLine>] {
+        &self.diagrams
+    }
+
+    /// A member whose diagrams carry exactly `diagrams`' lines.
+    #[cfg(test)]
+    pub(crate) fn from_diagram_lines(diagrams: Vec<Vec<ResonanceLine>>) -> Self {
+        MemberLines { diagrams }
+    }
+
     /// The member's code on each of `lines`, one configuration's lines of the
     /// representative, whose outgoing legs are `representative` where the
     /// member's are `member`.
@@ -597,7 +609,7 @@ fn pdg_charge(pdg: i32, model: &UFOModel) -> Option<f64> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet};
     use crate::hadronic::compile_class;
@@ -659,7 +671,7 @@ mod tests {
 
     /// `e+ e- > b e+ ve b~ mu- vm~` through two tops at 500 GeV, the `W+` at
     /// `mw_plus` and the `W-` at the pole.
-    fn top_pair(mw_plus: f64) -> Vec<[f64; 4]> {
+    pub(crate) fn top_pair(mw_plus: f64) -> Vec<[f64; 4]> {
         let (mt, mw, mb) = (173.4, 80.419002445756, 4.7);
         let (t, tb) = decay([500.0, 0.0, 0.0, 0.0], mt, mt, [0.3, 0.4, 0.8]);
         let (b, wp) = decay(t, mb, mw_plus, [0.1, -0.7, 0.2]);

@@ -361,20 +361,30 @@ pub(super) fn report_resonances(tally: ResonanceTally, written: usize) {
             tally.subleading
         );
     }
+    for warning in resonance_warnings(tally, written) {
+        warn!("{warning}");
+    }
+}
+
+/// The warnings [`report_resonances`] gives for events written without the
+/// intermediates their configuration names.
+pub(super) fn resonance_warnings(tally: ResonanceTally, written: usize) -> Vec<String> {
+    let mut out = Vec::new();
     if tally.refused > 0 {
-        warn!(
+        out.push(format!(
             "resonances: {} of {written} events list no intermediate record because a \
              resonance's daughters leave colour lines that do not fit it",
             tally.refused
-        );
+        ));
     }
     if tally.unresolved > 0 {
-        warn!(
+        out.push(format!(
             "resonances: {} of {written} events list no intermediate record because their \
              subprocess names no code for a resonance of its configuration",
             tally.unresolved
-        );
+        ));
     }
+    out
 }
 
 /// Per part, per flavour group, the index of its first member in the run's

@@ -1576,27 +1576,14 @@ fn group_resonances(
                 .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
             let mut configs = Vec::with_capacity(group.evaluator().n_configs());
             for config in 0..group.evaluator().n_configs() {
-                let lines = table.lines(config);
-                let codes = own
-                    .resolve(lines, table.outgoing(), &member.outgoing, model)
-                    .into_iter()
-                    .zip(lines)
-                    .map(|(code, line)| match code {
-                        MemberCode::Code(code) => Ok(code),
-                        MemberCode::Absent => Ok(LineCode::NONE),
-                        MemberCode::Ambiguous if !(line.width > 0.0) => Ok(LineCode::NONE),
-                        MemberCode::Ambiguous => Err(err(format!(
-                            "the resonance {} of {} has no single flavour in the subprocess \
-                             with outgoing {:?} that shares its matrix element: that \
-                             subprocess's diagrams carry the line under several codes, and \
-                             its legs name none of them",
-                            line.pdg,
-                            group.diagram_set().label(),
-                            member.outgoing
-                        ))),
-                    })
-                    .collect::<Result<Vec<LineCode>, _>>()?;
-                configs.push(codes);
+                configs.push(member_line_codes(
+                    &own,
+                    &table,
+                    config,
+                    &member.outgoing,
+                    model,
+                    &group.diagram_set().label(),
+                )?);
             }
             members.push(configs);
         }
@@ -1604,6 +1591,37 @@ fn group_resonances(
         pdgs.push(members);
     }
     Ok((tables, pdgs))
+}
+
+/// One member's code and colour on each line of configuration `config` of
+/// `table`, its outgoing legs `member`, as [`group_resonances`] stores them:
+/// [`LineCode::NONE`] for a line the member does not carry, or carries under
+/// several codes its legs cannot tell apart when the line has no width; a
+/// refusal naming `label` when such a line has one.
+fn member_line_codes(
+    own: &MemberLines,
+    table: &SubprocessResonances,
+    config: usize,
+    member: &[i32],
+    model: &UFOModel,
+    label: &str,
+) -> Result<Vec<LineCode>, GenerateError> {
+    let lines = table.lines(config);
+    own.resolve(lines, table.outgoing(), member, model)
+        .into_iter()
+        .zip(lines)
+        .map(|(code, line)| match code {
+            MemberCode::Code(code) => Ok(code),
+            MemberCode::Absent => Ok(LineCode::NONE),
+            MemberCode::Ambiguous if !(line.width > 0.0) => Ok(LineCode::NONE),
+            MemberCode::Ambiguous => Err(err(format!(
+                "the resonance {} of {label} has no single flavour in the subprocess with \
+                 outgoing {member:?} that shares its matrix element: that subprocess's \
+                 diagrams carry the line under several codes, and its legs name none of them",
+                line.pdg
+            ))),
+        })
+        .collect()
 }
 
 /// `IDBMUP` for a hadron-collider run: a proton on each side, the one hadron
@@ -2162,6 +2180,203 @@ mod tests {
                 assert!(pdgs[g].iter().all(|configs| !configs.is_empty()));
             }
         }
+    }
+
+    /// `e+ e- > b e+ ve b~ mu- vm~` through two decaying tops: its compiled
+    /// record, its resonance table, its own lines as a member, and a point with
+    /// every top and `W` inside its window.
+    fn top_pair_chain() -> (
+        Arc<UFOModel>,
+        SubprocessRecord,
+        SubprocessResonances,
+        MemberLines,
+        Vec<[f64; 4]>,
+    ) {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::hadronic::compile_class;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let parsed = parse_proc_card(
+            "import model sm\ngenerate e+ e- > t t~, t > b e+ ve, t~ > b~ mu- vm~\n",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let set = generate_from_proc_card(&parsed, &model)
+            .unwrap()
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .unwrap();
+        let eval = compile_class(&set, &model, &evaluated).unwrap();
+        let record = SubprocessRecord::new(&eval, &model, &evaluated).unwrap();
+        let table =
+            SubprocessResonances::new(&eval, &set.diagrams, &model, &evaluated, 15.0).unwrap();
+        let own = MemberLines::new(&set.diagrams, &model, &evaluated).unwrap();
+        let mut externals = vec![[250.0, 0.0, 0.0, 250.0], [250.0, 0.0, 0.0, -250.0]];
+        externals.extend(crate::lhef::resonance::tests::top_pair(80.0));
+        (model, record, table, own, externals)
+    }
+
+    /// The record `event_record` writes for configuration 0 with `codes` as the
+    /// member's table, and the warnings its tally gives.
+    fn top_pair_record(
+        record: &SubprocessRecord,
+        table: &SubprocessResonances,
+        codes: &[Vec<LineCode>],
+        externals: &[[f64; 4]],
+    ) -> (crate::lhef::record::LheEvent, Vec<String>) {
+        let mut tally = source::ResonanceTally::default();
+        let header = crate::lhef::build::EventHeader {
+            process_id: 1,
+            weight: 1.0,
+            scale: 250.0,
+            alpha_qed: 0.0078,
+            alpha_qcd: 0.118,
+        };
+        let event = source::event_record(
+            record,
+            externals,
+            &[1; 8],
+            0,
+            header,
+            Some((table, Some(codes))),
+            (Some(0), true),
+            &mut tally,
+        )
+        .expect("the event is written");
+        (event, source::resonance_warnings(tally, 1))
+    }
+
+    /// The codes of the intermediates an event lists, sorted.
+    fn intermediates(event: &crate::lhef::record::LheEvent) -> Vec<i32> {
+        let mut out: Vec<i32> = event
+            .particles
+            .iter()
+            .filter(|p| p.status == crate::lhef::record::STATUS_INTERMEDIATE)
+            .map(|p| p.pdg)
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
+    /// A member that does not carry a line with a width the representative
+    /// carries (here the top: a member whose diagrams have every line of
+    /// `e+ e- > t t~, t > b e+ ve, …` but that one) holds no code for it, and
+    /// an event of it inside the top's window is written without intermediates,
+    /// neither with the representative's top nor with any other code there, and
+    /// counted in the warning. The representative itself, at the same point,
+    /// lists the top: the line would be written.
+    #[test]
+    fn a_member_without_a_widthful_line_writes_no_intermediate_and_counts_it() {
+        let (model, record, table, own, externals) = top_pair_chain();
+        let label = "e+ e- > b e+ ve b~ mu- vm~";
+        let outgoing = table.outgoing().to_vec();
+        assert_eq!(
+            outgoing,
+            [5, -11, 12, -5, 13, -14],
+            "the order `top_pair` builds"
+        );
+
+        let rep_codes = member_line_codes(&own, &table, 0, &outgoing, &model, label).unwrap();
+        let (rep_event, rep_warnings) = top_pair_record(&record, &table, &[rep_codes], &externals);
+        assert_eq!(intermediates(&rep_event), [-24, -6, 6, 24]);
+        assert!(rep_warnings.is_empty(), "{rep_warnings:?}");
+
+        let top = table
+            .lines(0)
+            .iter()
+            .position(|l| l.pdg == 6)
+            .expect("a top line");
+        assert!(table.lines(0)[top].width > 0.0);
+        let without_top = MemberLines::from_diagram_lines(
+            own.diagram_lines()
+                .iter()
+                .map(|d| d.iter().copied().filter(|l| l.pdg != 6).collect())
+                .collect(),
+        );
+        let codes = member_line_codes(&without_top, &table, 0, &outgoing, &model, label)
+            .expect("a line the member does not carry does not refuse the run");
+        assert_eq!(codes[top], LineCode::NONE);
+        let (event, warnings) = top_pair_record(&record, &table, &[codes], &externals);
+        assert_eq!(
+            intermediates(&event),
+            Vec::<i32>::new(),
+            "no intermediate, and no substitute for the top"
+        );
+        assert_eq!(
+            event
+                .particles
+                .iter()
+                .filter(|p| p.status == crate::lhef::record::STATUS_OUTGOING)
+                .count(),
+            6
+        );
+        assert_eq!(
+            warnings,
+            [
+                "resonances: 1 of 1 events list no intermediate record because their subprocess \
+              names no code for a resonance of its configuration"
+            ]
+        );
+    }
+
+    /// A member whose diagrams carry a line with a width under several codes,
+    /// none of which its legs name, refuses the run by name; where the legs name
+    /// one of them, that one is taken.
+    #[test]
+    fn a_widthful_line_under_several_codes_the_legs_cannot_tell_apart_is_refused() {
+        let (model, _, table, own, _) = top_pair_chain();
+        let label = "e+ e- > b e+ ve b~ mu- vm~";
+        let outgoing = table.outgoing().to_vec();
+        let relabel = |code: i32| -> Vec<Vec<crate::lhef::resonance::ResonanceLine>> {
+            own.diagram_lines()
+                .iter()
+                .map(|d| {
+                    d.iter()
+                        .map(|l| {
+                            let mut l = *l;
+                            if l.pdg == 6 {
+                                l.pdg = code;
+                            }
+                            l
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        // The legs below the top (`b e+ ve`) name the top itself, which neither
+        // of the member's codes is.
+        let mut split = relabel(2);
+        split.extend(relabel(4));
+        let why = member_line_codes(
+            &MemberLines::from_diagram_lines(split.clone()),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            why.contains("the resonance 6 of e+ e- > b e+ ve b~ mu- vm~ has no single flavour"),
+            "{why}"
+        );
+        // Where the legs' code is one of them, it is taken.
+        let mut named = relabel(2);
+        named.extend(relabel(6));
+        let codes = member_line_codes(
+            &MemberLines::from_diagram_lines(named),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .unwrap();
+        let top = table.lines(0).iter().position(|l| l.pdg == 6).unwrap();
+        assert_eq!(codes[top].pdg, 6);
     }
 
     /// [`EventSource::restart`] promises the identical sequence follows, and a
