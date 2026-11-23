@@ -11,4 +11,4 @@ opened: 2026-11-04
 tags: [madgraph-parity, widths, sprint-g]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-04}
 ---
-G-F5 Found 1–2; decision G7 (amended): a negative non-Majorana mass is refused at binding today. Blocked in practice on [majorana-fermions-unsupported](../feature/majorana-fermions-unsupported.md). Report: [G-F5](../../sprints/v02-refusals/sessions/G-F5-report.md).
+G-F5 Found 1–2; decision G7 (amended): a negative non-Majorana mass is refused at binding today. Blocked in practice on the Majorana work of the [L-M1 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md). Report: [G-F5](../../sprints/v02-refusals/sessions/G-F5-report.md).

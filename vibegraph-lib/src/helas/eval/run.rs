@@ -177,8 +177,9 @@ pub struct BoundAmplitude<'a, F: Real> {
     eval: &'a AmplitudeEvaluator,
     consts_c: Box<[C<F>]>,
     consts_f: Box<[F]>,
-    /// The exact color-factor matrix resolved to `F` (row-major,
-    /// `cf[i*n_flows + j] = CF_{ij}`).
+    /// The JAMP contraction weights resolved to `F` (row-major over the root's
+    /// JAMPs, [`AmplitudeEvaluator::jamp_cf`]): the colour-factor matrix
+    /// `cf[i*n_flows + j] = CF_{ij}` without a squared-order split.
     cf: Box<[F]>,
     /// Names this amplitude *and* the current contents of its constant pools, drawn
     /// from a process-wide counter at construction and again on every pool rewrite.
@@ -243,7 +244,7 @@ impl<'a, F: Real + FromPrimitive> BoundAmplitude<'a, F> {
         // Resolve the exact rational CF matrix to `F` (each num/den converted before
         // the division, mirroring the constant-pool rationals).
         let cf: Box<[F]> = eval
-            .cf_matrix()
+            .jamp_cf()
             .iter()
             .map(|r| {
                 F::from_i64(*r.numer()).expect("CF numerator convertible to scalar")
@@ -370,7 +371,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             panic!("eval_m2 on a program without a helicity-expanded root");
         };
         let n = *n_flows as usize;
-        debug_assert_eq!(n, self.eval.n_flows());
+        debug_assert_eq!(n, self.eval.n_jamps());
 
         if n == 1 {
             let mut hel_sum = F::zero();
@@ -440,11 +441,25 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
             panic!("eval_jamp2 on a program without a helicity-expanded root");
         };
         let n = *n_flows as usize;
-        debug_assert_eq!(n, self.eval.n_flows());
+        debug_assert_eq!(n, self.eval.n_jamps());
 
+        let pairs = self.eval.jamp2_pairs();
+        if pairs.is_empty() {
+            for jamps in locs.chunks_exact(n) {
+                for (acc, &l) in jamp2.iter_mut().zip(jamps) {
+                    *acc = *acc + scratch.scalars[l as usize].norm_sqr();
+                }
+            }
+            return;
+        }
+        // Under a squared-order split, MadGraph's `JAMP2(i)` sums
+        // `|Re JAMP(i,M)·JAMP(i,N)*|` over the selected class pairs
+        // (`matrix_madevent_group_v4.inc:380-388`).
         for jamps in locs.chunks_exact(n) {
-            for (acc, &l) in jamp2.iter_mut().zip(jamps) {
-                *acc = *acc + scratch.scalars[l as usize].norm_sqr();
+            for &(x, y, flow) in pairs {
+                let term =
+                    scratch.scalars[jamps[x] as usize] * scratch.scalars[jamps[y] as usize].conj();
+                jamp2[flow] = jamp2[flow] + term.re.abs();
             }
         }
     }
@@ -579,8 +594,10 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         self.contract_per_combination(folded, scratch, hel_m2);
     }
 
-    /// The per-flow JAMPs of every surviving helicity combination at `momenta`,
-    /// written to `out` as `out[combo * n_flows + flow]` — the complex objects
+    /// The JAMPs of every surviving helicity combination at `momenta`, written to
+    /// `out` as `out[combo * n_jamps + jamp]` (one JAMP per flow, or per
+    /// `(order class, flow)` under a squared-order split,
+    /// [`AmplitudeEvaluator::jamp_slots`]) — the complex objects
     /// [`eval_m2`](Self::eval_m2) contracts through [`cf_weights`](Self::cf_weights)
     /// and sums. Reuses `out`'s allocation.
     ///
@@ -607,8 +624,8 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         out.extend(locs.iter().map(|&l| scratch.scalars[l as usize]));
     }
 
-    /// The colour-factor weights [`eval_m2`](Self::eval_m2) contracts the JAMPs
-    /// with: `n_flows²` entries, `cf[j * n_flows + i]` weighting `J_j` against
+    /// The weights [`eval_m2`](Self::eval_m2) contracts the JAMPs with:
+    /// `n_jamps²` entries, `cf[j * n_jamps + i]` weighting `J_j` against
     /// `conj(J_i)`, so `|M|² = Σ_hel Re Σ_ij cf[j·n+i] J_j conj(J_i)`.
     pub(crate) fn cf_weights(&self) -> &[F] {
         &self.cf
@@ -618,9 +635,11 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// helicity combination, `out[c]`. The arenas must already hold this point's
     /// values.
     ///
-    /// Each entry is non-negative: CF is positive semidefinite, and the imaginary
-    /// parts cancel over the flow sum, so only the real part contributes (the same
-    /// combination `eval_m2` accumulates over, per combination instead of pooled).
+    /// Each entry is non-negative — CF is positive semidefinite — unless a
+    /// squared-order selection keeps an interference term without its squares
+    /// ([`AmplitudeEvaluator::is_signed`]). The imaginary parts cancel over the
+    /// JAMP sum, so only the real part contributes (the same combination
+    /// `eval_m2` accumulates over, per combination instead of pooled).
     fn contract_per_combination(&self, folded: &Folded, scratch: &ScratchSpace<F>, out: &mut [F]) {
         let RootKind::Hels { n_flows, locs } = &folded.program().root else {
             panic!("per-helicity |M|² on a program without a helicity-expanded root");
@@ -689,10 +708,16 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         self.fill_for(folded, momenta, scratch);
 
         // Per-combination T_c: the CF-contracted |M_c|², nonnegative because CF is
-        // positive semidefinite. The threshold below is relative to their sum, so a
-        // common positive factor on every T_c leaves the filter unchanged.
+        // positive semidefinite, unless a squared-order selection keeps an
+        // interference term alone, when its sign is the kinematics'. MadGraph
+        // compares moduli (`DABS(TS(I))` against `ANS = Σ DABS(T)`), which on a
+        // nonnegative T_c is T_c itself. The threshold below is relative to their
+        // sum, so a common positive factor on every T_c leaves the filter unchanged.
         let mut ts = vec![F::zero(); good.len()];
         self.contract_per_combination(folded, scratch, &mut ts);
+        for t in ts.iter_mut() {
+            *t = t.abs();
+        }
         let ans = ts.iter().fold(F::zero(), |acc, &t| acc + t);
         if !(ans > F::zero()) {
             return;

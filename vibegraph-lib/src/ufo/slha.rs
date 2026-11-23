@@ -424,6 +424,27 @@ impl ParamCard {
     pub(crate) fn push_decay_table(&mut self, table: DecayTable) {
         self.decay_tables.push(table);
     }
+
+    /// The card with each `(pdg, width)` of `widths` written as a number on its
+    /// `DECAY` line, in place of the `Auto` there: the code leaves
+    /// [`auto_widths`](Self::auto_widths), and the table below the line, if the
+    /// card gives one, is replaced by `tables`' table for that code, or dropped
+    /// when `tables` has none or an empty one.
+    pub(crate) fn with_widths_set(&self, widths: &[(i32, f64)], tables: &[DecayTable]) -> Self {
+        let mut card = self.clone();
+        for &(pdg, width) in widths {
+            card.auto_widths.retain(|&c| c != pdg);
+            card.insert("decay", vec![pdg], width);
+            card.decay_tables.retain(|t| t.pdg != pdg);
+        }
+        card.decay_tables.extend(
+            tables
+                .iter()
+                .filter(|t| !t.channels.is_empty() && widths.iter().any(|&(pdg, _)| pdg == t.pdg))
+                .cloned(),
+        );
+        card
+    }
 }
 
 /// An LHA code as a card line writes it: the integers separated by spaces.

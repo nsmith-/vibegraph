@@ -12,3 +12,5 @@ tags: [vegas, refusal, batch, cms-gridpacks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-19}
 ---
 Found by K-G1 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-G1-report.md), Found 1).
+
+**Not a cause of the v022-1009 timeouts (sprint L, 2026-11-23).** Every card in the 21-card phase-timed sample that reached VEGAS had passing points ([L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md)). This item stays open on its own evidence.

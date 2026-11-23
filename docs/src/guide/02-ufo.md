@@ -153,9 +153,9 @@ propagators, and ALOHA's `Sigma` is half the textbook $\sigma^{\mu\nu}$.
 **Hard errors.** Representations neither the models nor the toys reach —
 spin $\ge 3/2$, spin-2, Majorana fermions and the charge conjugation they
 need, a colour sextet on an external leg, loop-level models — are refused
-with an error rather than silently approximated, as are squared-order
-constraints (`NP^2==1`: a bound on an interference term, which this
-generator selects diagrams too early to express).
+with an error rather than silently approximated. Squared-order constraints
+(`NP^2==1`, the dimension-six interference alone) are supported: see
+[diagrams](03-diagrams.md).
 
 ## Model identity
 

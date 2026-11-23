@@ -251,6 +251,7 @@ pub(super) fn single_diagram_amplitudes_at(
         polarizations: set.polarizations.clone(),
         diagrams: vec![diagram.clone()],
         mirrored: set.mirrored,
+        squared_orders: set.squared_orders.clone(),
     };
     let evaluator = AmplitudeEvaluator::compile(&single, model).expect("compile one diagram");
     let bound = BoundAmplitude::<f64>::bind(&evaluator, evaluated);

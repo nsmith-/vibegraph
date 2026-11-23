@@ -107,7 +107,10 @@ reads the card's `import model` (and its `generate` line, if it has one) and
 writes `parameters.json` and `param_card.dat` into `--out`. `enumerate` writes
 the same two files beside `diagrams.json`, for its own process. Nothing is
 sampled; with no `generate` line nothing is enumerated either, and the report
-is of the restricted model alone.
+is of the restricted model alone. With `--param-card`, `parameters` binds that
+card as `integrate` does (and refuses what `integrate` refuses), and each width
+the card sets to `Auto` carries its computation on its record; `enumerate`
+does the same with its own `--param-card`.
 
 `param_card.dat` is the card the restriction implies: every external parameter
 at its restricted default, then the computed masses and widths a card also
@@ -133,8 +136,7 @@ entry of a card addresses (class `internal`), in PDG order. A record has:
   particle is an external leg of some diagram; `null` with no process);
 - `constraints`, what the card binder holds the value to, each an object tagged
   by `kind`: `finite`; `minimum` with `value` (a mass is not negative, unless
-  the particle is a Majorana fermion); `not_auto` (a width is a number);
-  `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
+  the particle is a Majorana fermion); `fixed` with `value` (a `zero` or `one` class); `tied_to` with `to` and
   `factor`; `leads_group` with `members` (each `name` and `factor`: these are
   tied to this one and move only with it);
 - `reweight`: `verdict` (`movable`, `locked`, `fixed_one`, `merged`,
@@ -154,8 +156,19 @@ entry of a card addresses (class `internal`), in PDG order. A record has:
 `entering` is the list of external parameters whose `enters` has `couplings`,
 in the model's order (`null` with no process): the Wilson coefficients to offer
 for a process. A parameter fixed to zero is not listed, since the vertices it
-fed were removed. Where a width is computed rather than read from the
-restriction, it is a field added to its record, not a different record.
+fed were removed.
+
+`computed_width` is `null` unless the report was made at a card that sets the
+parameter's width to `Auto`. Then it has `pdg`, `particle`, `param`, `method`
+(`tree_level_two_body`), `total` (the sum of the channels, GeV), `bound` (the
+value the run binds: `total` to the seven digits MadGraph writes into the card
+it runs from), `channels` (each `daughters`, a list of `pdg` and `name`, and
+`width`, by descending width), `below_qcd_scale` (channels of a coloured
+particle below 0.1 GeV, set to zero as MadGraph sets them), `closed` (channels
+the particle is too light for) and `not_included`, which is always empty: a
+particle with a mode beyond two bodies is refused rather than bound. The
+`not_auto` constraint is no longer emitted, since `Auto` binds; the schema
+version stays 1.
 
 ## Inspecting a run card
 
@@ -262,8 +275,24 @@ every edit MadGraph applied before the run. The artifact records each
 parameter the card moved off the defaults, and `generate` takes no param card:
 it evaluates at the recorded values, and writes the card it evaluated at into
 the event file's `<slha>` header block, where a shower reads masses and widths.
-`integrate` refuses a card it cannot honour: a width given as `Auto` (MadGraph
-computes those at launch and writes the number into the card it ran with), a
+A width given as `Auto` is computed, as MadGraph computes it at launch: the
+tree-level two-body width, from every three-point vertex of the model that
+couples the particle to two lighter ones, summed over the open channels at the
+card's other parameters. The run binds that total to the seven digits MadGraph
+writes, the decay table below the `DECAY` line is the computed channels', and
+the artifact banks the card with the computed width written in place of `Auto`,
+so the banked card reproduces the run. Only two-body widths are computed, so a
+particle with a three-body mode through a closed two-body channel (`H > W+ e-
+ve~` through an off-shell `W-`, for example) is refused, naming every such mode:
+MadGraph's default may include them, and vibegraph does not. In the Standard
+Model this binds the top quark and the W boson, and refuses the Z boson (for
+`Z > W+ e- ve~` through `W-`, a mode MadGraph's default leaves out at these
+masses: the rule is conservative) and the Higgs boson. `Auto` is also refused,
+naming why, for a channel whose coupling runs with `α_s` (MadGraph runs it to
+the particle's mass first), a channel that reads another `Auto` width, a
+particle whose width is not a free parameter of the model, and a decay table
+below the `Auto` line that lists a mode no tree-level vertex gives.
+`integrate` refuses a card it cannot honour: a
 non-zero value for a parameter the restriction zeroes, a value other than one
 for a parameter the restriction fixes to one, a value that splits two
 parameters the restriction merged, and an entry the model has no parameter
@@ -363,9 +392,12 @@ banked cross section would then describe another matrix element. Both
 artifacts, `diagrams.bin.zst` and `grid.bin.zst`, also record the version of
 the diagram enumeration that produced their diagrams, and a build that
 enumerates differently (a fixed sign, a diagram added or dropped) refuses
-them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`) are a
-hard error: this generator selects diagrams by their coupling orders and squares
-the whole amplitude, so it cannot bound an interference term.
+them by name: `enumerate` or `integrate` the card again. Squared-order constraints (`NP^2==1`,
+`QCD^2<=2`, `aS=1`) are honoured by splitting each amplitude by coupling order
+and keeping only the interference terms they select. `integrate` reports the
+cross section of such a selection, which can be negative where only an
+interference term is kept; `generate` refuses that case, since its events would
+carry negative weights.
 
 ## Watching a run
 
@@ -506,6 +538,46 @@ result), `artifact` (a saved artifact unreadable or inconsistent), `io`
 (another file or directory), and `run` (anything else that failed once the
 inputs were accepted). `check-events` prints a report for a person and
 refuses `--output-ldjson`.
+
+### Phase timing
+
+Under `--output-ldjson`, `integrate` and `generate` also write a `phase`
+object when each phase of the run starts and another when it ends, at any
+verbosity. Each is written and flushed as it happens, so a run killed from
+outside (a batch system's `SIGKILL` at its time limit) still names the phase
+it was in: the last `phase` record without its `end`. A `phase` is a new
+`kind` under `schema_version` 1; a reader skips kinds it does not know.
+
+| field | on | meaning |
+|---|---|---|
+| `event` | both | `start` or `end` |
+| `phase` | both | the phase's name, below |
+| `elapsed_s` | both | seconds since the process started, on a monotonic clock |
+| `wall_s` | end | the phase's own wall time, `elapsed_s` at the end less at the start |
+| `outcome` | end | `ok`, or `failed` when the phase ended in the run's refusal |
+| `sizes` | end | the counts that explain the time, by phase (below); `{}` where none |
+
+`integrate` enters, in order and each at most once: `input` (the card or
+diagram artifact read, the model loaded), `enumerate` (from a proc card;
+`subprocesses`, `diagrams`), `amplitude_probe` (each diagram set compiled
+and evaluated at the probe points the artifact banks; `diagram_sets`), `pdf`
+(proton beams), `compile` (flavour groups and one evaluator per subprocess
+or group, with the cuts; `subprocesses`, `compiled_diagrams`, `helicities`,
+`colour_flows`, and on proton beams `parts` and `flavour_groups`),
+`channels` (the maps and the integrand over its channels; `channels`),
+`alpha_survey` (the channel-weight survey; `points_per_iteration`,
+`iterations`; on fixed-energy beams and decays it also builds the
+per-diagram channel maps), `vegas` (every VEGAS iteration, the warm-up
+included; `iterations`, `points`), `configurations` (the per-configuration
+shares and channel records) and `bank` (the artifact written). The VEGAS
+iterations inside `vegas` are the `progress` objects of the `vegas` stage.
+`--check` ends after `channels`. `generate` enters `input`, `pdf` and
+`generate` (`channels`, `events_written`), the last resolved further by its
+`compile`, `weight_scan` and `unweight` progress stages.
+
+Without `--output-ldjson` the same records are log events: the start at
+`debug`, the end at `info` as `phase vegas: 12.345 s (iterations 3, points
+30000)`. `--log-file` records both.
 
 ## Parallelism
 

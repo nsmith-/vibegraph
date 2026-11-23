@@ -191,6 +191,10 @@ pub enum ArtifactError {
     EnumerationVersion { found: u32, expected: u32 },
     #[error("cannot rebuild the model embedded in the artifact: {0}")]
     Model(#[from] UfoError),
+    /// The recorded proc card cannot be read back into the squared-order
+    /// selection its diagram sets were formed with.
+    #[error("the artifact's diagram sets: {0}")]
+    Diagrams(#[from] crate::diagrams::DiagramError),
 }
 
 /// A restricted model as an artifact carries it: the parsed model with its
@@ -786,6 +790,8 @@ impl IntegrateArtifact {
             }
         };
         artifact.check_embedded()?;
+        let mut artifact = artifact;
+        artifact.annotate_squared_orders()?;
         Ok((artifact, sha256))
     }
 
@@ -808,6 +814,23 @@ impl IntegrateArtifact {
                 computed,
             });
         }
+        Ok(())
+    }
+
+    /// Derive the sets' squared-order selections again from the recorded card
+    /// ([`DiagramSet::squared_orders`] is not serialized). Only a card with
+    /// squared-order constraints needs the model for it, so only such a card
+    /// rebuilds it here.
+    fn annotate_squared_orders(&mut self) -> Result<(), ArtifactError> {
+        let card = crate::diagrams::parse_proc_card(
+            &self.proc_card,
+            &crate::diagrams::ParsingOptions::default(),
+        )?;
+        if card.processes.iter().all(|p| p.squared_orders.is_empty()) {
+            return Ok(());
+        }
+        let model = self.loaded_model()?;
+        crate::diagrams::squared::annotate_sets(&mut self.sets, &card, &model.model)?;
         Ok(())
     }
 

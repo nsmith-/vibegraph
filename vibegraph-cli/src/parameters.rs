@@ -14,8 +14,9 @@ use clap::Args;
 use serde::Serialize;
 use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::{enumerate_lines_in, DiagramSet, ParsingOptions};
-use vibegraph::ufo::report::{default_param_card, describe_parameters, ParameterReport};
+use vibegraph::ufo::report::{default_param_card, describe_parameters_at, ParameterReport};
 use vibegraph::ufo::UFOModel;
+use vibegraph::widths::ComputedWidth;
 
 use crate::assets;
 use crate::error::{err, CliError, ErrorKind};
@@ -44,6 +45,13 @@ pub(crate) struct ParametersArgs {
     /// Overwrite the outputs of an earlier run in `--out`.
     #[arg(long)]
     pub(crate) force: bool,
+
+    /// SLHA `param_card.dat` to bind, as `integrate` binds it. Each width it sets
+    /// to `Auto` is computed, and its record carries the computation
+    /// (`computed_width`: the total, the bound value, the channels and the modes
+    /// left out); a card `integrate` refuses is refused here too.
+    #[arg(long)]
+    pub(crate) param_card: Option<PathBuf>,
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
@@ -74,8 +82,9 @@ pub(crate) fn build(
     model_ref: ModelRef,
     process: Option<String>,
     sets: Option<&[DiagramSet]>,
+    computed: &[ComputedWidth],
 ) -> (ParametersJson, String) {
-    let report = describe_parameters(model, sets);
+    let report = describe_parameters_at(model, sets, computed);
     (
         ParametersJson {
             schema_version: SCHEMA_VERSION,
@@ -162,11 +171,16 @@ pub(crate) fn run(args: &ParametersArgs) -> Result<(), CliError> {
         label: loaded.identity.label(),
         digest: loaded.identity.digest.clone(),
     };
+    let computed = match &args.param_card {
+        Some(path) => crate::integrate::bind_param_card(Some(path), &loaded.model)?.auto_widths,
+        None => Vec::new(),
+    };
     let (json, card) = build(
         &loaded.model,
         model_ref,
         parsed.process_string(),
         sets.as_deref(),
+        &computed,
     );
     let (report_path, card_path) = write(&args.out, &json, &card)?;
     if output::mode() == output::Mode::Ldjson {
