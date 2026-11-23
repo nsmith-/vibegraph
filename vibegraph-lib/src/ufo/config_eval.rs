@@ -153,31 +153,6 @@ pub(crate) fn select_branch<'a>(
 #[derive(Debug)]
 pub(crate) struct ConditionOutside;
 
-/// The module's statements with each `if`/`elif`/`else` replaced by the branch
-/// its test selects, at any depth: the statements Python would run.
-pub(crate) fn flatten_branches(
-    stmts: &[ast::Stmt],
-    scope: &Scope<'_>,
-) -> Result<Vec<ast::Stmt>, ConditionOutside> {
-    let mut out = Vec::with_capacity(stmts.len());
-    for stmt in stmts {
-        match stmt {
-            ast::Stmt::If(ast::StmtIf {
-                test, body, orelse, ..
-            }) => {
-                let chosen = if eval_int(test, scope).ok_or(ConditionOutside)? != 0 {
-                    body
-                } else {
-                    orelse
-                };
-                out.extend(flatten_branches(chosen, scope)?);
-            }
-            other => out.push(other.clone()),
-        }
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,25 +210,5 @@ mod tests {
         ] {
             assert_eq!(eval(outside, &c), None, "{outside}");
         }
-    }
-
-    #[test]
-    fn branches_flatten_to_the_ones_that_run() {
-        let c = config("a = False\nb = True\n");
-        let modules = vec!["configuration".to_owned()];
-        let scope = Scope {
-            names: &c,
-            modules: &modules,
-            bare: false,
-        };
-        let stmts = parse_stmts(
-            "if configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\nelse:\n    s = 4\n",
-        )
-        .unwrap();
-        let flat = flatten_branches(&stmts, &scope).unwrap();
-        let names: Vec<&str> = named_assignments(&flat).map(|(n, _)| n).collect();
-        assert_eq!(names, ["q"]);
-        let unbound = parse_stmts("if configuration.nope:\n    p = 1\n").unwrap();
-        assert!(flatten_branches(&unbound, &scope).is_err());
     }
 }
