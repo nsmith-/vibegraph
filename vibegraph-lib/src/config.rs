@@ -15,6 +15,7 @@ use thiserror::Error;
 use tracing::{debug, info, info_span, trace};
 
 use crate::diagrams::check::SupportedProcess;
+use crate::diagrams::CouplingOp;
 use crate::diagrams::{
     generate_from_proc_card_in, DiagramError, DiagramSet, EnumerationPool, LineSets, ModelImport,
     SupportedCard,
@@ -312,12 +313,58 @@ pub fn process_facts(
         .processes
         .iter()
         .any(|p| !p.forbidden_onshell_s_channels.is_empty());
-    let qcd_free = parsed
-        .processes
-        .iter()
-        .all(|p| p.orders.iter().any(|o| o.name == "QCD" && o.value == 0));
+    let qcd_free = parsed.processes.iter().all(bounds_qcd_at_zero);
     facts.qcd_free_single_color = qcd_free && single_color(sets, model)?;
+    set_interference_facts(&mut facts, parsed, sets, model)?;
     Ok(facts)
+}
+
+/// Set the [`ProcessFacts::interference`] and
+/// [`ProcessFacts::interference_single_color`] of `facts` from the card and its
+/// sets. They are not serialized, so a diagram artifact's reader sets them here
+/// again from the card it records.
+pub(crate) fn set_interference_facts(
+    facts: &mut ProcessFacts,
+    parsed: &SupportedCard,
+    sets: &[DiagramSet],
+    model: &UFOModel,
+) -> Result<(), ColorAlgebraError> {
+    facts.interference = parsed.processes.iter().any(prints_squared_orders);
+    facts.interference_single_color = facts.interference && single_color(sets, model)?;
+    Ok(())
+}
+
+/// Whether a process line bounds `QCD` at 0 in MadGraph's `orders`, which
+/// `banner.py:5001-5004` reads: an amplitude bound of 0 as written, or, on a line
+/// with squared orders and no amplitude bound, the bound its `QCD^2` (or `aS`)
+/// value implies (`madgraph_interface.py:4994-4999`).
+fn bounds_qcd_at_zero(p: &SupportedProcess) -> bool {
+    if p.orders.iter().any(|o| o.name == "QCD" && o.value == 0) {
+        return true;
+    }
+    let bounded = p
+        .orders
+        .iter()
+        .any(|o| matches!(o.op, CouplingOp::Le | CouplingOp::Eq | CouplingOp::ExactEq));
+    !bounded
+        && p.squared_orders.iter().any(|s| {
+            let qcd = if s.alias {
+                s.name == "aS"
+            } else {
+                s.name == "QCD"
+            };
+            qcd && s.value == 0 && s.op != CouplingOp::Gt
+        })
+}
+
+/// Whether a process line's MadGraph process string prints a `^2`, which is what
+/// sets the run card's interference defaults (`banner.py:4972-4977`): a
+/// squared-order constraint on any order but `WEIGHTED`, which
+/// `ProcessDefinition.nice_string` leaves out.
+fn prints_squared_orders(p: &SupportedProcess) -> bool {
+    p.squared_orders
+        .iter()
+        .any(|s| s.alias || s.name != "WEIGHTED")
 }
 
 /// Whether some subprocess uses a coupling of a vertex that emits a gluon among
@@ -604,11 +651,9 @@ mod tests {
             .processes
             .iter()
             .any(|p| !p.forbidden_onshell_s_channels.is_empty());
-        let qcd_free = parsed
-            .processes
-            .iter()
-            .all(|p| p.orders.iter().any(|o| o.name == "QCD" && o.value == 0));
+        let qcd_free = parsed.processes.iter().all(bounds_qcd_at_zero);
         facts.qcd_free_single_color = qcd_free && single_color(&sets, model).unwrap();
+        set_interference_facts(&mut facts, parsed, &sets, model).unwrap();
         facts
     }
 

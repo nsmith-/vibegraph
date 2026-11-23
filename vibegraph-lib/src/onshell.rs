@@ -280,6 +280,7 @@ impl OnShellVeto {
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
                 mirrored: set.mirrored,
+                squared_orders: set.squared_orders.clone(),
             };
             let part = compile_class(&subset, model, evaluated)?;
             let tags = part.color_flow_tags();
@@ -866,6 +867,7 @@ mod tests {
                 polarizations: set.polarizations.clone(),
                 diagrams: kept,
                 mirrored: set.mirrored,
+                squared_orders: set.squared_orders.clone(),
             };
             let reference = compile_class(&subset, model, &evaluated).unwrap();
             let (part, _) = veto.amplitude(pattern).unwrap();

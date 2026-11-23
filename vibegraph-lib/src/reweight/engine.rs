@@ -53,7 +53,8 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
 use super::poly::{PolyAnalysis, Support};
-use super::{Launch, ReweightError};
+use super::{Launch, ReweightError, SUMMED_REMEDY};
+use crate::lhef::record::SPIN_UNKNOWN;
 
 /// Largest condition number of the node system accepted. Past it the node values'
 /// rounding would be amplified into the weights beyond what the ratios can carry.
@@ -61,6 +62,25 @@ const MAX_CONDITION: f64 = 1e10;
 /// Candidate nodes drawn per basis monomial when the Chebyshev grid is larger.
 const CANDIDATES_PER_TERM: usize = 16;
 const CANDIDATE_SEED: u64 = 0x2E_16_4D;
+
+/// Which ratio a hypothesis's weight carries.
+///
+/// Both are unbiased for the reweighted cross section where every helicity
+/// combination a hypothesis reaches is one the card's amplitude reaches too
+/// ([`ReweightPlan::new`] refuses the per-event ratio otherwise). They differ
+/// event by event: the per-event ratio keeps the written helicities distributed
+/// as the hypothesis would draw them, at the price of a larger weight spread
+/// wherever a hypothesis moves one combination much more than another.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HelicityRatio {
+    /// `|M_hyp|² / |M_card|²` summed over helicities: MadGraph's
+    /// `change helicity False`.
+    #[default]
+    Summed,
+    /// `|M_hyp(λ)|² / |M_card(λ)|²` in the helicity combination `λ` the event
+    /// records: MadGraph's `change helicity True`, its default.
+    Event,
+}
 
 /// How the plan may evaluate hypotheses.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -72,6 +92,41 @@ pub struct ReweightOptions {
     /// subprocess polynomially. `None` groups hypotheses by the single parameter
     /// they move, where that is cheaper than evaluating them.
     pub couplings: Option<Vec<String>>,
+    /// The ratio each weight carries.
+    pub helicity: HelicityRatio,
+}
+
+/// The card point's `|M|²` at one event, which [`Reweighter::ratios`] takes the
+/// ratios against.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CardPoint {
+    /// Summed over helicities.
+    pub m2: f64,
+    /// In the event's helicity combination, under [`HelicityRatio::Event`].
+    pub helicity_m2: Option<f64>,
+}
+
+/// Why one event cannot be weighted under [`HelicityRatio::Event`].
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum HelicityRefusal {
+    #[error(
+        "the event records no helicity for some leg (SPINUP 9), and the per-event-helicity \
+         ratio is taken in the recorded one; {}",
+        SUMMED_REMEDY
+    )]
+    Unrecorded,
+    #[error(
+        "the event's helicities {helicity:?} are not a combination the subprocess's \
+         amplitude carries; {}",
+        SUMMED_REMEDY
+    )]
+    Unknown { helicity: Vec<i32> },
+    #[error(
+        "|M|^2 at the card's parameters is {value:e} in the event's helicities {helicity:?}, \
+         where no per-event-helicity ratio is defined (MadGraph stops on such an event); {}",
+        SUMMED_REMEDY
+    )]
+    ZeroAtCard { helicity: Vec<i32>, value: f64 },
 }
 
 /// Where one node's amplitude comes from.
@@ -138,6 +193,7 @@ impl SubprocessSummary {
 pub struct ReweightPlan {
     launches: Vec<Launch>,
     subs: Vec<SubPlan>,
+    helicity: HelicityRatio,
 }
 
 impl ReweightPlan {
@@ -150,6 +206,14 @@ impl ReweightPlan {
     /// off its card. The sets do not record it, and a vetoed process is
     /// refused: its weight depends on where each event sits relative to the
     /// veto windows.
+    ///
+    /// Under [`HelicityRatio::Event`] a subprocess is refused where the
+    /// per-event ratio is not MadGraph's or not unbiased: a polarized leg, a
+    /// signed `|M|²`, a hypothesis that reaches a helicity combination the
+    /// card's amplitude vanishes in (no event is ever drawn there, so the
+    /// reweighted cross section would miss it), and a process whose helicity
+    /// combinations cannot be probed for that (fewer than two incoming or
+    /// three external legs).
     pub fn new(
         sets: &[&DiagramSet],
         forbidden_onshell: &[i64],
@@ -192,6 +256,9 @@ impl ReweightPlan {
                 .map_err(|e| ReweightError::Compile(e.to_string()))?;
             check_external_masses(&evaluator, model, &launches)?;
             evaluator.prune_zero_helicities(&generic);
+            if options.helicity == HelicityRatio::Event {
+                check_event_helicity(&evaluator, set, base, &launches)?;
+            }
             let pdgs = evaluator
                 .external_particles()
                 .iter()
@@ -201,11 +268,20 @@ impl ReweightPlan {
             sub.pdgs = pdgs;
             subs.push(sub);
         }
-        Ok(ReweightPlan { launches, subs })
+        Ok(ReweightPlan {
+            launches,
+            subs,
+            helicity: options.helicity,
+        })
     }
 
     pub fn launches(&self) -> &[Launch] {
         &self.launches
+    }
+
+    /// The ratio each weight carries.
+    pub fn helicity(&self) -> HelicityRatio {
+        self.helicity
     }
 
     /// How each subprocess's hypotheses are evaluated.
@@ -260,6 +336,7 @@ impl ReweightPlan {
                     amps,
                     scratch,
                     base_jamps: Vec::new(),
+                    hel_m2: Vec::new(),
                     m2_at: Vec::new(),
                     jamps: Vec::new(),
                     contracted: Vec::new(),
@@ -284,7 +361,10 @@ struct BoundSub<'p> {
     contracted: Vec<Vec<Complex64>>,
     /// The node Gram matrix `R`, row-major.
     gram: Vec<f64>,
-    /// Per slot, its `|M|²` at this event once evaluated.
+    /// Per helicity combination, `|M|²` at one slot.
+    hel_m2: Vec<f64>,
+    /// Per slot, its `|M|²` at this event once evaluated: helicity-summed, or in
+    /// the event's helicity combination under [`HelicityRatio::Event`].
     m2_at: Vec<Option<f64>>,
 }
 
@@ -306,22 +386,34 @@ impl Reweighter<'_> {
         &self.plan.subs[sub].pdgs
     }
 
+    /// The ratio each weight carries.
+    pub fn helicity(&self) -> HelicityRatio {
+        self.plan.helicity
+    }
+
     /// `|M|²_new / |M|²_old` of subprocess `sub` at `momenta` for every hypothesis,
-    /// written to `out` in launch order; returns `|M|²_old`, the card-point
-    /// `|M|²` the ratios are taken against.
+    /// written to `out` in launch order; returns the card point's `|M|²`, which
+    /// the ratios are taken against.
     ///
     /// `momenta` are the subprocess's own external momenta in its leg order, in the
     /// partonic centre of mass with the beams along ±z (the frame the generation
     /// evaluates in). `alpha_s` is the strong coupling the event's matrix element
     /// ran at, or `None` where nothing in it runs. An event whose card-point `|M|²`
-    /// is zero — which an accepted event never is — gets zero ratios.
+    /// is zero — which an accepted event never is — gets zero summed ratios.
+    ///
+    /// `helicity` is the event's helicity combination, one entry per leg in the
+    /// same leg order, as its `SPINUP` writes them: read only under
+    /// [`HelicityRatio::Event`], where each ratio is taken in that combination
+    /// alone, and refused where it is missing, not one the amplitude carries, or
+    /// one the card's `|M|²` vanishes in.
     pub fn ratios(
         &mut self,
         sub: usize,
         momenta: &[LorentzVector<f64>],
         alpha_s: Option<f64>,
+        helicity: Option<&[i32]>,
         out: &mut Vec<f64>,
-    ) -> f64 {
+    ) -> Result<CardPoint, HelicityRefusal> {
         let plan = &self.plan.subs[sub];
         let bound = &mut self.subs[sub];
         out.clear();
@@ -332,6 +424,10 @@ impl Reweighter<'_> {
                 amp.set_alpha_s(alpha_s);
             }
         }
+        if self.plan.helicity == HelicityRatio::Event {
+            let combo = combination(plan.evaluator.helicities(), helicity)?;
+            return bound.ratios_in(plan, combo, momenta, out);
+        }
         let m0 = bound.amps[0].eval_m2(momenta, &mut bound.scratch);
         let ratio = |m: f64, m0: f64| if m0 > 0.0 { m / m0 } else { 0.0 };
         if !plan.groups.is_empty() {
@@ -340,7 +436,7 @@ impl Reweighter<'_> {
         }
 
         for group in &plan.groups {
-            bound.node_gram(&group.nodes, momenta);
+            bound.node_gram(&group.nodes, momenta, None);
             let k = group.nodes.len();
             let r = &bound.gram;
             // The card point is node 0, so its |M|² is `R₀₀`: the denominator
@@ -371,11 +467,99 @@ impl Reweighter<'_> {
             };
             out[launch] = ratio(m, m0);
         }
-        m0
+        Ok(CardPoint {
+            m2: m0,
+            helicity_m2: None,
+        })
     }
 }
 
+/// The index of `helicity` among an amplitude's combinations.
+fn combination(combos: &[Vec<i32>], helicity: Option<&[i32]>) -> Result<usize, HelicityRefusal> {
+    let helicity = helicity.ok_or(HelicityRefusal::Unrecorded)?;
+    if helicity.iter().any(|&h| f64::from(h) == SPIN_UNKNOWN) {
+        return Err(HelicityRefusal::Unrecorded);
+    }
+    combos
+        .iter()
+        .position(|c| c.as_slice() == helicity)
+        .ok_or_else(|| HelicityRefusal::Unknown {
+            helicity: helicity.to_vec(),
+        })
+}
+
 impl BoundSub<'_> {
+    /// [`Reweighter::ratios`] under [`HelicityRatio::Event`], in helicity
+    /// combination `combo`: every path's `|M|²` taken in that combination alone.
+    fn ratios_in(
+        &mut self,
+        plan: &SubPlan,
+        combo: usize,
+        momenta: &[LorentzVector<f64>],
+        out: &mut [f64],
+    ) -> Result<CardPoint, HelicityRefusal> {
+        let n_combos = plan.evaluator.helicities().len();
+        let refuse = |value: f64| HelicityRefusal::ZeroAtCard {
+            helicity: plan.evaluator.helicities()[combo].clone(),
+            value,
+        };
+        self.hel_m2.resize(n_combos, 0.0);
+        self.amps[0]
+            .amplitude()
+            .eval_hel_m2(momenta, &mut self.scratch, &mut self.hel_m2);
+        let m0: f64 = self.hel_m2.iter().sum();
+        let m0_combo = self.hel_m2[combo];
+        if !(m0_combo > 0.0) {
+            return Err(refuse(m0_combo));
+        }
+        if !plan.groups.is_empty() {
+            self.read_card_point(momenta);
+        }
+        for group in &plan.groups {
+            self.node_gram(&group.nodes, momenta, Some(combo));
+            let k = group.nodes.len();
+            let r = &self.gram;
+            // The denominator comes out of the same contraction as every
+            // numerator, as on the summed path, here in the one combination.
+            let r00 = r[0];
+            if !(r00 > 0.0) {
+                return Err(refuse(r00));
+            }
+            for (launch, u) in &group.launches {
+                let mut m = 0.0;
+                for (j, &uj) in u.iter().enumerate() {
+                    let row = &r[j * k..(j + 1) * k];
+                    let ru: f64 = row.iter().zip(u.iter()).map(|(a, b)| a * b).sum();
+                    m += uj * ru;
+                }
+                out[*launch] = m / r00;
+            }
+        }
+        self.m2_at.clear();
+        self.m2_at.resize(self.amps.len(), None);
+        self.m2_at[0] = Some(m0_combo);
+        for &(launch, slot) in &plan.exact {
+            let m = match self.m2_at[slot] {
+                Some(m) => m,
+                None => {
+                    self.amps[slot].amplitude().eval_hel_m2(
+                        momenta,
+                        &mut self.scratch,
+                        &mut self.hel_m2,
+                    );
+                    let m = self.hel_m2[combo];
+                    self.m2_at[slot] = Some(m);
+                    m
+                }
+            };
+            out[launch] = m / m0_combo;
+        }
+        Ok(CardPoint {
+            m2: m0,
+            helicity_m2: Some(m0_combo),
+        })
+    }
+
     /// Read the card point's JAMPs at `momenta` into `base_jamps`, for every
     /// [`node_gram`](Self::node_gram) at this event.
     fn read_card_point(&mut self, momenta: &[LorentzVector<f64>]) {
@@ -386,7 +570,13 @@ impl BoundSub<'_> {
 
     /// Fill `gram` with `R_jk = Re Σ_hel Σ_fg CF_fg conj(J_f(P_j)) J_g(P_k)` over
     /// `nodes` at `momenta`; the card point's JAMPs are `base_jamps`, already read.
-    fn node_gram(&mut self, nodes: &[NodeSource], momenta: &[LorentzVector<f64>]) {
+    /// With `combo`, the helicity sum is that one combination.
+    fn node_gram(
+        &mut self,
+        nodes: &[NodeSource],
+        momenta: &[LorentzVector<f64>],
+        combo: Option<usize>,
+    ) {
         let k = nodes.len();
         self.jamps.resize_with(k, Vec::new);
         self.contracted.resize_with(k, Vec::new);
@@ -401,12 +591,16 @@ impl BoundSub<'_> {
             }
         }
         let cf = self.amps[0].amplitude().cf_weights();
-        let n = self.amps[0].amplitude().evaluator().n_flows();
+        let n = self.amps[0].amplitude().evaluator().n_jamps();
+        let span = match combo {
+            Some(c) => c * n..(c + 1) * n,
+            None => 0..self.jamps.first().map_or(0, Vec::len),
+        };
         // `T_j = CF · J_j` per helicity combination, the contraction `eval_m2`
         // forms as its `ZTEMP`.
         for (jamps, t) in self.jamps.iter().zip(self.contracted.iter_mut()) {
             t.clear();
-            for combo in jamps.chunks_exact(n) {
+            for combo in jamps[span.clone()].chunks_exact(n) {
                 for i in 0..n {
                     let mut z = Complex64::new(0.0, 0.0);
                     for (jj, a) in combo.iter().enumerate() {
@@ -422,7 +616,7 @@ impl BoundSub<'_> {
             for b in a..k {
                 let value: f64 = self.contracted[a]
                     .iter()
-                    .zip(&self.jamps[b])
+                    .zip(&self.jamps[b][span.clone()])
                     .map(|(t, j)| (t * j.conj()).re)
                     .sum();
                 self.gram[a * k + b] = value;
@@ -528,6 +722,46 @@ fn check_external_masses(
                     });
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// Refuse a subprocess the per-event-helicity ratio cannot serve (see
+/// [`ReweightPlan::new`]).
+///
+/// A combination contributes at a parameter point where it does on the probe
+/// points helicity pruning reads ([`AmplitudeEvaluator::contributing_helicities`]);
+/// one that contributes at some hypothesis's point and not at the card's is
+/// never written to an event, so no per-event-helicity weight carries its share
+/// of that hypothesis.
+fn check_event_helicity(
+    evaluator: &AmplitudeEvaluator,
+    set: &DiagramSet,
+    base: &EvaluatedModel,
+    launches: &[Launch],
+) -> Result<(), ReweightError> {
+    let process = || process_label(set);
+    if evaluator.is_polarized() {
+        return Err(ReweightError::HelicityPolarized { process: process() });
+    }
+    if evaluator.is_signed() {
+        return Err(ReweightError::HelicitySigned { process: process() });
+    }
+    let Some(at_card) = evaluator.contributing_helicities(base) else {
+        return Err(ReweightError::HelicityUnchecked { process: process() });
+    };
+    for launch in launches.iter().filter(|l| !l.values.is_empty()) {
+        let point = moved_to(base, launch.values.iter().map(|(n, v)| (n.as_str(), *v)));
+        let at_launch = evaluator
+            .contributing_helicities(&point)
+            .expect("probed at the card's point, so at every point");
+        if let Some(c) = (0..at_card.len()).find(|&c| at_launch[c] && !at_card[c]) {
+            return Err(ReweightError::HelicityRevived {
+                launch: launch.id.clone(),
+                process: process(),
+                helicity: evaluator.helicities()[c].clone(),
+            });
         }
     }
     Ok(())
@@ -1015,6 +1249,7 @@ mod tests {
         ReweightOptions {
             exact: false,
             couplings: Some(resolve_couplings(&model, &names).unwrap()),
+            ..ReweightOptions::default()
         }
     }
 
@@ -1083,7 +1318,7 @@ mod tests {
         let mut out = Vec::new();
         let mut spread = (f64::INFINITY, 0.0f64);
         for p in points(&eval, base, sqrt_s).iter().take(4) {
-            rw.ratios(0, p, alpha_s, &mut out);
+            rw.ratios(0, p, alpha_s, None, &mut out).unwrap();
             for (launch, &got) in plan.launches().iter().zip(&out) {
                 let want = direct_ratio(set, &model, &at, launch, p);
                 spread = (spread.0.min(want), spread.1.max(want));
@@ -1149,7 +1384,7 @@ launch --rwgt_name=y4
             let bound = &mut rw.subs[0];
             let m0 = bound.amps[0].eval_m2(p, &mut bound.scratch);
             bound.read_card_point(p);
-            bound.node_gram(&group.nodes, p);
+            bound.node_gram(&group.nodes, p, None);
             let r00 = bound.gram[0];
             assert!((r00 - m0).abs() <= 1e-13 * m0, "{r00} vs {m0}");
         }
@@ -1195,7 +1430,7 @@ launch --rwgt_name=y4
         for p in points(&eval, &base, 1000.0).iter().take(3) {
             let bound = &mut rw.subs[0];
             bound.read_card_point(p);
-            bound.node_gram(&group.nodes, p);
+            bound.node_gram(&group.nodes, p, None);
             let (j0, j1) = (bound.jamps[0].clone(), bound.jamps[1].clone());
             // `J(y) = a + y·b`, read off the two nodes.
             let b: Vec<Complex64> = j0
@@ -1285,6 +1520,7 @@ launch --rwgt_name=y4
         let options = ReweightOptions {
             exact: false,
             couplings: Some(resolve_couplings(&model, &names).unwrap()),
+            ..ReweightOptions::default()
         };
         let refs: Vec<&DiagramSet> = sets.iter().collect();
         let plan = ReweightPlan::new(&refs, &[], &model, &base, launches, options).unwrap();
@@ -1345,7 +1581,7 @@ launch --rwgt_name=y4
             YMT_SCAN,
             ReweightOptions {
                 exact: true,
-                couplings: None,
+                ..ReweightOptions::default()
             },
         );
         assert_eq!(exact.summary()[0].exact, 5);
@@ -1361,7 +1597,7 @@ launch --rwgt_name=y4
                     launch --rwgt_name=c\n set ymt 173\nlaunch --rwgt_name=d\n set ymt 200\n";
         let options = ReweightOptions {
             exact: true,
-            couplings: None,
+            ..ReweightOptions::default()
         };
         let (_, base, _, plan) = plan("e+ e- > t t~ h", card, options);
         assert_eq!(
@@ -1405,7 +1641,7 @@ launch --rwgt_name=y4
         .unwrap();
         let options = ReweightOptions {
             exact: true,
-            couplings: None,
+            ..ReweightOptions::default()
         };
         match ReweightPlan::new(&refs, &[], &model, &base, launches, options) {
             Err(ReweightError::NonFinite { launch, .. }) => assert_eq!(launch, "zero"),
@@ -1493,7 +1729,8 @@ launch --rwgt_name=y4
         let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
         let mut rw = blind.bind();
         let mut out = Vec::new();
-        rw.ratios(0, &points(&eval, &base, 300.0)[0], None, &mut out);
+        rw.ratios(0, &points(&eval, &base, 300.0)[0], None, None, &mut out)
+            .unwrap();
         assert_eq!(out, vec![1.0; 3]);
     }
 
@@ -1736,5 +1973,331 @@ launch --rwgt_name=aew
         let (_, base, _, plan) = plan("g g > t t~ h", card, ReweightOptions::default());
         assert_eq!(plan.summary()[0].polynomial.len(), 1);
         check_against_direct("g g > t t~ h", 900.0, &base, &plan, Some(0.09), 1e-10);
+    }
+
+    fn per_event(options: ReweightOptions) -> ReweightOptions {
+        ReweightOptions {
+            helicity: HelicityRatio::Event,
+            ..options
+        }
+    }
+
+    /// Per helicity combination of `combos`, `|M|²` at the card's parameters and
+    /// at the hypothesis's, from an unpruned amplitude bound afresh at each
+    /// ([`fresh`]): the oracle the per-event-helicity path answers to.
+    fn direct_per_helicity(
+        set: &DiagramSet,
+        at: &EvaluatedModel,
+        launch: &Launch,
+        momenta: &[V],
+        combos: &[Vec<i32>],
+    ) -> Vec<(f64, f64)> {
+        let eval = AmplitudeEvaluator::compile(set, at.model()).unwrap();
+        let card = fresh(at, &[]);
+        let point = fresh(at, &launch.values);
+        let m2 = |model: &EvaluatedModel| {
+            let bound = BoundAmplitude::<f64>::bind(&eval, model);
+            let mut scratch = bound.scratch_space();
+            let mut hel = vec![0.0; eval.helicities().len()];
+            bound.eval_hel_m2(momenta, &mut scratch, &mut hel);
+            hel
+        };
+        let (old, new) = (m2(&card), m2(&point));
+        combos
+            .iter()
+            .map(|h| {
+                let c = eval
+                    .helicities()
+                    .iter()
+                    .position(|g| g == h)
+                    .expect("a pruned combination is one of the unpruned ones");
+                (old[c], new[c])
+            })
+            .collect()
+    }
+
+    /// Every hypothesis's per-event-helicity ratio, in every combination the plan
+    /// carries, at every point, against [`direct_per_helicity`] to `tol` relative
+    /// to the larger of the ratio and one; and the card-weighted mean of the
+    /// combinations' ratios against the summed plan's ratio, the identity that
+    /// makes the per-event ratio unbiased for the cross section. Returns the
+    /// largest relative distance of a combination's ratio from the summed one.
+    fn check_per_helicity(
+        process: &str,
+        sqrt_s: f64,
+        card: &str,
+        options: ReweightOptions,
+        alpha_s: Option<f64>,
+        tol: f64,
+    ) -> f64 {
+        let (_, base, sets, summed) = plan(process, card, options.clone());
+        let (_, _, _, event) = plan(process, card, per_event(options));
+        assert_eq!(event.helicity(), HelicityRatio::Event);
+        let set = &sets[0];
+        let mut at = base.clone();
+        if let Some(a) = alpha_s {
+            at.set_alpha_s(a).unwrap();
+        }
+        let combos = event.subs[0].evaluator.helicities().to_vec();
+        let eval = AmplitudeEvaluator::compile(set, base.model()).unwrap();
+        let (mut rs, mut re) = (summed.bind(), event.bind());
+        let (mut whole, mut one) = (Vec::new(), Vec::new());
+        let mut uneven = 0.0f64;
+        for p in points(&eval, &base, sqrt_s).iter().take(3) {
+            let m0 = rs.ratios(0, p, alpha_s, None, &mut whole).unwrap().m2;
+            let direct: Vec<Vec<(f64, f64)>> = event
+                .launches()
+                .iter()
+                .map(|l| direct_per_helicity(set, &at, l, p, &combos))
+                .collect();
+            let mut mean = vec![0.0; whole.len()];
+            let mut card_sum = 0.0;
+            for (c, combo) in combos.iter().enumerate() {
+                let card_m2 = direct[0][c].0;
+                if !(card_m2 > 0.0) {
+                    continue;
+                }
+                let at_card = re.ratios(0, p, alpha_s, Some(combo), &mut one).unwrap();
+                assert!(
+                    (at_card.m2 - m0).abs() <= 1e-12 * m0,
+                    "{process}: the card-point |M|^2 is the summed one"
+                );
+                let in_combo = at_card.helicity_m2.expect("the combination's |M|^2");
+                assert!(
+                    (in_combo - card_m2).abs() <= 1e-12 * card_m2,
+                    "{process} {combo:?}: {in_combo} vs {card_m2}"
+                );
+                card_sum += card_m2;
+                for (h, &got) in one.iter().enumerate() {
+                    let (old, new) = direct[h][c];
+                    let want = new / old;
+                    assert!(
+                        (got - want).abs() <= tol * want.abs().max(1.0),
+                        "{process} {} {combo:?}: {got} vs {want}",
+                        event.launches()[h].id
+                    );
+                    mean[h] += card_m2 * got;
+                    uneven = uneven.max((got / whole[h] - 1.0).abs());
+                }
+            }
+            for (h, (&m, &w)) in mean.iter().zip(&whole).enumerate() {
+                assert!(
+                    (m / card_sum - w).abs() <= tol * w.abs().max(1.0),
+                    "{process} {}: card-weighted mean {} against the summed {w}",
+                    event.launches()[h].id,
+                    m / card_sum
+                );
+            }
+        }
+        uneven
+    }
+
+    /// The per-event-helicity ratio on the polynomial path, the exact path and a
+    /// two-flow process at the event's strong coupling, combination by
+    /// combination. `e+ e- > t t~ h` moves its combinations unevenly (the Yukawa
+    /// diagrams against Higgsstrahlung), so a summed ratio in its place fails;
+    /// `g g > t t~ h` is `ymt` times one amplitude, so its combinations move
+    /// together and it checks the colour contraction restricted to one
+    /// combination, which the uneven case alone could not tell from a
+    /// contraction over the wrong combination's flows only through the values.
+    #[test]
+    fn per_event_helicity_ratios_reproduce_direct_evaluation() {
+        let uneven = check_per_helicity(
+            "e+ e- > t t~ h",
+            1000.0,
+            YMT_SCAN,
+            ReweightOptions::default(),
+            None,
+            1e-10,
+        );
+        assert!(uneven > 0.1, "the combinations move together: {uneven}");
+        let exact = ReweightOptions {
+            exact: true,
+            ..ReweightOptions::default()
+        };
+        let uneven = check_per_helicity("e+ e- > t t~ h", 1000.0, YMT_SCAN, exact, None, 1e-10);
+        assert!(uneven > 0.1, "the combinations move together: {uneven}");
+        let card = "launch\n set ymt 0\nlaunch\n set ymt 120\nlaunch\n set ymt 250\n";
+        let options = ReweightOptions::default();
+        check_per_helicity("g g > t t~ h", 900.0, card, options, Some(0.09), 1e-10);
+        // A hypothesis moving the Z mass, a propagator pole: exact, and uneven
+        // between the left- and right-handed couplings.
+        let uneven = check_per_helicity(
+            "e+ e- > mu+ mu-",
+            120.0,
+            "launch\n set MZ 89.0\nlaunch\n set aEWM1 120\n",
+            ReweightOptions::default(),
+            None,
+            1e-10,
+        );
+        assert!(uneven > 0.01, "the combinations move together: {uneven}");
+    }
+
+    /// An event with no helicity, a helicity the amplitude does not carry, or
+    /// one the card's `|M|²` vanishes in is refused by name; the summed ratio
+    /// reads none of them.
+    #[test]
+    fn per_event_helicity_refusals_are_named() {
+        let card = "launch\n set MZ 89.0\n";
+        let (model, base, sets, event) =
+            plan("e+ e- > mu+ mu-", card, per_event(Default::default()));
+        let mut rw = event.bind();
+        let mut out = Vec::new();
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let p = &points(&eval, &base, 120.0)[0];
+        let good = event.subs[0].evaluator.helicities()[0].clone();
+        assert!(rw.ratios(0, p, None, Some(&good), &mut out).is_ok());
+        assert_eq!(
+            rw.ratios(0, p, None, None, &mut out),
+            Err(HelicityRefusal::Unrecorded)
+        );
+        let mut unknown = good.clone();
+        unknown[2] = 9;
+        assert_eq!(
+            rw.ratios(0, p, None, Some(&unknown), &mut out),
+            Err(HelicityRefusal::Unrecorded)
+        );
+        unknown[2] = 3;
+        assert!(matches!(
+            rw.ratios(0, p, None, Some(&unknown), &mut out),
+            Err(HelicityRefusal::Unknown { .. })
+        ));
+        assert!(matches!(
+            rw.ratios(0, p, None, Some(&good[..3]), &mut out),
+            Err(HelicityRefusal::Unknown { .. })
+        ));
+
+        // Along the beam axis, angular momentum about it forbids the
+        // combinations whose spins along z do not add up: exactly zero there.
+        let e = 60.0;
+        let forward = vec![
+            V::new(e, 0.0, 0.0, e),
+            V::new(e, 0.0, 0.0, -e),
+            V::new(e, 0.0, 0.0, e),
+            V::new(e, 0.0, 0.0, -e),
+        ];
+        let bound = BoundAmplitude::<f64>::bind(&event.subs[0].evaluator, &base);
+        let mut scratch = bound.scratch_space();
+        let combos = event.subs[0].evaluator.helicities();
+        let mut hel = vec![0.0; combos.len()];
+        bound.eval_hel_m2(&forward, &mut scratch, &mut hel);
+        let zero = hel
+            .iter()
+            .position(|&m| m == 0.0)
+            .expect("a forbidden combination");
+        let allowed = hel.iter().position(|&m| m > 0.0).expect("an allowed one");
+        assert!(rw
+            .ratios(0, &forward, None, Some(&combos[allowed]), &mut out)
+            .is_ok());
+        assert!(matches!(
+            rw.ratios(0, &forward, None, Some(&combos[zero]), &mut out),
+            Err(HelicityRefusal::ZeroAtCard { value, .. }) if value == 0.0
+        ));
+        // The summed path reads no helicity at all.
+        let (_, _, _, summed) = plan("e+ e- > mu+ mu-", card, ReweightOptions::default());
+        let mut rw = summed.bind();
+        assert!(rw.ratios(0, &forward, None, None, &mut out).is_ok());
+    }
+
+    /// The subprocesses the per-event-helicity ratio cannot serve are refused
+    /// when the plan is made, each by name, and the summed ratio serves them.
+    #[test]
+    fn per_event_helicity_refuses_what_it_cannot_serve() {
+        let model = sm_model(SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        let new = |process: &str, card: &str, helicity| {
+            let sets = sets(process, &model);
+            let refs: Vec<&DiagramSet> = sets.iter().collect();
+            let launches = resolve(&card.parse().unwrap(), &model).unwrap();
+            let options = ReweightOptions {
+                helicity,
+                ..ReweightOptions::default()
+            };
+            ReweightPlan::new(&refs, &[], &model, &base, launches, options).map(|_| ())
+        };
+        let (summed, event) = (HelicityRatio::Summed, HelicityRatio::Event);
+        for (process, refused) in [
+            ("e+ e- > z{0} h", "HelicityPolarized"),
+            ("u u~ > u u~ QCD^2==2", "HelicitySigned"),
+            ("e+ e- > z", "HelicityUnchecked"),
+        ] {
+            let card = "launch\n set aEWM1 130\n";
+            let got = new(process, card, event);
+            assert!(format!("{got:?}").contains(refused), "{process}: {got:?}");
+            assert!(new(process, card, summed).is_ok(), "{process}");
+        }
+
+        // `cHtbRe` couples the W to a right-handed b, which the Standard Model's
+        // left-handed current never produces: at a card with every Wilson
+        // coefficient and the b mass at zero, the b~'s other helicity is reached
+        // only under the hypothesis, and no event at the card's point is drawn
+        // there. The top dipole flips the top's chirality and keeps the b's.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+        let smeft = UFOModel::load(&dir, Some(&dir.join("restrict_massless.dat"))).unwrap();
+        let mut base = EvaluatedModel::from_model(smeft.clone());
+        for p in &smeft.params.externals {
+            let is_smeft = matches!(&p.nature, crate::ufo::parameters::ParamNature::External { lha_block, .. }
+                if lha_block.eq_ignore_ascii_case("SMEFT"));
+            if is_smeft && !smeft.params.zeros.contains(&p.name) {
+                move_parameter(&mut base, &p.name, 0.0);
+            }
+        }
+        for name in ["MB", "ymb"] {
+            move_parameter(&mut base, name, 0.0);
+        }
+        let sets = sets("u d~ > t b~ NP<=1", &smeft);
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let plan_for = |card: &str, helicity| {
+            let launches = resolve(&card.parse().unwrap(), &smeft).unwrap();
+            let options = ReweightOptions {
+                helicity,
+                ..ReweightOptions::default()
+            };
+            ReweightPlan::new(&refs, &[], &smeft, &base, launches, options).map(|_| ())
+        };
+        let revived = plan_for("launch\n set ctWRe 1\nlaunch\n set cHtbRe 1\n", event);
+        assert!(
+            matches!(&revived, Err(ReweightError::HelicityRevived { launch, .. }) if launch == "rwgt_2"),
+            "{revived:?}"
+        );
+        assert!(plan_for("launch\n set ctWRe 1\n", event).is_ok());
+        assert!(plan_for("launch\n set cHtbRe 1\n", summed).is_ok());
+    }
+
+    /// Every refusal of the per-event-helicity ratio names both ways back to the
+    /// helicity-summed one: a card without `change helicity` reaches the ratio
+    /// by default, and that card ran before the ratio existed.
+    #[test]
+    fn every_per_event_helicity_refusal_names_both_remedies() {
+        let process = || "u d~ > t b~".to_string();
+        let texts = [
+            ReweightError::HelicityPolarized { process: process() }.to_string(),
+            ReweightError::HelicitySigned { process: process() }.to_string(),
+            ReweightError::HelicityUnchecked { process: process() }.to_string(),
+            ReweightError::HelicityRevived {
+                launch: "a".into(),
+                process: process(),
+                helicity: vec![1, -1],
+            }
+            .to_string(),
+            HelicityRefusal::Unrecorded.to_string(),
+            HelicityRefusal::Unknown {
+                helicity: vec![1, -1],
+            }
+            .to_string(),
+            HelicityRefusal::ZeroAtCard {
+                helicity: vec![1, -1],
+                value: 0.0,
+            }
+            .to_string(),
+        ];
+        for text in texts {
+            assert!(
+                text.contains("`change helicity False`")
+                    && text.contains("`--reweight-helicity summed`"),
+                "{text}"
+            );
+        }
     }
 }

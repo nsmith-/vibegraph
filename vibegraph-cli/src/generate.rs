@@ -40,7 +40,7 @@ use vibegraph::generate::{
 use vibegraph::lhef::write::InputsRead;
 use vibegraph::pdf::select::load_recorded;
 use vibegraph::reweight::card::ReweightCard;
-use vibegraph::reweight::engine::ReweightOptions;
+use vibegraph::reweight::engine::{HelicityRatio, ReweightOptions};
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
 use vibegraph::runcard::EventNorm;
 use vibegraph::systematics::plan::resolve as resolve_systematics;
@@ -55,6 +55,7 @@ use crate::integrate::{forbidden_onshell, observable_of, process_string};
 use crate::network::NetworkPolicy;
 use crate::output::{self, GenerateResult};
 use crate::parallel::ParallelArgs;
+use crate::phase::{self, PhaseName};
 use crate::tui;
 
 /// Default output file.
@@ -97,6 +98,25 @@ pub(crate) enum EventNormArg {
     Sum,
     /// Every weight is one (`IDWTUP = -3`).
     Unity,
+}
+
+/// The ratio a reweighting weight carries, as `--reweight-helicity` spells it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum HelicityArg {
+    /// `|M_hyp|² / |M_card|²` summed over helicities (`change helicity False`).
+    Summed,
+    /// `|M_hyp(λ)|² / |M_card(λ)|²` in the helicities the event records
+    /// (`change helicity True`, MadGraph's default).
+    Event,
+}
+
+impl From<HelicityArg> for HelicityRatio {
+    fn from(arg: HelicityArg) -> Self {
+        match arg {
+            HelicityArg::Summed => HelicityRatio::Summed,
+            HelicityArg::Event => HelicityRatio::Event,
+        }
+    }
 }
 
 impl From<EventNormArg> for EventNorm {
@@ -203,6 +223,15 @@ pub(crate) struct GenerateArgs {
     )]
     pub(crate) reweight_couplings: Option<Vec<String>>,
 
+    /// The ratio each reweighting weight carries: `event`, the ratio in the
+    /// helicities the event records (MadGraph's `change helicity True`), or
+    /// `summed`, the helicity-summed one (`change helicity False`). Without the
+    /// flag the card's `change helicity` line decides, and without that line
+    /// MadGraph's default, `event`. A flag the card's line contradicts is
+    /// refused.
+    #[arg(long, value_enum, value_name = "RATIO", requires = "reweight_card")]
+    pub(crate) reweight_helicity: Option<HelicityArg>,
+
     /// MadGraph systematics arguments, as one string, replacing the request
     /// the artifact recorded (`--mur=0.5,1,2 --pdf=errorset`, or CMS's
     /// `--start_id=1001 --pdf=... --together=muf,mur,dyn`): every event carries
@@ -286,11 +315,42 @@ fn reweight_launches(
         .map(|names| resolve_couplings(model, names))
         .transpose()
         .map_err(|e| err(ErrorKind::Usage, format!("--reweight-couplings: {e}")))?;
+    let helicity = match (
+        args.reweight_helicity.map(HelicityRatio::from),
+        card.stated_helicity(),
+    ) {
+        (Some(flag), Some(line)) if flag != line => {
+            return Err(err(
+                ErrorKind::Usage,
+                format!(
+                    "--reweight-helicity {}: {} says `change helicity {}`",
+                    helicity_word(flag),
+                    path.display(),
+                    if line == HelicityRatio::Event {
+                        "True"
+                    } else {
+                        "False"
+                    }
+                ),
+            ))
+        }
+        (Some(flag), _) => flag,
+        (None, _) => card.helicity(),
+    };
     let options = ReweightOptions {
         exact: args.reweight_exact,
         couplings,
+        helicity,
     };
     Ok(Some((launches, options)))
+}
+
+/// How `--reweight-helicity` spells a ratio.
+fn helicity_word(ratio: HelicityRatio) -> &'static str {
+    match ratio {
+        HelicityRatio::Summed => "summed",
+        HelicityRatio::Event => "event",
+    }
 }
 
 /// `--seed` has no default: two jobs drawing from one grid under one seed write
@@ -364,6 +424,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         ));
     }
 
+    let input_phase = phase::start(PhaseName::Input);
     let (artifact, grid_sha256) = IntegrateArtifact::read_hashed(&args.artifact).map_err(|e| {
         err(
             ErrorKind::Artifact,
@@ -482,7 +543,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         )
     })?;
     let reweight = reweight_launches(args, &parsed, &model)?;
+    input_phase.end();
 
+    let pdf_phase = phase::start(PhaseName::Pdf);
     let pdf = if reads_parton_densities(&artifact, &parsed) {
         let tiers = assets::pdf_tiers();
         load_recorded(&artifact.inputs.pdf, &tiers, &assets::pdf_fetch(network))
@@ -505,6 +568,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         }
         _ => None,
     };
+    pdf_phase.end();
     let inputs = InputsRead {
         pdf: pdf.as_ref().map(|p| (p.input.clone(), p.tier)),
         grid_sha256,
@@ -532,7 +596,11 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         artifact_label: args.artifact.display().to_string(),
         on_scan: Some(&tui::state::note_unweighting_efficiency),
     };
+    let mut sample = phase::start(PhaseName::Generate);
+    sample.size("channels", artifact.channels.len());
     let summary = generate(&artifact, &assets, &settings, &options).map_err(cli_error)?;
+    sample.size("events_written", summary.written as usize);
+    sample.end();
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
     output::text_line(format_args!("wrote {}", args.out.display()));

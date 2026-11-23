@@ -17,3 +17,5 @@ vanishing groups' floor allotment. The 2142 floor-bound channels as a whole
 are a budget effect, not this.
 
 Found by K-M1 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-M1-report.md), Found 1).
+
+**Not a cause of the v022-1009 timeouts (sprint L, 2026-11-23).** In the 21-card phase-timed sample no relayed size shows vanishing flavour groups; the timeouts there are enumeration, set compilation and the sampling schedule ([L-T2 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md)). This item stays open on its own evidence.

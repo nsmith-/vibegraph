@@ -9,8 +9,8 @@
 //! holds no copy of those rules.
 //!
 //! The record is meant to grow by added fields: a later field on
-//! [`ParameterRecord`] (a computed width and how it was computed, say) does not
-//! reshape the existing ones.
+//! [`ParameterRecord`] does not reshape the existing ones. A width a card sets
+//! to `Auto` is one such field ([`ParameterRecord::computed_width`]).
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -22,6 +22,7 @@ use super::slha::code_text;
 use super::{EvaluatedModel, UFOModel};
 use crate::diagrams::DiagramSet;
 use crate::reweight::{check_movable, poly::PolyAnalysis, resolve_couplings, ReweightError};
+use crate::widths::ComputedWidth;
 
 /// What the restriction made of a parameter.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -63,8 +64,6 @@ pub enum Constraint {
     /// The value is not below `value` (a mass is not negative unless it is a
     /// Majorana fermion's).
     Minimum { value: f64 },
-    /// The width is a number: `DECAY <pdg> Auto` is refused.
-    NotAuto,
     /// The value is `value`: a restriction's zero or one.
     Fixed { value: f64 },
     /// The value is `factor` times `to`'s.
@@ -151,6 +150,9 @@ pub struct ParameterRecord {
     /// vertex coupling depends on it) and `masses_widths` (the mass or width of
     /// a leg or propagator does); `null` when no process was given.
     pub enters: Option<Vec<&'static str>>,
+    /// For a width the card the report was made at sets to `Auto`: the width
+    /// as computed, its channels and what it leaves out; `null` otherwise.
+    pub computed_width: Option<ComputedWidth>,
 }
 
 /// The report: every parameter, and with a process the parameters entering its
@@ -284,9 +286,6 @@ fn constraints_of(
     {
         out.push(Constraint::Minimum { value: 0.0 });
     }
-    if particles.iter().any(|p| p.role == "width") {
-        out.push(Constraint::NotAuto);
-    }
     match class {
         ParameterClass::Zero => out.push(Constraint::Fixed { value: 0.0 }),
         ParameterClass::One => out.push(Constraint::Fixed { value: 1.0 }),
@@ -381,6 +380,16 @@ fn polynomial_of(
 /// Records come in the model's external order, then the internal masses and
 /// widths a `MASS` or `DECAY` entry addresses, in PDG order.
 pub fn describe_parameters(model: &Arc<UFOModel>, sets: Option<&[DiagramSet]>) -> ParameterReport {
+    describe_parameters_at(model, sets, &[])
+}
+
+/// [`describe_parameters`], with each width of `computed` (those a card set to
+/// `Auto`, as binding it computed them) on its parameter's record.
+pub fn describe_parameters_at(
+    model: &Arc<UFOModel>,
+    sets: Option<&[DiagramSet]>,
+    computed: &[ComputedWidth],
+) -> ParameterReport {
     let params = &model.params;
     let read = sets.map(|s| reads(model, s));
     let externals = read.as_ref().map(|r| &r.external_pdgs);
@@ -429,6 +438,7 @@ pub fn describe_parameters(model: &Arc<UFOModel>, sets: Option<&[DiagramSet]>) -
                 usable_as_coupling: resolve_couplings(model, std::slice::from_ref(&p.name)).is_ok(),
                 polynomial: polynomial_of(model, &p.name, sets, in_couplings || in_kinematics),
             },
+            computed_width: computed.iter().find(|w| w.param == p.name).cloned(),
             class,
             particles,
             enters,
@@ -469,6 +479,7 @@ pub fn describe_parameters(model: &Arc<UFOModel>, sets: Option<&[DiagramSet]>) -
                     },
                 },
                 enters: None,
+                computed_width: None,
             });
         }
     }
@@ -571,8 +582,33 @@ mod tests {
         assert_eq!(mt.reweight.verdict, ReweightVerdict::Movable);
 
         let wt = record(&report, "WT");
-        assert!(wt.constraints.contains(&Constraint::NotAuto));
+        assert_eq!(wt.constraints, vec![Constraint::Finite]);
         assert_eq!(wt.block, "DECAY");
+        assert_eq!(wt.computed_width, None);
+    }
+
+    /// A width a card sets to `Auto` carries its computation on its record, and
+    /// no other record does; the report is otherwise the model-only one.
+    #[test]
+    fn an_auto_width_is_reported_on_its_record() {
+        let model = crate::ufo::sm::sm_model(crate::ufo::sm::SMRestrict::Default);
+        let card: ParamCard = "DECAY 24 Auto\n".parse().unwrap();
+        let bound = bind_card(model.clone(), &card).unwrap();
+        let plain = describe_parameters(&model, None);
+        let report = describe_parameters_at(&model, None, &bound.auto_widths);
+        let ww = record(&report, "WW").computed_width.as_ref().unwrap();
+        assert_eq!(ww, &bound.auto_widths[0]);
+        assert_eq!(ww.pdg, 24);
+        assert_eq!(ww.channels.len(), 5);
+        for (a, b) in plain.parameters.iter().zip(&report.parameters) {
+            if a.name != "WW" {
+                assert_eq!(a, b);
+            }
+        }
+        let json = serde_json::to_value(record(&report, "WW")).unwrap();
+        assert_eq!(json["computed_width"]["method"], "tree_level_two_body");
+        assert_eq!(json["computed_width"]["bound"], ww.bound);
+        assert!(serde_json::to_value(record(&report, "WT")).unwrap()["computed_width"].is_null());
     }
 
     /// A copy of the SMEFTsim model directory whose `tied` restriction sets `cW` to

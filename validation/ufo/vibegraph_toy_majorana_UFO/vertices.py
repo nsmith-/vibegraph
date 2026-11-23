@@ -1,9 +1,11 @@
 """Four vertices, particles listed all-incoming with the barred spinor first.
 
 `V_ntntvt` pairs two `nt` legs, a fermion line with no particle/antiparticle
-orientation. `V_ltntsc` and its conjugate `V_ntltsc` put `nt` on a line with the
-Dirac `lt`; the conjugate pairs two particles, as a Majorana vertex's h.c. term
-does.
+orientation, through the axial current `FFV2`: a Majorana fermion has no vector
+current, and the axial one is its own charge conjugate, so the vertex reads alike
+whichever end the line enters by. `V_ltntsc` and its conjugate `V_ntltsc` put
+`nt` on a line with the Dirac `lt`; the conjugate pairs two particles, as a
+Majorana vertex's h.c. term does.
 """
 
 from object_library import all_vertices, Vertex
@@ -20,7 +22,7 @@ V_ltltvt = Vertex(name='V_ltltvt',
 V_ntntvt = Vertex(name='V_ntntvt',
                   particles=[P.nt, P.nt, P.vt],
                   color=['1'],
-                  lorentz=[L.FFV1],
+                  lorentz=[L.FFV2],
                   couplings={(0, 0): C.GC_NV})
 
 V_ltntsc = Vertex(name='V_ltntsc',

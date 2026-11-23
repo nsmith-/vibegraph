@@ -169,19 +169,22 @@ impl EventSource for SampleSource<'_, '_> {
             self.evaluation.clear();
             self.evaluation.extend_from_slice(self.integrand.incoming());
             self.evaluation.extend_from_slice(&momenta);
-            let m0 = rw.ratios(
+            // The selection's helicities are in the subprocess's own leg order, the
+            // order of the momenta evaluated.
+            let ratios = rw.ratios(
                 selection.subprocess,
                 &self.evaluation,
                 Some(alpha_qcd),
+                Some(&selection.helicity),
                 &mut reweights,
             );
             self.audit.check(
                 (0, BeamOrdering::Direct),
-                m0,
-                selection.m2,
+                ratios,
+                (selection.m2, selection.helicity_m2),
                 rw.pdgs(selection.subprocess),
                 &record,
-                (&reweights, rw.launches()),
+                (&reweights, rw.launches(), rw.helicity()),
             );
         }
         Some(WeightedEvent {
@@ -641,14 +644,20 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             // representative's leg order, where the group's was evaluated in
             // either ordering: the exchanged event is its rotation.
             let sub = self.member_offset[k][selection.group] + selection.member;
-            let m0 = rw.ratios(sub, &event.cm, Some(alpha_qcd), &mut reweights);
+            let ratios = rw.ratios(
+                sub,
+                &event.cm,
+                Some(alpha_qcd),
+                Some(&selection.cm_helicity),
+                &mut reweights,
+            );
             self.audit.check(
                 (k, selection.ordering),
-                m0,
-                selection.m2,
+                ratios,
+                (selection.m2, selection.helicity_m2),
                 rw.pdgs(sub),
                 &record,
-                (&reweights, rw.launches()),
+                (&reweights, rw.launches(), rw.helicity()),
             );
         }
         let lo_record = match &self.records {
@@ -725,6 +734,8 @@ mod tests {
             member: 0,
             ordering: BeamOrdering::Direct,
             helicity: Vec::new(),
+            cm_helicity: Vec::new(),
+            helicity_m2: 1.0,
             flow: 0,
             config: Some(1),
             leading: true,

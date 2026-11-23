@@ -41,11 +41,11 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 7 | particle charge referencing a parameter | 2 | `ufo-particle-attribute-parameter-references-refused` (closed) | medium |
 | 8 | subprocesses with different outgoing masses | 2 | `mixed-outgoing-mass-subprocesses-not-split`, closed ([K-X1 report](../sprints/v022-smeft-and-refusals/sessions/K-X1-report.md)) | medium |
 | 9 | decay chain without nested parentheses | 2 | [decay-chain-without-nested-parentheses-refused](../backlog/feature/decay-chain-without-nested-parentheses-refused.md) | medium |
-| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md) | medium |
+| 10 | squared-order constraint | 4 | [squared-order-constraints-refused](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md) | medium |
 | 11 | polarised leg in a non-default `me_frame` | 2 | [me-frame-other-than-partonic-cm-refused](../backlog/feature/me-frame-other-than-partonic-cm-refused.md) | medium |
 | 12 | polarisation on a decayed leg | 1 | [polarized-intermediate-resonances-refused](../backlog/feature/polarized-intermediate-resonances-refused.md) | medium |
 | 13 | σ carried by an effective 1.2 points (TTZ2b) | 1 | [ttz2b-sigma-carried-by-one-point](../backlog/performance/ttz2b-sigma-carried-by-one-point.md) | medium |
-| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md) | high (planned after v0.2, user, 2026-11-07) |
+| 14 | Majorana fermion, or a fermion-number-violating vertex | 21 | [L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md) | high (planned after v0.2, user, 2026-11-07) |
 | 15 | `xqcut` with a resolved `ptj` below it | 3 | [mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md) | medium (user, 2026-11-07; was low) |
 | 16 | spin-2 propagator (bulk graviton) | 2 | [spin-2-and-spin-3-2-particles-unsupported](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md) | low (descoped by user decision) |
 | 17 | clustering scale with a four-line vertex | 1 | [clustering-scale-contact-vertex-refused](../backlog/feature/clustering-scale-contact-vertex-refused.md) | low |
@@ -64,7 +64,7 @@ medium (2026-11-07).
 ## Timeouts and panics
 
 All 37 timeouts are at the 600 s limit, triaged by
-[multijet-mlm-cards-time-out-in-the-gridpack-campaign](../backlog/performance/multijet-mlm-cards-time-out-in-the-gridpack-campaign.md)
+`multijet-mlm-cards-time-out-in-the-gridpack-campaign`, closed by the [L-T2 report](../sprints/v023-orders-majorana-timeouts/sessions/L-T2-report.md)
 (high): DYBto2LB-4Jets ×2, DYJets_HT ×2, DYto2L-4Jets ×2, GJ-4Jets ×4,
 GJets-4Jets ×2, GJets_HT-100to200, QCD-5Jets ×2, TT-3Jets ×2, TTto2L2Nu-3Jets,
 TTto4Q-3Jets, VBS_WPMZTo4Q ×2, WBtoLNuB-4Jets ×2, WWjj_SS_ewk, Wto2Q-3Jets ×2,

@@ -58,6 +58,12 @@ use crate::ufo::UFOModel;
 
 use self::card::{Change, ReweightCard};
 
+/// How a refusal of the per-event-helicity ratio tells the user to get the
+/// helicity-summed one instead, which every such refusal carries: the ratio is
+/// MadGraph's default, so a card without `change helicity` reaches it too.
+pub const SUMMED_REMEDY: &str = "add `change helicity False` to the reweight card (or pass \
+     `--reweight-helicity summed`) for the helicity-summed ratio";
+
 /// One resolved hypothesis.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Launch {
@@ -154,6 +160,39 @@ pub enum ReweightError {
     NotPolynomial { couplings: String, process: String },
     #[error("{process}: {reason}")]
     NodeSystem { process: String, reason: String },
+    #[error(
+        "{process}: a polarized leg, on which the per-event-helicity ratio (`change helicity \
+         True`, MadGraph's default without the line) is not taken; {}",
+        SUMMED_REMEDY
+    )]
+    HelicityPolarized { process: String },
+    #[error(
+        "{process}: its |M|^2 keeps an interference term without its squares and can be \
+         negative in a helicity combination, where no per-event-helicity ratio (MadGraph's \
+         default without a `change helicity` line) is defined; {}",
+        SUMMED_REMEDY
+    )]
+    HelicitySigned { process: String },
+    #[error(
+        "{process}: a decay or 2 -> 1 process (fewer than two incoming or three external \
+         legs), where the helicity combinations a hypothesis reaches cannot be probed for \
+         the per-event-helicity ratio (MadGraph's default without a `change helicity` \
+         line); {}",
+        SUMMED_REMEDY
+    )]
+    HelicityUnchecked { process: String },
+    #[error(
+        "launch `{launch}` reaches helicity combination {helicity:?} of {process}, in which \
+         the card's amplitude vanishes: no event is written in it, so per-event-helicity \
+         weights (MadGraph's default without a `change helicity` line) would miss its share \
+         of the hypothesis; {}",
+        SUMMED_REMEDY
+    )]
+    HelicityRevived {
+        launch: String,
+        process: String,
+        helicity: Vec<i32>,
+    },
 }
 
 /// Name each of `names` as an external parameter of `model` that a polynomial can

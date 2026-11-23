@@ -166,7 +166,7 @@ digest) is pinned by the hermetic `cli_ufo_model.rs`[^n35-c].
   far below any budget's Monte-Carlo error.
 - `NP^2==1` and other squared-order constraints are refused, not compared. They
   are in scope but not built
-  ([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)).
+  ([squared-order-constraints-refused](../sprints/v023-orders-majorana-timeouts/sessions/L-Q1-report.md)).
 
 [^n35-v1]: Note 35 V1.
 [^n35-l2]: Note 35 L2.
