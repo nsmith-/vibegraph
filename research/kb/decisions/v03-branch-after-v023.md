@@ -37,5 +37,15 @@ Jet clustering, PDF lookup and per-lane αs follow the same rule. Each lands
 before the split only if it is byte-identical at f64.
 
 **Consumers.** simshop and the CERN host's batch run pinned release binaries,
-so they stay on v0.2.x until a v0.3 release exists. The branch's CI and
+so they stay on v0.2.x until a v0.3 release exists.
+
+**Sampling-cost work goes to v0.3 only** (decided 2026-11-23). The
+multi-jet MLM sampling-cost items simshop's production timeouts hit
+(`target-runs-pay-six-channel-floor-iterations`,
+`alpha-survey-spends-240k-points-per-part`,
+`mlm-every-group-matrix-element-evaluated-per-point`,
+`mlm-matrix-element-evaluated-twice-per-group`) are scheduled for the first
+sprint after the split and are not backported, including their byte-identical
+parts. Until a v0.3 release, simshop works around them with relaxed
+`--target-rel` on large cards, wider slots and a deadline stop. The branch's CI and
 ruleset setup is `release-branch-ci-and-ruleset-missing`.

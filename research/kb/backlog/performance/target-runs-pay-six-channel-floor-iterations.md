@@ -8,7 +8,7 @@ priority: high
 closes_when: "integrate reports, after warm-up 1, the minimum wall time its stop rule implies (channels × floor × min-iters × measured ns/eval) as a warning. Then either the warm-up and floor schedule for wide splits is changed, with σ within the multi-seed criterion on the MLM σ rows and a 1068-channel GJ or TT card, and cost × variance recorded over ≥10 seeds, or the schedule is kept and the measurement recording why is in a performance concept."
 blocked_by: []
 opened: 2026-11-23
-tags: [vegas, sampling, mlm, cms-gridpacks]
+tags: [vegas, sampling, mlm, cms-gridpacks, v0.3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 `--min-iters` defaults to 6 (two warm-ups), and the first iteration
