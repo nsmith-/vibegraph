@@ -387,19 +387,21 @@ pixi run kb-lint
          - the s-channel `alp > ta+ ta-` window at `bwcutoff` 15.
          There are no lepton or tau cuts (`cut_decays` False). `ptj` is 10,
          `etaj` 5, and the scale is `dynamical_scale_choice` −1.
-       - **The first candidate on 967 is the scale**, ahead of xqcut and the
-         HT window. 967 runs MLM with `dynamical_scale_choice` −1, which is
-         MadGraph's clustering scale and also sets αs per event. The uux
-         samples row (PR 13) shows a systematic SCALUP/AQCDUP offset against
-         MadGraph, and at αs² to αs³ a few-percent scale difference is easily
-         0.5% of σ.
-         - The oracle needs no sampling. Evaluate vibegraph's event scales at
-           MadGraph's own momenta, flavours and colour flows, and compare per
-           event with MadGraph's SCALUP and AQCDUP.
-         - The uux scale item names this oracle as its first step. It tests
-           967 as well, given MadGraph's own 967 events. The R3 seeds'
-           events were not kept (only `results.dat` was), so this needs one
-           `hard_survey = 2` seed regenerated with its events.
+       - **The scale is a candidate on 967, but not the first one.** 967 runs
+         MLM with `dynamical_scale_choice` −1, MadGraph's clustering scale,
+         which also sets αs per event. At αs² to αs³, a few-percent scale
+         difference is easily 0.5% of σ.
+         - The scale *computation* is already pinned: `validate_mlm_dumps`
+           reproduces MadGraph's merges and scales on the banked MLM rows,
+           given MadGraph's channel. What is not pinned is which
+           configuration each scale reads: the channel draw against
+           MadGraph's realised channels. That is the open question in
+           `two-to-six-scale-spectrum-offset-vs-madevent`, where the uux
+           samples row shows a SCALUP/AQCDUP offset.
+         - On 967 the scale candidate therefore reduces to configuration
+           choice. Testing it needs MadGraph's own 967 events. The R3 seeds
+           kept only `results.dat`, so one `hard_survey = 2` seed is being
+           regenerated with its events.
        - Reading 967's subprocess pattern against the cuts: the `alp j`
          (2→2) and `alp j j` (2→3) families see the HT window and the xqcut
          very differently. A mismatch in the HT object selection, its upper
@@ -411,6 +413,17 @@ pixi run kb-lint
   3. **If neither card localises,** measure vibegraph's own budget convergence
      before asking for more MadGraph seeds. A comparison between two budget
      rungs needs the measured seed spread: 20 or more seeds on both rungs.
+
+  **Before reading the residuals further, re-measure the three cards on the
+  multichannel transfer-bound fix (sprint L PR 5).**
+  - That fix widens channel support where an uncut leg sits beside a cut
+    jet. 134 and 700 have it (b and b̄ in `j`, `ptb` 0, `maxjetflavor` 4), and
+    so does 967 (the uncut τ legs).
+  - The fix can only raise σ in expectation: the old bound made seeds miss
+    weight, never add it. So it cannot explain the two excesses, and it may
+    lift 700 off its closure.
+  - The R1/R3 readings above are as of v0.2.2. vg-validator measures the
+    three cards on the fix's head, at 5 seeds each.
 
   Closes when the residual is attributed, or registered with its size.
 - **gfortran rejects `'$)'` edit descriptors** in MadGraph 3.5.7 and 2.9.18
