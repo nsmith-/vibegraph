@@ -111,3 +111,38 @@ candidate total:
 
 The validator's linear extrapolation of the last line to completion, about
 4500 s, is an extrapolation, not a measurement.
+
+## Card 290 and card 722 on v022-1009 (relayed 2026-11-23)
+
+Both come from vg-validator's gpdb `vg_run` rows and the batch-slot
+accounting in `survey1009/resources_v022.jsonl`. The one re-run is noted below.
+
+**Card 290** (VBFWto2Q, `loop_sm`). All five v022-1009 seeds had inputs
+identical to this sample's: proc_card sha256 5ad65e8d…, run_card da80969c…,
+the same param-card blob, and no patches. Each timed out on the batch proxy
+after 1216–1274 s wall:
+
+| seed | user CPU | sys CPU | peak RSS |
+|---|---|---|---|
+| s1 | 765 s | 437 s | 686 MB |
+| s2 | 552 s | 707 s | 661 MB |
+| s3 | 777 s | 477 s | 697 MB |
+| s4 | 630 s | 585 s | 691 MB |
+| s5 | 656 s | 560 s | 697 MB |
+
+Every seed's stdout capture is empty (the sha256 of the empty string), so
+no log survives. Re-run on the validator host with the released
+`bin-v0.2.2/vibegraph-x86_64-unknown-linux-musl-v3` on the staged cards
+(`--neval 120000 --target-rel 0.01 --seed 1 -j 4 --parallel-diagrams`):
+- It exits 1 in 16.6 s (user 10.2 s, sys 0.22 s, 123 MB). Its refusal
+  record is identical to 4aab24fb's.
+
+So the batch timeout is not a vibegraph verdict; the batch environment
+stalled it. This is filed as
+[`batch-slot-stalls-early-refusing-cards`](../../backlog/validation/batch-slot-stalls-early-refusing-cards.md).
+
+**Card 722** (ZZ_TT_madspin). All five v022-1009 seeds timed out after
+1243–1272 s wall, at 4826–4915 user-s and 1–22 sys-s (3.85 cores busy).
+Locally it finished in 1079 s on 4146 user-s. It is borderline cost: 0.90
+of the cap locally, over the cap on the batch cores. No code difference is
+indicated.
