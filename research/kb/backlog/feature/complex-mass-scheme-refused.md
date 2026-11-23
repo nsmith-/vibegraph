@@ -16,7 +16,7 @@ The CERN host's survey refused gridpacks 126, 127, 611, 613 and 615–619
 and the wide-width cards then read 3–40% low against MadGraph's σ, while the
 narrow M1200 card passed. The refusal was correct.
 
-Gridpack 126 is also the repro for
-[`multichannel-subdominant-channel-carries-dominant-region`](../validation/multichannel-subdominant-channel-carries-dominant-region.md).
-That item's sampling miss was measured with the scheme stripped, so it should
-be re-checked once this lands.
+Gridpack 126 was also the repro for a multichannel sampling miss, closed in
+sprint L ([L-P1 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-P1-report.md)).
+Its closing comparison used a MadGraph σ with the scheme off; on that card,
+MadGraph 3.7.1 measures the scheme's own effect at −0.04%.

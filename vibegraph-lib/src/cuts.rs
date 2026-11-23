@@ -2074,7 +2074,8 @@ impl Cuts {
     /// alike, so its size moves only the efficiency — and the well-posedness of a
     /// draw whose pole would otherwise sit on the transfer's own rounding noise.
     /// As a *support bound* it also caps each rung's transfer at `t ≤ −floor`,
-    /// above which the channel's density is exactly zero. The estimator is then
+    /// above which the channel's density is exactly zero, lowered per rung to what
+    /// a single-leg side of its line proves ([`Cuts::single_leg_transfer_bound`]). The estimator is then
     /// unbiased only while the channel set as a whole covers every point the cuts
     /// accept: past three outgoing legs, where the floor is a scale rather than a
     /// bound, that is what the coverage gates check, not something the floor
@@ -2216,6 +2217,41 @@ impl Cuts {
                     .map_or(0.0, |c| c.pt_min.max(c.e_min).max(0.0))
             })
             .sum()
+    }
+
+    /// The transfer (GeV²) a peripheral line provably carries when `slots`, one
+    /// side of it, is a single final-state leg: the square of that leg's
+    /// single-leg transverse-momentum threshold, zero for a leg with none.
+    /// `None` for a side of several legs (or of none), whose transverse
+    /// momentum no single-leg cut holds up.
+    ///
+    /// `products` are the legs the channel's own diagram puts inside its forced
+    /// decays. Under the pairing-weighted exemption the integrand is a sum of one
+    /// term per pairing, each cut by its own filter, and a diagram's channel is
+    /// the map for its own pairing's term; so the bound is read off the filter
+    /// exempting exactly `products`, where one does. A leg that is a decay
+    /// product only in *another* pairing is cut in this one, and that pairing's
+    /// own channels carry the configurations where it is soft. Where no filter
+    /// exempts `products`, the bound is the weakest of the filters'.
+    pub(crate) fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        if slots.count_ones() != 1 {
+            return None;
+        }
+        if self.is_pairing_weighted() {
+            if let Some(own) = self.pairings.iter().find(|p| p.exempt == products) {
+                return own.cuts.single_leg_transfer_bound(slots, products);
+            }
+            return self
+                .pairings
+                .iter()
+                .map(|p| p.cuts.single_leg_transfer_bound(slots, products))
+                .reduce(|a, b| Some(a?.min(b?)))
+                .flatten();
+        }
+        let k = slots.trailing_zeros() as usize;
+        let idx = *self.finals.get(k)?;
+        let pt = self.pt_min_of(idx);
+        Some(pt * pt)
     }
 
     /// The lower bound on one pair's invariant mass², from its own thresholds.
@@ -3570,6 +3606,21 @@ mod tests {
     }
 
     #[test]
+    fn a_single_leg_side_bounds_the_transfer_at_its_own_threshold() {
+        // llj final-state order: l+, l-, j at ptl = 10, ptj = 20.
+        let llj = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
+        assert_eq!(llj.single_leg_transfer_bound(0b100, 0), Some(400.0));
+        assert_eq!(llj.single_leg_transfer_bound(0b001, 0), Some(100.0));
+        assert_eq!(llj.single_leg_transfer_bound(0b011, 0), None);
+        assert_eq!(llj.single_leg_transfer_bound(0, 0), None);
+
+        // A leg with no threshold proves nothing, and says so with a zero.
+        let free = Cuts::compile(&card("0 = ptl\n"), &llj_legs()).unwrap();
+        assert_eq!(free.single_leg_transfer_bound(0b010, 0), Some(0.0));
+        assert_eq!(free.single_leg_transfer_bound(0b100, 0), Some(400.0));
+    }
+
+    #[test]
     fn spacelike_floor_is_the_hardest_single_leg_pt_squared() {
         // The banked llj card: ptj = 20 over ptl = 10 ⇒ |t| ≳ 400 GeV².
         let llj = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
@@ -4704,6 +4755,18 @@ mod tests {
         let exempt: Vec<u64> = cuts.pairings.iter().map(|p| p.exempt).collect();
         assert_eq!(exempt.len(), 2, "{exempt:?}");
         assert!(exempt.iter().all(|m| m.count_ones() == 2), "{exempt:?}");
+        // A channel reads the transfer bound off its own pairing's filter: its
+        // decay products are uncut there and its core partons carry `ptj`.
+        // Without a matching filter it takes the weakest, and every leg here is
+        // a decay product in some pairing.
+        for &own in &exempt {
+            for k in 0..4 {
+                let leg = 1u64 << k;
+                let expected = if own & leg != 0 { 0.0 } else { 400.0 };
+                assert_eq!(cuts.single_leg_transfer_bound(leg, own), Some(expected));
+                assert_eq!(cuts.single_leg_transfer_bound(leg, 0), Some(0.0));
+            }
+        }
         let t = card("T = cut_decays\n20 = ptj\n5 = etaj\n0.4 = drjj\n");
         assert!(!Cuts::compile_with(&t, &legs, &forced)
             .unwrap()
