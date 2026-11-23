@@ -326,7 +326,14 @@ pub enum EnumerationPool {
 /// The size of a walk, its candidate assignments times the tree topologies of
 /// its leg count, from which [`EnumerationPool::Auto`] runs it on the caller's
 /// pool rather than on one thread.
-pub const AUTO_PARALLEL_COST: u64 = 1 << 20;
+///
+/// Measured at four threads, dev profile: every walk from `p p > e+ e- j`
+/// (1331 candidates on 25 topologies, 33 275) up enumerated no slower on the
+/// pool than on one thread (`p p > j j`, 58 564: 0.027–0.033 s against
+/// 0.042–0.052 s; `p p > e+ e- j j`: 0.09–0.11 s against 0.24 s). Below it the
+/// walks measured (`e+ e- > mu+ mu-`, `p p > e+ e-`) take milliseconds either
+/// way and stay on one thread.
+pub const AUTO_PARALLEL_COST: u64 = 1 << 14;
 
 /// Surviving subprocesses handed to feyngraph per batch, per worker thread.
 const BATCH_PER_THREAD: usize = 16;

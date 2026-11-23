@@ -585,29 +585,39 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     };
 
     // Every drawing is made before anything is written, so a diagram the
-    // renderer refuses leaves the output directory as it was.
+    // renderer refuses leaves the output directory as it was. The drawings are
+    // made across the pool, in diagram order, while the artifact is encoded; a
+    // refusal is the first in that order.
     let drawer = DiagramDrawer::new(model);
-    let mut drawings = Vec::new();
-    for (k, set) in artifact.sets.iter().enumerate() {
-        for (j, d) in set
-            .diagrams
-            .iter()
-            .take(args.svg.drawn(set.diagrams.len()))
-            .enumerate()
-        {
-            let svg = drawer.svg(d).map_err(|e| {
-                err(
-                    ErrorKind::Run,
-                    format!("cannot draw {} ({}): {e}", diagram_id(k, j), set.label()),
-                )
-            })?;
-            drawings.push((k, svg_path(k, j), svg));
-        }
-    }
+    let to_draw: Vec<(usize, usize, &DiagramSet)> = artifact
+        .sets
+        .iter()
+        .enumerate()
+        .flat_map(|(k, set)| (0..args.svg.drawn(set.diagrams.len())).map(move |j| (k, j, set)))
+        .collect();
+    let (encoded, drawings) = rayon::join(
+        || artifact.encode(),
+        || {
+            use rayon::prelude::*;
+            to_draw
+                .par_iter()
+                .map(|&(k, j, set)| {
+                    let svg = drawer.svg(&set.diagrams[j]).map_err(|e| {
+                        err(
+                            ErrorKind::Run,
+                            format!("cannot draw {} ({}): {e}", diagram_id(k, j), set.label()),
+                        )
+                    })?;
+                    Ok((k, svg_path(k, j), svg))
+                })
+                .collect::<Vec<Result<_, CliError>>>()
+        },
+    );
+    let drawings = drawings.into_iter().collect::<Result<Vec<_>, _>>()?;
+    let encoded = encoded.map_err(|e| err(ErrorKind::Io, e.to_string()))?;
 
     std::fs::create_dir_all(&args.out).map_err(|e| io_error("create", &args.out, e))?;
-    artifact
-        .write_to_path(&artifact_path, args.force)
+    DiagramArtifact::write_encoded(&encoded, &artifact_path, args.force)
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
     let json = serde_json::to_string_pretty(&summary).expect("the summary serializes");
     std::fs::write(&summary_path, json + "\n").map_err(|e| io_error("write", &summary_path, e))?;
