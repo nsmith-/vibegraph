@@ -205,6 +205,9 @@ n 20 mean 2.52144e-04 ± 1.69e-07 (sd 7.57e-07, mean quoted err 6.02e-07)
      scatter χ²/dof 1.54  min 2.5095e-04 max 2.5359e-04
 ```
 
+- **The probe build is the committed code.** A clean release build of
+  f70ab694 reproduces seed 2 bit for bit: `0.0002535615000139615 ±
+  6.162057290876577e-07` from both `v0.2.2-15-gf70ab694` and the probe build.
 - **One population.** All 20 seeds sit in 2.510–2.536e-4. The base code's low
   population was 2.384–2.41e-4.
 - **The spread is close to the quoted errors.** Scatter χ²/dof is 1.54 on 19
