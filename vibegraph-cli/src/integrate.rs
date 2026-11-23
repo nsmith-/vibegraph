@@ -55,7 +55,8 @@ use vibegraph::hadronic::{
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::multiplicity::{
     multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
-    refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
+    refuse_mixed_multiplicity, refuse_one_body_final_state, sole_group, MultiplicityGroups,
+    MultiplicitySum,
 };
 use vibegraph::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
 use vibegraph::pairing::subprocess_pairing_splits;
@@ -65,6 +66,7 @@ use vibegraph::phasespace::maps::{
     MapChoices, MapOptions, PairOrder, RungOrder, SplitAngle, TauMap,
 };
 use vibegraph::phasespace::{parse_alpha_floor, DEFAULT_ALPHA_FLOOR};
+use vibegraph::progress;
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
@@ -1021,6 +1023,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     };
     let (rc, generate_settings) = split.map_err(|e| err(ErrorKind::Card, e.to_string()))?;
     let seed = rc.integration_seed(args.seed);
+    phase::plan(&phase::integrate_phases(
+        sets.is_none(),
+        !parsed.is_decay() && rc.beam_mode() == BeamMode::Proton,
+        args.check,
+    ));
     tui::state::describe_model(
         &model_id.label(),
         &model_id.digest,
@@ -1553,14 +1560,7 @@ fn integrate_proton(
 /// The process numbers (`@N`) of every subprocess of one part's groups,
 /// each once, in increasing order.
 pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
-    let mut ids: Vec<u32> = groups
-        .groups()
-        .iter()
-        .flat_map(|g| g.members().iter().map(|m| m.process))
-        .collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids
+    groups.process_ids()
 }
 
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
@@ -1854,7 +1854,11 @@ fn integrate_fixed_energy(
     refuse_one_body_final_state(sets).map_err(|e| err(ErrorKind::Process, e))?;
     refuse_exchanged_beam_orderings(sets).map_err(|e| err(ErrorKind::Process, e))?;
     let mut compile = phase::start(PhaseName::Compile);
-    let evals = compile_subprocesses(sets, model, evaluated).map_err(|e| {
+    let evals = {
+        let _group = progress::enter_group(sole_group(sets, None));
+        compile_subprocesses(sets, model, evaluated)
+    }
+    .map_err(|e| {
         err(
             ErrorKind::Process,
             format!("failed to compile subprocesses: {e}"),
@@ -1928,7 +1932,10 @@ fn integrate_fixed_energy(
     let mut survey = phase::start(PhaseName::AlphaSurvey);
     survey.size("points_per_iteration", n_survey);
     survey.size("iterations", ADAPT_ITERS);
-    integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
+    {
+        let _group = progress::enter_group(sole_group(sets, Some(diagrams.len())));
+        integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, seed);
+    }
     survey.end();
     // A process with no diagram to map keeps flat RAMBO, which draws its angles
     // isotropically and has no chain: the legacy choices describe it exactly.
