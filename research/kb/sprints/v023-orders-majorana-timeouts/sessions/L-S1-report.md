@@ -290,6 +290,66 @@ probe_2to6_sample_cost`), 27 min, load 1.6–3.7 (own run only):
 The two cells are about 16 + 49 minutes here, well past the 20-minute budget,
 so they were not run.
 
+
+### Four-core `generate` speedup table (manager, 2026-11-23)
+
+Measured by the manager on the head 5b546464 (`vibegraph v0.2.2-14-g5b546464`),
+release profile, after vg-planner asked for release-facing scaling evidence.
+**This is a 4-core table.** The -j 8 measurement is vg-planner's, on the released
+binary after the tag.
+
+**Host.** Intel Xeon Processor @ 2.10 GHz, 4 cores (1 socket, 1 thread per
+core), 15 GB. Nothing else ran during the timed runs: no agents were active,
+and no build or test was running.
+
+**Setup**, reproducible from the files in
+[`pr13-speedup/`](../pr13-speedup/):
+
+- **Card A, MLM-matched, three groups.** Model `sm` (built in), proc card
+  `A_proc.dat`: `generate p p > e+ e- @0`, `add process p p > e+ e- j @1`,
+  `add process p p > e+ e- j j @2`. Run card
+  `validation/madgraph/pp_to_llj_mlm_run_card.dat`, unedited (13 TeV, lhaid
+  247000, ickkw 1, xqcut 20).
+  - Integrated once with `integrate -j 4 --seed 1`: σ = 1067.89 ± 1.05 pb, 232 s.
+  - E = 10 000 events.
+- **Card B, unmatched.** Model `sm`, `generate p p > t t~` (`B_proc.dat`). Run
+  card `B_run.dat` is `validation/madgraph/pp_to_ttx_0j1j_mlm_run_card.dat`
+  with exactly two edits: `0 = ickkw` and `0 = xqcut`.
+  - Integrated once with `integrate -j 4 --seed 1`: σ = 513.26 ± 0.30 pb, 3.3 s.
+  - E = 249 000 events.
+- **Each run:** `vibegraph --no-network generate -j N <art>/grid.bin.zst --seed 7
+  --nevents E --out <file>`, with `LHAPDF_DATA_PATH` pointing at the banked
+  NNPDF23 set. Two repeats for each N. Times come from `wait4`.
+
+| card | N | wall r1 (s) | wall r2 (s) | mean (s) | speedup vs -j 1 | user CPU (s) | peak RSS |
+|---|---|---|---|---|---|---|---|
+| A | 1 | 137.13 | 135.00 | 136.07 | 1.00 | 136.0 | 37 MB |
+| A | 2 | 73.53 | 72.19 | 72.86 | 1.87 | 139.9 | 40 MB |
+| A | 4 | 39.11 | 41.49 | 40.30 | **3.38** | 138.1 | 45 MB |
+| B | 1 | 23.80 | 24.87 | 24.34 | 1.00 | 23.0 | 210 MB |
+| B | 2 | 16.06 | 16.18 | 16.12 | 1.51 | 23.6 | 218 MB |
+| B | 4 | 10.56 | 11.18 | 10.87 | **2.24** | 21.7 | 232 MB |
+
+**Identical output.** The event file's sha256 is identical across all six runs
+of each card: A `3b6467b394d7ea56…`, B `2c5a8ad8933c78dd…`.
+
+**Where the time goes.** Stage spans come from the `progress` timestamps of
+the r1 runs. This head predates the phase records.
+
+| card, N | compile | weight scan | unweight | outside the stages |
+|---|---|---|---|---|
+| A, 1 | 0.2 s | 23.9 s | 111.4 s | ≈0.6 s |
+| A, 4 | 0.2 s | 7.1 s | 30.8 s | ≈1.3 s |
+| B, 1 | <0.01 s | 1.0 s | 16.6 s | ≈5.7 s |
+| B, 4 | <0.01 s | 0.1 s | 5.9 s | ≈4.1 s |
+
+- **Card A.** A scales with accept/reject: unweighting runs 3.6× faster and
+  the scan 3.4× faster at -j 4.
+- **Card B.** B's shortfall is a serial tail of about 4 s. The log goes quiet
+  for 4 s after the last unweighting record, while the 225 MB Les Houches
+  file is written. A cheap process like this one is bound by output, so the
+  -j 8 number will depend more on the writer than on sampling.
+
 ## Validator-host request
 
 - Branch `sprintl-generate`, the final commit of this session.
