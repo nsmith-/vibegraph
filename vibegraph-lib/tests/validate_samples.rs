@@ -204,6 +204,17 @@ struct Row {
 /// every run, so a fix shows as a change in them.
 const KS_INFO_ROWS: &[&str] = &["ee_to_wpwm", "ee_to_wpwm_cw"];
 
+/// Rows whose reported scale columns (`SCALUP`, `AQCDUP`) are informational
+/// while every other column gates: the record's scale spectrum disagrees with
+/// MadGraph's banked sample under any accept/reject pass. A census on the
+/// gate's own grids and maxima, seeds `0x5a4d0001`–`3`, puts `D` at
+/// `0.025`–`0.031` (KS `p` down to `1.2e-5`) for both the trial-by-trial
+/// generator and the blocked parallel one, which agree with each other (two-sample
+/// `p` 0.62–1.0) while the kinematic columns of both pass. The disagreement is in
+/// the scale the record reports, not in the sampling. The columns are still
+/// computed and reported on every run, so a fix shows as a change in them.
+const SCALE_INFO_ROWS: &[&str] = &["uux_to_ccx_emmm_qcd0"];
+
 /// Every fixed-beam row whose `samples` cell the manifest puts in the banked
 /// layer. The budgets follow the σ gate's: enough that the frozen grids the
 /// events are drawn on are the ones that gate integrates over.
@@ -1067,11 +1078,16 @@ fn samples_gate(rows: &[Row]) {
             // distributions, the incoming legs and the scales the record reports
             // alike. A row is informational on all of them or on none, except a
             // row in KS_INFO_ROWS, whose continuous distributions alone are
-            // informational and every other column gates.
+            // informational and every other column gates, and a row in
+            // SCALE_INFO_ROWS, whose reported scales alone are informational.
             let ks_only = KS_INFO_ROWS.contains(&row.key);
             let others = if ks_only { "gate" } else { row.mode };
             let beams = others;
-            let scales = others;
+            let scales = if SCALE_INFO_ROWS.contains(&row.key) {
+                "info"
+            } else {
+                others
+            };
             // Every banked fixed-beam card asks for a scale, so every row has a
             // prescription to report one from. A row that compiled none would
             // report the card's constant where MadGraph reports what its own card
@@ -2774,4 +2790,14 @@ fn probe_wpwm_sampler_census() {
             }
         }
     });
+}
+
+/// Every key a column-demotion list names is a row the gate runs, so a renamed or
+/// mistyped key fails here instead of silently demoting nothing.
+#[test]
+fn every_demoted_row_is_a_gated_row() {
+    let keys: Vec<&str> = ROWS.iter().chain(LONG_ROWS).map(|row| row.key).collect();
+    for key in KS_INFO_ROWS.iter().chain(SCALE_INFO_ROWS) {
+        assert!(keys.contains(key), "{key} names no samples row");
+    }
 }

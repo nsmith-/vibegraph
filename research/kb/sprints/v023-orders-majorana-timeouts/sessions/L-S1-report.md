@@ -360,6 +360,56 @@ changes per-event helicity reweighting. On the merged head 0baf1703 (release,
 Neither card uses a reweight card, so PR 10's changes do not reach these
 event streams.
 
+
+### Long-tier samples rows (vg-validator, 2026-11-23)
+
+`the_long_tier_sample_rows_match_madgraph` on 5b546464 (release-debug, 4 vCPU,
+sharing the host with MadGraph 3.7.1 jobs, so walls are contended; CPU is the
+clean number):
+
+| row/seed | trials/event | CPU (s) | n_eff | worst KS | SCALUP p | AQCDUP p |
+|---|---|---|---|---|---|---|
+| uux 1 | 83.95 | 403.6 | 19337 | y(e-) 0.149 | 2.95e-3 | 2.51e-3 |
+| uux 2 | 84.71 | 407.7 | 19442 | m(c,mu-) 0.122 | **1.93e-5** | **1.25e-5** |
+| uux 3 | 84.77 | 408.0 | 8252 | m(c~,mu+) 0.065 | 4.39e-4 | 3.22e-4 |
+| bbx 1 | 357.78 | 2735.9 | 17754 | pt(c~) 0.027 | 5.1e-2 | 4.8e-3 |
+| bbx 2 | 354.96 | 2715.2 | 19451 | y(mu-) 0.063 | 3.4e-1 | 1.8e-1 |
+| bbx 3 | 362.94 | 2777.8 | 15617 | m(e+,mu-) 0.041 | 4.0e-2 | 1.5e-2 |
+
+- `bbx_to_ccx_emmm_qcd0` passes. Two margins are thin: the worst beam-2 `pz`
+  deviation is 4.43e-9 against a 5.00e-9 tolerance (89%), and trials per event
+  are 89–91% of the 400 budget.
+- `uux_to_ccx_emmm_qcd0` failed only on its scale columns (seed 2 below the
+  1e-4 floor); every kinematic and categorical column passed.
+
+**The uux scale offset predates this PR.** `probe_uux_sampler_census` (a local
+patch on 5b546464, kept with vg-validator's records) runs main's trial-by-trial
+loop and this PR's blocked pass on the gate's own frozen grids and maxima. The
+trial loop is main's unchanged (`Unweighter::trial` delegates to `trial_with`
+with the same RNG order and per-channel trailing streams; `git diff b4e284a3
+-- vibegraph-lib/src/unweight.rs`).
+
+| seed | serial vs MG, SCALUP / AQCDUP p | blocked vs MG | serial vs blocked, SCALUP / AQCDUP / worst kinematic p |
+|---|---|---|---|
+| 1 | 1.74e-4 / 1.87e-4 | 2.95e-3 / 2.51e-3 | 0.79 / 0.62 / 0.48 |
+| 2 | 2.85e-5 / 2.77e-5 | 1.93e-5 / 1.25e-5 | 0.9995 / 1.000 / 0.79 |
+| 3 | 7.72e-4 / 7.53e-4 | 4.39e-4 / 3.22e-4 | 0.97 / 0.97 / 0.29 |
+
+The two passes are indistinguishable and both miss MadGraph's scale spectrum
+(`D` 0.025–0.031), so the disagreement is in the scale the record reports. The
+row's scale columns are now informational (`SCALE_INFO_ROWS` in
+`validate_samples.rs`, with `every_demoted_row_is_a_gated_row` failing on a key
+that names no row; checked by mutating the key). The first step toward a fix is a
+per-event oracle: evaluate `record_scales` at the momenta, flavours and colour
+flow of MadGraph's own banked events
+(`validation/madgraph/output/uux_to_ccx_emmm_qcd0/Events/run_01/unweighted_events.lhe.gz`)
+and compare `SCALUP`/`AQCDUP` event by event, by topology.
+
+Seed 3's low `n_eff` (8252) is one event at `w/w_max = 168.5` in the blocked
+pass, carrying about 0.8% of the seed's weight; its other heaviest weights match
+the serial pass's exactly. It is a scanned maximum too low at one point, which
+either pass can draw, not a sampler defect.
+
 ## Validator-host request
 
 - Branch `sprintl-generate`, the final commit of this session.
