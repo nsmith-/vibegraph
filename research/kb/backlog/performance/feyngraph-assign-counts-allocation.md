@@ -25,12 +25,12 @@ upstream change or a fork plus a rev bump: a dedicated session.
 Already mitigated on this side: topology caching per `(n_ext, n_loops)` and a
 charge-conservation pre-filter (~86% of candidates eliminated).
 
-Enumeration defaults to one thread (`EnumerationPool::Serial`,
-`vibegraph-lib/src/diagrams/mod.rs:264`); `--parallel-diagrams` opts into the
-`-j` pool. FeynGraph's internal fan-out is contended: 16 threads vs 1 is
+Enumeration defaults to `EnumerationPool::Auto`: a walk whose cost reaches
+`AUTO_PARALLEL_COST` runs on the `-j` pool and a smaller one on one thread;
+`--parallel-diagrams` hands every walk the pool. FeynGraph's internal fan-out is contended: 16 threads vs 1 is
 0.137 s vs 0.083 s on `p p > j j j` (worse) and 3.36 s vs 8.90 s on
 `p p > e+ e- j j j` (2.6x better). Removing the allocation is what would let
-the small case parallelise too, and possibly let `Ambient` become the default.
+the small case parallelise too, and possibly let `Ambient` replace `Auto` as the default.
 
 Detail: [note 20](../../history/notes/20-eval-perf-2-plan.md),
 [note 02](../../history/notes/02-reference-implementations.md).
