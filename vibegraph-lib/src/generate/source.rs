@@ -12,7 +12,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::{pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord};
 use crate::lhef::emit::{EventSource, WeightedEvent};
 use crate::lhef::record::LheEvent;
-use crate::lhef::resonance::SubprocessResonances;
+use crate::lhef::resonance::{LineCode, SubprocessResonances};
 use crate::lhef::LhefError;
 use crate::multiplicity::MultiplicitySum;
 use crate::pdf::PdfMember;
@@ -217,6 +217,19 @@ pub(super) struct ResonanceTally {
     /// Events whose intermediates could not be given a colour their daughters
     /// fit, written without them rather than with a wrong one.
     refused: u64,
+    /// Events whose subprocess holds no code for an intermediate it would
+    /// write, written without them rather than with the representative's.
+    unresolved: u64,
+}
+
+/// The code `codes[config][line]`, `None` where the table holds none or holds
+/// [`LineCode::NONE`].
+fn member_code(codes: &[Vec<LineCode>], config: usize, line: usize) -> Option<LineCode> {
+    codes
+        .get(config)?
+        .get(line)
+        .copied()
+        .filter(|&code| code != LineCode::NONE)
 }
 
 /// One event's record, with the resonances of its configuration as status-2
@@ -231,7 +244,7 @@ pub(super) fn event_record(
     helicity: &[i32],
     flow: usize,
     header: EventHeader,
-    resonances: Option<(&SubprocessResonances, Option<&[Vec<i32>]>)>,
+    resonances: Option<(&SubprocessResonances, Option<&[Vec<LineCode>]>)>,
     (config, leading): (Option<usize>, bool),
     tally: &mut ResonanceTally,
 ) -> Option<LheEvent> {
@@ -243,15 +256,28 @@ pub(super) fn event_record(
         return record.event(externals, helicity, flow, header).ok();
     };
     let lines = table.lines(config);
-    let intermediates: Vec<Intermediate> = table
+    let intermediates: Option<Vec<Intermediate>> = table
         .on_shell(config, &externals[record.n_in()..])
         .into_iter()
-        .map(|i| Intermediate {
-            pdg: pdgs.map_or(lines[i].pdg, |p| p[config][i]),
-            color: lines[i].color,
-            slots: lines[i].slots,
+        .map(|i| {
+            let code = match pdgs {
+                Some(p) => member_code(p, config, i)?,
+                None => LineCode {
+                    pdg: lines[i].pdg,
+                    color: lines[i].color,
+                },
+            };
+            Some(Intermediate {
+                pdg: code.pdg,
+                color: code.color,
+                slots: lines[i].slots,
+            })
         })
         .collect();
+    let Some(intermediates) = intermediates else {
+        tally.unresolved += 1;
+        return record.event(externals, helicity, flow, header).ok();
+    };
     match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
         Ok(event) => Some(event),
         Err(LhefError::IntermediateColor { .. } | LhefError::IntermediateNesting { .. }) => {
@@ -279,7 +305,7 @@ pub(super) fn matched_event_record(
     helicity: &[i32],
     flow: usize,
     header: EventHeader,
-    resonances: Option<(&SubprocessResonances, &[Vec<i32>])>,
+    resonances: Option<(&SubprocessResonances, &[Vec<LineCode>])>,
     (config, leading): (Option<usize>, bool),
     matched: &MatchedRecord,
     tally: &mut ResonanceTally,
@@ -288,15 +314,22 @@ pub(super) fn matched_event_record(
     let intermediates: Vec<Intermediate> = match (resonances, config) {
         (Some((table, pdgs)), Some(config)) if leading => {
             let lines = table.lines(config);
-            table
+            let resolved: Option<Vec<Intermediate>> = table
                 .clustered_on_shell(config, &matched.on_shell, n_in)
                 .into_iter()
-                .map(|i| Intermediate {
-                    pdg: pdgs[config][i],
-                    color: lines[i].color,
-                    slots: lines[i].slots,
+                .map(|i| {
+                    let code = member_code(pdgs, config, i)?;
+                    Some(Intermediate {
+                        pdg: code.pdg,
+                        color: code.color,
+                        slots: lines[i].slots,
+                    })
                 })
-                .collect()
+                .collect();
+            resolved.unwrap_or_else(|| {
+                tally.unresolved += 1;
+                Vec::new()
+            })
         }
         (Some(_), Some(_)) => {
             tally.subleading += 1;
@@ -328,13 +361,30 @@ pub(super) fn report_resonances(tally: ResonanceTally, written: usize) {
             tally.subleading
         );
     }
+    for warning in resonance_warnings(tally, written) {
+        warn!("{warning}");
+    }
+}
+
+/// The warnings [`report_resonances`] gives for events written without the
+/// intermediates their configuration names.
+pub(super) fn resonance_warnings(tally: ResonanceTally, written: usize) -> Vec<String> {
+    let mut out = Vec::new();
     if tally.refused > 0 {
-        warn!(
+        out.push(format!(
             "resonances: {} of {written} events list no intermediate record because a \
              resonance's daughters leave colour lines that do not fit it",
             tally.refused
-        );
+        ));
     }
+    if tally.unresolved > 0 {
+        out.push(format!(
+            "resonances: {} of {written} events list no intermediate record because their \
+             subprocess names no code for a resonance of its configuration",
+            tally.unresolved
+        ));
+    }
+    out
 }
 
 /// Per part, per flavour group, the index of its first member in the run's
@@ -374,9 +424,9 @@ pub(super) fn ordering_slot(ordering: BeamOrdering) -> usize {
 pub(super) struct PartRecords {
     pub(super) records: FlavorRecords,
     pub(super) resonances: Vec<SubprocessResonances>,
-    /// `[group][member][config][line]`: the PDG code a resonance line of the
-    /// group's representative carries in a member.
-    pub(super) member_pdgs: Vec<Vec<Vec<Vec<i32>>>>,
+    /// `[group][member][config][line]`: the PDG code and colour a resonance
+    /// line of the group's representative carries in a member.
+    pub(super) member_pdgs: Vec<Vec<Vec<Vec<LineCode>>>>,
 }
 
 /// What a proton event's `<mgrwt>` record is filled from: the QCD power of
@@ -698,6 +748,24 @@ mod tests {
             .map(|i| 0.1 + 0.01 * i as f64)
             .collect();
         PdfMember::from_subgrids(vec![SubGrid { x, q2, flavors, xf }])
+    }
+
+    /// A member's code is read where its table holds one, and nowhere it holds
+    /// none: a configuration or line past the table (a group never drawn holds
+    /// no codes) or MadGraph's no-line code.
+    #[test]
+    fn a_member_code_is_read_only_where_the_member_has_one() {
+        let code = |pdg: i32, color: i32| LineCode { pdg, color };
+        let codes = vec![
+            vec![code(24, 1), code(-2, -3)],
+            vec![code(24, 1), LineCode::NONE],
+        ];
+        assert_eq!(member_code(&codes, 0, 1), Some(code(-2, -3)));
+        assert_eq!(member_code(&codes, 1, 0), Some(code(24, 1)));
+        assert_eq!(member_code(&codes, 1, 1), None);
+        assert_eq!(member_code(&codes, 1, 2), None);
+        assert_eq!(member_code(&codes, 2, 0), None);
+        assert_eq!(member_code(&[], 0, 0), None);
     }
 
     fn incoming(pdg: i32, pz: f64) -> LheParticle {
