@@ -1,0 +1,185 @@
+# v022-1009: 178 cards timed out at espresso (20 min wall, 4 cpus) on all 5 seeds, never retried.
+# Source: vg-validator, gpdb vg_run rows (campaigns v022-1009-sN and -sNm/-sNw retries). Families from gridpack-name prefix.
+# family counts: W/Z/DY+4j 56, VBS 47, VBF resonances 22, GJ-4Jets 19, other 17, TT-3Jets 10, aQGC 7
+# other = QCD multijet MLM (36,37,263,264); older GJets HT/DR photon+jets MLM (184,992-996); TT FCNC tZq (590,591,594,595); VBS-like madspin/QCD (717,722,768). ZNuNu*JJjj counted as VBS.
+# family	card_id	gridpack
+GJ-4Jets	25	GJ-4Jets_Bin-HT-1000-PTG-200_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	26	GJ-4Jets_Bin-HT-1000-PTG-100to200_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	30	GJ-4Jets_dRGJ-0p25_PTG-200_HT-600to1000_madgraphMLM-pythia8
+GJ-4Jets	31	GJ-4Jets_dRGJ-0p25_PTG-10to100_HT-100to200_madgraphMLM-pythia8
+GJ-4Jets	32	GJets-4Jets_dRGJ-0p2_HT-100to200_madgraphMLM-pythia8
+GJ-4Jets	33	GJets-4Jets_dRGJ-0p2_HT-400to600_madgraphMLM-pythia8
+GJ-4Jets	232	GJ-4Jets_Bin-HT-600to1000-PTG-100to200_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	233	GJ-4Jets_Bin-HT-1000-PTG-10to100_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	234	GJ-4Jets_Bin-HT-40to200-PTG-100to200_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	235	GJ-4Jets_Bin-HT-100to200-PTG-10to100_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	236	GJ-4Jets_Bin-HT-600to1000-PTG-200_Par-dRGJ-0p25_madgraphMLM-pythia8
+GJ-4Jets	243	GJ-4Jets_dRGJ-0p25_PTG-100to200_HT-400to600_madgraphMLM-pythia8
+GJ-4Jets	245	GJ-4Jets_dRGJ-0p25_PTG-100to200_HT-40to200_madgraphMLM-pythia8
+GJ-4Jets	246	GJ-4Jets_dRGJ-0p25_PTG-100to200_HT-200to400_madgraphMLM-pythia8
+GJ-4Jets	247	GJ-4Jets_dRGJ-0p25_PTG-10to100_HT-1000_madgraphMLM-pythia8
+GJ-4Jets	252	GJets-4Jets_dRGJ-0p2_HT-40to70_madgraphMLM-pythia8
+GJ-4Jets	253	GJets-4Jets_dRGJ-0p2_HT-200to400_madgraphMLM-pythia8
+GJ-4Jets	254	GJets-4Jets_dRGJ-0p2_HT-70to100_madgraphMLM-pythia8
+GJ-4Jets	255	GJets-4Jets_dRGJ-0p2_HT-600_madgraphMLM-pythia8
+TT-3Jets	41	TT-3Jets_Bin-HT-1500to2500_madgraphMLM-pythia8
+TT-3Jets	42	TT-3Jets_Bin-HT-800to1500_madgraphMLM-pythia8
+TT-3Jets	45	TTto2L2Nu-3Jets_madgraphMLM-pythia8
+TT-3Jets	46	TTto4Q-3Jets_madgraphMLM-pythia8
+TT-3Jets	275	TT-3Jets_Bin-HT-100to400_madgraphMLM-pythia8
+TT-3Jets	276	TT-3Jets_Bin-HT-400to800_madgraphMLM-pythia8
+TT-3Jets	277	TT-3Jets_Bin-HT-2500_madgraphMLM-pythia8
+TT-3Jets	286	TTtoLNu2Q-3Jets_madgraphMLM-pythia8
+TT-3Jets	287	TTtoLminusNu2Q-3Jets_madgraphMLM-pythia8
+TT-3Jets	288	TTtoLplusNu2Q-3Jets_madgraphMLM-pythia8
+VBF resonances	290	VBFWto2Q_madgraph-pythia8
+VBF resonances	634	VBFRadionTo2W_Inclusive_narrow_Par-M8000GeV
+VBF resonances	635	VBFRadionTo2W_Inclusive_narrow_Par-M3500GeV
+VBF resonances	636	VBFRadionTo2W_Inclusive_narrow_Par-M1800GeV
+VBF resonances	637	VBFRadionTo2W_Inclusive_narrow_Par-M2000GeV
+VBF resonances	639	VBFRadionTo2W_Inclusive_narrow_Par-M1200GeV
+VBF resonances	640	VBFRadionTo2W_Inclusive_narrow_Par-M4500GeV
+VBF resonances	641	VBFRadionTo2Z_Inclusive_narrow_Par-M2000GeV
+VBF resonances	642	VBFRadionTo2Z_Inclusive_narrow_Par-M1600GeV
+VBF resonances	643	VBFRadionTo2Z_Inclusive_narrow_Par-M3000GeV
+VBF resonances	644	VBFRadionTo2Z_Inclusive_narrow_Par-M600GeV
+VBF resonances	645	VBFRadionTo2Z_Inclusive_narrow_Par-M5500GeV
+VBF resonances	646	VBFRadionTo2Z_Inclusive_narrow_Par-M6000GeV
+VBF resonances	647	VBFRadionTo2Z_Inclusive_narrow_Par-M7500GeV
+VBF resonances	655	VBFWprimeToWZ_Inclusive_narrow_Par-M1200GeV
+VBF resonances	656	VBFWprimeToWZ_Inclusive_narrow_Par-M600GeV
+VBF resonances	657	VBFWprimeToWZ_Inclusive_narrow_Par-M1000GeV
+VBF resonances	658	VBFWprimeToWZ_Inclusive_narrow_Par-M2500GeV
+VBF resonances	659	VBFWprimeToWZ_Inclusive_narrow_Par-M4500GeV
+VBF resonances	660	VBFWprimeToWZ_Inclusive_narrow_Par-M1400GeV
+VBF resonances	661	VBFWprimeToWZ_Inclusive_narrow_Par-M4000GeV
+VBF resonances	667	VBFZprimeTo2W_Inclusive_narrow_Par-M7000GeV
+VBS	14	WWjj_SS_ewk
+VBS	132	VBS_WPMZTo4Q_5f_LO_EWK_PolarizationLT
+VBS	133	VBS_WPMZTo4Q_5f_LO_EWK
+VBS	136	VBS_WZ_T7Int_Zee_Weve
+VBS	693	VBS_WmZTo4Q_5f_LO_EWK_PolarizationLL
+VBS	694	VBS_osWpWm_5f_LO_EWK_PolarizationLL
+VBS	695	VBS_WpZTo4Q_5f_LO_EWK_PolarizationLL
+VBS	696	VBS_WpZTo4Q_5f_LO_EWK_PolarizationTL
+VBS	697	VBS_ZZTo4Q_5f_LO_EWK_PolarizationTT
+VBS	701	VBSOSWpLWmTToJets_5f_LO
+VBS	710	VBS_WZ_PolarizLL_WtoLEP_ZtoHAD
+VBS	711	VBS_ZZ_PolarizTL_semilep
+VBS	712	VBS_ssWW_PolarizTT_semilep
+VBS	713	VBS_WminusZ_PolarizLT_WtoHAD_ZtoLEP
+VBS	714	VBS_WplusZ_PolarizLT_WLtoHAD_ZTtoLEP
+VBS	715	VBS_WminusZ_PolarizLL_WtoHAD_ZtoLEP
+VBS	716	VBS_WminusZ_PolarizTT_WtoHAD_ZtoLEP-996e25
+VBS	719	VBS_WminusZ_PolarizLL_WLtoHAD_ZLtoLEP
+VBS	720	VBS_WZ_PolarizLL_WLtoHAD_ZLtoLEP
+VBS	721	VBS_WminusZ_PolarizTT_WtoHAD_ZtoLEP-925a56
+VBS	723	VBS_WplusZ_PolarizTT_WtoHAD_ZtoLEP
+VBS	724	VBS_WZ_M4Int_Zmumu_Wtavt
+VBS	726	VBS_WZ_M4Int_Zee_Weve
+VBS	727	VBS_WZ_M2Int_Zee_Wtavt
+VBS	728	VBS_WZ_T6Int_Ztata_Wmuvm
+VBS	729	VBS_WZ_PolarizTT_WtoLEP_ZtoLEP
+VBS	731	VBS_WZ_PolarizTL_WTtoLEP_ZLtoLEP
+VBS	733	VBS_WZ_PolarizLL_WtoLEP_ZtoLEP
+VBS	736	ZNuNuWmJJjj_EWK_LO_PolarizationLT
+VBS	737	ZNuNuWmJJjj_EWK_LO_PolarizationLL
+VBS	738	ZNuNuWpJJjj_EWK_LO_PolarizationTT
+VBS	739	ZNuNuWmJJjj_EWK_LO_PolarizationTT
+VBS	740	ZNuNuWpJJjj_EWK_LO_PolarizationLL
+VBS	741	ZNuNuWpJJjj_EWK_LO_PolarizationTL
+VBS	742	ZNuNuWmJJjj_EWK_LO_PolarizationTL
+VBS	743	ZNuNuWJJjj_QCD_LO_TT
+VBS	744	ZNuNuWJJjj_QCD_LO
+VBS	746	ZNuNuWJJjj_QCD_LO_TL
+VBS	749	ZNuNuZJJjj_EWK_LO_LL
+VBS	750	ZNuNuZJJjj_EWK_LO
+VBS	752	ZNuNuZJJjj_EWK_LO_TT
+VBS	753	VBS_ssWW_5f_LO_EWK_PolarizationTL
+VBS	754	VBS_ssWW_5f_LO_EWK
+VBS	755	VBS_ssWW_5f_LO_EWK_PolarizationTT
+VBS	767	VBS_OSWW_TT_noTop
+VBS	769	VBS_OSWW_LT_noTop
+VBS	770	VBS_OSWW_Inclusive_noTop
+W/Z/DY+4j	15	DYBto2LB-4Jets_MLL-120_HT-2500_madgraphMLM-pythia8
+W/Z/DY+4j	16	DYBto2LB-4Jets_MLL-120_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	20	DYto2L-4Jets_MLL-120_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	21	DYto2L-4Jets_MLL-50to120_HT-100to400_madgraphMLM-pythia8
+W/Z/DY+4j	51	WBtoLNuB-4Jets_MLNu-120_HT-40to100_madgraphMLM-pythia8
+W/Z/DY+4j	52	WBtoLNuB-4Jets_MLNu-0to120_HT-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	57	WtoLNu-4Jets_Bin-MLNu-4000to6000_madgraphMLM-pythia8
+W/Z/DY+4j	58	WtoLNu-4Jets_MLNu-120to200_madgraphMLM-pythia8
+W/Z/DY+4j	63	Zto2Nu-4Jets_Bin-HT-100to200_madgraphMLM-pythia8
+W/Z/DY+4j	64	Zto2Nu-4Jets_HT-2500_madgraphMLM-pythia8
+W/Z/DY+4j	65	Zto2Q-4Jets_Bin-HT-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	66	Zto2Q-4Jets_Bin-HT-100to400_madgraphMLM-pythia8
+W/Z/DY+4j	179	DYJets_HT-800to1200
+W/Z/DY+4j	180	DYJets_HT-1200to2500
+W/Z/DY+4j	199	ZJetsToNuNu_HT600to800
+W/Z/DY+4j	200	ZJetsToNuNu_HT100to200
+W/Z/DY+4j	202	DYBto2LB-4Jets_MLL-50to120_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	203	DYBto2LB-4Jets_MLL-50to120_HT-100to400_madgraphMLM-pythia8
+W/Z/DY+4j	204	DYBto2LB-4Jets_MLL-120_HT-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	205	DYBto2LB-4Jets_MLL-120_HT-40to100_madgraphMLM-pythia8
+W/Z/DY+4j	206	DYBto2LB-4Jets_MLL-50to120_HT-40to100_madgraphMLM-pythia8
+W/Z/DY+4j	219	DYto2L-4Jets_MLL-50to120_HT-2500_madgraphMLM-pythia8
+W/Z/DY+4j	221	DYto2L-4Jets_Bin-MLL-50_madgraphMLM-pythia8
+W/Z/DY+4j	222	DYto2L-4Jets_MLL-4to50_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	223	DYto2L-4Jets_Bin-3J-MLL-50_madgraphMLM-pythia8
+W/Z/DY+4j	297	WBtoLNuB-4Jets_MLNu-0to120_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	298	WBtoLNuB-4Jets_MLNu-0to120_HT-40to100_madgraphMLM-pythia8
+W/Z/DY+4j	299	WBtoLNuB-4Jets_MLNu-120_HT-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	300	WBtoLNuB-4Jets_MLNu-120_HT-100to400_madgraphMLM-pythia8
+W/Z/DY+4j	301	WBtoLNuB-4Jets_MLNu-0to120_HT-1500to2500_madgraphMLM-pythia8
+W/Z/DY+4j	319	WtoLNu_MLNu-6000_madgraph-pythia8
+W/Z/DY+4j	325	WtoLNu-4Jets_MLNu-120_HT-1500to2500_madgraphMLM-pythia8
+W/Z/DY+4j	326	WtoLNu-4Jets_MLNu-200to400_madgraphMLM-pythia8
+W/Z/DY+4j	327	WtoLNu-4Jets_MLNu-0to120_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	328	WtoLNu-4Jets_MLNu-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	329	WtoLNu-4Jets_Bin-MLNu-200to400_madgraphMLM-pythia8
+W/Z/DY+4j	330	WtoLNu-4Jets_madgraphMLM-pythia8
+W/Z/DY+4j	346	Zto2Nu-4Jets_Bin-HT-2500_madgraphMLM-pythia8
+W/Z/DY+4j	347	Zto2Nu-4Jets_HT-1500to2500_madgraphMLM-pythia8
+W/Z/DY+4j	348	Zto2Nu-4Jets_HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	349	Zto2Nu-4Jets_HT-800to1500_madgraphMLM-pythia8
+W/Z/DY+4j	350	Zto2Nu-4Jets_HT-100to200_madgraphMLM-pythia8
+W/Z/DY+4j	351	Zto2Nu-4Jets_madgraphMLM-pythia8
+W/Z/DY+4j	359	Zto2Q-4Jets_Bin-HT-2500_madgraphMLM-pythia8
+W/Z/DY+4j	360	Zto2Q-4Jets_Bin-HT-1500to2500_madgraphMLM-pythia8
+W/Z/DY+4j	361	Zto2Q-4Jets_Bin-HT-400to800_madgraphMLM-pythia8
+W/Z/DY+4j	982	DYJets_HT-600to800
+W/Z/DY+4j	983	DYJets_HT-400to600-1516dd
+W/Z/DY+4j	984	DYJets_HT-400to600-4477ee
+W/Z/DY+4j	985	DYJets_HT-2500toInf
+W/Z/DY+4j	986	DYJets_HT-70to100
+W/Z/DY+4j	1006	ZJetsToNuNu_HT1200to2500-ffffe5
+W/Z/DY+4j	1007	ZJetsToNuNu_HT1200to2500-1ea28d
+W/Z/DY+4j	1008	ZJetsToNuNu_HT2500toInf
+W/Z/DY+4j	1009	ZJetsToNuNu_HT200to400
+W/Z/DY+4j	1010	ZJetsToNuNu_HT400to600
+aQGC	195	aQGC_ZlepZhadJJ_EWK_LO_SM_mjj100_pTj10
+aQGC	196	aQGC_WPJJWPJJjj_EWK_LO_NPle1
+aQGC	999	aQGC_WPlepZhadJJ_EWK_LO_SM_mjj100_pTj10
+aQGC	1000	aQGC_WPlepWMhadJJ_EWK_LO_SM_mjj100_pTj10
+aQGC	1001	aQGC_WMlepZhadJJ_EWK_LO_SM_mjj100_pTj10
+aQGC	1002	aQGC_WMhadZlepJJ_EWK_LO_SM_mjj100_pTj10
+aQGC	1003	aQGC_WPlepWPhadJJ_EWK_LO_SM_mjj100_pTj10
+other	36	QCD-5Jets_Bin-HT-40_madgraphMLM-pythia8
+other	37	QCD-5Jets_HT-40_madgraphMLM-pythia8
+other	184	GJets_HT-100to200
+other	263	QCD-4Jets_HT-1000to1200_madgraphMLM-pythia8
+other	264	QCD-4Jets_HT-1200to1500_madgraphMLM-pythia8
+other	590	TT-TbartoUbarZ-TtoLNu-kzut
+other	591	TT-TtoUZ-TbartoLNu-kzut
+other	594	TT-TbartoCbarZ-TtoLNu-kzct
+other	595	TT-TtoCZ-TbartoLNu-kzct
+other	717	ssWW_TT_semilep_madspin
+other	722	ZZ_TT_madspin
+other	768	QCD_OSWW_noTop
+other	992	GJets_HT-200to400
+other	993	GJets_DR-0p4_HT-100to200
+other	994	GJets_DR-0p4_HT-400to600
+other	995	GJets_HT-400to600
+other	996	GJets_DR-0p4_HT-40to100
+# 3 error cards (no ok seed; recorded as error): really model refusals at setup, gridpack bundles no UFO model
+# 443 HSCP-MCP_Par-S-0-M-700-Q-6 ; 444 HSCP-MCP_Par-S-0-M-1800-Q-15 ; 782 VLLD_tau_M100
