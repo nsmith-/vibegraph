@@ -175,7 +175,7 @@ whether a rule is right depends on the factors beside it.
   pairs only; see [four-fermion-vertices](four-fermion-vertices.md) and
   [convention-sign-inventory](convention-sign-inventory.md).
 - Majorana lines are out of scope; see
-  [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md).
+  [L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md).
 
 Because the factor reads only the graph, it is invariant under re-rooting and
 renumbering; see [rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md).

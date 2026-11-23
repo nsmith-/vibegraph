@@ -21,7 +21,9 @@ use std::collections::HashSet;
 use crate::diagrams::diagram::{Diagram, Leg, LegIdx, PropIdx, Ray, RaySlot, VtxIdx};
 #[cfg(test)]
 use crate::diagrams::DiagramSet;
-use crate::helas::eval::diagram_eval::{vertex_flow_group, ExtLegInfo, PropInfo, VertexInfo};
+use crate::helas::eval::diagram_eval::{
+    against_arrow, vertex_flow_group, ExtLegInfo, PropInfo, VertexInfo,
+};
 use crate::helas::eval::tree::Tree;
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::particles::ParticleId;
@@ -370,6 +372,7 @@ impl DiagramEvalTree {
             n_in,
             uncross,
             chain,
+            keeps_fermion_number: !diagram.violates_fermion_flow(model),
             nodes: Vec::with_capacity(raw.nodes.len()),
         };
         let (root, _) = baker.bake_node(raw.root)?;
@@ -389,6 +392,9 @@ struct Baker<'a> {
     n_in: usize,
     uncross: &'a HashSet<LegIdx>,
     chain: &'a [u8],
+    /// Whether every line of the diagram keeps fermion number, where a line's
+    /// orientation against each vertex's arrow is its being crossed.
+    keeps_fermion_number: bool,
     nodes: Vec<EvalNode>,
 }
 
@@ -469,6 +475,12 @@ impl Baker<'_> {
                         let mut flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
                         flows.insert(ri.0, bind);
+                        debug_assert!(
+                            !self.keeps_fermion_number
+                                || against_arrow(&group.flow, Some(ri.0), &flows) == flows,
+                            "a line that keeps fermion number runs against a vertex's arrow \
+                             exactly where it is crossed"
+                        );
                         let info = VertexInfo::from_ufo(
                             model,
                             *vertex,
@@ -510,6 +522,12 @@ impl Baker<'_> {
                         // scalar sink, so no fermion output adjoint; every leg is a child.
                         let flows: Vec<Option<LegAdjoint>> =
                             baked.iter().map(|(_, f)| *f).collect();
+                        debug_assert!(
+                            !self.keeps_fermion_number
+                                || against_arrow(&group.flow, None, &flows) == flows,
+                            "a line that keeps fermion number runs against a vertex's arrow \
+                             exactly where it is crossed"
+                        );
                         let info = VertexInfo::from_ufo(
                             model, *vertex, color_idx, flow_group, None, &flows,
                         )?;
