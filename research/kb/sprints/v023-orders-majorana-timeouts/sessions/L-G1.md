@@ -22,6 +22,43 @@ item becomes a registered MG 2.9.18 deviation; if it agrees with 2.9.18, the
 attribution is the work. The manager hands you the exact cards and the 3.7.1
 numbers at dispatch.
 
+**A released chirality bug runs through these cards: size it first.** v0.2.2
+read every non-self-conjugate vertex whose Lorentz term is a bare
+`ProjM`/`ProjP` (no `Gamma` or `Sigma`) with the wrong chirality: g_L where it
+should use g_R, and the reverse. PR 2 (#169) fixed this on main a5bf8fca. The
+rule is `conjugate_standalone_projectors` in
+`vibegraph-lib/src/helas/eval/diagram_eval.rs`. Every quark–h± vertex in g2HDM
+is `[FFS1 = ProjM, FFS3 = ProjP]` with separate couplings. The census found
+that each g2HDM card 889–895 uses `t~ b h+` and `b~ t h-` about 53,000 times,
+along with about 50 other affected vertices. The excess this item records was
+measured on v0.2.2.
+- **Size the effect on 894 and 889**, two ways:
+  - per diagram against MadGraph 3.7.1 standalone on `g b > t h-`, which shows
+    the fixed code matches MadGraph;
+  - σ_fix/σ_main from fixed momenta, which shows how much the fix moves σ.
+    - Take N = 1000–2000 unweighted events from a short run on main c18042e
+      (pre-fix). They are distributed as main's |M|².
+    - Evaluate |M|² at **exactly those momenta** on both c18042e and a5bf8fca,
+      and check the momenta match bit for bit before taking any ratio.
+    - A pinned seed is not enough: VEGAS and the α survey adapt to |M|², so
+      after the first warm-up the two builds sample different points.
+    - The weighted mean of r = |M|²_fix/|M|²_main over those events estimates
+      σ_fix/σ_main. Report it with its error, plus the median, spread and sign
+      of r.
+    - vg-validator may already measure this for 894 and 889 in census step 2b.
+      If so, the manager forwards it; check it rather than redo it.
+    - If neither vibegraph nor vg-validator has a way to evaluate given
+      momenta, a reduced-budget σ on each build is the fallback. Its error must
+      be small enough to resolve the effect.
+- **Then re-read the item's excess on post-fix code** before attributing
+  anything else. The other candidate is MadEvent's default-survey bias, which
+  vg-validator's R3 (`hard_survey = 2`) tests. The two causes are independent;
+  separate them.
+- **The release note waits on this for g2HDM.** Report, for each of 889–895,
+  whether its v0.2.2 verdict could move. 890–893 and 895 share 894's vertex
+  set at other masses: say whether 889 and 894 bound them, or which of them
+  needs its own number.
+
 ## Scope
 
 1. **Cards.** Card 894 (M1000: Γ(H±) = 63.5971 GeV, Γ/M = 6.4%) and control 889
