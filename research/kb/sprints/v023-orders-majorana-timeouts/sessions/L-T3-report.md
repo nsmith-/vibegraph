@@ -276,23 +276,89 @@ there. With either card, the preview enumerated the whole card a second time
 and compiled every set serially; it now reuses the sets and compiles them
 across the pool.
 
-## Requests (heavy jobs; nothing below was run here)
+## Release measurements (manager-approved jobs 1–3)
 
-### Local, needs the manager's go-ahead (dev profile, both binaries)
+Release profile on both sides, `cargo build --release -p vibegraph -j 4`,
+each in its own target directory: old = main f08aa3ce (a detached worktree,
+removed afterwards), new = c74ade3e. One run per configuration, run one at a
+time with nothing else heavy on the container (4 cores, which are not the
+reference VM's cores). Driver `lt3-scripts/jobs.sh`, logs `lt3--job{1,2,3}.log`
+in the session scratchpad; wall and CPU from bash `time`, the enumerate time
+from the run's own `enumerated … (t s)` line.
 
-1. DY+0–3j (`lt3-cards/dy3j.dat`, the brief's card): `enumerate --svg none`
-   at `-j1`, `-j2`, `-j2 --parallel-diagrams`, `-j4`, base and head, one run
-   each; expected head `-j2` well under the brief's ≈14 s target in release
-   terms, set and digest identical, 260 sets / 10 310 diagrams.
-2. W(→ℓν)+0–4j (`lt3-cards/w4j.dat`) and Z(→νν)+4j (`lt3-cards/znn4j.dat`)
-   `enumerate --svg none -j4`, head only (base takes ~2900 s on the 4j line
-   at release, so far more in dev): expected the 4j lines to finish, with
-   1284 and 1878 survivors per W±/Z line as L-T2's script predicted.
-3. `integrate --check` on `p p > e+ e- j j j` (the item's card), base and
-   head at `-j4`: the `amplitude_probe` + `compile` phase walls, for the
-   saving the probe item asks for.
+### Job 1: DY+0–3j, `enumerate --svg none`
 
-### Validator host (draft)
+| run | wall (s) | user (s) | enumerate (s) |
+|---|---|---|---|
+| v0.2.2, 2-CPU VM, `-j2` (brief) | 27.2 | — | 20.5 |
+| v0.2.2, 2-CPU VM, `-j2 --parallel-diagrams` (brief) | 20.8 | 28.9 | 13.9 |
+| old, `-j1` | 18.64 | 18.39 | 14.90 |
+| old, `-j2` | 18.41 | 18.15 | 14.86 |
+| old, `-j2 --parallel-diagrams` | 14.33 | 20.79 | 10.88 |
+| old, `-j4` | 17.53 | 17.26 | 13.90 |
+| new, `-j1` | 6.05 | 5.72 | 2.64 |
+| **new, `-j2`** | **4.90** | 5.64 | **1.38** |
+| new, `-j2 --parallel-diagrams` | 4.94 | 5.70 | 1.44 |
+| new, `-j4` | 4.30 | 5.54 | 0.86 |
+
+All eight runs: 260 sets, 10 310 diagrams, `diagrams.json` c2b582fbbe80,
+`diagrams.bin.zst` 7eafafbe201c, `diagram_set_digest` dbbc37153bdeceb8…, so
+old and new and every thread count are byte-identical. The acceptance (≈14 s
+or less at `-j2`, no flag) is met: 4.9 s wall here against the old build's
+18.4 s on the same box. Most of the gain is the prune (`-j1`: 14.9 → 2.6 s
+enumerate). What is left of the wall at `-j2` is ~3.4 s after enumeration,
+the zstd-19 encode of the artifact (Found 1).
+
+### Job 2: W(→ℓν)+0–4j and Z(→νν)+4j, new only, `-j4`, `timeout -s KILL 600`
+
+`enumerate` writes no phase records (they are `integrate`'s and
+`generate`'s), so the per-line counts are from its `progress` records (the
+last record of each line's walk) and the time from the walk's first and last
+record:
+
+| card | line | candidates | handed to feyngraph | line wall (s) |
+|---|---|---|---|---|
+| W+0–4j | W± +0j | 1 089 each | 6 each | 0.0 |
+| | W± +1j | 11 979 each | 18 each | 0.0 |
+| | W± +2j | 131 769 each | 180 each | 0.3 |
+| | W± +3j | 1 449 459 each | 288 each | 3.5, 3.7 |
+| | W± +4j | 15 944 049 each | 1 284 each | 100.4, 107.0 |
+| Z→νν+4j | 4j | 15 944 049 | 1 878 | 130.4 |
+
+```
+w4j.new.j4   rc=0 real 260.679 user 561.571 sys 1.927 | enumerated 169884 diagrams in 3456 subprocesses (220.164 s)
+znn4j.new.j4 rc=0 real 180.780 user 407.086 sys 1.848 | enumerated 206280 diagrams in 1455 subprocesses (132.542 s)
+```
+
+Both finish inside the cap. The handed-on counts are exactly L-T2's
+flavour-conserving counts (180, 288, 1 284, 1 878) and the 3j lines' 288
+are exactly its non-empty count, so the prune removed every empty subprocess
+and nothing else on these lines. Before, the same lines handed feyngraph
+13 734 (3j), 45 720 (W 4j) and 60 318 (Z 4j) subprocesses; L-T2 projected
+~2900 s for 1009's 4j line at release on 4 threads. The old binary was not
+run on these cards (it would not finish in the cap). user/real is 2.2 on 4
+threads, so the 4j lines do not use the pool fully: see Found 5.
+
+### Job 3: `p p > e+ e- j j j` (sm), `integrate --check -j4`
+
+Phase records (`wall_s`):
+
+| phase | old | new |
+|---|---|---|
+| enumerate | 5.233 | 0.435 |
+| amplitude_probe | 2.881 | 0.849 |
+| compile | 3.191 | 0.042 |
+| probe + compile | 6.072 | 0.891 |
+| whole run (bash `real`) | 11.38 | 1.41 |
+
+Both: 96 sets, 6400 diagrams, 44 flavour groups, 3008 compiled diagrams,
+912 helicities, 210 channels. The saving the probe item asks for: the
+`compile` phase's 3.19 s of recompiling is gone (0.04 s left), and the
+probe's own compile runs across four cores (2.88 → 0.85 s), so probe and
+compile together drop 6.07 → 0.89 s. The old `enumerate` here is the old
+default single-thread walk.
+
+## Validator host request (draft)
 
 - **Enumerate diff.** Branch `sprintl-timeout-fixes`, head SHA as pushed. For
   every released v022-1009 card that enumerates within the cap, `vibegraph
@@ -313,7 +379,8 @@ across the pool.
 - The "compile stage over flavour groups and cuts" in the DY+0–3j numbers
   cannot come from `enumerate --svg none` alone (nothing compiles there); the
   run must have had a run or param card, which also enumerated the card twice.
-  The 3 s gap is the zstd-19 encode of the artifact (measured on DY+0–2j).
+  The 3 s gap is the zstd-19 encode of the artifact (timed on DY+0–2j, and
+  on DY+0–3j release it is the ~3.4 s left after enumeration, job 1).
 - "A one-thread walk of a single process line dominates" (the 1.5×): the
   pre-change `--parallel-diagrams` parallelised only inside one subprocess's
   topology assignment, a short contended loop; the walk's subprocesses were
@@ -350,3 +417,9 @@ across the pool.
    `research/kb/phase-space/rng-substreams-and-parallel-determinism.md:118`,
    and the `feyngraph-assign-counts-allocation` item's last paragraph). Not
    edited here (no kb edits outside this report).
+5. **The 4j walks use half the pool.** W+4j and Z→νν+4j ran at user/real 2.2
+   on 4 threads (job 2). Each 4j line walks 15.9M candidates serially
+   (cloning a `String` per leg and sorting a key per candidate) between the
+   batches it hands to feyngraph. Close by profiling the 4j line and, if the
+   walk dominates, walking the alias product without per-candidate
+   allocation or splitting it across the pool in order.
