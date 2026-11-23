@@ -397,8 +397,9 @@ pixi run kb-lint
            MadGraph's own momenta, flavours and colour flows, and compare per
            event with MadGraph's SCALUP and AQCDUP.
          - The uux scale item names this oracle as its first step. It tests
-           967 as well, provided the events from the 967 `hard_survey = 2`
-           seeds are kept; vg-validator keeps them.
+           967 as well, given MadGraph's own 967 events. The R3 seeds'
+           events were not kept (only `results.dat` was), so this needs one
+           `hard_survey = 2` seed regenerated with its events.
        - Reading 967's subprocess pattern against the cuts: the `alp j`
          (2→2) and `alp j j` (2→3) families see the HT window and the xqcut
          very differently. A mismatch in the HT object selection, its upper
