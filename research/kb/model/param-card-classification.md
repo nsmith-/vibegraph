@@ -45,7 +45,9 @@ fixes).
 | `XSECTION` block | rows unparsed up to the next `BLOCK`/`DECAY` (L374-L377) | benign: the reader skips the same rows |
 | `(block, code)` repeated at another value | "is already define" | refused |
 | block opened twice | the second replaces the first | refused |
-| entry the model has no parameter for | never read | refused (`CardError::Unknown`) |
+| entry in a block the model does not define (lone values included) | never read (`write_inc_file` loops over the model's `ident_card`, L656) | benign, reported in `BoundCard::ignored` |
+| `MASS` or `DECAY` entry at a code no particle of the model has | never read | benign, reported in `BoundCard::ignored` |
+| entry at a code the model lacks, in a block it does define | never read | benign, reported in `BoundCard::ignored` |
 | non-integer code | line dropped with a warning | refused |
 | value not a number (Fortran `d` included) | kept as a string | refused |
 | non-finite value | read | refused (`NonFinite`) |
@@ -135,9 +137,24 @@ binding refuses. The MSSM case
 itself cannot be evaluated here: diagram generation refuses a Majorana
 fermion on any line (`ConvertError::MajoranaFermion`).
 
-**An entry the model lacks is refused although MadGraph never reads it.** A
-mistyped block or code would otherwise leave the parameter the card meant at
-its default, silently.
+**An entry the model has no parameter for is ignored, by block and by code**
+(user rulings, 2026-11-22 and 2026-11-24). MadGraph's `write_inc_file` loops
+over the model's `ident_card` entries only (`check_param_card.py` L656), so a
+card written for a larger model, such as a gridpack's, carries blocks and codes
+the model lacks: the HNL gridpack cards on `SM_HeavyN_Gen3Mass_NLO` set
+`YUKAWA` codes 1, 2, 3, 4, 11 and 13 (ymdo, ymup, yms, ymc, yme, ymm), where
+the model defines the block at 5, 6 and 15 only. A whole block no parameter of
+the model sits in, a `MASS` or `DECAY` entry at a PDG code no model particle
+has, and (ruling of 2026-11-24) a code the model lacks inside a block it does
+define bind and are listed in `BoundCard::ignored`, one warning per entry
+naming the block, the code and the value. The last includes a mistyped code,
+which therefore leaves the parameter the card meant at its default with only
+the warning to show for it; MadGraph never reads such an entry either, and an
+entry whose value matches another code's gets no exception. A parameter the
+restriction zeroed stays in the model's parameter list (the restriction card must name
+every external, `RestrictMissing`), so binding sees the full model's blocks and
+refuses a value for it naming the restriction (`restrict_<x>.dat`), where a
+block the model never defined is ignored.
 
 ## Tests and their blind spots
 

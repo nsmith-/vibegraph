@@ -11,7 +11,11 @@
 
 use std::cell::Cell;
 
+use itertools::Itertools;
+
 use crate::budget::ConvergenceReport;
+use crate::diagrams::DiagramSet;
+use crate::ufo::{EvaluatedModel, UFOModel};
 
 /// Fewest effective points ([`ConvergenceReport::effective_points`]) a cross
 /// section is accepted on.
@@ -152,6 +156,68 @@ pub enum SupportError {
         minimum: f64,
         census: PointCensus,
     },
+}
+
+/// The subprocesses whose every diagram holds a vertex all of whose couplings evaluate to
+/// exactly zero at the parameters in force: the cause of a matrix element that vanishes on
+/// every point. One line per distinct set of such vertices, naming the vertices and their
+/// couplings and the subprocesses they empty; empty when no subprocess is zero for that
+/// reason.
+pub fn zero_coupling_subprocesses(
+    sets: &[DiagramSet],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<String> {
+    let mut by_vertices: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for set in sets {
+        let mut named = std::collections::BTreeSet::new();
+        let every_diagram_dead = !set.diagrams.is_empty()
+            && set.diagrams.iter().all(|diagram| {
+                diagram.vertices.iter().any(|vertex| {
+                    let def = model.vertex_def(vertex.interaction);
+                    let dead = def
+                        .couplings
+                        .values()
+                        .all(|&id| evaluated.coupling(id).norm() == 0.0);
+                    if dead {
+                        let couplings = def
+                            .couplings
+                            .values()
+                            .filter_map(|&id| model.couplings.get_index(id.index()))
+                            .map(|(name, _)| name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        named.insert(format!("{} ({couplings})", def.name));
+                    }
+                    dead
+                })
+            });
+        if every_diagram_dead {
+            let vertices = named.into_iter().take(6).collect::<Vec<_>>().join("; ");
+            by_vertices.entry(vertices).or_default().push(format!(
+                "{} > {}",
+                set.particles_in.join(" "),
+                set.particles_out.join(" ")
+            ));
+        }
+    }
+    by_vertices
+        .into_iter()
+        .map(|(vertices, subprocesses)| {
+            let shown = subprocesses.iter().take(2).join(", ");
+            let more = subprocesses.len().saturating_sub(2);
+            let and_more = if more > 0 {
+                format!(" and {more} more")
+            } else {
+                String::new()
+            };
+            format!(
+                "in {} subprocess(es), {shown}{and_more}, every diagram holds a vertex whose \
+                 couplings all evaluate to zero: {vertices}",
+                subprocesses.len()
+            )
+        })
+        .collect()
 }
 
 /// Refuse a completed integration whose points do not carry its cross section:

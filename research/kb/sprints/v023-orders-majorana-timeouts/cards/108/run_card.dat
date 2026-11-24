@@ -1,0 +1,25 @@
+# Reconstruction of CMS card 108 from the values the campaign recorded; unlisted parameters are left to the template default.
+6800 = ebeam1
+6800 = ebeam2
+325500 = lhaid
+-1 = dynamical_scale_choice
+0 = ickkw
+0 = xqcut
+4 = maxjetflavor
+5 = ptj
+5 = etaj
+0 = ptb
+5 = etab
+0 = ptl
+2.5 = etal
+0.4 = drll
+0 = drjj
+0 = drbb
+0 = drbj
+0 = drjl
+0 = drbl
+T = cut_decays
+15 = bwcutoff
+0 = nhel
+1 = sde_strategy
+10000 = nevents

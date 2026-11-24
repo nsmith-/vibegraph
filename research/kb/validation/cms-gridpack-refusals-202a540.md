@@ -50,7 +50,7 @@ Items marked *Sprint H branch* are on `sprinth-kb` and not yet on `main`.
 | 16 | spin-2 propagator (bulk graviton) | 2 | [spin-2-and-spin-3-2-particles-unsupported](../backlog/feature/spin-2-and-spin-3-2-particles-unsupported.md) | low (descoped by user decision) |
 | 17 | clustering scale with a four-line vertex | 1 | [clustering-scale-contact-vertex-refused](../backlog/feature/clustering-scale-contact-vertex-refused.md) | low |
 | 18 | custom `propagators.py` form | 1 | [custom-ufo-propagators-unevaluated](../backlog/feature/custom-ufo-propagators-unevaluated.md) | low |
-| 19 | zero weight on every point (TpTp) | 1 | [tptp-integrand-zero-on-every-point](../backlog/validation/tptp-integrand-zero-on-every-point.md) | low |
+| 19 | zero weight on every point (TpTp) | 1 | `tptp-integrand-zero-on-every-point` (closed: the card leaves the one coupling that feeds `s0 > b b~` at zero) | low |
 | — | NLO or split-order proc card | 36 | [nlo-generation-missing](../backlog/feature/nlo-generation-missing.md) | low; outside the LO charter |
 | — | μF below the PDF floor (QCD-4Jets_HT-100to200) | 1 | Sprint H fix in progress | — |
 
