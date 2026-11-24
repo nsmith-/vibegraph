@@ -165,7 +165,10 @@ pub(crate) fn run(args: &ParametersArgs) -> Result<(), CliError> {
         digest: loaded.identity.digest.clone(),
     };
     let computed = match &args.param_card {
-        Some(path) => crate::integrate::bind_param_card(Some(path), &loaded.model)?.auto_widths,
+        Some(path) => {
+            crate::integrate::bind_param_card(Some(path), &loaded.model, &loaded.identity.restrict)?
+                .auto_widths
+        }
         None => Vec::new(),
     };
     let (json, card) = build(
