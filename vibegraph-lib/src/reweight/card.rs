@@ -106,7 +106,7 @@ pub(crate) struct LaunchSpec {
 pub struct ReweightCard {
     pub(crate) launches: Vec<LaunchSpec>,
     /// The last `change helicity` value, `None` without the line.
-    pub(crate) helicity: Option<HelicityRatio>,
+    helicity: Option<HelicityRatio>,
 }
 
 impl ReweightCard {

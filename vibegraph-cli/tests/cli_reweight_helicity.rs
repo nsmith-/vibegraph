@@ -146,12 +146,15 @@ fn cli_reweight_helicity_follows_the_card_and_the_flag() {
         assert_eq!(got, want, "{name}");
     }
 
-    // A flag the card's own line contradicts is refused, naming both.
-    for (card, flag) in [(&summed, "event"), (&event, "summed")] {
+    // A flag the card's own line contradicts is refused, naming both. Every
+    // per-event refusal also prints `--reweight-helicity` and `change helicity`
+    // (the remedy), so the assertion reads this refusal's own head.
+    for (card, flag, line) in [(&summed, "event", "False"), (&event, "summed", "True")] {
         let run = generate(dir, &grid, "contradicted", card, Some(flag));
         assert!(!run.status, "{flag} over the card's line:\n{}", run.log);
         assert!(
-            run.log.contains("--reweight-helicity") && run.log.contains("change helicity"),
+            run.log.contains(&format!("--reweight-helicity {flag}: "))
+                && run.log.contains(&format!("says `change helicity {line}`")),
             "{}",
             run.log
         );

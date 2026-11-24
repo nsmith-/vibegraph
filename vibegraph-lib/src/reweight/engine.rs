@@ -443,35 +443,33 @@ impl Reweighter<'_> {
             // comes out of the same contraction as every numerator.
             let r00 = r[0];
             for (launch, u) in &group.launches {
-                let mut m = 0.0;
-                for (j, &uj) in u.iter().enumerate() {
-                    let row = &r[j * k..(j + 1) * k];
-                    let ru: f64 = row.iter().zip(u.iter()).map(|(a, b)| a * b).sum();
-                    m += uj * ru;
-                }
-                out[*launch] = ratio(m, r00);
+                out[*launch] = ratio(quadratic_form(r, k, u), r00);
             }
         }
-        // Launches sharing a parameter point share its slot, evaluated once.
-        bound.m2_at.clear();
-        bound.m2_at.resize(bound.amps.len(), None);
-        bound.m2_at[0] = Some(m0);
-        for &(launch, slot) in &plan.exact {
-            let m = match bound.m2_at[slot] {
-                Some(m) => m,
-                None => {
-                    let m = bound.amps[slot].eval_m2(momenta, &mut bound.scratch);
-                    bound.m2_at[slot] = Some(m);
-                    m
-                }
-            };
-            out[launch] = ratio(m, m0);
-        }
+        bound.exact_ratios(
+            &plan.exact,
+            m0,
+            out,
+            |b, slot| b.amps[slot].eval_m2(momenta, &mut b.scratch),
+            |m| ratio(m, m0),
+        );
         Ok(CardPoint {
             m2: m0,
             helicity_m2: None,
         })
     }
+}
+
+/// `uᵀ R u` for the row-major `k × k` node Gram matrix `r`: a hypothesis's
+/// `|M|²` from its node coefficients `u`.
+fn quadratic_form(r: &[f64], k: usize, u: &[f64]) -> f64 {
+    let mut m = 0.0;
+    for (j, &uj) in u.iter().enumerate() {
+        let row = &r[j * k..(j + 1) * k];
+        let ru: f64 = row.iter().zip(u.iter()).map(|(a, b)| a * b).sum();
+        m += uj * ru;
+    }
+    m
 }
 
 /// The index of `helicity` among an amplitude's combinations.
@@ -526,38 +524,52 @@ impl BoundSub<'_> {
                 return Err(refuse(r00));
             }
             for (launch, u) in &group.launches {
-                let mut m = 0.0;
-                for (j, &uj) in u.iter().enumerate() {
-                    let row = &r[j * k..(j + 1) * k];
-                    let ru: f64 = row.iter().zip(u.iter()).map(|(a, b)| a * b).sum();
-                    m += uj * ru;
-                }
-                out[*launch] = m / r00;
+                out[*launch] = quadratic_form(r, k, u) / r00;
             }
         }
-        self.m2_at.clear();
-        self.m2_at.resize(self.amps.len(), None);
-        self.m2_at[0] = Some(m0_combo);
-        for &(launch, slot) in &plan.exact {
-            let m = match self.m2_at[slot] {
-                Some(m) => m,
-                None => {
-                    self.amps[slot].amplitude().eval_hel_m2(
-                        momenta,
-                        &mut self.scratch,
-                        &mut self.hel_m2,
-                    );
-                    let m = self.hel_m2[combo];
-                    self.m2_at[slot] = Some(m);
-                    m
-                }
-            };
-            out[launch] = m / m0_combo;
-        }
+        self.exact_ratios(
+            &plan.exact,
+            m0_combo,
+            out,
+            |b, slot| {
+                b.amps[slot]
+                    .amplitude()
+                    .eval_hel_m2(momenta, &mut b.scratch, &mut b.hel_m2);
+                b.hel_m2[combo]
+            },
+            |m| m / m0_combo,
+        );
         Ok(CardPoint {
             m2: m0,
             helicity_m2: Some(m0_combo),
         })
+    }
+
+    /// Write each exact launch's ratio, `ratio(m)` of its slot's `|M|²` `m`, to
+    /// `out`. Launches sharing a parameter point share its slot, evaluated once
+    /// by `eval`; slot 0, the card's own, is `m0`.
+    fn exact_ratios(
+        &mut self,
+        exact: &[(usize, usize)],
+        m0: f64,
+        out: &mut [f64],
+        eval: impl Fn(&mut Self, usize) -> f64,
+        ratio: impl Fn(f64) -> f64,
+    ) {
+        self.m2_at.clear();
+        self.m2_at.resize(self.amps.len(), None);
+        self.m2_at[0] = Some(m0);
+        for &(launch, slot) in exact {
+            let m = match self.m2_at[slot] {
+                Some(m) => m,
+                None => {
+                    let m = eval(self, slot);
+                    self.m2_at[slot] = Some(m);
+                    m
+                }
+            };
+            out[launch] = ratio(m);
+        }
     }
 
     /// Read the card point's JAMPs at `momenta` into `base_jamps`, for every

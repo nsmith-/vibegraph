@@ -86,8 +86,7 @@ impl ReweightAudit {
                 helicity_m2: in_helicity,
             }) => {
                 if let Some(h) = in_helicity {
-                    let deviation =
-                        (h - helicity_m2).abs() / helicity_m2.abs().max(f64::MIN_POSITIVE);
+                    let deviation = relative_deviation(h, helicity_m2);
                     self.largest_helicity = self.largest_helicity.max(deviation);
                     if !(deviation <= CARD_POINT_TOLERANCE) {
                         self.helicity_mismatches += 1;
@@ -122,7 +121,7 @@ impl ReweightAudit {
             Some((_, n)) => *n += 1,
             None => self.terms.push((term, 1)),
         }
-        let deviation = (m0 - m2).abs() / m2.abs().max(f64::MIN_POSITIVE);
+        let deviation = relative_deviation(m0, m2);
         self.largest = self.largest.max(deviation);
         if !(deviation <= CARD_POINT_TOLERANCE) {
             self.m2_mismatches += 1;
@@ -166,7 +165,10 @@ impl ReweightAudit {
     }
 
     /// Report what was checked, and refuse a file whose weights were taken against
-    /// another subprocess than the one each event was drawn in, or are not finite.
+    /// another subprocess than the one each event was drawn in, or are not finite;
+    /// under [`HelicityRatio::Event`] also one with an event the reweighter
+    /// refused, an event with identical outgoing particles under different
+    /// mothers, or an event weighted in another helicity than it was drawn in.
     /// A refused file is removed rather than left beside the error.
     pub(super) fn finish(&self, out: &std::path::Path) -> Result<(), GenerateError> {
         let events: usize = self.terms.iter().map(|(_, n)| n).sum();
@@ -246,6 +248,12 @@ impl ReweightAudit {
             self.first.as_deref().unwrap_or("")
         )))
     }
+}
+
+/// `|got - want| / |want|`, with a zero `want` read as the smallest positive
+/// normal so that a nonzero `got` against it is a deviation, not a NaN.
+fn relative_deviation(got: f64, want: f64) -> f64 {
+    (got - want).abs() / want.abs().max(f64::MIN_POSITIVE)
 }
 
 /// The PDG code of two outgoing particles of `record` whose mothers differ:
