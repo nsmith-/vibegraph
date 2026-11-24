@@ -227,6 +227,13 @@ A per-PR agent therefore keeps new debt out, and the whole-codebase pass stays a
 
 **Refactors:** choose the identity oracle before the first edit, and run it at the end.
 
+An oracle over a progress or log stream needs a mask, and the mask must be
+proved before it is trusted. Run the base build against itself first: two runs
+of one binary already differ in `timestamp`, `elapsed_s`, `ns_per_eval`,
+timing text inside log messages, and a `-dirty` version string. A mask that
+does not make base-against-base identical cannot show that a fix changed
+nothing ([sprint L, L-Z6](../sprints/v023-orders-majorana-timeouts/sessions/L-Z6-report.md)).
+
 ### Report shape
 
 These sections keep the calibration measurable, as the sprint's did. `hygiene-dev` adds a **Routed** section for the findings it hands on (below).
