@@ -153,7 +153,22 @@ fn the_entering_list_of_a_smeft_process() {
     let t = record(report, "MT");
     assert_eq!(t["particles"][0]["external_in_process"], true);
     assert_eq!(t["reweight"]["verdict"], "external_mass");
+    assert_eq!(t["enters"], json!(["masses_widths"]));
+    assert_eq!(
+        record(report, "MZ")["enters"],
+        json!(["couplings", "masses_widths"])
+    );
     assert!(!entering.contains(&"MC"));
+    // At `NP<=1` each diagram carries at most one NP coupling, and SMEFTsim's
+    // couplings are linear in the Wilson coefficients, so the amplitude is of
+    // degree one in each coefficient that enters.
+    for name in entering.iter().filter(|n| n.starts_with('c')) {
+        assert_eq!(
+            record(report, name)["reweight"]["polynomial"],
+            json!({"status": "polynomial", "max_degree": 1}),
+            "{name}"
+        );
+    }
 }
 
 /// `enumerate` writes the same two files beside `diagrams.json`.
@@ -244,4 +259,34 @@ fn a_restriction_that_ties_and_fixes_parameters() {
     assert!(cg["constraints"].as_array().unwrap().contains(&json!(
         {"kind": "leads_group", "members": [{"name": "cW", "factor": 1.0}]}
     )));
+}
+
+/// A second run into the same directory is refused before it writes, unless
+/// `--force` is given.
+#[test]
+fn an_earlier_report_is_not_overwritten_without_force() {
+    let tmp = tempfile::tempdir().unwrap();
+    run(tmp.path(), "parameters", &model_card(), &[]);
+    let again = common::vibegraph(tmp.path(), tmp.path())
+        .args([
+            "parameters",
+            "proc_card.dat",
+            "--out",
+            "out",
+            "--output-ldjson",
+        ])
+        .args(["--ufo-dir".as_ref(), ufo_dir().as_os_str()])
+        .output()
+        .expect("spawn vibegraph");
+    let stdout = common::stdout_of(&again);
+    let refusal: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(refusal["error_kind"], "io", "{refusal}");
+    assert!(
+        refusal["message"]
+            .as_str()
+            .unwrap()
+            .contains("already exists (pass --force to overwrite)"),
+        "{refusal}"
+    );
+    run(tmp.path(), "parameters", &model_card(), &["--force"]);
 }

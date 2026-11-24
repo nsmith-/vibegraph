@@ -8,16 +8,37 @@ use serde::Serialize;
 
 use super::{canonical_name, parse_value, split_line, ParamValue, RunCardError, PARAM_DEFAULTS};
 
+/// Why a card line did not read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Problem {
+    /// A name MadGraph's template does not have.
+    UnknownName,
+    /// A known name whose value does not parse.
+    MalformedValue,
+    /// A `$`-led template line, which the parser refuses.
+    Placeholder,
+}
+
 /// A card line this build does not read.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct UnknownKey {
     pub name: String,
     pub line: usize,
     pub value: String,
-    /// `unknown_name` for a name MadGraph's template does not have,
-    /// `malformed_value` for a known name whose value does not parse, or
-    /// `placeholder` for a `$`-led template line, which the parser refuses.
-    pub problem: &'static str,
+    pub problem: Problem,
+}
+
+impl UnknownKey {
+    /// The parser's refusal of a [`Problem::Placeholder`] line; `None` for any
+    /// other problem.
+    pub(super) fn placeholder_refusal(&self) -> Option<RunCardError> {
+        (self.problem == Problem::Placeholder).then(|| RunCardError::UnfilledPlaceholder {
+            name: self.name.clone(),
+            placeholder: self.value.clone(),
+            line: self.line,
+        })
+    }
 }
 
 /// The card's lines as the parser reads them: values by canonical name, the
@@ -45,17 +66,14 @@ pub(super) fn scan(text: &str) -> Scanned {
         let Some((value_tok, name)) = split_line(raw) else {
             let body = raw.split(['#', '!']).next().unwrap_or("").trim();
             if let Some((value, name)) = body.rsplit_once('=').filter(|_| body.starts_with('$')) {
-                first_error.get_or_insert(RunCardError::UnfilledPlaceholder {
-                    name: name.trim().to_string(),
-                    placeholder: value.trim().to_string(),
-                    line: line_no,
-                });
-                unknown.push(UnknownKey {
+                let key = UnknownKey {
                     name: name.trim().to_string(),
                     line: line_no,
                     value: value.trim().to_string(),
-                    problem: "placeholder",
-                });
+                    problem: Problem::Placeholder,
+                };
+                first_error = first_error.or_else(|| key.placeholder_refusal());
+                unknown.push(key);
             }
             continue;
         };
@@ -68,7 +86,7 @@ pub(super) fn scan(text: &str) -> Scanned {
                 name: name.to_string(),
                 line: line_no,
                 value: value_tok.to_string(),
-                problem: "unknown_name",
+                problem: Problem::UnknownName,
             });
             continue;
         };
@@ -83,7 +101,7 @@ pub(super) fn scan(text: &str) -> Scanned {
                 name: name.to_string(),
                 line: line_no,
                 value: value_tok.to_string(),
-                problem: "malformed_value",
+                problem: Problem::MalformedValue,
             });
             continue;
         };
