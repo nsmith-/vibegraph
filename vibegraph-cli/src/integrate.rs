@@ -1057,8 +1057,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     // Each set is compiled once, across the pool, for the probe and the integrand
     // alike, so the probe's phase holds the run's compiles.
     let mut probe_phase = phase::start(PhaseName::AmplitudeProbe);
-    let set_refs: Vec<&DiagramSet> = sets.iter().collect();
-    let compiled = compile_classes(&set_refs, &model, &evaluated);
+    let compiled = compile_classes(&sets, &model, &evaluated);
     let (amplitude_probe, evaluators) =
         amplitude_probe::measure_compiled(&sets, compiled, &evaluated)
             .map_err(|e| err(ErrorKind::Process, e.to_string()))?;

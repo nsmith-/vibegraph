@@ -24,6 +24,7 @@
 //! clusters in the partonic CM, as MadEvent does, and evaluates the closed-form
 //! choices in the lab frame.
 
+use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -698,9 +699,10 @@ pub(crate) fn compile_class(
 /// result per set, in set order, each the evaluator the set compiles to on its
 /// own, so the order and the thread a set is compiled on change nothing. It
 /// reports no progress: the workers are in no progress group, so the caller
-/// reports, on its own thread, as it takes the results.
-pub fn compile_classes(
-    sets: &[&DiagramSet],
+/// reports, on its own thread, as it takes the results. `sets` holds the sets
+/// or references to them.
+pub fn compile_classes<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
@@ -709,7 +711,7 @@ pub fn compile_classes(
     sets.par_iter()
         .map(|set| {
             let _entered = span.enter();
-            compile_class(set, model, evaluated)
+            compile_class(set.borrow(), model, evaluated)
         })
         .collect()
 }
@@ -717,8 +719,8 @@ pub fn compile_classes(
 /// `precompiled[k]` where it holds an evaluator of `sets[k]`, compiled under
 /// `evaluated`, and [`compile_class`] of `sets[k]` across the rayon pool
 /// ([`compile_classes`]) where it holds none: one result per set, in set order.
-pub(crate) fn complete_compiles(
-    sets: &[&DiagramSet],
+pub(crate) fn complete_compiles<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
     precompiled: Vec<Option<AmplitudeEvaluator>>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
@@ -728,7 +730,7 @@ pub(crate) fn complete_compiles(
         .iter()
         .zip(&precompiled)
         .filter(|(_, e)| e.is_none())
-        .map(|(s, _)| *s)
+        .map(|(s, _)| s.borrow())
         .collect();
     let mut compiled = compile_classes(&missing, model, evaluated).into_iter();
     precompiled

@@ -341,20 +341,9 @@ pub fn check_process(artifact: &IntegrateArtifact, reparsed: &str) -> Result<(),
 /// Refuse a build that no longer computes the matrix element `artifact` was
 /// integrated with: every banked amplitude probe point is recomputed under
 /// `evaluated` and must agree to [`PROBE_REL_TOL`] ([`crate::amplitude_probe`]).
-pub fn check_amplitude_probe(
-    artifact: &IntegrateArtifact,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> Result<(), GenerateError> {
-    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
-    let compiled = compile_classes(&refs, model, evaluated);
-    check_amplitude_probe_compiled(artifact, &compiled, evaluated)
-}
-
-/// [`check_amplitude_probe`] through evaluators compiled already: `compiled[k]`
-/// is what [`compile_class`](crate::hadronic::compile_class) made of the
-/// artifact's set `k` under `evaluated`.
-fn check_amplitude_probe_compiled(
+/// `compiled[k]` is what [`compile_class`](crate::hadronic::compile_class) made
+/// of the artifact's set `k`, the evaluators the integrand then reuses.
+fn check_amplitude_probe(
     artifact: &IntegrateArtifact,
     compiled: &[Result<AmplitudeEvaluator, HadronicError>],
     evaluated: &EvaluatedModel,
@@ -429,9 +418,8 @@ pub fn generate(
     // Each set is compiled once, for the probe and the integrand alike. One the
     // probe could not compile is compiled again where the integrand needs it, to
     // be refused there as it would be without the probe.
-    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
-    let compiled = compile_classes(&refs, assets.model, assets.evaluated);
-    check_amplitude_probe_compiled(artifact, &compiled, assets.evaluated)?;
+    let compiled = compile_classes(&artifact.sets, assets.model, assets.evaluated);
+    check_amplitude_probe(artifact, &compiled, assets.evaluated)?;
     let precompiled: Vec<Option<AmplitudeEvaluator>> =
         compiled.into_iter().map(Result::ok).collect();
     if assets.card.is_decay() && settings.systematics.enabled {
