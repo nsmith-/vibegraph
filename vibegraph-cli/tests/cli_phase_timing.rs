@@ -135,6 +135,17 @@ fn a_fixed_beam_integration_streams_its_phases_in_order() {
     assert_eq!(size(&objects, "enumerate", "diagrams"), 2);
     assert_eq!(size(&objects, "channels", "channels"), 2);
     assert_eq!(size(&objects, "vegas", "iterations"), 4);
+    // The clock is real: no evaluation of the integrand takes under a
+    // nanosecond, so the VEGAS phase lasts at least that per point.
+    let vegas_end = phases(&objects)
+        .into_iter()
+        .find(|p| p["phase"] == "vegas" && p["event"] == "end")
+        .unwrap();
+    let points = size(&objects, "vegas", "points") as f64;
+    assert!(
+        vegas_end["wall_s"].as_f64().unwrap() >= points * 1e-9,
+        "{vegas_end}"
+    );
 
     // `generate` from the artifact the run wrote.
     let events = tmp.path().join("events.lhe");
