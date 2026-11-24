@@ -483,13 +483,13 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
             let mut overall = UnweightStats::default();
             // The shipped pass: blocks of trials on the seed's own streams, each
             // accepted point's momenta rebuilt on the worker that accepted it.
-            let prepare = |point: &AcceptedPoint, _: &[f64]| {
+            let prepare = |point: &AcceptedPoint, _: [f64; 0]| {
                 let mut momenta = Vec::new();
                 integ.event_in_channel(point.channel, &point.u, &mut momenta);
                 observables(&momenta)
             };
             for &seed in &GEN_SEEDS {
-                let mut pass = BlockedPass::new(uw.clone(), seed, 0, TRIALS_PER_SEED as u64);
+                let mut pass = BlockedPass::new(uw.clone(), seed, TRIALS_PER_SEED as u64);
                 // Every event whose trial falls inside the seed's budget, and the
                 // statistics as they stood after the last of them.
                 let mut used = UnweightStats::default();
@@ -503,8 +503,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
                     }
                 }
                 let events = used.accepted;
-                let sigma =
-                    uw.total_w_max() * GEV2_TO_PB * used.event_weight_sum / used.trials as f64;
+                let sigma = uw.sigma_of_events(&used) * GEV2_TO_PB;
                 eprintln!(
                     "  seed {seed:#010x} | {events:>6} events in {} trials, \
                      eff {:.3e} | sigma(events) = {sigma:.6e} pb",

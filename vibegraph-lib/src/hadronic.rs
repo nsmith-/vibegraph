@@ -2187,6 +2187,10 @@ pub struct ChannelIntegration {
     pub shares: Vec<VegasResult>,
 }
 
+/// The uniforms [`FixedBeamIntegrand::select_event`] draws an event's labels from:
+/// the subprocess, the helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 4;
+
 /// The discrete labels an accepted event carries besides its momenta, drawn by
 /// [`FixedBeamIntegrand::select_event`].
 ///
@@ -3606,7 +3610,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self,
         momenta: &[V],
         channel: usize,
-        u: [f64; 4],
+        u: [f64; SELECT_EVENT_DRAWS],
     ) -> Option<EventSelection> {
         let ext = self.externals(momenta);
         let sc = self.scratch();
