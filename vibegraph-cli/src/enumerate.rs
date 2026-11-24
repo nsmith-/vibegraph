@@ -537,7 +537,11 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     let model = &loaded.model;
 
     let bound = if args.run_card.is_some() || args.param_card.is_some() {
-        Some(bind_param_card(args.param_card.as_deref(), model)?)
+        Some(bind_param_card(
+            args.param_card.as_deref(),
+            model,
+            &loaded.identity.restrict,
+        )?)
     } else {
         None
     };

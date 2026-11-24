@@ -7,7 +7,7 @@
 //!   muon can reach the `ptl = 50 GeV` the run card asks for;
 //! * every point passes the cuts and `|M|²` is zero on all of them:
 //!   `lt~ lt > vt vt` in `vibegraph_toy_UFO`, whose only coupling `gl` the param
-//!   card sets to zero;
+//!   card sets to zero, and the refusal names the vertex and coupling that vanish;
 //! * a handful of points carry the weight: the same `e+ e- > mu+ mu-` with `ptl`
 //!   a hair under the beam energy, which only muons within `2·10⁻⁴` of
 //!   `cos θ = 0` pass, on a seed whose grid never finds that window and on one
@@ -130,6 +130,7 @@ fn a_coupling_zero_at_the_parameters_in_force_is_refused() {
             "passed the cuts",
             "|M|²",
             "zero at the parameters in force",
+            "every diagram holds a vertex whose couplings all evaluate to zero: V_ltltvt (GC_LV)",
             "no artifact was written",
         ],
     );

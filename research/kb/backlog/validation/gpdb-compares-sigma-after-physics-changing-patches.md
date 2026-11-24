@@ -24,7 +24,7 @@ attempt. It computes `ratio` and `pull` for any `ok` outcome, whatever its
 
 In the closing rerun, DarkPhoton's card was refused for a `chi` mass the model
 lacks
-([param-card-entries-for-absent-particles-refused](../feature/param-card-entries-for-absent-particles-refused.md)).
+(since fixed: an entry at a code the model has no particle for is ignored with a warning).
 gpdb then ran at the model's default MZd = 20 and reported a σ/MG that compares
 different physics.
 
