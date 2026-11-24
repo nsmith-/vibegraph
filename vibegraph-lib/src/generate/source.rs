@@ -230,8 +230,9 @@ fn member_code(codes: &[Vec<LineCode>], config: usize, line: usize) -> Option<Li
 /// One event's record, with the resonances of its configuration as status-2
 /// records where `resonances` names a table: the lines MadEvent's `cut_bw` flags
 /// at the event's momenta ([`SubprocessResonances::on_shell`]), each carrying the
-/// PDG code `pdgs[config][line]` where the record's flavours differ from the
-/// table's, its own otherwise.
+/// code and colour `codes[config][line]` where the record's flavours differ from
+/// the table's, its own otherwise. An event a line of which the record holds no
+/// code for ([`LineCode::NONE`]) is written without intermediates and counted.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn event_record(
     record: &SubprocessRecord,
@@ -243,7 +244,7 @@ pub(super) fn event_record(
     (config, leading): (Option<usize>, bool),
     tally: &mut ResonanceTally,
 ) -> Option<LheEvent> {
-    let Some((table, pdgs)) = resonances else {
+    let Some((table, codes)) = resonances else {
         return record.event(externals, helicity, flow, header).ok();
     };
     let Some(config) = config.filter(|_| leading) else {
@@ -255,12 +256,9 @@ pub(super) fn event_record(
         .on_shell(config, &externals[record.n_in()..])
         .into_iter()
         .map(|i| {
-            let code = match pdgs {
-                Some(p) => member_code(p, config, i)?,
-                None => LineCode {
-                    pdg: lines[i].pdg,
-                    color: lines[i].color,
-                },
+            let code = match codes {
+                Some(codes) => member_code(codes, config, i)?,
+                None => lines[i].code(),
             };
             Some(Intermediate {
                 pdg: code.pdg,
@@ -290,7 +288,9 @@ pub(super) fn event_record(
 /// whose leg sets the clustering found on their Breit–Wigner
 /// ([`SubprocessResonances::clustered_on_shell`]), none where the drawn flow is
 /// below leading colour in that configuration (`addmothers.f:129-131`, 195).
-/// `pdgs[config][line]` carries each line's code in the record's flavours.
+/// `codes[config][line]` carries each line's code and colour in the record's
+/// flavours; an event a line of which it holds no code for is written without
+/// intermediates and counted.
 /// `ptclus` is indexed like the record's legs: the record reorders only the
 /// incoming ones, which have none.
 #[allow(clippy::too_many_arguments)]
@@ -307,13 +307,13 @@ pub(super) fn matched_event_record(
 ) -> Option<LheEvent> {
     let n_in = record.n_in();
     let intermediates: Vec<Intermediate> = match (resonances, config) {
-        (Some((table, pdgs)), Some(config)) if leading => {
+        (Some((table, codes)), Some(config)) if leading => {
             let lines = table.lines(config);
             let resolved: Option<Vec<Intermediate>> = table
                 .clustered_on_shell(config, &matched.on_shell, n_in)
                 .into_iter()
                 .map(|i| {
-                    let code = member_code(pdgs, config, i)?;
+                    let code = member_code(codes, config, i)?;
                     Some(Intermediate {
                         pdg: code.pdg,
                         color: code.color,
@@ -419,10 +419,12 @@ pub(super) fn ordering_slot(ordering: BeamOrdering) -> usize {
 pub(super) struct PartRecords {
     pub(super) records: FlavorRecords,
     pub(super) resonances: Vec<SubprocessResonances>,
-    /// `[group][member][config][line]`: the PDG code and colour a resonance
-    /// line of the group's representative carries in a member.
-    pub(super) member_pdgs: Vec<Vec<Vec<Vec<LineCode>>>>,
+    pub(super) member_codes: MemberCodes,
 }
+
+/// `[group][member][config][line]`: the PDG code and colour a resonance line of
+/// the group's representative carries in a member.
+pub(super) type MemberCodes = Vec<Vec<Vec<Vec<LineCode>>>>;
 
 /// What a proton event's `<mgrwt>` record is filled from: the QCD power of
 /// each integration configuration's diagram, and the central member the
@@ -645,7 +647,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         let resonances = part.resonances.get(selection.group).map(|table| {
             (
                 table,
-                part.member_pdgs[selection.group][selection.member].as_slice(),
+                part.member_codes[selection.group][selection.member].as_slice(),
             )
         });
         let subprocess = part.records[selection.group][selection.member]
@@ -669,7 +671,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 &selection.helicity,
                 selection.flow,
                 header,
-                resonances.map(|(table, pdgs)| (table, Some(pdgs))),
+                resonances.map(|(table, codes)| (table, Some(codes))),
                 (selection.config, selection.leading),
                 &mut self.tally,
             )?,

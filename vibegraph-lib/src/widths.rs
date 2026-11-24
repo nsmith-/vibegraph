@@ -71,11 +71,11 @@ use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
 /// The method [`ComputedWidth::method`] names.
-pub const METHOD: &str = "tree_level_two_body";
+const METHOD: &str = "tree_level_two_body";
 
 /// The partial width (GeV) below which MadGraph sets a coloured particle's
 /// channel to zero (`do_compute_widths`, `madgraph_interface.py`).
-pub const QCD_SCALE_FLOOR: f64 = 0.1;
+const QCD_SCALE_FLOOR: f64 = 0.1;
 
 /// One daughter of a channel: its PDG code and the name a process card writes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -238,6 +238,12 @@ fn particle_with_code(model: &UFOModel, pdg: i32) -> Option<ParticleId> {
         .map(ParticleId::from)
 }
 
+/// The particle a `DECAY <pdg>` line names: physical, with PDG code `pdg`, and
+/// a particle rather than an antiparticle (`pdg > 0`).
+pub(crate) fn decaying_particle(model: &UFOModel, pdg: i32) -> Option<ParticleId> {
+    particle_with_code(model, pdg).filter(|_| pdg > 0)
+}
+
 /// `daughters` by descending PDG code.
 fn ordered(model: &UFOModel, mut daughters: Vec<ParticleId>) -> Vec<ParticleId> {
     daughters.sort_by_key(|&d| std::cmp::Reverse(model.particle(d).pdg_code));
@@ -391,7 +397,7 @@ fn channel_width(
 }
 
 /// `value` as MadGraph's `%e` writes it: seven significant digits.
-pub fn madgraph_rounded(value: f64) -> f64 {
+fn madgraph_rounded(value: f64) -> f64 {
     format!("{value:.6e}")
         .parse()
         .expect("a formatted finite number parses")
@@ -448,9 +454,7 @@ pub fn two_body_width(
     pdg: i32,
     auto_params: &BTreeSet<String>,
 ) -> Result<ComputedWidth, AutoWidthError> {
-    let parent = particle_with_code(model, pdg)
-        .filter(|_| pdg > 0)
-        .ok_or(AutoWidthError::UnknownParticle { pdg })?;
+    let parent = decaying_particle(model, pdg).ok_or(AutoWidthError::UnknownParticle { pdg })?;
     let particle = model.particle(parent);
     let _span = info_span!("auto_width", particle = %particle.name).entered();
     let m_parent = evaluated.mass(parent).abs();
@@ -512,7 +516,9 @@ pub fn two_body_width(
     let modes = three_body_modes(model, evaluated, parent, &closed);
 
     channels.sort_by(|x, y| y.width.total_cmp(&x.width));
-    let total: f64 = channels.iter().map(|c| c.width).sum();
+    // Summed from `0.0`: `Iterator::sum` of no floats is `-0.0`, which a stable
+    // particle's width would be written as.
+    let total = channels.iter().fold(0.0, |sum, c| sum + c.width);
     Ok(ComputedWidth {
         pdg,
         particle: card_name(model, parent),

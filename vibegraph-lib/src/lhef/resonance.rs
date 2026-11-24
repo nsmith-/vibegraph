@@ -51,6 +51,16 @@ pub struct ResonanceLine {
 }
 
 impl ResonanceLine {
+    /// The line's own code and colour.
+    pub(crate) fn code(&self) -> LineCode {
+        LineCode {
+            pdg: self.pdg,
+            color: self.color,
+        }
+    }
+}
+
+impl ResonanceLine {
     fn invariant_mass(&self, outgoing: &[[f64; 4]]) -> f64 {
         let p = sum_slots(self.slots, outgoing);
         (p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3])
@@ -340,7 +350,7 @@ fn timelike_lines(
 
 /// A line's code and colour representation in one member's record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LineCode {
+pub(crate) struct LineCode {
     pub pdg: i32,
     /// The SU(3) representation of the line as it flows towards the final
     /// state, in the UFO's code: a member carrying the representative's
@@ -353,12 +363,12 @@ impl LineCode {
     /// for a matrix element without the configuration's `s`-channel line
     /// (`export_v4.py:5530-5535`), which `addmothers.f:195-197` never writes as
     /// one.
-    pub const NONE: LineCode = LineCode { pdg: 0, color: 0 };
+    pub(crate) const NONE: LineCode = LineCode { pdg: 0, color: 0 };
 }
 
 /// What a member's own diagrams say about one line of the representative's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MemberCode {
+pub(crate) enum MemberCode {
     /// The member carries the line with this code.
     Code(LineCode),
     /// No diagram of the member has a line on the line's legs with its mass,
@@ -380,13 +390,13 @@ pub enum MemberCode {
 /// so a member of a group carries the code its own diagram puts on the line,
 /// whatever the representative's is.
 #[derive(Clone, Debug)]
-pub struct MemberLines {
+pub(crate) struct MemberLines {
     diagrams: Vec<Vec<ResonanceLine>>,
 }
 
 impl MemberLines {
     /// The lines of each of the member's `diagrams`.
-    pub fn new(
+    pub(crate) fn new(
         diagrams: &[Diagram],
         model: &UFOModel,
         evaluated: &EvaluatedModel,
@@ -419,7 +429,7 @@ impl MemberLines {
     /// width and colour up to conjugation), and failing such a diagram, of any
     /// member line on its legs with its mass, width and colour. Where those name
     /// several codes, the line takes [`member_line_pdg`]'s if it is one of them.
-    pub fn resolve(
+    pub(crate) fn resolve(
         &self,
         lines: &[ResonanceLine],
         representative: &[i32],
@@ -440,7 +450,7 @@ impl MemberLines {
                         .iter()
                         .flatten()
                         .filter(|other| same_line(line, other))
-                        .map(line_code)
+                        .map(ResonanceLine::code)
                         .collect()
                 } else {
                     own.iter().map(|codes| codes[i]).collect()
@@ -456,14 +466,6 @@ impl MemberLines {
                 }
             })
             .collect()
-    }
-}
-
-/// A line's own code and colour.
-fn line_code(line: &ResonanceLine) -> LineCode {
-    LineCode {
-        pdg: line.pdg,
-        color: line.color,
     }
 }
 
@@ -489,7 +491,7 @@ fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<
             diagram
                 .iter()
                 .find(|own| same_line(line, own))
-                .map(line_code)
+                .map(ResonanceLine::code)
         })
         .collect()
 }
@@ -509,7 +511,7 @@ fn same_lines(lines: &[ResonanceLine], diagram: &[ResonanceLine]) -> Option<Vec<
 /// charge, the antiparticle where they carry the opposite one.
 /// `None` where neither holds, or where a neutral line that is not its own
 /// antiparticle leaves the charge unable to tell them apart.
-pub fn member_line_pdg(
+pub(crate) fn member_line_pdg(
     line: &ResonanceLine,
     representative: &[i32],
     member: &[i32],
