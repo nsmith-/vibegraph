@@ -258,3 +258,307 @@ above shows no banked model does.
   - `eVLQS012_v8_4FNS_UFO`: 2d5c0dc08a52 (store) against 0f2b2b305ab1 (gridpack).
 
   The TpTp and bstar conclusions stand on the gridpacks' bundled models: the validator confirmed the zero coupling and ran the enumerate diff on them, and the 157 gate runs on them too. This session's local reduced-budget 157 run (2.18 ± 0.39 fb) used the store model, so it is indicative only. **Found:** the CMS-store tarball and a gridpack's bundled UFO can differ under the same model name, so a local reproduction of a campaign card should use the bundled copy.
+
+## Gate evidence for PR 11 (#177, merged as 970be89d)
+
+The validator ran these gates (vg-validator). The manager relayed them; they were not re-run here.
+
+**Builds**
+- The σ rows ran on 8a651703, which isolates PR 11's change.
+- The HNL binding rows ran on ba190428. That build is the main merge 187f7ba0 plus the user's ruling (A): an unknown code inside a block the model defines is ignored with a warning.
+
+**Command for every σ row**
+
+```
+vibegraph integrate <gpdb-staged gridpack cards + bundled UFO> --fixed-budget --neval 120000 \
+  --niter 3 --parallel-diagrams --seed N -j 4 --no-network --output-ldjson
+```
+
+- The driver is `chirality_cards.py --campaign`.
+- The one exception is the card-878 4× rung, which used `--neval 480000`.
+- Each card ran on its gridpack's bundled UFO, confirmed by identity hash: Bprime_no_b_mass 3f142c212e44, SM_HeavyN_Gen3Mass_NLO bba6f1be6b0f.
+- Outputs are on the validator host under `$B/`:
+  - `pr11-157` and `pr11-157-ext`
+  - `pr11-cards`
+  - `pr11-bprime` and `pr11-bprime-ext`
+  - `pr11-878-4x`
+  - `pr11-parambind`
+  - `hnl-pr11-ba190428`
+  - `paramcard-pr11-8a651703`
+
+### Card 157 (bstar_tW), 20 seeds
+
+MG reference: 1.7755e-3 ± 2.8e-6 pb (MG 2.9.18). Each seed takes 11 s, and the ESS is only 345–764 per seed. Seeds 6–20 were added for that reason.
+
+| seed | σ (pb) | err | ESS |
+|---|---|---|---|
+| 1 | 1.8292e-3 | 3.6% | 742 |
+| 2 | 1.7100e-3 | 3.8% | 685 |
+| 3 | 1.7942e-3 | 4.4% | 505 |
+| 4 | 1.8337e-3 | 4.6% | 471 |
+| 5 | 1.9053e-3 | 5.2% | 368 |
+
+- **Seeds 1–5:** unweighted mean 1.8145e-3, sd 3.9%, χ²/dof 0.91, vg/MG 1.0219 ± 0.0180.
+- **All 20 seeds:** unweighted mean 1.7878e-3, sd 3.25%, sem 0.73%, χ²/dof 0.64 over 19 dof.
+- **Verdict:** **vg/MG = 1.0069 ± 0.0075, pull +0.92.** The per-seed pulls run from −1.42 to +1.32.
+- The session's local 2.18 fb (store model, reduced budget) was off.
+
+### Bprime cards 156, 877 and 878, 20 seeds each
+
+The fix takes each card from 396 to 198 diagrams; every diagram it removes has a phi± propagator.
+
+| card | 5-seed vg/MG | 20-seed mean (pb) | sd | χ²/dof | seeds below MG | ESS | vg/MG | pull |
+|---|---|---|---|---|---|---|---|---|
+| 156 | 1.0138 ± 0.0216 | 0.0029517 | 4.67% | 1.23 | 11/20 | 127–1101 | 0.9925 ± 0.0105 | −0.71 |
+| 877 | 1.0051 ± 0.0133 | 0.05308 | 3.18% | 0.64 | 10/20 | 318–1085 | 1.0023 ± 0.0073 | +0.31 |
+| 878 | 0.9660 ± 0.0096 | 0.42746 | 3.52% | 1.12 | 14/20 | 455–1421 | 0.9886 ± 0.0079 | −1.44 |
+
+**878 at 4× budget, 5 seeds:**
+- The seeds read 1.0070, 1.0039, 0.9766, 0.9921 and 0.9855, each ±0.9–1.1%, with ESS 7514–11467.
+- The mean is 0.9930 ± 0.0059 (pull −1.19, χ²/dof 1.94).
+- The 5-seed −3.5σ was few-seed scatter. Those five seeds had an sd of 2.19%, against 3.52% over all 20.
+
+### DarkPhoton cards 78, 79, 418 and 419, untrimmed (MASS 1000022 present)
+
+- **Binding:** each card gets exactly one warning, the same at enumerate, check and integrate. Card 78's warning, verbatim:
+  `MASS 1000022 sets 13.33333, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored`
+- **MZd:** each card's own value is used. The Zp leg mass in the integrate channel lines reads 40, 86, 20 and 70, matching the cards.
+- **Decay table under 1000022:** none of the gridpack cards has one. A scratch copy of card 78's card with `DECAY 1000022 2.5e-1` and two BR lines binds with rc 0, giving these warnings:
+  `the decay table (2 channels) below DECAY 1000022 is for a particle the model does not have, so the table is ignored`
+  `DECAY 1000022 sets 0.25, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored`
+
+**σ against gpdb MG.** The 1-seed column ran at `--target-rel 0.02`. The 5-seed column ran at campaign budget, and its σ is the 5-seed unweighted mean.
+
+| card | MZd | 1-seed σ/MG | 5-seed σ (pb) | sd | χ²/dof | vg/MG | pull |
+|---|---|---|---|---|---|---|---|
+| 78 | 40 | 0.9974 | 0.21385 | 1.05% | 1.18 | 0.9869 ± 0.0052 | −2.54 |
+| 79 | 86 | 0.9962 | 4.4206 | 0.75% | 0.52 | 0.9977 ± 0.0038 | −0.62 |
+| 418 | 20 | 1.0023 | 0.21725 | 1.24% | 1.08 | 0.9938 ± 0.0065 | −0.95 |
+| 419 | 70 | 1.0039 | 0.39617 | 1.13% | 1.13 | 0.9909 ± 0.0053 | −1.70 |
+
+- Card 78's five seeds read 0.9922, 0.9864, 0.9983, 0.9704 and 0.9869. The earlier hand-trimmed runs gave 0.985 (MZd 40) and 0.971 (MZd 86).
+- **Card 78 at 20 seeds and at 4× budget:** card 78 reads about 1% low, not 1.3%. The estimator is heavy-tailed, and at 4× the reported errors understate the seed spread. The MG reference is 0.2167 ± 0.0004948 pb. All 25 runs exit 0. The vg/MG errors below include the MG error.
+
+  | rung | seeds | mean (pb) | sd | χ²/dof | seeds below MG | vg/MG | pull |
+  |---|---|---|---|---|---|---|---|
+  | 1× | 20 | 0.21509 | 1.75% | 1.27 | 17/20 | 0.9926 ± 0.0045 | −1.65 |
+  | 4× (`--neval 480000`) | 5 | 0.21544 | 1.47% | 6.98 | 2/5 | 0.9942 ± 0.0069 | −0.84 |
+
+  - **1× is skewed.** The median seed is about 0.990. One tail seed pulls the mean up: seed 10 reads 1.0521 at ESS 696.
+  - **4× is bimodal.** Seeds 1, 2 and 4 read 1.0068, 1.0066 and 1.0007. Seeds 3 and 5 read 0.9792 and 0.9776, at errors of ±0.55% and ±0.44% (ESS 30k and 45k).
+  - **The early −2.54σ came from that skew, not from a shift in the mean.**
+  - **Reading:** at 4× the mean moves toward 1, so this is not a stable deficit and not a physics item. It is not clean scatter either. Most seeds read low, an occasional seed carries a large weight, and at 4× two seeds are confidently 2.2% low. That is the signature of a region that is usually undersampled and occasionally hit.
+  - **Verdict:** the σ question for PR 11 is closed. The mean is 0.9926 ± 0.0045 at 1× and 0.9942 ± 0.0069 at 4×, and the 4× seeds are bimodal. Filed as `darkphoton-mzd40-seeds-confidently-low`. Its first step is 20 seeds at 4× plus a per-channel σ-share comparison between a low seed and a high seed.
+
+### HNL cards 84, 85 and 438–442 on ba190428
+
+- **Binding:** all 7 cards bind with rc 0 and exactly 10 warnings each (6 YUKAWA, 4 CKMBLOCK). The command was `vibegraph parameters <proc card with only 'import model'> --param-card <gridpack card> --ufo-dir <bundled UFO>`, which binds the same way integrate does.
+- **Before the fix:** 8a651703 refused all 7 cards at YUKAWA codes 1, 2, 3, 4, 11 and 13. Main 7b36722c refused them at CKMBLOCK.
+- **Card 84's warnings,** without the card-path prefix:
+
+```
+ckmblock 1 sets 0.227591, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 2 sets 0.003508, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 3 sets 0.041539, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 4 sets 1.2, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 1 sets 0.00504, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 2 sets 0.00255, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 3 sets 0.101, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 4 sets 1.27, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 11 sets 0.000511, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 13 sets 0.10566, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+```
+
+- **σ is not measured.** All 7 proc cards are decay chains (`generate p p > w, (w > l hnl)`, plus `w j` and `w j j`). Enumerate refuses them in 0.1 s before binding the card. Card 84's refusal, verbatim:
+  `decay chain 'p p > w, w > l hnl': in u d~ > e+ N1, a decay-chain diagram carries a Majorana fermion or a fermion-number-violating vertex; its lines are oriented per core and per decay, and orienting a line across the stitched propagator is not validated against MadGraph`
+- This blocker is filed as `majorana-in-decay-chain-refused` (v0.3). In these cards the stitched line is the W, and N1 is external inside the decay.
+
+### Per-seed rows
+
+These are the validator's rows: σ, relative error, ESS, and σ/MG against the gpdb MG value. The build is 8a651703, run with the campaign argv except where marked 4×. The card means recomputed from these rows match the summaries above.
+- The validator's copy is `pr11_seed_rows.txt` in its session scratchpad.
+- Card 157 seeds 1–5 are in its table above.
+- Card 78's rows are with the DarkPhoton rows below.
+
+**Card 157, seeds 6–20**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 6 | 0.0017659 | 4.32% | 526 | 0.9946 |
+| 7 | 0.0018042 | 3.77% | 686 | 1.0162 |
+| 8 | 0.0017521 | 4.04% | 602 | 0.9868 |
+| 9 | 0.001802 | 4.09% | 587 | 1.0149 |
+| 10 | 0.0016879 | 3.67% | 727 | 0.9506 |
+| 11 | 0.0017953 | 5.35% | 345 | 1.0111 |
+| 12 | 0.0017915 | 4.11% | 581 | 1.0090 |
+| 13 | 0.0018086 | 4.77% | 433 | 1.0186 |
+| 14 | 0.0016986 | 3.57% | 764 | 0.9567 |
+| 15 | 0.001682 | 4.36% | 517 | 0.9474 |
+| 16 | 0.0017908 | 3.91% | 641 | 1.0086 |
+| 17 | 0.0018137 | 3.59% | 754 | 1.0215 |
+| 18 | 0.0017975 | 3.78% | 683 | 1.0124 |
+| 19 | 0.0018682 | 4.74% | 439 | 1.0522 |
+| 20 | 0.0018244 | 5.01% | 393 | 1.0276 |
+
+**Card 156**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.0028853 | 4.51% | 484 | 0.9702 |
+| 2 | 0.0032235 | 4.13% | 575 | 1.0839 |
+| 3 | 0.0030903 | 8.86% | 127 | 1.0391 |
+| 4 | 0.0028929 | 4.76% | 434 | 0.9727 |
+| 5 | 0.0029827 | 4.59% | 468 | 1.0029 |
+| 6 | 0.0030209 | 4.63% | 459 | 1.0158 |
+| 7 | 0.0029723 | 4.46% | 493 | 0.9994 |
+| 8 | 0.0027808 | 3.77% | 689 | 0.9351 |
+| 9 | 0.0028746 | 4.57% | 472 | 0.9666 |
+| 10 | 0.0029959 | 4.33% | 523 | 1.0074 |
+| 11 | 0.0028953 | 5.72% | 303 | 0.9735 |
+| 12 | 0.0028179 | 3.60% | 751 | 0.9475 |
+| 13 | 0.003003 | 4.73% | 440 | 1.0098 |
+| 14 | 0.0027842 | 4.81% | 426 | 0.9362 |
+| 15 | 0.0030837 | 5.23% | 361 | 1.0369 |
+| 16 | 0.0032464 | 4.71% | 443 | 1.0916 |
+| 17 | 0.0028191 | 2.96% | 1101 | 0.9479 |
+| 18 | 0.0027733 | 3.17% | 967 | 0.9325 |
+| 19 | 0.0030214 | 6.92% | 207 | 1.0159 |
+| 20 | 0.0028712 | 4.31% | 526 | 0.9654 |
+
+**Card 877**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.054655 | 3.10% | 1005 | 1.0320 |
+| 2 | 0.051813 | 2.98% | 1085 | 0.9783 |
+| 3 | 0.053379 | 4.49% | 484 | 1.0079 |
+| 4 | 0.05147 | 3.09% | 1014 | 0.9719 |
+| 5 | 0.054833 | 4.33% | 522 | 1.0354 |
+| 6 | 0.05115 | 3.39% | 845 | 0.9658 |
+| 7 | 0.051878 | 3.37% | 855 | 0.9796 |
+| 8 | 0.052689 | 3.96% | 625 | 0.9949 |
+| 9 | 0.05083 | 3.68% | 723 | 0.9598 |
+| 10 | 0.057527 | 5.58% | 318 | 1.0862 |
+| 11 | 0.052167 | 3.41% | 835 | 0.9850 |
+| 12 | 0.052267 | 3.91% | 640 | 0.9869 |
+| 13 | 0.054028 | 3.17% | 966 | 1.0202 |
+| 14 | 0.053101 | 4.18% | 559 | 1.0027 |
+| 15 | 0.05214 | 3.88% | 651 | 0.9845 |
+| 16 | 0.054092 | 3.75% | 695 | 1.0214 |
+| 17 | 0.053367 | 3.15% | 975 | 1.0077 |
+| 18 | 0.055409 | 4.02% | 608 | 1.0462 |
+| 19 | 0.051131 | 3.06% | 1034 | 0.9655 |
+| 20 | 0.053681 | 3.99% | 615 | 1.0136 |
+
+**Card 878**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.42541 | 3.27% | 907 | 0.9838 |
+| 2 | 0.41055 | 3.22% | 933 | 0.9495 |
+| 3 | 0.42966 | 2.72% | 1291 | 0.9937 |
+| 4 | 0.41018 | 3.06% | 1030 | 0.9486 |
+| 5 | 0.41267 | 2.99% | 1077 | 0.9544 |
+| 6 | 0.42315 | 4.32% | 526 | 0.9786 |
+| 7 | 0.41834 | 3.07% | 1023 | 0.9675 |
+| 8 | 0.424 | 3.49% | 798 | 0.9806 |
+| 9 | 0.45096 | 4.65% | 455 | 1.0429 |
+| 10 | 0.41199 | 2.60% | 1411 | 0.9528 |
+| 11 | 0.41623 | 2.87% | 1166 | 0.9626 |
+| 12 | 0.46455 | 3.53% | 783 | 1.0744 |
+| 13 | 0.4382 | 4.11% | 581 | 1.0134 |
+| 14 | 0.42708 | 3.15% | 975 | 0.9877 |
+| 15 | 0.40938 | 2.60% | 1421 | 0.9468 |
+| 16 | 0.44198 | 3.12% | 996 | 1.0222 |
+| 17 | 0.43209 | 2.98% | 1091 | 0.9993 |
+| 18 | 0.44111 | 3.57% | 763 | 1.0201 |
+| 19 | 0.44059 | 3.40% | 843 | 1.0189 |
+| 20 | 0.42099 | 3.06% | 1033 | 0.9736 |
+
+**Card 878 at 4× (`--neval 480000`)**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.43542 | 0.94% | 10285 | 1.0070 |
+| 2 | 0.43407 | 0.89% | 11467 | 1.0039 |
+| 3 | 0.42228 | 0.90% | 11348 | 0.9766 |
+| 4 | 0.42897 | 1.11% | 7514 | 0.9921 |
+| 5 | 0.42612 | 1.00% | 9221 | 0.9855 |
+
+At 4× budget the ESS is about 10× the 1× value (about 1000 → about 10000), which is more than linear in budget. That fits the adapted grid concentrating better at the larger neval.
+
+**Card 78**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.21502 | 1.12% | 7385 | 0.9922 |
+| 2 | 0.21376 | 1.04% | 8438 | 0.9864 |
+| 3 | 0.21633 | 1.29% | 5655 | 0.9983 |
+| 4 | 0.21028 | 0.89% | 11224 | 0.9704 |
+| 5 | 0.21387 | 0.96% | 9814 | 0.9869 |
+| 6 | 0.21585 | 1.53% | 4110 | 0.9961 |
+| 7 | 0.21526 | 1.03% | 8460 | 0.9934 |
+| 8 | 0.21225 | 0.95% | 9821 | 0.9794 |
+| 9 | 0.21396 | 0.99% | 9121 | 0.9873 |
+| 10 | 0.22799 | 3.76% | 696 | 1.0521 |
+| 11 | 0.21443 | 1.27% | 5862 | 0.9895 |
+| 12 | 0.21444 | 0.99% | 9200 | 0.9895 |
+| 13 | 0.21199 | 0.89% | 11160 | 0.9783 |
+| 14 | 0.21997 | 1.26% | 5861 | 1.0151 |
+| 15 | 0.21355 | 0.93% | 10270 | 0.9854 |
+| 16 | 0.21857 | 1.33% | 5307 | 1.0086 |
+| 17 | 0.21448 | 1.14% | 7094 | 0.9897 |
+| 18 | 0.21253 | 0.95% | 9888 | 0.9808 |
+| 19 | 0.21539 | 1.28% | 5776 | 0.9940 |
+| 20 | 0.21191 | 1.02% | 8723 | 0.9779 |
+
+**Card 78 at 4× (`--neval 480000`)**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.21817 | 1.13% | 7630 | 1.0068 |
+| 2 | 0.21813 | 0.66% | 21558 | 1.0066 |
+| 3 | 0.21219 | 0.55% | 30482 | 0.9792 |
+| 4 | 0.21686 | 0.86% | 13139 | 1.0007 |
+| 5 | 0.21184 | 0.44% | 44838 | 0.9776 |
+
+**Card 79**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 4.4503 | 1.13% | 7217 | 1.0044 |
+| 2 | 4.4307 | 1.37% | 5017 | 0.9999 |
+| 3 | 4.3991 | 0.98% | 9406 | 0.9928 |
+| 4 | 4.449 | 1.87% | 2754 | 1.0041 |
+| 5 | 4.374 | 0.92% | 10433 | 0.9871 |
+
+**Card 418**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.22149 | 1.59% | 3816 | 1.0132 |
+| 2 | 0.2146 | 0.87% | 11637 | 0.9817 |
+| 3 | 0.21796 | 1.17% | 6766 | 0.9971 |
+| 4 | 0.21539 | 0.99% | 9183 | 0.9853 |
+| 5 | 0.2168 | 1.05% | 8310 | 0.9918 |
+
+**Card 419**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.39901 | 2.79% | 1270 | 0.9980 |
+| 2 | 0.3967 | 1.62% | 3646 | 0.9922 |
+| 3 | 0.40169 | 1.08% | 7934 | 1.0047 |
+| 4 | 0.39068 | 0.98% | 9350 | 0.9772 |
+| 5 | 0.39276 | 0.99% | 9158 | 0.9824 |
+
+### Card 188
+
+Skipped: it waits on MG 3.7.1 (R1).
+
+### Local gates (manager)
+
+- **187f7ba0** (the main merge), run with the reference data hidden:
+  `/tmp/claude-0/lp/verify-hidden.sh <worktree> pr11m` → FMT_OK, CLIPPY_RC=0, CLIPPY_EV_RC=0, TEST_RC=0, 2374 passed, 0 failed.
+- **ba190428,** as reported by the session that made the change, with the same gates: 2375 passed, 0 failed.
+- **CI on ba190428** (run 45378200789): every job green, including the full banked job.
