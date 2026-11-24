@@ -1582,12 +1582,6 @@ fn integrate_proton(
     )
 }
 
-/// The process numbers (`@N`) of every subprocess of one part's groups,
-/// each once, in increasing order.
-pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
-    groups.process_ids()
-}
-
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
 /// is split by final-state multiplicity and outgoing masses, each part partitioned into
 /// flavour groups, each group's summed parton-distribution luminosity multiplying
@@ -1828,7 +1822,7 @@ fn multiplicity_totals(
         .enumerate()
         .map(|(k, part)| MultiplicityTotal {
             final_state: integ.final_state_count(k),
-            process_ids: part_process_ids(&groups[k]),
+            process_ids: groups[k].process_ids(),
             final_masses: groups[k].groups()[0].final_masses(),
             channels: integ.offsets()[k + 1] - integ.offsets()[k],
             sigma_pb: part.integral * unit,
