@@ -247,6 +247,11 @@ $ pixi run --skip-deps kb-lint
 1394 concepts, 480 backlog items; 0 errors, 7 warnings   # warnings on other items
 ```
 
+After merging `origin/main` 0f1c1e8e (L-Z5, no file in common with this
+pass), the same script on the merge 3f50c67a: `FMT_OK`, `CLIPPY_RC=0`,
+`CLIPPY_EV_RC=0`, `TEST_RC=0`, `lines=79 passed=2355 failed=0` (main's three
+new tests).
+
 The two extended-validation targets are the ones these PRs added; the
 proton phase test reads the fetched NNPDF set, so it runs only there.
 
