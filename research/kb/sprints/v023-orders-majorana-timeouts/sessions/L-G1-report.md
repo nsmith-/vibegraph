@@ -572,6 +572,31 @@ above and fixed on main. The item is deleted with this addendum.
 What this does not claim: agreement with MadGraph at the 1% level on 894. Five
 seeds cannot calibrate its 6-body tail, and the tail item carries that.
 
-V2 (the remaining high-mass cards at a 7200 s cap) is post-merge release-note
-validation, not part of this closure.
+**V2: the other five cards, as corroboration (1 seed per card, batch, main
+3f4dd815).** vg-validator ran the five g2HDM cards V1 did not cover on lxbatch:
+- dev build "v0.2.2-42-g3f4dd815c605";
+- campaign budget: fixed, `--neval 120000 --niter 3`, parallel diagrams;
+- seed 1, 4 CPUs, no cap.
+
+All five exited 0. Walls are Condor execution walls. One seed per card does not
+gate anything; the closure rests on V1's five-seed means.
+
+| card | mass | σ (pb) | reported error | vg/MG | wall | peak RSS |
+|---|---|---|---|---|---|---|
+| 893 | M450 | 2.43094 | 1.22% | 0.9918 ± 0.0125 (−0.65σ) | 14408 s | 2.84 GB |
+| 892 | M900 | 0.0839256 | 1.45% | 0.9874 ± 0.0145 (−0.87σ) | 14540 s | 3.03 GB |
+| 895 | M1250 | 0.0117763 | 1.95% | 1.0161 ± 0.0200 (+0.81σ) | 11968 s | 4.60 GB |
+| 891 | M1500 | 0.00346673 | 1.88% | 1.0046 ± 0.0191 (+0.24σ) | 15238 s | 3.00 GB |
+| 890 | M1750 | 0.00120819 | 1.80% | 0.9855 ± 0.0181 (−0.80σ) | 13411 s | 2.99 GB |
+
+- Every card is within 1σ of MadGraph.
+- In v0.2.2's survey, M900–M1750 read +2.4% to +4.4% on every seed. On main,
+  the same cards read 0.986–1.016.
+- Earlier local single seeds on 7b36722c, capped at 7200 s, agree:
+  - 891: 0.0035278 pb (1.022);
+  - 892: 0.082733 pb (0.973).
+
+These cards need batch at campaign budget. Each takes 3.3–4.2 h of wall on
+4 CPUs, about 77 core-hours for the five, and that is past the local host's
+2 h cap. Card 895 peaked at 4.6 GB, above the local 4500M memory limit.
 
