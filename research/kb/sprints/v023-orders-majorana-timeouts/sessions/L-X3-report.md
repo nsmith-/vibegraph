@@ -1,13 +1,13 @@
 ---
 type: Session Report
-title: "L-X1 report: per-member XWGTUP within one multiplicity part"
+title: "L-X3 report: per-member XWGTUP within one multiplicity part"
 description: "The per-member unit weights reported against v0.2.2 do not reproduce with v0.2.2 or main; no per-member factor enters the written weight; the per-member σ shares of 30000-event samples agree with sixteen single-member integrations within statistics."
 status: draft
 tags: [events, unweighting, lhef, normalisation, mlm, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
 Branch `sprintl-xwgtup` off main cd35c4e6 (brief commit 54c31fe3). A
-diagnosis session: no source change. Brief: [L-X1](L-X1.md).
+diagnosis session: no source change. Brief: [L-X3](L-X3.md).
 
 ## Summary
 
