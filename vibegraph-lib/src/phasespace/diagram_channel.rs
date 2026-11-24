@@ -4505,11 +4505,11 @@ mod tests {
         }
     }
 
-    /// The rung caps `with_side_transfer_bounds` leaves on a two-rung chain
-    /// emitting leg 3, then legs `{0, 1}`, against leg 2: the first line has the
-    /// single leg 3 on one side and the second the single leg 2.
-    fn side_bounded_caps(leg3: f64, leg2: f64) -> (Vec<Option<f64>>, String) {
-        let ch = DiagramChannel::<f64>::from_topology_ladder(
+    /// A two-rung chain emitting leg 3, then legs `{0, 1}`, against leg 2, every
+    /// rung capped at the scale `t ≤ −100`: the first line has the single leg 3 on
+    /// one side and the second the single leg 2.
+    fn two_rung_chain() -> DiagramChannel<f64> {
+        DiagramChannel::<f64>::from_topology_ladder(
             600.0,
             [0.0, 0.0],
             vec![0.0, 0.0, 0.0, 4.7],
@@ -4517,19 +4517,25 @@ mod tests {
             (vec![2], None),
         )
         .with_fiducial_t_max(-100.0)
-        .with_side_transfer_bounds(&|slots| match slots {
+    }
+
+    fn rung_caps<F: Real>(ch: &DiagramChannel<F>) -> Vec<Option<F>> {
+        let ChannelTopology::Spine(spine) = &ch.topology else {
+            panic!("a ladder builds a spine");
+        };
+        spine.rungs.iter().map(|r| r.t_max_cap).collect()
+    }
+
+    /// The rung caps `with_side_transfer_bounds` leaves on [`two_rung_chain`] when
+    /// leg 3 proves `leg3` and leg 2 proves `leg2` (a composite side proves nothing).
+    fn side_bounded_caps(leg3: f64, leg2: f64) -> (Vec<Option<f64>>, String) {
+        let ch = two_rung_chain().with_side_transfer_bounds(&|slots| match slots {
             0b1000 => Some(leg3),
             0b0100 => Some(leg2),
             s if s.count_ones() == 1 => Some(0.0),
             _ => None,
         });
-        let ChannelTopology::Spine(spine) = &ch.topology else {
-            panic!("a two-rung ladder builds a spine");
-        };
-        (
-            spine.rungs.iter().map(|r| r.t_max_cap).collect(),
-            ch.map_key(),
-        )
+        (rung_caps(&ch), ch.map_key())
     }
 
     /// A line with an uncut single leg on one side and a composite on the other
@@ -4547,19 +4553,53 @@ mod tests {
 
         let (both, key) = side_bounded_caps(100.0, 100.0);
         assert_eq!(both, vec![Some(-100.0), Some(-100.0)]);
-        let unchanged = DiagramChannel::<f64>::from_topology_ladder(
-            600.0,
-            [0.0, 0.0],
-            vec![0.0, 0.0, 0.0, 4.7],
-            &[(vec![3], None, 4.7), (vec![0, 1], None, 0.0)],
-            (vec![2], None),
-        )
-        .with_fiducial_t_max(-100.0);
-        assert_eq!(key, unchanged.map_key());
+        assert_eq!(key, two_rung_chain().map_key());
 
         // A higher threshold than the scale never raises the bound.
         let (higher, _) = side_bounded_caps(400.0, 400.0);
         assert_eq!(higher, vec![Some(-100.0), Some(-100.0)]);
+    }
+
+    /// The second line's single leg 2 sits across from the legs `{3, 0, 1}` the
+    /// chain has emitted by then, so its bound is read off the far side of the
+    /// line and the emitted side is the union of every rung so far.
+    #[test]
+    fn the_second_rung_reads_the_single_leg_across_its_line() {
+        let (cut, _) = side_bounded_caps(100.0, 25.0);
+        assert_eq!(cut, vec![Some(-100.0), Some(-25.0)]);
+
+        let (uncut, _) = side_bounded_caps(100.0, 0.0);
+        assert_eq!(uncut, vec![Some(-100.0), None]);
+
+        let (neither, _) = side_bounded_caps(0.0, 0.0);
+        assert_eq!(neither, vec![None, None]);
+    }
+
+    /// Where both sides of a line are single legs, the line carries the larger of
+    /// the two squares (each leg's `pT` equals the other's), capped at the scale.
+    #[test]
+    fn a_line_between_two_single_legs_takes_the_larger_square() {
+        let two_legs = || {
+            DiagramChannel::<f64>::from_topology_ladder(
+                600.0,
+                [0.0, 0.0],
+                vec![0.0, 0.0],
+                &[(vec![0], None, 0.0)],
+                (vec![1], None),
+            )
+            .with_fiducial_t_max(-100.0)
+        };
+        let caps = |emitted: f64, recoil: f64| {
+            rung_caps(&two_legs().with_side_transfer_bounds(&|slots| match slots {
+                0b01 => Some(emitted),
+                0b10 => Some(recoil),
+                _ => None,
+            }))
+        };
+        assert_eq!(caps(30.0, 60.0), vec![Some(-60.0)]);
+        assert_eq!(caps(60.0, 30.0), vec![Some(-60.0)]);
+        assert_eq!(caps(300.0, 60.0), vec![Some(-100.0)]);
+        assert_eq!(caps(0.0, 0.0), vec![None]);
     }
 
     /// Where the uncut single leg's line had been bounded, the channel reaches
@@ -4567,18 +4607,8 @@ mod tests {
     /// density, which the bounded channel reports as exactly zero.
     #[test]
     fn dropping_a_side_bound_restores_the_collinear_support() {
-        let build = || {
-            DiagramChannel::<f64>::from_topology_ladder(
-                600.0,
-                [0.0, 0.0],
-                vec![0.0, 0.0, 0.0, 4.7],
-                &[(vec![3], None, 4.7), (vec![0, 1], None, 0.0)],
-                (vec![2], None),
-            )
-            .with_fiducial_t_max(-100.0)
-        };
-        let bounded = build();
-        let unbounded = build().with_side_transfer_bounds(&|slots| match slots {
+        let bounded = two_rung_chain();
+        let unbounded = two_rung_chain().with_side_transfer_bounds(&|slots| match slots {
             0b0100 => Some(100.0),
             s if s.count_ones() == 1 => Some(0.0),
             _ => None,

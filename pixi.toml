@@ -338,6 +338,9 @@ validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-val
 # The per-stage scripts survive as internals; what is consolidated here is the
 # entry point, the process list and the caching policy.
 generate-references = "bash validation/generate_references.sh"
+# ew_recombine.py's recombination arithmetic and refusals on hand-built run
+# directories; no MadGraph run.
+test-ew-recombine = "python -m unittest discover -s validation/madgraph -p test_ew_recombine.py -v"
 
 # --- helas-validation: Fortran77 HELAS compiled via f2py for amplitude cross-checks ---
 [feature.helas-validation.dependencies]
