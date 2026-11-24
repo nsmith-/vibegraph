@@ -296,19 +296,19 @@ fn a_negative_mass_off_a_majorana_fermion_is_refused() {
 fn every_problem_in_a_card_is_reported_at_once() {
     let message = param_refusal("Block MASS\n 6 x\n 23 y\n");
     assert_mentions(&message, &["line 2", "line 3"]);
-    let message = param_refusal("Block SMINPUTS\n 99 1.0\nBlock YUKAWA\n 98 2.0\n");
+    let message = param_refusal("Block MASS\n 4 1.27\nBlock YUKAWA\n 13 1.0566e-1\n");
     assert_mentions(
         &message,
-        &["block sminputs code 99", "block yukawa code 98"],
+        &["MC (block mass, code 4)", "ymm (block yukawa, code 13)"],
     );
 }
 
 /// The four ways a card entry can have no parameter behind it, on the fixture
 /// restricted to zero its whole `NEWCOUP` block (`restrict_test.dat`): a block
-/// the model never defined and a `MASS` at a code no particle has bind, listed
-/// as ignored; an unknown code in a block the model defines is refused as a
-/// typo; and a value for a parameter the restriction zeroed is refused naming
-/// the restriction, which is what tells that block from the undefined one.
+/// the model never defined, a `MASS` at a code no particle has, and a code the
+/// model lacks in a block it defines bind, listed as ignored; and a value for a
+/// parameter the restriction zeroed is refused naming the restriction, which is
+/// what tells that block from the undefined one.
 #[test]
 fn an_entry_without_a_parameter_is_ignored_or_refused_by_what_removed_it() {
     let dir = model_with(&[]);
@@ -332,11 +332,18 @@ fn an_entry_without_a_parameter_is_ignored_or_refused_by_what_removed_it() {
         .iter()
         .all(|e| e.why == IgnoredBecause::NoParameter));
 
-    let message = bind("Block MASS\n 9000001 1.0e1\nBlock NEWCOUP\n 99 1.0\n")
-        .err()
-        .expect("an unknown code in a block the model defines binds")
-        .to_string();
-    assert_mentions(&message, &["block newcoup code 99", "no parameter there"]);
+    let bound = bind("Block MASS\n 9000001 1.0e1\nBlock NEWCOUP\n 99 1.0\n")
+        .expect("an unknown code in a block the model defines is refused");
+    assert!(bound.moved.is_empty(), "{:?}", bound.moved);
+    let listed: Vec<(&str, &str, f64, &IgnoredBecause)> = bound
+        .ignored
+        .iter()
+        .map(|e| (e.block.as_str(), e.code.as_str(), e.card, &e.why))
+        .collect();
+    assert_eq!(
+        listed,
+        [("newcoup", "99", 1.0, &IgnoredBecause::NoParameter)]
+    );
 
     let message = bind("Block NEWCOUP\n 1 0.5\n")
         .err()

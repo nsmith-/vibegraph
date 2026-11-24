@@ -202,9 +202,14 @@ pub(crate) const PARAM_CARD: &[Construct] = &[
     Construct {
         name: "an entry at a code the model lacks, in a block it does define",
         madgraph: "never read: write_inc_file reads only the model's ident_card (L656)",
-        class: Refused("a mistyped code would leave the parameter the card meant at its default"),
-        example: Text("Block SMINPUTS\n 99 1.0\n"),
-        expect: Error("model has no parameter"),
+        class: IgnoredBenign(
+            "no parameter of the model sits at the code, so nothing the model evaluates reads \
+             the entry; a card written for a larger model sets codes the model lacks (a \
+             Yukawa of a fermion the model keeps massless), and the entry is listed in \
+             BoundCard::ignored and warned, a mistyped code included",
+        ),
+        example: Text("Block SMINPUTS\n 99 1.0\nBlock YUKAWA\n 1 5.04e-3\n"),
+        expect: Same(Text("")),
     },
     Construct {
         name: "an entry whose code is not integers",

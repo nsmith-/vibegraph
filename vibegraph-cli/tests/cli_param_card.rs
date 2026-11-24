@@ -379,22 +379,23 @@ fn a_dependent_mass_is_ignored_with_a_warning() {
     assert!(run.record() == default_run().record());
 }
 
-/// A card with a block the model does not define and a `MASS` and a `DECAY`
-/// entry at a code no particle has binds as the default card does, with one
-/// warning per entry naming it and saying it is ignored; the run is the default
-/// run, field for field but for the banked card text.
+/// A card with a block the model does not define, a code the model lacks in a
+/// block it defines (a light-quark Yukawa, a mistyped `SMINPUTS` code), and a
+/// `MASS` and a `DECAY` entry at a code no particle has binds as the default
+/// card does, with one warning per entry naming it and saying it is ignored;
+/// the run is the default run, field for field but for the banked card text.
 #[test]
 fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
     let run = integrate(
         "absent",
         Some(
-            "Block NOSUCH\n 1 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n 1.0 2 11 -11\nDECAY 1000023 Auto\n",
+            "Block NOSUCH\n 1 2.0\nBlock YUKAWA\n 1 5.04e-3 # ymdo\nBlock SMINPUTS\n 99 2.0\nBlock MASS\n 1000022 500.0\nDECAY 1000022 1.0\n 1.0 2 11 -11\nDECAY 1000023 Auto\n",
         ),
     );
     succeeded(&run);
     let notices = common::stderr_of(&run.output);
     let warnings: Vec<&str> = notices.lines().filter(|l| l.contains("ignored")).collect();
-    assert_eq!(warnings.len(), 5, "{notices}");
+    assert_eq!(warnings.len(), 7, "{notices}");
     assert!(
         warnings
             .iter()
@@ -411,6 +412,8 @@ fn entries_the_model_has_no_parameter_for_are_ignored_with_warnings() {
         "DECAY 1000022 sets 1",
         "MASS 1000022 sets 500",
         "nosuch 1 sets 2",
+        "yukawa 1 sets 0.00504",
+        "sminputs 99 sets 2",
     ] {
         assert!(
             warnings
@@ -472,11 +475,6 @@ fn cards_the_model_cannot_honour_are_refused() {
             "revive",
             "Block MASS\n 4 1.27 # MC\n",
             &["MC (block mass, code 4)", "fixes it to zero"][..],
-        ),
-        (
-            "unknown",
-            "Block SMINPUTS\n 99 2.0\n",
-            &["block sminputs code 99", "no parameter there"][..],
         ),
     ] {
         let run = integrate(name, Some(card));

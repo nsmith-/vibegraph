@@ -30,16 +30,16 @@
 //!   external parameter (MW in the SM, or a massless particle's `ZERO`) is
 //!   ignored, as MadGraph's Fortran ignores it; one that disagrees with the
 //!   computed value is reported in [`BoundCard::ignored`].
-//! * An entry in a block no parameter of the model sits in, and a `MASS` or
-//!   `DECAY` entry at a code no particle of the model has, is ignored and
-//!   listed in [`BoundCard::ignored`]: MadGraph reads only the entries the
-//!   model's `ident_card` names (`write_inc_file`, `check_param_card.py`), so
-//!   a card written for a larger model binds; a decay table below such a
-//!   `DECAY` line goes with it. The `QNUMBERS` blocks that
+//! * An entry no parameter of the model sits at is ignored and listed in
+//!   [`BoundCard::ignored`]: one in a block no parameter of the model sits in,
+//!   one at a code the model lacks inside a block it does define, and a `MASS`
+//!   or `DECAY` entry at a code no particle of the model has. MadGraph reads
+//!   only the entries the model's `ident_card` names (`write_inc_file`,
+//!   `check_param_card.py`), so a card written for a larger model binds; a
+//!   decay table below such a `DECAY` line goes with it. A mistyped code is
+//!   such an entry too, and leaves the parameter the card meant at its
+//!   default; the listing is what reports it. The `QNUMBERS` blocks that
 //!   declare a new state's quantum numbers are not parameters either.
-//! * A code the model has no parameter for inside a block it does define is
-//!   refused: a mistyped code would leave the parameter the card meant at its
-//!   default.
 //! * A decay table is carried, as written, to the event file's `<slha>`
 //!   header ([`EvaluatedModel::decay_tables`]), where MadGraph puts the card
 //!   for a shower to decay from. MadGraph checks neither a table's sum nor its
@@ -128,16 +128,6 @@ pub enum CardError {
         member_value: f64,
         factor: f64,
     },
-    #[error(
-        "the card sets block {block} code {code} to {value:e}, and the model has no parameter \
-         there (block {block} is one the model defines, so a mistyped code is refused rather \
-         than left at its default)"
-    )]
-    Unknown {
-        block: String,
-        code: String,
-        value: f64,
-    },
     #[error("the card sets block {block} code {code} to {value}, which is not a finite number")]
     NonFinite {
         block: String,
@@ -201,7 +191,8 @@ pub enum IgnoredBecause {
     /// disagrees with `computed`.
     Computed { param: String, computed: f64 },
     /// No parameter of the model sits at the entry: its block is none the model
-    /// defines, or it is a `MASS` or `DECAY` entry at a code no particle has.
+    /// defines, its code is none the model has in the block, or it is a `MASS`
+    /// or `DECAY` entry at a code no particle has.
     NoParameter,
     /// The decay table below a `DECAY` line at a code no particle of the model
     /// has; [`IgnoredEntry::card`] is the sum of its branching ratios.
@@ -416,14 +407,6 @@ fn has_particle(model: &UFOModel, pdg: i32) -> bool {
         .any(|p| p.pdg_code == i64::from(pdg).abs() && !p.is_unphysical())
 }
 
-/// Whether some external parameter of `model` sits in `block`, case aside.
-fn defines_block(model: &UFOModel, block: &str) -> bool {
-    model.params.externals.iter().any(|p| {
-        matches!(&p.nature, ParamNature::External { lha_block, .. }
-            if lha_block.eq_ignore_ascii_case(block))
-    })
-}
-
 /// Bind `model` to `card`, refusing what the model cannot honour (see the
 /// module documentation), and record what the card moved. A refusal for a
 /// parameter the restriction zeroed says "the model's restriction"; use
@@ -536,12 +519,7 @@ fn bind_card_named(
                     }),
                 }
             }
-            _ if !defines_block(&model, block) => aside.push(Aside::NoParameter {
-                block: block.to_string(),
-                code: code_text(code),
-                value,
-            }),
-            _ => errors.push(CardError::Unknown {
+            _ => aside.push(Aside::NoParameter {
                 block: block.to_string(),
                 code: code_text(code),
                 value,
@@ -1061,22 +1039,118 @@ mod tests {
         assert!(bind("Block MASS\n 4 0.0 # MC\n").unwrap().moved.is_empty());
     }
 
-    /// A code the model lacks inside a block it defines is refused, as a
-    /// mistyped code would leave the parameter meant at its default; the block
-    /// that holds it is one some parameter of the model sits in.
+    /// A code the model lacks inside a block it defines is ignored and listed,
+    /// as an entry in a block the model lacks is: MadGraph reads only the
+    /// model's own parameters, so a mistyped code is never read there either.
+    /// The block's other codes are read as before.
     #[test]
-    fn an_unknown_code_in_a_defined_block_is_refused() {
-        for text in ["Block SMINPUTS\n 9 2.0\n", "Block YUKAWA\n 99 2.0\n"] {
-            assert!(
-                matches!(bind(text), Err(CardError::Unknown { .. })),
+    fn an_unknown_code_in_a_defined_block_is_ignored_and_listed() {
+        for (text, block) in [
+            ("Block SMINPUTS\n 99 2.0\n", "sminputs"),
+            ("Block YUKAWA\n 99 2.0\n", "yukawa"),
+        ] {
+            let bound = bind(text).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+            assert!(bound.moved.is_empty(), "{text:?}: {:?}", bound.moved);
+            assert_same_point(&bound.evaluated, &EvaluatedModel::from_model(sm()));
+            assert_eq!(
+                bound.ignored,
+                [IgnoredEntry {
+                    block: block.to_string(),
+                    code: "99".to_string(),
+                    card: 2.0,
+                    why: IgnoredBecause::NoParameter,
+                }],
                 "{text:?}"
             );
         }
+        let bound = bind("Block SMINPUTS\n 99 2.0\n 3 1.2e-1\n").unwrap();
+        let moved: Vec<(&str, f64)> = bound
+            .moved
+            .iter()
+            .map(|p| (p.name.as_str(), p.value))
+            .collect();
+        assert_eq!(moved, [("aS", 1.2e-1)]);
+        assert_eq!(bound.ignored.len(), 1, "{:?}", bound.ignored);
         // A new state's quantum numbers are not parameters.
         assert!(bind("Block QNUMBERS 9000005 # x\n 1 0\n 2 1\n").is_ok());
         assert!(
             bind("Block QNUMBERS 9000005 # x\n 1 0\nBlock QNUMBERS 9000006 # y\n 1 3\n").is_ok()
         );
+    }
+
+    /// A model whose `YUKAWA` block holds only codes 5, 6 and 15 (ymb, ymt,
+    /// ymtau), as `SM_HeavyN_Gen3Mass_NLO`'s does: the SM with its other
+    /// Yukawa externals moved to a block no card names.
+    fn heavy_flavour_yukawa_sm() -> Arc<UFOModel> {
+        let mut model = (*sm()).clone();
+        for p in &mut model.params.externals {
+            if let ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &mut p.nature
+            {
+                if lha_block.eq_ignore_ascii_case("yukawa") && ![5, 6, 15].contains(&lha_code[0]) {
+                    *lha_block = "LIGHTYUKAWA".to_string();
+                }
+            }
+        }
+        let yukawa: Vec<i32> = model
+            .params
+            .externals
+            .iter()
+            .filter_map(|p| match &p.nature {
+                ParamNature::External {
+                    lha_block,
+                    lha_code,
+                    ..
+                } if lha_block.eq_ignore_ascii_case("yukawa") => Some(lha_code[0]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(yukawa, [5, 6, 15]);
+        Arc::new(model)
+    }
+
+    /// The `YUKAWA` block of the HNL gridpack cards written for a model with
+    /// every fermion's Yukawa (ymdo, ymup, yms, ymc, yme, ymm at codes 1, 2, 3,
+    /// 4, 11 and 13), bound to a model defining the block at 5, 6 and 15 only:
+    /// the six entries are ignored and listed with their codes and values, and
+    /// the model's own codes are read.
+    #[test]
+    fn light_yukawas_the_model_lacks_are_ignored_and_listed() {
+        let model = heavy_flavour_yukawa_sm();
+        let text = "Block YUKAWA\n 1 5.040000e-03 # ymdo\n 2 2.550000e-03 # ymup\n \
+                    3 1.010000e-01 # yms\n 4 1.270000e+00 # ymc\n 5 4.700000e+00 # ymb\n \
+                    6 1.725000e+02 # ymt\n 11 5.110000e-04 # yme\n 13 1.056600e-01 # ymm\n \
+                    15 1.777000e+00 # ymtau\n";
+        let bound = bind_card(model.clone(), &card(text)).unwrap();
+        let moved: Vec<(&str, f64)> = bound
+            .moved
+            .iter()
+            .map(|p| (p.name.as_str(), p.value))
+            .collect();
+        assert_eq!(moved, [("ymt", 1.725e2)]);
+        let none = IgnoredBecause::NoParameter;
+        let listed: Vec<(&str, &str, f64, &IgnoredBecause)> = bound
+            .ignored
+            .iter()
+            .map(|e| (e.block.as_str(), e.code.as_str(), e.card, &e.why))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("yukawa", "1", 5.04e-3, &none),
+                ("yukawa", "2", 2.55e-3, &none),
+                ("yukawa", "3", 1.01e-1, &none),
+                ("yukawa", "4", 1.27, &none),
+                ("yukawa", "11", 5.11e-4, &none),
+                ("yukawa", "13", 1.0566e-1, &none),
+            ]
+        );
+        let alone = bind_card(model, &card("Block YUKAWA\n 6 1.725000e+02\n")).unwrap();
+        assert!(alone.ignored.is_empty());
+        assert_same_point(&bound.evaluated, &alone.evaluated);
     }
 
     /// `DECAY <code> Auto` at a code no particle has is one ignored entry, like

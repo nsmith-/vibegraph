@@ -294,14 +294,16 @@ particle whose width is not a free parameter of the model, and a decay table
 below the `Auto` line that lists a mode no tree-level vertex gives.
 `integrate` refuses a card it cannot honour: a
 non-zero value for a parameter the restriction zeroes, a value other than one
-for a parameter the restriction fixes to one, a value that splits two
-parameters the restriction merged, and a code the model has no parameter for
-inside a block it does define (a mistyped code). A value for a mass or width
-the model computes, such as the W mass in the Standard Model, is ignored, as
-MadGraph ignores it, with a warning when it disagrees with the computed one;
-an entry in a block the model does not define, or a `MASS` or `DECAY` entry at
-a code no particle of the model has (its decay table, or its `Auto` width,
-included), is ignored with a warning too.
+for a parameter the restriction fixes to one, and a value that splits two
+parameters the restriction merged. A value for a mass or width the model
+computes, such as the W mass in the Standard Model, is ignored, as MadGraph
+ignores it, with a warning when it disagrees with the computed one. An entry
+the model has no parameter for is ignored with a warning naming its block,
+code and value, as MadGraph reads only the model's own parameters: an entry in
+a block the model does not define, a code the model lacks inside a block it
+does define (a mistyped code among them, so read the warnings), and a `MASS`
+or `DECAY` entry at a code no particle of the model has (its decay table, or
+its `Auto` width, included).
 `integrate` also refuses a result its points do not carry, and writes no
 artifact for it. If no point of the integration has weight, the error says how
 many points passed the cuts: none means the cuts reject everything the sampler

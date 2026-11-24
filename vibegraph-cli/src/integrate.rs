@@ -438,13 +438,15 @@ pub(crate) struct IntegrateArgs {
     /// `Auto` width of a particle with a three-body mode through a closed
     /// channel (in the SM, Z and H) or that cannot otherwise be computed as
     /// MadGraph would, a non-zero value for a parameter the restriction fixed to
-    /// zero, a value other than one for a parameter it fixed to one, a move that
-    /// splits parameters the restriction merged, and a code the model has no
-    /// parameter for inside a block it does define. A mass or width the model
-    /// computes (MW in the SM) is ignored, with a warning when it disagrees; so
-    /// is an entry in a block the model does not define, and a `MASS` or `DECAY`
+    /// zero, a value other than one for a parameter it fixed to one, and a move
+    /// that splits parameters the restriction merged. A mass or width the model
+    /// computes (MW in the SM) is ignored, with a warning when it disagrees. An
+    /// entry the model has no parameter for is ignored with a warning naming
+    /// it, as MadGraph reads only the model's own parameters: one in a block
+    /// the model does not define, one at a code the model lacks inside a block
+    /// it does define (a mistyped code among them), and a `MASS` or `DECAY`
     /// entry (with its decay table or `Auto` width) at a code no particle of the
-    /// model has, as MadGraph reads only the model's own parameters.
+    /// model has.
     #[arg(long)]
     pub(crate) param_card: Option<PathBuf>,
 
