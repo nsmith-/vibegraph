@@ -11,7 +11,7 @@ opened: 2026-11-24
 tags: [integrate, flavour-groups, generate, validation-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-Found by sprint L's L-X1 investigation of per-member event weights (report on
-branch `sprintl-xwgtup`, `sessions/L-X1-report.md`).
+Found by sprint L's L-X3 investigation of per-member event weights (report:
+[L-X3 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-X3-report.md)).
 
-L-X1 had to integrate all 16 members of `p p > e+ e-` + `p p > e+ e- j` separately to test the sample's flavour shares, and those integrations close against the mixed run only to −1.2σ on the 1-jet part.
+L-X3 had to integrate all 16 members of `p p > e+ e-` + `p p > e+ e- j` separately to test the sample's flavour shares, and those integrations close against the mixed run only to −1.2σ on the 1-jet part.

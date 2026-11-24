@@ -11,7 +11,7 @@ opened: 2026-11-24
 tags: [generate, flavour-groups, mlm, sampling]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-Found by sprint L's L-X1 investigation of per-member event weights (report on
-branch `sprintl-xwgtup`, `sessions/L-X1-report.md`).
+Found by sprint L's L-X3 investigation of per-member event weights (report:
+[L-X3 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-X3-report.md)).
 
 Card: banked `pp_to_llj_mlm_run_card.dat` with `p p > e+ e-` + `add process p p > e+ e- j`. Seed 101 also had `s~ g` at +2.5σ and `d~ g` at −1.9σ; seed 202 read `c g` at −0.9σ.

@@ -51,5 +51,5 @@ normalises each part to its own integrated σ, so each flavour got its own
 unit. Nothing is biased, but the scales are noisy: part 9 held 7 of 1000
 events and was scaled up by 1.83, since its sample estimate was 45% below
 its integration. On the `sm` model, where the light quarks are massless, the
-same card has two parts and two units (L-X1). A common unit has to replace
+same card has two parts and two units (L-X3). A common unit has to replace
 per-part normalisation, not only per-multiplicity normalisation.

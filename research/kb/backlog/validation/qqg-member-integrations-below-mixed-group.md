@@ -11,7 +11,7 @@ opened: 2026-11-24
 tags: [integrate, flavour-groups, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-Found by sprint L's L-X1 investigation of per-member event weights (report on
-branch `sprintl-xwgtup`, `sessions/L-X1-report.md`).
+Found by sprint L's L-X3 investigation of per-member event weights (report:
+[L-X3 report](../../sprints/v023-orders-majorana-timeouts/sessions/L-X3-report.md)).
 
 The other members close; the sum over the 1-jet part is 268.38 ± 0.10 against 269.26 ± 0.74 pb.
