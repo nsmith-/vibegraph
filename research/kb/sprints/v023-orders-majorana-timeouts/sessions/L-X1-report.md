@@ -337,7 +337,18 @@ The fix takes each card from 396 to 198 diagrams; every diagram it removes has a
 | 419 | 70 | 1.0039 | 0.39617 | 1.13% | 1.13 | 0.9909 ± 0.0053 | −1.70 |
 
 - Card 78's five seeds read 0.9922, 0.9864, 0.9983, 0.9704 and 0.9869. The earlier hand-trimmed runs gave 0.985 (MZd 40) and 0.971 (MZd 86).
-- **Card 78 is still open: the 20-seed and 4×-budget check is running.** Its result goes below when it lands.
+- **Card 78 at 20 seeds and at 4× budget:** card 78 reads about 1% low, not 1.3%. The estimator is heavy-tailed, and at 4× the reported errors understate the seed spread. The MG reference is 0.2167 ± 0.0004948 pb. All 25 runs exit 0. The vg/MG errors below include the MG error.
+
+  | rung | seeds | mean (pb) | sd | χ²/dof | seeds below MG | vg/MG | pull |
+  |---|---|---|---|---|---|---|---|
+  | 1× | 20 | 0.21509 | 1.75% | 1.27 | 17/20 | 0.9926 ± 0.0045 | −1.65 |
+  | 4× (`--neval 480000`) | 5 | 0.21544 | 1.47% | 6.98 | 2/5 | 0.9942 ± 0.0069 | −0.84 |
+
+  - **1× is skewed.** The median seed is about 0.990. One tail seed pulls the mean up: seed 10 reads 1.0521 at ESS 696.
+  - **4× is bimodal.** Seeds 1, 2 and 4 read 1.0068, 1.0066 and 1.0007. Seeds 3 and 5 read 0.9792 and 0.9776, at errors of ±0.55% and ±0.44% (ESS 30k and 45k).
+  - **The early −2.54σ came from that skew, not from a shift in the mean.**
+  - **Reading:** at 4× the mean moves toward 1, so this is not a stable deficit and not a physics item. It is not clean scatter either. Most seeds read low, an occasional seed carries a large weight, and at 4× two seeds are confidently 2.2% low. That is the signature of a region that is usually undersampled and occasionally hit.
+  - **What would settle it:** 20 seeds at 4× (about 2.4 h). Whether to file the MZd-40 tail as a sampler/multichannel observation is the planner's decision.
 
 ### HNL cards 84, 85 and 438–442 on ba190428
 
@@ -367,7 +378,7 @@ yukawa 13 sets 0.10566, and the model has no parameter there; MadGraph reads onl
 These are the validator's rows: σ, relative error, ESS, and σ/MG against the gpdb MG value. The build is 8a651703, run with the campaign argv except where marked 4×. The card means recomputed from these rows match the summaries above.
 - The validator's copy is `pr11_seed_rows.txt` in its session scratchpad.
 - Card 157 seeds 1–5 are in its table above.
-- Card 78's per-seed ratios are under its table above.
+- Card 78's rows are with the DarkPhoton rows below.
 
 **Card 157, seeds 6–20**
 
@@ -475,6 +486,41 @@ These are the validator's rows: σ, relative error, ESS, and σ/MG against the g
 | 5 | 0.42612 | 1.00% | 9221 | 0.9855 |
 
 At 4× budget the ESS is about 10× the 1× value (about 1000 → about 10000), which is more than linear in budget. That fits the adapted grid concentrating better at the larger neval.
+
+**Card 78**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.21502 | 1.12% | 7385 | 0.9922 |
+| 2 | 0.21376 | 1.04% | 8438 | 0.9864 |
+| 3 | 0.21633 | 1.29% | 5655 | 0.9983 |
+| 4 | 0.21028 | 0.89% | 11224 | 0.9704 |
+| 5 | 0.21387 | 0.96% | 9814 | 0.9869 |
+| 6 | 0.21585 | 1.53% | 4110 | 0.9961 |
+| 7 | 0.21526 | 1.03% | 8460 | 0.9934 |
+| 8 | 0.21225 | 0.95% | 9821 | 0.9794 |
+| 9 | 0.21396 | 0.99% | 9121 | 0.9873 |
+| 10 | 0.22799 | 3.76% | 696 | 1.0521 |
+| 11 | 0.21443 | 1.27% | 5862 | 0.9895 |
+| 12 | 0.21444 | 0.99% | 9200 | 0.9895 |
+| 13 | 0.21199 | 0.89% | 11160 | 0.9783 |
+| 14 | 0.21997 | 1.26% | 5861 | 1.0151 |
+| 15 | 0.21355 | 0.93% | 10270 | 0.9854 |
+| 16 | 0.21857 | 1.33% | 5307 | 1.0086 |
+| 17 | 0.21448 | 1.14% | 7094 | 0.9897 |
+| 18 | 0.21253 | 0.95% | 9888 | 0.9808 |
+| 19 | 0.21539 | 1.28% | 5776 | 0.9940 |
+| 20 | 0.21191 | 1.02% | 8723 | 0.9779 |
+
+**Card 78 at 4× (`--neval 480000`)**
+
+| seed | σ (pb) | err | ESS | σ/MG |
+|---|---|---|---|---|
+| 1 | 0.21817 | 1.13% | 7630 | 1.0068 |
+| 2 | 0.21813 | 0.66% | 21558 | 1.0066 |
+| 3 | 0.21219 | 0.55% | 30482 | 0.9792 |
+| 4 | 0.21686 | 0.86% | 13139 | 1.0007 |
+| 5 | 0.21184 | 0.44% | 44838 | 0.9776 |
 
 **Card 79**
 
