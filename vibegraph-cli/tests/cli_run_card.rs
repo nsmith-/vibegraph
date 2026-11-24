@@ -343,6 +343,26 @@ fn an_unfilled_placeholder_is_refused_by_name() {
         if name == "lhaid" {
             assert_eq!(key(&result, name)["refusal"], refusal["message"], "{line}");
         }
+        // The refusal sits on the placeholder's own key, where that is a run-card
+        // parameter, and on no other.
+        let refused: Vec<&str> = result["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|k| {
+                k["refusal"]
+                    .as_str()
+                    .is_some_and(|r| r.contains(placeholder))
+            })
+            .map(|k| k["name"].as_str().unwrap())
+            .collect();
+        assert!(
+            refused.iter().all(|k| k.eq_ignore_ascii_case(name)) && refused.len() <= 1,
+            "{line}: {refused:?}"
+        );
+        if name == "lhaid" {
+            assert_eq!(refused, ["lhaid"], "{line}");
+        }
         let unknown = &result["unknown_keys"][0];
         assert_eq!(unknown["problem"], "placeholder", "{line}");
 

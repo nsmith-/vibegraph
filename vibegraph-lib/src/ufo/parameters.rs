@@ -2,7 +2,9 @@ use super::ast_util::{
     call_func_name, conditional_definitions, extract_float, extract_name, extract_string,
     named_assignments, parse_stmts, FieldError, Fields, UniqueNames,
 };
-use super::config_eval::{configuration_modules, eval_int, select_branch, Configuration, Scope};
+use super::config_eval::{
+    config_subset, configuration_modules, eval_int, select_branch, Configuration, Scope,
+};
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::functions::FunctionLibrary;
 use super::slha::ParamCard;
@@ -23,17 +25,15 @@ pub enum ParameterError {
     ExprParse { name: String, cause: String },
     #[error(
         "parameter(s) {names} are defined under an `if` of parameters.py whose condition is \
-         outside the subset of Python the loader evaluates against configuration.py (integer \
-         and boolean literals, `configuration.<name>` for a name configuration.py binds to one, \
-         `not`, `and`, `or`, `+`, `-`, `*`): MadGraph runs the module as Python, the loader \
-         does not"
+         outside the subset of Python the loader evaluates against configuration.py ({}): \
+         MadGraph runs the module as Python, the loader does not",
+        config_subset!()
     )]
     ConditionOutside { names: String },
     #[error(
         "parameter '{parameter}': `value` is a conditional expression whose condition is outside \
-         the subset of Python the loader evaluates against configuration.py (integer and boolean \
-         literals, `configuration.<name>` for a name configuration.py binds to one, `not`, `and`, \
-         `or`, `+`, `-`, `*`)"
+         the subset of Python the loader evaluates against configuration.py ({})",
+        config_subset!()
     )]
     ValueConditionOutside { parameter: String },
     #[error(
@@ -994,7 +994,7 @@ if configuration.a > 1:
             modules: &modules,
             bare: false,
         };
-        let src = "import configuration\nif configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\n    if configuration.nope:\n        s, (t, *u) = 4, (5, 6)\n        v += 7\nelse:\n    w = 8\n";
+        let src = "import configuration\nif configuration.a:\n    z = 9\nif configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\n    if configuration.nope:\n        s, (t, *u) = 4, (5, 6)\n        v += 7\nelse:\n    w = 8\n";
         let stmts = select_statements(&parse_stmts(src).unwrap(), &scope).unwrap();
         let names: Vec<&str> = named_assignments(&stmts).map(|(n, _)| n).collect();
         assert_eq!(names, ["q"]);
