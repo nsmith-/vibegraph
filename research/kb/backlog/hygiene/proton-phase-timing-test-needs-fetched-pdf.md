@@ -17,3 +17,7 @@ sources:
 loads; it checks phase order, not PDF values. `cli_progress_position.rs`
 already writes a smooth stand-in set, so the test can use it and leave the
 `extended-validation` gate.
+
+Three hand-written stand-in sets already exist; the shared writer that
+[standin-pdf-set-three-copies](standin-pdf-set-three-copies.md) asks for is the
+one to use here.

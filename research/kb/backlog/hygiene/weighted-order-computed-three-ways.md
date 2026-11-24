@@ -28,3 +28,10 @@ stated once there. It is the natural single helper for the other three.
 `generate_sets_inner`, `NegativeOrders::weighted` in `ufo/topo.rs`, and the
 test-only `weighted` in `stitching.rs`, which panics on a missing order.
 Closing them needs an `order_weight` that works on a diagram view.
+
+**Sites as of sprint L (2026-11-24).** `diagrams/chain.rs:341` and
+`diagrams/reduction.rs:213` now call `order_weight`. Still separate:
+`helas/eval/stitching.rs:149` indexes `order_hierarchy[order]` and panics on an
+order missing from the hierarchy (L-Z1 Found 2), and since #185 the enumerate
+closure lives in `Walk::assign` (`diagrams/mod.rs`) beside a second near-copy,
+`constraint_fn` (L-Z7 Found 2).
