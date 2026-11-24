@@ -38,6 +38,13 @@ one; a **process** is one `@N`.
    promises, the one MadGraph's `event_norm = average` and Pythia's `main164`
    read. A single-multiplicity run passes no parts and the whole file is
    normalised to `artifact.sigma_pb`.
+
+   Within a part the scale does not depend on the event's flavour member.
+   Members of one flavour group, and members of different groups, share it. A
+   member's share of the part is carried by how often it is drawn, never by
+   its weight. The member draw is `∝ S_i L_i r_i |M_g|²`: the member's own term
+   of the point's value, MLM's per-member reweighting `r_i` included
+   (`proton.rs`, the member selection after acceptance).
 2. **Overweights keep their weight**, rescaled with their part; nothing is
    truncated. The only bias is the ratio estimator's, `O(1/n_k)`.
 3. **`<init>` has one line per `@N`** (`LPRUP = N`). Process `p` declares
