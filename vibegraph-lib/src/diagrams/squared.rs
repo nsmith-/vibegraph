@@ -32,6 +32,7 @@ use super::check::{SquaredOrder, SupportedCard};
 use super::parse::CouplingOp;
 use super::resolve::{check_order_name, ResolveError};
 use super::{Diagram, DiagramError, DiagramSet};
+use crate::ufo::weighted::order_weight;
 use crate::ufo::UFOModel;
 
 /// The order name MadGraph's `WEIGHTED` is: every coupling order weighted by its
@@ -194,12 +195,7 @@ fn orders_of(constraints: &[SquaredConstraint], diagram: &Diagram, model: &UFOMo
         .iter()
         .map(|c| {
             if c.order == WEIGHTED {
-                orders
-                    .iter()
-                    .map(|(name, &n)| {
-                        n * i64::from(model.order_hierarchy.get(name).copied().unwrap_or(0))
-                    })
-                    .sum()
+                order_weight(&orders, &model.order_hierarchy)
             } else {
                 orders.get(&c.order).copied().unwrap_or(0)
             }

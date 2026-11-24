@@ -184,6 +184,18 @@ fn weighted_exact_and_lower_bounds_filter_the_weighted_order() {
     }
 }
 
+/// `WEIGHTED^2` bounds a term's summed weighted order, each order weighed by
+/// its hierarchy: on `u u~ > u u~` the gluon exchanges weigh 2 and the
+/// electroweak ones 4, so `WEIGHTED^2<=4` pairs only gluon exchanges and keeps
+/// the two of them; unweighted, every diagram would weigh 2 and all six stay.
+#[test]
+fn a_weighted_squared_order_weighs_each_order_by_its_hierarchy() {
+    let sets = enumerate("generate u u~ > u u~ WEIGHTED^2<=4").unwrap();
+    assert_eq!(total_diagrams(&sets), 2);
+    let sets = enumerate("generate u u~ > u u~ WEIGHTED^2<=6").unwrap();
+    assert_eq!(total_diagrams(&sets), 6);
+}
+
 /// A squared-order selection none of whose terms any diagram can make leaves
 /// the line without diagrams, which is MadGraph's `NoDiagramException`.
 #[test]
