@@ -2075,11 +2075,11 @@ impl Cuts {
     /// draw whose pole would otherwise sit on the transfer's own rounding noise.
     /// As a *support bound* it also caps each rung's transfer at `t ≤ −floor`,
     /// above which the channel's density is exactly zero, lowered per rung to what
-    /// a single-leg side of its line proves ([`Cuts::single_leg_transfer_bound`]). The estimator is then
-    /// unbiased only while the channel set as a whole covers every point the cuts
-    /// accept: past three outgoing legs, where the floor is a scale rather than a
-    /// bound, that is what the coverage gates check, not something the floor
-    /// guarantees. A run with no active single-leg `pT` cut gets `0`: its
+    /// a single-leg side of its line proves ([`Cuts::single_leg_transfer_bound`]).
+    /// The estimator is then unbiased only while the channel set as a whole covers
+    /// every point the cuts accept: past three outgoing legs, where the floor is a
+    /// scale rather than a bound, that is what the coverage gates check, not
+    /// something the floor guarantees. A run with no active single-leg `pT` cut gets `0`: its
     /// peripheral channels are still built, unbounded, with the pole floored at
     /// the channel's own default scale rather than at one read off other cuts.
     ///
