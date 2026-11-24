@@ -67,6 +67,11 @@ impl Particle {
     pub fn is_goldstone(&self) -> bool {
         self.is_goldstone
     }
+
+    /// A Majorana fermion: a spin-½ particle that is its own antiparticle.
+    pub(crate) fn is_majorana(&self) -> bool {
+        self.spin.abs() == 2 && self.is_self_conjugate
+    }
 }
 
 impl Index<ParticleId> for IndexMap<String, Particle> {
@@ -621,6 +626,11 @@ phi__plus__ = Particle(pdg_code = 251,
             );
             let particles = parse_particles(&src).unwrap();
             assert!(particles[0].is_unphysical(), "{spelling} not recognised");
+            let unflagged = parse_particles(&src.replace("= True", "= False")).unwrap();
+            assert!(
+                !unflagged[0].is_unphysical(),
+                "{spelling} = False marks a Goldstone"
+            );
         }
     }
 
@@ -630,6 +640,7 @@ phi__plus__ = Particle(pdg_code = 251,
             "[Prop.U, Prop.F]",
             "(Prop.U, Prop.F)",
             "{0: Prop.U, 1: Prop.F}",
+            "{1: Prop.F, 0: Prop.U}",
         ] {
             let src = format!(
                 r#"

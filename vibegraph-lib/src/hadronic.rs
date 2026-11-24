@@ -24,6 +24,7 @@
 //! clusters in the partonic CM, as MadEvent does, and evaluates the closed-form
 //! choices in the lab frame.
 
+use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -698,9 +699,10 @@ pub(crate) fn compile_class(
 /// result per set, in set order, each the evaluator the set compiles to on its
 /// own, so the order and the thread a set is compiled on change nothing. It
 /// reports no progress: the workers are in no progress group, so the caller
-/// reports, on its own thread, as it takes the results.
-pub fn compile_classes(
-    sets: &[&DiagramSet],
+/// reports, on its own thread, as it takes the results. `sets` holds the sets
+/// or references to them.
+pub fn compile_classes<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
@@ -709,7 +711,7 @@ pub fn compile_classes(
     sets.par_iter()
         .map(|set| {
             let _entered = span.enter();
-            compile_class(set, model, evaluated)
+            compile_class(set.borrow(), model, evaluated)
         })
         .collect()
 }
@@ -717,8 +719,8 @@ pub fn compile_classes(
 /// `precompiled[k]` where it holds an evaluator of `sets[k]`, compiled under
 /// `evaluated`, and [`compile_class`] of `sets[k]` across the rayon pool
 /// ([`compile_classes`]) where it holds none: one result per set, in set order.
-pub(crate) fn complete_compiles(
-    sets: &[&DiagramSet],
+pub(crate) fn complete_compiles<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
     precompiled: Vec<Option<AmplitudeEvaluator>>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
@@ -728,7 +730,7 @@ pub(crate) fn complete_compiles(
         .iter()
         .zip(&precompiled)
         .filter(|(_, e)| e.is_none())
-        .map(|(s, _)| *s)
+        .map(|(s, _)| s.borrow())
         .collect();
     let mut compiled = compile_classes(&missing, model, evaluated).into_iter();
     precompiled
@@ -1681,21 +1683,6 @@ pub(crate) fn share_offsets(n_configs: impl IntoIterator<Item = usize>) -> Vec<u
 /// `JAMP2` written into `jamp2` in the whole amplitude's flow indexing (flows it
 /// does not reach at zero). `None` where no line is zeroed, leaving `jamp2` the
 /// caller's.
-/// The helicity combination drawn off `hel_m2` from `u`
-/// ([`AmplitudeEvaluator::select_helicity`]), and its entry in `hel_m2`.
-pub(crate) fn drawn_helicity<'e>(
-    eval: &'e AmplitudeEvaluator,
-    hel_m2: &[f64],
-    u: f64,
-) -> Option<(&'e [i32], f64)> {
-    let drawn = eval.select_helicity(hel_m2, u)?;
-    let c = eval
-        .helicities()
-        .iter()
-        .position(|h| h.as_slice() == drawn)?;
-    Some((drawn, hel_m2[c]))
-}
-
 pub(crate) fn zeroed_diagonals<'a>(
     vetoed: Option<&BoundVetoed<'a>>,
     main: &BoundSubprocess<'a>,
@@ -2184,6 +2171,10 @@ pub struct ChannelIntegration {
     /// of this term, in the same units; empty for an integrand with none.
     pub shares: Vec<VegasResult>,
 }
+
+/// The uniforms [`FixedBeamIntegrand::select_event`] draws an event's labels from:
+/// the subprocess, the helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 4;
 
 /// The discrete labels an accepted event carries besides its momenta, drawn by
 /// [`FixedBeamIntegrand::select_event`].
@@ -3604,7 +3595,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self,
         momenta: &[V],
         channel: usize,
-        u: [f64; 4],
+        u: [f64; SELECT_EVENT_DRAWS],
     ) -> Option<EventSelection> {
         let ext = self.externals(momenta);
         let sc = self.scratch();
@@ -3652,8 +3643,8 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
         let (helicity, helicity_m2) =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, subprocess), sub, &ext, &mut jamp2) {
-                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[1])?,
-                None => drawn_helicity(eval, &hel_m2, u[1])?,
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?,
+                None => eval.select_helicity(&hel_m2, u[1])?,
             };
         let helicity = helicity.to_vec();
         // Matching is refused at fixed beams, so the configuration is always drawn.

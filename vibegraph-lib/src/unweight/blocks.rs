@@ -9,8 +9,8 @@
 //!
 //! - The trial stream, at draw `b · BLOCK_TRIALS · stride`. A trial in channel
 //!   `j` consumes `2 + channel_grid_ndim(j)` draws (channel, grid coordinates,
-//!   acceptance) and an accepted one a further `event_draws` for its event's
-//!   discrete labels, so `stride = 2 + max_j channel_grid_ndim(j) + event_draws`
+//!   acceptance) and an accepted one a further `D` for its event's discrete
+//!   labels, so `stride = 2 + max_j channel_grid_ndim(j) + D`
 //!   bounds every trial and no block reaches into the next block's draws.
 //! - The trailing-uniform stream, at draw `b · BLOCK_TRIALS · scale_draw_ndim`:
 //!   every trial takes exactly `scale_draw_ndim` of them, the per-point layout an
@@ -42,7 +42,7 @@ use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE, WORDS_PER_DRAW};
 /// fraction of any sample worth generating in parallel; large enough that a
 /// block of `2 → 6` trials at a few hundred microseconds each is still a fraction
 /// of a second, so the batch barrier balances.
-pub const BLOCK_TRIALS: u64 = 1024;
+const BLOCK_TRIALS: u64 = 1024;
 
 /// Blocks per worker thread in one batch: enough that a thread finishing early
 /// steals another block rather than idling at the barrier, few enough that the
@@ -73,17 +73,17 @@ struct Layout {
     seed: u64,
     /// The most trial-stream draws one trial may consume.
     stride: u64,
-    event_draws: usize,
 }
 
 /// An accept/reject pass over frozen maxima whose output is fixed by its seed
 /// and independent of the worker pool's size.
 ///
 /// Each accepted point is handed to the caller's `prepare` on the worker that
-/// accepted it, together with `event_draws` uniforms from the trial stream for
-/// whatever discrete labels the event needs, so the work an accepted point
-/// costs beyond its trial runs in parallel too.
-pub struct BlockedPass<T> {
+/// accepted it, together with `D` uniforms from the trial stream for whatever
+/// discrete labels the event needs, so the work an accepted point costs beyond
+/// its trial runs in parallel too. `D` is the length of the array `prepare`
+/// takes, so the label draw that consumes them fixes it.
+pub struct BlockedPass<T, const D: usize> {
     unweighter: Unweighter,
     layout: Layout,
     /// Trials an event may cost before the pass gives up.
@@ -101,19 +101,15 @@ pub struct BlockedPass<T> {
     exhausted: bool,
 }
 
-impl<T: Send> BlockedPass<T> {
+impl<T: Send, const D: usize> BlockedPass<T, D> {
     /// A pass over `unweighter`'s frozen maxima on `seed`'s streams, handing each
-    /// accepted point `event_draws` uniforms and giving up after `max_trials`
-    /// trials without one.
-    pub fn new(unweighter: Unweighter, seed: u64, event_draws: usize, max_trials: u64) -> Self {
-        let stride = (2 + unweighter.widest_grid() + event_draws) as u64;
+    /// accepted point `D` uniforms and giving up after `max_trials` trials
+    /// without one.
+    pub fn new(unweighter: Unweighter, seed: u64, max_trials: u64) -> Self {
+        let stride = (2 + unweighter.widest_grid() + D) as u64;
         BlockedPass {
             unweighter,
-            layout: Layout {
-                seed,
-                stride,
-                event_draws,
-            },
+            layout: Layout { seed, stride },
             max_trials,
             next_block: 0,
             ready: VecDeque::new(),
@@ -125,11 +121,6 @@ impl<T: Send> BlockedPass<T> {
         }
     }
 
-    /// The frozen maxima the pass draws against.
-    pub fn unweighter(&self) -> &Unweighter {
-        &self.unweighter
-    }
-
     /// The statistics of every trial up to the one that produced the last point
     /// handed out.
     pub fn stats(&self) -> &UnweightStats {
@@ -139,12 +130,7 @@ impl<T: Send> BlockedPass<T> {
     /// [`Unweighter::sigma_from_events`] over [`stats`](Self::stats): the cross
     /// section the points handed out so far carry, in the integrand's units.
     pub fn sigma_from_events(&self) -> f64 {
-        let trials = self.stats.trials as f64;
-        if trials > 0.0 {
-            self.unweighter.total_w_max() * self.stats.event_weight_sum / trials
-        } else {
-            0.0
-        }
+        self.unweighter.sigma_of_events(&self.stats)
     }
 
     /// Return the pass to its first trial, so the identical sequence follows.
@@ -167,7 +153,7 @@ impl<T: Send> BlockedPass<T> {
     pub fn next<I, F>(&mut self, integrand: &I, prepare: &F) -> Option<(AcceptedPoint, T)>
     where
         I: ChannelIntegrand + Sync,
-        F: Fn(&AcceptedPoint, &[f64]) -> T + Sync,
+        F: Fn(&AcceptedPoint, [f64; D]) -> T + Sync,
     {
         if self.exhausted {
             return None;
@@ -207,7 +193,7 @@ impl<T: Send> BlockedPass<T> {
     fn run_batch<I, F>(&mut self, integrand: &I, prepare: &F)
     where
         I: ChannelIntegrand + Sync,
-        F: Fn(&AcceptedPoint, &[f64]) -> T + Sync,
+        F: Fn(&AcceptedPoint, [f64; D]) -> T + Sync,
     {
         let width = (rayon::current_num_threads() * BLOCKS_PER_THREAD) as u64;
         let first = self.next_block;
@@ -223,7 +209,7 @@ impl<T: Send> BlockedPass<T> {
 }
 
 /// Block `b`'s trials, on the streams [`Layout`] places it at.
-fn run_block<I, T, F>(
+fn run_block<I, T, F, const D: usize>(
     unweighter: &Unweighter,
     integrand: &I,
     layout: Layout,
@@ -232,7 +218,7 @@ fn run_block<I, T, F>(
 ) -> Block<T>
 where
     I: ChannelIntegrand,
-    F: Fn(&AcceptedPoint, &[f64]) -> T,
+    F: Fn(&AcceptedPoint, [f64; D]) -> T,
 {
     let first = b * BLOCK_TRIALS;
     let start = u128::from(first) * u128::from(layout.stride) * WORDS_PER_DRAW;
@@ -245,7 +231,6 @@ where
         first * unweighter.scale_ndim() as u64,
     );
     let mut u = vec![0.0; unweighter.point_len()];
-    let mut draws = vec![0.0; layout.event_draws];
     let mut stats = UnweightStats::default();
     let mut events = VecDeque::new();
     for trial in 0..BLOCK_TRIALS {
@@ -257,10 +242,8 @@ where
             &mut stats,
         );
         if let Some(point) = accepted {
-            for d in draws.iter_mut() {
-                *d = rng.random();
-            }
-            let item = prepare(&point, &draws);
+            let draws: [f64; D] = std::array::from_fn(|_| rng.random());
+            let item = prepare(&point, draws);
             events.push_back(BlockEvent {
                 trial,
                 point,
@@ -324,47 +307,61 @@ mod tests {
     /// uniforms it was prepared with, bit for bit, and the statistics after it.
     type Taken = Vec<(usize, Vec<u64>, u64, Vec<u64>, u64, u64, u64)>;
 
-    fn take(pass: &mut BlockedPass<Vec<f64>>, integ: &PowerChannels, n: usize) -> Taken {
-        let prepare = |_: &AcceptedPoint, draws: &[f64]| draws.to_vec();
-        (0..n)
-            .map(|_| {
-                let (point, draws) = pass.next(integ, &prepare).expect("an event");
-                let stats = pass.stats();
-                (
-                    point.channel,
-                    point.u.iter().map(|x| x.to_bits()).collect(),
-                    point.weight.to_bits(),
-                    draws.iter().map(|x| x.to_bits()).collect(),
-                    stats.trials,
-                    stats.ratio_sum.to_bits(),
-                    stats.event_weight_sum.to_bits(),
-                )
-            })
-            .collect()
+    fn take<const D: usize>(
+        pass: &mut BlockedPass<Vec<f64>, D>,
+        integ: &PowerChannels,
+        min_trials: u64,
+    ) -> Taken {
+        let prepare = |_: &AcceptedPoint, draws: [f64; D]| draws.to_vec();
+        let mut taken = Vec::new();
+        while pass.stats().trials < min_trials {
+            let (point, draws) = pass.next(integ, &prepare).expect("an event");
+            let stats = pass.stats();
+            taken.push((
+                point.channel,
+                point.u.iter().map(|x| x.to_bits()).collect(),
+                point.weight.to_bits(),
+                draws.iter().map(|x| x.to_bits()).collect(),
+                stats.trials,
+                stats.ratio_sum.to_bits(),
+                stats.event_weight_sum.to_bits(),
+            ));
+        }
+        taken
     }
 
-    fn run_on(threads: usize, n: usize) -> (Taken, u64) {
+    /// Trials spanning three batches of the widest pool [`run_on`] is given, so every
+    /// pool size it is given takes at least two batches beyond its first.
+    const SPAN_TRIALS: u64 = 3 * 4 * BLOCKS_PER_THREAD as u64 * BLOCK_TRIALS;
+
+    fn run_on(threads: usize) -> (Taken, u64) {
+        assert!(
+            threads <= 4,
+            "SPAN_TRIALS spans three batches of four threads"
+        );
         let integ = channels();
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
             .expect("a pool");
         pool.install(|| {
-            let mut pass = BlockedPass::new(scan(&integ, MaxRule::default()), 0xB10C, 3, 1 << 20);
-            let taken = take(&mut pass, &integ, n);
+            let mut pass =
+                BlockedPass::<_, 3>::new(scan(&integ, MaxRule::default()), 0xB10C, 1 << 20);
+            let taken = take(&mut pass, &integ, SPAN_TRIALS);
             (taken, pass.sigma_from_events().to_bits())
         })
     }
 
     /// The pool's size reaches neither the points, the uniforms they were
-    /// prepared with, nor any statistic read after each of them. Several
-    /// thousand events span many blocks and, at four threads, several batches.
+    /// prepared with, nor any statistic read after each of them. The events span
+    /// [`SPAN_TRIALS`], so every pool size takes several batches and a batch that
+    /// starts at the wrong block shows.
     #[test]
     fn the_output_is_independent_of_the_thread_count() {
-        let one = run_on(1, 3_000);
+        let one = run_on(1);
         for threads in [2, 3, 4] {
             assert!(
-                run_on(threads, 3_000) == one,
+                run_on(threads) == one,
                 "{threads} threads departed from one"
             );
         }
@@ -379,12 +376,15 @@ mod tests {
     fn the_blocks_tile_one_serial_sequence() {
         let integ = channels();
         let uw = scan(&integ, MaxRule::default());
-        let event_draws = 2;
+        const EVENT_DRAWS: usize = 2;
         let seed = 0x5EED_1;
-        let stride = 2 + 1 + event_draws as u64;
+        let stride = 2 + 1 + EVENT_DRAWS as u64;
         let mut reference = Vec::new();
         let mut trailing = SubStream::new(seed, SCALE_DRAW_STREAM_BASE, 0);
         let mut u = vec![0.0; 2];
+        // Three batches of the pool the pass runs on, so the replay crosses batch
+        // boundaries as well as block ones.
+        let span = 3 * (rayon::current_num_threads() * BLOCKS_PER_THREAD) as u64 * BLOCK_TRIALS;
         let mut stats = UnweightStats::default();
         'blocks: for b in 0.. {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -398,16 +398,16 @@ mod tests {
                     &mut u,
                     &mut stats,
                 ) {
-                    let draws: Vec<f64> = (0..event_draws).map(|_| rng.random()).collect();
+                    let draws: Vec<f64> = (0..EVENT_DRAWS).map(|_| rng.random()).collect();
                     reference.push((p.channel, p.u, p.weight, draws, b * BLOCK_TRIALS + t + 1));
-                    if reference.len() == 2_500 {
+                    if b * BLOCK_TRIALS + t + 1 >= span {
                         break 'blocks;
                     }
                 }
             }
         }
-        let mut pass = BlockedPass::new(uw, seed, event_draws, 1 << 20);
-        let prepare = |_: &AcceptedPoint, draws: &[f64]| draws.to_vec();
+        let mut pass = BlockedPass::new(uw, seed, 1 << 20);
+        let prepare = |_: &AcceptedPoint, draws: [f64; EVENT_DRAWS]| draws.to_vec();
         for (k, (channel, u, weight, draws, trials)) in reference.into_iter().enumerate() {
             let (point, got) = pass.next(&integ, &prepare).expect("an event");
             assert_eq!(point.channel, channel, "event {k}");
@@ -426,8 +426,8 @@ mod tests {
     fn the_merged_statistics_are_the_serial_ones() {
         let integ = channels();
         let uw = scan(&integ, MaxRule::default());
-        let mut pass = BlockedPass::new(uw.clone(), 3, 0, 1 << 20);
-        let prepare = |_: &AcceptedPoint, _: &[f64]| ();
+        let mut pass = BlockedPass::new(uw.clone(), 3, 1 << 20);
+        let prepare = |_: &AcceptedPoint, _: [f64; 0]| ();
         for _ in 0..4_000 {
             pass.next(&integ, &prepare).expect("an event");
         }
@@ -477,11 +477,11 @@ mod tests {
     #[test]
     fn a_restart_replays_the_pass() {
         let integ = channels();
-        let mut pass = BlockedPass::new(scan(&integ, MaxRule::default()), 77, 1, 1 << 20);
-        let first = take(&mut pass, &integ, 1_500);
+        let mut pass = BlockedPass::<_, 1>::new(scan(&integ, MaxRule::default()), 77, 1 << 20);
+        let first = take(&mut pass, &integ, 5 * BLOCK_TRIALS);
         pass.restart();
         assert_eq!(pass.stats().trials, 0);
-        assert!(take(&mut pass, &integ, 1_500) == first);
+        assert!(take(&mut pass, &integ, 5 * BLOCK_TRIALS) == first);
     }
 
     /// The kept weight reproduces each channel's integral: the blocked pass is
@@ -489,8 +489,8 @@ mod tests {
     #[test]
     fn the_sample_reproduces_the_integral() {
         let integ = channels();
-        let mut pass = BlockedPass::new(scan(&integ, MaxRule::default()), 5, 0, 1 << 20);
-        let prepare = |p: &AcceptedPoint, _: &[f64]| p.weight;
+        let mut pass = BlockedPass::new(scan(&integ, MaxRule::default()), 5, 1 << 20);
+        let prepare = |p: &AcceptedPoint, _: [f64; 0]| p.weight;
         let mut per_channel = [0.0; 3];
         for _ in 0..200_000 {
             let (point, weight) = pass.next(&integ, &prepare).expect("an event");
@@ -537,11 +537,14 @@ mod tests {
         let integ = Vanishing(channels(), false.into());
         let uw = scan(&integ.0, MaxRule::default());
         integ.1.store(true, std::sync::atomic::Ordering::Relaxed);
-        let mut pass = BlockedPass::new(uw, 1, 0, 3 * BLOCK_TRIALS + 17);
-        let prepare = |_: &AcceptedPoint, _: &[f64]| ();
+        let mut pass = BlockedPass::new(uw, 1, 3 * BLOCK_TRIALS + 17);
+        let prepare = |_: &AcceptedPoint, _: [f64; 0]| ();
         assert!(pass.next(&integ, &prepare).is_none());
+        let given_up = pass.stats().clone();
+        assert!(given_up.trials >= 3 * BLOCK_TRIALS + 17);
+        // A pass that has given up stays given up: a later call runs no trial.
         assert!(pass.next(&integ, &prepare).is_none());
-        assert!(pass.stats().trials >= 3 * BLOCK_TRIALS + 17);
+        assert_eq!(pass.stats().trials, given_up.trials);
         assert_eq!(pass.stats().accepted, 0);
     }
 }

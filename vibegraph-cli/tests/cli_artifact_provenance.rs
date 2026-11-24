@@ -269,3 +269,47 @@ fn other_refusals_name_unreadable_or_carry_no_reason() {
     assert_eq!(usage["error_kind"], "usage");
     assert!(usage.get("reason").is_none(), "{usage}");
 }
+
+/// A diagram artifact `integrate` reads carries its reason too: one whose
+/// diagrams another enumeration version wrote is refused with both versions.
+#[test]
+fn a_diagram_artifact_refusal_carries_its_reason() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("proc_card.dat"),
+        format!("import model sm\ngenerate {PROCESS}\n"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("run_card.dat"), common::fixed_beams(EBEAM, EBEAM)).unwrap();
+    let enumerated = common::vibegraph(dir, dir)
+        .args(["enumerate", "proc_card.dat", "--out", "d", "--svg", "none"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        enumerated.status.success(),
+        "{}",
+        common::stderr_of(&enumerated)
+    );
+    let path = dir.join("d").join("diagrams.bin.zst");
+    let mut raw = zstd::decode_all(std::fs::read(&path).unwrap().as_slice()).unwrap();
+    raw[4..8].copy_from_slice(&2u32.to_le_bytes());
+    std::fs::write(&path, zstd::encode_all(raw.as_slice(), 3).unwrap()).unwrap();
+    let refused = common::vibegraph(dir, dir)
+        .arg("integrate")
+        .arg(&path)
+        .args([
+            "--run-card",
+            "run_card.dat",
+            "--out",
+            "out",
+            "--output-ldjson",
+        ])
+        .output()
+        .expect("spawn vibegraph");
+    assert_eq!(
+        reason_of(&last_object(&refused)),
+        &json!({"kind": "enumeration_version", "found": 2,
+                "expected": ENUMERATION_VERSION})
+    );
+}

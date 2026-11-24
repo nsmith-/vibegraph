@@ -125,8 +125,8 @@ use crate::diagrams::artifact::diagram_set_digest;
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    bind_vetoes, drawn_helicity, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2,
-    vetoed_of, zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
+    bind_vetoes, enhancement_weights, mask_zeroed, share_offsets, vetoed_m2, vetoed_of,
+    zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_configuration_weights, compile_scale_source,
@@ -1108,7 +1108,7 @@ pub fn derive_flavor_groups(
 /// `evaluated`. A set whose outgoing legs the decomposition reorders is
 /// compiled again in its new order; every other one is compiled only where it
 /// comes without an evaluator, the missing ones across the rayon pool.
-pub fn derive_flavor_groups_with(
+pub(crate) fn derive_flavor_groups_with(
     sets: Vec<(DiagramSet, Option<AmplitudeEvaluator>)>,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
@@ -1138,8 +1138,7 @@ pub fn derive_flavor_groups_with(
         .map(|s| s.diagrams[0].provenance.process)
         .collect();
 
-    let set_refs: Vec<&DiagramSet> = sets.iter().collect();
-    let evaluators = complete_compiles(&set_refs, precompiled, model, evaluated);
+    let evaluators = complete_compiles(&sets, precompiled, model, evaluated);
     let mut compiled = Vec::with_capacity(sets.len());
     let mut one_body: Option<(String, bool)> = None;
     let mut massless_one_body: Option<String> = None;
@@ -1872,6 +1871,11 @@ pub struct ProtonEvent {
     /// the frame `|M|²` is taken in, in both orderings.
     pub cm: Vec<V>,
 }
+
+/// The uniforms [`ProtonIntegrand::select_event`] draws an event's labels from:
+/// the flavour group, the `(flavour, beam ordering)` pair inside it, the
+/// helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 5;
 
 /// The discrete labels an accepted hadronic event carries besides its momenta.
 ///
@@ -4226,7 +4230,11 @@ impl<'a> ProtonIntegrand<'a> {
     /// caller may skip it entirely and integrate the same number.
     ///
     /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+    pub fn select_event(
+        &self,
+        event: &ProtonEvent,
+        u: [f64; SELECT_EVENT_DRAWS],
+    ) -> Option<ProtonSelection> {
         let sc = self.scratch();
         assert_eq!(
             event.group_scales.len(),
@@ -4302,8 +4310,8 @@ impl<'a> ProtonIntegrand<'a> {
         }
         let (drawn, helicity_m2) =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2) {
-                Some((part, part_hel_m2)) => drawn_helicity(part, &part_hel_m2, u[2])?,
-                None => drawn_helicity(eval, &hel_m2, u[2])?,
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
+                None => eval.select_helicity(&hel_m2, u[2])?,
             };
         let (_, order) = g.event_legs(member, ordering);
         if let Some(table) = self.resonances.get(group) {
@@ -6143,6 +6151,64 @@ mod tests {
         for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
             let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
             assert!((ma / mb - 1.0).abs() < 1e-12, "{ma} against {mb}");
+        }
+    }
+
+    /// A caller's evaluator compiled in a set's enumerated leg order is dropped
+    /// when the decomposition reorders that set's outgoing legs, and the set is
+    /// compiled again in its new order: with every set of `p p > w+ j @1` and
+    /// `p p > j w- @2` handed in precompiled, each group gets the evaluator the
+    /// uncompiled path gives, by external order and by |M|² at probe points,
+    /// bit for bit. It cannot see an evaluator compiled under different
+    /// parameters than `evaluated`, which the caller vouches for.
+    #[test]
+    fn a_reordered_set_is_compiled_again_whatever_the_caller_compiled() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card(
+            "generate p p > w+ j @1\nadd process p p > j w- @2\n",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets: Vec<DiagramSet> = generate_from_proc_card(&card, &m)
+            .expect("enumeration")
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        let precompiled = sets
+            .iter()
+            .map(|s| {
+                let evaluator = compile_class(s, &m, &evaluated).expect("compiles");
+                (s.clone(), Some(evaluator))
+            })
+            .collect();
+        let with = derive_flavor_groups_with(precompiled, &m, &evaluated, &RunCard::default())
+            .expect("groups");
+        let without =
+            derive_flavor_groups(sets, &m, &evaluated, &RunCard::default()).expect("groups");
+        assert!(
+            without
+                .groups()
+                .iter()
+                .any(|g| g.member_orders.iter().any(|o| o != &[0, 1])),
+            "the card reorders a set"
+        );
+        assert_eq!(with.groups().len(), without.groups().len());
+        let mw = evaluated.mass(m.particle_id("W+").expect("W+"));
+        for (a, b) in with.groups().iter().zip(without.groups()) {
+            assert_eq!(
+                a.evaluator.external_particles(),
+                b.evaluator.external_particles()
+            );
+            let (ba, bb) = (
+                BoundAmplitude::<f64>::bind(&a.evaluator, &evaluated),
+                BoundAmplitude::<f64>::bind(&b.evaluator, &evaluated),
+            );
+            let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
+            for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
+                let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
+                assert_eq!(ma.to_bits(), mb.to_bits(), "{ma} against {mb}");
+            }
         }
     }
 

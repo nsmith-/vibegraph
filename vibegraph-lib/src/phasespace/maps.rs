@@ -195,6 +195,8 @@ pub(crate) trait ChannelBounds {
     fn timelike_floor(&self, slots: u64) -> f64;
     /// [`Cuts::energy_floor`].
     fn energy_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::single_leg_transfer_bound`].
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64>;
     /// [`Cuts::bwcutoff`].
     fn bwcutoff(&self) -> f64;
     /// [`tau_range`] at hadronic invariant `s`.
@@ -210,6 +212,9 @@ impl ChannelBounds for Cuts {
     }
     fn energy_floor(&self, slots: u64) -> f64 {
         Cuts::energy_floor(self, slots)
+    }
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        Cuts::single_leg_transfer_bound(self, slots, products)
     }
     fn bwcutoff(&self) -> f64 {
         Cuts::bwcutoff(self)
@@ -243,6 +248,13 @@ impl ChannelBounds for UnionBounds<'_> {
     }
     fn energy_floor(&self, slots: u64) -> f64 {
         self.weakest(|c| c.energy_floor(slots))
+    }
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        self.0
+            .iter()
+            .map(|c| c.single_leg_transfer_bound(slots, products))
+            .reduce(|a, b| Some(a?.min(b?)))
+            .expect("bounds over at least one filter")
     }
     /// `bwcutoff` is the run card's, the same for every filter compiled from it.
     fn bwcutoff(&self) -> f64 {
@@ -302,7 +314,9 @@ impl MapChoices {
     /// One diagram's phase-space channel under these choices: the regulated
     /// decomposition with the cut-implied timelike floors, each line a decay chain
     /// forces on shell confined to its `bwcutoff` window, the chosen angular map
-    /// on the splits it selects, the chosen rung order and the chosen pair order.
+    /// on the splits it selects, the chosen rung order and the chosen pair order,
+    /// and each peripheral rung's transfer bound held to what the single-leg cuts
+    /// on either side of its line prove.
     /// The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
@@ -354,10 +368,12 @@ impl MapChoices {
                 channel.with_rung_order(&order)
             }
         };
-        match self.pair_order {
+        let channel = match self.pair_order {
             PairOrder::Ordered => channel,
             PairOrder::Symmetric => channel.with_symmetric_pairs(),
-        }
+        };
+        let products = forced.iter().fold(0u64, |m, l| m | l.slots);
+        channel.with_side_transfer_bounds(&|slots| cuts.single_leg_transfer_bound(slots, products))
     }
 
     /// One line naming each choice and whether the rule or the caller made it.

@@ -77,27 +77,18 @@ const NC: i64 = 3;
 /// alongside it, so their values stay readable off the arena after a run. They are
 /// the *same* nodes the JAMPs are built from — referenced, not rebuilt — so no
 /// arithmetic is added and the sharing is unchanged.
-#[cfg(test)]
-pub(crate) fn lower_flows(
-    basis: &ColorBasis,
-    evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
-    configs: &[Vec<(usize, Vec<u8>)>],
-) -> Ast<Sym> {
-    lower_split_flows(basis, evals, configs, None).0
-}
-
-/// [`lower_flows`] with the JAMPs split by an order class of the diagrams:
-/// `class_of[d]` is diagram `d`'s class, and the `Flows` root carries one JAMP
-/// per `(class, flow)` pair that has a contribution, class-major — MadGraph's
+///
+/// `class_of` splits the JAMPs by an order class of the diagrams: `class_of[d]`
+/// is diagram `d`'s class, and the `Flows` root carries one JAMP per
+/// `(class, flow)` pair that has a contribution, class-major — MadGraph's
 /// `JAMP(flow, class)` of a process with split orders
 /// (`get_JAMP_lines_split_order`, `export_v4.py:1497`). Each JAMP sums the same
 /// terms the unsplit flow does, restricted to its class's diagrams, so the
 /// unsplit JAMP of a flow is the sum of its classes'.
 ///
 /// Returns the AST and, per root JAMP in order, its `(class, flow)`. With no
-/// split (`None`) the lowering is [`lower_flows`]' and every JAMP is
-/// `(0, flow)`.
-pub(crate) fn lower_split_flows(
+/// split (`None`) there is one JAMP per flow and every JAMP is `(0, flow)`.
+pub(crate) fn lower_flows(
     basis: &ColorBasis,
     evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
     configs: &[Vec<(usize, Vec<u8>)>],
@@ -131,7 +122,7 @@ pub(crate) fn lower_split_flows(
                 let sf = b.add(Op::Coeff, Sym::Coeff(factor), vec![]);
                 // The exact color coefficient with `Nc` evaluated. A unit real
                 // coefficient (`num == den`, not imaginary) is dropped so the
-                // single-flow path reduces to today's color-free lowering.
+                // single-flow path reduces to the color-free lowering.
                 let r = contrib.coeff.eval_nc(NC);
                 let (num, den) = (*r.numer(), *r.denom());
                 let mut factors = Vec::with_capacity(3);

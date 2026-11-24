@@ -140,7 +140,11 @@ impl From<&ArtifactError> for ArtifactReason {
             ArtifactError::Io { .. } | ArtifactError::Decode(_) | ArtifactError::Zstd(_) => {
                 ArtifactReason::Unreadable
             }
-            _ => ArtifactReason::Other,
+            ArtifactError::AlreadyExists { .. }
+            | ArtifactError::Encode(_)
+            | ArtifactError::UnwritableVersion { .. }
+            | ArtifactError::Model(_)
+            | ArtifactError::Diagrams(_) => ArtifactReason::Other,
         }
     }
 }
@@ -178,7 +182,13 @@ impl From<&DiagramArtifactError> for ArtifactReason {
             DiagramArtifactError::Io { .. }
             | DiagramArtifactError::Decode(_)
             | DiagramArtifactError::Zstd(_) => ArtifactReason::Unreadable,
-            _ => ArtifactReason::Other,
+            DiagramArtifactError::AlreadyExists { .. }
+            | DiagramArtifactError::Encode(_)
+            | DiagramArtifactError::UnwritableVersion { .. }
+            | DiagramArtifactError::Model(_)
+            | DiagramArtifactError::NoProcess
+            | DiagramArtifactError::Enumerate(_)
+            | DiagramArtifactError::Facts(_) => ArtifactReason::Other,
         }
     }
 }
@@ -244,6 +254,14 @@ impl std::fmt::Display for CliError {
 }
 
 impl std::error::Error for CliError {}
+
+/// An [`ErrorKind::Io`] failure to `what` (create, write, ...) `path`.
+pub(crate) fn io_error(what: &str, path: &std::path::Path, e: std::io::Error) -> CliError {
+    err(
+        ErrorKind::Io,
+        format!("cannot {what} {}: {e}", path.display()),
+    )
+}
 
 /// A [`CliError`] of `kind` carrying `msg`.
 pub(crate) fn err(kind: ErrorKind, msg: impl Into<String>) -> CliError {

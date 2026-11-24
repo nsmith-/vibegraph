@@ -58,8 +58,8 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::{MaxRule, NoUsableWeight, ScanBudget, UnweightStats, Unweighter};
 
 use source::{
-    ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, RecordFill,
-    SampleSource,
+    ordering_slot, report_resonances, FlavorRecords, MemberCodes, PartRecords, ProtonSampleSource,
+    RecordFill, SampleSource,
 };
 
 /// Seed offsets, so the weight scan, the event generation and a strategy's own
@@ -341,20 +341,9 @@ pub fn check_process(artifact: &IntegrateArtifact, reparsed: &str) -> Result<(),
 /// Refuse a build that no longer computes the matrix element `artifact` was
 /// integrated with: every banked amplitude probe point is recomputed under
 /// `evaluated` and must agree to [`PROBE_REL_TOL`] ([`crate::amplitude_probe`]).
-pub fn check_amplitude_probe(
-    artifact: &IntegrateArtifact,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> Result<(), GenerateError> {
-    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
-    let compiled = compile_classes(&refs, model, evaluated);
-    check_amplitude_probe_compiled(artifact, &compiled, evaluated)
-}
-
-/// [`check_amplitude_probe`] through evaluators compiled already: `compiled[k]`
-/// is what [`compile_class`](crate::hadronic::compile_class) made of the
-/// artifact's set `k` under `evaluated`.
-fn check_amplitude_probe_compiled(
+/// `compiled[k]` is what [`compile_class`](crate::hadronic::compile_class) made
+/// of the artifact's set `k`, the evaluators the integrand then reuses.
+fn check_amplitude_probe(
     artifact: &IntegrateArtifact,
     compiled: &[Result<AmplitudeEvaluator, HadronicError>],
     evaluated: &EvaluatedModel,
@@ -429,9 +418,8 @@ pub fn generate(
     // Each set is compiled once, for the probe and the integrand alike. One the
     // probe could not compile is compiled again where the integrand needs it, to
     // be refused there as it would be without the probe.
-    let refs: Vec<&DiagramSet> = artifact.sets.iter().collect();
-    let compiled = compile_classes(&refs, assets.model, assets.evaluated);
-    check_amplitude_probe_compiled(artifact, &compiled, assets.evaluated)?;
+    let compiled = compile_classes(&artifact.sets, assets.model, assets.evaluated);
+    check_amplitude_probe(artifact, &compiled, assets.evaluated)?;
     let precompiled: Vec<Option<AmplitudeEvaluator>> =
         compiled.into_iter().map(Result::ok).collect();
     if assets.card.is_decay() && settings.systematics.enabled {
@@ -1130,7 +1118,7 @@ fn generate_proton_sample(
     // their Breit–Wigner, whatever the card's decays.
     let matched = rc.int("ickkw") > 0;
     for part_groups in &groups {
-        let (resonances, member_pdgs) = if has_decay_chains(parsed) || matched {
+        let (resonances, member_codes) = if has_decay_chains(parsed) || matched {
             group_resonances(part_groups, model, evaluated, rc.float("bwcutoff"))?
         } else {
             (Vec::new(), Vec::new())
@@ -1138,7 +1126,7 @@ fn generate_proton_sample(
         parts_records.push(PartRecords {
             records: flavor_records(part_groups, model, evaluated)?,
             resonances,
-            member_pdgs,
+            member_codes,
         });
     }
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
@@ -1547,15 +1535,14 @@ fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma
 /// refuses the run: it can be written on its Breit–Wigner, and no one code for it
 /// is right. A group whose matrix element vanishes at the card is never drawn, so
 /// its members resolve nothing and hold no codes.
-#[allow(clippy::type_complexity)]
 fn group_resonances(
     groups: &FlavorGroups,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<LineCode>>>>), GenerateError> {
+) -> Result<(Vec<SubprocessResonances>, MemberCodes), GenerateError> {
     let mut tables = Vec::with_capacity(groups.groups().len());
-    let mut pdgs = Vec::with_capacity(groups.groups().len());
+    let mut codes = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
         let table = SubprocessResonances::new(
             group.evaluator(),
@@ -1567,7 +1554,7 @@ fn group_resonances(
         .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
         if group.vanishes() {
             tables.push(table);
-            pdgs.push(vec![Vec::new(); group.members().len()]);
+            codes.push(vec![Vec::new(); group.members().len()]);
             continue;
         }
         let mut members = Vec::with_capacity(group.members().len());
@@ -1588,9 +1575,9 @@ fn group_resonances(
             members.push(configs);
         }
         tables.push(table);
-        pdgs.push(members);
+        codes.push(members);
     }
-    Ok((tables, pdgs))
+    Ok((tables, codes))
 }
 
 /// One member's code and colour on each line of configuration `config` of
@@ -2067,7 +2054,7 @@ mod tests {
     ) -> (
         Arc<UFOModel>,
         FlavorGroups,
-        Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<LineCode>>>>), GenerateError>,
+        Result<(Vec<SubprocessResonances>, MemberCodes), GenerateError>,
     ) {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::proton::derive_flavor_groups;
@@ -2323,7 +2310,8 @@ mod tests {
 
     /// A member whose diagrams carry a line with a width under several codes,
     /// none of which its legs name, refuses the run by name; where the legs name
-    /// one of them, that one is taken.
+    /// one of them, that one is taken; and a line without a width in the same
+    /// case holds no code rather than refusing.
     #[test]
     fn a_widthful_line_under_several_codes_the_legs_cannot_tell_apart_is_refused() {
         let (model, _, table, own, _) = top_pair_chain();
@@ -2376,6 +2364,47 @@ mod tests {
         )
         .unwrap();
         let top = table.lines(0).iter().position(|l| l.pdg == 6).unwrap();
+        assert_eq!(codes[top].pdg, 6);
+
+        // A line without a width under several codes its legs name none of holds
+        // no code instead: it is never written as an intermediate. Here the
+        // `s`-channel boson, carried as `2` in one copy of the member's
+        // diagrams and `4` in the other.
+        let (at, boson) = table
+            .lines(0)
+            .iter()
+            .enumerate()
+            .find(|(_, l)| !(l.width > 0.0))
+            .map(|(i, l)| (i, l.pdg))
+            .expect("a line without a width");
+        let relabel_boson = |code: i32| -> Vec<Vec<crate::lhef::resonance::ResonanceLine>> {
+            own.diagram_lines()
+                .iter()
+                .map(|d| {
+                    d.iter()
+                        .map(|l| {
+                            let mut l = *l;
+                            if l.pdg == boson && !(l.width > 0.0) {
+                                l.pdg = code;
+                            }
+                            l
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        let mut widthless = relabel_boson(2);
+        widthless.extend(relabel_boson(4));
+        let codes = member_line_codes(
+            &MemberLines::from_diagram_lines(widthless),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .expect("a line without a width under several codes does not refuse the run");
+        assert_eq!(codes[at], LineCode::NONE);
         assert_eq!(codes[top].pdg, 6);
     }
 

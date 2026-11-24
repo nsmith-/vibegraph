@@ -7,7 +7,9 @@ use super::audit::ReweightAudit;
 use super::MAX_TRIALS_PER_EVENT;
 use crate::coupling::cluster::configs::qcd_order;
 use crate::coupling::scales::MatchedRecord;
-use crate::hadronic::{EventSelection, FixedBeamIntegrand};
+use crate::hadronic::{
+    EventSelection, FixedBeamIntegrand, SELECT_EVENT_DRAWS as FIXED_BEAM_EVENT_DRAWS,
+};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::{pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord};
 use crate::lhef::emit::{EventSource, WeightedEvent};
@@ -17,7 +19,10 @@ use crate::lhef::LhefError;
 use crate::multiplicity::MultiplicitySum;
 use crate::pdf::PdfMember;
 use crate::phasespace::GEV2_TO_PB;
-use crate::proton::{BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection};
+use crate::proton::{
+    BeamOrdering, FlavorGroups, ProtonEvent, ProtonIntegrand, ProtonSelection,
+    SELECT_EVENT_DRAWS as PROTON_EVENT_DRAWS,
+};
 use crate::reweight::engine::Reweighter;
 use crate::runcard::RunCard;
 use crate::systematics::record::{LoRecord, RecordInputs};
@@ -35,7 +40,7 @@ type V = LorentzVector<f64>;
 pub(super) struct SampleSource<'s, 'a> {
     integrand: &'s FixedBeamIntegrand<'a>,
     records: &'s [SubprocessRecord],
-    pass: BlockedPass<Option<FixedBeamPrepared>>,
+    pass: BlockedPass<Option<FixedBeamPrepared>, FIXED_BEAM_EVENT_DRAWS>,
     /// The card the run was set up from, which supplies the record's scale where
     /// nothing in the matrix element moves with `αs` and so no per-event scale
     /// prescription was installed.
@@ -71,12 +76,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         SampleSource {
             integrand,
             records,
-            pass: BlockedPass::new(
-                unweighter,
-                seed,
-                FIXED_BEAM_EVENT_DRAWS,
-                MAX_TRIALS_PER_EVENT as u64,
-            ),
+            pass: BlockedPass::new(unweighter, seed, MAX_TRIALS_PER_EVENT as u64),
             card,
             alpha_qed,
             unit: integrand.observable().per_natural_unit(),
@@ -94,10 +94,6 @@ impl<'s, 'a> SampleSource<'s, 'a> {
     }
 }
 
-/// The uniforms a fixed-beam event's labels are drawn from
-/// ([`FixedBeamIntegrand::select_event`]).
-const FIXED_BEAM_EVENT_DRAWS: usize = 4;
-
 /// What the worker that accepted a fixed-beam point makes of it: the momenta
 /// rebuilt at the point's coordinates, the labels drawn there, and the scales
 /// its record reports.
@@ -112,11 +108,10 @@ impl EventSource for SampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let integrand = self.integrand;
         let card = self.card;
-        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+        let prepare = |point: &AcceptedPoint, u| {
             let mut momenta = Vec::new();
             integrand.event_in_channel(point.channel, &point.u, &mut momenta);
-            let selection =
-                integrand.select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])?;
+            let selection = integrand.select_event(&momenta, point.channel, u)?;
             // A point the scale prescription rejects has no scale to report, so
             // the source stops rather than inventing one, and the strategy
             // reports a sample it could not fill.
@@ -235,8 +230,9 @@ fn member_code(codes: &[Vec<LineCode>], config: usize, line: usize) -> Option<Li
 /// One event's record, with the resonances of its configuration as status-2
 /// records where `resonances` names a table: the lines MadEvent's `cut_bw` flags
 /// at the event's momenta ([`SubprocessResonances::on_shell`]), each carrying the
-/// PDG code `pdgs[config][line]` where the record's flavours differ from the
-/// table's, its own otherwise.
+/// code and colour `codes[config][line]` where the record's flavours differ from
+/// the table's, its own otherwise. An event a line of which the record holds no
+/// code for ([`LineCode::NONE`]) is written without intermediates and counted.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn event_record(
     record: &SubprocessRecord,
@@ -248,7 +244,7 @@ pub(super) fn event_record(
     (config, leading): (Option<usize>, bool),
     tally: &mut ResonanceTally,
 ) -> Option<LheEvent> {
-    let Some((table, pdgs)) = resonances else {
+    let Some((table, codes)) = resonances else {
         return record.event(externals, helicity, flow, header).ok();
     };
     let Some(config) = config.filter(|_| leading) else {
@@ -260,12 +256,9 @@ pub(super) fn event_record(
         .on_shell(config, &externals[record.n_in()..])
         .into_iter()
         .map(|i| {
-            let code = match pdgs {
-                Some(p) => member_code(p, config, i)?,
-                None => LineCode {
-                    pdg: lines[i].pdg,
-                    color: lines[i].color,
-                },
+            let code = match codes {
+                Some(codes) => member_code(codes, config, i)?,
+                None => lines[i].code(),
             };
             Some(Intermediate {
                 pdg: code.pdg,
@@ -295,7 +288,9 @@ pub(super) fn event_record(
 /// whose leg sets the clustering found on their Breit–Wigner
 /// ([`SubprocessResonances::clustered_on_shell`]), none where the drawn flow is
 /// below leading colour in that configuration (`addmothers.f:129-131`, 195).
-/// `pdgs[config][line]` carries each line's code in the record's flavours.
+/// `codes[config][line]` carries each line's code and colour in the record's
+/// flavours; an event a line of which it holds no code for is written without
+/// intermediates and counted.
 /// `ptclus` is indexed like the record's legs: the record reorders only the
 /// incoming ones, which have none.
 #[allow(clippy::too_many_arguments)]
@@ -312,13 +307,13 @@ pub(super) fn matched_event_record(
 ) -> Option<LheEvent> {
     let n_in = record.n_in();
     let intermediates: Vec<Intermediate> = match (resonances, config) {
-        (Some((table, pdgs)), Some(config)) if leading => {
+        (Some((table, codes)), Some(config)) if leading => {
             let lines = table.lines(config);
             let resolved: Option<Vec<Intermediate>> = table
                 .clustered_on_shell(config, &matched.on_shell, n_in)
                 .into_iter()
                 .map(|i| {
-                    let code = member_code(pdgs, config, i)?;
+                    let code = member_code(codes, config, i)?;
                     Some(Intermediate {
                         pdg: code.pdg,
                         color: code.color,
@@ -424,10 +419,12 @@ pub(super) fn ordering_slot(ordering: BeamOrdering) -> usize {
 pub(super) struct PartRecords {
     pub(super) records: FlavorRecords,
     pub(super) resonances: Vec<SubprocessResonances>,
-    /// `[group][member][config][line]`: the PDG code and colour a resonance
-    /// line of the group's representative carries in a member.
-    pub(super) member_pdgs: Vec<Vec<Vec<Vec<LineCode>>>>,
+    pub(super) member_codes: MemberCodes,
 }
+
+/// `[group][member][config][line]`: the PDG code and colour a resonance line of
+/// the group's representative carries in a member.
+pub(super) type MemberCodes = Vec<Vec<Vec<Vec<LineCode>>>>;
 
 /// What a proton event's `<mgrwt>` record is filled from: the QCD power of
 /// each integration configuration's diagram, and the central member the
@@ -546,7 +543,7 @@ pub(super) struct ProtonSampleSource<'s, 'a> {
     integrand: &'s MultiplicitySum<'a>,
     /// Per part, in the integrand's part order.
     parts: &'s [PartRecords],
-    pass: BlockedPass<Option<ProtonPrepared>>,
+    pass: BlockedPass<Option<ProtonPrepared>, PROTON_EVENT_DRAWS>,
     alpha_qed: f64,
     pub(super) tally: ResonanceTally,
     /// The reweighting hypotheses, indexed by concrete subprocess across every
@@ -572,12 +569,7 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         ProtonSampleSource {
             integrand,
             parts,
-            pass: BlockedPass::new(
-                unweighter,
-                seed,
-                PROTON_EVENT_DRAWS,
-                MAX_TRIALS_PER_EVENT as u64,
-            ),
+            pass: BlockedPass::new(unweighter, seed, MAX_TRIALS_PER_EVENT as u64),
             alpha_qed,
             tally: ResonanceTally::default(),
             reweighter,
@@ -591,10 +583,6 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         self.pass.stats()
     }
 }
-
-/// The uniforms a proton event's labels are drawn from
-/// ([`ProtonIntegrand::select_event`]).
-const PROTON_EVENT_DRAWS: usize = 5;
 
 /// What the worker that accepted a proton point makes of it: the event rebuilt
 /// at the point's coordinates and the part it belongs to, the labels drawn
@@ -610,10 +598,10 @@ struct ProtonPrepared {
 impl EventSource for ProtonSampleSource<'_, '_> {
     fn next_event(&mut self) -> Option<WeightedEvent> {
         let sum = self.integrand;
-        let prepare = |point: &AcceptedPoint, u: &[f64]| {
+        let prepare = |point: &AcceptedPoint, u| {
             let (k, event) = sum.event_in_channel(point.channel, &point.u)?;
             let integrand: &ProtonIntegrand<'_> = &sum.parts()[k];
-            let selection = integrand.select_event(&event, [u[0], u[1], u[2], u[3], u[4]])?;
+            let selection = integrand.select_event(&event, u)?;
             let externals: Vec<[f64; 4]> = integrand
                 .record_momenta(&event, selection.ordering)
                 .iter()
@@ -659,7 +647,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         let resonances = part.resonances.get(selection.group).map(|table| {
             (
                 table,
-                part.member_pdgs[selection.group][selection.member].as_slice(),
+                part.member_codes[selection.group][selection.member].as_slice(),
             )
         });
         let subprocess = part.records[selection.group][selection.member]
@@ -683,7 +671,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 &selection.helicity,
                 selection.flow,
                 header,
-                resonances.map(|(table, pdgs)| (table, Some(pdgs))),
+                resonances.map(|(table, codes)| (table, Some(codes))),
                 (selection.config, selection.leading),
                 &mut self.tally,
             )?,

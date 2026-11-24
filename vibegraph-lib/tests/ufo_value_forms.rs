@@ -497,3 +497,83 @@ if configuration.fixed > 0:
     let message = conditional_values("fixed = 1\n", extra).unwrap_err();
     assert!(message.contains("outside the subset"), "{message}");
 }
+
+/// An `if` with no `Parameter` in any branch defines nothing the loader reads,
+/// so its condition is not evaluated: a test outside the subset (here a
+/// comparison) loads, and every value is the model's without it.
+#[test]
+fn an_if_outside_the_subset_that_defines_no_parameter_loads() {
+    let extra = "
+if configuration.x > 1:
+    plain = 1.0
+";
+    let with_if = conditional_values("x = 3\n", extra).unwrap();
+    let without = conditional_values("x = 3\n", "").unwrap();
+    assert_eq!(with_if, without);
+}
+
+/// A refused `if` names the `Parameter`s in its own branches, not those under
+/// another `if` of the file.
+#[test]
+fn a_refused_if_names_only_the_parameters_under_it() {
+    let extra = "
+if configuration.fixed:
+    EWK = Parameter(name = 'EWK', nature = 'external', type = 'real', value = 79.5, texname = 'E',
+                    lhablock = 'NEWCOUP', lhacode = [ 20 ])
+if configuration.x > 1:
+    extra = Parameter(name = 'extra', nature = 'internal', type = 'real', value = '1.0',
+                      texname = 'extra')
+else:
+    other = Parameter(name = 'other', nature = 'internal', type = 'real', value = '2.0',
+                      texname = 'other')
+";
+    let message = conditional_values("fixed = True\nx = 3\n", extra).unwrap_err();
+    assert!(
+        message.contains("parameter(s) 'extra', 'other' are defined under an `if`")
+            && !message.contains("'EWK'"),
+        "{message}"
+    );
+}
+
+/// A name bound under a skipped `if` has the value Python gives it there, which
+/// the loader does not know: a parameter whose `value` is that name is refused
+/// naming both, whether or not the name was bound before the `if`.
+#[test]
+fn a_value_naming_a_name_bound_under_a_skipped_if_is_refused() {
+    let skipped = "
+if configuration.x > 1:
+    plain = 2.0
+";
+    for (before, nature, code) in [
+        ("", "external", 11),
+        ("", "internal", 0),
+        ("\nplain = 1.0\n", "external", 11),
+        ("\nplain = 1.0\n", "internal", 0),
+    ] {
+        let extra = before.to_owned() + skipped + &param("P", nature, "plain", code);
+        let message = conditional_values("x = 3\n", &extra).unwrap_err();
+        assert!(
+            message.contains("'P'") && message.contains("`plain`"),
+            "{before:?} {nature}: {message}"
+        );
+    }
+    // Bound again at module level after the `if`, the name reads that number.
+    let extra = skipped.to_owned() + "\nplain = 3.0\n" + &param("P", "external", "plain", 11);
+    assert_eq!(conditional_values("x = 3\n", &extra).unwrap()["P"].re, 3.0);
+    // Under an `if` the subset evaluates, the branch that runs binds it.
+    let extra = "
+plain = 1.0
+if configuration.flag:
+    plain = 2.0
+"
+    .to_owned()
+        + &param("P", "external", "plain", 11);
+    assert_eq!(
+        conditional_values("flag = True\n", &extra).unwrap()["P"].re,
+        2.0
+    );
+    assert_eq!(
+        conditional_values("flag = False\n", &extra).unwrap()["P"].re,
+        1.0
+    );
+}
