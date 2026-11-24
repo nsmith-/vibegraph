@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Full 40-character commit SHA to build."
+        description: "Full 40-character commit SHA to build. A tagged commit fails the version check (describe gives the bare tag); use its release binary."
         required: true
 
 run-name: dev-build ${{ inputs.sha }}
@@ -36,16 +36,21 @@ jobs:
           ref: ${{ inputs.sha }}
           fetch-depth: 0
 
+      # A fixed abbreviation, so `--version` always contains g<sha8>: describe
+      # otherwise sizes the hash by the clone's object count.
       - name: check checkout
         env:
           SHA: ${{ inputs.sha }}
-        run: test "$(git rev-parse HEAD)" = "$SHA"
+        run: |
+          test "$(git rev-parse HEAD)" = "$SHA"
+          git config core.abbrev 12
 
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
+      # The release rust-toolchain.toml pins, plus the musl target.
+      - run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
 
       - uses: actions/cache@v6
         with:
@@ -53,7 +58,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: dev-build-musl-v3--${{ hashFiles('Cargo.lock') }}
+          key: dev-build-musl-v3--${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             dev-build-musl-v3--
 
@@ -68,7 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           bin="target/$TARGET/release/vibegraph"
-          "$bin" --version | head -1 | grep -q "g${SHA:0:8}"
+          version="$("$bin" --version)"
+          grep -q "g${SHA:0:8}" <<< "${version%%$'\n'*}"
           work="$(mktemp -d)"
           cat > "$work/proc_card.dat" <<'EOF'
           import model sm
@@ -92,7 +98,8 @@ jobs:
           mkdir -p dist
           cp "target/$TARGET/release/vibegraph" dist/vibegraph
           (cd dist && sha256sum vibegraph > vibegraph.sha256)
-          { echo "commit $SHA"; dist/vibegraph --version | head -1; } > dist/version.txt
+          version="$(dist/vibegraph --version)"
+          printf 'commit %s\n%s\n' "$SHA" "${version%%$'\n'*}" > dist/version.txt
           cat dist/version.txt dist/vibegraph.sha256
 
       - uses: actions/upload-artifact@v7
