@@ -21,8 +21,8 @@ use serde::Serialize;
 use serde_json::{Number, Value};
 
 use super::classes::{FieldClass, Stage, FIELD_CLASSES};
-pub use super::scan::UnknownKey;
 use super::scan::{scan, Scanned};
+pub use super::scan::{Problem, UnknownKey};
 use super::{canonical_name, param_default, ParamValue, RunCard, RunCardError, PARAM_DEFAULTS};
 use crate::cuts::{
     cutuse_refusal, describe, detect_unimplemented, inert_values, pdg_cut_refusal,
@@ -425,15 +425,10 @@ fn key_report(name: &'static str, entry: &TableEntry, cx: &KeyContext<'_>) -> Ke
         refusal = unimplemented_cut_refusal(name, &resolved_value, beam_sum).map(|e| e.to_string());
     }
     for key in &cx.scanned.unknown {
-        if key.problem == "placeholder" && canonical_name(&key.name) == Some(name) {
-            refusal = Some(
-                RunCardError::UnfilledPlaceholder {
-                    name: key.name.clone(),
-                    placeholder: key.value.clone(),
-                    line: key.line,
-                }
-                .to_string(),
-            );
+        if canonical_name(&key.name) == Some(name) {
+            if let Some(placeholder) = key.placeholder_refusal() {
+                refusal = Some(placeholder.to_string());
+            }
         }
     }
     if name == "cutuse" && cx.cutuse_refused.is_some() {
@@ -615,10 +610,10 @@ mod tests {
         assert_eq!(refusal.message, parse_error);
         assert_eq!(report.unknown_keys.len(), 2);
         assert_eq!(report.unknown_keys[0].name, "lhaid");
-        assert_eq!(report.unknown_keys[0].problem, "placeholder");
+        assert_eq!(report.unknown_keys[0].problem, Problem::Placeholder);
         assert_eq!(report.unknown_keys[0].value, "$DEFAULT_PDF_SETS");
         assert_eq!(report.unknown_keys[1].name, "nonsense_key");
-        assert_eq!(report.unknown_keys[1].problem, "unknown_name");
+        assert_eq!(report.unknown_keys[1].problem, Problem::UnknownName);
         assert_eq!(key(&report, "ptj").resolved, Value::from(5.0));
         assert_eq!(report.keys.len(), PARAM_DEFAULTS.len());
     }

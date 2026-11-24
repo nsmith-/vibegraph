@@ -77,7 +77,7 @@ These are not MadGraph rules, but a new model meets the same constraints:
 - **All-scalar colour model.** Two fermions reach a diquark only through a
   fermion-number-violating vertex, which needs charge conjugation; Majorana and `C`
   handling are outside what the engine evaluates
-  ([backlog](../backlog/feature/majorana-fermions-unsupported.md)).
+  ([L-M1 report](../sprints/v023-orders-majorana-timeouts/sessions/L-M1-report.md)).
 - **Two spellings, two orders.** The toy model writes its tensor four-fermion contact
   twice, once with a literal `Sigma` and once as the γγ expansion, under different
   coupling orders, so MadGraph splits them into two diagrams that can be compared per

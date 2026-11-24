@@ -50,8 +50,11 @@
 //!   ([`CardError::NegativeMass`]): the phase-space, on-shell, cut and
 //!   event-record code downstream of the amplitudes is not validated for one.
 //!   A Majorana fermion's negative mass binds, and the evaluation negates the
-//!   width at its code as MadGraph's Fortran does ([`EvaluatedModel`]); diagram
-//!   generation refuses Majorana fermions, so no amplitude reads it yet.
+//!   width at its code as MadGraph's Fortran does ([`EvaluatedModel`]). Its
+//!   spinors and propagator read the signed mass; the MSSM neutralino `n3`
+//!   (`Mneu3 < 0` in the default card) agrees with MadGraph's `AMP()` per diagram
+//!   as an external leg and as a propagator (`standalone_jamps`'s
+//!   `ee_to_n1n3_mssm` and `x1px1m_to_wpwm_mssm`, at zero widths).
 //!
 //! Every entry refused is reported at once ([`CardError::Several`]).
 
@@ -65,7 +68,9 @@ use super::parameters::{ParamNature, ParameterSet};
 use super::slha::{code_text, ParamCard};
 use super::{EvaluatedModel, UFOModel};
 use crate::artifact::{DecayTable, MovedParam};
-use crate::widths::{check_given_table, compute_width, AutoWidthError, ComputedWidth};
+use crate::widths::{
+    check_given_table, compute_width, decaying_particle, AutoWidthError, ComputedWidth,
+};
 
 /// How far a card's entry for a computed mass or width may sit from the value
 /// the model computes, relative, before it is reported. MadGraph writes those
@@ -622,10 +627,7 @@ fn auto_width_params(
     let mut params = BTreeSet::new();
     for &pdg in card.auto_widths() {
         let refuse = |reason| CardError::AutoWidth { pdg, reason };
-        let particle = model
-            .particles
-            .values()
-            .find(|p| pdg > 0 && p.pdg_code == i64::from(pdg) && !p.is_unphysical());
+        let particle = decaying_particle(model, pdg).map(|id| model.particle(id));
         let Some(particle) = particle else {
             errors.push(refuse(AutoWidthError::UnknownParticle { pdg }));
             continue;
@@ -1011,18 +1013,37 @@ mod tests {
 
     /// A table the card gives below an `Auto` line, naming channels the
     /// computation has, is replaced by the computed one, as MadGraph replaces
-    /// it; a particle with no channel open and none beyond two bodies binds to
-    /// zero, as MadGraph's stable particle does.
+    /// it, both when binding and in the card text a run banks; a particle with
+    /// no channel open and none beyond two bodies binds to zero, positive zero
+    /// as MadGraph writes it, as MadGraph's stable particle does.
     #[test]
     fn a_given_table_is_replaced_and_a_stable_particle_is_zero() {
-        let bound = bind("DECAY 24 Auto\n 0.5 2 12 -11\n 0.5 2 14 -13\n").unwrap();
+        let given = "DECAY 24 Auto\n 0.5 2 12 -11\n 0.5 2 14 -13\n";
+        let bound = bind(given).unwrap();
         let table = &bound.evaluated.decay_tables()[0];
         assert_eq!(table.channels.len(), 5);
         assert!(table.channels.iter().all(|c| c.branching_ratio < 0.5));
+        let resolved = crate::widths::resolved_card_text(given, &bound.auto_widths);
+        assert!(!resolved.contains(" 0.5 2 "), "{resolved}");
+        let rebound = bind(&resolved).unwrap();
+        assert_eq!(
+            rebound.evaluated.decay_tables(),
+            bound.evaluated.decay_tables(),
+            "{resolved}"
+        );
 
         let light = bind("Block MASS\n 25 1.0\nDECAY 25 Auto\n").unwrap();
         let width = &light.auto_widths[0];
         assert_eq!((width.total, width.bound), (0.0, 0.0));
+        assert!(
+            width.total.is_sign_positive() && width.bound.is_sign_positive(),
+            "{width:?}"
+        );
+        let resolved = crate::widths::resolved_card_text("DECAY 25 Auto\n", &light.auto_widths);
+        assert!(
+            resolved.starts_with("DECAY  25   0.000000e+00 "),
+            "{resolved}"
+        );
         assert!(width.channels.is_empty() && width.not_included.is_empty());
         assert_eq!(light.evaluated.param_values["WH"].re, 0.0);
         assert!(light.evaluated.decay_tables().is_empty());

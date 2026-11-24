@@ -1,13 +1,12 @@
-//! Majorana fermions and fermion-number-violating vertices are refused through
-//! `vibegraph integrate`, with an error naming the particle or vertex, before
-//! any amplitude is evaluated.
+//! Majorana fermions and fermion-number-violating vertices integrate through
+//! `vibegraph integrate`.
 //!
-//! The two models are refusal fixtures committed under `validation/ufo/`:
+//! The two models are committed under `validation/ufo/`:
 //! `vibegraph_toy_majorana_UFO` (a Majorana `nt` beside a Dirac `lt`) and
-//! `vibegraph_toy_fnv_UFO` (a diquark-like scalar `dq` coupling the Dirac
-//! fermions `at` and `bt` with no charge-conjugation operator). Each model also
-//! has a Dirac-only process, which must still integrate: the refusal is a
-//! property of a process's diagrams, not of the model it is drawn from.
+//! `vibegraph_toy_fnv_UFO` (a diquark-like scalar `dq` coupling the Dirac fermions
+//! `at` and `bt` with no charge-conjugation operator). Their amplitudes are compared
+//! with MadGraph's per diagram in `vibegraph-lib/tests/standalone_jamps.rs`; these
+//! tests hold the command-line path.
 //!
 //! Hermetic: the models are committed to this repository and no PDF set is
 //! needed (`lpp = 0`).
@@ -19,8 +18,7 @@ fn ufo_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo")
 }
 
-/// `vibegraph integrate` on `generate <process>` in `model`, at a budget that is
-/// a smoke run when the process is not refused.
+/// `vibegraph integrate` on `generate <process>` in `model`, at a smoke-run budget.
 fn integrate(tmp: &Path, model: &str, process: &str) -> Output {
     let proc_path = tmp.join("proc_card.dat");
     std::fs::write(
@@ -51,31 +49,6 @@ fn integrate(tmp: &Path, model: &str, process: &str) -> Output {
         .expect("spawn vibegraph")
 }
 
-/// The process is refused, cleanly, with every one of `needles` in the error.
-fn assert_refused(model: &str, process: &str, needles: &[&str]) {
-    let tmp = tempfile::tempdir().unwrap();
-    let output = integrate(tmp.path(), model, process);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "'{process}' in {model} must be refused"
-    );
-    assert!(
-        !stderr.contains("panicked"),
-        "'{process}' in {model} panicked instead of refusing:\n{stderr}"
-    );
-    for needle in needles {
-        assert!(
-            stderr.contains(needle),
-            "'{process}' in {model}: the refusal does not say {needle:?}:\n{stderr}"
-        );
-    }
-    assert!(
-        !tmp.path().join("out").join("grid.bin.zst").exists(),
-        "a refused process left an artifact"
-    );
-}
-
 fn assert_integrates(model: &str, process: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let output = integrate(tmp.path(), model, process);
@@ -86,72 +59,30 @@ fn assert_integrates(model: &str, process: &str) {
     );
 }
 
-/// Two Majorana fermions in the final state, reached through an s-channel vector
-/// and a t- and u-channel scalar: every diagram carries `nt` on two external legs.
+/// Two Majorana fermions in the final state, reached through the s-channel vector
+/// on the axial `nt nt vt` vertex and the t- and u-channel scalar.
 #[test]
-fn a_majorana_fermion_on_an_external_leg_is_refused() {
-    assert_refused(
-        "vibegraph_toy_majorana_UFO",
-        "lt~ lt > nt nt",
-        &[
-            "particle 'nt' is a Majorana fermion",
-            "an external leg",
-            "charge conjugation",
-        ],
-    );
+fn external_majorana_fermions_integrate() {
+    assert_integrates("vibegraph_toy_majorana_UFO", "lt~ lt > nt nt");
 }
 
 /// Every external leg is a Dirac lepton or a scalar; the Majorana fermion is the
 /// t-channel propagator only.
 #[test]
-fn a_majorana_fermion_on_a_propagator_only_is_refused() {
-    assert_refused(
-        "vibegraph_toy_majorana_UFO",
-        "lt~ lt > sc sc~",
-        &[
-            "particle 'nt' is a Majorana fermion",
-            "an internal propagator",
-        ],
-    );
+fn a_majorana_propagator_integrates() {
+    assert_integrates("vibegraph_toy_majorana_UFO", "lt~ lt > sc sc~");
 }
 
 /// Two incoming particles annihilate into the diquark-like scalar, whose vertex
-/// pairs them on one fermion line.
+/// pairs them on one fermion line, and its conjugate pairs two antiparticles.
 #[test]
-fn a_fermion_number_violating_vertex_is_refused() {
-    assert_refused(
-        "vibegraph_toy_fnv_UFO",
-        "at bt > at bt",
-        &[
-            "vertex 'V_atbtdq' joins 'at' and 'bt'",
-            "on one fermion line as two incoming particles",
-            "fermion-number-violating",
-        ],
-    );
+fn fermion_number_violating_vertices_integrate() {
+    assert_integrates("vibegraph_toy_fnv_UFO", "at bt > at bt");
+    assert_integrates("vibegraph_toy_fnv_UFO", "at~ bt~ > at~ bt~");
 }
 
-/// The conjugate vertex pairs two antiparticles, which the message names as such.
-#[test]
-fn a_vertex_pairing_two_antiparticles_is_refused() {
-    assert_refused(
-        "vibegraph_toy_fnv_UFO",
-        "at~ bt~ > at~ bt~",
-        &[
-            "vertex 'V_atbtdqc' joins 'at~' and 'bt~'",
-            "on one fermion line as two incoming antiparticles",
-        ],
-    );
-}
-
-/// The refusal judges the diagrams the s-channel restrictions keep: `$$ dq` removes
-/// the diquark diagram, and the t-channel vector diagram left integrates.
-#[test]
-fn a_refused_diagram_removed_by_an_s_channel_veto_does_not_refuse() {
-    assert_integrates("vibegraph_toy_fnv_UFO", "at bt > at bt $$ dq");
-}
-
-/// The control for both refusals: a Dirac-only process of each model, whose
-/// diagrams reach neither the Majorana fermion nor the diquark vertex.
+/// A Dirac-only process of each model, whose diagrams reach neither the Majorana
+/// fermion nor the diquark vertex.
 #[test]
 fn dirac_only_processes_of_the_same_models_integrate() {
     assert_integrates("vibegraph_toy_majorana_UFO", "lt~ lt > lt~ lt");

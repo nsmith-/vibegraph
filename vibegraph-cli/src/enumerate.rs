@@ -15,15 +15,15 @@ use vibegraph::config::GlobalConfig;
 use vibegraph::diagrams::artifact::DiagramArtifact;
 use vibegraph::diagrams::diagram::OnShell;
 use vibegraph::diagrams::draw::DiagramDrawer;
-use vibegraph::diagrams::{DiagramSet, ParsingOptions};
+use vibegraph::diagrams::{forbidden_onshell_ids, DiagramSet, ParsingOptions};
 use vibegraph::helas::eval::config_groups;
-use vibegraph::multiplicity::multiplicity_groups;
+use vibegraph::multiplicity::multiplicity_groups_of;
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::BeamMode;
 use vibegraph::ufo::UFOModel;
 
 use crate::assets;
-use crate::error::{err, CliError, ErrorKind};
+use crate::error::{err, io_error, CliError, ErrorKind};
 use crate::integrate::{bind_param_card, load_run_card, BoundParamCard};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
@@ -263,13 +263,6 @@ fn is_set_name(name: &str) -> bool {
         .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn io_error(what: &str, path: &Path, e: std::io::Error) -> CliError {
-    err(
-        ErrorKind::Io,
-        format!("cannot {what} {}: {e}", path.display()),
-    )
-}
-
 /// Remove the drawings an earlier run wrote under `svg/`: every
 /// `svg/s<k>/s<k>.d<j>.svg`, then each `svg/s<k>/` and `svg/` itself if that
 /// leaves them empty. Nothing else is touched.
@@ -455,7 +448,10 @@ fn flavour_preview(
         preview.beams = "fixed_energy";
         return Ok((preview, group_of));
     }
-    let groups = multiplicity_groups(parsed, model, evaluated, &rc, args.parallel.enumeration())
+    // The sets just enumerated, which are what enumerating the card again gives.
+    let forbidden =
+        forbidden_onshell_ids(parsed, model).map_err(|e| err(ErrorKind::Process, e.to_string()))?;
+    let groups = multiplicity_groups_of(sets.to_vec(), &forbidden, model, evaluated, &rc)
         .map_err(|e| err(ErrorKind::Process, e))?;
     for (part, part_groups) in groups.groups.iter().enumerate() {
         for group in part_groups.groups() {
@@ -586,29 +582,39 @@ pub(crate) fn run(args: &EnumerateArgs) -> Result<(), CliError> {
     };
 
     // Every drawing is made before anything is written, so a diagram the
-    // renderer refuses leaves the output directory as it was.
+    // renderer refuses leaves the output directory as it was. The drawings are
+    // made across the pool, in diagram order, while the artifact is encoded; a
+    // refusal is the first in that order.
     let drawer = DiagramDrawer::new(model);
-    let mut drawings = Vec::new();
-    for (k, set) in artifact.sets.iter().enumerate() {
-        for (j, d) in set
-            .diagrams
-            .iter()
-            .take(args.svg.drawn(set.diagrams.len()))
-            .enumerate()
-        {
-            let svg = drawer.svg(d).map_err(|e| {
-                err(
-                    ErrorKind::Run,
-                    format!("cannot draw {} ({}): {e}", diagram_id(k, j), set.label()),
-                )
-            })?;
-            drawings.push((k, svg_path(k, j), svg));
-        }
-    }
+    let to_draw: Vec<(usize, usize, &DiagramSet)> = artifact
+        .sets
+        .iter()
+        .enumerate()
+        .flat_map(|(k, set)| (0..args.svg.drawn(set.diagrams.len())).map(move |j| (k, j, set)))
+        .collect();
+    let (encoded, drawings) = rayon::join(
+        || artifact.encode(),
+        || {
+            use rayon::prelude::*;
+            to_draw
+                .par_iter()
+                .map(|&(k, j, set)| {
+                    let svg = drawer.svg(&set.diagrams[j]).map_err(|e| {
+                        err(
+                            ErrorKind::Run,
+                            format!("cannot draw {} ({}): {e}", diagram_id(k, j), set.label()),
+                        )
+                    })?;
+                    Ok((k, svg_path(k, j), svg))
+                })
+                .collect::<Vec<Result<_, CliError>>>()
+        },
+    );
+    let drawings = drawings.into_iter().collect::<Result<Vec<_>, _>>()?;
+    let encoded = encoded.map_err(|e| err(ErrorKind::Io, e.to_string()))?;
 
     std::fs::create_dir_all(&args.out).map_err(|e| io_error("create", &args.out, e))?;
-    artifact
-        .write_to_path(&artifact_path, args.force)
+    DiagramArtifact::write_encoded(&encoded, &artifact_path, args.force)
         .map_err(|e| err(ErrorKind::Io, e.to_string()))?;
     let json = serde_json::to_string_pretty(&summary).expect("the summary serializes");
     std::fs::write(&summary_path, json + "\n").map_err(|e| io_error("write", &summary_path, e))?;

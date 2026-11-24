@@ -43,11 +43,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::diagrams::DiagramSet;
-use crate::hadronic::{compile_class, HadronicError};
+#[cfg(doc)]
+use crate::hadronic::compile_class;
+use crate::hadronic::HadronicError;
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo::rambo_massive;
-use crate::ufo::{EvaluatedModel, UFOModel};
+use crate::ufo::EvaluatedModel;
 
 /// Points banked per diagram set.
 pub const PROBE_POINTS: usize = 4;
@@ -239,27 +241,36 @@ fn evaluate(
         .collect()
 }
 
-fn compile(
-    set: &DiagramSet,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> Result<AmplitudeEvaluator, ProbeError> {
-    compile_class(set, model, evaluated).map_err(|source| ProbeError::Compile {
+/// The probe's refusal for a set [`compile_class`] refused, `source`.
+fn compile_refusal(set: &DiagramSet, source: &HadronicError) -> ProbeError {
+    ProbeError::Compile {
         label: set.label(),
-        source,
-    })
+        source: match source {
+            HadronicError::Compile(why) => HadronicError::Compile(why.clone()),
+            other => HadronicError::Compile(other.to_string()),
+        },
+    }
 }
 
-/// Compile every set of `sets` and bank |M|² at its probe points under
-/// `evaluated`, one [`SetProbe`] per set in set order.
-pub fn measure(
+/// Bank |M|² at the probe points of every set of `sets` under `evaluated`, one
+/// [`SetProbe`] per set in set order, through evaluators compiled already:
+/// `compiled[k]` is what [`compile_class`] made of `sets[k]`, and its refusal
+/// is the probe's refusal for that set. The sets are probed across the rayon
+/// pool, and the evaluators come back in set order for the integrand to use.
+/// The refusal is the first in set order, the one probing the sets one after
+/// another meets.
+pub fn measure_compiled(
     sets: &[DiagramSet],
-    model: &UFOModel,
+    compiled: Vec<Result<AmplitudeEvaluator, HadronicError>>,
     evaluated: &EvaluatedModel,
-) -> Result<Vec<SetProbe>, ProbeError> {
-    sets.iter()
-        .map(|set| {
-            let evaluator = compile(set, model, evaluated)?;
+) -> Result<(Vec<SetProbe>, Vec<AmplitudeEvaluator>), ProbeError> {
+    use rayon::prelude::*;
+    debug_assert_eq!(sets.len(), compiled.len());
+    let probed: Vec<Result<(SetProbe, AmplitudeEvaluator), ProbeError>> = compiled
+        .into_par_iter()
+        .zip(sets.par_iter())
+        .map(|(compiled, set)| {
+            let evaluator = compiled.map_err(|source| compile_refusal(set, &source))?;
             let masses: Vec<f64> = evaluator
                 .external_particles()
                 .iter()
@@ -271,15 +282,20 @@ pub fn measure(
                     why,
                 })?;
             let m2 = evaluate(&evaluator, evaluated, &momenta);
-            Ok(SetProbe {
+            let probe = SetProbe {
                 points: momenta
                     .into_iter()
                     .zip(m2)
                     .map(|(momenta, m2)| ProbePoint { momenta, m2 })
                     .collect(),
-            })
+            };
+            Ok((probe, evaluator))
         })
-        .collect()
+        .collect();
+    probed
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .map(|v| v.into_iter().unzip())
 }
 
 /// Recompute every banked point of `banked` with `m2_of(set index, momenta)` and
@@ -334,17 +350,19 @@ pub(crate) fn check_with(
     Ok(())
 }
 
-/// Recompile every set of `sets` and refuse a banked point whose |M|² this build
-/// no longer reproduces to [`PROBE_REL_TOL`] under `evaluated`.
-pub fn check(
+/// Refuse a banked point of `banked` whose |M|² this build does not reproduce
+/// to [`PROBE_REL_TOL`] under `evaluated`, recomputed through evaluators
+/// compiled already: `compiled[k]` is what [`compile_class`] made of `sets[k]`,
+/// and its refusal is the probe's refusal for that set.
+pub(crate) fn check_compiled(
     banked: &[SetProbe],
     sets: &[DiagramSet],
-    model: &UFOModel,
+    compiled: &[Result<AmplitudeEvaluator, HadronicError>],
     evaluated: &EvaluatedModel,
 ) -> Result<(), ProbeError> {
-    check_with(banked, sets, |k, points| {
-        let evaluator = compile(&sets[k], model, evaluated)?;
-        Ok(evaluate(&evaluator, evaluated, points))
+    check_with(banked, sets, |k, points| match &compiled[k] {
+        Ok(evaluator) => Ok(evaluate(evaluator, evaluated, points)),
+        Err(source) => Err(compile_refusal(&sets[k], source)),
     })
 }
 
@@ -352,10 +370,12 @@ pub fn check(
 mod tests {
     use super::*;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::hadronic::compile_classes;
     use crate::ufo::bind::bind_card;
     use crate::ufo::loaded::LoadedModel;
     use crate::ufo::slha::ParamCard;
     use crate::ufo::sm::SMRestrict;
+    use crate::ufo::UFOModel;
 
     struct Fixture {
         sets: Vec<DiagramSet>,
@@ -380,6 +400,32 @@ mod tests {
     /// Two subprocesses, one massive final state, gluons and quarks: the sets
     /// carry several helicities and colour flows each.
     const CARD: &str = "generate u u~ > t t~ g\nadd process g g > t t~ g\n";
+
+    /// Compile every set and bank its probe, as `integrate` does.
+    fn measure(
+        sets: &[DiagramSet],
+        model: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Result<Vec<SetProbe>, ProbeError> {
+        let compiled = compile_classes(sets, model, evaluated);
+        measure_compiled(sets, compiled, evaluated).map(|(probes, _)| probes)
+    }
+
+    /// Compile every set and check the banked probe against it, as `generate`
+    /// does.
+    fn check(
+        banked: &[SetProbe],
+        sets: &[DiagramSet],
+        model: &UFOModel,
+        evaluated: &EvaluatedModel,
+    ) -> Result<(), ProbeError> {
+        check_compiled(
+            banked,
+            sets,
+            &compile_classes(sets, model, evaluated),
+            evaluated,
+        )
+    }
 
     fn probe(f: &Fixture) -> Vec<SetProbe> {
         measure(&f.sets, &f.model.model, &f.evaluated).unwrap()
@@ -495,7 +541,9 @@ mod tests {
         let f = fixture(CARD);
         let banked = probe(&f);
         let moved = |k: usize, points: &[Vec<[f64; 4]>]| {
-            let evaluator = compile(&f.sets[k], &f.model.model, &f.evaluated)?;
+            let evaluator =
+                crate::hadronic::compile_class(&f.sets[k], &f.model.model, &f.evaluated)
+                    .map_err(|source| compile_refusal(&f.sets[k], &source))?;
             Ok(evaluate(&evaluator, &f.evaluated, points)
                 .into_iter()
                 .map(|m2| m2 * (1.0 + 1e-9))

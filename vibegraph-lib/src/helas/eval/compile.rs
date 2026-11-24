@@ -194,7 +194,7 @@ impl AmplitudeEvaluator {
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
         let config_ends = config_ends(&config_spans);
         let split = OrderSplit::of(set, model);
-        let (lowered, jamp_slots) = lower::lower_split_flows(
+        let (lowered, jamp_slots) = lower::lower_flows(
             &basis,
             &evals,
             &configs,
@@ -325,12 +325,13 @@ impl AmplitudeEvaluator {
     /// `|M_c(p)|² / Σ_d |M_d(p)|²` from a uniform variate `u ∈ [0, 1)`, off the
     /// per-combination diagonal
     /// [`BoundAmplitude::eval_hel_m2`](super::run::BoundAmplitude::eval_hel_m2)
-    /// fills; `None` when the weights carry no probability.
+    /// fills: the combination and its entry in `hel_m2`, or `None` when the
+    /// weights carry no probability.
     ///
     /// This is MadGraph's `SELECT_HEL`: a categorical draw that fills in an event
     /// record's helicities once a phase-space point has been accepted. It has no
     /// effect on the cross section, which sums over the combinations.
-    pub(crate) fn select_helicity(&self, hel_m2: &[f64], u: f64) -> Option<&[i32]> {
+    pub(crate) fn select_helicity(&self, hel_m2: &[f64], u: f64) -> Option<(&[i32], f64)> {
         // Asserted rather than debug-asserted: a short weight vector would draw from
         // a prefix of the combinations and return a helicity that looks valid, which
         // nothing downstream can detect.
@@ -339,13 +340,15 @@ impl AmplitudeEvaluator {
             self.helicities.len(),
             "helicity weights must cover the surviving combinations"
         );
-        if self.is_signed() {
+        let c = if self.is_signed() {
             // MadGraph draws `∝ DABS(TS(I))` (`matrix_madevent_group_v4.inc:198-207`),
             // the only distribution a signed per-combination |M_c|² defines.
             let moduli: Vec<f64> = hel_m2.iter().map(|t| t.abs()).collect();
-            return select_index(&moduli, u).map(|c| self.helicities[c].as_slice());
-        }
-        select_index(hel_m2, u).map(|c| self.helicities[c].as_slice())
+            select_index(&moduli, u)?
+        } else {
+            select_index(hel_m2, u)?
+        };
+        Some((self.helicities[c].as_slice(), hel_m2[c]))
     }
 
     /// The colour flow an accepted event is written with, and the configuration it
@@ -679,6 +682,24 @@ impl AmplitudeEvaluator {
         // per-diagram amplitudes that are still identically zero (MadGraph's `ZEROAMP`).
         self.prune_zero_amplitudes(evaluated, &points);
         dropped
+    }
+
+    /// Per helicity combination this evaluator carries, whether it contributes at
+    /// `evaluated`: over threshold at some point of the probe set
+    /// [`prune_zero_helicities`](Self::prune_zero_helicities) reads, by its
+    /// criterion. `None` where that method does not prune (a process that is not
+    /// 2 → n with `n ≥ 2`), which has no probe set to read.
+    pub(crate) fn contributing_helicities(&self, evaluated: &EvaluatedModel) -> Option<Vec<bool>> {
+        if self.n_ext <= 3 || self.n_in != 2 {
+            return None;
+        }
+        let mut good = vec![false; self.helicities.len()];
+        let bound = BoundAmplitude::<f64>::bind(self, evaluated);
+        let mut scratch = bound.scratch_space();
+        for p in &self.generic_probe_points(evaluated) {
+            bound.mark_contributing_helicities(p, HEL_PRUNE_REL, &mut scratch, &mut good);
+        }
+        Some(good)
     }
 
     /// A deterministic set of generic on-shell partonic-CM probe points: two incoming
@@ -1456,7 +1477,7 @@ mod tests {
                 let basis = colorize_process(&model, &set.diagrams).unwrap();
                 let evals = root_amplitudes(&basis, set, &model).unwrap();
                 let configs = Configurations::group(set, &model, &evals);
-                let ast = lower::lower_flows(&basis, &evals, &configs.amps);
+                let (ast, _) = lower::lower_flows(&basis, &evals, &configs.amps, None);
                 for id in ast.iter() {
                     let op = ast.value(id).op;
                     if matches!(op, Op::Add | Op::Mul) {

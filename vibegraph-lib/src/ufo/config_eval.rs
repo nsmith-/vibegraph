@@ -6,17 +6,28 @@
 //! `'A' if configuration.flag else 'B'` as a value. The loader does not run
 //! Python: it evaluates this subset and refuses anything else by name.
 //!
-//! The subset is integer-valued (`True` is 1, `False` is 0): integer and
-//! boolean literals, unary `-` and `not`, `+`, `-` and `*`, `and`/`or` with
-//! Python's operand-returning semantics, the conditional expression
-//! `A if T else B`, `configuration.<name>` (through any alias the file binds the
-//! module to), and, in `configuration.py` itself, a bare name bound earlier.
+//! The subset is integer-valued (`True` is 1, `False` is 0) and is the forms
+//! [`config_subset!`] lists, which every refusal of a form outside it quotes:
+//! `and`/`or` follow Python's operand-returning semantics, `configuration.<name>`
+//! resolves through any alias the file binds the module to, and, in
+//! `configuration.py` itself, a bare name bound earlier is read too.
 
 use std::collections::HashMap;
 
 use rustpython_parser::ast;
 
 use super::ast_util::{extract_int, extract_name, named_assignments};
+
+/// The forms [`eval_int`] evaluates, as a refusal names them. A macro so that a
+/// `&'static str` message can `concat!` it.
+macro_rules! config_subset {
+    () => {
+        "integer and boolean literals, `configuration.<name>` for a name \
+         configuration.py binds to one, unary `-`, `+` and `not`, binary `+`, `-` \
+         and `*`, `and`, `or`, and `A if T else B`"
+    };
+}
+pub(crate) use config_subset;
 
 /// The module-level names a model's `configuration.py` binds, as integers
 /// (`True` is 1): the switches a definition or value may test.
@@ -153,31 +164,6 @@ pub(crate) fn select_branch<'a>(
 #[derive(Debug)]
 pub(crate) struct ConditionOutside;
 
-/// The module's statements with each `if`/`elif`/`else` replaced by the branch
-/// its test selects, at any depth: the statements Python would run.
-pub(crate) fn flatten_branches(
-    stmts: &[ast::Stmt],
-    scope: &Scope<'_>,
-) -> Result<Vec<ast::Stmt>, ConditionOutside> {
-    let mut out = Vec::with_capacity(stmts.len());
-    for stmt in stmts {
-        match stmt {
-            ast::Stmt::If(ast::StmtIf {
-                test, body, orelse, ..
-            }) => {
-                let chosen = if eval_int(test, scope).ok_or(ConditionOutside)? != 0 {
-                    body
-                } else {
-                    orelse
-                };
-                out.extend(flatten_branches(chosen, scope)?);
-            }
-            other => out.push(other.clone()),
-        }
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +205,9 @@ mod tests {
             ("configuration.t and configuration.f", 0),
             ("configuration.f or 7", 7),
             ("configuration.t and 4", 4),
+            // Python stops at the first operand that decides: not the last one.
+            ("configuration.f and 4", 0),
+            ("configuration.t or 9", 1),
             ("3 if configuration.f else 4 if configuration.t else 5", 4),
             ("0 + configuration.t", 1),
             ("not configuration.f", 1),
@@ -235,25 +224,5 @@ mod tests {
         ] {
             assert_eq!(eval(outside, &c), None, "{outside}");
         }
-    }
-
-    #[test]
-    fn branches_flatten_to_the_ones_that_run() {
-        let c = config("a = False\nb = True\n");
-        let modules = vec!["configuration".to_owned()];
-        let scope = Scope {
-            names: &c,
-            modules: &modules,
-            bare: false,
-        };
-        let stmts = parse_stmts(
-            "if configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\nelse:\n    s = 4\n",
-        )
-        .unwrap();
-        let flat = flatten_branches(&stmts, &scope).unwrap();
-        let names: Vec<&str> = named_assignments(&flat).map(|(n, _)| n).collect();
-        assert_eq!(names, ["q"]);
-        let unbound = parse_stmts("if configuration.nope:\n    p = 1\n").unwrap();
-        assert!(flatten_branches(&unbound, &scope).is_err());
     }
 }

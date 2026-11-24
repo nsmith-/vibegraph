@@ -29,18 +29,19 @@ use crate::artifact::{channel_map_digest, IntegrateArtifact};
 use crate::cuts::{Cuts, ForcedResonances};
 use crate::diagrams::{forbidden_onshell_ids, DiagramSet, SupportedCard};
 use crate::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, InitialState, Observable,
+    compile_classes, compile_subprocesses_with, initial_spin_color_average, process_external_legs,
+    refuse_polarized_frame, subprocess_diagrams, FixedBeamIntegrand, HadronicError, InitialState,
+    Observable,
 };
-use crate::helas::eval::BoundAmplitude;
+use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::lhef::build::SubprocessRecord;
 use crate::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
 };
-use crate::lhef::resonance::{member_line_pdg, SubprocessResonances};
+use crate::lhef::resonance::{LineCode, MemberCode, MemberLines, SubprocessResonances};
 use crate::lhef::write::{generator_element, mg_run_card, slha_block, InputsRead};
 use crate::multiplicity::{
-    multiplicity_groups_of, multiplicity_maps, refuse_exchanged_beam_orderings,
+    multiplicity_groups_of_with, multiplicity_maps, refuse_exchanged_beam_orderings,
     refuse_mixed_multiplicity, refuse_one_body_final_state, MultiplicityGroups, MultiplicitySum,
 };
 use crate::onshell::{refuse_vetoed_pairing_weights, subprocess_vetoes};
@@ -48,7 +49,7 @@ use crate::pairing::subprocess_pairing_splits;
 use crate::pdf::{PdfMember, PdfSet};
 use crate::phasespace::maps::MapOptions;
 use crate::proton::{BeamOrdering, FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
-use crate::reweight::engine::{ReweightOptions, ReweightPlan, SubprocessSummary};
+use crate::reweight::engine::{HelicityRatio, ReweightOptions, ReweightPlan, SubprocessSummary};
 use crate::reweight::Launch;
 use crate::runcard::{BeamMode, EventNorm};
 use crate::systematics::plan::{ResolvedPdfs, Writer as SystematicsWriter};
@@ -57,8 +58,8 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::{MaxRule, NoUsableWeight, ScanBudget, UnweightStats, Unweighter};
 
 use source::{
-    ordering_slot, report_resonances, FlavorRecords, PartRecords, ProtonSampleSource, RecordFill,
-    SampleSource,
+    ordering_slot, report_resonances, FlavorRecords, MemberCodes, PartRecords, ProtonSampleSource,
+    RecordFill, SampleSource,
 };
 
 /// Seed offsets, so the weight scan, the event generation and a strategy's own
@@ -340,12 +341,19 @@ pub fn check_process(artifact: &IntegrateArtifact, reparsed: &str) -> Result<(),
 /// Refuse a build that no longer computes the matrix element `artifact` was
 /// integrated with: every banked amplitude probe point is recomputed under
 /// `evaluated` and must agree to [`PROBE_REL_TOL`] ([`crate::amplitude_probe`]).
-pub fn check_amplitude_probe(
+/// `compiled[k]` is what [`compile_class`](crate::hadronic::compile_class) made
+/// of the artifact's set `k`, the evaluators the integrand then reuses.
+fn check_amplitude_probe(
     artifact: &IntegrateArtifact,
-    model: &UFOModel,
+    compiled: &[Result<AmplitudeEvaluator, HadronicError>],
     evaluated: &EvaluatedModel,
 ) -> Result<(), GenerateError> {
-    amplitude_probe::check(&artifact.amplitude_probe, &artifact.sets, model, evaluated)?;
+    amplitude_probe::check_compiled(
+        &artifact.amplitude_probe,
+        &artifact.sets,
+        compiled,
+        evaluated,
+    )?;
     let points: usize = artifact
         .amplitude_probe
         .iter()
@@ -407,7 +415,13 @@ pub fn generate(
     refuse_rounding_off_average(options.strategy, settings.event_norm)?;
     refuse_signed_matrix_elements(&artifact.sets, assets.model)?;
     check_collider_energy(artifact, assets.card)?;
-    check_amplitude_probe(artifact, assets.model, assets.evaluated)?;
+    // Each set is compiled once, for the probe and the integrand alike. One the
+    // probe could not compile is compiled again where the integrand needs it, to
+    // be refused there as it would be without the probe.
+    let compiled = compile_classes(&artifact.sets, assets.model, assets.evaluated);
+    check_amplitude_probe(artifact, &compiled, assets.evaluated)?;
+    let precompiled: Vec<Option<AmplitudeEvaluator>> =
+        compiled.into_iter().map(Result::ok).collect();
     if assets.card.is_decay() && settings.systematics.enabled {
         warn!(
             "use_syst = T on a decay: no <mgrwt> record and no systematics weights are written, \
@@ -421,9 +435,9 @@ pub fn generate(
                  generate with",
             ));
         };
-        generate_proton_sample(artifact, assets, settings, options, set, pdf)
+        generate_proton_sample(artifact, assets, settings, options, set, pdf, precompiled)
     } else {
-        generate_sample(artifact, assets, settings, options)
+        generate_sample(artifact, assets, settings, options, precompiled)
     }
 }
 
@@ -486,6 +500,7 @@ fn generate_sample(
     assets: &GenerateAssets<'_>,
     settings: &GenerateSettings,
     options: &GenerateOptions<'_>,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
 ) -> Result<EmitSummary, GenerateError> {
     let GenerateAssets {
         card: parsed,
@@ -500,8 +515,11 @@ fn generate_sample(
     refuse_mixed_multiplicity(sets).map_err(err)?;
     refuse_one_body_final_state(sets).map_err(err)?;
     refuse_exchanged_beam_orderings(sets).map_err(err)?;
-    let evals = compile_subprocesses(sets, model, evaluated)
-        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let evals = {
+        let _group = crate::progress::enter_group(crate::multiplicity::sole_group(sets, None));
+        compile_subprocesses_with(sets, precompiled, model, evaluated)
+    }
+    .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
         sets,
         &evals,
@@ -726,13 +744,13 @@ fn reweight_plan(
     let n = launches.len();
     let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
-    report_reweighting(n, &plan.summary());
+    report_reweighting(n, plan.helicity(), &plan.summary());
     Ok(plan)
 }
 
 /// One line per distinct subprocess plan: how many subprocesses share it, how
 /// many amplitude evaluations an event costs, and what serves the hypotheses.
-fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
+fn report_reweighting(hypotheses: usize, helicity: HelicityRatio, summary: &[SubprocessSummary]) {
     let mut lines: Vec<(String, usize)> = Vec::new();
     for sub in summary {
         let mut parts: Vec<String> = sub
@@ -763,7 +781,11 @@ fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
             None => lines.push((line, 1)),
         }
     }
-    info!("reweight: {hypotheses} hypotheses");
+    let ratio = match helicity {
+        HelicityRatio::Summed => "helicity-summed",
+        HelicityRatio::Event => "in each event's own helicity",
+    };
+    info!("reweight: {hypotheses} hypotheses, each ratio {ratio}");
     for (line, count) in lines {
         info!("reweight: {count} subprocess(es), {line}");
     }
@@ -1060,6 +1082,7 @@ fn generate_proton_sample(
     options: &GenerateOptions<'_>,
     set: &PdfSet,
     pdf: &PdfMember,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
 ) -> Result<EmitSummary, GenerateError> {
     let GenerateAssets {
         card: parsed,
@@ -1073,8 +1096,9 @@ fn generate_proton_sample(
     let beams = ProtonBeams::from_run_card(rc);
     let sqrt_s_had = beams.sqrt_s();
 
-    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of(
+    let MultiplicityGroups { groups, vetoes } = multiplicity_groups_of_with(
         artifact.sets.clone(),
+        precompiled,
         &forbidden_onshell(parsed, model)?,
         model,
         evaluated,
@@ -1094,7 +1118,7 @@ fn generate_proton_sample(
     // their Breit–Wigner, whatever the card's decays.
     let matched = rc.int("ickkw") > 0;
     for part_groups in &groups {
-        let (resonances, member_pdgs) = if has_decay_chains(parsed) || matched {
+        let (resonances, member_codes) = if has_decay_chains(parsed) || matched {
             group_resonances(part_groups, model, evaluated, rc.float("bwcutoff"))?
         } else {
             (Vec::new(), Vec::new())
@@ -1102,7 +1126,7 @@ fn generate_proton_sample(
         parts_records.push(PartRecords {
             records: flavor_records(part_groups, model, evaluated)?,
             resonances,
-            member_pdgs,
+            member_codes,
         });
     }
     let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
@@ -1276,14 +1300,14 @@ fn generate_proton_sample(
     }
     report(
         artifact,
-        source.unweighter.stats(),
+        source.stats(),
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
         settings.event_norm,
         Observable::CrossSection,
     );
-    report_heaviest(artifact, &integ, source.unweighter.stats());
+    report_heaviest(artifact, &integ, source.stats());
     Ok(summary)
 }
 
@@ -1497,21 +1521,28 @@ fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma
         .collect()
 }
 
-/// Every flavour group's resonance lines, and the PDG code each line carries in
-/// each of the group's members (`[group][member][config][line]`).
+/// Every flavour group's resonance lines, and the PDG code and colour each line
+/// carries in each of the group's members (`[group][member][config][line]`).
 ///
-/// A group's lines are its representative's; a member's line is the same
-/// flavour or its antiparticle ([`member_line_pdg`]), resolved here once so a
-/// member whose resonance neither describes is refused before any event is drawn.
-#[allow(clippy::type_complexity)]
+/// A group's lines are its representative's; a member's line carries the code
+/// the member's own diagrams put on it ([`MemberLines::resolve`]), resolved here
+/// once, before any event is drawn. A member none of whose lines sits on a
+/// line's legs with its mass and width does not have that line's pole in its
+/// matrix element; it holds [`LineCode::NONE`] for the line, as MadGraph's
+/// `sprop` does for a matrix element without it, and an event that would list
+/// the line is written without intermediates. A line with a width whose
+/// member's diagrams carry it under several codes, none of which its legs name,
+/// refuses the run: it can be written on its Breit–Wigner, and no one code for it
+/// is right. A group whose matrix element vanishes at the card is never drawn, so
+/// its members resolve nothing and hold no codes.
 fn group_resonances(
     groups: &FlavorGroups,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), GenerateError> {
+) -> Result<(Vec<SubprocessResonances>, MemberCodes), GenerateError> {
     let mut tables = Vec::with_capacity(groups.groups().len());
-    let mut pdgs = Vec::with_capacity(groups.groups().len());
+    let mut codes = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
         let table = SubprocessResonances::new(
             group.evaluator(),
@@ -1521,35 +1552,63 @@ fn group_resonances(
             bwcutoff,
         )
         .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
+        if group.vanishes() {
+            tables.push(table);
+            codes.push(vec![Vec::new(); group.members().len()]);
+            continue;
+        }
         let mut members = Vec::with_capacity(group.members().len());
-        for member in group.members() {
+        for (m, member) in group.members().iter().enumerate() {
+            let own = MemberLines::new(&group.member_diagram_set(m).diagrams, model, evaluated)
+                .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
             let mut configs = Vec::with_capacity(group.evaluator().n_configs());
             for config in 0..group.evaluator().n_configs() {
-                let lines = table
-                    .lines(config)
-                    .iter()
-                    .map(|line| {
-                        member_line_pdg(line, table.outgoing(), &member.outgoing, model).ok_or_else(
-                            || {
-                                err(format!(
-                                    "the resonance {} of {} has no flavour in the subprocess \
-                                     with outgoing {:?} that shares its matrix element",
-                                    line.pdg,
-                                    group.diagram_set().label(),
-                                    member.outgoing
-                                ))
-                            },
-                        )
-                    })
-                    .collect::<Result<Vec<i32>, _>>()?;
-                configs.push(lines);
+                configs.push(member_line_codes(
+                    &own,
+                    &table,
+                    config,
+                    &member.outgoing,
+                    model,
+                    &group.diagram_set().label(),
+                )?);
             }
             members.push(configs);
         }
         tables.push(table);
-        pdgs.push(members);
+        codes.push(members);
     }
-    Ok((tables, pdgs))
+    Ok((tables, codes))
+}
+
+/// One member's code and colour on each line of configuration `config` of
+/// `table`, its outgoing legs `member`, as [`group_resonances`] stores them:
+/// [`LineCode::NONE`] for a line the member does not carry, or carries under
+/// several codes its legs cannot tell apart when the line has no width; a
+/// refusal naming `label` when such a line has one.
+fn member_line_codes(
+    own: &MemberLines,
+    table: &SubprocessResonances,
+    config: usize,
+    member: &[i32],
+    model: &UFOModel,
+    label: &str,
+) -> Result<Vec<LineCode>, GenerateError> {
+    let lines = table.lines(config);
+    own.resolve(lines, table.outgoing(), member, model)
+        .into_iter()
+        .zip(lines)
+        .map(|(code, line)| match code {
+            MemberCode::Code(code) => Ok(code),
+            MemberCode::Absent => Ok(LineCode::NONE),
+            MemberCode::Ambiguous if !(line.width > 0.0) => Ok(LineCode::NONE),
+            MemberCode::Ambiguous => Err(err(format!(
+                "the resonance {} of {label} has no single flavour in the subprocess with \
+                 outgoing {member:?} that shares its matrix element: that subprocess's \
+                 diagrams carry the line under several codes, and its legs name none of them",
+                line.pdg
+            ))),
+        })
+        .collect()
 }
 
 /// `IDBMUP` for a hadron-collider run: a proton on each side, the one hadron
@@ -1689,6 +1748,7 @@ fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
 mod tests {
     use super::audit::ReweightAudit;
     use super::*;
+    use crate::reweight::engine::CardPoint;
 
     /// A selection that keeps the QCD-electroweak interference alone has a
     /// signed |M|² and is refused by name; the pure-QCD square and a card with
@@ -1775,11 +1835,14 @@ mod tests {
         let mut clean = ReweightAudit::default();
         clean.check(
             (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
+            Ok(CardPoint {
+                m2: 1.0,
+                helicity_m2: None,
+            }),
+            (1.0, 1.0),
             &[],
             &record,
-            (&[2.0], &launches),
+            (&[2.0], &launches, HelicityRatio::Summed),
         );
         clean.finish(&out).unwrap();
         assert!(out.exists());
@@ -1787,17 +1850,122 @@ mod tests {
         let mut refused = ReweightAudit::default();
         refused.check(
             (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
+            Ok(CardPoint {
+                m2: 1.0,
+                helicity_m2: None,
+            }),
+            (1.0, 1.0),
             &[],
             &record,
-            (&[f64::NAN], &launches),
+            (&[f64::NAN], &launches, HelicityRatio::Summed),
         );
         let why = refused.finish(&out).unwrap_err().to_string();
         assert!(
             why.contains("non-finite") && why.contains("`zero`"),
             "{why}"
         );
+        assert!(!out.exists(), "{why}");
+    }
+
+    /// Both ways back to the helicity-summed ratio.
+    fn assert_remedies(why: &str) {
+        assert!(
+            why.contains("`change helicity False`") && why.contains("`--reweight-helicity summed`"),
+            "{why}"
+        );
+    }
+
+    /// Under the per-event-helicity ratio, an event the reweighter refuses and
+    /// an event whose record MadGraph would read in more than one leg order
+    /// each refuse the file, by name.
+    #[test]
+    fn a_refused_helicity_removes_its_file() {
+        use crate::lhef::record::{LheParticle, STATUS_INCOMING, STATUS_OUTGOING};
+        use crate::reweight::engine::HelicityRefusal;
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("events.lhe");
+        let launches = vec![Launch {
+            id: "a".to_string(),
+            info: String::new(),
+            values: Vec::new(),
+        }];
+        let particle = |pdg, status, mothers| LheParticle {
+            pdg,
+            status,
+            mothers,
+            color: [0, 0],
+            momentum: [1.0, 0.0, 0.0, 1.0],
+            mass: 0.0,
+            lifetime: 0.0,
+            spin: 1.0,
+        };
+        let record = |mothers: [[i32; 2]; 2]| crate::lhef::record::LheEvent {
+            process_id: 1,
+            weight: 1.0,
+            scale: 0.0,
+            alpha_qed: 0.0,
+            alpha_qcd: 0.0,
+            particles: vec![
+                particle(11, STATUS_INCOMING, [0, 0]),
+                particle(-11, STATUS_INCOMING, [0, 0]),
+                particle(1, STATUS_OUTGOING, mothers[0]),
+                particle(1, STATUS_OUTGOING, mothers[1]),
+            ],
+            trailer: Vec::new(),
+            source: None,
+        };
+        let event = HelicityRatio::Event;
+        let card = |helicity_m2| {
+            Ok(CardPoint {
+                m2: 2.0,
+                helicity_m2: Some(helicity_m2),
+            })
+        };
+        let check = |audit: &mut ReweightAudit, m0, mothers| {
+            audit.check(
+                (0, BeamOrdering::Direct),
+                m0,
+                (2.0, 1.0),
+                &[11, -11, 1, 1],
+                &record(mothers),
+                (&[1.0], &launches, event),
+            )
+        };
+
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut clean = ReweightAudit::default();
+        check(&mut clean, card(1.0), [[1, 2], [1, 2]]);
+        clean.finish(&out).unwrap();
+
+        let mut refused = ReweightAudit::default();
+        check(
+            &mut refused,
+            Err(HelicityRefusal::Unrecorded),
+            [[1, 2], [1, 2]],
+        );
+        let why = refused.finish(&out).unwrap_err().to_string();
+        assert!(
+            why.contains("in their own helicity") && why.contains("SPINUP 9"),
+            "{why}"
+        );
+        assert_remedies(&why);
+        assert!(!out.exists(), "{why}");
+
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut ambiguous = ReweightAudit::default();
+        check(&mut ambiguous, card(1.0), [[1, 2], [5, 5]]);
+        let why = ambiguous.finish(&out).unwrap_err().to_string();
+        assert!(why.contains("different mothers"), "{why}");
+        assert_remedies(&why);
+        assert!(!out.exists(), "{why}");
+
+        // The card point's |M|^2 in the event's helicity is the integrand's.
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut other = ReweightAudit::default();
+        check(&mut other, card(0.5), [[1, 2], [1, 2]]);
+        let why = other.finish(&out).unwrap_err().to_string();
+        assert!(why.contains("another helicity"), "{why}");
+        assert_remedies(&why);
         assert!(!out.exists(), "{why}");
     }
 
@@ -1852,12 +2020,21 @@ mod tests {
             }
             for (member, configs) in group.members().iter().zip(members) {
                 for (config, member_lines) in configs.iter().enumerate() {
-                    for (line, &pdg) in table.lines(config).iter().zip(member_lines) {
+                    for (line, code) in table.lines(config).iter().zip(member_lines) {
                         if is_quark(line.pdg) {
                             quark_lines += 1;
-                            assert_eq!(pdg, member.outgoing[2], "{member:?} config {config}");
+                            let quark = member.outgoing[2];
+                            assert_eq!(
+                                (code.pdg, code.color),
+                                (quark, 3 * quark.signum()),
+                                "{member:?} config {config}"
+                            );
                         } else {
-                            assert_eq!((line.pdg, pdg), (21, 21), "{member:?} config {config}");
+                            assert_eq!(
+                                (line.pdg, code.pdg),
+                                (21, 21),
+                                "{member:?} config {config}"
+                            );
                         }
                     }
                 }
@@ -1865,6 +2042,370 @@ mod tests {
         }
         assert!(mixed > 0, "no group joins up- and down-type quarks");
         assert!(quark_lines > 0, "no quark line reached");
+    }
+
+    /// The flavour groups of a card at the SM's defaults or under `restrict`
+    /// with `param_card`, every group's resonance lines and each member's codes.
+    #[allow(clippy::type_complexity)]
+    fn resolved_groups(
+        restrict: crate::ufo::sm::SMRestrict,
+        param_card: Option<&str>,
+        card: &str,
+    ) -> (
+        Arc<UFOModel>,
+        FlavorGroups,
+        Result<(Vec<SubprocessResonances>, MemberCodes), GenerateError>,
+    ) {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::proton::derive_flavor_groups;
+        use crate::ufo::slha::ParamCard;
+        use crate::ufo::sm::sm_model;
+
+        let model = sm_model(restrict);
+        let evaluated = match param_card {
+            Some(text) => {
+                EvaluatedModel::from_model_card(model.clone(), &text.parse::<ParamCard>().unwrap())
+                    .unwrap()
+            }
+            None => EvaluatedModel::from_model(model.clone()),
+        };
+        let parsed = parse_proc_card(card, &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&parsed, &model).unwrap();
+        let groups = derive_flavor_groups(sets, &model, &evaluated, &RunCard::default()).unwrap();
+        let resolved = group_resonances(&groups, &model, &evaluated, 15.0);
+        (model, groups, resolved)
+    }
+
+    /// `g u > w+ d` and `g d~ > w+ u~` share one matrix element (the second is
+    /// the CP image of `g d > w- u`, and the polarization sum hides the
+    /// chirality), so they form one live group whose `s`-channel quark is `u` in
+    /// one member and `d~` in the other. Their legs below the line carry charge
+    /// `+2/3` and `+1/3`, so the legs alone name no flavour for the second
+    /// member; each member's own diagram carries its incoming quark there, in
+    /// its own colour representation (the `d~` line an anti-triplet).
+    ///
+    /// MadGraph 3.5.7 `output madevent` of the same two lines writes `SPROP = 2`
+    /// on that line in `g u > w+ d`'s `configs.inc` and `SPROP = -1` in
+    /// `g d~ > w+ u~`'s.
+    #[test]
+    fn a_live_groups_quark_line_carries_each_members_own_flavour() {
+        use crate::lhef::resonance::member_line_pdg;
+        use crate::ufo::sm::SMRestrict;
+
+        let (model, groups, resolved) = resolved_groups(
+            SMRestrict::Default,
+            None,
+            "generate g u > w+ d\nadd process g d~ > w+ u~",
+        );
+        assert_eq!(
+            groups.groups().len(),
+            1,
+            "the two subprocesses form one group"
+        );
+        let group = &groups.groups()[0];
+        assert!(!group.vanishes());
+        let (tables, pdgs) = resolved.expect("every member names its resonance lines");
+        let table = &tables[0];
+        let mut quark_lines = 0;
+        let mut legs_alone_fail = 0;
+        for (member, configs) in group.members().iter().zip(&pdgs[0]) {
+            for (config, member_lines) in configs.iter().enumerate() {
+                for (line, code) in table.lines(config).iter().zip(member_lines) {
+                    if line.pdg.abs() <= 4 {
+                        quark_lines += 1;
+                        let quark = member.incoming[1];
+                        assert_eq!(
+                            (code.pdg, code.color),
+                            (quark, 3 * quark.signum()),
+                            "{member:?} config {config}"
+                        );
+                        if member_line_pdg(line, table.outgoing(), &member.outgoing, &model)
+                            .is_none()
+                        {
+                            legs_alone_fail += 1;
+                        }
+                    } else {
+                        assert_eq!((line.pdg, code.pdg), (24, 24), "{member:?} config {config}");
+                    }
+                }
+            }
+        }
+        assert_eq!(quark_lines, 2, "one s-channel quark line per member");
+        assert_eq!(
+            legs_alone_fail, 1,
+            "the legs alone name no flavour for g d~ > w+ u~"
+        );
+    }
+
+    /// With the Cabibbo angle at zero (`restrict_ckm`, `lamWS = 0`),
+    /// `g u > w+ s` and `g s~ > w+ u~` vanish at the card and form one group on
+    /// `0 = 0`, whose `s`-channel quark is `u` in one and `s~` in the other: the
+    /// shape of g2HDM's `g u > h+ d` with `g d~ > h+ u~` where H± has no `u d`
+    /// coupling. Such a group is never drawn, so it resolves no codes, and the
+    /// run's live group resolves as usual.
+    #[test]
+    fn a_group_that_vanishes_at_the_card_resolves_no_resonance_codes() {
+        use crate::ufo::sm::SMRestrict;
+
+        let (_, groups, resolved) = resolved_groups(
+            SMRestrict::Ckm,
+            Some("Block Wolfenstein\n    1 0.000000e+00 # lamWS\n"),
+            "define q = u s~\ndefine qq = s u~\n\
+             generate g q > w+ qq, w+ > e+ ve\n\
+             add process g u > w+ d, w+ > e+ ve",
+        );
+        let (_, pdgs) = resolved.expect("a vanishing group never blocks generation");
+        let vanishing: Vec<usize> = (0..groups.groups().len())
+            .filter(|&g| groups.groups()[g].vanishes())
+            .collect();
+        assert_eq!(vanishing.len(), 1, "one group vanishes at the card");
+        let dead = &groups.groups()[vanishing[0]];
+        assert_eq!(dead.members().len(), 2, "{:?}", dead.members());
+        assert!(pdgs[vanishing[0]].iter().all(Vec::is_empty));
+        for (g, group) in groups.groups().iter().enumerate() {
+            if !group.vanishes() {
+                assert!(pdgs[g].iter().all(|configs| !configs.is_empty()));
+            }
+        }
+    }
+
+    /// `e+ e- > b e+ ve b~ mu- vm~` through two decaying tops: its compiled
+    /// record, its resonance table, its own lines as a member, and a point with
+    /// every top and `W` inside its window.
+    fn top_pair_chain() -> (
+        Arc<UFOModel>,
+        SubprocessRecord,
+        SubprocessResonances,
+        MemberLines,
+        Vec<[f64; 4]>,
+    ) {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::hadronic::compile_class;
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let parsed = parse_proc_card(
+            "import model sm\ngenerate e+ e- > t t~, t > b e+ ve, t~ > b~ mu- vm~\n",
+            &ParsingOptions::default(),
+        )
+        .unwrap();
+        let set = generate_from_proc_card(&parsed, &model)
+            .unwrap()
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .unwrap();
+        let eval = compile_class(&set, &model, &evaluated).unwrap();
+        let record = SubprocessRecord::new(&eval, &model, &evaluated).unwrap();
+        let table =
+            SubprocessResonances::new(&eval, &set.diagrams, &model, &evaluated, 15.0).unwrap();
+        let own = MemberLines::new(&set.diagrams, &model, &evaluated).unwrap();
+        let mut externals = vec![[250.0, 0.0, 0.0, 250.0], [250.0, 0.0, 0.0, -250.0]];
+        externals.extend(crate::lhef::resonance::tests::top_pair(80.0));
+        (model, record, table, own, externals)
+    }
+
+    /// The record `event_record` writes for configuration 0 with `codes` as the
+    /// member's table, and the warnings its tally gives.
+    fn top_pair_record(
+        record: &SubprocessRecord,
+        table: &SubprocessResonances,
+        codes: &[Vec<LineCode>],
+        externals: &[[f64; 4]],
+    ) -> (crate::lhef::record::LheEvent, Vec<String>) {
+        let mut tally = source::ResonanceTally::default();
+        let header = crate::lhef::build::EventHeader {
+            process_id: 1,
+            weight: 1.0,
+            scale: 250.0,
+            alpha_qed: 0.0078,
+            alpha_qcd: 0.118,
+        };
+        let event = source::event_record(
+            record,
+            externals,
+            &[1; 8],
+            0,
+            header,
+            Some((table, Some(codes))),
+            (Some(0), true),
+            &mut tally,
+        )
+        .expect("the event is written");
+        (event, source::resonance_warnings(tally, 1))
+    }
+
+    /// The codes of the intermediates an event lists, sorted.
+    fn intermediates(event: &crate::lhef::record::LheEvent) -> Vec<i32> {
+        let mut out: Vec<i32> = event
+            .particles
+            .iter()
+            .filter(|p| p.status == crate::lhef::record::STATUS_INTERMEDIATE)
+            .map(|p| p.pdg)
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
+    /// A member that does not carry a line with a width the representative
+    /// carries (here the top: a member whose diagrams have every line of
+    /// `e+ e- > t t~, t > b e+ ve, …` but that one) holds no code for it, and
+    /// an event of it inside the top's window is written without intermediates,
+    /// neither with the representative's top nor with any other code there, and
+    /// counted in the warning. The representative itself, at the same point,
+    /// lists the top: the line would be written.
+    #[test]
+    fn a_member_without_a_widthful_line_writes_no_intermediate_and_counts_it() {
+        let (model, record, table, own, externals) = top_pair_chain();
+        let label = "e+ e- > b e+ ve b~ mu- vm~";
+        let outgoing = table.outgoing().to_vec();
+        assert_eq!(
+            outgoing,
+            [5, -11, 12, -5, 13, -14],
+            "the order `top_pair` builds"
+        );
+
+        let rep_codes = member_line_codes(&own, &table, 0, &outgoing, &model, label).unwrap();
+        let (rep_event, rep_warnings) = top_pair_record(&record, &table, &[rep_codes], &externals);
+        assert_eq!(intermediates(&rep_event), [-24, -6, 6, 24]);
+        assert!(rep_warnings.is_empty(), "{rep_warnings:?}");
+
+        let top = table
+            .lines(0)
+            .iter()
+            .position(|l| l.pdg == 6)
+            .expect("a top line");
+        assert!(table.lines(0)[top].width > 0.0);
+        let without_top = MemberLines::from_diagram_lines(
+            own.diagram_lines()
+                .iter()
+                .map(|d| d.iter().copied().filter(|l| l.pdg != 6).collect())
+                .collect(),
+        );
+        let codes = member_line_codes(&without_top, &table, 0, &outgoing, &model, label)
+            .expect("a line the member does not carry does not refuse the run");
+        assert_eq!(codes[top], LineCode::NONE);
+        let (event, warnings) = top_pair_record(&record, &table, &[codes], &externals);
+        assert_eq!(
+            intermediates(&event),
+            Vec::<i32>::new(),
+            "no intermediate, and no substitute for the top"
+        );
+        assert_eq!(
+            event
+                .particles
+                .iter()
+                .filter(|p| p.status == crate::lhef::record::STATUS_OUTGOING)
+                .count(),
+            6
+        );
+        assert_eq!(
+            warnings,
+            [
+                "resonances: 1 of 1 events list no intermediate record because their subprocess \
+              names no code for a resonance of its configuration"
+            ]
+        );
+    }
+
+    /// A member whose diagrams carry a line with a width under several codes,
+    /// none of which its legs name, refuses the run by name; where the legs name
+    /// one of them, that one is taken; and a line without a width in the same
+    /// case holds no code rather than refusing.
+    #[test]
+    fn a_widthful_line_under_several_codes_the_legs_cannot_tell_apart_is_refused() {
+        let (model, _, table, own, _) = top_pair_chain();
+        let label = "e+ e- > b e+ ve b~ mu- vm~";
+        let outgoing = table.outgoing().to_vec();
+        let relabel = |code: i32| -> Vec<Vec<crate::lhef::resonance::ResonanceLine>> {
+            own.diagram_lines()
+                .iter()
+                .map(|d| {
+                    d.iter()
+                        .map(|l| {
+                            let mut l = *l;
+                            if l.pdg == 6 {
+                                l.pdg = code;
+                            }
+                            l
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        // The legs below the top (`b e+ ve`) name the top itself, which neither
+        // of the member's codes is.
+        let mut split = relabel(2);
+        split.extend(relabel(4));
+        let why = member_line_codes(
+            &MemberLines::from_diagram_lines(split.clone()),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            why.contains("the resonance 6 of e+ e- > b e+ ve b~ mu- vm~ has no single flavour"),
+            "{why}"
+        );
+        // Where the legs' code is one of them, it is taken.
+        let mut named = relabel(2);
+        named.extend(relabel(6));
+        let codes = member_line_codes(
+            &MemberLines::from_diagram_lines(named),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .unwrap();
+        let top = table.lines(0).iter().position(|l| l.pdg == 6).unwrap();
+        assert_eq!(codes[top].pdg, 6);
+
+        // A line without a width under several codes its legs name none of holds
+        // no code instead: it is never written as an intermediate. Here the
+        // `s`-channel boson, carried as `2` in one copy of the member's
+        // diagrams and `4` in the other.
+        let (at, boson) = table
+            .lines(0)
+            .iter()
+            .enumerate()
+            .find(|(_, l)| !(l.width > 0.0))
+            .map(|(i, l)| (i, l.pdg))
+            .expect("a line without a width");
+        let relabel_boson = |code: i32| -> Vec<Vec<crate::lhef::resonance::ResonanceLine>> {
+            own.diagram_lines()
+                .iter()
+                .map(|d| {
+                    d.iter()
+                        .map(|l| {
+                            let mut l = *l;
+                            if l.pdg == boson && !(l.width > 0.0) {
+                                l.pdg = code;
+                            }
+                            l
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        let mut widthless = relabel_boson(2);
+        widthless.extend(relabel_boson(4));
+        let codes = member_line_codes(
+            &MemberLines::from_diagram_lines(widthless),
+            &table,
+            0,
+            &outgoing,
+            &model,
+            label,
+        )
+        .expect("a line without a width under several codes does not refuse the run");
+        assert_eq!(codes[at], LineCode::NONE);
+        assert_eq!(codes[top].pdg, 6);
     }
 
     /// [`EventSource::restart`] promises the identical sequence follows, and a
@@ -1884,7 +2425,7 @@ mod tests {
         let opts = ParsingOptions::default();
         let parsed = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
         let sets = generate_from_proc_card(&parsed, &model).unwrap();
-        let evals = compile_subprocesses(&sets, &model, &evaluated).unwrap();
+        let evals = crate::hadronic::compile_subprocesses(&sets, &model, &evaluated).unwrap();
         let bounds: Vec<_> = evals
             .iter()
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))

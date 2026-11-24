@@ -195,6 +195,8 @@ pub(crate) trait ChannelBounds {
     fn timelike_floor(&self, slots: u64) -> f64;
     /// [`Cuts::energy_floor`].
     fn energy_floor(&self, slots: u64) -> f64;
+    /// [`Cuts::single_leg_transfer_bound`].
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64>;
     /// [`Cuts::bwcutoff`].
     fn bwcutoff(&self) -> f64;
     /// [`tau_range`] at hadronic invariant `s`.
@@ -210,6 +212,9 @@ impl ChannelBounds for Cuts {
     }
     fn energy_floor(&self, slots: u64) -> f64 {
         Cuts::energy_floor(self, slots)
+    }
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        Cuts::single_leg_transfer_bound(self, slots, products)
     }
     fn bwcutoff(&self) -> f64 {
         Cuts::bwcutoff(self)
@@ -243,6 +248,13 @@ impl ChannelBounds for UnionBounds<'_> {
     }
     fn energy_floor(&self, slots: u64) -> f64 {
         self.weakest(|c| c.energy_floor(slots))
+    }
+    fn single_leg_transfer_bound(&self, slots: u64, products: u64) -> Option<f64> {
+        self.0
+            .iter()
+            .map(|c| c.single_leg_transfer_bound(slots, products))
+            .reduce(|a, b| Some(a?.min(b?)))
+            .expect("bounds over at least one filter")
     }
     /// `bwcutoff` is the run card's, the same for every filter compiled from it.
     fn bwcutoff(&self) -> f64 {
@@ -302,10 +314,11 @@ impl MapChoices {
     /// One diagram's phase-space channel under these choices: the regulated
     /// decomposition with the cut-implied timelike floors, each line a decay chain
     /// forces on shell confined to its `bwcutoff` window, the chosen angular map
-    /// on the splits it selects, the chosen rung order and the chosen pair order.
-    /// The one place a channel
-    /// is built for integration, so an integrator and the generator replaying its
-    /// grids cannot disagree about the map.
+    /// on the splits it selects, the chosen rung order and the chosen pair order,
+    /// and each peripheral rung's transfer bound held to what the single-leg cuts
+    /// on either side of its line prove. The one place a channel is built for
+    /// integration, so an integrator and the generator replaying its grids cannot
+    /// disagree about the map.
     pub(crate) fn channel<B: ChannelBounds + ?Sized>(
         &self,
         diagram: &Diagram,
@@ -354,10 +367,12 @@ impl MapChoices {
                 channel.with_rung_order(&order)
             }
         };
-        match self.pair_order {
+        let channel = match self.pair_order {
             PairOrder::Ordered => channel,
             PairOrder::Symmetric => channel.with_symmetric_pairs(),
-        }
+        };
+        let products = forced.iter().fold(0u64, |m, l| m | l.slots);
+        channel.with_side_transfer_bounds(&|slots| cuts.single_leg_transfer_bound(slots, products))
     }
 
     /// One line naming each choice and whether the rule or the caller made it.
@@ -742,5 +757,120 @@ mod tests {
             "split-angle isotropic, tau inverse-square, rung-order derived (auto), pair-order \
              ordered"
         );
+    }
+
+    /// Final-state order `e+ e- g`, with the card's lepton and jet thresholds.
+    fn llj_legs() -> Vec<crate::cuts::ExternalLeg> {
+        use crate::cuts::ExternalLeg;
+        vec![
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::incoming(-2, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+        ]
+    }
+
+    fn compiled(card: &str) -> Cuts {
+        let card = crate::runcard::RunCard::parse(card).unwrap();
+        Cuts::compile(&card, &llj_legs()).unwrap()
+    }
+
+    /// Over several filters a single leg's transfer bound is the weakest of
+    /// theirs, and over one filter it is that filter's own.
+    #[test]
+    fn the_union_of_filters_bounds_a_single_leg_by_its_weakest() {
+        let default = compiled("");
+        let soft = compiled("5 = ptl\n10 = ptj\n");
+        let free = compiled("0 = ptl\n");
+        let jet = 0b100;
+        let lepton = 0b001;
+        let bound =
+            |filters: &[&Cuts], slots| UnionBounds(filters).single_leg_transfer_bound(slots, 0);
+
+        assert_eq!(bound(&[&default, &soft], jet), Some(100.0));
+        assert_eq!(bound(&[&soft, &default], jet), Some(100.0));
+        assert_eq!(bound(&[&default, &free], jet), Some(400.0));
+        assert_eq!(bound(&[&default, &free], lepton), Some(0.0));
+        assert_eq!(bound(&[&default, &soft], lepton), Some(25.0));
+        assert_eq!(bound(&[&default, &soft], 0b011), None);
+        for slots in [lepton, jet, 0b011, 0] {
+            assert_eq!(
+                bound(&[&default], slots),
+                default.single_leg_transfer_bound(slots, 0)
+            );
+        }
+    }
+
+    /// The bounds a channel is built under, except that no single-leg side proves
+    /// anything, which keeps every rung at its scale.
+    struct NothingProven<'a>(&'a Cuts);
+
+    impl ChannelBounds for NothingProven<'_> {
+        fn spacelike_floor(&self) -> f64 {
+            self.0.spacelike_floor()
+        }
+        fn timelike_floor(&self, slots: u64) -> f64 {
+            self.0.timelike_floor(slots)
+        }
+        fn energy_floor(&self, slots: u64) -> f64 {
+            self.0.energy_floor(slots)
+        }
+        fn single_leg_transfer_bound(&self, _slots: u64, _products: u64) -> Option<f64> {
+            None
+        }
+        fn bwcutoff(&self) -> f64 {
+            self.0.bwcutoff()
+        }
+        fn tau_range(&self, s: f64) -> (f64, f64) {
+            self.0.tau_range(s)
+        }
+    }
+
+    /// A channel built for integration carries the bound the cuts prove for each
+    /// rung: in `g g > b b~ g` with the card's `ptj` and no `ptb`, the lines with
+    /// a single `b` on one side lose the jet's `pT²` scale, and no other line moves.
+    #[test]
+    fn a_built_channel_carries_the_transfer_bounds_the_cuts_prove() {
+        use crate::cuts::ExternalLeg;
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+
+        let model = sm_model(SMRestrict::Default);
+        let ev = EvaluatedModel::from_model(model.clone());
+        let card = parse_proc_card("generate g g > b b~ g", &ParsingOptions::default()).unwrap();
+        let diagrams: Vec<Diagram> = generate_from_proc_card(&card, &model)
+            .unwrap()
+            .into_iter()
+            .flat_map(|s| s.diagrams)
+            .collect();
+        let legs = [
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(5, 0.0),
+            ExternalLeg::outgoing(-5, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+        ];
+        let cuts = Cuts::compile(&crate::runcard::RunCard::default(), &legs).unwrap();
+        assert_eq!(cuts.single_leg_transfer_bound(0b001, 0), Some(0.0));
+        assert_eq!(cuts.single_leg_transfer_bound(0b100, 0), Some(400.0));
+
+        let choices = MapChoices {
+            split_angle: SplitAngle::SoftAll,
+            tau: TauMap::InverseSquare,
+            rung_order: RungOrder::Derived,
+            pair_order: PairOrder::Symmetric,
+        };
+        let keys = |bounds: &dyn ChannelBounds| -> Vec<String> {
+            diagrams
+                .iter()
+                .map(|d| choices.channel(d, &ev, 500.0, bounds).map_key())
+                .collect()
+        };
+        let proven = keys(&cuts);
+        let unproven = keys(&NothingProven(&cuts));
+        let moved = proven.iter().zip(&unproven).filter(|(a, b)| a != b).count();
+        assert!(moved > 0, "no channel's bound moved");
+        assert!(moved < diagrams.len(), "every channel's bound moved");
     }
 }

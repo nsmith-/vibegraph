@@ -8,7 +8,7 @@ priority: medium
 closes_when: "A matched multi-jet point evaluates the matrix element of one (group, ordering) term drawn by its clustered luminosity weight, with the estimator unbiased, the MLM σ and dump gates passing, and pp_to_ll_0j2j_mlm's cost × variance against the per-group sum recorded over ≥10 seeds; or the per-group sum is kept and the measurement recording why is in the MLM cost concept."
 blocked_by: []
 opened: 2026-11-11
-tags: [mlm, performance, matrix-element, pooling, madgraph-comparison]
+tags: [mlm, performance, matrix-element, pooling, madgraph-comparison, v0.3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-11}
 sources:
   - {id: diag, resource: "../../performance/mlm-integration-cost-vs-madevent.md", title: "MLM integration cost against MadEvent"}

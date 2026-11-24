@@ -8,10 +8,19 @@
 //! polynomial or joint where the row names couplings, and the exact path besides —
 //! and compares each weight with MadGraph's.
 //!
-//! **Informational.** The comparison is measured and printed, not enforced, until
-//! it has run against more processes than these rows; what is asserted is that it
-//! ran: every banked event found its subprocess, every hypothesis was compared, and
-//! the parameters both sides started from are the same (below).
+//! **Informational** on the helicity-summed rows (`change helicity False`): the
+//! comparison is measured and printed, not enforced, until it has run against
+//! more processes than these rows; what is asserted is that it ran: every banked
+//! event found its subprocess, every hypothesis was compared, and the parameters
+//! both sides started from are the same (below).
+//!
+//! **Enforced** on the rows in each event's own helicity (MadGraph's default,
+//! `helicity` true in the reference): every weight within [`PRINTED`] of
+//! MadGraph's, where the event's `SPINUP` picks the combination on both sides.
+//! Those rows also weigh every banked event with the helicity-summed ratio and
+//! require some hypothesis to move some event's weight by far more than the
+//! tolerance between the two, so a summed ratio in the per-event one's place
+//! fails them.
 //!
 //! # What it holds fixed, and what it is blind to
 //!
@@ -34,6 +43,13 @@
 //!   banked flavours by this test, not by `generate` (the same audit covers that);
 //! * anything below the files' eight printed digits, which bound the comparison at
 //!   about `1e-7` relative.
+//!
+//! On the per-event-helicity rows it sees a combination taken from the wrong
+//! legs, or with one leg's label read under another convention, wherever the
+//! hypotheses move the two combinations differently; both generators read the
+//! labels from the same `SPINUP`, so it cannot see a convention shared by
+//! vibegraph's writer and both readers. It sees nothing of a combination no
+//! banked event carries.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -44,7 +60,7 @@ use vibegraph::diagrams::{
 };
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::reweight::card::ReweightCard;
-use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan};
+use vibegraph::reweight::engine::{HelicityRatio, ReweightOptions, ReweightPlan};
 use vibegraph::reweight::{resolve, resolve_couplings};
 use vibegraph::ufo::parameters::ParamNature;
 use vibegraph::ufo::slha::ParamCard;
@@ -184,9 +200,10 @@ fn provenance(
     worst
 }
 
-/// An event's subprocess among `pdgs` (each in its own leg order) and its
-/// momenta in that order in the partonic centre of mass, beam 1 along +z.
-fn locate(pdgs: &[Vec<i32>], event: &Value) -> Option<(usize, Vec<V>)> {
+/// An event's subprocess among `pdgs` (each in its own leg order), its momenta
+/// in that order in the partonic centre of mass, beam 1 along +z, and the
+/// positions in the event of the legs in that order.
+fn locate(pdgs: &[Vec<i32>], event: &Value) -> Option<(usize, Vec<V>, Vec<usize>)> {
     let status: Vec<i64> = event["status"]
         .as_array()?
         .iter()
@@ -239,7 +256,8 @@ fn locate(pdgs: &[Vec<i32>], event: &Value) -> Option<(usize, Vec<V>)> {
         }
         // Boost along z into the partonic centre of mass, then turn by π about x
         // if the subprocess's first parton arrived on the second beam: a Lorentz
-        // transformation, under which the helicity-summed |M|² is unchanged.
+        // transformation, under which the helicity-summed |M|² is unchanged, and
+        // the turn a rotation, which keeps every leg's helicity.
         let (a, b) = (mom[beams[0]], mom[beams[1]]);
         let beta = (a.pz() + b.pz()) / (a.e() + b.e());
         let gamma = 1.0 / (1.0 - beta * beta).sqrt();
@@ -257,7 +275,7 @@ fn locate(pdgs: &[Vec<i32>], event: &Value) -> Option<(usize, Vec<V>)> {
                 }
             })
             .collect();
-        return Some((s, p));
+        return Some((s, p, order));
     }
     None
 }
@@ -266,6 +284,9 @@ struct Comparison {
     events: usize,
     largest: f64,
     beyond: usize,
+    /// The largest `|w / w_summed - 1|`, the per-event ratio against the summed
+    /// one on the same event, on a per-event-helicity row.
+    from_summed: f64,
 }
 
 #[test]
@@ -325,14 +346,23 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                 id
             })
             .collect();
+        // A per-event-helicity row's card carries no `change helicity` line, as
+        // MadGraph's did: the ratio is the card's default.
+        let per_event = row["helicity"].as_bool().unwrap_or(false);
+        if !per_event {
+            rw_card.insert_str(0, "change helicity False\n");
+        }
         let rw_card: ReweightCard = rw_card.parse().unwrap();
         let launches = resolve(&rw_card, &model).unwrap();
+        let helicity = rw_card.helicity();
+        assert_eq!(helicity == HelicityRatio::Event, per_event, "{key}");
 
         let mut paths = vec![(
             "exact",
             ReweightOptions {
                 exact: true,
                 couplings: None,
+                helicity,
             },
         )];
         if let Some(couplings) = row["couplings"].as_array() {
@@ -345,11 +375,32 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                 ReweightOptions {
                     exact: false,
                     couplings: Some(resolve_couplings(&model, &names).unwrap()),
+                    helicity,
                 },
             ));
         } else {
-            paths.push(("default", ReweightOptions::default()));
+            paths.push((
+                "default",
+                ReweightOptions {
+                    helicity,
+                    ..ReweightOptions::default()
+                },
+            ));
         }
+        // The helicity-summed weights of the same events, which a per-event row
+        // must move away from.
+        let summed = ReweightPlan::new(
+            &refs,
+            &forbidden,
+            &model,
+            &base,
+            launches.clone(),
+            ReweightOptions {
+                exact: true,
+                ..ReweightOptions::default()
+            },
+        )
+        .unwrap();
 
         let events = row["events"].as_array().unwrap();
         assert!(!events.is_empty(), "{key}: no banked events");
@@ -358,6 +409,7 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                 ReweightPlan::new(&refs, &forbidden, &model, &base, launches.clone(), options)
                     .unwrap();
             let mut rw = plan.bind();
+            let mut rs = summed.bind();
             let pdgs: Vec<Vec<i32>> = (0..sets.len()).map(|s| rw.pdgs(s).to_vec()).collect();
             let mut stats: Vec<Comparison> = ids
                 .iter()
@@ -365,15 +417,29 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                     events: 0,
                     largest: 0.0,
                     beyond: 0,
+                    from_summed: 0.0,
                 })
                 .collect();
-            let mut out = Vec::new();
+            let (mut out, mut whole) = (Vec::new(), Vec::new());
             for (k, event) in events.iter().enumerate() {
-                let (sub, momenta) = locate(&pdgs, event)
+                let (sub, momenta, order) = locate(&pdgs, event)
                     .unwrap_or_else(|| panic!("{key}: banked event {k} matches no subprocess"));
                 let xwgtup = event["xwgtup"].as_f64().unwrap();
                 let alpha_s = event["aqcdup"].as_f64().unwrap();
-                rw.ratios(sub, &momenta, Some(alpha_s), &mut out);
+                // `SPINUP` of each leg, in the subprocess's leg order.
+                let spin: Option<Vec<i32>> = event["spin"].as_array().map(|spin| {
+                    order
+                        .iter()
+                        .map(|&i| spin[i].as_i64().unwrap() as i32)
+                        .collect()
+                });
+                assert_eq!(spin.is_some(), per_event, "{key}: banked SPINUP");
+                rw.ratios(sub, &momenta, Some(alpha_s), spin.as_deref(), &mut out)
+                    .unwrap_or_else(|e| panic!("{key} [{name}]: banked event {k}: {e}"));
+                if per_event {
+                    rs.ratios(sub, &momenta, Some(alpha_s), None, &mut whole)
+                        .unwrap();
+                }
                 for (h, id) in ids.iter().enumerate() {
                     let mg = event["madgraph"][id].as_f64().unwrap();
                     let ours = xwgtup * out[h];
@@ -382,13 +448,38 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                     s.events += 1;
                     s.largest = s.largest.max(rel);
                     s.beyond += usize::from(!(rel <= PRINTED));
+                    if per_event {
+                        s.from_summed = s.from_summed.max(relative_difference(out[h], whole[h]));
+                    }
                 }
             }
             for (id, s) in ids.iter().zip(&stats) {
                 assert_eq!(s.events, events.len());
+                let moved = if per_event {
+                    format!(", largest |w/w_summed - 1| {:.2e}", s.from_summed)
+                } else {
+                    String::new()
+                };
                 println!(
-                    "{key} [{name}] {id:>8}: {} events, largest |w/w_MG - 1| {:.2e}, {} beyond {PRINTED:.0e}",
+                    "{key} [{name}] {id:>8}: {} events, largest |w/w_MG - 1| {:.2e}, {} beyond \
+                     {PRINTED:.0e}{moved}",
                     s.events, s.largest, s.beyond
+                );
+            }
+            if per_event {
+                for (id, s) in ids.iter().zip(&stats) {
+                    assert_eq!(
+                        s.beyond, 0,
+                        "{key} [{name}] {id}: per-event-helicity weights beyond {PRINTED:.0e} \
+                         of MadGraph's (largest {:.2e})",
+                        s.largest
+                    );
+                }
+                let moved = stats.iter().map(|s| s.from_summed).fold(0.0, f64::max);
+                assert!(
+                    moved > 1e3 * PRINTED,
+                    "{key} [{name}]: no hypothesis moves a weight off the helicity-summed one \
+                     ({moved:.1e}), so the row cannot tell the two ratios apart"
                 );
             }
         }

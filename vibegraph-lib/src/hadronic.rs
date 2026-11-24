@@ -24,6 +24,7 @@
 //! clusters in the partonic CM, as MadEvent does, and evaluates the closed-form
 //! choices in the lab frame.
 
+use std::borrow::Borrow;
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -694,6 +695,55 @@ pub(crate) fn compile_class(
     Ok(evaluator)
 }
 
+/// [`compile_class`] over every one of `sets`, across the rayon pool: one
+/// result per set, in set order, each the evaluator the set compiles to on its
+/// own, so the order and the thread a set is compiled on change nothing. It
+/// reports no progress: the workers are in no progress group, so the caller
+/// reports, on its own thread, as it takes the results. `sets` holds the sets
+/// or references to them.
+pub fn compile_classes<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
+    use rayon::prelude::*;
+    let span = tracing::Span::current();
+    sets.par_iter()
+        .map(|set| {
+            let _entered = span.enter();
+            compile_class(set.borrow(), model, evaluated)
+        })
+        .collect()
+}
+
+/// `precompiled[k]` where it holds an evaluator of `sets[k]`, compiled under
+/// `evaluated`, and [`compile_class`] of `sets[k]` across the rayon pool
+/// ([`compile_classes`]) where it holds none: one result per set, in set order.
+pub(crate) fn complete_compiles<S: Borrow<DiagramSet> + Sync>(
+    sets: &[S],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Vec<Result<AmplitudeEvaluator, HadronicError>> {
+    debug_assert_eq!(sets.len(), precompiled.len());
+    let missing: Vec<&DiagramSet> = sets
+        .iter()
+        .zip(&precompiled)
+        .filter(|(_, e)| e.is_none())
+        .map(|(s, _)| s.borrow())
+        .collect();
+    let mut compiled = compile_classes(&missing, model, evaluated).into_iter();
+    precompiled
+        .into_iter()
+        .map(|e| match e {
+            Some(e) => Ok(e),
+            None => compiled
+                .next()
+                .expect("one compile per set without an evaluator"),
+        })
+        .collect()
+}
+
 /// Number of spin (helicity / polarization) states of a particle, from its UFO
 /// spin code (`2s+1`) and whether it is massless. A massless vector has no
 /// longitudinal mode, so it carries two states rather than three.
@@ -1067,13 +1117,27 @@ pub fn compile_subprocesses(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
-    let total = sets.iter().filter(|s| !s.diagrams.is_empty()).count() as u64;
-    let mut evals = Vec::new();
-    for set in sets {
-        if set.diagrams.is_empty() {
-            continue;
-        }
-        evals.push(compile_class(set, model, evaluated)?);
+    compile_subprocesses_with(sets, sets.iter().map(|_| None).collect(), model, evaluated)
+}
+
+/// [`compile_subprocesses`], taking `precompiled[k]` as the evaluator of
+/// `sets[k]` where it holds one ([`complete_compiles`]): an evaluator
+/// [`compile_class`] built from that set under `evaluated`.
+pub fn compile_subprocesses_with(
+    sets: &[DiagramSet],
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+) -> Result<Vec<AmplitudeEvaluator>, HadronicError> {
+    let (kept, precompiled): (Vec<&DiagramSet>, Vec<Option<AmplitudeEvaluator>>) = sets
+        .iter()
+        .zip(precompiled)
+        .filter(|(s, _)| !s.diagrams.is_empty())
+        .unzip();
+    let total = kept.len() as u64;
+    let mut evals = Vec::with_capacity(kept.len());
+    for evaluator in complete_compiles(&kept, precompiled, model, evaluated) {
+        evals.push(evaluator?);
         progress::step(progress::stage::COMPILE, evals.len() as u64, Some(total));
     }
     if evals.is_empty() {
@@ -2108,6 +2172,10 @@ pub struct ChannelIntegration {
     pub shares: Vec<VegasResult>,
 }
 
+/// The uniforms [`FixedBeamIntegrand::select_event`] draws an event's labels from:
+/// the subprocess, the helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 4;
+
 /// The discrete labels an accepted event carries besides its momenta, drawn by
 /// [`FixedBeamIntegrand::select_event`].
 ///
@@ -2121,6 +2189,9 @@ pub struct EventSelection {
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
+    /// The `|M|²` of that helicity combination alone, off the diagonal it was
+    /// drawn from, at the event's coupling.
+    pub helicity_m2: f64,
     /// Index into the subprocess's colour-flow basis, and so into its
     /// [`ColorFlowTags`](crate::helas::color::flow_tags::ColorFlowTags) table.
     pub flow: usize,
@@ -3524,7 +3595,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self,
         momenta: &[V],
         channel: usize,
-        u: [f64; 4],
+        u: [f64; SELECT_EVENT_DRAWS],
     ) -> Option<EventSelection> {
         let ext = self.externals(momenta);
         let sc = self.scratch();
@@ -3570,17 +3641,19 @@ impl<'a> FixedBeamIntegrand<'a> {
             let outgoing: Vec<[f64; 4]> = momenta.iter().map(components).collect();
             table.mask_unadmitted(&mut amp2, &outgoing);
         }
-        let helicity =
+        let (helicity, helicity_m2) =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, subprocess), sub, &ext, &mut jamp2) {
-                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
-                None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?,
+                None => eval.select_helicity(&hel_m2, u[1])?,
             };
+        let helicity = helicity.to_vec();
         // Matching is refused at fixed beams, so the configuration is always drawn.
         let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]], None)?;
 
         Some(EventSelection {
             subprocess,
             helicity,
+            helicity_m2,
             flow: color.flow,
             config: color.config,
             leading: color.leading,

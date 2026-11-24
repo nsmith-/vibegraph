@@ -6,7 +6,8 @@ use tracing::info;
 use super::{err, GenerateError};
 use crate::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
 use crate::proton::BeamOrdering;
-use crate::reweight::Launch;
+use crate::reweight::engine::{CardPoint, HelicityRatio, HelicityRefusal};
+use crate::reweight::{Launch, SUMMED_REMEDY};
 
 /// How far the reweighter's card-point `|M|²` may sit from the integrand's, relative.
 ///
@@ -28,6 +29,14 @@ const CARD_POINT_TOLERANCE: f64 = 1e-9;
 /// shares it) is what the flavour comparison is for. Both checks share with the
 /// reweighter the event's momenta, its beam mirror and the model's parameters, and
 /// are blind to an error in any of them.
+///
+/// Under [`HelicityRatio::Event`] it also counts the events the reweighter
+/// refused ([`HelicityRefusal`]), and the events whose record lists two
+/// identical outgoing particles under different mothers: MadGraph reads such an
+/// event's legs in every order the mothers allow, turns its per-event-helicity
+/// ratio off for the rest of the file and averages the orders
+/// (`calculate_matrix_element`, `reweight_interface.py` L1586-L1592), which no
+/// per-event weight here reproduces. Either refuses the file.
 #[derive(Default)]
 pub(super) struct ReweightAudit {
     /// Events checked per part and beam ordering.
@@ -37,6 +46,15 @@ pub(super) struct ReweightAudit {
     flavour_mismatches: usize,
     /// Events with a hypothesis ratio that is not finite.
     non_finite: usize,
+    /// Events weighted in their own helicity, and of those the ones refused or
+    /// ambiguous.
+    in_helicity: usize,
+    helicity_refused: usize,
+    /// The largest relative deviation of the card point's `|M|²` in the event's
+    /// helicity from the integrand's, and how many exceed the tolerance.
+    largest_helicity: f64,
+    helicity_mismatches: usize,
+    ambiguous: usize,
     first: Option<String>,
 }
 
@@ -44,12 +62,52 @@ impl ReweightAudit {
     pub(super) fn check(
         &mut self,
         term: (usize, BeamOrdering),
-        m0: f64,
-        m2: f64,
+        m0: Result<CardPoint, HelicityRefusal>,
+        (m2, helicity_m2): (f64, f64),
         pdgs: &[i32],
         record: &LheEvent,
-        (ratios, launches): (&[f64], &[Launch]),
+        (ratios, launches, helicity): (&[f64], &[Launch], HelicityRatio),
     ) {
+        if helicity == HelicityRatio::Event {
+            self.in_helicity += 1;
+            if let Some(pdg) = identical_under_different_mothers(record) {
+                self.ambiguous += 1;
+                self.first.get_or_insert_with(|| {
+                    format!(
+                        "part {} {:?}: two outgoing {pdg} under different mothers",
+                        term.0, term.1
+                    )
+                });
+            }
+        }
+        let m0 = match m0 {
+            Ok(CardPoint {
+                m2: m0,
+                helicity_m2: in_helicity,
+            }) => {
+                if let Some(h) = in_helicity {
+                    let deviation = relative_deviation(h, helicity_m2);
+                    self.largest_helicity = self.largest_helicity.max(deviation);
+                    if !(deviation <= CARD_POINT_TOLERANCE) {
+                        self.helicity_mismatches += 1;
+                        self.first.get_or_insert_with(|| {
+                            format!(
+                                "part {} {:?}: |M|^2 {h:e} in the event's helicity against the \
+                                 integrand's {helicity_m2:e}",
+                                term.0, term.1
+                            )
+                        });
+                    }
+                }
+                m0
+            }
+            Err(refusal) => {
+                self.helicity_refused += 1;
+                self.first
+                    .get_or_insert_with(|| format!("part {} {:?}: {refusal}", term.0, term.1));
+                return;
+            }
+        };
         if let Some(k) = ratios.iter().position(|r| !r.is_finite()) {
             self.non_finite += 1;
             self.first.get_or_insert_with(|| {
@@ -63,7 +121,7 @@ impl ReweightAudit {
             Some((_, n)) => *n += 1,
             None => self.terms.push((term, 1)),
         }
-        let deviation = (m0 - m2).abs() / m2.abs().max(f64::MIN_POSITIVE);
+        let deviation = relative_deviation(m0, m2);
         self.largest = self.largest.max(deviation);
         if !(deviation <= CARD_POINT_TOLERANCE) {
             self.m2_mismatches += 1;
@@ -107,7 +165,10 @@ impl ReweightAudit {
     }
 
     /// Report what was checked, and refuse a file whose weights were taken against
-    /// another subprocess than the one each event was drawn in, or are not finite.
+    /// another subprocess than the one each event was drawn in, or are not finite;
+    /// under [`HelicityRatio::Event`] also one with an event the reweighter
+    /// refused, an event with identical outgoing particles under different
+    /// mothers, or an event weighted in another helicity than it was drawn in.
     /// A refused file is removed rather than left beside the error.
     pub(super) fn finish(&self, out: &std::path::Path) -> Result<(), GenerateError> {
         let events: usize = self.terms.iter().map(|(_, n)| n).sum();
@@ -130,7 +191,40 @@ impl ReweightAudit {
              {CARD_POINT_TOLERANCE:.0e}: {}; flavour mismatches: {}; non-finite weights: {}",
             self.largest, self.m2_mismatches, self.flavour_mismatches, self.non_finite
         );
-        let why = if self.m2_mismatches + self.flavour_mismatches > 0 {
+        if self.in_helicity > 0 {
+            info!(
+                "reweight: {} events weighted in their own helicity; card-point |M|^2 in it \
+                 checked against the integrand's, largest relative deviation {:.1e}, beyond \
+                 {CARD_POINT_TOLERANCE:.0e}: {}; refused: {}; identical outgoing particles \
+                 under different mothers: {}",
+                self.in_helicity,
+                self.largest_helicity,
+                self.helicity_mismatches,
+                self.helicity_refused,
+                self.ambiguous
+            );
+        }
+        let why = if self.helicity_refused > 0 {
+            format!(
+                "{} of {} events cannot be weighted in their own helicity (MadGraph's default \
+                 without a `change helicity` line); {SUMMED_REMEDY}",
+                self.helicity_refused, self.in_helicity
+            )
+        } else if self.ambiguous > 0 {
+            format!(
+                "{} of {} events list two identical outgoing particles under different \
+                 mothers, where MadGraph turns the per-event-helicity ratio (its default \
+                 without a `change helicity` line) off for the rest of its file; \
+                 {SUMMED_REMEDY}",
+                self.ambiguous, self.in_helicity
+            )
+        } else if self.helicity_mismatches > 0 {
+            format!(
+                "reweighting evaluated {} of {} events in another helicity than the integrand \
+                 drew them in; {SUMMED_REMEDY}",
+                self.helicity_mismatches, self.in_helicity
+            )
+        } else if self.m2_mismatches + self.flavour_mismatches > 0 {
             format!(
                 "reweighting evaluated {} of {events} events in another subprocess than the \
                  integrand drew them in",
@@ -154,4 +248,26 @@ impl ReweightAudit {
             self.first.as_deref().unwrap_or("")
         )))
     }
+}
+
+/// `|got - want| / |want|`, with a zero `want` read as the smallest positive
+/// normal so that a nonzero `got` against it is a deviation, not a NaN.
+fn relative_deviation(got: f64, want: f64) -> f64 {
+    (got - want).abs() / want.abs().max(f64::MIN_POSITIVE)
+}
+
+/// The PDG code of two outgoing particles of `record` whose mothers differ:
+/// MadGraph's `get_all_momenta` (`lhe_parser.py` L2710) permutes exactly those.
+fn identical_under_different_mothers(record: &LheEvent) -> Option<i32> {
+    let outgoing: Vec<_> = record
+        .particles
+        .iter()
+        .filter(|p| p.status == STATUS_OUTGOING)
+        .collect();
+    outgoing.iter().enumerate().find_map(|(i, a)| {
+        outgoing[i + 1..]
+            .iter()
+            .any(|b| b.pdg == a.pdg && b.mothers != a.mothers)
+            .then_some(a.pdg)
+    })
 }

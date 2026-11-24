@@ -111,6 +111,7 @@ pub(crate) fn generate_chain_with_merges(
         line: 1,
         lines: 1,
         diagrams_before: 0,
+        pool: super::EnumerationPool::Serial,
     };
     let sets = chain_sets(
         process,
@@ -505,6 +506,16 @@ fn stitch_set(
                 .map(|(&(pos, node, _), &d)| (n_in + pos, node, d))
                 .collect();
             let glued = glue(core_diagram, &parts);
+            if glued.violates_fermion_flow(model) {
+                return Err(format!(
+                    "in {} > {}, a decay-chain diagram carries a Majorana fermion or a \
+                     fermion-number-violating vertex; its lines are oriented per core and \
+                     per decay, and orienting a line across the stitched propagator is not \
+                     validated against MadGraph",
+                    core.particles_in.join(" "),
+                    particles_out.join(" ")
+                ));
+            }
             for permutation in &permutations {
                 let d = relabelled(&glued, permutation, n_in, model);
                 let mut unsigned = d.clone();

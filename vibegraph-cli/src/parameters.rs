@@ -19,7 +19,7 @@ use vibegraph::ufo::UFOModel;
 use vibegraph::widths::ComputedWidth;
 
 use crate::assets;
-use crate::error::{err, CliError, ErrorKind};
+use crate::error::{err, io_error, CliError, ErrorKind};
 use crate::output::{self, ModelRef};
 use crate::parallel::ParallelArgs;
 
@@ -94,13 +94,6 @@ pub(crate) fn build(
             report,
         },
         default_param_card(model),
-    )
-}
-
-fn io_error(what: &str, path: &Path, e: std::io::Error) -> CliError {
-    err(
-        ErrorKind::Io,
-        format!("cannot {what} {}: {e}", path.display()),
     )
 }
 

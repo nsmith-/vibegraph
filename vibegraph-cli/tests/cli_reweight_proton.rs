@@ -186,6 +186,23 @@ fn reweighted_sample(
     assert!(generate.status.success(), "generate failed:\n{log}");
     let audit = audit_of(&log);
     eprintln!("{audit:?}");
+    // The card carries no `change helicity` line, so each ratio is taken in the
+    // event's own helicity, MadGraph's default, and the audit holds every
+    // event's card-point |M|^2 in that helicity to the integrand's: a
+    // helicity carried to the reweighter on the wrong legs (the exchanged
+    // beam ordering's, say) moves it.
+    let helicity = log
+        .lines()
+        .find(|l| l.contains("events weighted in their own helicity"))
+        .unwrap_or_else(|| panic!("generate did not report the helicity audit:\n{log}"));
+    eprintln!("{helicity}");
+    assert!(
+        helicity.contains(&format!("{nevents} events weighted"))
+            && helicity.contains("beyond 1e-9: 0;")
+            && helicity.contains("refused: 0;")
+            && helicity.contains("different mothers: 0"),
+        "{helicity}"
+    );
     let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our file parses");
     (audit, file)
 }

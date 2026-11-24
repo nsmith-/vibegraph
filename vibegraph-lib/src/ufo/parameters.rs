@@ -3,7 +3,7 @@ use super::ast_util::{
     named_assignments, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::config_eval::{
-    configuration_modules, flatten_branches, select_branch, Configuration, Scope,
+    config_subset, configuration_modules, eval_int, select_branch, Configuration, Scope,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::functions::FunctionLibrary;
@@ -25,17 +25,15 @@ pub enum ParameterError {
     ExprParse { name: String, cause: String },
     #[error(
         "parameter(s) {names} are defined under an `if` of parameters.py whose condition is \
-         outside the subset of Python the loader evaluates against configuration.py (integer \
-         and boolean literals, `configuration.<name>` for a name configuration.py binds to one, \
-         `not`, `and`, `or`, `+`, `-`, `*`): MadGraph runs the module as Python, the loader \
-         does not"
+         outside the subset of Python the loader evaluates against configuration.py ({}): \
+         MadGraph runs the module as Python, the loader does not",
+        config_subset!()
     )]
     ConditionOutside { names: String },
     #[error(
         "parameter '{parameter}': `value` is a conditional expression whose condition is outside \
-         the subset of Python the loader evaluates against configuration.py (integer and boolean \
-         literals, `configuration.<name>` for a name configuration.py binds to one, `not`, `and`, \
-         `or`, `+`, `-`, `*`)"
+         the subset of Python the loader evaluates against configuration.py ({})",
+        config_subset!()
     )]
     ValueConditionOutside { parameter: String },
     #[error(
@@ -47,6 +45,12 @@ pub enum ParameterError {
          defined as a number or a parameter by that point"
     )]
     UnresolvedValueName { parameter: String, name: String },
+    #[error(
+        "parameter '{parameter}': `value` is the name `{name}`, which parameters.py last binds \
+         under an `if` whose condition is outside the subset of Python the loader evaluates \
+         against configuration.py: MadGraph runs the module as Python, the loader does not"
+    )]
+    ConditionalValueName { parameter: String, name: String },
     #[error(transparent)]
     Field(#[from] FieldError),
 }
@@ -398,10 +402,7 @@ pub(crate) fn parse_parameters_with_variables(
         modules: &modules,
         bare: false,
     };
-    let stmts =
-        flatten_branches(&parsed, &scope).map_err(|_| ParameterError::ConditionOutside {
-            names: conditional_definitions(&parsed, "Parameter").unwrap_or_default(),
-        })?;
+    let stmts = select_statements(&parsed, &scope)?;
 
     let mut externals: Vec<Parameter> = Vec::new();
     let mut raw_internals: Vec<(String, bool, Expr, Vec<String>)> = Vec::new();
@@ -416,7 +417,21 @@ pub(crate) fn parse_parameters_with_variables(
     // Numbers assigned at module level so far: a `value = NAME` reads the one
     // bound when the `Parameter` statement runs.
     let mut numbers: HashMap<&str, f64> = HashMap::new();
-    for (python_name, assigned) in named_assignments(&stmts) {
+    // Names last bound under a skipped `if`: their value at that point is not known.
+    let mut unknown: HashSet<&str> = HashSet::new();
+    for stmt in &stmts {
+        if matches!(stmt, ast::Stmt::If(_)) {
+            for name in bound_names(std::slice::from_ref(stmt)) {
+                numbers.remove(name);
+                unknown.insert(name);
+            }
+            continue;
+        }
+        let Some((python_name, assigned)) = named_assignments(std::slice::from_ref(stmt)).next()
+        else {
+            continue;
+        };
+        unknown.remove(python_name);
         let ast::Expr::Call(call) = assigned else {
             if let Some(x) = extract_float(assigned) {
                 numbers.insert(python_name, x);
@@ -445,6 +460,7 @@ pub(crate) fn parse_parameters_with_variables(
         match fields.str("nature")?.as_str() {
             "external" => {
                 let default_value = match extract_name(value) {
+                    Some(n) if unknown.contains(n) => return Err(conditional_name(&name, n)),
                     Some(n) => *numbers.get(n).ok_or_else(|| unresolved(&name, n))?,
                     None => {
                         extract_float(value).ok_or_else(|| fields.malformed("value", "a number"))?
@@ -464,6 +480,7 @@ pub(crate) fn parse_parameters_with_variables(
             }
             "internal" => {
                 let expr = match extract_name(value) {
+                    Some(n) if unknown.contains(n) => return Err(conditional_name(&name, n)),
                     // The value is a Python name: a `Parameter` object, which MadGraph
                     // writes into the expression as its UFO `name`, or a number.
                     Some(n) => match (variables.get(n), numbers.get(n)) {
@@ -528,6 +545,79 @@ pub(crate) fn parse_parameters_with_variables(
         ones: BTreeSet::new(),
     };
     Ok((set, variables))
+}
+
+/// The statements of `parsed` that the loader reads, in order. An `if` whose
+/// test the subset evaluates is replaced by the branch it selects, at any
+/// depth. An `if` whose test is outside the subset is refused, naming the
+/// `Parameter`s defined in its branches, when it defines any; otherwise it is
+/// kept as it stands, and the names it binds are unknown from that point on.
+fn select_statements(
+    parsed: &[ast::Stmt],
+    scope: &Scope<'_>,
+) -> Result<Vec<ast::Stmt>, ParameterError> {
+    let mut out = Vec::with_capacity(parsed.len());
+    for stmt in parsed {
+        let ast::Stmt::If(ast::StmtIf {
+            test, body, orelse, ..
+        }) = stmt
+        else {
+            out.push(stmt.clone());
+            continue;
+        };
+        match eval_int(test, scope) {
+            Some(v) => out.extend(select_statements(
+                if v != 0 { body } else { orelse },
+                scope,
+            )?),
+            None => match conditional_definitions(std::slice::from_ref(stmt), "Parameter") {
+                Some(names) => return Err(ParameterError::ConditionOutside { names }),
+                None => out.push(stmt.clone()),
+            },
+        }
+    }
+    Ok(out)
+}
+
+/// The names an assignment in `stmts` binds, in any `if` branch at any depth.
+fn bound_names(stmts: &[ast::Stmt]) -> Vec<&str> {
+    fn targets<'a>(target: &'a ast::Expr, out: &mut Vec<&'a str>) {
+        match target {
+            ast::Expr::Name(ast::ExprName { id, .. }) => out.push(id.as_str()),
+            ast::Expr::Tuple(ast::ExprTuple { elts, .. })
+            | ast::Expr::List(ast::ExprList { elts, .. }) => {
+                elts.iter().for_each(|e| targets(e, out));
+            }
+            ast::Expr::Starred(ast::ExprStarred { value, .. }) => targets(value, out),
+            _ => {}
+        }
+    }
+    fn walk<'a>(stmts: &'a [ast::Stmt], out: &mut Vec<&'a str>) {
+        for stmt in stmts {
+            match stmt {
+                ast::Stmt::Assign(ast::StmtAssign { targets: ts, .. }) => {
+                    ts.iter().for_each(|t| targets(t, out));
+                }
+                ast::Stmt::AugAssign(ast::StmtAugAssign { target, .. })
+                | ast::Stmt::AnnAssign(ast::StmtAnnAssign { target, .. }) => targets(target, out),
+                ast::Stmt::If(ast::StmtIf { body, orelse, .. }) => {
+                    walk(body, out);
+                    walk(orelse, out);
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(stmts, &mut out);
+    out
+}
+
+fn conditional_name(parameter: &str, name: &str) -> ParameterError {
+    ParameterError::ConditionalValueName {
+        parameter: parameter.to_owned(),
+        name: name.to_owned(),
+    }
 }
 
 fn unresolved(parameter: &str, name: &str) -> ParameterError {
@@ -892,6 +982,30 @@ if configuration.a > 1:
         assert!(
             matches!(err, ParameterError::ConditionOutside { .. }),
             "{err}"
+        );
+    }
+
+    #[test]
+    fn statements_are_the_branches_that_run_and_the_skipped_ifs() {
+        let configuration: Configuration = [("a".to_owned(), 0), ("b".to_owned(), 1)].into();
+        let modules = vec!["configuration".to_owned()];
+        let scope = Scope {
+            names: &configuration,
+            modules: &modules,
+            bare: false,
+        };
+        let src = "import configuration\nif configuration.a:\n    z = 9\nif configuration.a:\n    p = 1\nelif configuration.b:\n    if configuration.b:\n        q = 2\n    else:\n        r = 3\n    if configuration.nope:\n        s, (t, *u) = 4, (5, 6)\n        v += 7\nelse:\n    w = 8\n";
+        let stmts = select_statements(&parse_stmts(src).unwrap(), &scope).unwrap();
+        let names: Vec<&str> = named_assignments(&stmts).map(|(n, _)| n).collect();
+        assert_eq!(names, ["q"]);
+        let skipped: Vec<_> = stmts
+            .iter()
+            .filter(|s| matches!(s, ast::Stmt::If(_)))
+            .collect();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(
+            bound_names(std::slice::from_ref(skipped[0])),
+            ["s", "t", "u", "v"]
         );
     }
 

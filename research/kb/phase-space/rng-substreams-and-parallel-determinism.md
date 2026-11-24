@@ -115,8 +115,10 @@ at the top of the command, because the pool is immutable after first use. A
 count the platform cannot honour is refused, not silently replaced, since a run
 asked for a thread count is usually being timed. `generate`'s accept/reject
 replay is serial, so there the flag only sizes the pool. Diagram enumeration
-runs on one thread unless `--parallel-diagrams` is given; a 2→3 process
-enumerates slower on sixteen threads than on one[^parallel-rs].
+decides per process-line walk: a walk whose candidate assignments times tree
+topologies reach `AUTO_PARALLEL_COST` runs across the pool, and a smaller one
+on one thread, since a 2→3 process enumerates slower on sixteen threads than on
+one. `--parallel-diagrams` hands every walk the pool[^parallel-rs].
 
 ## Evidence and its limits
 

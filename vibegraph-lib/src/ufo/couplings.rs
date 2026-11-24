@@ -2,7 +2,7 @@ use super::ast_util::{
     constructor_calls, extract_str, parse_stmts, FieldError, Fields, UniqueNames,
 };
 use super::config_eval::{
-    configuration_modules, eval_int, read_configuration, Configuration, Scope,
+    config_subset, configuration_modules, eval_int, read_configuration, Configuration, Scope,
 };
 use super::expr::{collect_deps, parse_expr, Expr};
 use super::functions::FunctionLibrary;
@@ -156,9 +156,12 @@ fn extract_orders(
     fields: &Fields<'_>,
     scope: &Scope<'_>,
 ) -> Result<BTreeMap<String, i64>, FieldError> {
-    const EXPECTED: &str = "a dict of order names to integers, or to an expression over \
-                            `configuration.<name>` values built from integers, `not`, \
-                            `and`, `or`, `+`, `-`, `*` and `A if T else B`";
+    const EXPECTED: &str = concat!(
+        "a dict of order names to integers, or to an expression in the subset of Python the \
+         loader evaluates against configuration.py (",
+        config_subset!(),
+        ")"
+    );
     let ast::Expr::Dict(ast::ExprDict { keys, values, .. }) = fields.required("order")? else {
         return Err(fields.malformed("order", EXPECTED));
     };

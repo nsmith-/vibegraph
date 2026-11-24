@@ -13,7 +13,7 @@ use itertools::Itertools;
 use super::root_lorentz::{Adjoint, LegAdjoint, RootLorentzError, RootedTerm};
 use crate::helas::repr::numbers::Charge;
 use crate::ufo::couplings::CouplingId;
-use crate::ufo::lorentz::LorentzId;
+use crate::ufo::lorentz::{LorentzId, LorentzTerm};
 use crate::ufo::particles::ParticleId;
 use crate::ufo::topo::{flow_groups, FlowGroup};
 use crate::ufo::vertices::VertexId;
@@ -90,12 +90,147 @@ pub(crate) struct VertexTerm {
     pub(crate) coupling_id: CouplingId,
 }
 
+/// Whether the vertex's particles, all conjugated, are the same multiset: the vertex
+/// is its own hermitian-conjugate partner.
+fn self_conjugate_set(model: &UFOModel, id: VertexId) -> bool {
+    let particles = &model.vertex_def(id).particles;
+    let mut conjugate: Vec<ParticleId> = particles
+        .iter()
+        .map(|&p| crate::diagrams::diagram::antiparticle(model, p))
+        .collect();
+    particles.iter().all(|p| {
+        conjugate
+            .iter()
+            .position(|q| q == p)
+            .map(|k| conjugate.swap_remove(k))
+            .is_some()
+    })
+}
+
+/// `term` with each chiral projector of a chain that carries no `Gamma` or `Sigma`
+/// exchanged for the other chirality, and each `Gamma5` of such a chain negated
+/// (`P_L ↔ P_R` is `γ⁵ → −γ⁵`, so `Identity − Gamma5` reads as `2 ProjM` does).
+///
+/// Diagram enumeration matches a vertex to its legs read all-incoming, and MadGraph
+/// binds the same legs read all-outgoing. Where the vertex's particles are not their
+/// own conjugate set (`t~ b H+`, a lepton–neutralino–slepton vertex), the two pick the
+/// two hermitian-conjugate halves of the interaction, and MadGraph evaluates the half
+/// whose structure is the Dirac conjugate `γ⁰Γ†γ⁰` of the one matched here, with the
+/// matched half's coupling. For the vector and tensor structures that conjugate is
+/// the structure itself (`γ^μ`, `γ^μ P_χ`, `γ^μ γ⁵`, `σ^{μν}`, the identity), and the
+/// reversed reading accounts for the rest; a bare projector's is the other chirality,
+/// `γ⁰ P_L† γ⁰ = P_R`. Without the exchange, `t t~ > H+ H-` in the MSSM disagrees with
+/// MadGraph's `AMP()` on its bottom-exchange diagram (overlap 0.85), and every
+/// neutralino–sfermion diagram comes out with the opposite chirality's coupling.
+fn conjugate_standalone_projectors(term: &LorentzTerm) -> LorentzTerm {
+    use crate::ufo::lorentz::LorentzOp;
+    let chained = term
+        .ops
+        .iter()
+        .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. }));
+    if chained {
+        return term.clone();
+    }
+    let mut out = term.clone();
+    for op in &mut out.ops {
+        let swapped = match op {
+            LorentzOp::ProjM { i, j } => LorentzOp::ProjP { i: *i, j: *j },
+            LorentzOp::ProjP { i, j } => LorentzOp::ProjM { i: *i, j: *j },
+            LorentzOp::Gamma5 { .. } => {
+                out.coeff = -out.coeff;
+                continue;
+            }
+            _ => continue,
+        };
+        *op = swapped;
+    }
+    out
+}
+
+/// A term whose spinor chain is one `Gamma` beside a `Gamma5` (`γ^μ γ⁵`, the axial
+/// current), written as its two chiral halves `γ^μ P_R − γ^μ P_L`; every other term as
+/// it is.
+///
+/// The rooting conjugates a gamma-chained projector where a line reads the vertex
+/// against its arrow (`C(γ^μ P_χ)ᵀC⁻¹ = −γ^μ P_χ̄`), and `γ⁵ = P_R − P_L` conjugates with
+/// it: `C(γ^μ γ⁵)ᵀC⁻¹ = +γ^μ γ⁵` against the vector part's `−γ^μ`. A `Gamma5` node is
+/// never conjugated, so the axial current is put in the form whose conjugation the
+/// rooting performs. Chains of two gammas keep their `Gamma5`: their chirality is
+/// restored by the chain reordering instead.
+fn split_chained_gamma5(term: &LorentzTerm) -> Vec<LorentzTerm> {
+    use crate::ufo::lorentz::LorentzOp;
+    let gammas = term
+        .ops
+        .iter()
+        .filter(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. }))
+        .count();
+    let fives: Vec<usize> = term
+        .ops
+        .iter()
+        .enumerate()
+        .filter(|(_, op)| matches!(op, LorentzOp::Gamma5 { .. }))
+        .map(|(k, _)| k)
+        .collect();
+    let [five] = fives[..] else {
+        return vec![term.clone()];
+    };
+    if gammas != 1 {
+        return vec![term.clone()];
+    }
+    let LorentzOp::Gamma5 { i, j } = term.ops[five] else {
+        unreachable!("the position holds a Gamma5")
+    };
+    let chained = term.ops.iter().any(|op| {
+        matches!(op, LorentzOp::Gamma { i: gi, j: gj, .. }
+            if (*gi < 0 && (*gi == i || *gi == j)) || (*gj < 0 && (*gj == i || *gj == j)))
+    });
+    if !chained {
+        return vec![term.clone()];
+    }
+    let half = |op: LorentzOp, coeff: f64| {
+        let mut half = term.clone();
+        half.ops[five] = op;
+        half.coeff = coeff;
+        half
+    };
+    vec![
+        half(LorentzOp::ProjP { i, j }, term.coeff),
+        half(LorentzOp::ProjM { i, j }, -term.coeff),
+    ]
+}
+
 impl VertexTerm {
-    /// Generate a VertexTerm from a UFO vertex definition, given the model and the desired index of the result leg.
-    ///
-    /// result_leg_idx is 0-indexed here
+    /// [`from_ufo_read`](Self::from_ufo_read) with the vertex's own chirality, the
+    /// reading of a vertex whose particles are their own conjugate set.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_ufo(
+        model: &UFOModel,
+        lorentz_id: LorentzId,
+        color: &crate::ufo::color::ColorExpr,
+        coupling_id: CouplingId,
+        flow: &[(usize, usize)],
+        result_leg_idx: Option<usize>,
+        flows: &[Option<LegAdjoint>],
+    ) -> Result<Self, RootLorentzError> {
+        Self::from_ufo_read(
+            model,
+            lorentz_id,
+            color,
+            coupling_id,
+            flow,
+            result_leg_idx,
+            flows,
+            false,
+        )
+    }
+
+    /// Generate a VertexTerm from a UFO vertex definition, given the model and the
+    /// desired index of the result leg (0-indexed), with every chiral projector of a
+    /// chain that carries no gamma exchanged for the other chirality where
+    /// `swap_standalone_chirality` is set ([`conjugate_standalone_projectors`]).
+    #[allow(clippy::too_many_arguments)]
+    fn from_ufo_read(
         model: &UFOModel,
         lorentz_id: LorentzId,
         _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed
@@ -103,6 +238,7 @@ impl VertexTerm {
         flow: &[(usize, usize)],
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
+        swap_standalone_chirality: bool,
     ) -> Result<Self, RootLorentzError> {
         let lorentz = model.lorentz_struct(lorentz_id);
         super::root_lorentz::reject_cyclic_structure(
@@ -112,11 +248,20 @@ impl VertexTerm {
             &lorentz.expr,
         )?;
 
+        let swap = swap_standalone_chirality;
         let terms = lorentz
             .expr
             .iter()
+            .flat_map(split_chained_gamma5)
             .map(|term| {
-                super::root_lorentz::root_term(term, &lorentz.spins, flow, result_leg_idx, flows)
+                if swap {
+                    conjugate_standalone_projectors(&term)
+                } else {
+                    term
+                }
+            })
+            .map(|term| {
+                super::root_lorentz::root_term(&term, &lorentz.spins, flow, result_leg_idx, flows)
                     .map_err(|e| e.in_structure(&lorentz.name, &lorentz.structure))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -207,6 +352,46 @@ pub(super) fn vertex_flow_group(model: &UFOModel, id: VertexId, group: usize) ->
     groups.swap_remove(group)
 }
 
+/// `flows` with each fermion leg's [`LegAdjoint::crossed`] set to whether its line runs
+/// against the vertex's arrow here.
+///
+/// `flow` is the vertex's pairing as MadGraph reads it, `(ket slot, bra slot)`.
+/// MadGraph binds a leg at the slot of its all-outgoing particle; diagram enumeration
+/// binds it at the slot of its all-incoming one, its antiparticle's. A line that runs
+/// along the vertex's arrow, as MadGraph reads `Γ`, therefore arrives here with its ket
+/// at the `bra` slot and its bra at the `ket` slot, and the rooting re-reads it in
+/// that order. A line whose spinors sit at the slots their adjoints name runs against
+/// the arrow, where the vertex is `CΓᵀC⁻¹`, and the rooting emits the conjugate
+/// chirality for it. The input end of the pair decides: an off-shell fermion current
+/// carries its input's adjoint to its output, so the output leg says nothing.
+///
+/// On a line that keeps fermion number this is exactly whether the line is crossed
+/// (both ends final-state, bound by their conjugate spinors): every vertex of a crossed
+/// line has its spinors at the slots their adjoints name, and every vertex of any
+/// other line has them swapped. On a line through a Majorana fermion or a
+/// fermion-number-violating vertex the vertices of one line can differ, and it is
+/// each vertex's own binding that fixes `Γ` against `CΓᵀC⁻¹` there.
+pub(crate) fn against_arrow(
+    flow: &[(usize, usize)],
+    result: Option<usize>,
+    flows: &[Option<LegAdjoint>],
+) -> Vec<Option<LegAdjoint>> {
+    let mut out = flows.to_vec();
+    for &(ket, bra) in flow {
+        let input = if result == Some(ket) { bra } else { ket };
+        let Some(Some(bound)) = flows.get(input) else {
+            continue;
+        };
+        let at_named_slot = (input == ket) == (bound.adjoint == Adjoint::Ket);
+        for leg in [ket, bra] {
+            if let Some(Some(b)) = out.get_mut(leg) {
+                b.crossed = at_named_slot;
+            }
+        }
+    }
+    out
+}
+
 impl VertexInfo {
     /// Generate VertexInfo from a UFO vertex definition, restricted to a single
     /// color structure `color_idx` and a single fermion-flow group `flow_group`,
@@ -233,12 +418,14 @@ impl VertexInfo {
     ) -> Result<Self, RootLorentzError> {
         let vertex = model.vertex_def(id);
         let group = vertex_flow_group(model, id, flow_group);
+        let flows = &against_arrow(&group.flow, result_leg_idx, flows);
+        let swap = !self_conjugate_set(model, id);
         let terms = vertex
             .couplings
             .keys()
             .filter(|&&(c, l)| c == color_idx && group.lorentz.contains(&l))
             .map(|&key| {
-                VertexTerm::from_ufo(
+                VertexTerm::from_ufo_read(
                     model,
                     vertex.lorentz[key.1],
                     &vertex.color[color_idx],
@@ -246,6 +433,7 @@ impl VertexInfo {
                     &group.flow,
                     result_leg_idx,
                     flows,
+                    swap,
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;

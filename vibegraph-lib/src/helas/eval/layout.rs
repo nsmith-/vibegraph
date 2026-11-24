@@ -766,9 +766,9 @@ fn lower_node(
             (NodeType::FermionIn, NodeType::FermionOut) => (b, a, true),
             other => panic!(
                 "internal invariant: a fermion bilinear needs one bra and one ket operand, \
-                 got {other:?}; diagram generation refuses Majorana fermions and \
-                 fermion-number-violating vertices (`Diagram::check_fermion_flow`), so \
-                 every fermion line has a ket at one end and a bra at the other"
+                 got {other:?}; diagram generation gives every fermion line a particle \
+                 end and an antiparticle end (`Diagram::orient_fermion_lines`), so every \
+                 fermion line has a ket at one end and a bra at the other"
             ),
         }
     };

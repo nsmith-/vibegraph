@@ -802,6 +802,52 @@ fn the_systematics_weights_round_trip_through_the_written_file() {
     assert!(weights > 0);
 }
 
+/// A hadronic sample is the same bytes at any thread count: the accept/reject
+/// trials run in blocks placed on the seed's streams by their index alone and
+/// are taken in block order, and so is every label a worker draws for an
+/// accepted point — flavour, beam ordering, helicity, colour flow. The card's
+/// channels span several flavour groups, and the sample spans many blocks and
+/// several batches at four threads.
+#[test]
+fn a_hadronic_sample_does_not_depend_on_the_thread_count() {
+    if !banked_present() {
+        vibegraph::validation::require(
+            "a_hadronic_sample_does_not_depend_on_the_thread_count",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let run = integrated();
+    let files: Vec<(&str, String)> = ["1", "2", "4"]
+        .into_iter()
+        .map(|j| {
+            let name = format!("threads-{j}.lhe");
+            let out = run
+                .generate_cmd_at(&name, SEED)
+                .args(["--nevents", "3000", "-j", j])
+                .output()
+                .expect("spawn vibegraph");
+            assert!(
+                out.status.success(),
+                "vibegraph generate -j {j} failed:\n{}",
+                common::stderr_of(&out)
+            );
+            (
+                j,
+                std::fs::read_to_string(run.dir.join(name)).expect("read the event file"),
+            )
+        })
+        .collect();
+    let (_, one) = &files[0];
+    assert!(one.contains("<event>"), "the -j 1 file holds no events");
+    for (j, file) in &files[1..] {
+        assert!(
+            file == one,
+            "`generate -j 1` and `-j {j}` wrote different hadronic samples"
+        );
+    }
+}
+
 /// `generate` takes no PDF choice: it locates the set the artifact recorded,
 /// by name, through `$LHAPDF_DATA_PATH` and the cache. With the data path
 /// pointing at a directory without it, an empty cache and downloads refused,

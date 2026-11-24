@@ -198,18 +198,36 @@ pub(crate) const REWEIGHT_CARD: &[Construct] = &[
     },
     Construct {
         name: "`change helicity False`",
-        madgraph: "the helicity-summed ratio (do_change L402, calculate_matrix_element \
-                   L1597-L1601)",
-        class: IgnoredBenign("the helicity-summed ratio is the one generate writes"),
+        madgraph: "the helicity-summed ratio (do_change L402-L403, calculate_matrix_element \
+                   L1596-L1601: `nhel = -1`, every combination)",
+        class: Consumed("ReweightCard::helicity, HelicityRatio::Summed"),
         example: Text("change helicity False\nlaunch\n set ymb 5.0\n"),
-        expect: Same(Text("launch\n set ymb 5.0\n")),
+        expect: Differs(Text("launch\n set ymb 5.0\n")),
     },
     Construct {
         name: "`change helicity True`",
-        madgraph: "the ratio in the event's own helicity, MadGraph's default (L112)",
-        class: Refused("only the helicity-summed ratio is written"),
-        example: Text("change helicity True\nlaunch\n"),
-        expect: Error("own helicity, MadGraph's default"),
+        madgraph: "the ratio in the event's own helicity (L1596-L1598: the SPINUP \
+                   combination's index in the matrix element's NHEL table), MadGraph's \
+                   default (L112)",
+        class: Consumed("ReweightCard::helicity, HelicityRatio::Event"),
+        example: Text("change helicity True\nlaunch\n set ymb 5.0\n"),
+        expect: Differs(Text("change helicity False\nlaunch\n set ymb 5.0\n")),
+    },
+    Construct {
+        name: "a card without `change helicity`",
+        madgraph: "the ratio in the event's own helicity: `helicity_reweighting = True` \
+                   (L112)",
+        class: IgnoredBenign("the same ratio as `change helicity True`"),
+        example: Text("launch\n set ymb 5.0\n"),
+        expect: Same(Text("change helicity True\nlaunch\n set ymb 5.0\n")),
+    },
+    Construct {
+        name: "`change helicity` after the first `launch`",
+        madgraph: "applies to the launches after it: each `launch` reweights the file as \
+                   it is read (do_launch L497-L545)",
+        class: Refused("the launches before it would carry the other ratio"),
+        example: Text("launch\n set ymb 5.0\nchange helicity False\n"),
+        expect: Error("after it only"),
     },
     Construct {
         name: "`change output default`",
@@ -347,12 +365,15 @@ pub(crate) const REWEIGHT_CARD: &[Construct] = &[
 mod tests {
     use super::*;
     use crate::reweight::card::ReweightCard;
+    use crate::reweight::engine::HelicityRatio;
     use crate::reweight::{resolve, Launch};
     use crate::ufo::card_classes::tests::{assert_rows, param_model};
 
-    fn launches(text: &str) -> Result<Vec<Launch>, String> {
+    /// The resolved launches and the ratio the card asks for.
+    fn launches(text: &str) -> Result<(Vec<Launch>, HelicityRatio), String> {
         let card: ReweightCard = text.parse().map_err(|e| format!("{e}"))?;
-        resolve(&card, &param_model()).map_err(|e| e.to_string())
+        let launches = resolve(&card, &param_model()).map_err(|e| e.to_string())?;
+        Ok((launches, card.helicity()))
     }
 
     #[test]

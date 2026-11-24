@@ -843,14 +843,9 @@ V_ltntpp = Vertex(name='V_ltntpp', particles=[P.lt__tilde__, P.nt, P.pp__minus__
                   color=['1'], lorentz=[L.FFS1], couplings={(0, 0): C.GC_LS})";
 
 /// The charged Goldstone enters the diagrams of `lt nt > lt nt` through the
-/// vertices it shares with a W-like vector, and a `GoldstoneBoson` flag removes
-/// exactly those diagrams in every spelling MadGraph's importer accepts, leaving
-/// the vector's.
-///
-/// The parser at a0a6eb4 (`vibegraph-lib/src/ufo/particles.rs` lines 233-235)
-/// reads only `goldstoneboson` and `goldstone`, so the `GoldstoneBoson` case fails
-/// there: the scalar stays in the enumeration and its count equals the unflagged
-/// one.
+/// vertices it shares with a W-like vector, and a Goldstone flag in every spelling
+/// MadGraph's importer accepts (`GoldstoneBoson` among them) removes diagrams and
+/// keeps the vector's.
 #[test]
 fn a_charged_goldstone_flag_removes_its_diagrams_and_keeps_the_vectors() {
     let process = "lt nt > lt nt";

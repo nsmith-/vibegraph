@@ -478,7 +478,9 @@ kinds, bumps the version.
   coupling-order bound the automatic search tries, and for each core of a
   decay chain. The VEGAS stage's running `sigma`
   and `err` are in the integrand's natural units (GeV⁻² for a cross section,
-  GeV for a width).
+  GeV for a width). The run's place in its phases (`phase`, `phases`) and a
+  multi-group card's group (`group`, `groups`, `label`, `channels`) ride in
+  `fields` too; both are described under [Where a run is](#where-a-run-is).
 - `result`: the command's final object. `integrate`'s carries `process`,
   `model` (`label`, `digest`), `observable` and `unit` (`pb`, or `GeV` for a
   decay's width), `sigma`, `sigma_err`, `chi2_per_dof` (`null` over fewer than
@@ -541,6 +543,106 @@ result), `artifact` (a saved artifact unreadable or inconsistent), `io`
 (another file or directory), and `run` (anything else that failed once the
 inputs were accepted). `check-events` prints a report for a person and
 refuses `--output-ldjson`.
+
+### Phase timing
+
+Under `--output-ldjson`, `integrate` and `generate` also write a `phase`
+object when each phase of the run starts and another when it ends, at any
+verbosity. Each is written and flushed as it happens, so a run killed from
+outside (a batch system's `SIGKILL` at its time limit) still names the phase
+it was in: the last `phase` record without its `end`. A `phase` is a new
+`kind` under `schema_version` 1; a reader skips kinds it does not know.
+
+| field | on | meaning |
+|---|---|---|
+| `event` | both | `start` or `end` |
+| `phase` | both | the phase's name, below |
+| `elapsed_s` | both | seconds since the process started, on a monotonic clock |
+| `wall_s` | end | the phase's own wall time, `elapsed_s` at the end less at the start |
+| `outcome` | end | `ok`, or `failed` when the phase ended in the run's refusal |
+| `sizes` | end | the counts that explain the time, by phase (below); `{}` where none |
+
+`integrate` enters, in order and each at most once: `input` (the card or
+diagram artifact read, the model loaded), `enumerate` (from a proc card;
+`subprocesses`, `diagrams`), `amplitude_probe` (each diagram set compiled
+and evaluated at the probe points the artifact banks; `diagram_sets`), `pdf`
+(proton beams), `compile` (flavour groups and one evaluator per subprocess
+or group, with the cuts; `subprocesses`, `compiled_diagrams`, `helicities`,
+`colour_flows`, and on proton beams `parts` and `flavour_groups`),
+`channels` (the maps and the integrand over its channels; `channels`),
+`alpha_survey` (the channel-weight survey; `points_per_iteration`,
+`iterations`; on fixed-energy beams and decays it also builds the
+per-diagram channel maps), `vegas` (every VEGAS iteration, the warm-up
+included; `iterations`, `points`), `configurations` (the per-configuration
+shares and channel records) and `bank` (the artifact written). The VEGAS
+iterations inside `vegas` are the `progress` objects of the `vegas` stage.
+`--check` ends after `channels`. `generate` enters `input`, `pdf` and
+`generate` (`channels`, `events_written`), the last resolved further by its
+`compile`, `weight_scan` and `unweight` progress stages.
+
+Without `--output-ldjson` the same records are log events: the start at
+`debug`, the end at `info` as `phase vegas: 12.345 s (iterations 3, points
+30000)`. `--log-file` records both.
+
+### Where a run is
+
+Two sets of extra fields in a `progress` object's `fields` say where in the run
+the record is. They are new fields under `schema_version` 1: no existing field
+changes meaning, and the order of the records is unchanged.
+
+**The phase.** Every `progress` object carries `phase`, the 1-based count of
+phases the run has entered so far, in the order of the `phase` records above
+(so the `phase` of a `progress` object is a number, where a `phase` object's
+`phase` is a name). It never decreases. From the moment the run knows which
+phases it executes, each object also carries `phases`, that count:
+
+| run | `phases` |
+|---|---|
+| `integrate`, proton beams, from a proc card | 10: `input`, `enumerate`, `amplitude_probe`, `pdf`, `compile`, `channels`, `alpha_survey`, `vegas`, `configurations`, `bank` |
+| `integrate`, fixed-energy beams or a decay | 9: the same without `pdf` |
+| `integrate` from a diagram artifact | one fewer: no `enumerate` |
+| `integrate --check` | the phases up to and including `channels` |
+| `generate` | 3: `input`, `pdf`, `generate` |
+
+`generate` knows its count before it starts. `integrate` knows whether it
+reads the density set only once its run card is resolved, and a default run
+card is read off the card's own enumeration, so objects written before that
+(the `ufo_load` and `enumerate` stages) carry `phase` and no `phases`. Every
+object after the first that carries `phases` carries the same `phases`. A run that is refused, or stopped by a
+signal, ends at a phase no later than `phases`.
+
+**The group.** A card whose lines differ in final-state multiplicity or in
+outgoing masses is integrated as several groups, each over channels of its own
+(the `multiplicities` of the `result`). A stage that runs once per group
+carries, in each of its objects:
+
+| field | meaning |
+|---|---|
+| `group` | the group's position, from 1 |
+| `groups` | the number of groups |
+| `label` | the group's process tag, `@1` (several, as `@1 @2`, when lines share its final state); its leg count, `3 legs`, when another group carries the same tags |
+| `channels` | the group's channel count, once its channels are built |
+
+The stages that carry them are `alpha_survey`, whose `channels` is the group's
+and which restarts its `done` for each group, and `compile`, which compiles
+each group's subprocesses in turn: its `channels` is absent, since the channels
+are built later, and `groups` counts the card's groups before any is dropped
+for being a single particle its cuts reject, which `alpha_survey` does not
+count. A card of one group, and a fixed-energy run or a decay, reports
+`group` 1 of `groups` 1. The `vegas`, `weight_scan` and `unweight` stages
+run over the channels of all groups at once and carry no group.
+
+**A monotone position.** `phase` alone never goes backwards. Within a phase, a
+stage that runs per group is read by the pair (`group`, `done`): `group`
+never decreases, and `done` rises within a group and restarts at the next, so
+"survey iteration 3 of 6, group 2 of 4" is
+(`phase`, `group`, `done`) = (7, 2, 3), and the triple is non-decreasing in
+lexicographic order across the stream's `compile` and `alpha_survey` records.
+No overall fraction is written. `phase / phases` is a progress bar that stays
+put while a phase runs; a reader that wants one inside `alpha_survey` can use
+`(group - 1 + done / total) / groups`, which is monotone there. The `done` of
+other stages is not comparable across stages, and the `enumerate` count
+restarts for each process line.
 
 ## Parallelism
 

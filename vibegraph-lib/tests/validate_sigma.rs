@@ -2754,12 +2754,14 @@ fn probe_alpha_survey_seed_sensitivity() {
 /// measured acceptance rather than from another row's.
 ///
 /// The `samples` gate's cost is not its integration: it is the accept/reject
-/// loop, which is serial by construction (one RNG advanced trial by trial) and
-/// spends `1/efficiency` integrand evaluations per event kept. That ratio is a
-/// property of how well the channel maxima bound the weight on *this* integrand,
-/// so it is measured here — with the production `MaxRule`, whose truncation is
-/// what sets the acceptance — and the full run's wall time extrapolated from it
-/// rather than assumed from a `2 -> 2` row's efficiency.
+/// pass, which spends `1/efficiency` integrand evaluations per event kept. That
+/// ratio is a property of how well the channel maxima bound the weight on *this*
+/// integrand, so it is measured here — with the production `MaxRule`, whose
+/// truncation is what sets the acceptance — and the full run's wall time
+/// extrapolated from it rather than assumed from a `2 -> 2` row's efficiency.
+/// The pass is the shipped one, blocks of trials on the worker pool with each
+/// accepted point's momenta and labels built where it was accepted, so the
+/// time is at this host's thread count.
 ///
 /// Reported against the two thresholds a decision needs: the trials per event the
 /// `samples` gate allows before it calls a seed short, and the wall time of its
@@ -2767,10 +2769,11 @@ fn probe_alpha_survey_seed_sensitivity() {
 #[test]
 #[ignore]
 fn probe_2to6_sample_cost() {
-    use vibegraph::unweight::Unweighter;
+    use vibegraph::unweight::blocks::BlockedPass;
+    use vibegraph::unweight::{AcceptedPoint, Unweighter};
 
     /// Events generated to measure the acceptance, well short of a real sample.
-    const TRIAL_EVENTS: usize = 500;
+    const TRIAL_EVENTS: usize = 2_000;
     /// What the `samples` gate asks of each generation seed, and over how many.
     const GATE_EVENTS: usize = 20_000;
     const GATE_SEEDS: usize = 3;
@@ -2804,23 +2807,32 @@ fn probe_2to6_sample_cost() {
                 let grids_s = grids.seconds();
 
                 let scan = Stopwatch::start();
-                let mut uw = Unweighter::scan(
+                let uw = Unweighter::scan(
                     integ,
                     channels.iter().map(|c| (&c.grid, c.neval)),
                     SCAN_SEED,
                 );
                 let scan_s = scan.seconds();
 
+                let prepare = |point: &AcceptedPoint, u| {
+                    let mut momenta = Vec::new();
+                    integ.event_in_channel(point.channel, &point.u, &mut momenta);
+                    integ.select_event(&momenta, point.channel, u).is_some()
+                };
                 let gen = Stopwatch::start();
-                let mut rng = ChaCha8Rng::seed_from_u64(0x5A_4D_0001);
+                let mut pass = BlockedPass::new(
+                    uw,
+                    0x5A_4D_0001,
+                    (GATE_MAX_TRIALS_PER_EVENT * TRIAL_EVENTS) as u64,
+                );
                 let mut kept = 0usize;
                 while kept < TRIAL_EVENTS {
-                    if uw.trial(integ, &mut rng).is_some() {
-                        kept += 1;
-                    }
+                    pass.next(integ, &prepare)
+                        .expect("the pass accepts within the gate's budget");
+                    kept += 1;
                 }
                 let gen_s = gen.seconds();
-                let stats = uw.stats();
+                let stats = pass.stats();
                 let trials_per_event = stats.trials as f64 / kept as f64;
                 let per_seed_s = gen_s / kept as f64 * GATE_EVENTS as f64;
 
@@ -2828,10 +2840,12 @@ fn probe_2to6_sample_cost() {
                     "[{dir}] grids {neval}x{niter} {grids_s:6.1} s | w_max scan {scan_s:6.1} s \
                      | acceptance {:.3e} ({trials_per_event:.0} trials/event, \
                      {:.1}% of the {GATE_MAX_TRIALS_PER_EVENT}-trial budget) | \
-                     {GATE_SEEDS} x {GATE_EVENTS} events would take {:.0} s of serial \
+                     {TRIAL_EVENTS} events in {gen_s:.1} s on {} threads, so \
+                     {GATE_SEEDS} x {GATE_EVENTS} events would take {:.0} s of \
                      accept/reject on top of {:.0} s of grids and scan",
                     stats.efficiency(),
                     100.0 * trials_per_event / GATE_MAX_TRIALS_PER_EVENT as f64,
+                    rayon::current_num_threads(),
                     per_seed_s * GATE_SEEDS as f64,
                     grids_s + scan_s,
                 );

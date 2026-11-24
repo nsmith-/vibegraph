@@ -90,6 +90,32 @@ impl LorentzOp {
         }
     }
 
+    /// The spinor index pair `(row, column)` of an operator that sits on a fermion
+    /// chain, or `None`.
+    ///
+    /// A `Sigma` is here as a carrier of its pair, never as two gammas: it *is* the two
+    /// gammas already contracted, so a line spells its rank-2 slot either with two
+    /// adjacent `Gamma`s or with one `Sigma`. `C` carries a spinor pair too and is
+    /// deliberately absent: charge conjugation is not supported anywhere in the rooting,
+    /// and a chain through it has no charge-conjugation parity this crate reads.
+    pub(crate) fn spinor_pair(&self) -> Option<(isize, isize)> {
+        match self {
+            LorentzOp::Gamma { i, j, .. }
+            | LorentzOp::Sigma { i, j, .. }
+            | LorentzOp::Identity { i, j }
+            | LorentzOp::ProjM { i, j }
+            | LorentzOp::ProjP { i, j }
+            | LorentzOp::Gamma5 { i, j } => Some((*i, *j)),
+            _ => None,
+        }
+    }
+
+    /// Whether the operator acts in spinor space: one with a [`spinor_pair`](Self::spinor_pair),
+    /// or `C`.
+    fn on_spinor_chain(&self) -> bool {
+        self.spinor_pair().is_some() || matches!(self, LorentzOp::C { .. })
+    }
+
     /// Returns true if this operator involves a Lorentz index contraction with the given leg index.
     pub(crate) fn involves_vector(&self, idx: isize) -> bool {
         match self {
@@ -105,6 +131,107 @@ impl LorentzOp {
     }
 }
 
+impl LorentzStructure {
+    /// The structure's parity under charge conjugation of its fermion pair: `c` with
+    /// `C Γᵀ C⁻¹ = c Γ`, where `Γ` is the structure read as a matrix from the `bra` slot
+    /// (row) to the `ket` slot (column), legs 0-indexed. `None` when the structure is not
+    /// `±` its conjugate, or when it is not a two-fermion chain this reads: a `C`, a
+    /// chain with more than one `Gamma` or `Sigma`, or a chain written against its order.
+    ///
+    /// Term by term the chain is put in the form `Γ₀ X`, one `Gamma` or `Sigma` (or none)
+    /// with the chirality `X` to its right, `X` held as its eigenvalues `(c_L, c_R)` on the
+    /// left- and right-handed spinors (`1 = (1, 1)`, `γ⁵ = (−1, 1)`, `P_L = (1, 0)`,
+    /// `P_R = (0, 1)`). A chirality written left of a gamma moves through it as
+    /// `X γ^μ = γ^μ X̄`, which swaps `c_L` and `c_R`; `σ^{μν}` commutes with `γ⁵`.
+    /// Conjugation reverses the chain, with `CγᵀC⁻¹ = −γ`, `CσᵀC⁻¹ = −σ` and `γ⁵`, `P_χ`
+    /// unchanged, so `γ^μ X → −γ^μ X̄`, `σ^{μν} X → −σ^{μν} X` and `X → X`.
+    pub(crate) fn charge_conjugation_parity(&self, ket: usize, bra: usize) -> Option<i8> {
+        type Key = (String, String);
+        let mut original: Vec<(Key, (f64, f64))> = Vec::new();
+        let mut conjugate: Vec<(Key, (f64, f64))> = Vec::new();
+        let add = |list: &mut Vec<(Key, (f64, f64))>, key: &Key, (l, r): (f64, f64)| match list
+            .iter_mut()
+            .find(|(k, _)| k == key)
+        {
+            Some((_, v)) => {
+                v.0 += l;
+                v.1 += r;
+            }
+            None => list.push((key.clone(), (l, r))),
+        };
+        for term in &self.expr {
+            let mut others: Vec<String> = term
+                .ops
+                .iter()
+                .filter(|op| !op.on_spinor_chain())
+                .map(|op| format!("{op:?}"))
+                .collect();
+            others.sort();
+            let chain = term.spinor_chain(bra, ket)?;
+            let mut carrier: Option<(bool, String)> = None;
+            let (mut l, mut r) = (1.0, 1.0);
+            for op in &chain {
+                let (cl, cr) = match op {
+                    LorentzOp::Gamma { mu, .. } => {
+                        if carrier.is_some() {
+                            return None;
+                        }
+                        carrier = Some((false, format!("Gamma({mu})")));
+                        continue;
+                    }
+                    LorentzOp::Sigma { mu, nu, .. } => {
+                        if carrier.is_some() {
+                            return None;
+                        }
+                        carrier = Some((true, format!("Sigma({mu},{nu})")));
+                        continue;
+                    }
+                    LorentzOp::Identity { .. } => continue,
+                    LorentzOp::ProjM { .. } => (1.0, 0.0),
+                    LorentzOp::ProjP { .. } => (0.0, 1.0),
+                    LorentzOp::Gamma5 { .. } => (-1.0, 1.0),
+                    _ => return None,
+                };
+                // Left of a gamma, the chirality moves through it to the right.
+                let before_gamma =
+                    carrier.is_none() && chain.iter().any(|o| matches!(o, LorentzOp::Gamma { .. }));
+                let (cl, cr) = if before_gamma { (cr, cl) } else { (cl, cr) };
+                l *= cl;
+                r *= cr;
+            }
+            let key = (
+                others.join("*"),
+                carrier.as_ref().map(|c| c.1.clone()).unwrap_or_default(),
+            );
+            let (l, r) = (term.coeff * l, term.coeff * r);
+            add(&mut original, &key, (l, r));
+            let conj = match carrier {
+                Some((false, _)) => (-r, -l),
+                Some((true, _)) => (-l, -r),
+                None => (l, r),
+            };
+            add(&mut conjugate, &key, conj);
+        }
+        let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * (1.0 + a.abs().max(b.abs()));
+        let matches = |sign: f64| {
+            original.len() == conjugate.len()
+                && original.iter().all(|(k, (l, r))| {
+                    conjugate
+                        .iter()
+                        .find(|(kc, _)| kc == k)
+                        .is_some_and(|(_, (lc, rc))| close(*lc, sign * l) && close(*rc, sign * r))
+                })
+        };
+        if matches(1.0) {
+            Some(1)
+        } else if matches(-1.0) {
+            Some(-1)
+        } else {
+            None
+        }
+    }
+}
+
 /// A term in a Lorentz structure: `coeff * op1 * op2 * ...`
 ///
 /// The term itself is a fully connected graph of Lorentz operators
@@ -115,6 +242,30 @@ impl LorentzOp {
 pub struct LorentzTerm {
     pub(crate) coeff: f64,
     pub ops: Vec<LorentzOp>,
+}
+
+impl LorentzTerm {
+    /// The term's spinor operators in order from the `bra` slot (row) to the `ket` slot
+    /// (column), legs 0-indexed; `None` when no chain runs from one to the other or when
+    /// it leaves a spinor operator of the term off it (a `C`, a second chain).
+    fn spinor_chain(&self, bra: usize, ket: usize) -> Option<Vec<&LorentzOp>> {
+        let mut chain: Vec<&LorentzOp> = Vec::new();
+        let mut cursor = bra as isize;
+        while chain.is_empty() || cursor != ket as isize {
+            let (next, (_, j)) = self.ops.iter().find_map(|op| {
+                op.spinor_pair()
+                    .filter(|&(i, _)| i == cursor)
+                    .map(|pair| (op, pair))
+            })?;
+            cursor = j;
+            chain.push(next);
+            if chain.len() > self.ops.len() {
+                return None;
+            }
+        }
+        let on_chain = self.ops.iter().filter(|op| op.on_spinor_chain()).count();
+        (chain.len() == on_chain).then_some(chain)
+    }
 }
 
 /// A Lorentz structure expression: sum of `LorentzTerm`s.
@@ -595,6 +746,72 @@ fn pow_atom(a: Atom, k: u32) -> Result<Atom, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The charge-conjugation parity of the structures a vertex of two identical
+    /// Majorana fermions can carry: the axial current (`γ^μ γ⁵`, MSSM's `FFV4`
+    /// `γ^μ(P_L − P_R)`) and the scalar and pseudoscalar are their own conjugates, the
+    /// vector current is odd (a Majorana fermion has none), and a single chirality of
+    /// the vector current, `γ^μ P_L`, is the conjugate of `−γ^μ P_R`, neither sign. Each
+    /// spelling of a chirality beside the gamma (right of it, left of it) reads alike,
+    /// and the two spellings add as `P_R γ^μ = γ^μ P_L`: `γ^μ P_L + P_R γ^μ` is one
+    /// chirality, `γ^μ P_L + P_L γ^μ` the vector current. The magnetic-moment structure
+    /// `σ^{μν} p_ν` is odd, as a Majorana fermion has no magnetic moment.
+    #[test]
+    fn charge_conjugation_parity_of_two_fermion_structures() {
+        let parity = |src: &str, spins: Vec<i32>| {
+            let expr = parse_structure(src).unwrap();
+            let spin_map = compute_spin_map(&expr, spins.len()).unwrap();
+            LorentzStructure {
+                python_name: "S".into(),
+                name: "S".into(),
+                spins,
+                structure: src.into(),
+                expr,
+                spin_map,
+            }
+            .charge_conjugation_parity(0, 1)
+        };
+        let ffv = || vec![2, 2, 3];
+        let ffs = || vec![2, 2, 1];
+        assert_eq!(parity("Gamma(3,2,1)", ffv()), Some(-1));
+        assert_eq!(
+            parity(
+                "Gamma(3,2,-1)*ProjM(-1,1) - Gamma(3,2,-1)*ProjP(-1,1)",
+                ffv()
+            ),
+            Some(1)
+        );
+        assert_eq!(parity("Gamma(3,2,-1)*Gamma5(-1,1)", ffv()), Some(1));
+        assert_eq!(parity("Gamma5(2,-1)*Gamma(3,-1,1)", ffv()), Some(1));
+        assert_eq!(
+            parity(
+                "ProjP(2,-1)*Gamma(3,-1,1) - ProjM(2,-1)*Gamma(3,-1,1)",
+                ffv()
+            ),
+            Some(1)
+        );
+        assert_eq!(parity("Gamma(3,2,-1)*ProjM(-1,1)", ffv()), None);
+        assert_eq!(parity("Identity(2,1)", ffs()), Some(1));
+        assert_eq!(parity("Gamma5(2,1)", ffs()), Some(1));
+        assert_eq!(parity("ProjM(2,1)", ffs()), Some(1));
+        assert_eq!(parity("ProjM(2,1) + ProjP(2,1)", ffs()), Some(1));
+        assert_eq!(parity("C(2,1)", ffs()), None);
+        assert_eq!(parity("Sigma(3,-1,2,1)*P(-1,3)", ffv()), Some(-1));
+        assert_eq!(
+            parity(
+                "Gamma(3,2,-1)*ProjM(-1,1) + ProjP(2,-1)*Gamma(3,-1,1)",
+                ffv()
+            ),
+            None
+        );
+        assert_eq!(
+            parity(
+                "Gamma(3,2,-1)*ProjM(-1,1) + ProjM(2,-1)*Gamma(3,-1,1)",
+                ffv()
+            ),
+            Some(-1)
+        );
+    }
 
     #[test]
     fn test_parse_identity() {

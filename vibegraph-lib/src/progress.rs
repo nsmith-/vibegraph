@@ -31,6 +31,10 @@
 //! work is spread over threads counts completions rather than positions. A display
 //! shows the latest value rather than assuming the next one is larger.
 //!
+//! A stage that runs once per group of a multi-group card (see [`Group`]) also
+//! carries `group`, `groups`, `label` and, once the group's channels are built,
+//! `channels`; a record from outside any group has none of the four.
+//!
 //! Stage-specific fields ride alongside those three and are documented on the
 //! function that emits them: [`vegas_iteration`] carries the running estimate,
 //! [`unweighting`] the accept/reject counts, [`eval_rate`] the measured cost of an
@@ -43,6 +47,9 @@
 //! misspelling at one call site is a stage that silently never reports. They are
 //! cheap when nothing is listening — a disabled `TRACE` callsite is an atomic load
 //! and a branch — so a loop may call one per item.
+
+use std::cell::RefCell;
+use std::marker::PhantomData;
 
 use tracing::trace;
 
@@ -79,10 +86,81 @@ pub mod stage {
     pub const UNWEIGHT: &str = "unweight";
 }
 
-/// `done` of `total` units of `stage` finished.
+/// One group of a card whose integration is split into several: a final-state
+/// multiplicity and set of outgoing masses, each integrated over channels of
+/// its own.
+///
+/// While a [`GroupScope`] holds a group, every [`step`] on that thread carries
+/// its four fields:
+///
+/// | field | meaning |
+/// |---|---|
+/// | `group` | the group's position, from 1 |
+/// | `groups` | how many groups the card is split into |
+/// | `label` | the group's process tag (`@1`, or `@1 @2` when several lines share its final state), or its outgoing-leg count when the tags do not tell the groups apart |
+/// | `channels` | the group's channel count; absent while the group's channels are not yet built |
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Group {
+    pub(crate) index: u64,
+    pub(crate) count: u64,
+    pub(crate) label: String,
+    pub(crate) channels: Option<u64>,
+}
+
+thread_local! {
+    static GROUP: RefCell<Option<Group>> = const { RefCell::new(None) };
+}
+
+/// Run `read` on the group this thread is in, if any.
+fn in_group<T>(read: impl FnOnce(&Group) -> T) -> Option<T> {
+    GROUP
+        .try_with(|g| g.borrow().as_ref().map(read))
+        .ok()
+        .flatten()
+}
+
+/// The group a thread's progress is reported under, until dropped; the group it
+/// replaced is restored then. It belongs to the thread that entered it, so the
+/// work a stage hands to other threads reports outside any group.
+#[must_use = "the group applies until the scope is dropped"]
+pub struct GroupScope {
+    previous: Option<Group>,
+    not_send: PhantomData<*const ()>,
+}
+
+/// Report this thread's progress under `group` until the returned scope drops.
+pub fn enter_group(group: Group) -> GroupScope {
+    let previous = GROUP
+        .try_with(|g| g.borrow_mut().replace(group))
+        .ok()
+        .flatten();
+    GroupScope {
+        previous,
+        not_send: PhantomData,
+    }
+}
+
+impl Drop for GroupScope {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        let _ = GROUP.try_with(|g| *g.borrow_mut() = previous);
+    }
+}
+
+/// `done` of `total` units of `stage` finished, under the thread's [`Group`]
+/// when it is in one.
 #[inline]
 pub fn step(stage: &'static str, done: u64, total: Option<u64>) {
-    trace!(target: TARGET, stage, done, total);
+    trace!(
+        target: TARGET,
+        stage,
+        done,
+        total,
+        group = in_group(|g| g.index),
+        groups = in_group(|g| g.count),
+        label = in_group(|g| g.label.clone()).as_deref(),
+        channels = in_group(|g| g.channels).flatten()
+    );
 }
 
 /// One step through a process line's candidate assignments: `done` of `total`
@@ -175,6 +253,67 @@ mod tests {
 
     fn captured(emit: impl FnOnce()) -> Vec<Captured> {
         capture(emit).1
+    }
+
+    /// A group scope puts its four fields on every step taken inside it, a
+    /// scope inside a scope shadows it until it drops, and nothing is left
+    /// behind after the outermost drops.
+    #[test]
+    fn a_step_in_a_group_carries_the_groups_fields() {
+        use super::{enter_group, Group};
+        let group = |index, label: &str, channels| Group {
+            index,
+            count: 2,
+            label: label.to_string(),
+            channels,
+        };
+        let events = captured(|| {
+            super::step(stage::COMPILE, 0, Some(1));
+            let outer = enter_group(group(1, "@1", None));
+            super::step(stage::COMPILE, 1, Some(1));
+            {
+                let _inner = enter_group(group(2, "@2", Some(9)));
+                super::step(stage::ALPHA_SURVEY, 1, Some(6));
+            }
+            super::step(stage::COMPILE, 1, Some(1));
+            drop(outer);
+            super::step(stage::COMPILE, 1, Some(1));
+        });
+        assert_eq!(events.len(), 5);
+        fn key(e: &Captured) -> [Option<&str>; 4] {
+            [
+                e.field("group"),
+                e.field("groups"),
+                e.field("label"),
+                e.field("channels"),
+            ]
+        }
+        assert_eq!(key(&events[0]), [None; 4]);
+        assert_eq!(key(&events[1]), [Some("1"), Some("2"), Some("@1"), None]);
+        assert_eq!(
+            key(&events[2]),
+            [Some("2"), Some("2"), Some("@2"), Some("9")]
+        );
+        assert_eq!(key(&events[3]), key(&events[1]));
+        assert_eq!(key(&events[4]), [None; 4]);
+        assert_eq!(events[4].fields.len(), 3);
+    }
+
+    /// The group belongs to the thread that entered it.
+    #[test]
+    fn a_group_does_not_follow_work_onto_other_threads() {
+        use super::{enter_group, Group};
+        let _scope = enter_group(Group {
+            index: 1,
+            count: 1,
+            label: "@1".to_string(),
+            channels: None,
+        });
+        assert_eq!(super::in_group(|g| g.index), Some(1));
+        let elsewhere = std::thread::spawn(|| super::in_group(|g| g.index))
+            .join()
+            .unwrap();
+        assert_eq!(elsewhere, None);
     }
 
     /// The target and the level are the whole reason this stream can be consumed

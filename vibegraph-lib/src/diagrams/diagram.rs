@@ -53,7 +53,10 @@ pub struct RaySlot(pub(crate) usize);
 /// An external leg, resolved and crossing-baked.
 ///
 /// `particle`/`charge` are as seen *from the attached vertex* (feyngraph's all-incoming
-/// convention: an outgoing leg carries its crossed antiparticle here). `incoming` is the
+/// convention: an outgoing leg carries its crossed antiparticle here). `charge` is the
+/// one the leg's fermion line is read with: its PDG sign, except on a line whose two
+/// ends share a sign, where [`Diagram::orient_fermion_lines`] gives one end the other
+/// (a Majorana fermion's PDG sign says nothing about its line). `incoming` is the
 /// momentum-flow direction — equivalently `leg_idx.0 < n_in`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Leg {
@@ -289,26 +292,39 @@ pub enum ConvertError {
         particle: String,
         propagator: String,
     },
-    /// A self-conjugate (Majorana) fermion is on a line of the diagram. Its charge
-    /// fixes no direction for the line, which needs charge-conjugated wavefunctions
-    /// and propagators to evaluate.
+    /// A self-conjugate (Majorana) fermion is a leg of a vertex with more than two
+    /// fermion legs. Such a structure has no single charge-conjugated form; MadGraph
+    /// refuses it too.
     #[error(
-        "particle '{particle}' is a Majorana fermion (its own antiparticle) and is \
-         {role} here; Majorana fermion flow needs charge conjugation, which this \
-         evaluator does not implement"
+        "particle '{particle}' is a Majorana fermion (its own antiparticle) on the \
+         four-fermion vertex '{vertex}'; a four-fermion structure has no single \
+         charge-conjugated form, and MadGraph refuses it too"
     )]
-    MajoranaFermion {
+    MajoranaFermion { particle: String, vertex: String },
+    /// A vertex joins two of the same Majorana fermion with a Lorentz structure that
+    /// is not its own charge conjugate (`C Γᵀ C⁻¹ ≠ Γ`, a bare `γ^μ` among them). Either
+    /// end of such a pair can be the one the line enters by, and the two readings
+    /// differ, so the vertex has no value independent of the fermion flow: the field
+    /// theory's vertex is the symmetric part, and MadGraph reads `Γ` along whatever flow
+    /// its diagram generation happens to choose.
+    #[error(
+        "vertex '{vertex}' joins two '{particle}' Majorana fermions with the Lorentz \
+         structure '{structure}', which is not its own charge conjugate; its value would \
+         depend on the direction the fermion line is read in"
+    )]
+    MajoranaPairNotSelfConjugate {
+        vertex: String,
         particle: String,
-        /// `"an external leg"` or `"an internal propagator"`.
-        role: &'static str,
+        structure: String,
     },
-    /// A vertex pairs two particles, or two antiparticles, on one fermion line (its
-    /// particles read all-incoming): it changes fermion number by two, and the line
-    /// through it has no consistent fermion-number arrow.
+    /// A vertex of more than two fermion legs pairs two particles, or two
+    /// antiparticles, on one fermion line (its particles read all-incoming): it changes
+    /// fermion number by two, and a four-fermion structure has no single
+    /// charge-conjugated form.
     #[error(
         "vertex '{vertex}' joins '{first}' and '{second}' on one fermion line as two \
-         incoming {kind}; a fermion-number-violating vertex needs charge conjugation, \
-         which this evaluator does not implement"
+         incoming {kind}; a fermion-number-violating four-fermion vertex has no single \
+         charge-conjugated form, and MadGraph refuses it too"
     )]
     FermionNumberViolation {
         vertex: String,
@@ -403,6 +419,7 @@ impl Diagram {
             n_in,
             provenance: Provenance::default(),
         };
+        diagram.orient_fermion_lines(model);
         diagram.sign = diagram.fermion_pairing_sign(model) * diagram.fermion_line_sign(model);
         Ok(diagram)
     }
@@ -579,56 +596,140 @@ impl Diagram {
         lines
     }
 
-    /// Refuse a diagram whose fermion lines have no fermion-number arrow.
+    /// Choose a fermion flow for every line whose two end legs carry the same charge,
+    /// by giving one end the opposite [`Leg::charge`].
     ///
-    /// Two things leave a line without one: a Majorana fermion on it (its PDG code is
-    /// positive whichever way the line runs), and a vertex whose fermion pairing joins two
-    /// particles or two antiparticles (the arrow reverses there). Without either, fermion
-    /// number flows through every vertex of every line, so its two end legs are one
-    /// particle and one antiparticle.
+    /// A line with a Majorana fermion on it, or through a vertex whose fermion pairing
+    /// joins two particles or two antiparticles, has no fermion-number arrow: its ends
+    /// can be two particles (both read all-incoming), and a Majorana end has whichever
+    /// charge its PDG sign says. The evaluator reads a line along a flow from a ket end
+    /// to a bra end, so the ends need opposite charges, and either choice is a valid
+    /// flow: the amplitude does not depend on it (Denner, Eck, Hahn and Küblbeck,
+    /// Nucl. Phys. B387 (1992) 467), the spinor of the flipped end being the charge
+    /// conjugate of its physical one (`v̄` for an incoming particle). The Majorana end
+    /// is flipped when only one end is Majorana, otherwise the end of higher index.
     ///
-    /// Particle and antiparticle are meant all-incoming throughout, by PDG sign: an
-    /// interaction's slots, [`Leg::charge`] and the debug assertion below all read a
-    /// final-state fermion as its crossed antiparticle. The evaluator flips such a leg
-    /// back (`helas::eval::root_diagram::external_leg` types a final-state leg of a line
-    /// to the initial state by its physical particle), so one particle end and one
-    /// antiparticle end here is what gives it the one ket and one bra every bilinear needs.
-    pub(crate) fn check_fermion_flow(&self, model: &UFOModel) -> Result<(), ConvertError> {
-        let majorana = |pid: ParticleId| {
-            let p = model.particle(pid);
-            (p.spin.abs() == 2 && p.is_self_conjugate).then(|| p.name.clone())
+    /// A line whose ends already carry opposite charges keeps them, so every line of a
+    /// fermion-number-conserving diagram is left as diagram enumeration bound it.
+    fn orient_fermion_lines(&mut self, model: &UFOModel) {
+        for line in self.fermion_lines(model) {
+            let [a, b] = line.legs;
+            if self.leg(a).charge != self.leg(b).charge {
+                continue;
+            }
+            let majorana = |l: LegIdx| model.particle(self.leg(l).particle).is_majorana();
+            let flip = if majorana(a) && !majorana(b) { a } else { b };
+            self.legs[flip.0].charge = self.legs[flip.0].charge.anti();
+        }
+    }
+
+    /// A one-line description of the diagram's fermion lines, for diagnosis: per line
+    /// its end legs with the charge each is read with (`+` particle, `-` antiparticle,
+    /// all-incoming) and the vertices it passes through, then the internal
+    /// propagators' particles.
+    pub fn fermion_flow_summary(&self, model: &UFOModel) -> String {
+        let sign = |l: LegIdx| match self.leg(l).charge {
+            Charge::Particle => '+',
+            Charge::Antiparticle => '-',
         };
-        let legs = self.legs.iter().map(|l| (l.particle, "an external leg"));
-        let props = self
+        let lines: Vec<String> = self
+            .fermion_lines(model)
+            .iter()
+            .map(|line| {
+                let [a, b] = line.legs;
+                let vertices: Vec<&str> = line
+                    .vertices
+                    .iter()
+                    .map(|&v| self.vertex(v).interaction_name(model))
+                    .collect();
+                format!(
+                    "{}{}~{}{} [{}]",
+                    a.0,
+                    sign(a),
+                    b.0,
+                    sign(b),
+                    vertices.join(" ")
+                )
+            })
+            .collect();
+        let props: Vec<&str> = self
             .props
             .iter()
-            .map(|p| (p.particle, "an internal propagator"));
-        for (pid, role) in legs.chain(props) {
-            if let Some(particle) = majorana(pid) {
-                return Err(ConvertError::MajoranaFermion { particle, role });
+            .map(|p| model.particle(p.particle).name.as_str())
+            .collect();
+        format!("lines {} props [{}]", lines.join(", "), props.join(" "))
+    }
+
+    /// Whether the diagram has a line with no fermion-number arrow: a Majorana fermion
+    /// on a leg or propagator, or a vertex pairing two particles or two antiparticles.
+    pub(crate) fn violates_fermion_flow(&self, model: &UFOModel) -> bool {
+        let majorana = |pid: ParticleId| model.particle(pid).is_majorana();
+        self.legs.iter().any(|l| majorana(l.particle))
+            || self.props.iter().any(|p| majorana(p.particle))
+            || self
+                .vertices
+                .iter()
+                .any(|v| fermion_number_violating_pair(model, v).is_some())
+    }
+
+    /// Refuse a diagram with a Majorana fermion or a fermion-number-violating pairing
+    /// at a vertex of more than two fermion legs.
+    ///
+    /// MadGraph's ALOHA refuses the same ("Unable to deal with 4(or more) point
+    /// interactions in presence of majorana particle/flow violation",
+    /// `aloha/create_aloha.py`, `apply_conjugation`): a four-fermion structure has no
+    /// single charge-conjugated form. Every other diagram has its lines oriented by
+    /// [`orient_fermion_lines`](Self::orient_fermion_lines), so each line has a particle
+    /// end and an antiparticle end, which gives it the one ket and one bra every
+    /// bilinear needs.
+    pub(crate) fn check_fermion_flow(&self, model: &UFOModel) -> Result<(), ConvertError> {
+        for vertex in &self.vertices {
+            let def = model.vertex_def(vertex.interaction);
+            let fermions = def
+                .particles
+                .iter()
+                .filter(|&&p| model.particle(p).spin.abs() == 2)
+                .count();
+            if fermions <= 2 {
+                continue;
+            }
+            if let Some(&pid) = def
+                .particles
+                .iter()
+                .find(|&&p| model.particle(p).is_majorana())
+            {
+                return Err(ConvertError::MajoranaFermion {
+                    particle: model.particle(pid).name.clone(),
+                    vertex: def.name.clone(),
+                });
+            }
+            if let Some((first, second, kind)) = fermion_number_violating_pair(model, vertex) {
+                return Err(ConvertError::FermionNumberViolation {
+                    vertex: def.name.clone(),
+                    first,
+                    second,
+                    kind,
+                });
             }
         }
         for vertex in &self.vertices {
             let def = model.vertex_def(vertex.interaction);
             let group =
                 crate::ufo::topo::flow_groups(def, &model.lorentz).swap_remove(vertex.flow_group);
-            for (a, &pa) in def.particles.iter().enumerate() {
-                let b = group.partner(a);
-                if b <= a || model.particle(pa).spin.abs() != 2 {
+            for &(ket, bra) in &group.flow {
+                let particle = model.particle(def.particles[ket]);
+                if def.particles[ket] != def.particles[bra] || !particle.is_self_conjugate {
                     continue;
                 }
-                let (first, second) = (model.particle(pa), model.particle(def.particles[b]));
-                if (first.pdg_code > 0) == (second.pdg_code > 0) {
-                    return Err(ConvertError::FermionNumberViolation {
-                        vertex: def.name.clone(),
-                        first: first.name.clone(),
-                        second: second.name.clone(),
-                        kind: if first.pdg_code > 0 {
-                            "particles"
-                        } else {
-                            "antiparticles"
-                        },
-                    });
+                for &l in &group.lorentz {
+                    let structure = model.lorentz_struct(def.lorentz[l]);
+                    if structure.charge_conjugation_parity(ket, bra) != Some(1) {
+                        return Err(ConvertError::MajoranaPairNotSelfConjugate {
+                            vertex: def.name.clone(),
+                            particle: particle.name.clone(),
+                            structure: structure.name.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -636,8 +737,7 @@ impl Diagram {
             self.fermion_lines(model)
                 .iter()
                 .all(|line| self.leg(line.legs[0]).charge != self.leg(line.legs[1]).charge),
-            "a diagram with no Majorana fermion and no fermion-number-violating vertex has \
-             a fermion line whose two ends are both particles or both antiparticles"
+            "every fermion line is oriented from a particle end to an antiparticle end"
         );
         Ok(())
     }
@@ -698,6 +798,18 @@ impl Diagram {
     /// t-channel's two mixed ones; `t t~ b b~`'s (t t~)(b b~) pairing against the
     /// (t b~)(b t~) one a W joins). MadGraph's amplitudes are invariant under the
     /// relabelling, and agree with this order on both.
+    ///
+    /// Read against the spinor order of each line, ket end first, this order swaps
+    /// the pair on exactly the lines with an incoming end bound as a bra (an
+    /// initial-state line, or a mixed one entering as an antiparticle): its parity is
+    /// the ket-first parity, MadGraph's fermion factor (`calculate_fermionfactor` in
+    /// `madgraph/core/helas_objects.py`), times `−1` per incoming leg read as an
+    /// antiparticle. For a process whose lines keep fermion number that count is the
+    /// same in every diagram. A line oriented by
+    /// [`orient_fermion_lines`](Self::orient_fermion_lines) can bind an incoming leg
+    /// either way from one diagram to the next, so each incoming leg read with the
+    /// opposite of its PDG charge (a Majorana fermion's being a particle's) takes one
+    /// more `−1`, which puts every diagram back on the PDG count.
     pub(crate) fn fermion_pairing_sign(&self, model: &UFOModel) -> i8 {
         // `Leg::charge` is all-incoming: a final-state leg carries its antiparticle.
         let physical_antiparticle =
@@ -720,7 +832,17 @@ impl Diagram {
             .flat_map(|i| (i + 1..order.len()).map(move |j| (i, j)))
             .filter(|&(i, j)| order[i] > order[j])
             .count();
-        if inversions % 2 == 0 {
+        let reoriented = self
+            .legs
+            .iter()
+            .filter(|leg| {
+                let pdg_antiparticle = model.particle(leg.particle).pdg_code < 0;
+                leg.incoming
+                    && leg.spin.abs() == 2
+                    && pdg_antiparticle != (leg.charge == Charge::Antiparticle)
+            })
+            .count();
+        if (inversions + reoriented) % 2 == 0 {
             1
         } else {
             -1
@@ -862,6 +984,33 @@ impl Diagram {
         }
         unreachable!("every external leg attaches to a vertex")
     }
+}
+
+/// The first pair of a vertex's fermion pairing that joins two particles or two
+/// antiparticles (its particles read all-incoming, by PDG sign): the two particle
+/// names and `"particles"` or `"antiparticles"`. A self-conjugate fermion is neither.
+fn fermion_number_violating_pair(
+    model: &UFOModel,
+    vertex: &Vertex,
+) -> Option<(String, String, &'static str)> {
+    let def = model.vertex_def(vertex.interaction);
+    let group = crate::ufo::topo::flow_groups(def, &model.lorentz).swap_remove(vertex.flow_group);
+    for (a, &pa) in def.particles.iter().enumerate() {
+        let b = group.partner(a);
+        let (first, second) = (model.particle(pa), model.particle(def.particles[b]));
+        if b <= a || first.spin.abs() != 2 || first.is_self_conjugate || second.is_self_conjugate {
+            continue;
+        }
+        if (first.pdg_code > 0) == (second.pdg_code > 0) {
+            let kind = if first.pdg_code > 0 {
+                "particles"
+            } else {
+                "antiparticles"
+            };
+            return Some((first.name.clone(), second.name.clone(), kind));
+        }
+    }
+    None
 }
 
 /// The antiparticle of `particle` (itself when self-conjugate).

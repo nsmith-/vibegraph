@@ -44,11 +44,13 @@ use crate::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, SupportedCard,
 };
 use crate::hadronic::{combine_channels, ChannelIntegration};
+use crate::helas::eval::AmplitudeEvaluator;
 use crate::onshell::{group_vetoes, OnShellVeto};
 use crate::phasespace::channel::AlphaAdaptation;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
+use crate::progress::{self, Group};
 use crate::proton::{
-    derive_flavor_groups, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
+    derive_flavor_groups_with, final_masses_against, process_shape, FlavorGroups, PointAnatomy,
     ProtonError, ProtonEvent, ProtonIntegrand, SampledPointFault,
 };
 use crate::runcard::RunCard;
@@ -60,7 +62,7 @@ use crate::vegas::{GridRule, IterationCombination, VegasResult};
 /// Split a proc card's enumeration by final-state multiplicity, in increasing
 /// order of outgoing legs, each part keeping the enumeration's own order.
 ///
-/// Empty sets are dropped, as [`derive_flavor_groups`]
+/// Empty sets are dropped, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
 /// drops them; an enumeration with no diagram at all comes back whole, as one
 /// part, for that function to refuse by name.
 ///
@@ -68,17 +70,28 @@ use crate::vegas::{GridRule, IterationCombination, VegasResult};
 /// accepts it, and warned about: the higher multiplicities then overlap the
 /// lower ones' radiation and the sum double counts it.
 pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<DiagramSet>> {
-    let mut parts: Vec<(usize, Vec<DiagramSet>)> = Vec::new();
+    split_by_multiplicity_of(sets, |s| s, card)
+}
+
+/// [`split_by_multiplicity`] over items that each carry a set, `set_of` reading
+/// it.
+fn split_by_multiplicity_of<T>(
+    sets: Vec<T>,
+    set_of: impl Fn(&T) -> &DiagramSet,
+    card: &RunCard,
+) -> Vec<Vec<T>> {
+    let mut parts: Vec<(usize, Vec<T>)> = Vec::new();
     let mut empty = Vec::new();
-    for set in sets {
+    for item in sets {
+        let set = set_of(&item);
         if set.diagrams.is_empty() {
-            empty.push(set);
+            empty.push(item);
             continue;
         }
         let n_out = set.particles_out.len();
         match parts.iter_mut().find(|(n, _)| *n == n_out) {
-            Some((_, part)) => part.push(set),
-            None => parts.push((n_out, vec![set])),
+            Some((_, part)) => part.push(item),
+            None => parts.push((n_out, vec![item])),
         }
     }
     if parts.is_empty() {
@@ -108,7 +121,7 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// A subprocess joins the first part whose leading subprocess has its incoming
 /// masses, in beam order, and its outgoing masses slot by slot once its legs are
 /// paired with the leader's by content ([`final_masses_against`]), which is the
-/// pairing [`derive_flavor_groups`] applies. So two lines listing the same final
+/// pairing [`derive_flavor_groups`](crate::proton::derive_flavor_groups) applies. So two lines listing the same final
 /// state in different orders (`p p > w+ j` and `add process p p > j w-`) share a
 /// part, while two whose massive legs sit in slots the content pairing cannot
 /// line up do not: `u u~ > ta+ vt d u~` and `u u~ > e+ ve ta- vt~` hold the same
@@ -122,19 +135,23 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// (`group_subprocs.py`, `find_process_classes`) lists every leg's mass in the
 /// process's own leg order, so such subprocesses never share a `P` directory.
 ///
-/// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`]
+/// Masses are compared exactly, with no tolerance, as [`derive_flavor_groups`](crate::proton::derive_flavor_groups)
 /// compares them: two subprocesses share a part only when every outgoing mass is
 /// the same value, which it is when the legs read equal parameters. So no part
 /// this returns is one the decomposition refuses for its masses. A name the model
 /// does not know keys as NaN, apart from every mass the model has, for the
 /// decomposition to refuse by name, and an empty part comes back whole, as one
 /// part, for the same reason.
-pub(crate) fn split_by_external_masses(
-    part: Vec<DiagramSet>,
+///
+/// The items of `part` each carry a set, which `set_of` reads, so whatever
+/// travels with a set (its evaluator) is split with it.
+pub(crate) fn split_by_external_masses<T>(
+    part: Vec<T>,
+    set_of: impl Fn(&T) -> &DiagramSet,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     card: &RunCard,
-) -> Vec<Vec<DiagramSet>> {
+) -> Vec<Vec<T>> {
     let mass = |name: &String| {
         model
             .particle_id(name)
@@ -149,17 +166,17 @@ pub(crate) fn split_by_external_masses(
     if part.is_empty() {
         return vec![part];
     }
-    let mut parts: Vec<(Vec<u64>, Vec<u64>, Vec<DiagramSet>)> = Vec::new();
-    for set in part {
-        let k_in = incoming(&set);
-        match parts
-            .iter_mut()
-            .find(|(lead_in, lead_out, p)| *lead_in == k_in && *lead_out == outgoing(&p[0], &set))
-        {
-            Some((_, _, p)) => p.push(set),
+    let mut parts: Vec<(Vec<u64>, Vec<u64>, Vec<T>)> = Vec::new();
+    for item in part {
+        let set = set_of(&item);
+        let k_in = incoming(set);
+        match parts.iter_mut().find(|(lead_in, lead_out, p)| {
+            *lead_in == k_in && *lead_out == outgoing(set_of(&p[0]), set)
+        }) {
+            Some((_, _, p)) => p.push(item),
             None => {
-                let k_out = outgoing(&set, &set);
-                parts.push((k_in, k_out, vec![set]));
+                let k_out = outgoing(set, set);
+                parts.push((k_in, k_out, vec![item]));
             }
         }
     }
@@ -206,41 +223,77 @@ pub fn multiplicity_groups_of(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
 ) -> Result<MultiplicityGroups, String> {
+    let precompiled = sets.iter().map(|_| None).collect();
+    multiplicity_groups_of_with(sets, precompiled, forbidden, model, evaluated, rc)
+}
+
+/// [`multiplicity_groups_of`], with `precompiled[k]` the evaluator of `sets[k]`
+/// where the caller compiled one already: an evaluator
+/// [`compile_class`](crate::hadronic::compile_class) built from that set under
+/// `evaluated`. A set whose outgoing legs a flavour group reorders is compiled
+/// again in its new order.
+pub fn multiplicity_groups_of_with(
+    sets: Vec<DiagramSet>,
+    precompiled: Vec<Option<AmplitudeEvaluator>>,
+    forbidden: &[i64],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+) -> Result<MultiplicityGroups, String> {
+    debug_assert_eq!(sets.len(), precompiled.len());
+    let items: Vec<(DiagramSet, Option<AmplitudeEvaluator>)> =
+        sets.into_iter().zip(precompiled).collect();
+    fn set_of(item: &(DiagramSet, Option<AmplitudeEvaluator>)) -> &DiagramSet {
+        &item.0
+    }
     let mut out = MultiplicityGroups {
         groups: Vec::new(),
         vetoes: Vec::new(),
     };
     let mut dropped_one_body: Option<String> = None;
-    for multiplicity in split_by_multiplicity(sets, rc) {
-        let parts = split_by_external_masses(multiplicity, model, evaluated, rc);
+    let mut all_parts = Vec::new();
+    for multiplicity in split_by_multiplicity_of(items, set_of, rc) {
+        let parts = split_by_external_masses(multiplicity, set_of, model, evaluated, rc);
         if parts.len() > 1 {
             tracing::info!(
                 "the {}-leg final states have {} different sets of external masses; each is \
                  integrated over channels of its own and the cross sections are summed",
-                parts[0][0].particles_out.len(),
+                parts[0][0].0.particles_out.len(),
                 parts.len()
             );
         }
-        for part in parts {
-            let groups = match derive_flavor_groups(part, model, evaluated, rc) {
-                Ok(groups) => groups,
-                Err(ProtonError::OneBodyCutToZero { process }) => {
-                    tracing::warn!(
-                        "{process} and the other single-particle final states of its phase \
-                         space contribute nothing: the outgoing particle has zero transverse \
-                         momentum and the run card's pT minimum on it rejects every such \
-                         point, as it does in MadGraph; the part is left out of the sum"
-                    );
-                    dropped_one_body.get_or_insert(process);
-                    continue;
-                }
-                Err(e) => return Err(format!("failed to decompose into flavour groups: {e}")),
-            };
-            let vetoes =
-                group_vetoes(&groups, forbidden, evaluated, rc).map_err(|e| e.to_string())?;
-            out.groups.push(groups);
-            out.vetoes.push(vetoes);
-        }
+        all_parts.extend(parts);
+    }
+    let numbered = numbered_groups(
+        &all_parts
+            .iter()
+            .map(|part| {
+                (
+                    set_process_ids(part.iter().map(|(s, _)| s)),
+                    part[0].0.particles_out.len(),
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    for (part, group) in all_parts.into_iter().zip(numbered) {
+        let _group = progress::enter_group(group);
+        let groups = match derive_flavor_groups_with(part, model, evaluated, rc) {
+            Ok(groups) => groups,
+            Err(ProtonError::OneBodyCutToZero { process }) => {
+                tracing::warn!(
+                    "{process} and the other single-particle final states of its phase \
+                     space contribute nothing: the outgoing particle has zero transverse \
+                     momentum and the run card's pT minimum on it rejects every such \
+                     point, as it does in MadGraph; the part is left out of the sum"
+                );
+                dropped_one_body.get_or_insert(process);
+                continue;
+            }
+            Err(e) => return Err(format!("failed to decompose into flavour groups: {e}")),
+        };
+        let vetoes = group_vetoes(&groups, forbidden, evaluated, rc).map_err(|e| e.to_string())?;
+        out.groups.push(groups);
+        out.vetoes.push(vetoes);
     }
     if let (true, Some(process)) = (out.groups.is_empty(), dropped_one_body) {
         return Err(format!(
@@ -250,6 +303,66 @@ pub fn multiplicity_groups_of(
         ));
     }
     Ok(out)
+}
+
+/// The process numbers (`@N`) the diagrams of `sets` carry, each once, in
+/// increasing order.
+fn set_process_ids<'a>(sets: impl IntoIterator<Item = &'a DiagramSet>) -> Vec<u32> {
+    let mut ids: Vec<u32> = sets
+        .into_iter()
+        .flat_map(|s| s.diagrams.iter().map(|d| d.provenance.process))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// What each group of a card is called in progress reports, given each group's
+/// process numbers and outgoing-leg count: its tags (`@1`, or `@1 @2`), or its
+/// leg count (`3 legs`) when another group carries the same tags and they do
+/// not tell the two apart.
+fn group_labels(groups: &[(Vec<u32>, usize)]) -> Vec<String> {
+    groups
+        .iter()
+        .map(|(ids, legs)| {
+            let tagged = !ids.is_empty() && groups.iter().filter(|(o, _)| o == ids).count() == 1;
+            if tagged {
+                ids.iter()
+                    .map(|id| format!("@{id}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                format!("{legs} leg{}", if *legs == 1 { "" } else { "s" })
+            }
+        })
+        .collect()
+}
+
+/// A card's groups, given each one's process numbers and outgoing-leg count:
+/// numbered from 1 in that order, labelled by [`group_labels`], and with no
+/// channel count yet.
+fn numbered_groups(keys: &[(Vec<u32>, usize)]) -> Vec<Group> {
+    let count = keys.len() as u64;
+    group_labels(keys)
+        .into_iter()
+        .zip(1..)
+        .map(|(label, index)| Group {
+            index,
+            count,
+            label,
+            channels: None,
+        })
+        .collect()
+}
+
+/// The one group of a card that is not split: `sets` as a single group, with
+/// `channels` once they are known.
+pub fn sole_group(sets: &[DiagramSet], channels: Option<usize>) -> Group {
+    let legs = sets.first().map_or(0, |s| s.particles_out.len());
+    Group {
+        channels: channels.map(|n| n as u64),
+        ..numbered_groups(&[(set_process_ids(sets), legs)]).remove(0)
+    }
 }
 
 /// The maps every part is built under: `options` as given for a card of one
@@ -720,10 +833,24 @@ impl<'a> MultiplicitySum<'a> {
         n_iter: usize,
         damping: f64,
     ) -> Vec<AlphaAdaptation<f64>> {
+        let numbered = numbered_groups(
+            &self
+                .parts
+                .iter()
+                .map(|p| (p.groups().process_ids(), final_state_count(p)))
+                .collect::<Vec<_>>(),
+        );
         let adaptations: Vec<AlphaAdaptation<f64>> = self
             .parts
             .iter_mut()
-            .map(|p| p.adapt_alphas(seed, n_survey, n_iter, damping))
+            .zip(numbered)
+            .map(|(p, group)| {
+                let _group = progress::enter_group(Group {
+                    channels: Some(p.channel_count() as u64),
+                    ..group
+                });
+                p.adapt_alphas(seed, n_survey, n_iter, damping)
+            })
             .collect();
         if self.parts.len() > 1 {
             let sd: Vec<f64> = adaptations
@@ -916,6 +1043,22 @@ fn normalised_or_uniform(x: &[f64]) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
+    /// Groups with distinct tags are named by them; groups whose tags
+    /// coincide fall back to their leg counts, so the names tell the groups
+    /// apart wherever the tags can.
+    #[test]
+    fn group_labels_are_tags_unless_the_tags_repeat() {
+        assert_eq!(
+            group_labels(&[(vec![1], 2), (vec![2], 3), (vec![3, 4], 4)]),
+            ["@1", "@2", "@3 @4"]
+        );
+        assert_eq!(
+            group_labels(&[(vec![1], 2), (vec![1], 3)]),
+            ["2 legs", "3 legs"]
+        );
+        assert_eq!(group_labels(&[(vec![], 1)]), ["1 leg"]);
+    }
+
     use super::*;
     use crate::budget::StopSignal;
     use crate::diagrams::{
@@ -1329,7 +1472,7 @@ mod tests {
         assert_eq!(multiplicities.len(), 1, "every final state is four legs");
         let whole = multiplicities.into_iter().next().expect("one multiplicity");
 
-        let parts = split_by_external_masses(whole.clone(), &model, &evaluated, &card());
+        let parts = split_by_external_masses(whole.clone(), |s| s, &model, &evaluated, &card());
         let split: Vec<Vec<String>> = parts.iter().map(|p| labels(p)).collect();
         eprintln!(
             "parts: {:?}",

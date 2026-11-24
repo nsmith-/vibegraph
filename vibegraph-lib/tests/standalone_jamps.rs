@@ -128,6 +128,25 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("ee_to_ttxh_identity", &[3, 4, 1, 2, 0]),
     ("ll_to_qqxs_toy_yukawa", TOY_YUKAWA_GRAPHS),
     ("ll_to_ss_toy_dscalar", &[0, 1, 2, 3]),
+    ("ll_to_ntnt_toy_majorana", &[0, 1, 2]),
+    ("ll_to_scscx_toy_majorana", &[0]),
+    ("scscx_to_ntnt_toy_majorana", &[0, 1]),
+    ("ntl_to_ntl_toy_majorana", &[0, 1, 2]),
+    ("ntnt_to_llx_toy_majorana", &[0, 1, 2]),
+    (
+        "ll_to_ntntvt_toy_majorana",
+        &[1, 0, 3, 2, 5, 4, 8, 7, 6, 9, 10, 11],
+    ),
+    ("ab_to_ab_toy_fnv", &[0, 1]),
+    ("ab_to_dqvt_toy_fnv", &[0, 1]),
+    ("dqxvt_to_abx_toy_fnv", &[0, 1]),
+    ("ee_to_n1n2_mssm", &[0, 1, 2, 3, 4]),
+    ("uux_to_n1n1_mssm", &[0, 1, 2, 3, 4]),
+    ("udx_to_x1pn1_mssm", &[0, 1, 2]),
+    ("en1_to_en1_mssm", &[0, 1, 2, 3, 4]),
+    ("ttx_to_hphm_mssm", &[0, 1, 2, 3, 4]),
+    ("ee_to_n1n3_mssm", &[0, 1, 2, 3, 4]),
+    ("x1px1m_to_wpwm_mssm", &[0, 1, 2, 3, 4, 5, 6, 7]),
     ("sl_to_sl_toy_dscalar", &[0, 1, 2, 3]),
     ("ttx_to_hh_chbox", TTX_TO_HH_GRAPHS),
     ("ht_to_ht_chbox", HT_TO_HT_GRAPHS),
@@ -395,7 +414,8 @@ impl GraphLevel {
 
 /// The model a table was computed in: the interned SM, the model and restrict card
 /// of the manifest row it names, or (`"ufo"`) the committed model directory and
-/// restrict card it records itself, for a model card no manifest row carries.
+/// restrict card it records itself, for a model card no manifest row carries (no
+/// card where it records `null`: every parameter at the model's default).
 fn table_model(key: &str, table: &serde_json::Value) -> Arc<UFOModel> {
     match table["model"].as_str().unwrap() {
         "sm" => sm_model(),
@@ -403,8 +423,8 @@ fn table_model(key: &str, table: &serde_json::Value) -> Arc<UFOModel> {
             let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
             let ufo = &table["ufo"];
             let dir = repo.join(ufo["dir"].as_str().unwrap());
-            let card = repo.join(ufo["restrict_card"].as_str().unwrap());
-            UFOModel::load(&dir, Some(&card))
+            let card = ufo["restrict_card"].as_str().map(|c| repo.join(c));
+            UFOModel::load(&dir, card.as_deref())
                 .unwrap_or_else(|e| panic!("{key}: load {}: {e}", dir.display()))
         }
         row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
@@ -1445,6 +1465,130 @@ fn rounded_coupling_rows_have_tables() {
     }
 }
 
+/// Two final-state Majorana fermions of the toy model: the s-channel vector on the
+/// axial `nt nt vt` vertex, a line with two Majorana ends, beside the t- and
+/// u-channel scalar on two lines each joining a Dirac lepton to a Majorana end. The
+/// t- and u-channel graphs interfere with MadGraph's relative `−1`.
+#[test]
+fn ll_to_ntnt_toy_majorana() {
+    check("ll_to_ntnt_toy_majorana");
+}
+
+/// A Majorana fermion as the t-channel propagator only, between a lepton and its
+/// antiparticle.
+#[test]
+fn ll_to_scscx_toy_majorana() {
+    check("ll_to_scscx_toy_majorana");
+}
+
+/// Two Majorana ends joined through a Dirac propagator, on a final-state line whose
+/// two vertices each pair the lepton with the Majorana fermion.
+#[test]
+fn scscx_to_ntnt_toy_majorana() {
+    check("scscx_to_ntnt_toy_majorana");
+}
+
+/// An initial-state Majorana fermion on a line to a final-state one and on lines to
+/// a final-state lepton.
+#[test]
+fn ntl_to_ntl_toy_majorana() {
+    check("ntl_to_ntl_toy_majorana");
+}
+
+/// Two initial-state Majorana fermions annihilating.
+#[test]
+fn ntnt_to_llx_toy_majorana() {
+    check("ntnt_to_llx_toy_majorana");
+}
+
+/// The vector off the Majorana line: Majorana propagators between the axial vertex
+/// and the scalar ones, and between two axial vertices.
+#[test]
+fn ll_to_ntntvt_toy_majorana() {
+    check("ll_to_ntntvt_toy_majorana");
+}
+
+/// Fermion-number violation: two particles meeting at the diquark vertex, beside the
+/// vector exchange between their lines.
+#[test]
+fn ab_to_ab_toy_fnv() {
+    check("ab_to_ab_toy_fnv");
+}
+
+/// The diquark produced beside a vector off either incoming line: a Dirac propagator
+/// between the vector vertex and the fermion-number-violating one.
+#[test]
+fn ab_to_dqvt_toy_fnv() {
+    check("ab_to_dqvt_toy_fnv");
+}
+
+/// Two antiparticles in the final state from the same vertex.
+#[test]
+fn dqxvt_to_abx_toy_fnv() {
+    check("dqxvt_to_abx_toy_fnv");
+}
+
+/// Two different neutralinos: the chiral `n2 n1 Z` vertex on a final-state line of two
+/// Majorana ends, beside t- and u-channel selectrons on chiral scalar vertices that
+/// join a lepton to a neutralino.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn ee_to_n1n2_mssm() {
+    check("ee_to_n1n2_mssm");
+}
+
+/// Two identical neutralinos: the axial `n1 n1 Z` vertex beside t- and u-channel
+/// squarks.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn uux_to_n1n1_mssm() {
+    check("uux_to_n1n1_mssm");
+}
+
+/// A chargino and a neutralino on one line, a Dirac end and a Majorana end, through
+/// the chiral `x1 n1 W` vertex and through squarks.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn udx_to_x1pn1_mssm() {
+    check("udx_to_x1pn1_mssm");
+}
+
+/// An initial-state neutralino: its line runs from the initial to the final state
+/// through the selectron s- and u-channels and the axial Z vertex.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn en1_to_en1_mssm() {
+    check("en1_to_en1_mssm");
+}
+
+/// A neutralino of negative mass (`Mneu3 < 0` in the default card) on an external
+/// leg: its spinors read the signed mass, as MadGraph's `IXXXXX`/`OXXXXX` do.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn ee_to_n1n3_mssm() {
+    check("ee_to_n1n3_mssm");
+}
+
+/// Every neutralino as the t-channel propagator between two chiral
+/// chargino–neutralino–W vertices, the negative-mass one among them, beside the
+/// s-channel photon, Z and two neutral Higgs bosons. The two Higgs exchanges are
+/// proportional at every point (both read `s`), so their pairing is the one
+/// enumeration order gives, and the gate holds each against its own graph.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn x1px1m_to_wpwm_mssm() {
+    check("x1px1m_to_wpwm_mssm");
+}
+
+/// A Dirac control for the chiral scalar vertex `t~ b H+`, whose two chiralities carry
+/// different couplings: the bottom exchange reads the projectors of the vertex's
+/// hermitian-conjugate partner, as MadGraph does.
+#[cfg(feature = "extended-validation")]
+#[test]
+fn ttx_to_hphm_mssm() {
+    check("ttx_to_hphm_mssm");
+}
+
 /// The per-graph gate of `wpwm_to_wpwmz_cw` sees a wrong pairing where the values
 /// alone could not tell two graphs apart by shape: AMP(15) and AMP(22) are the
 /// photon and Z exchanges of one topology, exactly proportional at every point, and
@@ -1499,6 +1643,142 @@ fn wpwm_to_wpwmz_cw_sees_a_wrong_rounded_list() {
             m.worst_graph_ratio > GRAPH_RATIO_TOL && !failures.is_empty(),
             "{what}: the gate does not see it (on its own scale {:.3e})",
             m.worst_graph_ratio
+        );
+    }
+}
+
+/// Diagnosis, not a gate: for the table `VG_PROBE_KEY`, every diagram's values against
+/// every MadGraph graph's `c_k · AMP_k` over all banked entries. Prints, per diagram,
+/// its fermion-flow summary, the graph it overlaps best and the complex ratio
+/// `Σ conj(c·AMP)·ours / Σ |c·AMP|²` with the overlap `|Σ conj(c·AMP)·ours| /
+/// (‖c·AMP‖‖ours‖)`. A pure sign pattern shows as ratios `±G` at overlap 1; the
+/// per-diagram ratios are what a pairing in [`MG_GRAPH_DIAGRAMS`] and a sign rule are
+/// read from.
+///
+/// Several keys, comma-separated, are probed in turn.
+///
+/// Run: `VG_PROBE_KEY=<key> cargo test -p vibegraph-lib --test standalone_jamps
+/// probe_graph_ratios -- --ignored --nocapture`
+#[test]
+#[ignore = "diagnosis: prints per-diagram ratios against MadGraph's AMP(); needs VG_PROBE_KEY"]
+fn probe_graph_ratios() {
+    let keys = std::env::var("VG_PROBE_KEY").expect("set VG_PROBE_KEY=<table key>[,<key>…]");
+    for key in keys.split(',') {
+        if std::panic::catch_unwind(|| probe_one(key)).is_err() {
+            println!("{key}: the probe panicked");
+        }
+    }
+}
+
+fn probe_one(key: &str) {
+    let key = key.to_owned();
+    let text = std::fs::read_to_string(table_path(&key)).unwrap();
+    let table: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let model = table_model(&key, &table);
+    let card: ParamCard = table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .unwrap();
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card).unwrap();
+    let set = generate_with(table["process"].as_str().unwrap(), model.as_ref()).remove(0);
+    let coefs: Vec<f64> = table["jamp_coefficients"]
+        .as_array()
+        .expect("the table banks AMP()")
+        .iter()
+        .map(|c| c.as_f64().unwrap())
+        .collect();
+    let per_diagram: Vec<AmplitudeEvaluator> = set
+        .diagrams
+        .iter()
+        .map(|d| {
+            AmplitudeEvaluator::compile(
+                &DiagramSet {
+                    particles_in: set.particles_in.clone(),
+                    particles_out: set.particles_out.clone(),
+                    polarizations: set.polarizations.clone(),
+                    diagrams: vec![d.clone()],
+                    mirrored: set.mirrored,
+                    squared_orders: set.squared_orders.clone(),
+                },
+                model.as_ref(),
+            )
+            .unwrap()
+        })
+        .collect();
+    let bound: Vec<BoundAmplitude<f64>> = per_diagram
+        .iter()
+        .map(|ev| BoundAmplitude::<f64>::bind(ev, &evaluated))
+        .collect();
+    let helicities: Vec<Vec<i32>> = table["helicities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| {
+            h.as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_i64().unwrap() as i32)
+                .collect()
+        })
+        .collect();
+    // ours[d] and theirs[k] over every (point, helicity) entry banking AMP().
+    let mut ours: Vec<Vec<C<f64>>> = vec![Vec::new(); set.diagrams.len()];
+    let mut theirs: Vec<Vec<C<f64>>> = vec![Vec::new(); coefs.len()];
+    for point in table["points"].as_array().unwrap() {
+        let momenta: Vec<LorentzVector<f64>> = point["momenta"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| {
+                let c: Vec<f64> = k
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| x.as_f64().unwrap())
+                    .collect();
+                LorentzVector::new(c[0], c[1], c[2], c[3])
+            })
+            .collect();
+        for (hel, entry) in helicities.iter().zip(point["helicity"].as_array().unwrap()) {
+            let Some(amps) = entry["amps"].as_array() else {
+                continue;
+            };
+            for (d, b) in bound.iter().enumerate() {
+                ours[d].push(b.eval_amplitude(&momenta, hel, &mut b.scratch_space()));
+            }
+            for (k, amp) in amps.iter().enumerate() {
+                theirs[k].push(complex(amp) * coefs[k]);
+            }
+        }
+    }
+    let dot =
+        |a: &[C<f64>], b: &[C<f64>]| -> C<f64> { a.iter().zip(b).map(|(x, y)| x.conj() * y).sum() };
+    let norm = |a: &[C<f64>]| dot(a, a).re.sqrt();
+    println!(
+        "{key}: {} diagrams, {} graphs",
+        set.diagrams.len(),
+        coefs.len()
+    );
+    for (d, diagram) in set.diagrams.iter().enumerate() {
+        let (best, overlap) = (0..coefs.len())
+            .map(|k| {
+                let o = dot(&theirs[k], &ours[d]).norm() / (norm(&theirs[k]) * norm(&ours[d]));
+                (k, o)
+            })
+            .fold((0, -1.0), |acc, x| if x.1 > acc.1 { x } else { acc });
+        let ratio = dot(&theirs[best], &ours[d]) / dot(&theirs[best], &theirs[best]).re;
+        println!(
+            "  diagram {d:3} -> AMP({:3})  overlap {overlap:.12}  ratio ({:+.12}, {:+.12})  |ours| {:.3e}  {}",
+            best + 1,
+            ratio.re,
+            ratio.im,
+            norm(&ours[d]),
+            diagram.fermion_flow_summary(model.as_ref()),
         );
     }
 }

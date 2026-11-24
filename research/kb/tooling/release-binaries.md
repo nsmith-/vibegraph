@@ -74,6 +74,39 @@ becomes what `releases/latest` (the weekly acceptance run's default) returns;
 it can still be tested through the `-f tag=` dispatch, which `publish` issues
 for every tag.
 
+## The v3 asset: speed and output
+
+Measured on 2026-11-23 with the v0.2.2 assets, sha256-checked, on a 4-core
+Intel Xeon @ 2.30 GHz with every v3 flag. The runs were `generate -j 4
+--seed 7` on fixed-energy grids, and wall time includes the startup program
+build and the w_max scan:
+
+| process (500 GeV) | events | baseline wall | v3 wall | speedup |
+|---|---|---|---|---|
+| `e+ e- > u u~ g g` | 200000 | 56.9 s (3 runs) | 50.3 s (2 runs) | 1.13× |
+| `e+ e- > u u~ g g g` | 20000 | 90.9 s (3 runs) | 74.2 s (2 runs) | 1.22× |
+
+The gain grows with multiplicity, because amplitude evaluation is what the
+wider vectors speed up. Proton processes add PDF lookups and are unmeasured.
+
+**The two assets' outputs are not byte-identical.** On the same grid and
+seed, both processes gave the same events, weights and order. A few
+momentum components differed in the eleventh significant digit: 19 lines of
+200000 events, and 1 line of 20000. A last-bit difference can also flip a
+rare accept/reject decision, after which the event streams diverge. Both
+samples are valid, and bit-reproducibility across codegen targets is not a
+goal. A consumer that picks the asset per node gives up exact seed
+reproducibility across node types.
+
+The CPU flags v3 needs are LLVM's x86-64-v3 set and nothing more:
+
+- avx, avx2, bmi1, bmi2, f16c, fma, lzcnt, movbe and xsave;
+- the v2 set: cx16, lahf_lm, popcnt, sse3, sse4.1, sse4.2 and ssse3.
+
+There is no `.cargo` config, and no in-tree `target_feature` or runtime
+feature detection. Dependency runtime dispatch (`sha2` through
+`cpufeatures`) is cpuid-guarded.
+
 ## Bare executables carry their own notices
 
 Each asset is the bare executable, runnable after `chmod +x`, with no archive

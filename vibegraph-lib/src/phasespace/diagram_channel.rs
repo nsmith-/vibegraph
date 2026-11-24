@@ -93,9 +93,12 @@
 //! accepting. The bound narrows the channel's *support*, which
 //! [`Channel::density`] reports as an exact zero above the edge, so it is applied
 //! only from a scale the cuts guarantee ([`DiagramChannel::from_diagram_regulated`]);
-//! a run with no single-leg `pT` cut keeps the whole kinematic window. With the
-//! floor always on, a spine is built for every final state whose spacelike lines
-//! form a chain, cut or no cut.
+//! a run with no single-leg `pT` cut keeps the whole kinematic window. A rung
+//! whose line has a single leg on one side is then held to what that leg's own
+//! threshold proves, and keeps no bound where the leg is uncut
+//! ([`DiagramChannel::with_side_transfer_bounds`]). With the floor always on, a
+//! spine is built for every final state whose spacelike lines form a chain, cut or
+//! no cut.
 //!
 //! The weight is the exact product of the 2-body LIPS factors `R_2 = π|p*|/√s`
 //! and each invariant's draw measure `ds/dx`, so a flat Monte-Carlo average of
@@ -947,6 +950,54 @@ impl<F: Real> DiagramChannel<F> {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.t_max_cap = Some(t_max);
+            }
+        }
+        self
+    }
+
+    /// Lower each peripheral rung's transfer bound to what the cuts prove for the
+    /// line that rung draws, dropping it where they prove nothing.
+    ///
+    /// A rung's line splits the final state into the side `S` the chain has
+    /// emitted so far and the rest `R`. With massless beams, `S` carries no more
+    /// light-cone momentum than the beam it is emitted against, and any system of
+    /// invariant mass `M` and transverse momentum `pT` taking a fraction `x ≤ 1` of
+    /// it transfers `t = M² − (M² + pT²)/x ≤ −pT²`; transverse balance gives `S`
+    /// and `R` the same `pT`. So a side that is a single leg held above `pT_min`
+    /// bounds the line at `|t| ≥ pT_min²`, whichever end the chain is drawn from.
+    ///
+    /// `bound` receives a side's outgoing-leg slots as a bitmask and returns that
+    /// square for a single leg (zero for a leg with no transverse-momentum
+    /// threshold) and `None` for a composite side, which bounds nothing on its
+    /// own. Where either side is a single leg, the rung's bound becomes the
+    /// smaller of its current one and the larger proven square, and is dropped
+    /// where that is zero. A rung with two composite sides keeps its bound as a
+    /// scale, and a rung with no bound is left without one.
+    ///
+    /// The bound narrows the channel's support, so a bound the cuts do not prove
+    /// removes accepted configurations from this channel. A single uncut leg
+    /// emitted off a beam — a `b` from `g → b b̄` with no `ptb` — then reaches
+    /// transfers far below another leg's threshold, and the configurations there
+    /// fall to whichever other channels happen to cover them, as rare heavy
+    /// weights.
+    pub fn with_side_transfer_bounds(mut self, bound: &dyn Fn(u64) -> Option<F>) -> Self {
+        let full = if self.n_out >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.n_out) - 1
+        };
+        if let ChannelTopology::Spine(spine) = &mut self.topology {
+            let mut side = 0u64;
+            for rung in &mut spine.rungs {
+                side |= node_mask(&rung.emitted);
+                let proven = [bound(side), bound(full & !side)]
+                    .into_iter()
+                    .flatten()
+                    .reduce(|a, b| if b > a { b } else { a });
+                if let (Some(cap), Some(proven)) = (rung.t_max_cap, proven) {
+                    let limit = if proven < -cap { proven } else { -cap };
+                    rung.t_max_cap = (limit > F::zero()).then_some(-limit);
+                }
             }
         }
         self
@@ -4452,6 +4503,130 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A two-rung chain emitting leg 3, then legs `{0, 1}`, against leg 2, every
+    /// rung capped at the scale `t ≤ −100`: the first line has the single leg 3 on
+    /// one side and the second the single leg 2.
+    fn two_rung_chain() -> DiagramChannel<f64> {
+        DiagramChannel::<f64>::from_topology_ladder(
+            600.0,
+            [0.0, 0.0],
+            vec![0.0, 0.0, 0.0, 4.7],
+            &[(vec![3], None, 4.7), (vec![0, 1], None, 0.0)],
+            (vec![2], None),
+        )
+        .with_fiducial_t_max(-100.0)
+    }
+
+    fn rung_caps<F: Real>(ch: &DiagramChannel<F>) -> Vec<Option<F>> {
+        let ChannelTopology::Spine(spine) = &ch.topology else {
+            panic!("a ladder builds a spine");
+        };
+        spine.rungs.iter().map(|r| r.t_max_cap).collect()
+    }
+
+    /// The rung caps `with_side_transfer_bounds` leaves on [`two_rung_chain`] when
+    /// leg 3 proves `leg3` and leg 2 proves `leg2` (a composite side proves nothing).
+    fn side_bounded_caps(leg3: f64, leg2: f64) -> (Vec<Option<f64>>, String) {
+        let ch = two_rung_chain().with_side_transfer_bounds(&|slots| match slots {
+            0b1000 => Some(leg3),
+            0b0100 => Some(leg2),
+            s if s.count_ones() == 1 => Some(0.0),
+            _ => None,
+        });
+        (rung_caps(&ch), ch.map_key())
+    }
+
+    /// A line with an uncut single leg on one side and a composite on the other
+    /// loses its bound, since that leg is accepted at any `pT` and its transfer
+    /// reaches the collinear edge; a line with a cut single leg on either side
+    /// keeps the cut's square, and a bound the cuts already prove is left bit
+    /// for bit, map key included.
+    #[test]
+    fn a_side_bound_drops_only_what_no_single_leg_cut_proves() {
+        let (uncut, _) = side_bounded_caps(0.0, 100.0);
+        assert_eq!(uncut, vec![None, Some(-100.0)]);
+
+        let (lower, _) = side_bounded_caps(25.0, 100.0);
+        assert_eq!(lower, vec![Some(-25.0), Some(-100.0)]);
+
+        let (both, key) = side_bounded_caps(100.0, 100.0);
+        assert_eq!(both, vec![Some(-100.0), Some(-100.0)]);
+        assert_eq!(key, two_rung_chain().map_key());
+
+        // A higher threshold than the scale never raises the bound.
+        let (higher, _) = side_bounded_caps(400.0, 400.0);
+        assert_eq!(higher, vec![Some(-100.0), Some(-100.0)]);
+    }
+
+    /// The second line's single leg 2 sits across from the legs `{3, 0, 1}` the
+    /// chain has emitted by then, so its bound is read off the far side of the
+    /// line and the emitted side is the union of every rung so far.
+    #[test]
+    fn the_second_rung_reads_the_single_leg_across_its_line() {
+        let (cut, _) = side_bounded_caps(100.0, 25.0);
+        assert_eq!(cut, vec![Some(-100.0), Some(-25.0)]);
+
+        let (uncut, _) = side_bounded_caps(100.0, 0.0);
+        assert_eq!(uncut, vec![Some(-100.0), None]);
+
+        let (neither, _) = side_bounded_caps(0.0, 0.0);
+        assert_eq!(neither, vec![None, None]);
+    }
+
+    /// Where both sides of a line are single legs, the line carries the larger of
+    /// the two squares (each leg's `pT` equals the other's), capped at the scale.
+    #[test]
+    fn a_line_between_two_single_legs_takes_the_larger_square() {
+        let two_legs = || {
+            DiagramChannel::<f64>::from_topology_ladder(
+                600.0,
+                [0.0, 0.0],
+                vec![0.0, 0.0],
+                &[(vec![0], None, 0.0)],
+                (vec![1], None),
+            )
+            .with_fiducial_t_max(-100.0)
+        };
+        let caps = |emitted: f64, recoil: f64| {
+            rung_caps(&two_legs().with_side_transfer_bounds(&|slots| match slots {
+                0b01 => Some(emitted),
+                0b10 => Some(recoil),
+                _ => None,
+            }))
+        };
+        assert_eq!(caps(30.0, 60.0), vec![Some(-60.0)]);
+        assert_eq!(caps(60.0, 30.0), vec![Some(-60.0)]);
+        assert_eq!(caps(300.0, 60.0), vec![Some(-100.0)]);
+        assert_eq!(caps(0.0, 0.0), vec![None]);
+    }
+
+    /// Where the uncut single leg's line had been bounded, the channel reaches
+    /// configurations below the bound again: a draw lands there with a positive
+    /// density, which the bounded channel reports as exactly zero.
+    #[test]
+    fn dropping_a_side_bound_restores_the_collinear_support() {
+        let bounded = two_rung_chain();
+        let unbounded = two_rung_chain().with_side_transfer_bounds(&|slots| match slots {
+            0b0100 => Some(100.0),
+            s if s.count_ones() == 1 => Some(0.0),
+            _ => None,
+        });
+        let beams = beam_momenta::<f64>(600.0, 0.0, 0.0);
+        let mut stream = SubStream::from_stream(0x5EED_1, 7);
+        let mut reached = 0;
+        for _ in 0..20_000 {
+            let u = stream.uniforms::<f64>(unbounded.ndim());
+            let pt = unbounded.sample(&u);
+            let t = transfer_invariant(beams[0], pt.momenta[3]);
+            if t > -100.0 {
+                reached += 1;
+                assert!(unbounded.density(&pt.momenta) > 0.0);
+                assert_eq!(bounded.density(&pt.momenta), 0.0);
+            }
+        }
+        assert!(reached > 100, "only {reached} draws below the bound");
     }
 
     /// A single-rung spine at √s = 500 with 80 GeV beams and massless final legs.

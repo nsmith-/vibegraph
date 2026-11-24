@@ -51,6 +51,8 @@ use crate::progress;
 use crate::select::select_index;
 use crate::vegas::{GridRule, VegasGrid};
 
+pub mod blocks;
+
 /// The RNG stream the per-channel weight scans run on, offset by channel index so
 /// each channel's scan is independent of the others and of the event generation.
 const SCAN_STREAM_BASE: u64 = 0x0057_4D41;
@@ -420,6 +422,25 @@ impl UnweightStats {
         ratio(self.event_weight_sum, self.accepted as f64)
     }
 
+    /// Add `later`'s counts to these, as if its trials had followed this pass's
+    /// own: the sums add, the largest ratio is the larger of the two, and the
+    /// heaviest trials are merged with this pass's ahead of `later`'s at equal
+    /// ratio, which is where a single pass over both would have put them.
+    pub fn absorb(&mut self, later: &UnweightStats) {
+        self.trials += later.trials;
+        self.accepted += later.accepted;
+        self.vanishing += later.vanishing;
+        self.ratio_sum += later.ratio_sum;
+        self.event_weight_sum += later.event_weight_sum;
+        self.overweight += later.overweight;
+        self.overweight_ratio_sum += later.overweight_ratio_sum;
+        self.excess_sum += later.excess_sum;
+        self.ratio_max = self.ratio_max.max(later.ratio_max);
+        for heavy in &later.heaviest {
+            self.keep_if_heavy(|| heavy.clone(), heavy.ratio);
+        }
+    }
+
     /// Keep `trial` if it is among the [`HEAVIEST_KEPT`] heaviest so far.
     fn keep_if_heavy(&mut self, trial: impl FnOnce() -> HeavyTrial, r: f64) {
         let full = self.heaviest.len() == HEAVIEST_KEPT;
@@ -706,6 +727,22 @@ impl Unweighter {
             .collect()
     }
 
+    /// The length of the widest point a trial fills: the widest channel's grid
+    /// coordinates followed by the integrand's trailing uniforms.
+    pub(crate) fn point_len(&self) -> usize {
+        self.u.len()
+    }
+
+    /// The most grid coordinates any channel's trial draws.
+    pub(crate) fn widest_grid(&self) -> usize {
+        self.u.len() - self.scale_ndim
+    }
+
+    /// How many trailing uniforms every trial appends after its grid coordinates.
+    pub(crate) fn scale_ndim(&self) -> usize {
+        self.scale_ndim
+    }
+
     /// The statistics accumulated so far.
     pub fn stats(&self) -> &UnweightStats {
         &self.stats
@@ -728,52 +765,95 @@ impl Unweighter {
     /// larger variance — the rejected trials are exactly the information
     /// unweighting throws away.
     pub fn sigma_from_events(&self) -> f64 {
-        self.total_w_max * ratio(self.stats.event_weight_sum, self.stats.trials as f64)
+        self.sigma_of_events(&self.stats)
+    }
+
+    /// [`sigma_from_events`](Self::sigma_from_events) over `stats`, the counts of
+    /// any pass drawn against these maxima: `Σⱼ w_maxⱼ · Σw / T`, and `0` before
+    /// the first trial.
+    pub fn sigma_of_events(&self, stats: &UnweightStats) -> f64 {
+        let trials = stats.trials as f64;
+        if trials > 0.0 {
+            self.total_w_max * stats.event_weight_sum / trials
+        } else {
+            0.0
+        }
     }
 
     /// Draw one trial: pick a channel `∝ w_maxⱼ`, draw a point on its grid, and
     /// accept it with probability `w/w_maxⱼ`. Returns the accepted point, or
     /// `None` when the trial was rejected.
     ///
-    /// Three uniforms' worth of the caller's stream are consumed per trial in a
-    /// fixed order — channel, point, acceptance — so a run is reproducible from
-    /// the RNG alone. The integrand's trailing uniforms are *not* among them: they
-    /// come off this pass's own per-channel streams, which is what leaves the
-    /// caller's sequence identical to a run with no such coordinate.
+    /// [`trial_with`](Self::trial_with) on this pass's own scratch and statistics:
+    /// the caller's stream supplies the channel, the grid coordinates and the
+    /// acceptance uniform, in that order, so a run is reproducible from the RNG
+    /// alone. The integrand's trailing uniforms are *not* among them: they come
+    /// off this pass's own per-channel streams, which is what leaves the caller's
+    /// sequence identical to a run with no such coordinate.
     pub fn trial<I: ChannelIntegrand>(
         &mut self,
         integrand: &I,
         rng: &mut impl Rng,
     ) -> Option<AcceptedPoint> {
+        let mut u = std::mem::take(&mut self.u);
+        let mut stats = std::mem::take(&mut self.stats);
+        let mut scale_draw = std::mem::take(&mut self.scale_draw);
+        let point = self.trial_with(
+            integrand,
+            rng,
+            |j, out| scale_draw[j].fill_uniforms(out),
+            &mut u,
+            &mut stats,
+        );
+        self.u = u;
+        self.stats = stats;
+        self.scale_draw = scale_draw;
+        point
+    }
+
+    /// One trial against the frozen maxima, with the trailing uniforms supplied by
+    /// `trailing(channel, out)` and the counts going into `stats`.
+    ///
+    /// `rng` supplies, in order, the channel, the `channel_grid_ndim` grid
+    /// coordinates and the acceptance uniform, so a trial in channel `j` consumes
+    /// exactly `2 + channel_grid_ndim(j)` of its draws. `u` is scratch at least as
+    /// long as the widest channel's point.
+    pub(crate) fn trial_with<I: ChannelIntegrand>(
+        &self,
+        integrand: &I,
+        rng: &mut impl Rng,
+        trailing: impl FnOnce(usize, &mut [f64]),
+        u: &mut [f64],
+        stats: &mut UnweightStats,
+    ) -> Option<AcceptedPoint> {
         let j = select_index(&self.select_weights, rng.random::<f64>())
             .expect("the summed maximum is positive, so some channel carries weight");
         let channel = &self.channels[j];
         let grid_ndim = channel.grid.ndim();
-        let point = &mut self.u[..grid_ndim + self.scale_ndim];
+        let point = &mut u[..grid_ndim + self.scale_ndim];
         let jac = channel.grid.draw(rng, &mut point[..grid_ndim]);
-        self.scale_draw[j].fill_uniforms(&mut point[grid_ndim..]);
+        trailing(j, &mut point[grid_ndim..]);
         let value = integrand.value_in_channel(j, point);
         let w = jac * value;
         let r = w / channel.w_max;
         let accept: f64 = rng.random();
 
-        self.stats.trials += 1;
+        stats.trials += 1;
         if !(w > 0.0) {
-            self.stats.vanishing += 1;
+            stats.vanishing += 1;
             return None;
         }
-        self.stats.ratio_sum += r;
-        self.stats.ratio_max = self.stats.ratio_max.max(r);
+        stats.ratio_sum += r;
+        stats.ratio_max = stats.ratio_max.max(r);
         if r > 1.0 {
-            self.stats.overweight += 1;
-            self.stats.overweight_ratio_sum += r;
-            self.stats.excess_sum += r - 1.0;
-            let u = &self.u[..grid_ndim + self.scale_ndim];
-            self.stats.keep_if_heavy(
+            stats.overweight += 1;
+            stats.overweight_ratio_sum += r;
+            stats.excess_sum += r - 1.0;
+            stats.keep_if_heavy(
                 || HeavyTrial {
                     ratio: r,
                     channel: j,
-                    u: u.to_vec(),
+                    u: point.to_vec(),
                     jacobian: jac,
                     value,
                 },
@@ -784,11 +864,11 @@ impl Unweighter {
             return None;
         }
         let weight = r.max(1.0);
-        self.stats.accepted += 1;
-        self.stats.event_weight_sum += weight;
+        stats.accepted += 1;
+        stats.event_weight_sum += weight;
         Some(AcceptedPoint {
             channel: j,
-            u: self.u[..grid_ndim + self.scale_ndim].to_vec(),
+            u: point.to_vec(),
             weight,
         })
     }

@@ -1,4 +1,4 @@
-/target
+target/
 /research/refs/papers/
 # pixi environments
 .pixi/*
@@ -40,6 +40,9 @@ __pycache__/
 profile.json.gz
 # mg5_aMC drops a scratch py.py into whatever directory it is invoked from
 /py.py
+# The README quickstart's cards, when it is followed at the repository root.
+/proc_card.dat
+/run_card.dat
 .DS_Store
 
 # Rendered by `pixi run backlog` and `pixi run kb-log` in scripts/build-docs.sh; never committed.

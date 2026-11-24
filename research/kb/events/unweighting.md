@@ -36,6 +36,12 @@ A trial's weight is the full integrand term of its channel —
 — not `|M|²/max|M|²`. How σ and that weight are assembled is
 [pipeline/overview](../pipeline/overview.md).
 
+The discrete labels drawn after acceptance carry no weight of their own:
+group, flavour member, beam ordering, helicity and colour flow. Each is drawn in
+proportion to its term of the accepted point's value, so it never changes an
+event's generator weight. An accepted event's weight is 1, or `r > 1` for an
+overweight.
+
 ## One grid per channel, so one maximum per channel
 
 The integral is split by channel, `∫f = Σ_j ∫ f·α_j g_j/g`, and each term gets

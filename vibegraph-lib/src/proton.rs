@@ -129,12 +129,12 @@ use crate::hadronic::{
     zeroed_diagonals, BoundVetoed, ShareSplit, VetoedAmplitudes,
 };
 use crate::hadronic::{
-    boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
-    components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
-    process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
-    ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
-    RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto, SubprocessProto,
-    SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    boost_z, channel_diagrams, compile_configuration_weights, compile_scale_source,
+    complete_compiles, components, constant_scale_report, initial_spin_color_average,
+    make_subs_scale_aware, process_external_legs, refuse_polarized_frame, report_channel_maps,
+    BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError, PointHistory,
+    PointScales, RunningCouplingReport, SampledChannel, ScaleProbeTally, ScaleVeto,
+    SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -411,8 +411,8 @@ impl FlavorGroup {
     /// whatever their diagrams, so the group can join crossings of different
     /// topology — `g u > h+ d` with `u d~ > h+ g` — that share no clustering. The
     /// group carries no cross section and is never clustered
-    /// ([`ProtonIntegrand`]).
-    fn vanishes(&self) -> bool {
+    /// ([`ProtonIntegrand`]), so no event is ever drawn from it.
+    pub(crate) fn vanishes(&self) -> bool {
         self.vanishes
     }
 
@@ -693,6 +693,19 @@ pub struct FlavorGroups {
 impl FlavorGroups {
     pub fn groups(&self) -> &[FlavorGroup] {
         &self.groups
+    }
+
+    /// The process numbers (`@N`) of every subprocess, each once, in
+    /// increasing order.
+    pub fn process_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self
+            .groups
+            .iter()
+            .flat_map(|g| g.members().iter().map(|m| m.process))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     /// The pole masses of the two incoming legs in beam order, which every group
@@ -1082,10 +1095,29 @@ pub fn derive_flavor_groups(
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Result<FlavorGroups, ProtonError> {
-    let sets: Vec<DiagramSet> = sets
+    derive_flavor_groups_with(
+        sets.into_iter().map(|s| (s, None)).collect(),
+        model,
+        evaluated,
+        card,
+    )
+}
+
+/// [`derive_flavor_groups`], each set paired with its evaluator where the caller
+/// compiled one already: what [`compile_class`](crate::hadronic::compile_class) builds from that set under
+/// `evaluated`. A set whose outgoing legs the decomposition reorders is
+/// compiled again in its new order; every other one is compiled only where it
+/// comes without an evaluator, the missing ones across the rayon pool.
+pub(crate) fn derive_flavor_groups_with(
+    sets: Vec<(DiagramSet, Option<AmplitudeEvaluator>)>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Result<FlavorGroups, ProtonError> {
+    let (sets, mut precompiled): (Vec<DiagramSet>, Vec<Option<AmplitudeEvaluator>>) = sets
         .into_iter()
-        .filter(|s| !s.diagrams.is_empty())
-        .collect();
+        .filter(|(s, _)| !s.diagrams.is_empty())
+        .unzip();
     if sets.is_empty() {
         return Err(ProtonError::NoSubprocess);
     }
@@ -1095,22 +1127,30 @@ pub fn derive_flavor_groups(
         content_ordered(sets, model, evaluated, card)?
             .into_iter()
             .unzip();
+    for (evaluator, order) in precompiled.iter_mut().zip(&final_orders) {
+        if order.iter().enumerate().any(|(i, &j)| i != j) {
+            *evaluator = None;
+        }
+    }
     let labels: Vec<String> = sets.iter().map(label).collect();
     let processes: Vec<u32> = sets
         .iter()
         .map(|s| s.diagrams[0].provenance.process)
         .collect();
 
+    let evaluators = complete_compiles(&sets, precompiled, model, evaluated);
     let mut compiled = Vec::with_capacity(sets.len());
     let mut one_body: Option<(String, bool)> = None;
     let mut massless_one_body: Option<String> = None;
-    for (set, process) in sets.iter().zip(&labels) {
+    // The compiles ran on the pool; their progress is reported here, in set
+    // order on this thread, so it carries this thread's group and rises.
+    for ((set, process), evaluator) in sets.iter().zip(&labels).zip(evaluators) {
         progress::step(
             progress::stage::COMPILE,
             compiled.len() as u64,
             Some(sets.len() as u64),
         );
-        let evaluator = compile_class(set, model, evaluated)?;
+        let evaluator = evaluator?;
         if evaluator.n_in() != 2 {
             return Err(ProtonError::NotTwoIncoming {
                 process: process.clone(),
@@ -1172,7 +1212,7 @@ pub fn derive_flavor_groups(
         PROBE_SEED,
     );
     let traces: Vec<Vec<f64>> = compiled
-        .iter()
+        .par_iter()
         .map(|(evaluator, ..)| {
             let bound = BoundAmplitude::<f64>::bind(evaluator, evaluated);
             let mut scratch = bound.scratch_space();
@@ -1832,6 +1872,11 @@ pub struct ProtonEvent {
     pub cm: Vec<V>,
 }
 
+/// The uniforms [`ProtonIntegrand::select_event`] draws an event's labels from:
+/// the flavour group, the `(flavour, beam ordering)` pair inside it, the
+/// helicity, the integration configuration and the colour flow.
+pub const SELECT_EVENT_DRAWS: usize = 5;
+
 /// The discrete labels an accepted hadronic event carries besides its momenta.
 ///
 /// Every one of them is summed over in the cross section, so none is a sampling
@@ -1851,6 +1896,14 @@ pub struct ProtonSelection {
     /// order [`FlavorGroup::event_legs`] returns codes in, so an exchanged
     /// ordering's beam helicities are already swapped.
     pub helicity: Vec<i32>,
+    /// The same helicities in the group representative's leg order, the order
+    /// [`ProtonEvent::cm`] holds the momenta in for either beam ordering: the
+    /// combination the drawn member's amplitude carries at those momenta.
+    pub cm_helicity: Vec<i32>,
+    /// The `|M|²` of that combination alone at those momenta, off the
+    /// representative's diagonal the draw was made from, at the drawn term's
+    /// coupling.
+    pub helicity_m2: f64,
     /// Index into the group **representative's** colour-flow basis — the indexing
     /// the draw is made in, off the representative's `JAMP2`.
     ///
@@ -4177,7 +4230,11 @@ impl<'a> ProtonIntegrand<'a> {
     /// caller may skip it entirely and integrate the same number.
     ///
     /// `None` when the point carries no weight, where no label is defined.
-    pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
+    pub fn select_event(
+        &self,
+        event: &ProtonEvent,
+        u: [f64; SELECT_EVENT_DRAWS],
+    ) -> Option<ProtonSelection> {
         let sc = self.scratch();
         assert_eq!(
             event.group_scales.len(),
@@ -4251,11 +4308,11 @@ impl<'a> ProtonIntegrand<'a> {
                 mask_zeroed(vetoed_of(&sc.vetoed, group), argument, &mut amp2);
             }
         }
-        let drawn = match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2)
-        {
-            Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
-            None => eval.select_helicity(&hel_m2, u[2])?,
-        };
+        let (drawn, helicity_m2) =
+            match zeroed_diagonals(vetoed_of(&sc.vetoed, group), sub, argument, &mut jamp2) {
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[2])?,
+                None => eval.select_helicity(&hel_m2, u[2])?,
+            };
         let (_, order) = g.event_legs(member, ordering);
         if let Some(table) = self.resonances.get(group) {
             let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
@@ -4291,6 +4348,8 @@ impl<'a> ProtonIntegrand<'a> {
             member,
             ordering,
             helicity: order.iter().map(|&leg| drawn[leg]).collect(),
+            cm_helicity: drawn.to_vec(),
+            helicity_m2,
             flow: color.flow,
             config: color.config,
             leading: color.leading,
@@ -4602,7 +4661,7 @@ mod tests {
     use crate::artifact::SamplerTopology;
     use crate::budget::sequential_channel_reference;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-    use crate::hadronic::{channel_share, CHANNEL_STREAM_BASE, VEGAS_NBINS};
+    use crate::hadronic::{channel_share, compile_class, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
     use crate::phasespace::DiagramChannel;
@@ -6092,6 +6151,64 @@ mod tests {
         for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
             let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
             assert!((ma / mb - 1.0).abs() < 1e-12, "{ma} against {mb}");
+        }
+    }
+
+    /// A caller's evaluator compiled in a set's enumerated leg order is dropped
+    /// when the decomposition reorders that set's outgoing legs, and the set is
+    /// compiled again in its new order: with every set of `p p > w+ j @1` and
+    /// `p p > j w- @2` handed in precompiled, each group gets the evaluator the
+    /// uncompiled path gives, by external order and by |M|² at probe points,
+    /// bit for bit. It cannot see an evaluator compiled under different
+    /// parameters than `evaluated`, which the caller vouches for.
+    #[test]
+    fn a_reordered_set_is_compiled_again_whatever_the_caller_compiled() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card(
+            "generate p p > w+ j @1\nadd process p p > j w- @2\n",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets: Vec<DiagramSet> = generate_from_proc_card(&card, &m)
+            .expect("enumeration")
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        let precompiled = sets
+            .iter()
+            .map(|s| {
+                let evaluator = compile_class(s, &m, &evaluated).expect("compiles");
+                (s.clone(), Some(evaluator))
+            })
+            .collect();
+        let with = derive_flavor_groups_with(precompiled, &m, &evaluated, &RunCard::default())
+            .expect("groups");
+        let without =
+            derive_flavor_groups(sets, &m, &evaluated, &RunCard::default()).expect("groups");
+        assert!(
+            without
+                .groups()
+                .iter()
+                .any(|g| g.member_orders.iter().any(|o| o != &[0, 1])),
+            "the card reorders a set"
+        );
+        assert_eq!(with.groups().len(), without.groups().len());
+        let mw = evaluated.mass(m.particle_id("W+").expect("W+"));
+        for (a, b) in with.groups().iter().zip(without.groups()) {
+            assert_eq!(
+                a.evaluator.external_particles(),
+                b.evaluator.external_particles()
+            );
+            let (ba, bb) = (
+                BoundAmplitude::<f64>::bind(&a.evaluator, &evaluated),
+                BoundAmplitude::<f64>::bind(&b.evaluator, &evaluated),
+            );
+            let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
+            for point in probe_momenta([0.0, 0.0], &[mw, 0.0], None, 7) {
+                let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
+                assert_eq!(ma.to_bits(), mb.to_bits(), "{ma} against {mb}");
+            }
         }
     }
 

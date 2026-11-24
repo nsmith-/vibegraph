@@ -8,7 +8,7 @@ priority: low
 closes_when: "One matrix-element pass per group per point serves both the configuration draw and the weight, with the αs change applied as a rescaling that handles vetoed_m2 correctly, and the MLM σ and dump gates unchanged within tolerance."
 blocked_by: []
 opened: 2026-11-10
-tags: [mlm, performance, matrix-element, alpha-s]
+tags: [mlm, performance, matrix-element, alpha-s, v0.3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-10}
 sources:
   - {id: diag, resource: "../../performance/mlm-integration-cost-vs-madevent.md", title: "MLM integration cost against MadEvent"}
