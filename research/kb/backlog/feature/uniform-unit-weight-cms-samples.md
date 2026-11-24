@@ -41,3 +41,15 @@ What has to be designed:
 
 Settle first whether the per-flavour unit weights simshop observed are intended
 compensation or a bias; that is being investigated for v0.2.3 separately.
+
+**Where the per-flavour units came from** (simshop's rerun of the same job,
+2026-11-24). The card used `smeftsim_topu3l_mwscheme_ufo`, whose light quarks
+are massive. Incoming masses split a multiplicity into mass parts
+(`multiplicity.rs`, `split_by_external_masses`), so `p p > e+ e-` +
+`p p > e+ e- j` became 12 parts, one per incoming-flavour signature. Buffer
+normalises each part to its own integrated σ, so each flavour got its own
+unit. Nothing is biased, but the scales are noisy: part 9 held 7 of 1000
+events and was scaled up by 1.83, since its sample estimate was 45% below
+its integration. On the `sm` model, where the light quarks are massless, the
+same card has two parts and two units (L-X1). A common unit has to replace
+per-part normalisation, not only per-multiplicity normalisation.

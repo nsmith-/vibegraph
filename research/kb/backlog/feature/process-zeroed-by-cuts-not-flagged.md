@@ -5,7 +5,7 @@ description: "With ptj2min > 0, an MLM sum's Z+1j line has σ = 0 (MadGraph's cu
 area: feature
 state: open
 priority: medium
-closes_when: "When the cuts reject every point of a whole @N process or multiplicity part, integrate names that process and the cut that zeroes it (here ptj2min against a one-jet final state) as a warning, and generate's weight-scan warning no longer calls a zero-σ channel's share missing; a test pins both on a p p > z j / p p > z j j card with ptj2min set."
+closes_when: "integrate reports σ per process line (each generate / add process) in its integrated record, and when the cuts reject every point of a whole @N process or multiplicity part, integrate names that process and the cut that zeroes it (here ptj2min against a one-jet final state) as a warning, and generate's weight-scan warning no longer calls a zero-σ channel's share missing; a test pins both on a p p > z j / p p > z j j card with ptj2min set."
 blocked_by: []
 opened: 2026-11-24
 tags: [cuts, run-card, mlm, warnings, user-facing]
@@ -27,3 +27,7 @@ jets, so the one-jet line can never pass. The defects are the reporting:
 - The scan warning calls the line's share of σ missing. That share is zero,
   which is the same wording problem as
   [weight-scan-warning-counts-vanishing-channels-as-lost](../hygiene/weight-scan-warning-counts-vanishing-channels-as-lost.md).
+
+The user asked on 2026-11-24, relayed through simshop, for σ per process line
+in `integrate`'s `integrated` record, so a production tool can flag a zeroed
+line itself. The field name and shape are open.
