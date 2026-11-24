@@ -534,3 +534,5 @@ Both runs exited with rc 0. Each sample was then scored with `bias.py`:
   - The reference has its own systematic: the 1j closure is −1.2σ.
 - **Scale of any effect.** A 3% shift on this member is 0.13% of the 1j part's composition. It moves no σ, because each part's scale is fixed.
 - **Not a blocker.** Settling the residual needs ≥5 seeds, against shares read from the mixed run itself, which is Found 4.
+
+**Found 1 resolved (user's rerun).** The user's card used `smeftsim_topu3l_mwscheme_ufo`, in which the light quarks are massive. `split_by_external_masses` therefore splits each multiplicity by incoming flavour mass: the header shows 12 normalisation parts against 2 LHE processes. Buffer then normalises each part to its own integration, so the per-flavour units are as designed. The planner recorded this on `uniform-unit-weight-cms-samples`.
