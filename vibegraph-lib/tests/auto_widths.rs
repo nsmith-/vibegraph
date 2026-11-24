@@ -476,6 +476,39 @@ fn a_closed_channel_is_listed_and_adds_nothing() {
     }
 }
 
+/// A coloured parent's open channel below 0.1 GeV is set to zero and left out
+/// of the total and the decay table, as MadGraph sets it ("lower than QCD
+/// scale"), and listed as such: under `restrict_ckm` the top's CKM-suppressed
+/// `t > W+ s` and `t > W+ d` are, and `t > W+ b` carries the whole width.
+/// (Binding refuses this top for its `t > W+ Z s` mode through `t`, so the
+/// two-body width is read directly.)
+#[test]
+fn a_coloured_parents_channel_below_the_qcd_scale_is_left_out() {
+    let model = vibegraph::ufo::sm::sm_model(vibegraph::ufo::sm::SMRestrict::Ckm);
+    let (_, widths) = two_body(&model, "DECAY 6 Auto\n");
+    let w = find(&widths, 6);
+    let below: std::collections::BTreeSet<Vec<i32>> = w
+        .below_qcd_scale
+        .iter()
+        .map(|c| key(c.daughters.iter().map(|d| d.pdg)))
+        .collect();
+    assert_eq!(
+        below,
+        [key([24, 3]), key([24, 1])].into_iter().collect(),
+        "{w:?}"
+    );
+    for c in &w.below_qcd_scale {
+        assert!(c.width > 0.0 && c.width < 0.1, "{c:?}");
+    }
+    assert_eq!(partial(w, &[24, 5]), Some(w.total), "{w:?}");
+    let table = w.decay_table();
+    assert_eq!(table.channels.len(), 1, "{table:?}");
+    assert_eq!(
+        key(table.channels[0].daughters.iter().copied()),
+        key([24, 5])
+    );
+}
+
 /// The SM particles that bind under `Auto` and those refused, each by name:
 /// the top and the W bind with nothing listed as not included; the Z is
 /// refused for `Z > W+ e- ve~` through `W-` (a mode MadGraph's default leaves
