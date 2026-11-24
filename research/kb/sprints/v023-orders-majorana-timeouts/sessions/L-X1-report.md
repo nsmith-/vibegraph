@@ -348,7 +348,7 @@ The fix takes each card from 396 to 198 diagrams; every diagram it removes has a
   - **4× is bimodal.** Seeds 1, 2 and 4 read 1.0068, 1.0066 and 1.0007. Seeds 3 and 5 read 0.9792 and 0.9776, at errors of ±0.55% and ±0.44% (ESS 30k and 45k).
   - **The early −2.54σ came from that skew, not from a shift in the mean.**
   - **Reading:** at 4× the mean moves toward 1, so this is not a stable deficit and not a physics item. It is not clean scatter either. Most seeds read low, an occasional seed carries a large weight, and at 4× two seeds are confidently 2.2% low. That is the signature of a region that is usually undersampled and occasionally hit.
-  - **What would settle it:** 20 seeds at 4× (about 2.4 h). Whether to file the MZd-40 tail as a sampler/multichannel observation is the planner's decision.
+  - **Verdict:** the σ question for PR 11 is closed. The mean is 0.9926 ± 0.0045 at 1× and 0.9942 ± 0.0069 at 4×, and the 4× seeds are bimodal. Filed as `darkphoton-mzd40-seeds-confidently-low`. Its first step is 20 seeds at 4× plus a per-channel σ-share comparison between a low seed and a high seed.
 
 ### HNL cards 84, 85 and 438–442 on ba190428
 
