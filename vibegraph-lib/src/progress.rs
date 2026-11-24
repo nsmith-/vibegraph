@@ -101,10 +101,10 @@ pub mod stage {
 /// | `channels` | the group's channel count; absent while the group's channels are not yet built |
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Group {
-    pub index: u64,
-    pub count: u64,
-    pub label: String,
-    pub channels: Option<u64>,
+    pub(crate) index: u64,
+    pub(crate) count: u64,
+    pub(crate) label: String,
+    pub(crate) channels: Option<u64>,
 }
 
 thread_local! {

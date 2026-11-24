@@ -264,7 +264,7 @@ pub fn multiplicity_groups_of_with(
         }
         all_parts.extend(parts);
     }
-    let labels = group_labels(
+    let numbered = numbered_groups(
         &all_parts
             .iter()
             .map(|part| {
@@ -275,14 +275,8 @@ pub fn multiplicity_groups_of_with(
             })
             .collect::<Vec<_>>(),
     );
-    let count = all_parts.len() as u64;
-    for (k, part) in all_parts.into_iter().enumerate() {
-        let _group = progress::enter_group(Group {
-            index: k as u64 + 1,
-            count,
-            label: labels[k].clone(),
-            channels: None,
-        });
+    for (part, group) in all_parts.into_iter().zip(numbered) {
+        let _group = progress::enter_group(group);
         let groups = match derive_flavor_groups_with(part, model, evaluated, rc) {
             Ok(groups) => groups,
             Err(ProtonError::OneBodyCutToZero { process }) => {
@@ -344,15 +338,30 @@ fn group_labels(groups: &[(Vec<u32>, usize)]) -> Vec<String> {
         .collect()
 }
 
+/// A card's groups, given each one's process numbers and outgoing-leg count:
+/// numbered from 1 in that order, labelled by [`group_labels`], and with no
+/// channel count yet.
+fn numbered_groups(keys: &[(Vec<u32>, usize)]) -> Vec<Group> {
+    let count = keys.len() as u64;
+    group_labels(keys)
+        .into_iter()
+        .zip(1..)
+        .map(|(label, index)| Group {
+            index,
+            count,
+            label,
+            channels: None,
+        })
+        .collect()
+}
+
 /// The one group of a card that is not split: `sets` as a single group, with
 /// `channels` once they are known.
 pub fn sole_group(sets: &[DiagramSet], channels: Option<usize>) -> Group {
     let legs = sets.first().map_or(0, |s| s.particles_out.len());
     Group {
-        index: 1,
-        count: 1,
-        label: group_labels(&[(set_process_ids(sets), legs)]).remove(0),
         channels: channels.map(|n| n as u64),
+        ..numbered_groups(&[(set_process_ids(sets), legs)]).remove(0)
     }
 }
 
@@ -824,25 +833,21 @@ impl<'a> MultiplicitySum<'a> {
         n_iter: usize,
         damping: f64,
     ) -> Vec<AlphaAdaptation<f64>> {
-        let labels = group_labels(
+        let numbered = numbered_groups(
             &self
                 .parts
                 .iter()
                 .map(|p| (p.groups().process_ids(), final_state_count(p)))
                 .collect::<Vec<_>>(),
         );
-        let count = self.parts.len() as u64;
         let adaptations: Vec<AlphaAdaptation<f64>> = self
             .parts
             .iter_mut()
-            .zip(labels)
-            .enumerate()
-            .map(|(k, (p, label))| {
+            .zip(numbered)
+            .map(|(p, group)| {
                 let _group = progress::enter_group(Group {
-                    index: k as u64 + 1,
-                    count,
-                    label,
                     channels: Some(p.channel_count() as u64),
+                    ..group
                 });
                 p.adapt_alphas(seed, n_survey, n_iter, damping)
             })

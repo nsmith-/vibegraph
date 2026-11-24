@@ -268,6 +268,44 @@ fn a_check_run_plans_the_phases_it_executes() {
     assert_eq!(assert_position_matches_the_phase_records(&objects, true), 5);
 }
 
+/// `integrate` of a diagram artifact plans no `enumerate` phase and enters
+/// none: with `--check`, its run is `input`, `amplitude_probe`, `compile` and
+/// `channels`.
+#[test]
+fn an_artifact_run_plans_no_enumeration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let proc_card = tmp.path().join("proc_card.dat");
+    let run_card = tmp.path().join("run_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    std::fs::write(&run_card, common::fixed_beams(EBEAM, EBEAM)).unwrap();
+    let output = common::vibegraph(tmp.path(), tmp.path())
+        .arg("enumerate")
+        .arg(&proc_card)
+        .arg("--out")
+        .arg(tmp.path().join("diagrams"))
+        .output()
+        .expect("spawn vibegraph");
+    assert!(output.status.success(), "{}", common::stderr_of(&output));
+    let mut cmd = common::vibegraph(tmp.path(), tmp.path());
+    cmd.arg("integrate")
+        .arg(tmp.path().join("diagrams/diagrams.bin.zst"))
+        .arg("--run-card")
+        .arg(&run_card)
+        .args(["--out", "out", "-j", "1", "--check", "--output-ldjson"]);
+    let objects = run(cmd);
+    assert_eq!(assert_position_matches_the_phase_records(&objects, true), 4);
+    let started: Vec<&str> = objects
+        .iter()
+        .filter(|o| o["kind"] == "phase" && o["event"] == "start")
+        .map(|o| o["phase"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        started,
+        ["input", "amplitude_probe", "compile", "channels"],
+        "{objects:#?}"
+    );
+}
+
 /// `generate` knows its three phases before it reads anything, so every
 /// progress object carries them; its compile stage is one group.
 #[test]
