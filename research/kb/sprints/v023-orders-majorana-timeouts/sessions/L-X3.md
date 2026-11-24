@@ -63,7 +63,7 @@ Two kb pages, `research/kb/events/unweighting.md` and `research/kb/events/multi-
 - **First action:** `cd /home/user/wt/sprintl-xwgtup`. Then verify that `git rev-parse --show-toplevel` is `/home/user/wt/sprintl-xwgtup` and `git branch --show-current` is `sprintl-xwgtup`.
   - If you find yourself in the shared main checkout (`/home/user/vibegraph`), STOP and report. Never edit it.
   - Re-verify `pwd` after any resume: resume is when isolation leaks.
-- **Background anything expected to exceed ~2 minutes.** Use `run_in_background: true`, with output redirected to a log under `/home/user/wt/logs/` whose name starts with `lx3-`. Sibling sessions share that directory.
+- **Background anything expected to exceed ~2 minutes.** Use `run_in_background: true`, with output redirected to a log under `/home/user/wt/logs/` whose name starts with `lx1-`. Sibling sessions share that directory.
   - A backgrounded command notifies you when it exits. Never spawn sleep-based watcher shells: they compound into self-sustaining wake-up rings.
   - Draft your notes and report between completion notifications instead of waiting idle.
   - On resume after a stall, first check whether the interrupted command finished (`ps`, result artifacts) before re-running it.
@@ -95,7 +95,7 @@ Two kb pages, `research/kb/events/unweighting.md` and `research/kb/events/multi-
 
 **The hermetic layer has no submodule and no fetched data.** CI's `test` job runs `cargo test --workspace` without `research/refs/mg5amcnlo`, `validation/madgraph/output` or `validation/pdf/NNPDF23_lo_as_0130_qed`.
 - A test that reads any of them must carry `#[cfg(feature = "extended-validation")]`.
-- Before reporting, run the workspace suite once with those three paths moved aside, then restore them: `/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx3` does this and restores them on exit.
+- Before reporting, run the workspace suite once with those three paths moved aside, then restore them: `/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx1` does this and restores them on exit.
 
 **Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-X3-report.md`, a `Session Report` concept like sprint K's `K-C1-report.md`. It contains:
 - what changed;

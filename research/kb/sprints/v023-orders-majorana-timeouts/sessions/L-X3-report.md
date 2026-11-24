@@ -36,7 +36,7 @@ diagnosis session: no source change. Brief: [L-X3](L-X3.md).
 
 ## Reproduction
 
-Inputs, in the scratchpad (`$S` = `/tmp/claude-0/-home-user-vibegraph/87596584-b164-5456-b1bc-28aaced93371/scratchpad/lx3`):
+Inputs, in the scratchpad (`$S` = `/tmp/claude-0/-home-user-vibegraph/87596584-b164-5456-b1bc-28aaced93371/scratchpad/lx1`):
 - `proc_card.dat` = `import model sm` / `generate p p > e+ e-` / `add process p p > e+ e- j`, with no `@N` tags, as the user wrote it;
 - `run_card.dat` = `validation/madgraph/pp_to_llj_mlm_run_card.dat`, unchanged: 13 TeV, lhaid 247000, `ickkw = 1`, `xqcut = 20`, `use_syst = True`, `systematics_program = none`;
 - `run_card_user.dat` = the same card with `lhaid = 325300` and `xqcut = 10`, the user's two values;
@@ -460,7 +460,7 @@ point made explicit, this is the sentence I would add (not applied).
 ## Gates
 
 No source change. The hermetic layer was run, as the brief asks:
-`/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx3` (under
+`/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx1` (under
 the lock):
 
 ```text
