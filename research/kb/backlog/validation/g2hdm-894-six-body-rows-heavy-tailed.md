@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "g2HDM card 894's six-body light-jet rows have a heavy weight tail that five seeds cannot calibrate"
-description: "On main, one of five 894 seeds reads +4.4% high, all of it in the 6-body lv bb + jet rows; the other four agree to 0.14% while each reports 1.5–2.0%."
+description: "On main, one of five 894 seeds reads +4.4% high, 89% of it in the 6-body lv bb + jet rows; n_eff/N is 0.07–0.29% on every seed."
 area: validation
 state: open
 priority: medium
@@ -25,6 +25,14 @@ Seed 4's excess is in the two six-body multiplicities with an extra light jet:
 | ℓν bb̄ + 2 light | 168 | 0.004108 (sd 7.5%) | 0.004601 ± 9% | 24% |
 
 The 4- and 5-body rows agree within about 1%. The six-body rows hold about 22%
-of σ. The signature is a rare large-weight region that most seeds never
-sample. The first step needs no new runs: dump each channel's w_max share and
-variance in those rows for seed 4 against seed 1.
+of σ. They are 3520 and 2562 (group, diagram) channels on 412 and 167 maps.
+
+**The weights are heavy on every seed, not only seed 4.** Effective sample
+size, from each run's support line, out of about 1.31M kept points: 3830,
+3376, 3088, **939** and 2298, so n_eff/N is 0.07–0.29%. Seed 4's n_eff is 4×
+lower than seed 1's, matching its doubled error.
+
+**First step.** The campaign script deleted each run's output directory, so no
+per-channel σ, error, α or w_max survives. Rerun seed 4 on 7b36722c with the
+same argv and `--out` kept (about 1.6 h), check it reproduces σ = 0.0480612 pb,
+and read the heaviest channels from its grid against seed 1's.
