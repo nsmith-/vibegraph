@@ -765,18 +765,31 @@ impl Unweighter {
     /// larger variance — the rejected trials are exactly the information
     /// unweighting throws away.
     pub fn sigma_from_events(&self) -> f64 {
-        self.total_w_max * ratio(self.stats.event_weight_sum, self.stats.trials as f64)
+        self.sigma_of_events(&self.stats)
+    }
+
+    /// [`sigma_from_events`](Self::sigma_from_events) over `stats`, the counts of
+    /// any pass drawn against these maxima: `Σⱼ w_maxⱼ · Σw / T`, and `0` before
+    /// the first trial.
+    pub fn sigma_of_events(&self, stats: &UnweightStats) -> f64 {
+        let trials = stats.trials as f64;
+        if trials > 0.0 {
+            self.total_w_max * stats.event_weight_sum / trials
+        } else {
+            0.0
+        }
     }
 
     /// Draw one trial: pick a channel `∝ w_maxⱼ`, draw a point on its grid, and
     /// accept it with probability `w/w_maxⱼ`. Returns the accepted point, or
     /// `None` when the trial was rejected.
     ///
-    /// Three uniforms' worth of the caller's stream are consumed per trial in a
-    /// fixed order — channel, point, acceptance — so a run is reproducible from
-    /// the RNG alone. The integrand's trailing uniforms are *not* among them: they
-    /// come off this pass's own per-channel streams, which is what leaves the
-    /// caller's sequence identical to a run with no such coordinate.
+    /// [`trial_with`](Self::trial_with) on this pass's own scratch and statistics:
+    /// the caller's stream supplies the channel, the grid coordinates and the
+    /// acceptance uniform, in that order, so a run is reproducible from the RNG
+    /// alone. The integrand's trailing uniforms are *not* among them: they come
+    /// off this pass's own per-channel streams, which is what leaves the caller's
+    /// sequence identical to a run with no such coordinate.
     pub fn trial<I: ChannelIntegrand>(
         &mut self,
         integrand: &I,

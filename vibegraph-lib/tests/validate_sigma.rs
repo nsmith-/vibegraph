@@ -2814,18 +2814,15 @@ fn probe_2to6_sample_cost() {
                 );
                 let scan_s = scan.seconds();
 
-                let prepare = |point: &AcceptedPoint, u: &[f64]| {
+                let prepare = |point: &AcceptedPoint, u| {
                     let mut momenta = Vec::new();
                     integ.event_in_channel(point.channel, &point.u, &mut momenta);
-                    integ
-                        .select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])
-                        .is_some()
+                    integ.select_event(&momenta, point.channel, u).is_some()
                 };
                 let gen = Stopwatch::start();
                 let mut pass = BlockedPass::new(
                     uw,
                     0x5A_4D_0001,
-                    4,
                     (GATE_MAX_TRIALS_PER_EVENT * TRIAL_EVENTS) as u64,
                 );
                 let mut kept = 0usize;

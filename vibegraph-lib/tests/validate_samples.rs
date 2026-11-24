@@ -135,10 +135,9 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 ///
 /// The measured minimum over every gating row and three seeds is `2.667e-3`
 /// (`uux_to_ttx_4f`, `y(t)`, seed `0x5a4d0003`), with `ddx_to_epemg` at
-/// `4.267e-3` and `uux_to_epemg` at `5.297e-3` behind it, against `3.6e-6` and
-/// `0` for the two rows that used to disagree. `ee_to_wpwm` and `ee_to_wpwm_cw`
-/// are not among them: their KS columns are informational ([`KS_INFO_ROWS`]),
-/// reading `5.742e-5` and `8.025e-5` on seed `0x5a4d0003`.
+/// `4.267e-3` and `uux_to_epemg` at `5.297e-3` behind it. `ee_to_wpwm` and
+/// `ee_to_wpwm_cw` are not among them: their KS columns are informational
+/// ([`KS_INFO_ROWS`]), reading `5.742e-5` and `8.025e-5` on seed `0x5a4d0003`.
 /// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
 /// measures the reference's own sample, and its manifest note carries the
 /// measurement and the diagnosis.
@@ -794,16 +793,16 @@ fn generate(
     let budget = (EVENTS_PER_SEED * MAX_TRIALS_PER_EVENT) as u64;
     // The shipped pass: blocks of trials on the seed's own streams, each accepted
     // point's momenta, labels and scales built on the worker that accepted it.
-    let prepare = |point: &AcceptedPoint, u: &[f64]| {
+    let prepare = |point: &AcceptedPoint, u| {
         let mut momenta = Vec::new();
         integ.event_in_channel(point.channel, &point.u, &mut momenta);
-        let selection = integ.select_event(&momenta, point.channel, [u[0], u[1], u[2], u[3]])?;
+        let selection = integ.select_event(&momenta, point.channel, u)?;
         let scales = integ
             .record_scales(&momenta, point.channel, &point.u, run_card)
             .ok();
         Some((momenta, selection, scales))
     };
-    let mut pass = BlockedPass::new(uw.clone(), seed, 4, budget);
+    let mut pass = BlockedPass::new(uw.clone(), seed, budget);
     let mut events = Vec::with_capacity(EVENTS_PER_SEED);
     let mut weights = Vec::with_capacity(EVENTS_PER_SEED);
     let mut used = UnweightStats::default();
@@ -839,7 +838,7 @@ fn generate(
         events.push(event);
         weights.push(point.weight);
     }
-    let sigma_pb = uw.total_w_max() * GEV2_TO_PB * used.event_weight_sum / used.trials as f64;
+    let sigma_pb = uw.sigma_of_events(&used) * GEV2_TO_PB;
     (
         EventSample {
             events,
@@ -2792,12 +2791,29 @@ fn probe_wpwm_sampler_census() {
     });
 }
 
-/// Every key a column-demotion list names is a row the gate runs, so a renamed or
-/// mistyped key fails here instead of silently demoting nothing.
+/// Every key a column-demotion list names is a row the gate runs, at the one mode
+/// under which the list changes anything, so a renamed or mistyped key, or a row
+/// whose mode makes its listing a no-op, fails here instead of silently demoting
+/// nothing: a [`KS_INFO_ROWS`] row's KS columns run at its own mode, so it is
+/// demoted only while that mode is `info`, and a [`SCALE_INFO_ROWS`] row's scales
+/// are informational anyway unless its mode is `gate`.
 #[test]
 fn every_demoted_row_is_a_gated_row() {
-    let keys: Vec<&str> = ROWS.iter().chain(LONG_ROWS).map(|row| row.key).collect();
-    for key in KS_INFO_ROWS.iter().chain(SCALE_INFO_ROWS) {
-        assert!(keys.contains(key), "{key} names no samples row");
+    let mode = |key: &str| {
+        ROWS.iter()
+            .chain(LONG_ROWS)
+            .find(|row| row.key == key)
+            .map(|row| row.mode)
+    };
+    for (list, wanted) in [(KS_INFO_ROWS, "info"), (SCALE_INFO_ROWS, "gate")] {
+        for key in list {
+            match mode(key) {
+                None => panic!("{key} names no samples row"),
+                Some(m) => assert_eq!(
+                    m, wanted,
+                    "{key} is listed for demotion but runs at mode {m}, where the listing changes nothing"
+                ),
+            }
+        }
     }
 }
