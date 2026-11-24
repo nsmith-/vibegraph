@@ -617,7 +617,7 @@ impl Diagram {
             if self.leg(a).charge != self.leg(b).charge {
                 continue;
             }
-            let majorana = |l: LegIdx| model.particle(self.leg(l).particle).is_self_conjugate;
+            let majorana = |l: LegIdx| model.particle(self.leg(l).particle).is_majorana();
             let flip = if majorana(a) && !majorana(b) { a } else { b };
             self.legs[flip.0].charge = self.legs[flip.0].charge.anti();
         }
@@ -625,8 +625,8 @@ impl Diagram {
 
     /// A one-line description of the diagram's fermion lines, for diagnosis: per line
     /// its end legs with the charge each is read with (`+` particle, `-` antiparticle,
-    /// all-incoming), the vertices it passes through and its propagator count, then
-    /// the internal propagators' particles.
+    /// all-incoming) and the vertices it passes through, then the internal
+    /// propagators' particles.
     pub fn fermion_flow_summary(&self, model: &UFOModel) -> String {
         let sign = |l: LegIdx| match self.leg(l).charge {
             Charge::Particle => '+',
@@ -663,10 +663,7 @@ impl Diagram {
     /// Whether the diagram has a line with no fermion-number arrow: a Majorana fermion
     /// on a leg or propagator, or a vertex pairing two particles or two antiparticles.
     pub(crate) fn violates_fermion_flow(&self, model: &UFOModel) -> bool {
-        let majorana = |pid: ParticleId| {
-            let p = model.particle(pid);
-            p.spin.abs() == 2 && p.is_self_conjugate
-        };
+        let majorana = |pid: ParticleId| model.particle(pid).is_majorana();
         self.legs.iter().any(|l| majorana(l.particle))
             || self.props.iter().any(|p| majorana(p.particle))
             || self
@@ -696,10 +693,11 @@ impl Diagram {
             if fermions <= 2 {
                 continue;
             }
-            if let Some(&pid) = def.particles.iter().find(|&&p| {
-                let p = model.particle(p);
-                p.spin.abs() == 2 && p.is_self_conjugate
-            }) {
+            if let Some(&pid) = def
+                .particles
+                .iter()
+                .find(|&&p| model.particle(p).is_majorana())
+            {
                 return Err(ConvertError::MajoranaFermion {
                     particle: model.particle(pid).name.clone(),
                     vertex: def.name.clone(),
