@@ -1,6 +1,6 @@
 ---
 type: Session Brief
-title: "L-X1: per-member XWGTUP within one multiplicity part"
+title: "L-X3: per-member XWGTUP within one multiplicity part"
 description: "Reproduce per-flavour-member unit weights in generate's LHE output, locate where the per-member factor enters, and run a per-member bias check against the integrated sigma shares."
 status: draft
 agent: validation-dev (Opus)
@@ -97,7 +97,7 @@ Two kb pages, `research/kb/events/unweighting.md` and `research/kb/events/multi-
 - A test that reads any of them must carry `#[cfg(feature = "extended-validation")]`.
 - Before reporting, run the workspace suite once with those three paths moved aside, then restore them: `/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx1` does this and restores them on exit.
 
-**Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-X1-report.md`, a `Session Report` concept like sprint K's `K-C1-report.md`. It contains:
+**Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-X3-report.md`, a `Session Report` concept like sprint K's `K-C1-report.md`. It contains:
 - what changed;
 - every oracle, with the command alongside its output;
 - what each test provably cannot detect;
