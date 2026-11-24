@@ -258,3 +258,117 @@ above shows no banked model does.
   - `eVLQS012_v8_4FNS_UFO`: 2d5c0dc08a52 (store) against 0f2b2b305ab1 (gridpack).
 
   The TpTp and bstar conclusions stand on the gridpacks' bundled models: the validator confirmed the zero coupling and ran the enumerate diff on them, and the 157 gate runs on them too. This session's local reduced-budget 157 run (2.18 ± 0.39 fb) used the store model, so it is indicative only. **Found:** the CMS-store tarball and a gridpack's bundled UFO can differ under the same model name, so a local reproduction of a campaign card should use the bundled copy.
+
+## Gate evidence for PR 11 (#177, merged as 970be89d)
+
+The validator ran these gates (vg-validator). The manager relayed them; they were not re-run here.
+
+**Builds**
+- The σ rows ran on 8a651703, which isolates PR 11's change.
+- The HNL binding rows ran on ba190428. That build is the main merge 187f7ba0 plus the user's ruling (A): an unknown code inside a block the model defines is ignored with a warning.
+
+**Command for every σ row**
+
+```
+vibegraph integrate <gpdb-staged gridpack cards + bundled UFO> --fixed-budget --neval 120000 \
+  --niter 3 --parallel-diagrams --seed N -j 4 --no-network --output-ldjson
+```
+
+- The driver is `chirality_cards.py --campaign`.
+- The one exception is the card-878 4× rung, which used `--neval 480000`.
+- Each card ran on its gridpack's bundled UFO, confirmed by identity hash: Bprime_no_b_mass 3f142c212e44, SM_HeavyN_Gen3Mass_NLO bba6f1be6b0f.
+- Outputs are on the validator host under `$B/`:
+  - `pr11-157` and `pr11-157-ext`
+  - `pr11-cards`
+  - `pr11-bprime` and `pr11-bprime-ext`
+  - `pr11-878-4x`
+  - `pr11-parambind`
+  - `hnl-pr11-ba190428`
+  - `paramcard-pr11-8a651703`
+
+### Card 157 (bstar_tW), 20 seeds
+
+MG reference: 1.7755e-3 ± 2.8e-6 pb (MG 2.9.18). Each seed takes 11 s, and the ESS is only 345–764 per seed. Seeds 6–20 were added for that reason.
+
+| seed | σ (pb) | err | ESS |
+|---|---|---|---|
+| 1 | 1.8292e-3 | 3.6% | 742 |
+| 2 | 1.7100e-3 | 3.8% | 685 |
+| 3 | 1.7942e-3 | 4.4% | 505 |
+| 4 | 1.8337e-3 | 4.6% | 471 |
+| 5 | 1.9053e-3 | 5.2% | 368 |
+
+- **Seeds 1–5:** unweighted mean 1.8145e-3, sd 3.9%, χ²/dof 0.91, vg/MG 1.0219 ± 0.0180.
+- **All 20 seeds:** unweighted mean 1.7878e-3, sd 3.25%, sem 0.73%, χ²/dof 0.64 over 19 dof.
+- **Verdict:** **vg/MG = 1.0069 ± 0.0075, pull +0.92.** The per-seed pulls run from −1.42 to +1.32.
+- The session's local 2.18 fb (store model, reduced budget) was off.
+
+### Bprime cards 156, 877 and 878, 20 seeds each
+
+The fix takes each card from 396 to 198 diagrams; every diagram it removes has a phi± propagator.
+
+| card | 5-seed vg/MG | 20-seed mean (pb) | sd | χ²/dof | seeds below MG | ESS | vg/MG | pull |
+|---|---|---|---|---|---|---|---|---|
+| 156 | 1.0138 ± 0.0216 | 0.0029517 | 4.67% | 1.23 | 11/20 | 127–1101 | 0.9925 ± 0.0105 | −0.71 |
+| 877 | 1.0051 ± 0.0133 | 0.05308 | 3.18% | 0.64 | 10/20 | 318–1085 | 1.0023 ± 0.0073 | +0.31 |
+| 878 | 0.9660 ± 0.0096 | 0.42746 | 3.52% | 1.12 | 14/20 | 455–1421 | 0.9886 ± 0.0079 | −1.44 |
+
+**878 at 4× budget, 5 seeds:**
+- The seeds read 1.0070, 1.0039, 0.9766, 0.9921 and 0.9855, each ±0.9–1.1%, with ESS 7514–11467.
+- The mean is 0.9930 ± 0.0059 (pull −1.19, χ²/dof 1.94).
+- The 5-seed −3.5σ was few-seed scatter. Those five seeds had an sd of 2.19%, against 3.52% over all 20.
+
+### DarkPhoton cards 78, 79, 418 and 419, untrimmed (MASS 1000022 present)
+
+- **Binding:** each card gets exactly one warning, the same at enumerate, check and integrate. Card 78's warning, verbatim:
+  `MASS 1000022 sets 13.33333, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored`
+- **MZd:** each card's own value is used. The Zp leg mass in the integrate channel lines reads 40, 86, 20 and 70, matching the cards.
+- **Decay table under 1000022:** none of the gridpack cards has one. A scratch copy of card 78's card with `DECAY 1000022 2.5e-1` and two BR lines binds with rc 0, giving these warnings:
+  `the decay table (2 channels) below DECAY 1000022 is for a particle the model does not have, so the table is ignored`
+  `DECAY 1000022 sets 0.25, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored`
+
+**σ against gpdb MG.** The 1-seed column ran at `--target-rel 0.02`. The 5-seed column ran at campaign budget, and its σ is the 5-seed unweighted mean.
+
+| card | MZd | 1-seed σ/MG | 5-seed σ (pb) | sd | χ²/dof | vg/MG | pull |
+|---|---|---|---|---|---|---|---|
+| 78 | 40 | 0.9974 | 0.21385 | 1.05% | 1.18 | 0.9869 ± 0.0052 | −2.54 |
+| 79 | 86 | 0.9962 | 4.4206 | 0.75% | 0.52 | 0.9977 ± 0.0038 | −0.62 |
+| 418 | 20 | 1.0023 | 0.21725 | 1.24% | 1.08 | 0.9938 ± 0.0065 | −0.95 |
+| 419 | 70 | 1.0039 | 0.39617 | 1.13% | 1.13 | 0.9909 ± 0.0053 | −1.70 |
+
+- Card 78's five seeds read 0.9922, 0.9864, 0.9983, 0.9704 and 0.9869. The earlier hand-trimmed runs gave 0.985 (MZd 40) and 0.971 (MZd 86).
+- **Card 78 is still open: the 20-seed and 4×-budget check is running.** Its result goes below when it lands.
+
+### HNL cards 84, 85 and 438–442 on ba190428
+
+- **Binding:** all 7 cards bind with rc 0 and exactly 10 warnings each (6 YUKAWA, 4 CKMBLOCK). The command was `vibegraph parameters <proc card with only 'import model'> --param-card <gridpack card> --ufo-dir <bundled UFO>`, which binds the same way integrate does.
+- **Before the fix:** 8a651703 refused all 7 cards at YUKAWA codes 1, 2, 3, 4, 11 and 13. Main 7b36722c refused them at CKMBLOCK.
+- **Card 84's warnings,** without the card-path prefix:
+
+```
+ckmblock 1 sets 0.227591, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 2 sets 0.003508, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 3 sets 0.041539, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+ckmblock 4 sets 1.2, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 1 sets 0.00504, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 2 sets 0.00255, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 3 sets 0.101, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 4 sets 1.27, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 11 sets 0.000511, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+yukawa 13 sets 0.10566, and the model has no parameter there; MadGraph reads only the model's own parameters, so the entry is ignored
+```
+
+- **σ is not measured.** All 7 proc cards are decay chains (`generate p p > w, (w > l hnl)`, plus `w j` and `w j j`). Enumerate refuses them in 0.1 s before binding the card. Card 84's refusal, verbatim:
+  `decay chain 'p p > w, w > l hnl': in u d~ > e+ N1, a decay-chain diagram carries a Majorana fermion or a fermion-number-violating vertex; its lines are oriented per core and per decay, and orienting a line across the stitched propagator is not validated against MadGraph`
+- This blocker is filed as `majorana-in-decay-chain-refused` (v0.3). In these cards the stitched line is the W, and N1 is external inside the decay.
+
+### Card 188
+
+Skipped: it waits on MG 3.7.1 (R1).
+
+### Local gates (manager)
+
+- **187f7ba0** (the main merge), run with the reference data hidden:
+  `/tmp/claude-0/lp/verify-hidden.sh <worktree> pr11m` → FMT_OK, CLIPPY_RC=0, CLIPPY_EV_RC=0, TEST_RC=0, 2374 passed, 0 failed.
+- **ba190428,** as reported by the session that made the change, with the same gates: 2375 passed, 0 failed.
+- **CI on ba190428** (run 45378200789): every job green, including the full banked job.
