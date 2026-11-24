@@ -19,3 +19,8 @@ conditional definitions in `particles.py`, `couplings.py`, `vertices.py`,
 `ufo/config_eval.rs` could flatten them the same way it does for
 `parameters.py`. No store or gridpack model is known to need it, so this stays
 low until one does.
+
+As of sprint L (L-U2), only `parameters.py` evaluates the configuration
+subset; `refuse_conditional_definitions` (`ufo/mod.rs`) still refuses any
+definition under any `if` in the other files, evaluable or not. No model in
+hand needs more.
