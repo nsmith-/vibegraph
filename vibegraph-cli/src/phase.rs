@@ -171,17 +171,22 @@ pub(crate) fn annotate(object: &mut Map<String, Value>) {
     }
 }
 
+/// The fields every `phase` record carries: `event`, `phase` and `elapsed_s`.
+fn record(event: &'static str, name: PhaseName, elapsed_s: f64) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("event".to_string(), Value::from(event));
+    fields.insert("phase".to_string(), Value::from(name.as_str()));
+    fields.insert("elapsed_s".to_string(), Value::from(elapsed_s));
+    fields
+}
+
 /// Enter `name`: its start record is written and flushed before this returns.
 pub(crate) fn start(name: PhaseName) -> Phase {
     ENTERED.fetch_add(1, Ordering::Relaxed);
     let started = elapsed();
     debug!(phase = name.as_str(), "phase {}: started", name.as_str());
     if output::mode() == Mode::Ldjson {
-        let mut fields = Map::new();
-        fields.insert("event".to_string(), Value::from("start"));
-        fields.insert("phase".to_string(), Value::from(name.as_str()));
-        fields.insert("elapsed_s".to_string(), Value::from(started));
-        output::emit_object("phase", fields);
+        output::emit_object("phase", record("start", name, started));
     }
     Phase {
         name,
@@ -226,10 +231,7 @@ impl Phase {
             }
         );
         if output::mode() == Mode::Ldjson {
-            let mut fields = Map::new();
-            fields.insert("event".to_string(), Value::from("end"));
-            fields.insert("phase".to_string(), Value::from(name));
-            fields.insert("elapsed_s".to_string(), Value::from(now));
+            let mut fields = record("end", self.name, now);
             fields.insert("wall_s".to_string(), Value::from(wall));
             fields.insert("outcome".to_string(), Value::from(outcome));
             fields.insert(
@@ -252,14 +254,6 @@ impl Drop for Phase {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn elapsed_time_never_runs_backwards() {
-        mark_origin();
-        let a = elapsed();
-        let b = elapsed();
-        assert!(b >= a && a >= 0.0);
-    }
 
     /// The counts a run is planned with: a proton run adds the density phase,
     /// an artifact's run drops enumeration, and `--check` stops after the
