@@ -315,6 +315,8 @@ pub fn parse_proc_card(
 pub enum EnumerationPool {
     /// The caller's pool for a walk whose candidate assignments times its tree
     /// topologies reach [`AUTO_PARALLEL_COST`], one thread for a smaller one.
+    /// The gluon-free trial walks of the automatic WEIGHTED search belong to no
+    /// process line and run on one thread whatever their size.
     #[default]
     Auto,
     /// One thread, whatever the caller's pool is sized to.
@@ -1506,7 +1508,7 @@ fn generate_sets_inner(
             EnumerationPool::Ambient => true,
             EnumerationPool::Auto => position.is_some() && cost >= AUTO_PARALLEL_COST,
         };
-    if !parallel && threads > 1 && pool != EnumerationPool::Ambient {
+    if !parallel && threads > 1 {
         // feyngraph's internal fan-out would otherwise run on the caller's pool.
         let serial = serial_pool()?;
         return serial.install(|| {
@@ -1808,6 +1810,7 @@ fn report_vertex_assignments(subprocess: &str, diagrams: &[Diagram], model: &UFO
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ufo::conserved::ConservedNumbers;
     use crate::ufo::sm::{sm_model, sm_parsed_model, SMRestrict};
 
     /// Particle assignments the model gives no diagram are not returned. Under
@@ -1987,6 +1990,11 @@ add process p p > mu+ mu- j";
     /// on the CKM restriction, where the generation numbers are not conserved.
     /// It cannot see an assignment that has diagrams only on a card this one
     /// does not reach.
+    ///
+    /// The walk consults the model's numbers: given one its vertices do not
+    /// conserve, a unit on the gluon alone, it keeps exactly the sets whose two
+    /// sides hold as many gluons. That the real numbers prune at all, rather
+    /// than only being consulted, is visible only in the walk's debug count.
     #[test]
     fn the_flavour_prune_drops_no_subprocess_with_a_diagram() {
         let card = "\
@@ -1999,13 +2007,31 @@ add process p p > e+ e- j j";
         for variant in [SMRestrict::NoBMass, SMRestrict::Ckm] {
             let model = sm_model(variant);
             let mut unpruned = (*model).clone();
-            unpruned.conserved = crate::ufo::conserved::ConservedNumbers::none();
+            unpruned.conserved = ConservedNumbers::default();
             let pruned = sets_in(card, &model, EnumerationPool::Serial);
             let all = sets_in(card, &unpruned, EnumerationPool::Serial);
             assert!(!pruned.is_empty());
             assert!(rendered(&pruned) == rendered(&all), "{variant:?}");
         }
         let diagonal = sm_model(SMRestrict::NoBMass);
+        let gluon_card = "\
+define p = g u c d s u~ c~ d~ s~
+define j = p
+generate p p > e+ e- j j";
+        let mut gluon_number = (*diagonal).clone();
+        let mut on_gluon = vec![0; diagonal.particles.len()];
+        on_gluon[diagonal.particle_id("g").expect("g").index()] = 1;
+        gluon_number.conserved = ConservedNumbers::from_values(vec![on_gluon]);
+        let gluons = |legs: &[String]| legs.iter().filter(|leg| *leg == "g").count();
+        let all = sets_in(gluon_card, &diagonal, EnumerationPool::Serial);
+        let balanced: Vec<DiagramSet> = all
+            .iter()
+            .filter(|s| gluons(&s.particles_in) == gluons(&s.particles_out))
+            .cloned()
+            .collect();
+        assert!(!balanced.is_empty() && balanced.len() < all.len());
+        let kept = sets_in(gluon_card, &gluon_number, EnumerationPool::Serial);
+        assert!(rendered(&kept) == rendered(&balanced));
         let names = |n: &[&str]| n.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert!(!flavour_balanced(
             &diagonal,

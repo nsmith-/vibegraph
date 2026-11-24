@@ -142,19 +142,10 @@ fn split_by_multiplicity_of<T>(
 /// does not know keys as NaN, apart from every mass the model has, for the
 /// decomposition to refuse by name, and an empty part comes back whole, as one
 /// part, for the same reason.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn split_by_external_masses(
-    part: Vec<DiagramSet>,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    card: &RunCard,
-) -> Vec<Vec<DiagramSet>> {
-    split_by_external_masses_of(part, |s| s, model, evaluated, card)
-}
-
-/// [`split_by_external_masses`] over items that each carry a set, `set_of`
-/// reading it.
-fn split_by_external_masses_of<T>(
+///
+/// The items of `part` each carry a set, which `set_of` reads, so whatever
+/// travels with a set (its evaluator) is split with it.
+pub(crate) fn split_by_external_masses<T>(
     part: Vec<T>,
     set_of: impl Fn(&T) -> &DiagramSet,
     model: &UFOModel,
@@ -237,8 +228,10 @@ pub fn multiplicity_groups_of(
 }
 
 /// [`multiplicity_groups_of`], with `precompiled[k]` the evaluator of `sets[k]`
-/// where the caller compiled one already, as [`derive_flavor_groups_with`]
-/// takes them.
+/// where the caller compiled one already: an evaluator
+/// [`compile_class`](crate::hadronic::compile_class) built from that set under
+/// `evaluated`. A set whose outgoing legs a flavour group reorders is compiled
+/// again in its new order.
 pub fn multiplicity_groups_of_with(
     sets: Vec<DiagramSet>,
     precompiled: Vec<Option<AmplitudeEvaluator>>,
@@ -260,7 +253,7 @@ pub fn multiplicity_groups_of_with(
     let mut dropped_one_body: Option<String> = None;
     let mut all_parts = Vec::new();
     for multiplicity in split_by_multiplicity_of(items, set_of, rc) {
-        let parts = split_by_external_masses_of(multiplicity, set_of, model, evaluated, rc);
+        let parts = split_by_external_masses(multiplicity, set_of, model, evaluated, rc);
         if parts.len() > 1 {
             tracing::info!(
                 "the {}-leg final states have {} different sets of external masses; each is \
@@ -1474,7 +1467,7 @@ mod tests {
         assert_eq!(multiplicities.len(), 1, "every final state is four legs");
         let whole = multiplicities.into_iter().next().expect("one multiplicity");
 
-        let parts = split_by_external_masses(whole.clone(), &model, &evaluated, &card());
+        let parts = split_by_external_masses(whole.clone(), |s| s, &model, &evaluated, &card());
         let split: Vec<Vec<String>> = parts.iter().map(|p| labels(p)).collect();
         eprintln!(
             "parts: {:?}",

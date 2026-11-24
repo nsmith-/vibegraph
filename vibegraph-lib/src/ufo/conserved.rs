@@ -34,7 +34,7 @@ use super::vertices::Vertex;
 /// span: each row is one number's value on every particle, indexed by
 /// [`ParticleId`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ConservedNumbers {
+pub(crate) struct ConservedNumbers {
     values: Vec<Vec<i64>>,
 }
 
@@ -84,25 +84,16 @@ impl ConservedNumbers {
         ConservedNumbers { values }
     }
 
-    /// No conserved number: prunes nothing.
+    /// The numbers `values`, each one's value on every particle indexed by
+    /// [`ParticleId`], whether or not the model conserves them.
     #[cfg(test)]
-    pub(crate) fn none() -> Self {
-        ConservedNumbers::default()
-    }
-
-    /// How many independent numbers are conserved.
-    pub fn len(&self) -> usize {
-        self.values.len()
+    pub(crate) fn from_values(values: Vec<Vec<i64>>) -> Self {
+        ConservedNumbers { values }
     }
 
     /// Whether no number is conserved.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.values.is_empty()
-    }
-
-    /// Each number's value on every particle, indexed by [`ParticleId`].
-    pub fn values(&self) -> &[Vec<i64>] {
-        &self.values
     }
 
     /// Whether every conserved number totals the same over the incoming legs
@@ -268,10 +259,10 @@ mod tests {
 
     /// Whether the derived numbers span exactly the space `expected` spans.
     fn spans(derived: &ConservedNumbers, expected: &[Vec<i64>]) -> bool {
-        let mut both = derived.values().to_vec();
+        let mut both = derived.values.clone();
         both.extend_from_slice(expected);
         let r = rank(expected);
-        rank(derived.values()) == r && rank(&both) == r
+        rank(&derived.values) == r && rank(&both) == r
     }
 
     /// With a diagonal CKM matrix the vertex table conserves electric charge, the
@@ -285,8 +276,8 @@ mod tests {
         let mut expected = vec![three_charge(&model)];
         expected.extend((1..=3).map(|g| lepton(&model, g)));
         expected.extend((1..=3).map(|g| quark_generation(&model, g)));
-        assert_eq!(derived.len(), 7, "{:?}", derived.values());
-        assert!(spans(derived, &expected), "{:?}", derived.values());
+        assert_eq!(derived.values.len(), 7, "{:?}", derived.values);
+        assert!(spans(derived, &expected), "{:?}", derived.values);
     }
 
     /// The CKM restriction's W vertices mix the quark generations, so only
@@ -299,8 +290,8 @@ mod tests {
         let baryon = by_pdg(&model, |pdg| i64::from((1..=6).contains(&pdg)));
         let mut expected = vec![three_charge(&model), baryon];
         expected.extend((1..=3).map(|g| lepton(&model, g)));
-        assert_eq!(derived.len(), 5, "{:?}", derived.values());
-        assert!(spans(derived, &expected), "{:?}", derived.values());
+        assert_eq!(derived.values.len(), 5, "{:?}", derived.values);
+        assert!(spans(derived, &expected), "{:?}", derived.values);
         for g in 1..=3 {
             assert!(!spans(derived, &[quark_generation(&model, g)]));
         }
@@ -311,7 +302,7 @@ mod tests {
     fn every_derived_number_is_conserved_at_every_vertex() {
         for variant in [SMRestrict::NoBMass, SMRestrict::Ckm, SMRestrict::Default] {
             let model = sm_model(variant);
-            for q in model.conserved_numbers().values() {
+            for q in &model.conserved_numbers().values {
                 for (_, vertex) in model.unitary_gauge_vertices() {
                     let total: i64 = vertex.particles.iter().map(|&id| q[id.index()]).sum();
                     assert_eq!(total, 0, "{variant:?}: {}", vertex.name);
@@ -350,6 +341,6 @@ mod tests {
         assert!(sm_model(SMRestrict::Ckm)
             .conserved_numbers()
             .balanced(&ids(&["u", "s~"]), &ids(&["e+", "ve"])));
-        assert!(ConservedNumbers::none().balanced(&ids(&["u"]), &ids(&["e+"])));
+        assert!(ConservedNumbers::default().balanced(&ids(&["u"]), &ids(&["e+"])));
     }
 }
