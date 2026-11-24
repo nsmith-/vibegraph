@@ -1,0 +1,103 @@
+name: dev-build
+
+# Builds the static x86-64-v3 musl binary for one commit, for validation runs
+# of unreleased code on the batch system. The binary is a workflow artifact
+# only: nothing is tagged or released, and it expires after the retention
+# period. The batch side fetches the artifact by this run's ID and checks
+# vibegraph.sha256 and version.txt against the commit it was asked to run.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit SHA to build."
+        required: true
+
+run-name: dev-build ${{ inputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TARGET: x86_64-unknown-linux-musl
+    steps:
+      - name: check input
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "sha must be a full 40-character lowercase hex SHA"; exit 1; }
+
+      # Full history so `git describe` (vibegraph-cli/build.rs) can name the
+      # commit in `--version`.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: check checkout
+        env:
+          SHA: ${{ inputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SHA"
+
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: dev-build-musl-v3--${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            dev-build-musl-v3--
+
+      - name: cargo build --release
+        env:
+          RUSTFLAGS: -C target-cpu=x86-64-v3
+        run: cargo build --release --locked --target "$TARGET" --package vibegraph
+
+      - name: smoke test
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          bin="target/$TARGET/release/vibegraph"
+          "$bin" --version | head -1 | grep -q "g${SHA:0:8}"
+          work="$(mktemp -d)"
+          cat > "$work/proc_card.dat" <<'EOF'
+          import model sm
+          generate e+ e- > t t~
+          EOF
+          cat > "$work/run_card.dat" <<'EOF'
+            0 = lpp1
+            0 = lpp2
+            250.0 = ebeam1
+            250.0 = ebeam2
+          EOF
+          "$bin" integrate "$work/proc_card.dat" --run-card "$work/run_card.dat" \
+            --out "$work/out" --neval 5000 --niter 2
+          test -f "$work/out/grid.bin.zst"
+
+      - name: package
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/$TARGET/release/vibegraph" dist/vibegraph
+          (cd dist && sha256sum vibegraph > vibegraph.sha256)
+          { echo "commit $SHA"; dist/vibegraph --version | head -1; } > dist/version.txt
+          cat dist/version.txt dist/vibegraph.sha256
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vibegraph-dev-${{ inputs.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
