@@ -511,3 +511,26 @@ lines=79 passed=2368 failed=0
   and card values. One extra integration was made for the user's card, and
   sixteen single-member integrations to obtain the per-member σ that the
   integration does not report.
+
+## Addendum: the two 300k samples (manager-run)
+
+The long-run request above, run by the manager on the same `$S/main` grid. Each seed was generated with:
+
+```
+vibegraph-main --no-network generate main/grid.bin.zst --seed <seed> --nevents 300000 -j 4
+```
+
+Both runs exited with rc 0. Each sample was then scored with `bias.py`:
+
+| seed | 0j Σpull² (3 dof) | 1j Σpull² (11 dof) | `c g` share (integrated 0.04591) | pull |
+|---|---|---|---|---|
+| 101 | 2.00 | 24.43 | 0.04411 ± 0.00071 | −2.54 |
+| 202 | 6.63 | 9.20 | 0.04528 ± 0.00072 | −0.88 |
+
+- **The two seeds agree with each other.** They differ by 1.2σ, so the deficit does not migrate between seeds.
+- **The 8% charm bias is excluded.** The `c g` share was 0.196 against 0.213 integrated in the 30k samples, which would have been an 8% bias. At 300k it is not there.
+- **About 3% remains, unresolved.** All four samples combined give `c g` = 0.0445 ± 0.0005, about −2.8σ or −3% of the member.
+  - That is within the reach of the look-elsewhere effect over 16 members.
+  - The reference has its own systematic: the 1j closure is −1.2σ.
+- **Scale of any effect.** A 3% shift on this member is 0.13% of the 1j part's composition. It moves no σ, because each part's scale is fixed.
+- **Not a blocker.** Settling the residual needs ≥5 seeds, against shares read from the mixed run itself, which is Found 4.
