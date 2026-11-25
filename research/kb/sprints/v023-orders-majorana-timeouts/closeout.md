@@ -44,6 +44,8 @@ sprint traffic. Each session's brief and report is in `sessions/`.
 | #201 | 92877716 | L-U2 | The regression L-Z5 found: a `Parameter`-free `if` on an unevaluated condition loads again. |
 | #191 | 486668d8 | | The committed `vibegraph-cli/target` build tree is untracked, and `target/` is ignored in every crate. |
 | #206 | 3f4dd815 | | The dev-build CI workflow: static musl binaries of unreleased commits, for batch. |
+| #210 | c16f8ec2 | | CI on `release/v*`, the backport flow, and no publish from a dispatch. |
+| #211 | 54cecfac | | Release prep: version 0.2.3, `ENUMERATION_VERSION` 4, and the release notes the user approved. |
 
 Records and kb-only PRs:
 - #189 and #190: the pipeline close-out and the v0.3 decisions;
@@ -91,11 +93,11 @@ Records and kb-only PRs:
 
 ## Release
 
-v0.2.3 is not tagged yet. Before the tag:
-- the release-prep PR: version bump and complete release notes, with the limits above stated;
-- `release-branch-ci-and-ruleset-missing`;
-- `vg-validator`'s targeted check of v022-1009's failures on the release-candidate build;
-- the history rewrite dropping `vibegraph-cli/target/`, from d5e7c71f on. No v0.2.x tag contains that tree, so no tag moves.
+v0.2.3 is not tagged yet. The release candidate is main 54cecfac (#211). Before the tag:
+- `vg-validator`'s targeted check of v022-1009's failures, on the dev build of 54cecfac. Stage A (`integrate --check` on all 1000 cards) is running. Stage B (1-seed integrations of newly running cards) waits on the user's approval of its batch cost.
+- The history rewrite dropping `vibegraph-cli/target/`, from d5e7c71f on. No v0.2.x tag contains that tree, so no tag moves.
+
+After the tag: cut `release/v0.2`, run the non-publishing dispatch from it, and activate the ruleset (`release-v02-branch-dry-run-and-ruleset`, needs-user).
 
 ## Carried forward
 
@@ -118,6 +120,13 @@ The four MLM sampling-cost items ship on the v0.3 line only. In it, the
 one-group-per-point evaluation lands before lane batching.
 
 ## Lessons
+
+- **An artifact that embeds its model cannot see a reader fix.** #178 fixed
+  the `GoldstoneBoson` spelling without a version bump. Until #211 bumped
+  `ENUMERATION_VERSION` to 4, HEAD read v0.2.2's Bprime artifact silently at
+  17.70 pb against 2.527 fresh, and main-built artifacts from between the two
+  carried the same exposure. This is sprint K's #161 lesson again, one layer
+  down (`artifact-version-blind-to-ufo-reader-changes`).
 
 - **Name the build of every campaign row.** PR 1's request A ran on a
   branch build that lacked a fix already on main. A wrong-sign interference
