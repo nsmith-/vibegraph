@@ -34,3 +34,17 @@ field to MadGraph's default, as idm's `small_width_treatment` presumably was
 may be benign; the view cannot tell. The `patches` column already marks every
 such attempt (`patches = '[]'` is as-shipped), so the fix is in what the view
 and the statistics read from it.
+
+## `strip:set` of `complex_mass_scheme` (2026-11-25)
+
+On all 14 VLQ T' gridpacks (TprimeBToTH 124, 125, 610–614; TprimeBToTZ 126,
+127, 615–619), v022-1009's attempt 2 ran with the patch `["strip:set"]`. It
+deleted `set complex_mass_scheme`, which vibegraph refuses by name. The row then
+compared a real-mass vibegraph σ against a complex-mass MG reference, and the
+comparison view gave it a ratio and a pull.
+
+Sprint L's lane reproduced that staging, and the 20%-width interference cards
+612 and 614 read 0.81 and 0.52. The scheme is the leading suspect; see
+[complex-mass-scheme-refused](../feature/complex-mass-scheme-refused.md). A patch
+that removes a physics-scheme command is physics-changing, the same as
+`param-card:dropped`.
