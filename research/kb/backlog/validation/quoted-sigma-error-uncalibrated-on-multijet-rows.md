@@ -36,3 +36,19 @@ seeds), found seed-scatter χ²/dof of 9.3 on ChargedHiggsGM VBF M2000
 (gridpack 72) and 5.1 on QCD-4Jets HT-10to40 (gridpack 34).
 TpTpTo2T2STo2Mu2G_MS10 (gridpack 508) hits the 500-iteration cap on some
 seeds.
+
+## A 20-seed calibration on a cancelling interference (614, 2026-11-25)
+
+Sprint L measured VLQ card 614 (TprimeBToTH, `VLQ^2==2`, a signed interference
+across a 20%-width pole) on main e6a4cba8, 20 seeds per rung:
+
+| rung | mean (pb) | seed sd | mean quoted error | χ²/dof |
+|---|---|---|---|---|
+| 4× (neval 480000) | −2.984e-4 | 5.7% | 8.4% | 0.51 |
+| 8× (neval 960000) | −2.997e-4 | 5.0% | 5.7% | 0.80 |
+
+The rungs agree (−0.25σ). The quoted error overstates the scatter at 4×. The
+seed spread shrinks far less than the 1/√2 that point count alone would give,
+which points to grid adaptation rather than per-iteration statistics dominating
+the scatter. A 5-seed read of the same 4× rung gave a 3.2% spread, 1.8× too
+small, and a spurious "dip".
