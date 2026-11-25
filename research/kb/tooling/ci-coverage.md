@@ -17,7 +17,8 @@ sources:
 ---
 # What a green CI run covers
 
-`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests. A
+`.github/workflows/ci.yml` runs on pushes to `main` and to `release/v*`
+([release branches](release-branches.md)), and on pull requests. A
 green check means the six jobs passed (on a pull request `banked` may pass by
 being skipped), and each covers a defined slice. Branch protection requires
 only `all-pass`, which aggregates the rest. The

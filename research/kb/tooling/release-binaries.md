@@ -191,6 +191,9 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 # watch Actions: publish needs every build leg green, then dispatches acceptance
 ```
 
+A patch release on a maintenance line is tagged on its `release/vX.Y` branch
+the same way; the backport flow is in [release branches](release-branches.md).
+
 A bad test release is removed with `gh release delete <tag> --yes` and deleting
 the tag locally and on the remote.
 
