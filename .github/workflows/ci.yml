@@ -25,7 +25,7 @@ name: ci
 # media, Markdown outside the crates and `validation/`), and the `changes`
 # job's summary then says "banked skipped: no banked-layer inputs changed".
 # Any doubt (no base, a failed diff, an empty diff, `changes` itself failing)
-# runs it. Pushes to `main` always run it.
+# runs it. Pushes to `main` and to `release/v*` always run it.
 #
 # `merge_group` runs the same jobs on a merge-queue group: the tip of `main`
 # with every PR queued ahead of it and this one merged in. A PR in the queue
@@ -38,9 +38,14 @@ name: ci
 # A skipped job reports as passing, and `banked` is also skipped when `test`
 # fails, so the required check is `all-pass`: it accepts a skipped `banked`
 # only when `changes` answered `run=false`, and needs every other job green.
+#
+# A `release/v*` maintenance branch gets the same gates as `main`: pushes to it
+# run every job, `banked` included, and a pull request into it runs as one into
+# `main` does (the `pull_request` trigger has no branch filter). Nothing here
+# deploys or publishes, so no job needs a guard to keep it off those branches.
 on:
   push:
-    branches: [main]
+    branches: [main, "release/v*"]
   pull_request:
   merge_group:
 

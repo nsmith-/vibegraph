@@ -3578,6 +3578,7 @@ dependencies = [
  "unicode-width",
  "ureq",
  "vibegraph-lib",
+ "yaml_serde",
  "zstd",
 ]
 
