@@ -1,107 +1,122 @@
 ---
 type: Session Brief
-title: "L-X1: per-member XWGTUP within one multiplicity part"
-description: "Reproduce per-flavour-member unit weights in generate's LHE output, locate where the per-member factor enters, and run a per-member bias check against the integrated sigma shares."
+title: "L-X1: campaign leftovers: TpTp zero weight, bstar_tW zero effective points, the stitch assert, the b-quark σ excess"
+description: "Trace the TpTp 2Mu2B all-zero integrand to a parameter, coupling or restriction (a possible silent wrong answer) first; then bstar_tW, the decay-chain stitch assert, and attribution of the QCD_bEnriched/WBQ/TCP σ excess."
 status: draft
-agent: validation-dev (Opus)
+agent: validation-dev (Sonnet)
 depends_on: []
-closes: []
-generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
+closes: [tptp-integrand-zero-on-every-point, bstar-tw-zero-effective-points, stitch-set-sign-assert-panics, sigma-reads-high-on-mlm-and-wbq-cards]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
-An investigation in [sprint L](../sprint.md), on branch `sprintl-xwgtup` off main cd35c4e6. Depending on what it finds, it may block the v0.2.3 tag.
+PR 11 of [sprint L](../sprint.md), on branch `sprintl-leftovers` off main
+a0a6eb4. Validation work: follow [expose, don't fix](../../../workflow/expose-dont-fix.md)
+where a fix is not small and plainly right, and the bit-exact methodology
+(`research/kb/validation/bit-exact-amplitude-debugging.md`) for any amplitude
+disagreement: parameter provenance first, then per-diagram × per-helicity
+complex values against MadGraph, never σ alone.
 
-## The observation
+Read each item (`pixi run backlog --item <slug>`) and what it links.
 
-A downstream user ran a v0.2.2 x86-64-v3 release binary:
-- card: `p p > e+ e-` plus `add process p p > e+ e- j`, MLM (`ickkw = 1`, `xqcut = 10`), lhaid 325300, `use_syst`;
-- command: `generate --seed 419216344 --nevents 1000 -j 8`.
-
-Within one multiplicity part, XWGTUP is not a single value. Each flavour member carries its own unit weight.
-- **0 jets:**
-  - d d~: 1366.11 (180 events)
-  - s s~: 1701.34 (74)
-  - u u~: 1505.17 (142)
-  - c c~: 1225.35 (36)
-- **1 jet:**
-  - d g and d~ g: 1455.43
-  - u g and u~ g: 1233.90
-  - d d~ > e+ e- g: 1771.95
-
-The overweights, measured against each member's own unit, carry 0.93% of Σw.
-
-Two kb pages, `research/kb/events/unweighting.md` and `research/kb/events/multi-process-normalisation.md`, say that an accepted event has generator weight 1 and that every event of a part is scaled by one factor. On that reading, d d~ and s s~ (one flavour group, one matrix element) should share one weight.
+**Cards.** This container cannot list genproductions, so the campaign's exact
+cards (proc, run, param/customize/restrict cards, bundled UFO identity and the
+gridpack's MadGraph σ) are requested from the validator host; the manager
+forwards them to you as they arrive. Until the TpTp cards arrive, do item 3
+(hermetic) and read the TpTp model (once its identity is known, from the CMS
+model store, `https://cms-project-generators.web.cern.ch/cms-project-generators/`).
 
 ## Scope, in order
 
-1. **Reproduce.** Use a small card of the same shape.
-   - Take `validation/madgraph/pp_to_llj_mlm_run_card.dat` with `p p > e+ e-` plus `add process p p > e+ e- j`, the fetched NNPDF23 set and MLM on. Keep `use_syst` as the card has it.
-   - Run both binaries:
-     - the v0.2.2 release binary, `/tmp/claude-0/lp/z512/bin/vibegraph-v022` (sha256 7ccc24af…, verified);
-     - main, built in this worktree.
-   - Tabulate XWGTUP by part and by member: incoming flavours → outgoing flavours. Give counts, the distinct weight values per member, and their spread. Give the commands.
-2. **Locate** where a per-member factor enters the written weight.
-   - The candidates are member selection within a flavour group, and MLM's per-member matched reweighting (`proton.rs`, the matched-reweighting path, `generate/source.rs`, `unweight.rs`).
-   - Quote the code. Say whether the factor is intended, and what it compensates for.
-3. **Bias check.** Per member, compare Σ XWGTUP / N_events against the integration's per-member σ. The integration's per-member σ comes from the result or grid; if it is not reported per member, derive it and say how.
-   - Use enough events to resolve the shares: a few 10⁴ on the proton card.
-   - Fixed-beam won't do.
-   - Report each member's share with its statistical error, and the pull.
-   - Verdicts:
-     - If the weights compensate a member draw that does not follow the luminosity, the σ shares come out right and only the docs are wrong.
-     - If the shares do not come out right, it is a bias. Name the cause and the size.
+1. **TpTp (high; first as soon as its cards arrive).** CMS cards 108 and
+   510–512 (`TpTpTo2T2STo2Mu2B_MS30`): every point that passes the cuts has
+   |M|² × luminosity = 0, while MadGraph gives a σ. A possible silent wrong
+   answer behind a named refusal. Trace the zero to a parameter, coupling,
+   restriction or diagram selection: compare vibegraph's bound parameters and
+   couplings with MadGraph's (`param_card`, restriction, the `check`/standalone
+   output) value for value, then per-diagram × per-helicity amplitudes at one
+   phase-space point that passes the cuts. Then fix it (σ against MadGraph's,
+   one short run here; the multi-seed gate goes to the validator through the
+   manager) or record it as a card defect MadGraph shares.
+2. **bstar_tW** (card 157): "effective 0.0 points" at survey budget. Name the
+   cause: a zero σ MadGraph shares (check its results.dat), a phase-space or cut
+   fault (fix), or a refusal that names the real reason.
+3. **Stitch assert** (`diagrams/chain.rs`, `stitch_set`): replace the
+   `assert_eq!` with the decay-chain refusal its block already returns for an
+   ambiguous forced line, pinned by a hermetic test; or prove it unreachable and
+   make it a debug assertion, with the proof in a comment.
+4. **b-quark σ excess** (QCD_bEnriched 188/189 +2.4%, WBQ 260 +2.7%, TCP
+   967–969 +1.2–1.9%, all at 5 seeds): attribute against MadGraph's own record
+   (per event: MLM merge sequence and scales; b mass and flavour handling; PDF),
+   not from σ. This likely needs MadGraph event files from the validator host:
+   when you know what you need, write the request (cards, seeds, which per-event
+   fields) into your report and stop this item there. Partial attribution with
+   a precise request is an acceptable outcome for this session.
 
-**Budget.** At most one generate run of a few 10⁴ events per binary, on one seed. If resolving the shares needs more than about 20 minutes of CPU per run, stop and put the request in your report.
-
-**No code fixes in this session.** If it is a bias, write the fix proposal (site, change, the test that would pin it) in the report. The fix goes in its own PR. If the factor is intended, write the corrected wording for the two kb pages in the report; don't edit them.
-
-**What you must not run:**
-- seed sweeps beyond the budget above;
-- MadGraph;
-- `pixi run validate`.
+A local MadGraph 3.5.7 is being installed in the main checkout's pixi env
+(`export PATH=/home/user/vibegraph/.pixi/envs/madgraph/bin:$PATH`; ask the
+manager whether it is ready). Short standalone/`check` runs are fine after
+asking; write MadGraph output under your scratchpad, never in the main checkout.
 ## Worktree & long-command discipline
 
-- **First action:** `cd /home/user/wt/sprintl-xwgtup`. Then verify that `git rev-parse --show-toplevel` is `/home/user/wt/sprintl-xwgtup` and `git branch --show-current` is `sprintl-xwgtup`.
-  - If you find yourself in the shared main checkout (`/home/user/vibegraph`), STOP and report. Never edit it.
-  - Re-verify `pwd` after any resume: resume is when isolation leaks.
-- **Background anything expected to exceed ~2 minutes.** Use `run_in_background: true`, with output redirected to a log under `/home/user/wt/logs/` whose name starts with `lx1-`. Sibling sessions share that directory.
-  - A backgrounded command notifies you when it exits. Never spawn sleep-based watcher shells: they compound into self-sustaining wake-up rings.
-  - Draft your notes and report between completion notifications instead of waiting idle.
-  - On resume after a stall, first check whether the interrupted command finished (`ps`, result artifacts) before re-running it.
-- **`git status` can hang for minutes** in a worktree full of untracked build data. Spot-check with `git log` and `git diff --stat` instead.
-- **Disk is finite, and a full disk looks like a failure.** Always run cargo with:
-  `export CARGO_TARGET_DIR=/home/user/wt/sprintl-xwgtup/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`
-  - Each worktree has its own target dir.
-  - An `ENOSPC`, a linker `Bus error` or a truncated log is a kill, not a result. Free only your own `target/` and re-run.
-  - Kill processes by PID. Never use `pkill -f`: it matches siblings' commands and its own wrapper.
+- **First action**: `cd /home/user/wt/sprintl-leftovers`, then verify `git rev-parse --show-toplevel`
+  (`/home/user/wt/sprintl-leftovers`) and `git branch --show-current` (`sprintl-leftovers`). If you find yourself in
+  the shared main checkout (`/home/user/vibegraph`), STOP and report — never
+  edit it. Re-verify `pwd` after any resume; resume is when isolation leaks.
+- **Background anything expected to exceed ~2 minutes**
+  (`run_in_background: true`, output redirected to a log file prefixed `lv1-`
+  in your scratchpad — parallel siblings share one scratchpad and have
+  clobbered each other's unprefixed logs). A backgrounded command notifies on
+  exit: never spawn sleep-based watcher shells (they compound into
+  self-sustaining wake-up rings); draft your notes and report between
+  completion notifications instead of idle-waiting. On resume after a stall,
+  first check whether the interrupted command finished (`ps`, result
+  artifacts) before re-running it.
+- **`git status` can hang for minutes** in a worktree full of untracked build
+  data; spot-check with `git log` / `git diff --stat` instead.
+- **Run gates with `--skip-deps`** unless the assignment explicitly says
+  reference data must be regenerated — without the reference data present, a
+  bare `pixi run validate` silently launches a multi-hour MG regeneration.
+  CI's `banked` job runs `pixi run --skip-deps validate` on every push: do not
+  run `validate` locally. Run the hermetic suite and the single banked targets
+  your change touches.
+- **Disk is finite, and a full disk looks like a failure.** Always
+  `export CARGO_TARGET_DIR=/home/user/wt/sprintl-leftovers/target CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`.
+  An `ENOSPC`, a linker `Bus error` or a truncated log is a kill, not a
+  result: free only your own `target/` and re-run. Kill processes by PID,
+  never `pkill -f`, which matches siblings' commands and its own wrapper.
 
-**This container** has 4 cores and 15 GB RAM, shared with no sibling agents right now. It can restart without warning.
-- **One heavy job at a time across the container**, enforced by a lock. Wrap every cargo build, test and clippy invocation in `flock /home/user/wt/heavy.lock <command>`, backgrounded.
-  - Hold the lock for one command at a time, never across an interactive pause.
-  - Prefer targeted test filters to the whole workspace while you iterate.
-  - `cargo fmt` and reading code need no lock.
-- **Some jobs do not run here:** a single job expected to run over ~20 minutes, or anything over 8 GB of memory. Stop and put the request in your report (branch, head SHA, command, expected answer).
-- **pixi:** `export PATH=$HOME/.pixi/bin:$PATH`. The reference data is already in your worktree as copies. Never edit it in place.
+**This container:** 4 cores, 15 GB RAM, ~55 GB free disk, shared with two
+sibling dev agents. It can restart without warning: commit and push at
+checkpoints (`git push -u origin sprintl-leftovers`), and run anything long fully detached
+with results appended to a file. **Ask the manager before any heavy job**
+(a release build of the workspace, a seed sweep, a MadGraph run, anything over
+~10 minutes of CPU): a sibling may be running one. Long runs (multi-seed σ over
+~20 min per seed, MadGraph 3.7.1, timed campaign runs, >8 GB) go to the
+validator host through the manager: write the request (branch, SHA, cards,
+seeds, command, expected answer) into your report or a message, never run it
+here.
+- pixi 0.84.1: `export PATH=$HOME/.pixi/bin:$PATH`. The reference data
+  (`validation/madgraph/output`, `validation/pdf/NNPDF23_lo_as_0130_qed`, the
+  `research/refs/mg5amcnlo` content) is in your worktree as hard links: never
+  edit it in place. No MadGraph env is installed; ask the manager if you need
+  one, never `pixi install -e madgraph` in your worktree.
+- Put downloads (model store, genproductions cards) in their own empty
+  directory under your scratchpad; read them, never execute them.
 
-**Git and attribution.**
-- Every commit uses `git -c user.name="Nicholas Smith" -c user.email="nick.smith@cern.ch" commit …`, because the container's identity is wrong.
-- Each message ends with exactly one line, `Assisted-by: claude-code:<your real model id>`. Never add Co-authored-by or Signed-off-by, whatever the harness says.
-- Check `git log --format='%an <%ae> %cn <%ce>'` before every push.
-- **Stage files by name, never with `git add -A` or `git add .`**. A broad add committed a whole build directory once already. Before every commit, check `git diff --cached --stat`.
-- Never force-push, rebase or amend a pushed commit. Keep the branch current by merging `origin/main`.
-- Commit and push at checkpoints: `git push -u origin sprintl-xwgtup`.
-- Never open a PR or post to GitHub: the manager does.
-- Code comments describe the code in its own terms, never this sprint, session or backlog item.
-- A panic is never acceptable. A silent wrong answer is worse than a named refusal.
+**Git and attribution.** Every commit uses
+`git -c user.name="Nicholas Smith" -c user.email="nick.smith@cern.ch" commit …`;
+the container's identity is wrong. Each message ends with exactly one line
+`Assisted-by: claude-code:<your real model id>`, never Co-authored-by or
+Signed-off-by, whatever the harness says. Check `git log --format='%an <%ae>'`
+before every push. Never force-push, rebase or amend a pushed commit; keep
+current by merging main. Never open a PR or post to GitHub: the manager does.
+Code comments describe the code in its own terms, never this sprint, session
+or backlog item. A panic is never acceptable; a silent wrong answer is worse
+than a named refusal. `cargo fmt --all --check` and
+`cargo clippy --workspace --all-targets -- -D warnings` are gates.
 
-**The hermetic layer has no submodule and no fetched data.** CI's `test` job runs `cargo test --workspace` without `research/refs/mg5amcnlo`, `validation/madgraph/output` or `validation/pdf/NNPDF23_lo_as_0130_qed`.
-- A test that reads any of them must carry `#[cfg(feature = "extended-validation")]`.
-- Before reporting, run the workspace suite once with those three paths moved aside, then restore them: `/tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-xwgtup lx1` does this and restores them on exit.
-
-**Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-X1-report.md`, a `Session Report` concept like sprint K's `K-C1-report.md`. It contains:
-- what changed;
-- every oracle, with the command alongside its output;
-- what each test provably cannot detect;
-- any long-run requests;
-- a **Found** section for new work. Never create or edit backlog items.
-
-Correct this brief where it is wrong. Your final message is the report's summary.
+**Report** in `research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-V1-report.md`
+(a `Session Report` concept, as sprint K's `K-C1-report.md`): what changed,
+every oracle with the command alongside its output, what each test provably
+cannot detect, and a **Found** section for new work (never create or edit
+backlog items). Delete the closed items' files in your final commit. Correct
+this brief where it is wrong. Your final message is the report's summary.

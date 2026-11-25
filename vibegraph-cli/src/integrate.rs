@@ -70,9 +70,9 @@ use vibegraph::progress;
 use vibegraph::proton::{FlavorGroups, ProtonBeams, ProtonIntegrand, SampledPointFault};
 use vibegraph::runcard::process_defaults::ProcessFacts;
 use vibegraph::runcard::{BeamMode, RunCard};
-use vibegraph::support::{check_support, PointCensus};
+use vibegraph::support::{check_support, zero_coupling_subprocesses, PointCensus, SupportError};
 use vibegraph::systematics::request::VariationRequest;
-use vibegraph::ufo::bind::bind_card;
+use vibegraph::ufo::bind::{bind_card_under, IgnoredBecause};
 use vibegraph::ufo::loaded::LoadedModel;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -437,11 +437,16 @@ pub(crate) struct IntegrateArgs {
     /// computed width in place of `Auto` (in the SM, t and W bind). Refused: an
     /// `Auto` width of a particle with a three-body mode through a closed
     /// channel (in the SM, Z and H) or that cannot otherwise be computed as
-    /// MadGraph would, a non-zero value for a
-    /// parameter the restriction fixed to zero, a value other than one for a parameter it fixed to one, a
-    /// move that splits parameters the restriction merged, and an entry the
-    /// model has no parameter for. A mass or width the model
-    /// computes (MW in the SM) is ignored, with a warning when it disagrees.
+    /// MadGraph would, a non-zero value for a parameter the restriction fixed to
+    /// zero, a value other than one for a parameter it fixed to one, and a move
+    /// that splits parameters the restriction merged. A mass or width the model
+    /// computes (MW in the SM) is ignored, with a warning when it disagrees. An
+    /// entry the model has no parameter for is ignored with a warning naming
+    /// it, as MadGraph reads only the model's own parameters: one in a block
+    /// the model does not define, one at a code the model lacks inside a block
+    /// it does define (a mistyped code among them), and a `MASS` or `DECAY`
+    /// entry (with its decay table or `Auto` width) at a code no particle of the
+    /// model has.
     #[arg(long)]
     pub(crate) param_card: Option<PathBuf>,
 
@@ -1042,7 +1047,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         moved,
         text: param_card,
         ..
-    } = bind_param_card(args.param_card.as_deref(), &model)?;
+    } = bind_param_card(args.param_card.as_deref(), &model, &model_id.restrict)?;
     let sets = match sets.or(enumerated) {
         Some(sets) => sets,
         None => {
@@ -1155,8 +1160,18 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
     // A cross section no point carries, or only a handful do, is not a result:
     // refused before it is printed or banked, so nothing downstream reads it.
-    check_support(conv, output.census)
-        .map_err(|e| err(ErrorKind::Support, format!("{e}; no artifact was written")))?;
+    check_support(conv, output.census).map_err(|e| {
+        let zero = zero_coupling_subprocesses(&sets, &model, &evaluated);
+        let cause = if matches!(e, SupportError::MatrixElementZero { .. }) && !zero.is_empty() {
+            format!(" ({})", zero.join("; "))
+        } else {
+            String::new()
+        };
+        err(
+            ErrorKind::Support,
+            format!("{e}{cause}; no artifact was written"),
+        )
+    })?;
 
     let observable = output.observable;
     let sigma_pb = output.result.integral * observable.per_natural_unit();
@@ -1468,14 +1483,16 @@ pub(crate) struct BoundParamCard {
 pub(crate) fn bind_param_card(
     path: Option<&Path>,
     model: &Arc<UFOModel>,
+    restriction: &str,
 ) -> Result<BoundParamCard, CliError> {
     let Some(path) = path else {
-        let bound = bind_card(model.clone(), &ParamCard::default()).map_err(|e| {
-            err(
-                ErrorKind::Model,
-                format!("the model's default parameters: {e}"),
-            )
-        })?;
+        let bound =
+            bind_card_under(model.clone(), &ParamCard::default(), restriction).map_err(|e| {
+                err(
+                    ErrorKind::Model,
+                    format!("the model's default parameters: {e}"),
+                )
+            })?;
         return Ok(BoundParamCard {
             evaluated: bound.evaluated,
             moved: bound.moved,
@@ -1495,19 +1512,42 @@ pub(crate) fn bind_param_card(
             format!("cannot read the param card {}: {e}", path.display()),
         )
     })?;
-    let bound = bind_card(model.clone(), &card)
+    let bound = bind_card_under(model.clone(), &card, restriction)
         .map_err(|e| err(ErrorKind::Card, format!("{}: {e}", path.display())))?;
     for ignored in &bound.ignored {
-        warn!(
-            "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
-             ignored",
-            path.display(),
-            ignored.block,
-            ignored.pdg,
-            ignored.param,
-            ignored.card,
-            ignored.computed,
-        );
+        match &ignored.why {
+            IgnoredBecause::Computed { param, computed } => warn!(
+                "{}: {} {} sets {} to {}, which the model computes as {}; the card's value is \
+                 ignored",
+                path.display(),
+                ignored.block,
+                ignored.code,
+                param,
+                ignored.card,
+                computed,
+            ),
+            IgnoredBecause::NoParticleTable { channels } => warn!(
+                "{}: the decay table ({} channels) below DECAY {} is for a particle the model does \
+                 not have, so the table is ignored",
+                path.display(),
+                channels,
+                ignored.code,
+            ),
+            IgnoredBecause::NoParticleAuto => warn!(
+                "{}: DECAY {} Auto is for a particle the model does not have, so the entry is \
+                 ignored",
+                path.display(),
+                ignored.code,
+            ),
+            IgnoredBecause::NoParameter => warn!(
+                "{}: {} {} sets {}, and the model has no parameter there; MadGraph reads only \
+                 the model's own parameters, so the entry is ignored",
+                path.display(),
+                ignored.block,
+                ignored.code,
+                ignored.card,
+            ),
+        }
     }
     for width in &bound.auto_widths {
         info!(
