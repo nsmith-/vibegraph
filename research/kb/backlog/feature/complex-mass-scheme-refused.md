@@ -40,3 +40,22 @@ the scheme's own effect on 126 at −0.04%. So the scheme's size on the
 pair-production cards is not established, and on the interference cards, where
 σ is a cancellation, it may be large or small. MG 3.7.1 on 612 with the scheme
 on against off, and everything else identical, measures it directly.
+
+### Measured: the scheme accounts for 612/614's gap against their references
+
+MG 3.7.1 on each card's own cards, with zerowidth_tchannel True and
+hard_survey 2, run with the scheme off and then on:
+
+| card | MG off | MG on | on/off | MG on / gridpack reference | vibegraph main 8× / MG off |
+|---|---|---|---|---|---|
+| 612 | −8.912e-4 (3 seeds, sd 3.4%) | −1.094e-3 (3 seeds) | 1.228 | 0.993 | 0.986 ± 0.019 |
+| 614 | −3.078e-4 (8 seeds, sd 11.2%) | −5.579e-4 (3 seeds) | 1.74 ± 0.15 | 0.938 ± 0.06 | 0.982 ± 0.044 |
+
+vibegraph agrees with MG in the real-mass scheme on both cards. Against
+complex-mass references, the VLQ interference cards are not comparable until
+the scheme is supported.
+
+Sprint L's L-I1 report (fixed-point bank) explains the sensitivity. Near the
+pole the scheme rotates the T' propagator's phase, so the interference moves by
+O(1) while |M0|² and |M2|² move about 1%. That is why pair production barely
+feels the scheme.
