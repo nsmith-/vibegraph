@@ -22,7 +22,8 @@ self-contained `vibegraph` binaries for a user with no Rust toolchain.
   release candidate such as `v0.2.0-rc1`), plus `workflow_dispatch` for a dry
   run of the build matrix against any ref (input `tag`, default `v0.2.0-rc1`,
   names the tag whose notes the dry run reports on). `publish` runs only on a
-  tag ref, so a dispatch builds and smoke-tests without releasing.
+  tag push (`github.event_name == 'push'` and a tag ref), so a dispatch builds
+  and smoke-tests without releasing, on a branch ref and on a tag ref alike.
 - **`release-check`** (`contents: read`): runs `scripts/release-check.sh` on
   the tag, then `scripts/test-release-check.sh`. On a tag push a refusal fails
   the run and `publish` (which needs it) is skipped; on a dispatch the real
@@ -190,6 +191,9 @@ git tag vX.Y.Z-rc1 && git push origin vX.Y.Z-rc1   # prerelease candidate
 git tag vX.Y.Z && git push origin vX.Y.Z
 # watch Actions: publish needs every build leg green, then dispatches acceptance
 ```
+
+A patch release on a maintenance line is tagged on its `release/vX.Y` branch
+the same way; the backport flow is in [release branches](release-branches.md).
 
 A bad test release is removed with `gh release delete <tag> --yes` and deleting
 the tag locally and on the remote.

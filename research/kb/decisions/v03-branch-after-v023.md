@@ -49,5 +49,5 @@ sprint after the split and are not backported, including their byte-identical
 parts. Until a v0.3 release, simshop works around them with relaxed
 `--target-rel` on large cards, wider slots and a deadline stop. Within
 v0.3, the one-group-per-point MLM evaluation lands before lane batching,
-because it changes the per-point structure lanes batch over. The branch's CI and
-ruleset setup is `release-branch-ci-and-ruleset-missing`.
+because it changes the per-point structure lanes batch over. The branch's CI,
+ruleset and backport flow are in [release branches](../tooling/release-branches.md).

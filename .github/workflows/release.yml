@@ -178,9 +178,11 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
+  # Only a tag push publishes. A dispatch never does, whatever its ref: one on
+  # a tag ref would otherwise publish after the non-enforcing check above.
   publish:
     needs: [build, release-check]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     # `contents` to create the release, `actions` to dispatch acceptance at the
     # end. Set here rather than at the top level so the build jobs keep the
