@@ -69,7 +69,19 @@ use crate::ufo::{ParsedModel, UfoError};
 /// automatic `WEIGHTED` search trials each subprocess with its final-state
 /// gluons removed (#141), which can change which diagrams an order-limited
 /// card keeps.
-pub const ENUMERATION_VERSION: u32 = 3;
+///
+/// `4`: the UFO reader treats a particle as a Goldstone, and drops it, when
+/// any of `goldstoneboson`, `GoldstoneBoson` or `goldstone` is true, as
+/// MadGraph's importer does. Version 3 read only the first and the last, so a
+/// model that spells the flag `GoldstoneBoson` (`Bprime_no_b_mass` among them)
+/// kept its Goldstones as physical scalars and its sets carry their diagrams:
+/// there `t t~ > z h` has a `phi0` s-channel diagram, and σ reads about 7× the
+/// unitary-gauge value. Such an artifact embeds the model as version 3 read
+/// it, so its model and sets digests agree with what it holds, and an
+/// integrate artifact's amplitude probe, which recompiles that embedded model,
+/// agrees with itself. Only this version refuses it. A card whose model spells
+/// the flag another way enumerates as in version 3.
+pub const ENUMERATION_VERSION: u32 = 4;
 
 /// The schema version of a [`DiagramArtifact`].
 ///
@@ -730,6 +742,90 @@ mod tests {
         DiagramArtifact::read_from_path(&path).unwrap();
     }
 
+    /// `vibegraph_toy_UFO` copied into `dir`, its scalar `st` given `flag`
+    /// (empty for none), loaded under `restrict_all`.
+    fn toy_model_with_scalar_flag(dir: &Path, flag: &str) -> LoadedModel {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO");
+        for entry in std::fs::read_dir(&src).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                std::fs::copy(&path, dir.join(path.file_name().unwrap())).unwrap();
+            }
+        }
+        let particles = std::fs::read_to_string(dir.join("particles.py")).unwrap();
+        let anchor = "antitexname='S',";
+        assert_eq!(
+            particles.matches(anchor).count(),
+            1,
+            "the toy scalar's anchor"
+        );
+        let flagged = particles.replace(anchor, &format!("{anchor}\n              {flag}"));
+        std::fs::write(dir.join("particles.py"), flagged).unwrap();
+        LoadedModel::from_dir(
+            dir,
+            Some(&dir.join("restrict_all.dat")),
+            crate::ufo::names::ParticleNaming::default(),
+            "vibegraph_toy_UFO",
+            "all",
+        )
+        .expect("load the toy model")
+    }
+
+    /// A model that spells the Goldstone flag `GoldstoneBoson` is read with that
+    /// scalar dropped; enumeration version 3 read the same file with it
+    /// physical. A version-3 artifact of such a card embeds the model as
+    /// version 3 read it and carries the scalar's diagrams, and every digest
+    /// agrees with what the file holds, so only the version refuses it.
+    ///
+    /// The version-3 artifact is the toy model with the flag left out (what
+    /// version 3 made of `GoldstoneBoson=True`: it read neither that keyword
+    /// nor anything in its place), enumerated and stamped version 3. Cannot
+    /// detect a later reader change that this card's diagrams do not show.
+    #[test]
+    fn a_version_3_artifact_with_a_goldstoneboson_scalar_is_refused() {
+        let card_text = "generate lt~ lt > qt qt~ NP<=2 NPCP<=2\n";
+        let card = parse_proc_card(card_text, &ParsingOptions::default()).unwrap();
+        let count = |a: &DiagramArtifact| a.sets.iter().map(|s| s.diagrams.len()).sum::<usize>();
+
+        let current_dir = scratch();
+        let current_model = toy_model_with_scalar_flag(current_dir.path(), "GoldstoneBoson=True,");
+        let current =
+            DiagramArtifact::enumerate(card_text, &card, &current_model, EnumerationPool::Serial)
+                .unwrap();
+
+        let old_dir = scratch();
+        let old_model = toy_model_with_scalar_flag(old_dir.path(), "");
+        let mut old =
+            DiagramArtifact::enumerate(card_text, &card, &old_model, EnumerationPool::Serial)
+                .unwrap();
+        assert!(
+            count(&old) > count(&current),
+            "the version-3 reading keeps the scalar's diagrams: {} against {}",
+            count(&old),
+            count(&current)
+        );
+        old.enumeration_version = 3;
+
+        let dir = scratch();
+        let path = dir.path().join("v3.bin.zst");
+        old.write_to_path(&path, false).unwrap();
+        let err = DiagramArtifact::read_from_path(&path)
+            .err()
+            .expect("a version-3 artifact with the Goldstone's diagrams must be refused");
+        assert!(
+            matches!(
+                err,
+                DiagramArtifactError::EnumerationVersion { found: 3, expected }
+                    if expected == ENUMERATION_VERSION
+            ),
+            "{err}"
+        );
+
+        let path = dir.path().join("current.bin.zst");
+        current.write_to_path(&path, false).unwrap();
+        DiagramArtifact::read_from_path(&path).unwrap();
+    }
+
     /// The known-answer cards: each with the model it is enumerated against,
     /// and the [`diagram_set_digest`] of its sets and the digest of its
     /// [`ProcessFacts`] at [`PINNED_ENUMERATION_VERSION`].
@@ -801,7 +897,7 @@ mod tests {
 
     /// The [`ENUMERATION_VERSION`] the digests of [`KNOWN_ANSWERS`] were
     /// recorded at.
-    const PINNED_ENUMERATION_VERSION: u32 = 3;
+    const PINNED_ENUMERATION_VERSION: u32 = 4;
 
     #[derive(Clone, Copy, Debug)]
     enum KnownModel {
@@ -838,9 +934,11 @@ mod tests {
     /// Each card's sets and process facts are digested and compared with the
     /// pinned digests, and each card is checked to still reach the feature it
     /// is in the set for. Cannot detect a change that moves only cards outside
-    /// the set, nor a change to how a model is parsed or built that moves a
-    /// card's output (it moves the digest here too, and the artifacts' model
-    /// digest already refuses those).
+    /// the set, including a change to how a UFO file is parsed that no model
+    /// here exercises. The artifacts' model digest does not refuse such a
+    /// change either: it covers the model the artifact embeds, as the writing
+    /// build parsed it, and nothing parses the UFO again on read
+    /// (`a_version_3_artifact_with_a_goldstoneboson_scalar_is_refused`).
     #[test]
     fn enumeration_output_matches_the_pinned_version() {
         let mut mismatches = Vec::new();
