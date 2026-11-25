@@ -48,6 +48,35 @@ cards:
 Every earlier ratio on those cards is void until their references are
 re-derived.
 
+The validator has re-derived them, read-only against gridpacks.sqlite. The fix
+is in vibegraph-valdb on branch `gpdb/signed-reference`: it reads the signed
+`xsec` (column 10) from a MadEvent `results.dat`, and `usable()` accepts σ ≠ 0.
+Five tests on 612's real files cover it. As of 2026-11-25 it is uncommitted,
+waiting on the user's approval, and not applied to the live database. Exactly
+these 15 change, and the errors stay the same:
+
+| card | old (axsec, pb) | new (signed, pb) |
+|---|---|---|
+| 124 | 6.3297e-3 | −1.558e-3 ± 2.572e-5 |
+| 125 | 2.6126e-3 | −9.025e-4 ± 1.212e-5 |
+| 610 | 2.0679e-3 | −7.177e-4 ± 1.515e-5 |
+| 612 | 7.4046e-3 | −1.101e-3 ± 3.187e-5 |
+| 614 | 8.7945e-3 | −5.95e-4 ± 2.97e-5 |
+| 707 | 1.3926e-3 | −3.747e-4 ± 1.578e-6 |
+| 708 | 1.8655e-3 | −5.087e-4 ± 1.625e-6 |
+| 709 | 2.0487e-3 | −1.284e-3 ± 2.096e-6 |
+| 724 | 4.9764e-5 | −6.29e-7 ± 6.529e-8 |
+| 725 | 1.4333e-5 | −4.819e-7 ± 3.029e-8 |
+| 726 | 4.8683e-5 | −6.621e-7 ± 1.157e-7 |
+| 727 | 1.4295e-5 | −4.604e-7 ± 5.835e-8 |
+| 760 | 2.0486e-3 | −1.284e-3 ± 2.09e-6 |
+| 762 | 1.8656e-3 | −5.086e-4 ± 1.632e-6 |
+| 898 | 4.2407e-4 | −3.608e-4 ± 8.383e-7 |
+
+Five NLO cards, including 227, 228 and 230, take their reference from column 1
+of an aMC@NLO `results.dat` because they have no usable gen_log line. What that
+column holds there has not been checked.
+
 ## Release impact
 
 If the dump confirms a sign error, every squared-order selection that keeps an
