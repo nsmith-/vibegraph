@@ -84,3 +84,29 @@ fn release_check_accepts_and_refuses_the_expected_inputs() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// Only a tag push may publish. A `workflow_dispatch` runs `release-check` in
+/// report-only mode, so a dispatch that reached `publish` would release without
+/// the enforcing check, whatever ref it named.
+#[test]
+fn only_a_tag_push_publishes_a_release() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/workflows/release.yml");
+    let text = std::fs::read_to_string(&path).expect("release.yml reads");
+    let workflow: yaml_serde::Value = yaml_serde::from_str(&text).expect("release.yml parses");
+    let condition = workflow["jobs"]["publish"]["if"]
+        .as_str()
+        .expect("the publish job has an `if` condition");
+    let clauses: Vec<&str> = condition.split("&&").map(str::trim).collect();
+    assert!(
+        clauses.contains(&"github.event_name == 'push'"),
+        "publish must require a push event, got `{condition}`"
+    );
+    assert!(
+        clauses.contains(&"startsWith(github.ref, 'refs/tags/')"),
+        "publish must require a tag ref, got `{condition}`"
+    );
+    assert!(
+        !condition.contains("||"),
+        "an alternative clause could reopen publishing, got `{condition}`"
+    );
+}

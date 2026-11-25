@@ -98,7 +98,8 @@ commit is on:
 - `release-check` validates the tag's form and its notes file.
 - `build` checks out the tag with full history. `git describe --tags --match 'v*'`
   then names the tag.
-- `publish` runs when `github.ref` starts with `refs/tags/`, then creates the
+- `publish` runs on a tag push (`github.event_name == 'push'` and a `refs/tags/`
+  ref), then creates the
   release and dispatches `acceptance.yml`. That dispatch runs the
   default-branch copy of the workflow, which checks out the tag again before
   it runs `scripts/acceptance.sh`, so the script matches the binary.
@@ -118,10 +119,10 @@ release either way. After that, whether a later-dated v0.2.x would take
 whatever is "Latest".
 
 **Dry run.** `release.yml`'s `workflow_dispatch` builds and smoke-tests every
-leg without publishing, provided the dispatch ref is a **branch**:
-`gh workflow run release.yml --ref release/v0.2 -f tag=v0.2.N`. `publish` is
-gated only on `github.ref` being a tag, so a dispatch with `--ref v0.2.N`
-would publish.
+leg without publishing: `gh workflow run release.yml --ref release/v0.2
+-f tag=v0.2.N`. `publish` requires a tag push, so no dispatch publishes,
+whatever its ref. The first such dry run on a release branch is run by hand
+after the branch is cut from its tag, before the ruleset is activated.
 
 ## The ruleset
 

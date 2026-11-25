@@ -64,6 +64,8 @@ ureq = "3.3.0"
 # The seeded sigma gates read MadEvent's seed records through the library
 # gates' own reader (`vibegraph-lib/tests/common/seed_record.rs`), which needs it.
 statrs = { version = "0.19", default-features = false }
+# The release workflow test reads `.github/workflows/release.yml` as YAML.
+yaml_serde = "0.10"
 
 # `required-features` is how a test declares its dependency layer: everything
 # listed here needs a fetched PDF set or a frozen MadGraph run, so it is absent
