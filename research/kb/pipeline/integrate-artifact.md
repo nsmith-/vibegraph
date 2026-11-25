@@ -215,6 +215,16 @@ steps). `--ufo-dir` is refused: no UFO directory is read.
    anything is integrated or generated. This is what covers check 8's blind
    spot: the sets digest to what they hold and the probe recompiles them, so
    neither can tell an artifact whose enumeration a later build changed.
+   The model digest cannot tell a change to how a UFO file is read either:
+   it covers the model the artifact embeds, as the writing build parsed it,
+   and nothing parses the UFO again on read. Version 4 is such a bump. The
+   reader's Goldstone flag gained MadGraph's `GoldstoneBoson` spelling, so a
+   version-3 artifact of a model that spells it so carries its Goldstones'
+   diagrams. Measured on `Bprime_no_b_mass` `t t~ > z h` at fixed 500 GeV
+   beams: v0.2.2 integrates 17.703 ± 0.025 pb (4 diagrams, one through
+   `phi0`), the fixed reader 2.5270 ± 0.0039 pb (3 diagrams), and a build
+   with the fix but without the bump accepted v0.2.2's integrate artifact
+   (its probe passes) and wrote events with `XSECUP = 17.70 pb`.
    **How the version is kept honest.** `ENUMERATION_VERSION`
    (`diagrams/artifact.rs`) covers every field of the banked `DiagramSet`s
    that enumeration, decay-chain stitching and the conversion of feyngraph's
