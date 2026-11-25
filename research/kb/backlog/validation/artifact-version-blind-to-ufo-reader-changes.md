@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "Diagram and integrate artifacts cannot see a UFO-reader change, and no test forces ENUMERATION_VERSION to move"
-description: "Both artifacts embed the parsed model, so a reader fix (#178's GoldstoneBoson spelling) leaves every digest and the probe agreeing with a stale file. v0.2.2's Bprime artifact gave 17.70 pb under HEAD, against 2.527 fresh."
+description: "Artifacts embed the parsed model, so a UFO-reader fix (#178) leaves every digest agreeing with a stale file: v0.2.2's Bprime artifact gave 17.70 pb under HEAD, against 2.527 fresh."
 area: validation
 state: open
 priority: high
