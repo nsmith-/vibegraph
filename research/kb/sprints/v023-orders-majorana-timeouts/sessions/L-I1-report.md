@@ -496,3 +496,309 @@ Logs: `/home/user/wt/logs/li1-*.log`.
 - **The binary matters as much as the card.** The campaign's +4.779e-4 pb comes from a
   binary without `a5bf8fca`, and the brief's "what is known" does not say so. Main
   differs from it on exactly this vertex class.
+
+## Follow-up A: t-channel zero-width sets, every subprocess of card 612
+
+Head `6f660873`, with origin/main merged. This is diagnosis only: no source is changed.
+The question was whether this crate's production zero-width rule (`PropInfo::t_channel`)
+picks the same propagators as MadEvent's on all of 612's subprocesses. L-I1 checked only
+`g u > h t b~ d`. The answer is yes: the sets are identical on all 12 flavour processes,
+with 0 mismatches.
+
+### Counting the subprocesses
+
+There are 12 flavour processes, so the planner's "12" is right. On each side they group
+differently.
+
+**MadEvent:**
+- 6 amplitudes, in 6 `matrix*.f` files across 2 P directories;
+- 12 flavour processes, every one with `MIRRORPROCS = .TRUE.`;
+- so 24 beam-ordered channels;
+- 228 diagrams (12 × 19): "12 processes with 228 diagrams".
+
+**This crate:**
+- 12 sets, all `mirrored true`, each with 19 diagrams;
+- `integrate` compiles 6 flavour groups (`flavour_groups 6, compiled_diagrams 114,
+  subprocesses 12`).
+
+### MadEvent side
+
+`output madevent` of the full card, generation only, through `mg5_pinned.sh` with
+MadGraph 3.7.1:
+
+```
+sa/gen_me612.mg5: import model .../VLQ_v4_4FNS_UFO-3rdL_noCKM; the 4 defines; generate p p > h tt bb j / bp x y VLQ^2==2; output madevent sa/me612
+  Total: 12 processes with 228 diagrams
+  INFO: Some T-channel width have been set to zero [new since 2.8.0]
+  P1_gq_htbxq/matrix1: g u > h t b~ d, g c > h t b~ s     matrix2: g d > h t~ b u, g s > h t~ b c
+              matrix3: g u~ > h t~ b d~, g c~ > h t~ b s~ matrix4: g d~ > h t b~ u~, g s~ > h t b~ c~
+  P1_qq_htbxg/matrix1: u d~ > h t b~ g, c s~ > h t b~ g   matrix2: d u~ > h t~ b g, s c~ > h t~ b g
+```
+
+The comparison script is `harness/li1_widthdiff.py`. For each `matrix*_orig.f`, it walks
+the `MATRIX` helas calls in order and rebuilds each `AMP(k)`'s propagators from the
+current wavefunction slots. For each propagator it records:
+
+- the particle, through its mass argument (`MDL_MT`, `MDL_MTP`, `MDL_MW`, ...);
+- the set of external legs it carries, taken on the side away from the last leg;
+- the width token: `ZERO` or `FK_MDL_W*`.
+
+`FK_MDL_WTP` is `SIGN(MAX(|WTP|, |MTP|·small_width_treatment), WTP)`, which equals WTP at
+these widths.
+
+### This crate's side
+
+The scratch test `harness/li1_widths.rs` was copied into `vibegraph-lib/tests/`, run in
+release under the lock, and removed afterwards. It does three things:
+
+- It parses `sigma/proc_612.dat` with `parse_proc_card` and enumerates the sets with
+  `generate_from_proc_card`. That is the enumeration `integrate` runs.
+- For each propagator of each diagram it records the particle, the baked `momentum`
+  and `Prop::is_spacelike(2)`. That predicate is the one production reads:
+  `root_diagram.rs:511` sets `PropInfo::t_channel` from it, and `lower.rs:340` bakes
+  `Coeff(0)` for the width on those lines.
+- **It checks the compiled code directly.** It compiles each diagram alone through the
+  production compile and evaluates it at the 4 generic points over every helicity. This
+  is done under the 612 card, and again under three cards, each with one width doubled
+  (WT, WTP or WW). A diagram's amplitude can move under a doubled width only if it has
+  a timelike line of that particle that keeps its width. The script checks that the
+  observed moves agree with the prediction from `is_spacelike`.
+
+```
+LI1_CARD=sigma/proc_612.dat LI1_PARAM=sigma/param_card_612_full.dat LI1_POINT=tables/li1_gu_htbxd_w.json \
+LI1_VARIANTS=wt=..x2wt.dat,wtp=..x2wtp.dat,ww=..x2ww.dat cargo test --release -p vibegraph-lib --test li1_widths
+  12 sets; set ["g", "u"] > ["H", "t", "b~", "d"]: 19 diagrams, mirrored true; ... (12 lines)
+python harness/li1_widthdiff.py sa/me612 tables/vg_widths_612.json
+```
+
+### The diff
+
+Diagrams are paired machine-wise by their full propagator signature, the multiset of
+(particle, leg set). The pairing is a bijection on every process, with 0 signature ties.
+The script asserts that the signature sets are equal and that each multiplicity matches.
+
+The counts are propagator occurrences per diagram, summed over the 19 diagrams, and only
+for lines whose model width is non-zero (t, T′, W; the b width is 0).
+
+| P dir / matrix | flavour process | graphs / diagrams | zeroed (MadEvent = this crate) | kept width | result | width-doubling observation |
+|---|---|---|---|---|---|---|
+| P1_gq_htbxq/matrix1 | g u > h t b~ d | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix1 | g c > h t b~ s | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix2 | g d > h t~ b u | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix2 | g s > h t~ b c | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix3 | g u~ > h t~ b d~ | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix3 | g c~ > h t~ b s~ | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix4 | g d~ > h t b~ u~ | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_gq_htbxq/matrix4 | g s~ > h t b~ c~ | 19 / 19 | 21 | 18 | identical | consistent |
+| P1_qq_htbxg/matrix1 | u d~ > h t b~ g | 19 / 19 | 0 | 39 | matched, both sets empty | consistent |
+| P1_qq_htbxg/matrix1 | c s~ > h t b~ g | 19 / 19 | 0 | 39 | matched, both sets empty | consistent |
+| P1_qq_htbxg/matrix2 | d u~ > h t~ b g | 19 / 19 | 0 | 39 | matched, both sets empty | consistent |
+| P1_qq_htbxg/matrix2 | s c~ > h t~ b g | 19 / 19 | 0 | 39 | matched, both sets empty | consistent |
+
+```
+TOTAL mismatches: 0
+```
+
+**The spacelike T′ lines, all zero-width on both sides.** In each g q channel, two T′
+lines carry the legs {g, h, t}: the T′ after the gluon, and the T′ from (t + g) before
+the h. The q q̄′ channels have no spacelike T′ line.
+
+| flavour processes | first T′ line | second T′ line |
+|---|---|---|
+| g u > h t b~ d, g c, g d~, g s~ | AMP(5) = diagram 5 | AMP(17) = diagram 17 |
+| g d > h t~ b u, g s, g u~, g c~ | AMP(6) = diagram 4 | AMP(18) = diagram 16 |
+
+In every case MadEvent writes ZERO and this crate's line is spacelike.
+
+**The width-doubling observation is not vacuous.** Doubling a width moves 64 (WT),
+52 (WTP) and 140 (WW) of the 228 compiled diagrams. The smallest move is 5.2e-4, 1.1e-1
+and 7.4e-5 of the diagram's size respectively, and every unmoved diagram moves by exactly
+0.0. Every observed move agrees with the `is_spacelike` prediction.
+
+Step 4 of the task, quantifying the effect of a difference, has no case: no subprocess
+differs.
+
+### What this check cannot see
+
+- **Width values on timelike lines.** Those are the card's, and the L-I1 oracle checks
+  them numerically on `g u > h t b~ d` only.
+- **A wrong width on a line of a particle other than t, T′ or W.** Z and H have no
+  internal lines in this process.
+- **The amplitude values of the 11 subprocesses other than `g u > h t b~ d`.** The
+  width-doubling check sees only whether a width enters, not whether the amplitude is
+  right. The 4 doubled-width cards share the generic points, so a dependence that
+  vanished at all 4 points would be missed; the moves seen are 7e-5 or larger.
+- **How each flavour group's representative is applied to its members.** `integrate`
+  compiles a representative per flavour group. Here all 12 sets were enumerated and
+  checked individually, and every member of a group agrees.
+- **Anything about the σ.** The cause of 612's 0.81 and 614's 0.52 is not here. The
+  real-mass t-channel convention agrees on every line. Follow-up B shows the complex-mass
+  scheme moving the interference by large factors near the pole.
+
+## Follow-up B: what the complex-mass scheme does on `g u > h t b~ d`, MadGraph against MadGraph
+
+The 612 and 614 gridpacks were generated with `set complex_mass_scheme`. Every vibegraph
+σ, and every L-I1 table above, is real-mass. This section compares MadGraph with itself,
+CMS on against CMS off. This crate has no CMS, and nothing here compares it to a CMS
+table.
+
+### Banking
+
+`set complex_mass_scheme True` was put before `import model`, and the process was output
+both ways:
+
+```
+sa/gen_cms_standalone.mg5: output standalone sa/cms_standalone_split      "Activate complex mass scheme." 19 diagrams
+sa/gen_cms_madevent.mg5:   output madevent   sa/cms_madevent_split        no "T-channel width have been set to zero" line
+```
+
+**Correction to the request: under CMS, MadEvent zeroes no t-channel width.** Its calls
+pass `DCMPLX(CMASS_MDL_MX)` on every massive line, spacelike T′, t and W included. Two
+examples are `FFV1_1(W(1,8),W(1,1),GC_9(IVEC),DCMPLX(CMASS_MDL_MTP),W(1,6))` and
+`FFV2_3(W(1,2),W(1,6),GC_27,DCMPLX(CMASS_MDL_MW),W(1,12))`. The zeroing in
+`helas_call_writers.py:288` substitutes only `fk_` width tokens, and CMS calls carry
+none. So "the same madevent-style zeroing" does not exist under CMS. Two CMS tables
+were banked:
+
+- **`cms_*`: the gridpack's own convention.** This is MadEvent's CMS calls, which are
+  standalone's calls exactly (`li1_bank.py` with `LI1_ME=cms_madevent_split` makes no
+  substitution).
+- **`cmsreal_*`: a hybrid MadGraph never writes.** It is CMS, with the real mass
+  substituted on exactly the 8 lines real-mass MadEvent zeroes. It is a control that
+  separates the complex couplings and timelike complex masses from the complex mass on
+  spacelike lines.
+
+```
+LI1_SA=sa/cms_standalone_split LI1_ME=sa/cms_madevent_split LI1_TAG=cms_ [LI1_RESONANT=1] python harness/li1_bank.py
+LI1_CMS_REAL_SPACELIKE=sa/me_split/.../matrix1_orig.f LI1_SA=sa/cms_hybrid_split ... LI1_TAG=cmsreal_ [LI1_RESONANT=1] python harness/li1_bank.py
+```
+
+The points and card values are the same as in the real-mass tables. The script asserts
+that the momenta are identical. The card text differs, because the CMS model reads MW
+as an input, with no Gf and no YUKAWA block, but the values are the same.
+
+The control holds. With every width zero, CMS on and off agree to 6 printed digits on all
+three squared orders, and Σ|M0|² differs by 5.5e-8 relative.
+
+### 1. Σ over points and helicities, CMS on against off (`/home/user/wt/logs/li1-cms-compare.log`)
+
+| table | RES(VLQ²=0) on/off | RES(VLQ²=2) on/off | RES(VLQ²=4) on/off |
+|---|---|---|---|
+| w, MadEvent's CMS (`cms_w`) | 0.999927 | **1.048243** | 1.017487 |
+| w, hybrid (`cmsreal_w`) | 0.996612 | 1.052085 | 1.018748 |
+| res_w, MadEvent's CMS (`cms_res_w`) | 0.994663 | **−273.3** (+1.0875e-09 against −3.979e-12) | 1.011830 |
+| res_w, hybrid (`cmsreal_res_w`) | 1.052455 | −481.6 (+1.917e-09 against −3.979e-12) | 1.018006 |
+| zw (control) | 1.000000 | 1.000000 | 1.000000 |
+| res_zw (control) | 1.000000 | 1.000000 | 1.000000 |
+
+At the generic points, CMS moves the interference by +4.8% and |M0|² by −0.007%. Near
+the pole, |M0|² moves by −0.5% and |M2|² by +1.2%. The summed interference changes sign
+and grows by a factor of 270, because the real-mass sum is itself a near-total
+cancellation.
+
+### 2. Per point, RES(VLQ²=2), CMS on against off (MadEvent's CMS)
+
+| point (m(t h), GeV) | on | off | on/off | |M0|² on/off | |M2|² on/off |
+|---|---|---|---|---|---|
+| 0 (791.8) | +2.098e-11 | +2.855e-12 | **+7.35** | 0.9973 | 1.0209 |
+| 1 (794.1) | +1.884e-10 | +1.924e-10 | +0.979 | 1.0086 | 1.0214 |
+| 2 (799.2) | +1.033e-09 | +8.120e-10 | **+1.272** | 1.0083 | 1.0284 |
+| 3 (849.5) | −3.236e-10 | −1.155e-09 | **+0.280** | 0.9887 | 1.0096 |
+| 4 (827.0) | −1.149e-11 | −1.170e-11 | +0.982 | 0.9960 | 1.0298 |
+| 5 (721.5) | +1.801e-10 | +1.553e-10 | +1.160 | 0.9992 | 1.0211 |
+
+For the 4 generic points the on/off ratio of RES(2) is 0.985, 1.032, 1.042 and 0.970.
+In the hybrid, point 3 changes sign (−0.418): the complex mass on the spacelike lines
+alone moves it by O(1). So yes: near the pole, CMS moves the interference by tens of
+percent to factors of several, point by point, while |M0|² moves by at most 1.1%.
+
+### 3. Which MadGraph parameters and couplings change under CMS
+
+`Source/MODEL` of each output was linked with a 5-line driver that calls `SETPARA` and
+then `PRINTOUT`. The output is `tables/li1_params_{split,cms_standalone_split}.txt`, and
+the diff is `/home/user/wt/logs/li1-cms-params.log`. Every entry below changes by more
+than 1e-6 relative.
+
+**Complex masses, used on every massive propagator under CMS:**
+
+| mass | CMS value |
+|---|---|
+| `CMASS_MDL_MTP` | 803.951 − 79.607i |
+| `CMASS_MDL_MT` | 172.002 − 0.754i |
+| `CMASS_MDL_MW` | 79.831 − 1.042i |
+| `CMASS_MDL_MZ` | 91.196 − 1.247i |
+| `CMASS_MDL_MH` | 125 − 0.002i |
+| `CMASS_MDL_MX`, `CMASS_MDL_MY`, `CMASS_MDL_MBP` | 1000 − 2.5i |
+
+Squared masses:
+
+| parameter | real-mass | CMS |
+|---|---|---|
+| `MDL_MTP__EXP__2` | 640000 | 640000 − 128000i (20% imaginary) |
+| `MDL_MT__EXP__2` | 29584 | 29584 − 259i |
+| `MDL_MW__EXP__2` | 6371.9 | 6371.9 − 166i |
+
+**Derived parameters that become complex**, with the relative change:
+
+| parameter | relative change |
+|---|---|
+| `MDL_SW` | 2.0e-3 |
+| `MDL_SW2` | 4.1e-3 |
+| `MDL_CW` | 6.2e-4 |
+| `MDL_GW` | 2.0e-3 |
+| `MDL_G1` | 6.2e-4 |
+| `MDL_VEV` | 1.5e-2 (246.249 − 3.717i) |
+| `MDL_LAM` | 3.0e-2 |
+| `MDL_YT` | 1.1e-2 |
+| `MDL_YB` | 1.5e-2 |
+| `MDL_YTAU` | 1.5e-2 |
+| `MDL_YMT` | 4.4e-3 |
+| `MDL_MUH` | 1.6e-5 |
+
+`GF` itself becomes a derived complex quantity.
+
+**Couplings** that change in this process, with the relative change:
+
+| coupling | relative change | what it is |
+|---|---|---|
+| `GC_27` | 2.0e-3 | W f f′ |
+| `GC_55` | 2.0e-3 | T′ b W, ∝ KTLw/sw |
+| `GC_84` | 1.1e-2 | WWH |
+| `GC_86` | 1.5e-2 | b Yukawa |
+| `GC_87` | 1.1e-2 | t Yukawa |
+
+`GC_19` = i·KTLh3 (T′ t H) and `GC_9` (gluon) are unchanged. So the large effect near the
+pole comes mainly from the T′ complex mass, 20% imaginary in MTP², sitting on every T′
+line. That includes the two spacelike T′ lines per g q diagram set, where the real-mass
+scheme has zero width. The couplings move only at the 0.2–1.5% level.
+
+### What this cannot settle
+
+- **Fixed points are not σ.** The interference near the pole is a cancellation, and its
+  integral depends on how these per-point changes weigh over the T′ line shape and the
+  rest of phase space. The σ-level test is **R2**: MadGraph σ on 612 and 614 with
+  `set complex_mass_scheme` on against off, which the validator runs. If CMS-off
+  MadGraph lands near vibegraph's 0.81 (612) and 0.52 (614) of the CMS-on σ, the
+  residual is the scheme, not a vibegraph defect.
+- **One subprocess.** These tables cover only `g u > h t b~ d`. They are not a
+  comparison of vibegraph with CMS.
+
+### Correction to the L-I1 provenance
+
+The transcribed `param_card_612.dat` lists MW as an input and has no Gf and no YUKAWA
+block. That is exactly the layout of the card the CMS model writes (see the card diff
+in `cms_w` above). So those entries were not lost in transport: the card is the CMS
+gridpack's own. Only the QNUMBERS blocks were dropped. The values are equal on both
+sides, as stated above.
+
+### Files (scratch, not committed)
+
+- `harness/li1_widths.rs`, `harness/li1_widthdiff.py`;
+- `harness/li1_bank.py`, extended with the `LI1_SA`, `LI1_ME`, `LI1_TAG` and
+  `LI1_CMS_REAL_SPACELIKE` switches;
+- `sa/me612/`, `sa/cms_standalone_split/`, `sa/cms_madevent_split/`, `sa/cms_hybrid_split/`;
+- `tables/li1_gu_htbxd_{cms,cmsreal}_{zw,w,w_sa,res_zw,res_w,res_w_sa}.json`;
+- `tables/vg_widths_612.json`, `tables/li1_params_*.txt`;
+- `sigma/param_card_612_x2{wt,wtp,ww}.dat`;
+- logs `li1-gen_me612.log`, `li1-widths.log`, `li1-widthdiff.log`, `li1-bank-cms*.log`,
+  `li1-cms-compare.log`, `li1-cms-params.log`.
