@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "Cards 134 and 967 read about 0.5% above MadGraph even at hard_survey = 2 with equal weighting"
-description: "After MadEvent's survey bias is removed, polarised VBS 134 reads +0.64% ± 0.25% and ALP → ττ 967 +0.53% ± 0.22%, while the control 700 closes to 0.03%. Either vibegraph is high here or the reference is still low."
+description: "With MadEvent's survey bias removed, VBS 134 reads +0.64% ± 0.25% and ALP → ττ 967 +0.53% ± 0.22% above MG; control 700 closes to 0.03%. vibegraph high, or the reference still low?"
 area: validation
 state: open
 priority: medium
