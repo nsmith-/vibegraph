@@ -90,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: prefix-dev/setup-pixi@v0.10.0
+      - uses: prefix-dev/setup-pixi@v0.11.3
         with:
           pixi-version: v0.84.1
           environments: kb
@@ -181,7 +181,7 @@ jobs:
 
       # `pixi-version` is the version `requires-pixi` in pixi.toml pins, so CI
       # reads `pixi.lock` with the pixi that wrote it.
-      - uses: prefix-dev/setup-pixi@v0.10.0
+      - uses: prefix-dev/setup-pixi@v0.11.3
         with:
           pixi-version: v0.84.1
           environments: default
