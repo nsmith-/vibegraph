@@ -19,3 +19,12 @@ it has survived. Decide whether the function has a caller outside the profiles
 that warn: gate it with a matching `cfg`, or remove it.
 
 Detail: [M1 report, Found](../../sprints/vegas-absolute-grid-coords/sessions/M1-report.md).
+
+Seen again four times. It was filed twice more as duplicates, which are now
+folded in here:
+- K-C2 ([report](../../sprints/v022-smeft-and-refusals/sessions/K-C2-report.md)), and K-H4 (#158) under `cargo check --release`;
+- L-Z8 ([report](../../sprints/v023-orders-majorana-timeouts/sessions/L-Z8-report.md));
+- L-I1, sprint L's interference-sign probe.
+
+The warning shows in every release-profile build, not just the release-debug
+test build.
