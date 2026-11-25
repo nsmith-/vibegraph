@@ -9,8 +9,10 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 Worktree `/home/user/wt/sprintl-g2hdm`, branch `sprintl-g2hdm`, head `bb111efb`
 (main a5bf8fca with the brief merged in). It has no source changes. The only
 commit is this report. The item `g2hdm-charged-higgs-high-mass-sigma-reads-high`
-is **not** deleted. Its closing condition asks the high-mass cards to match
-MadGraph by the multi-seed criterion, and that is requests V1 and V2 below.
+was not deleted by this session: its closing condition asks the high-mass cards
+to match MadGraph by the multi-seed criterion, which is request V1 below. V1 ran
+after the merge, and the close-out that deletes the item adds its result as the
+last addendum ("V1: five seeds on 889 and 894 after the fix").
 
 ## The answer
 
@@ -479,3 +481,122 @@ the five-line card above. No fix was made in this session.
   0.9935 against it, with about 0.3–0.6% one-seed MadGraph error and this
   session's ±0.4%.
 - Seeds 2–5 and V1 are pending.
+
+## Addendum: V1, five seeds on 889 and 894 after the fix
+
+vg-validator ran both cards on main 7b36722c, which contains the chirality fix.
+The argv is the 3-iteration fixed budget (`--neval 120000 --niter 3 -j 4
+--parallel-diagrams`), seeds 1–5, with a 7200 s cap. No seed timed out: walls
+were 5833–5884 s on 894 and 5460–5558 s on 889. Means are unweighted over the
+five seeds. The error on a mean is the seed spread over √5.
+
+**894 (M1000)**
+
+| seed | σ (pb) | reported error |
+|---|---|---|
+| 1 | 0.0461046 | 1.53% |
+| 2 | 0.0459666 | 1.64% |
+| 3 | 0.0459727 | 1.73% |
+| 4 | **0.0480612** | **3.23%** |
+| 5 | 0.0460138 | 2.02% |
+
+- Mean 0.0464238 ± 0.88%. Seed sd 1.98%, mean reported error 2.03%, χ²/dof 0.55.
+- Against MadGraph (reference 0.046464 pb): vg/MG = **0.9991 ± 0.0088**.
+- Against the EW-recombined MadGraph σ (0.046518 pb): 0.9980 ± 0.0088.
+- The prediction above (0.9935 against R3 seed 1) and the predicted post-fix
+  vg/MG(3.7.1) of 0.997 ± 0.005 both agree.
+- Against v0.2.2's CERN mean of 0.04764 (a different argv): 0.9745 ± 0.009.
+  That is the drop the chirality fix predicts.
+
+**The five seeds do not calibrate 894 at the 1% level.**
+- Seeds 1, 2, 3 and 5 sit within 0.14% of each other, while each reports
+  1.5–2.0%. Among them χ²/dof is far below 1.
+- Seed 4 sits +4.4% above them and reports twice their error.
+- Without seed 4, vg/MG is 0.9903. With it, 0.9991.
+
+The excess is in the two 6-body multiplicities, read from each run's
+per-multiplicity results:
+
+| multiplicity | other four seeds, mean (sd) | seed 4 | share of seed 4's excess |
+|---|---|---|---|
+| ℓν bb̄ + j + b (412 maps, 3520 channels) | 0.005961 pb (6.5%) | 0.007302 ± 19% | 65% |
+| ℓν bb̄ + 2 light (167 maps, 2562 channels) | 0.004108 pb (7.5%) | 0.004601 | 24% |
+
+- The 4- and 5-body rows agree within about 1%.
+- The 6-body rows carry about 22% of σ.
+- From each run's support line, the effective sample size out of about 1.31M
+  weighted points is:
+  - seed 1: 3830
+  - seed 2: 3376
+  - seed 3: 3088
+  - seed 4: 939
+  - seed 5: 2298
+
+  That is n_eff/N of 0.07–0.29% on every seed.
+- The weight distribution is extremely heavy on all of them. On seed 4, a
+  handful of events dominate.
+- Per-channel w_max and variance are not recoverable: the run script deleted
+  each run's output directory.
+
+This tail is a sampler defect separate from the excess this report attributes.
+It is filed as `g2hdm-894-six-body-rows-heavy-tailed`, whose first step is to
+rerun 894 seed 4 with its output kept.
+
+**889 (M300)**
+
+| seed | σ (pb) | reported error |
+|---|---|---|
+| 1 | 10.1316 | 2.02% |
+| 2 | 9.8859 | 0.97% |
+| 3 | 9.9533 | 1.09% |
+| 4 | 10.0909 | 1.13% |
+| 5 | 10.1146 | 1.05% |
+
+- Mean 10.0352. Seed sd 1.09%, error on the mean 0.49%, χ²/dof 1.00.
+- The 1/σ²-weighted mean is 10.0104 ± 0.0513.
+- The MadGraph reference is the gpdb survey value, 10.04 ± 0.0385 pb, as
+  reported. There is no fresh `hard_survey = 2` or EW-recombined MadGraph run
+  for 889, as there is for 894.
+- vg/MG = **0.9995 ± 0.0062** (pull −0.08). On the 1/σ² mean: 0.9971 ± 0.0064.
+- The seed spread matches the reported errors, and no seed is an outlier.
+- Against v0.2.2's gpdb proxy runs (mean 10.0791, not the same argv): 0.9957.
+
+**Verdict.** The item asked whether vibegraph reads high on the high-mass cards,
+and why. After the fix, neither card reads high, under any reading of its mean:
+- 894: 0.9991 with seed 4, 0.9903 without it.
+- 889: 0.9995.
+
+v0.2.2's excess is the chirality bug, attributed per diagram and per helicity
+above and fixed on main. The item is deleted with this addendum.
+
+What this does not claim: agreement with MadGraph at the 1% level on 894. Five
+seeds cannot calibrate its 6-body tail, and the tail item carries that.
+
+**V2: the other five cards, as corroboration (1 seed per card, batch, main
+3f4dd815).** vg-validator ran the five g2HDM cards V1 did not cover on lxbatch:
+- dev build "v0.2.2-42-g3f4dd815c605";
+- campaign budget: fixed, `--neval 120000 --niter 3`, parallel diagrams;
+- seed 1, 4 CPUs, no cap.
+
+All five exited 0. Walls are Condor execution walls. One seed per card does not
+gate anything; the closure rests on V1's five-seed means.
+
+| card | mass | σ (pb) | reported error | vg/MG | wall | peak RSS |
+|---|---|---|---|---|---|---|
+| 893 | M450 | 2.43094 | 1.22% | 0.9918 ± 0.0125 (−0.65σ) | 14408 s | 2.84 GB |
+| 892 | M900 | 0.0839256 | 1.45% | 0.9874 ± 0.0145 (−0.87σ) | 14540 s | 3.03 GB |
+| 895 | M1250 | 0.0117763 | 1.95% | 1.0161 ± 0.0200 (+0.81σ) | 11968 s | 4.60 GB |
+| 891 | M1500 | 0.00346673 | 1.88% | 1.0046 ± 0.0191 (+0.24σ) | 15238 s | 3.00 GB |
+| 890 | M1750 | 0.00120819 | 1.80% | 0.9855 ± 0.0181 (−0.80σ) | 13411 s | 2.99 GB |
+
+- Every card is within 1σ of MadGraph.
+- In v0.2.2's survey, M900–M1750 read +2.4% to +4.4% on every seed. On main,
+  the same cards read 0.986–1.016.
+- Earlier local single seeds on 7b36722c, capped at 7200 s, agree:
+  - 891: 0.0035278 pb (1.022);
+  - 892: 0.082733 pb (0.973).
+
+These cards need batch at campaign budget. Each takes 3.3–4.2 h of wall on
+4 CPUs, about 77 core-hours for the five, and that is past the local host's
+2 h cap. Card 895 peaked at 4.6 GB, above the local 4500M memory limit.
+
