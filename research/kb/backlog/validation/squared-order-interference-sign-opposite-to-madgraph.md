@@ -1,86 +1,56 @@
 ---
 type: Backlog Item
-title: "VLQ^2==2 interference σ has the opposite sign to MadGraph on TprimeBToTH cards 612 and 614"
-description: "At campaign budget vibegraph gives +4.78e-4 pb (612) and +7.83e-4 pb (614) for the VLQ^2==2 term; MadGraph's signed σ is −1.10e-3 and −5.95e-4. The |M|² order classes sum consistently."
+title: "VLQ^2==2 interference on 612/614: confirm main's signed σ against MadGraph (the opposite sign came from a pre-#169 binary)"
+description: "The campaign binary bin-pr1 9f196713 lacked #169's chirality fix and gave VLQ^2==2 the wrong sign. On main, L-I1 matches MG standalone per diagram; 612/614's σ on main is not yet measured."
 area: validation
 state: open
-priority: high
-closes_when: "A per-diagram × per-helicity complex dump of 'g u > H t b~ d' at one point, against MadGraph 3.7.1 standalone with matched parameter provenance, locates the relative sign or phase between the VLQ-order-0 and VLQ-order-2 amplitudes. The fix is checked arithmetically on the dump, a test pins the interference sign against MG, and 612/614 agree with MG's signed σ over 5 seeds. Or the dump shows the amplitudes agree and the discrepancy is in the reference."
+priority: medium
+closes_when: "Main, at or after 3f4dd815, on cards 612 and 614 with their own gridpack cards at campaign budget over 5 seeds, gives a negative σ consistent with gpdb's signed MG reference (612 −1.101e-3, 614 −5.95e-4 pb), read against the seed spread. If it misses by more than the spread, MG 3.7.1 at hard_survey = 2 on 612 decides which side is off. The same run covers PR 1 request A's other VLQ rows, 124, 125 and 610."
 blocked_by: []
 opened: 2026-11-25
-tags: [squared-orders, interference, sign, vlq, madgraph-parity, cms, release-blocker]
+tags: [squared-orders, interference, sign, vlq, chirality, madgraph-parity, cms]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-25}
 sources:
+  - {id: l-i1, resource: "../../sprints/v023-orders-majorana-timeouts/sessions/L-I1-report.md", title: "L-I1 report: per-diagram VLQ split against MG standalone"}
   - {id: method, resource: "../../validation/bit-exact-amplitude-debugging.md", title: "Bit-exact amplitude debugging"}
 ---
-Found by the sprint L validator on PR 1's request A (bin-pr1 9f196713). The run
-used 5 seeds at campaign budget (fixed, neval 120000, niter 3):
+## What was seen
 
-| card | vibegraph σ (pb) | sd | MG signed σ (pb) | ratio |
-|---|---|---|---|---|
-| 612 | +4.779e-4 | 4.1% | −1.101e-3 ± 3.19e-5 | −0.43 |
-| 614 | +7.828e-4 | 3.1% | −5.95e-4 ± 2.97e-5 | −1.32 |
+PR 1's request A (bin-pr1 9f196713) ran at campaign budget over 5 seeds. It gave
+612 +4.78e-4 pb and 614 +7.83e-4 pb for `VLQ^2==2`, against MadGraph's signed
+−1.101e-3 and −5.95e-4.
 
-The order classes are self-consistent on 612 (seed 1). VLQ enters the amplitude
-only at orders 0 and 2:
-- `^2==0`: 0.065912;
-- `^2==2`: 0.000472;
-- `^2==4`: 0.001281.
+## Diagnosis (L-I1)
 
-Their sum, 0.06767, matches `VLQ<=2`, 0.06719 ± 0.0004, at 1.1σ. `^2<=2` matches
-`==0` plus `==2` at 1.1σ. So the selection partitions |M|² correctly. The |M|²
-pieces cannot see a relative sign or phase between the two amplitude classes, but
-the interference term can. That fits a relative-sign error between diagram
-classes, such as a fermion-flow or vertex convention, not a selection bug. This
-is a hypothesis until the dump settles it.
+9f196713 does not contain a5bf8fca (#169, the charged-scalar chirality fix):
+`git merge-base --is-ancestor a5bf8fca 9f196713` fails. Main contains it.
 
-## The reference was wrong too
+L-I1 compared against MG 3.7.1 standalone on `g u > h t b~ d`, which has 19
+diagrams, 5 of them VLQ=2, at 10 points, 6 of them near the T' pole:
+- **Main:** G0 = G2 = −i, and G2/G0 = 1 to 1e-15. Every diagram pairs with one MG
+  graph. |M0|², |M2|² and 2Re(M0·M2*) all agree to 1e-12.
+- **9f196713:** G2/G0 is 0.31–0.55, with residuals up to 1.29. |M2|² is off by
+  0.27–1.83×. This is not a pure sign.
+- **Carriers:** the 5 VLQ=2 diagrams. They share `V_24 [t~, tp, H]`, an FFS2 bare
+  ProjM vertex on a non-self-conjugate pair, which is #169's bug class.
+- **Attribution:** removing only the projector exchange from main reproduces
+  9f196713 bit for bit.
+- **Pruning:** ruled out. Runs with and without it are identical.
 
-Earlier comparisons read vibegraph "10–16× low", against the wrong reference.
-gpdb's `choose_reference` rejects the signed gen_log σ because it is negative,
-and falls back to `results.dat` column 1. For a negative-weight run, that column
-is the absolute integral. The same error affects 15 squared-order interference
-cards:
-- VLQ: 124, 125, 610, 612, 614;
-- VBS EFT interference: 707–709, 724–727, 760, 762;
-- 898.
+The earlier reasoning ("the classes partition, so only the interference is
+wrong") checked vibegraph against itself. Against MG, |M2|² itself was wrong.
 
-Every earlier ratio on those cards is void until their references are
-re-derived.
+On main, a reduced-budget run of 612 with card 126's run card gives σ = −937 ±
+27 ab against MG's −1101 ± 32 ab. The run card is not 612's own, so only the
+sign counts.
 
-The validator has re-derived them, read-only against gridpacks.sqlite. The fix
-is in vibegraph-valdb on branch `gpdb/signed-reference`: it reads the signed
-`xsec` (column 10) from a MadEvent `results.dat`, and `usable()` accepts σ ≠ 0.
-Five tests on 612's real files cover it. As of 2026-11-25 it is uncommitted,
-waiting on the user's approval, and not applied to the live database. Exactly
-these 15 change, and the errors stay the same:
+## The reference
 
-| card | old (axsec, pb) | new (signed, pb) |
-|---|---|---|
-| 124 | 6.3297e-3 | −1.558e-3 ± 2.572e-5 |
-| 125 | 2.6126e-3 | −9.025e-4 ± 1.212e-5 |
-| 610 | 2.0679e-3 | −7.177e-4 ± 1.515e-5 |
-| 612 | 7.4046e-3 | −1.101e-3 ± 3.187e-5 |
-| 614 | 8.7945e-3 | −5.95e-4 ± 2.97e-5 |
-| 707 | 1.3926e-3 | −3.747e-4 ± 1.578e-6 |
-| 708 | 1.8655e-3 | −5.087e-4 ± 1.625e-6 |
-| 709 | 2.0487e-3 | −1.284e-3 ± 2.096e-6 |
-| 724 | 4.9764e-5 | −6.29e-7 ± 6.529e-8 |
-| 725 | 1.4333e-5 | −4.819e-7 ± 3.029e-8 |
-| 726 | 4.8683e-5 | −6.621e-7 ± 1.157e-7 |
-| 727 | 1.4295e-5 | −4.604e-7 ± 5.835e-8 |
-| 760 | 2.0486e-3 | −1.284e-3 ± 2.09e-6 |
-| 762 | 1.8656e-3 | −5.086e-4 ± 1.632e-6 |
-| 898 | 4.2407e-4 | −3.608e-4 ± 8.383e-7 |
+gpdb used to compare negative-weight runs against `results.dat`'s absolute
+integral. nsmith-/vibegraph-valdb#3 makes it use the signed σ. The live DB was
+migrated to schema 5 on 2026-11-25, and exactly 15 references changed: 124,
+125, 610, 612, 614, 707–709, 724–727, 760, 762 and 898. Ratios on those cards
+from before the migration are void.
 
 Five NLO cards, including 227, 228 and 230, take their reference from column 1
-of an aMC@NLO `results.dat` because they have no usable gen_log line. What that
-column holds there has not been checked.
-
-## Release impact
-
-If the dump confirms a sign error, every squared-order selection that keeps an
-interference term between amplitude classes may be wrong in sign. `generate`
-already refuses these selections, because their weights are negative, but
-`integrate` reports their σ. v0.2.3 should not tag with this open unless the
-user decides to ship it as a known issue.
+of an aMC@NLO `results.dat`. What that column holds there has not been checked.
