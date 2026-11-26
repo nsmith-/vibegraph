@@ -6,7 +6,7 @@ area: validation
 state: open
 priority: medium
 closes_when: "Every campaign card with a nonzero imaginary Wilson coefficient is listed with its model. On the fixed build, each family has one card read against MG within 2σ, and the list records which cards ran."
-blocked_by: [imaginary-couplings-on-contact-and-self-conjugate-vertices-wrong-phase]
+blocked_by: []
 opened: 2026-11-26
 tags: [eft, cpv, dim6top, smeftsim, campaign, screen]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
