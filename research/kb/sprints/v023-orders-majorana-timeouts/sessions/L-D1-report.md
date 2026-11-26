@@ -1,7 +1,7 @@
 ---
 type: Session Report
 title: "L-D1 report: card 6 has a CP-odd coupling-binding defect, worth percent, not 1.66x"
-description: "The census of card 6 matches MadGraph 3.7.1 subprocess by subprocess, with and without `/ h` and `$$ w+ w-`. On g u > t b~ d mu+ mu- (t > w+ b, w+ > e+ ve), per diagram and per helicity, every amplitude matches to 1e-14 once the imaginary Wilson coefficients are zero. With them on, 23 of 75 diagrams disagree: the four-point t-b-W-photon/Z contacts and the self-conjugate t-t-g/photon/Z dipoles take the wrong coupling under this crate's all-incoming vertex binding. A two-part fix, checked on the dumps and on the charge-conjugate subprocess, gives 2e-14. The defect moves the subprocess's summed |M|² by -1% to +9% at resonant points, so it does not account for the 1.66x σ ratio; the σ gap needs the gridpack run card and a MadGraph σ."
+description: "The census of card 6 matches MadGraph 3.7.1 subprocess by subprocess, with and without `/ h` and `$$ w+ w-`. On g u > t b~ d mu+ mu- (t > w+ b, w+ > e+ ve), per diagram and per helicity, every amplitude matches to 1e-14 once the imaginary Wilson coefficients are zero. With them on, 23 of 75 diagrams disagree: the four-point t-b-W-photon/Z contacts and the self-conjugate t-t-g/photon/Z dipoles take the wrong coupling under this crate's all-incoming vertex binding. A two-part fix, checked on the dumps and on the charge-conjugate subprocess, gives 2e-14. Follow-up: with card 6's own cuts both sides apply ptj 0.1 to the spectator b~ and mmll 30 to the core pair only, and on this subprocess vibegraph reads 1.668x MadGraph 3.7.1 with the imaginary coefficients on and 1.011x with them zero, so this defect is the 1.66x."
 status: draft
 tags: [dim6top, cp-violation, complex-couplings, hermitian-conjugate, oracle, madgraph-parity, cms-gridpacks, report, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
@@ -15,6 +15,12 @@ deleted. The canonical copy is `harness/ld1_probe.rs`. The brief closes no item,
 this commit deletes no file.
 
 ## Summary
+
+> **Superseded in part by the follow-up section at the end.** The σ-level
+> conclusion below ("this defect does not explain 1.66×") is wrong: with card 6's
+> own run card, the same subprocess reads 1.668× MadGraph with the imaginary
+> coefficients on and 1.011× with them off. The resonant-point |M|² scan
+> understated the effect because it does not sample where the σ lives.
 
 - **`/ h` and `$$ w+ w-` both reach the diagram set.** The census is machine-checked
   on both sides for both `generate` lines, in three variants: as written, without
@@ -677,3 +683,221 @@ Branch `sprintl-dim6top-sigma`, head = this report's commit (on `570f1ea9`).
   counts. On same-flavour sets they differ by design (×2 here, closed under
   identical-particle permutations), so the comparison has to apply that rule. With
   it, the counts match exactly.
+
+## Follow-up: card 6's own cuts, and the σ the defect produces
+
+Branch `sprintl-dim6top-sigma`, starting at `be45128c`. `origin/main` was still
+`c095a1cf`, already merged (`git merge-base --is-ancestor origin/main HEAD`). Inputs
+from the validator:
+
+- The run card's cut and scale lines. Active cuts: `ptj = 0.1` and `mmll = 30`.
+  `maxjetflavor = 5`, `cut_decays = False`, `bwcutoff = 15`, `dynamical_scale_choice
+  = -1`, lhaid 325300.
+- A correction to this report's earlier premise. vibegraph does not refuse card 6:
+  at `maxjetflavor = 5` a b is a jet, so `ptj = 0.1` regulates the spectator b~. My
+  earlier refusal was at the MadGraph 3.7.1 default card, `maxjetflavor = 4` with
+  `ptb = 0`, and my earlier reduced σ used `ptb 20`/`etab 5`. Neither was card 6's
+  regulator.
+
+**The run card used here.** `sigma/run_card_gp.dat` (sha `b66cbc27…`) is MadGraph
+3.7.1's default card for the process with the validator's values set: `ebeam 6800`,
+`maxjetflavor 5`, `ptj 0.1`, `ptb = ptl = 0`, `etaj = etab = etal = -1`, every ΔR 0,
+`mmll 30`, `mmbb 0`, `cut_decays F`, `bwcutoff 15`, `dynamical_scale_choice -1`,
+`scale = dsqrt_q2fact = 91.188`. One substitution: lhaid **247000**
+(NNPDF23_lo_as_0130_qed) in place of 325300. Set 325300 is not on this container, and
+`--no-network` was kept. The same set is read through LHAPDF 6.5.6 on both sides,
+so the comparison is like for like. The PDF is not the variable under test.
+
+### 1. mmll and cut_decays
+
+What each side's code does:
+
+- **MadEvent 3.7.1.** `Template/LO/SubProcesses/setcuts.f` sets `do_cuts(i) =
+  .false.` for every `from_decay(i)` when `cut_decays` is F (lines 201–203).
+  `from_decay` comes from configuration 1's forced Breit–Wigner lines
+  (`check_decay`, lines 989–1000). `s_min(j,i) = mmll·|mmll|` is set only when
+  `do_cuts(i).and.do_cuts(j)`, both legs are leptons, they have the same |PDG|, and
+  the product of their PDG codes is negative (lines 391–399). So only the core
+  l+l− pair is cut. A pair with the W-decay lepton is never cut, whatever its
+  flavour.
+- **vibegraph (`vibegraph-lib/src/cuts.rs`).**
+  - The header documents the same rule (`setcuts.f:192`, `:217`, `:399`): a leg
+    descending from a forced line loses its single-leg and pairwise cuts.
+  - On same-flavour sets, where the W-decay e+ and a core e+ are identical, every
+    pairing is kept coherently. Each pairing exempts its own decay products, and its
+    indicator is weighted by its share of |M|². MadEvent instead keeps one pairing.
+    That changes σ only by the interference between pairings.
+- **2.9.18.** The pinned submodule copy has no git history, so 2.9.18's `cuts.f`
+  and `setcuts.f` could not be diffed here.
+
+**Measured per event.** I integrated and then generated 500 events, at the card-6
+param card with the card-6 cuts, on the distinct-flavour set (`sigma/chain.dat`) and
+on the same-flavour set `g u > t b~ d e+ e-, (t > w+ b, w+ > e+ ve)`
+(`sigma/chain_sf.dat`). Command: `/home/user/wt/logs/ld1-cuts.sh`, log
+`ld1-cuts.log`, then `python3 harness/ld1_lhe_cuts.py sigma/gp_<c>/events.lhe`.
+The core and decay legs are told apart by LHE mother pointers (a leg descending from
+the top is a decay product).
+
+```
+== chain
+min core m(l+l-) 32.212 GeV; min over every OS same-flavour pair 32.212 GeV; events with some OS SF pair below 30: 0
+core m(l+l-) histogram: [30,60):16 [60,80):15 [80,85):8 [85,88):27 [88,90):61 [90,92):213 [92,94):91 [94,97):33 [97,100):9 [100,120):20 [120,200):6 [200,10000):1
+== chain_sf
+min core m(l+l-) 30.069 GeV; min over every OS same-flavour pair 5.961 GeV; events with some OS SF pair below 30: 21
+```
+
+**mmll matches MadEvent.** The core pair is always above 30 GeV. A pair formed with
+the W-decay e+ is not cut: 21 of 500 events have it below 30 GeV, as MadEvent's
+`from_decay` exemption implies. There is no uncut γ* pole: the core m(ll) peaks at
+the Z.
+
+### 2. ptj on the spectator b~
+
+What each side's code does:
+
+- **MadEvent.** `setcuts.f:217–221`: a final leg is `is_a_j` if `|pdg| ≤
+  min(maxjetflavor, 6)`, and `is_a_b` only if `maxjetflavor < |pdg| ≤ 5`. At
+  `maxjetflavor = 5` the b~ is a jet and takes `etmin = ptj = 0.1`
+  (`setcuts.f:272`). `ptb = 0` is never read, because no leg is `is_a_b`. The
+  decay b is `from_decay` and stays uncut.
+- **vibegraph.** `cuts.rs` uses the same class rule ("a jet if `|pdg| ≤
+  min(maxjetflavor,6)`; a b if `maxjetflavor < |pdg| ≤ 5`").
+
+**Measured per event.** I compared vibegraph's 500 events with 2000 MadGraph 3.7.1
+events of the same subprocess at the same cards (below). Command: `python3
+harness/ld1_lhe_cmp.py sigma/mg_chain_events.lhe 1.497 sigma/gp_chain/events.lhe
+2.497`.
+
+```
+min pT(b~): A(MG) 0.1011  B(vg) 0.1024        [chain_sf, vg: 0.1001]
+```
+
+**ptj matches.** Both sides cut the core b~ at 0.1 GeV and nothing else. The σ is
+spread across the collinear logarithm. In vibegraph's events 28% of σ has pT(b~) <
+1 GeV and 51% has pT(b~) < 5 GeV (`ld1_lhe_cuts.py`), with the median at 4.8 GeV.
+This regulator makes σ very sensitive to the treatment of pT(b~) → 0. Both sides
+apply the same regulator.
+
+### 3. The cuts match, so the σ was measured directly: MadGraph against vibegraph on one subprocess
+
+**Both cuts match, so neither explains the excess.** The manager's step 3 allows a
+reduced MadGraph σ on one subprocess if cheap. It was cheap: about 2 minutes. I ran
+MadGraph 3.7.1 `output madevent` of the same subprocess (`sa/me_sigma`, a copy of
+`sa/madevent`) with the same run card. The param card was the restricted model's
+with card 6's values (`param_card_edited.dat`), or with imaginary coefficients zero
+(`param_card_edited_noI.dat`). Settings: `run_mode 2`, `nb_core 3`, 2000 unweighted
+events. Commands: `/home/user/wt/logs/ld1-mesigma.sh` and
+`/home/user/wt/logs/ld1-noI.sh`, logs `ld1-mesigma-mg.log`, `ld1-mesigma-noI-mg.log`
+and `ld1-noI.log`. vibegraph used `integrate --target-rel 0.02` with seed 20260719,
+on `param_card_card6.dat` or on its noI copy `sigma/param_card_card6_noI.dat` (sha
+`fe569590…`, with ctpI, ctWI, ctZI and ctGI set to 0, and Γ_t kept at 1.3129 on both
+sides).
+
+| `g u > e+ ve b b~ d mu+ mu-`, card-6 cuts | vibegraph | MadGraph 3.7.1 | vg/MG |
+|---|---|---|---|
+| card 6 (imaginary coefficients on) | 2.497 ± 0.032 fb (χ²/dof 387) | 1.497 ± 0.0083 fb | **1.668 ± 0.023** |
+| ctXI = 0 | 1.497 ± 0.012 fb (χ²/dof 559) | 1.481 ± 0.010 fb | **1.011 ± 0.011** |
+| same-flavour set `… e+ e-`, card 6 | 2.546 ± 0.044 fb | not run | |
+
+**The defect is the whole of the gap.** This one subprocess reproduces the card's
+1.655 ± 0.074 to within its error, and setting the imaginary coefficients to zero
+removes it to 1%. That is the amplitude discriminator of the main section, now at σ
+level. The PDF and the run card do not enter the conclusion; each side is compared
+with itself, at the same cards. One consequence is worth stating: MadGraph's σ
+barely moves with the CP-odd coefficients (1.497 against 1.481). That is what CP-odd
+terms should do in a CP-even observable, which they enter only quadratically.
+vibegraph's mis-bound CP-odd terms instead interfere as if they were CP-even, adding
++67%.
+
+**The per-event distributions point the same way.** The comparison above
+(`ld1_lhe_cmp.py`) gives these ratios of the per-bin partial cross sections:
+
+| pT(b~) bin (GeV) | vg/MG, card 6 | vg/MG, ctXI = 0 |
+|---|---|---|
+| [0.1, 0.3) | 1.58 | 1.02 |
+| [0.3, 1) | 1.38 | 0.87 |
+| [1, 3) | 1.73 | 1.18 |
+| [3, 10) | 1.47 | 1.10 |
+| [10, 30) | 1.70 | 0.79 |
+| [30, 100) | 1.55 | 1.22 |
+| [100, ∞) | 3.18 | 0.80 |
+
+The ctXI = 0 column is statistically flat. The noI file pair is
+`sigma/mg_chain_noI_events.lhe` and `sigma/gp_chain_noI/events.lhe`, each bin about
+±15% at 500 events. The scales agree at zero imaginary coefficients: median SCALUP
+194 against 194, and median AQCDUP 0.124 against 0.123. With card 6, vibegraph's
+median SCALUP is 243 against MadGraph's 195. That shift is kinematic: vibegraph's
+spurious terms grow with energy.
+
+**The |M|² on MadGraph's own events.** `harness/ld1_events_m2.py` evaluates the
+helicity-summed |M|² of the t-channel-zeroed standalone `MATRIX` at the momenta of
+MadGraph's 2000 unweighted events. This crate's production `eval_m2` was evaluated
+at the same momenta (`LD1_M2ONLY=1 harness/run_probe.sh ev_w ev_noI_w`):
+
+```
+ev_w:     2000 MG unweighted events; mean of |M_vg|^2/|M_MG|^2 = 1.3192 +- 0.0623; median 1.0045; 5%-95% [0.867, 1.935]
+ev_noI_w: 2000 MG unweighted events; mean of |M_vg|^2/|M_MG|^2 = 1.0000 +- 0.0000; median 1.0000; 5%-95% [1.000, 1.000]
+```
+
+The mean of this ratio over MadGraph's events estimates σ_vg/σ_MG. It is heavy
+tailed and biased low, because it samples MadGraph's distribution and so
+under-represents the regions where vibegraph is much larger. It is consistent with
+the 1.67 measured directly. At zero imaginary coefficients it is 1 to every digit.
+
+**Why the earlier |M|² scan said "percent".** Its points were RAMBO t b~ d Z at a
+fixed √ŝ with isotropic decays. They almost never place the b~ collinear with the
+beam, which carries most of card 6's σ (51% at pT(b~) < 5 GeV). They also miss the
+high-energy tail, where the ratio is 3.2. The scan measured the defect where it is
+small. The finer oracle was one cheap MadEvent σ, and I should have reached for it
+first.
+
+### What each oracle in this section cannot see
+
+- **The per-event cut checks.** They show that each cut is applied as MadEvent
+  applies it at 500 events. A cut that is wrong only in a region those events do
+  not reach, or only in other subprocesses, would pass. Only one distinct-flavour
+  and one same-flavour set were checked.
+- **The σ comparison.** It is one subprocess and one seed per side. The vibegraph
+  runs have χ²/dof 387 and 559 across iterations. The noI agreement at 1.011 ±
+  0.011 says those runs are not grossly wrong, but it is not a seed sweep. It also
+  uses lhaid 247000, not 325300.
+- **What this does not settle.** That the fix restores every subprocess. The
+  charge-conjugate amplitude control says it should, but no σ was run with the
+  fix, since that needs production code.
+
+### Requests for the long-run host (replacing the earlier list)
+
+1. **Once the fix of the main section is implemented on a feature branch**, card 6
+   at campaign budget, 5 seeds, with the gridpack's run card (lhaid 325300).
+   Expected: vg/MG ≈ 1.00 against 0.04754 pb, within the seed spread. Gate it on the
+   sweep's spread and χ²/dof, not on a single pull.
+2. **A pre-fix control on main**: card 6 with ctpI = ctWI = ctZI = ctGI = 0 in both
+   vibegraph and MadGraph 3.7.1 (the gridpack's σ cannot be reused, since it is at
+   nonzero coefficients). 5 vibegraph seeds and 3 MadGraph seeds. Expected: ratio
+   about 1.0, the whole-card version of the 1.011 here.
+
+### Found (additions)
+
+7. **A σ-level oracle for CP-odd EFT cards exists and costs minutes.** A one-subprocess
+   MadEvent σ at the card's own run card, on and off the imaginary coefficients,
+   located this gap more cheaply than any amplitude scan. Every CMS EFT card with
+   imaginary Wilson coefficients (dim6top, SMEFTsim `*Im`) should get this pair
+   before σ is compared. Other cards in the campaign may carry the same defect.
+8. **vibegraph's chain integration zeroes many points as "degenerate" at
+   `ptj = 0.1`.** 176361 of 1143312 were zeroed in the distinct-flavour chain run
+   (`ld1-cuts.log`), while the same-flavour run zeroed 1 of 2.0M. At ctXI = 0 the σ
+   still agrees with MadGraph, so this cost no σ here, but a 15% zeroed share is
+   worth explaining. It is an efficiency or robustness question at near-collinear
+   b~, not a σ defect shown here.
+
+### Scratch files added (all under `/home/user/wt/sprintl-dim6top-mg/`)
+
+- `sigma/`: `run_card_gp.dat`, `param_card_card6_noI.dat`, `chain_sf.dat`,
+  `gp_chain/`, `gp_chain_sf/`, `gp_chain_noI/` (grids and 500-event LHE files),
+  `mg_chain_events.lhe`, `mg_chain_noI_events.lhe`.
+- `sa/me_sigma/`: the MadEvent run directory, with runs `run_ld1` and `run_ld1_noI`.
+- `harness/`: `ld1_lhe_cuts.py`, `ld1_lhe_cmp.py`, `ld1_events_m2.py`.
+- `tables/`: `ld1_gu_ev_{w,noI_w}.json` and `vg_gu_ev_{w,noI_w}.json`.
+
+The scratch probe was again copied into `vibegraph-lib/tests/` for one run and
+deleted afterwards (`ls vibegraph-lib/tests/ld1_probe.rs` → no such file).
