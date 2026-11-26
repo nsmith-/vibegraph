@@ -66,3 +66,19 @@ So the imaginary-coupling defect accounts for the whole gap. The cuts match:
 - ptj = 0.1 applies to the b~ at maxjetflavor 5 on both sides.
 
 That run used lhaid 247000 on both sides.
+
+**Full-card control.** `vg-validator` ran card 6 with ctXI = 0 on 54cecfac,
+5 seeds at campaign budget, with Γt kept at 1.3129:
+
+| seed | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| vg/MG | 0.989 | 0.902 | 0.991 | 0.982 | 0.976 |
+
+- The unweighted mean is 0.968 ± 0.017, with χ²/dof 3.39.
+- The reference is MG at the CPV point. L-D1's pair puts MG's own ctXI → 0
+  shift at about −1.1%, so against a matching reference the control reads
+  about 0.98.
+- Seed 2 is confidently low: 0.902 with a quoted 2.0% error, the smallest of
+  the five. That is a missed-region signature on a collinear-dominated
+  integrand. If the fix build's 5 seeds show it again, it becomes its own
+  sampling item.
