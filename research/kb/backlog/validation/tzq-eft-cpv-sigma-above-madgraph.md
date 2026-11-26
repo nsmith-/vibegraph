@@ -43,3 +43,14 @@ spectator b~ is regulated at most by ptj = 0.1 GeV, so the g → b b̄ collinear
 region is nearly unregulated on both sides. The next oracle is how each side
 reads the same card in that region: whether b counts as a jet for ptj, and
 which lepton pairs mmll cuts.
+
+Card 7 (ttZ_3l_4l_EFT_CPV_point_0_13p6, the same bundled dim6top UFO) reads high
+too. On one seed it gives vg/MG 1.215 ± 0.034 (pull +6.4), with a 2.8% error.
+It ran its gridpack's own run card. The cuts follow card 6's pattern, with
+mmll = 10. Its imaginary coefficients are large (|ctXI| 0.67–0.98), so the
+class-B dipole defect is fully in play there.
+
+The two cards discriminate between the hypotheses in two ways:
+- **Per event:** check the core m(l+l−) against mmll, with the W-decay leptons
+  exempt.
+- **Single seed:** compare a reduced σ at ctXI = 0 against card 7's ctXI.
