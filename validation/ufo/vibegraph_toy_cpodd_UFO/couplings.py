@@ -3,7 +3,9 @@ dim6top model's: a dipole's CP-even term `i c` on `[gamma^mu, pslash]` and its
 CP-odd term `c^I` on `[gamma^mu, pslash](P_L - P_R)`; a charged contact's
 coupling `c^I - i c` on the right-handed chain of one charge and `c^I + i c` on
 the left-handed chain of the other, the pair the Lagrangian's hermiticity ties
-together. The `ht` Yukawas are written as the Higgs-characterisation model
+together. The charged contact with a scalar carries `-c^I + i c` on the right-handed
+momentum chain of one charge and `c^I + i c` on the left-handed one of the other,
+as dim6top's `t b W H` contacts. The `ht` Yukawas are written as the Higgs-characterisation model
 writes its `X0 t t~` vertex: `-i y` on the identity and a real `y_a` on `Gamma5`.
 """
 
@@ -52,3 +54,11 @@ GC_YH = Coupling(name='GC_YH',
 GC_YA = Coupling(name='GC_YA',
                  value='ya',
                  order={'NPA': 1})
+
+GC_WHR = Coupling(name='GC_WHR',
+                  value='-cwI + complex(0,1)*cw',
+                  order={'NPC': 1})
+
+GC_WHL = Coupling(name='GC_WHL',
+                  value='cwI + complex(0,1)*cw',
+                  order={'NPC': 1})

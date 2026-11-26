@@ -1,4 +1,4 @@
-"""Eight vertices. Particles are listed as the dim6top model lists them, the
+"""Ten vertices. Particles are listed as the dim6top model lists them, the
 anti-fermion first, so a structure's spinor index 1 is the barred spinor and
 index 2 the unbarred one.
 
@@ -8,7 +8,9 @@ splits it into three interactions. `V_utdtzwp` and `V_dtutzwm` are the charged
 contact and its Hermitian partner, each with one chirality of
 `[gamma^mu, gamma^nu]`, as the dim6top restricted model's `t b a W` contacts.
 `V_ututht` is a scalar Yukawa beside a pseudoscalar one with a real coupling, and
-`V_ututzht` the dipole's chains beside the scalar.
+`V_ututzht` the dipole's chains beside the scalar. `V_utdtwph` and `V_dtutwmh`
+are a charged contact with a scalar and its Hermitian partner, each with one
+chirality of the momentum chain.
 """
 
 from object_library import all_vertices, Vertex
@@ -63,3 +65,15 @@ V_ututzht = Vertex(name='V_ututzht',
                    color=['1'],
                    lorentz=[L.FFVS6, L.FFVS4],
                    couplings={(0, 0): C.GC_HDIP, (0, 1): C.GC_HDIPI})
+
+V_utdtwph = Vertex(name='V_utdtwph',
+                   particles=[P.ut__tilde__, P.dt, P.wt__plus__, P.ht],
+                   color=['1'],
+                   lorentz=[L.FFVS5],
+                   couplings={(0, 0): C.GC_WHR})
+
+V_dtutwmh = Vertex(name='V_dtutwmh',
+                   particles=[P.dt__tilde__, P.ut, P.wt__minus__, P.ht],
+                   color=['1'],
+                   lorentz=[L.FFVS2],
+                   couplings={(0, 0): C.GC_WHL})

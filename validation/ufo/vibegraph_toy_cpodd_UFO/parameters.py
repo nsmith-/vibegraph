@@ -5,8 +5,9 @@ fermion exchanged in the t or u channel, so the model has no widths. The masses
 keep every banked 2 -> 2 process at sqrt(s) = 600 GeV above threshold.
 
 `cd` and `cdI` are the CP-even and CP-odd parts of the `ut` dipole, `cc` and
-`ccI` those of the charged contact, and `ch` and `chI` those of the
-`ut ut~ zt ht` contact. Each CP-odd strength is the imaginary part of a complex
+`ccI` those of the charged contact, `ch` and `chI` those of the
+`ut ut~ zt ht` contact, and `cw` and `cwI` those of the charged `ut dt wt ht`
+contact. Each CP-odd strength is the imaginary part of a complex
 Wilson coefficient, which is what puts a real number on a dipole's `gamma^5`
 term and an imaginary part on the charged contact's coupling. `yh` and `ya` are
 the scalar and pseudoscalar Yukawas of `ht`, the second as real as a CP-mixed
@@ -148,3 +149,19 @@ ya = Parameter(name='ya',
                texname='y_{a}',
                lhablock='TOYCOUP',
                lhacode=[11])
+
+cw = Parameter(name='cw',
+               nature='external',
+               type='real',
+               value=0.0009,
+               texname='c_{w}',
+               lhablock='TOYCOUP',
+               lhacode=[12])
+
+cwI = Parameter(name='cwI',
+                nature='external',
+                type='real',
+                value=0.0015,
+                texname='c_{w}^{I}',
+                lhablock='TOYCOUP',
+                lhacode=[13])

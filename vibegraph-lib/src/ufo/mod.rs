@@ -1974,10 +1974,44 @@ mod tests {
         }
     }
 
+    /// The charged contact with a scalar binds its Hermitian partner's coupling with
+    /// sign `+1`: `[γ^μ, p̸]P_R` on `[ut~ dt wt+ ht]` conjugates into `[γ^μ, p̸]P_L`,
+    /// the structure `[dt~ ut wt- ht]` carries, as the W dipoles do. The bound value
+    /// is `−conj` of the vertex's own, which differs from it exactly where `c^I ≠ 0`.
+    #[test]
+    fn a_charged_contact_with_a_scalar_binds_its_partners_coupling() {
+        let model = toy_cpodd();
+        let ev = EvaluatedModel::from_model(model.clone());
+        for (bound, partner) in [("V_utdtwph", "GC_WHL"), ("V_dtutwmh", "GC_WHR")] {
+            let id = model.vertex_id(bound).unwrap();
+            let own = model.vertex_def(id).couplings[&(0, 0)];
+            let got = model.bound_coupling(id, (0, 0));
+            assert_eq!(
+                got,
+                BoundCoupling {
+                    id: model.coupling_id(partner).unwrap(),
+                    sign: 1
+                },
+                "{bound}"
+            );
+            let (gv, gb) = (ev.coupling(own), ev.coupling(got.id));
+            assert!(
+                (gb + gv.conj()).norm() <= 1e-15 * gv.norm(),
+                "{bound}: {gb} against {gv}"
+            );
+            assert!(
+                (gb - gv).norm() > 0.1 * gv.norm(),
+                "{bound}: the card is CP-even"
+            );
+        }
+    }
+
     /// The self-conjugate dipole keeps its couplings, and its CP-odd term, written as
     /// `[γ^μ, p̸](P_L − P_R)` with projectors, enters negated: the rooting evaluates
     /// that chain with its projectors exchanged. The gauge term and the CP-even
-    /// `[γ^μ, p̸]` enter as written. Dropping the sign fails this test, and every
+    /// `[γ^μ, p̸]` enter as written; so do both terms of the Yukawa, the pseudoscalar
+    /// one's real coupling included, and the same chains beside a scalar behave as
+    /// the dipole's. Dropping the sign fails this test, and every
     /// `*_toy_cpodd` row against MadGraph.
     #[test]
     fn a_projector_written_cp_odd_dipole_term_enters_negated() {
@@ -2002,6 +2036,27 @@ mod tests {
         }
         seen.sort();
         assert_eq!(seen, ["FFV1", "FFV11", "FFV9"]);
+        // The same chains beside a scalar, and the Yukawas, whose chains carry no gamma.
+        for (base, negated) in [("V_ututzht", "FFVS4"), ("V_ututht", "")] {
+            let mut terms = 0;
+            for (i, v) in model.vertices.values().enumerate() {
+                if v.name.split('#').next() != Some(base) {
+                    continue;
+                }
+                for (key, &g) in &v.couplings {
+                    let name = model.lorentz_struct(v.lorentz[key.1]).python_name.as_str();
+                    let sign = if name == negated { -1 } else { 1 };
+                    assert_eq!(
+                        model.bound_coupling(VertexId(i), *key),
+                        BoundCoupling { id: g, sign },
+                        "{} {name}",
+                        v.name
+                    );
+                    terms += 1;
+                }
+            }
+            assert_eq!(terms, 2, "{base}");
+        }
         for name in ["V_dtdtzt", "V_utdtwp", "V_dtutwm"] {
             let id = model.vertex_id(name).unwrap();
             assert_eq!(model.bound_coupling(id, (0, 0)).sign, 1, "{name}");

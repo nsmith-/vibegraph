@@ -622,6 +622,15 @@ ROWS = {
         Row("hu_to_zu_toy_cpodd", "ht ut > zt ut QED<=2 NP<=1 NPCP<=1 NPA<=1",
             (9000025, 9000002), (9000023, 9000002), 600.0, 3, 5436,
             model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        # A charged contact with a scalar beside the vector, one chirality of the
+        # momentum chain with a complex coupling, whose Hermitian partner carries
+        # the other; one row per charge, beside the Yukawas on the exchanged `ut`.
+        Row("udx_to_wph_toy_cpodd", "ut dt~ > wt+ ht QED<=2 NPC<=1 NPA<=1",
+            (9000002, -9000001), (9000024, 9000025), 600.0, 3, 5437,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("dux_to_wmh_toy_cpodd", "dt ut~ > wt- ht QED<=2 NPC<=1 NPA<=1",
+            (9000001, -9000002), (-9000024, 9000025), 600.0, 3, 5438,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
     ]
 }
 

@@ -6,7 +6,9 @@ chirality with `ProjM` and `ProjP` rather than with `Gamma5`.
 `FFVV1` and `FFVV3` are `[gamma^mu, gamma^nu]` times `P_L` and `P_R`, each with
 the boson momentum and indices as the dim6top vertices read them.
 `FFVS4` and `FFVS6` are `FFV9` and `FFV11` beside a scalar, as dim6top's
-`t~ t g H` contact writes them; `FFS1` and `FFS5` are the Higgs-characterisation
+`t~ t g H` contact writes them, and `FFVS2` and `FFVS5` the one-chirality
+momentum chains `[gamma^mu, pslash] P_L` and `P_R` beside a scalar, as its
+`t b W H` contacts do; `FFS1` and `FFS5` are the Higgs-characterisation
 model's scalar and pseudoscalar Yukawas.
 """
 
@@ -51,3 +53,11 @@ FFVS4 = Lorentz(name='FFVS4',
 FFVS6 = Lorentz(name='FFVS6',
                 spins=[2, 2, 3, 1],
                 structure='-(P(-1,3)*Gamma(-1,2,-3)*Gamma(3,-3,-2)*ProjM(-2,1)) + P(-1,3)*Gamma(-1,-3,-2)*Gamma(3,2,-3)*ProjM(-2,1) - P(-1,3)*Gamma(-1,2,-3)*Gamma(3,-3,-2)*ProjP(-2,1) + P(-1,3)*Gamma(-1,-3,-2)*Gamma(3,2,-3)*ProjP(-2,1)')
+
+FFVS2 = Lorentz(name='FFVS2',
+                spins=[2, 2, 3, 1],
+                structure='-(P(-1,3)*Gamma(-1,2,-3)*Gamma(3,-3,-2)*ProjM(-2,1)) + P(-1,3)*Gamma(-1,-3,-2)*Gamma(3,2,-3)*ProjM(-2,1)')
+
+FFVS5 = Lorentz(name='FFVS5',
+                spins=[2, 2, 3, 1],
+                structure='-(P(-1,3)*Gamma(-1,2,-3)*Gamma(3,-3,-2)*ProjP(-2,1)) + P(-1,3)*Gamma(-1,-3,-2)*Gamma(3,2,-3)*ProjP(-2,1)')
