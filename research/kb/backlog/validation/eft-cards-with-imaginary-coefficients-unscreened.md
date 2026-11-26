@@ -38,7 +38,14 @@ class-B vertices.
   same relative phase as dim6top's V_110 with an imaginary ctpI. The same holds
   for the X0 couplings to τ, b, μ and c (V_3008, V_3009, V_3011 and V_3012).
   Either main is wrong on HC with any nonzero kAff, or a fix that closes
-  dim6top breaks HC. Card 4 (`p p > x0 t t~`, kAtt and kHtt) read 0.992 in v022.
-  A CP-even σ cannot settle this, because CP-odd interference can integrate to
-  zero. The per-diagram x per-helicity check against MadGraph on card 4's point
-  is required of the fix.
+  dim6top breaks HC. The per-diagram x per-helicity check against MadGraph is
+  required of the fix. It must run at a point with cosa ≠ ±1 (e.g. cosa = 1/√2,
+  kAtt = kHtt = 1).
+
+**Card 4's base point cannot see the defect.** It sets cosa = 1, so
+sina = 0 and the γ⁵ coupling GC_3010a vanishes, and its 0.992 reads only
+CP-even physics. Its CP mixing lives in its 344-line reweight card: 19 points
+in cosa, kAtt, kHtt and others. Any reweighting of such a sample to cosa ≠ ±1,
+including vibegraph's own reweight path, inherits the defect until the fix
+lands. HC_NLO_X0 is the standard ttH CP model, so that reweight case is the
+exposure that matters most downstream.
