@@ -17,7 +17,7 @@ use crate::ufo::lorentz::{LorentzId, LorentzTerm};
 use crate::ufo::particles::ParticleId;
 use crate::ufo::topo::{flow_groups, FlowGroup};
 use crate::ufo::vertices::VertexId;
-use crate::ufo::UFOModel;
+use crate::ufo::{BoundCoupling, UFOModel};
 
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
@@ -217,7 +217,10 @@ impl VertexTerm {
             model,
             lorentz_id,
             color,
-            coupling_id,
+            BoundCoupling {
+                id: coupling_id,
+                sign: 1,
+            },
             flow,
             result_leg_idx,
             flows,
@@ -228,13 +231,14 @@ impl VertexTerm {
     /// Generate a VertexTerm from a UFO vertex definition, given the model and the
     /// desired index of the result leg (0-indexed), with every chiral projector of a
     /// chain that carries no gamma exchanged for the other chirality where
-    /// `swap_standalone_chirality` is set ([`conjugate_standalone_projectors`]).
+    /// `swap_standalone_chirality` is set ([`conjugate_standalone_projectors`]). The
+    /// coupling's sign multiplies every Lorentz term's coefficient.
     #[allow(clippy::too_many_arguments)]
     fn from_ufo_read(
         model: &UFOModel,
         lorentz_id: LorentzId,
         _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed
-        coupling_id: CouplingId,
+        coupling: BoundCoupling,
         flow: &[(usize, usize)],
         result_leg_idx: Option<usize>,
         flows: &[Option<LegAdjoint>],
@@ -260,13 +264,22 @@ impl VertexTerm {
                     term
                 }
             })
+            .map(|mut term| {
+                if coupling.sign < 0 {
+                    term.coeff = -term.coeff;
+                }
+                term
+            })
             .map(|term| {
                 super::root_lorentz::root_term(&term, &lorentz.spins, flow, result_leg_idx, flows)
                     .map_err(|e| e.in_structure(&lorentz.name, &lorentz.structure))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(VertexTerm { terms, coupling_id })
+        Ok(VertexTerm {
+            terms,
+            coupling_id: coupling.id,
+        })
     }
 
     /// The tensor-path sign shared by this vertex-term's Lorentz terms (see

@@ -947,7 +947,7 @@ fn vanishes_at_card(set: &DiagramSet, model: &UFOModel, evaluated: &EvaluatedMod
                 !couplings.is_empty()
                     && couplings.keys().all(|&key| {
                         let value =
-                            evaluated.coupling(model.bound_coupling(vertex.interaction, key));
+                            evaluated.coupling(model.bound_coupling(vertex.interaction, key).id);
                         value.re == 0.0 && value.im == 0.0
                     })
             })

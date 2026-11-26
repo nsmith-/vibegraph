@@ -24,3 +24,10 @@ three gaps:
 The binary that lacked #169 got |M2|² wrong by up to 1.8× and the
 interference sign wrong. No committed gate could have caught it, because none
 compares a per-class amplitude.
+
+L-I1's out-of-tree `li1_bank.py` also under-zeroes MadEvent t-channel widths.
+It misses HELAS calls with several Lorentz structures (e.g. `FFV11_9_1`), and
+calls continued onto a second line. On card 6 it missed 5 of 16 (sprint L's
+L-D1, which used its own parser). It could not affect L-I1's VLQ tables: of the
+38 calls in `P1_gq_htbxq/matrix1_orig.f`, none is multi-structure and none is
+continued. An in-tree harness must handle both cases.
