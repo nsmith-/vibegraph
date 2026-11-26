@@ -612,6 +612,16 @@ ROWS = {
         Row("zu_to_wpd_toy_cpodd", "zt ut > wt+ dt QED<=2 NP<=1 NPCP<=1 NPC<=1",
             (9000023, 9000002), (9000024, 9000001), 600.0, 3, 5434,
             model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        # The same dipole chains beside a scalar on the self-conjugate contact
+        # `ut ut~ zt ht`, beside a scalar Yukawa and a pseudoscalar one with a real
+        # coupling: an annihilating pair, and the crossing with the line running
+        # from an initial to a final `ut`.
+        Row("uux_to_zh_toy_cpodd", "ut ut~ > zt ht QED<=2 NP<=1 NPCP<=1 NPA<=1",
+            (9000002, -9000002), (9000023, 9000025), 600.0, 3, 5435,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("hu_to_zu_toy_cpodd", "ht ut > zt ut QED<=2 NP<=1 NPCP<=1 NPA<=1",
+            (9000025, 9000002), (9000023, 9000002), 600.0, 3, 5436,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
     ]
 }
 

@@ -5,9 +5,12 @@ fermion exchanged in the t or u channel, so the model has no widths. The masses
 keep every banked 2 -> 2 process at sqrt(s) = 600 GeV above threshold.
 
 `cd` and `cdI` are the CP-even and CP-odd parts of the `ut` dipole, `cc` and
-`ccI` those of the charged contact. Each CP-odd strength is the imaginary part
-of a complex Wilson coefficient, which is what puts a real number on the
-dipole's `gamma^5` term and an imaginary part on the contact's coupling.
+`ccI` those of the charged contact, and `ch` and `chI` those of the
+`ut ut~ zt ht` contact. Each CP-odd strength is the imaginary part of a complex
+Wilson coefficient, which is what puts a real number on a dipole's `gamma^5`
+term and an imaginary part on the charged contact's coupling. `yh` and `ya` are
+the scalar and pseudoscalar Yukawas of `ht`, the second as real as a CP-mixed
+Higgs's.
 """
 
 from object_library import all_parameters, Parameter
@@ -49,6 +52,14 @@ MZT = Parameter(name='MZT',
                 texname='M_{Z}',
                 lhablock='MASS',
                 lhacode=[9000023])
+
+MHT = Parameter(name='MHT',
+                nature='external',
+                type='real',
+                value=125.0,
+                texname='M_{H}',
+                lhablock='MASS',
+                lhacode=[9000025])
 
 gzu = Parameter(name='gzu',
                 nature='external',
@@ -105,3 +116,35 @@ ccI = Parameter(name='ccI',
                 texname='c_{c}^{I}',
                 lhablock='TOYCOUP',
                 lhacode=[7])
+
+ch = Parameter(name='ch',
+               nature='external',
+               type='real',
+               value=0.0007,
+               texname='c_{h}',
+               lhablock='TOYCOUP',
+               lhacode=[8])
+
+chI = Parameter(name='chI',
+                nature='external',
+                type='real',
+                value=0.0023,
+                texname='c_{h}^{I}',
+                lhablock='TOYCOUP',
+                lhacode=[9])
+
+yh = Parameter(name='yh',
+               nature='external',
+               type='real',
+               value=0.53,
+               texname='y_{h}',
+               lhablock='TOYCOUP',
+               lhacode=[10])
+
+ya = Parameter(name='ya',
+               nature='external',
+               type='real',
+               value=0.37,
+               texname='y_{a}',
+               lhablock='TOYCOUP',
+               lhacode=[11])

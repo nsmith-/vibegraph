@@ -23,3 +23,7 @@ NPCP = CouplingOrder(name='NPCP',
 NPC = CouplingOrder(name='NPC',
                     expansion_order=99,
                     hierarchy=1)
+
+NPA = CouplingOrder(name='NPA',
+                    expansion_order=99,
+                    hierarchy=1)

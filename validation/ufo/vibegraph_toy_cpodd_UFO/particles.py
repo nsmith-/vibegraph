@@ -1,6 +1,6 @@
-"""Four fields: two Dirac fermions `ut` and `dt` whose charges differ by one
-unit, a charged vector `wt+` coupling them, and a neutral vector `zt` coupling
-each to itself.
+"""Five fields: two Dirac fermions `ut` and `dt` whose charges differ by one
+unit, a charged vector `wt+` coupling them, a neutral vector `zt` coupling each
+to itself, and a neutral scalar `ht` coupling to `ut`.
 
 The charges make every vertex below charge-conserving; nothing else in the model
 reads them.
@@ -64,6 +64,19 @@ zt = Particle(pdg_code=9000023,
               width=Param.ZERO,
               texname='Z_t',
               antitexname='Z_t',
+              charge=0,
+              GhostNumber=0,
+              LeptonNumber=0)
+
+ht = Particle(pdg_code=9000025,
+              name='ht',
+              antiname='ht',
+              spin=1,
+              color=1,
+              mass=Param.MHT,
+              width=Param.ZERO,
+              texname='H_t',
+              antitexname='H_t',
               charge=0,
               GhostNumber=0,
               LeptonNumber=0)

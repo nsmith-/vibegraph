@@ -788,8 +788,8 @@ impl UFOModel {
         }
     }
 
-    /// For a vertex with two fermion slots and vector bosons, the coupling each of
-    /// `vertex`'s terms binds and the sign it enters with, by term key.
+    /// For a vertex with two fermion slots, the coupling each of `vertex`'s terms binds
+    /// and the sign it enters with, by term key.
     ///
     /// For a charged vertex the coupling is the one the Hermitian-conjugate
     /// interaction carries on the conjugate of the term. The conjugate of a term is
@@ -804,24 +804,22 @@ impl UFOModel {
     /// antiparticles of `vertex`'s particles and the same colour structures whose
     /// terms are those conjugates one to one up to a sign each, at the same colour
     /// index and coupling orders, and the sign is the one relating the conjugate to
-    /// the partner's term.
+    /// the partner's term. The exchange is made only where every term carries a
+    /// gamma, whatever the bosons beside it: a charged scalar or chiral-scalar
+    /// structure (`FFS`, a charged Goldstone's or Higgs's Yukawa) keeps its own
+    /// coupling with sign `+1`, since what such a term's conjugate is under this
+    /// crate's binding has not been measured against MadGraph, and the binding is a
+    /// convention, not an identity, so it is not extended to it by analogy.
     ///
     /// A vertex whose particles are their own conjugate set (`t~ t g`) is read by
     /// MadGraph and by this crate as the same interaction, so each term keeps its own
-    /// coupling. Its sign is the one relating the structure the rooting evaluates to
-    /// the structure as written ([`even_chain_chirality_flipped`]): `−1` for a
-    /// two-gamma chain whose chirality is written with projectors and is not
-    /// symmetric, the dim6top model's `[γ^μ, p̸](P_L − P_R)`, and `+1` for the same
-    /// chain written with `Gamma5` (SMEFTsim's), for one with both projectors at equal
-    /// weight, and for every vector current.
-    ///
-    /// The exchange is made only where every term carries a gamma and every boson is a
-    /// vector: the vector currents, the momentum-slashed dipoles and the two-gamma
-    /// contacts. A scalar or chiral-scalar structure (`FFS`, a Yukawa) and a vertex
-    /// with a scalar beside the vector (`FFVS`) keep their own couplings with sign
-    /// `+1`: what such a term's conjugate is under this crate's binding has not been
-    /// measured against MadGraph, and the binding is a convention, not an identity, so
-    /// it is not extended to them by analogy.
+    /// coupling, whatever the bosons. Its sign is the one relating the structure the
+    /// rooting evaluates to the structure as written
+    /// ([`even_chain_chirality_flipped`]): `−1` for a two-gamma chain whose chirality
+    /// is written with projectors and is not symmetric (the dim6top model's
+    /// `[γ^μ, p̸](P_L − P_R)`, alone or beside a scalar), and `+1` for the same chain
+    /// written with `Gamma5` (SMEFTsim's), for one with both projectors at equal
+    /// weight, for every vector current and for every Yukawa.
     ///
     /// `None` for any other vertex, a structure outside [`chain_normal_form`], or no
     /// unique conjugate.
@@ -836,18 +834,7 @@ impl UFOModel {
                 .filter(|&&p| self.particle(p).spin == s)
                 .count()
         };
-        let vectors = spin_count(3);
-        if spin_count(2) != 2 || vectors == 0 || v.particles.len() != 2 + vectors {
-            return None;
-        }
-        let every_term_carries_a_gamma = v.lorentz.iter().all(|&l| {
-            self.lorentz_struct(l).expr.iter().all(|term| {
-                term.ops
-                    .iter()
-                    .any(|op| matches!(op, lorentz::LorentzOp::Gamma { .. }))
-            })
-        });
-        if !every_term_carries_a_gamma {
+        if spin_count(2) != 2 {
             return None;
         }
         let sorted = |mut ids: Vec<ParticleId>| {
@@ -874,6 +861,16 @@ impl UFOModel {
                     Some((key, BoundCoupling { id: g, sign }))
                 })
                 .collect();
+        }
+        let every_term_carries_a_gamma = v.lorentz.iter().all(|&l| {
+            self.lorentz_struct(l).expr.iter().all(|term| {
+                term.ops
+                    .iter()
+                    .any(|op| matches!(op, lorentz::LorentzOp::Gamma { .. }))
+            })
+        });
+        if !every_term_carries_a_gamma {
+            return None;
         }
         let targets = v
             .couplings
@@ -1785,11 +1782,13 @@ mod tests {
     }
 
     /// The partner exchange stays on the class it was measured on. A charged Goldstone's
-    /// Yukawa (`V_88`, `[t~, b, G+]`, `FFS1`/`FFS3`) and SMEFTsim's `t b W H` contacts
-    /// (`V_290`, `V_329`, `FFVS*`) keep their own couplings, as before the dipoles were
-    /// mapped; a CKM vector current keeps binding its partner's coupling on the same
-    /// key. Mapping every two-fermion charged vertex would flip the Goldstone Yukawas
-    /// (`GC_15`, `GC_21` against their partner's), which no measurement supports.
+    /// Yukawa (`V_88`, `[t~, b, G+]`, `FFS1`/`FFS3`) keeps its own couplings; a CKM
+    /// vector current keeps binding its partner's coupling on the same key. Mapping
+    /// every two-fermion charged vertex would flip the Goldstone Yukawas (`GC_15`,
+    /// `GC_21` against their partner's), which no measurement supports. SMEFTsim's
+    /// `t b W H` contacts (`V_290`, `V_329`, `FFVS*`) carry a gamma on every term and
+    /// bind their partners; with every coefficient real, as `restrict_massless` sets
+    /// them, the value each binds is its own.
     #[test]
     fn the_partner_exchange_is_limited_to_gamma_currents() {
         let sm = sm::sm_model(sm::SMRestrict::Default);
@@ -1868,15 +1867,26 @@ mod tests {
             ),
         )
         .unwrap();
+        let ev = EvaluatedModel::from_model(smeft.clone());
         let mut checked = 0;
         for (i, v) in smeft.vertices.values().enumerate() {
             let base = v.name.split('#').next().unwrap();
             if base == "V_290" || base == "V_329" {
-                assert!(
-                    smeft.conjugate_couplings(VertexId(i)).is_none(),
-                    "{}",
-                    v.name
-                );
+                let map = smeft
+                    .conjugate_couplings(VertexId(i))
+                    .unwrap_or_else(|| panic!("{} has no partner", v.name));
+                for (key, &g) in &v.couplings {
+                    let bound = map[key];
+                    let (own, got) = (
+                        ev.coupling(g),
+                        ev.coupling(bound.id) * f64::from(bound.sign),
+                    );
+                    assert!(
+                        (own - got).norm() <= 1e-15 * own.norm(),
+                        "{} {key:?}: {got} against {own}",
+                        v.name
+                    );
+                }
                 checked += 1;
             }
         }

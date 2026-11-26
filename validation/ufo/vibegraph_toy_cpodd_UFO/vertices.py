@@ -1,4 +1,4 @@
-"""Six vertices. Particles are listed as the dim6top model lists them, the
+"""Eight vertices. Particles are listed as the dim6top model lists them, the
 anti-fermion first, so a structure's spinor index 1 is the barred spinor and
 index 2 the unbarred one.
 
@@ -7,6 +7,8 @@ CP-even and the CP-odd dipole terms, under three coupling orders, so MadGraph
 splits it into three interactions. `V_utdtzwp` and `V_dtutzwm` are the charged
 contact and its Hermitian partner, each with one chirality of
 `[gamma^mu, gamma^nu]`, as the dim6top restricted model's `t b a W` contacts.
+`V_ututht` is a scalar Yukawa beside a pseudoscalar one with a real coupling, and
+`V_ututzht` the dipole's chains beside the scalar.
 """
 
 from object_library import all_vertices, Vertex
@@ -49,3 +51,15 @@ V_dtutzwm = Vertex(name='V_dtutzwm',
                    color=['1'],
                    lorentz=[L.FFVV1],
                    couplings={(0, 0): C.GC_CL})
+
+V_ututht = Vertex(name='V_ututht',
+                  particles=[P.ut__tilde__, P.ut, P.ht],
+                  color=['1'],
+                  lorentz=[L.FFS1, L.FFS5],
+                  couplings={(0, 0): C.GC_YH, (0, 1): C.GC_YA})
+
+V_ututzht = Vertex(name='V_ututzht',
+                   particles=[P.ut__tilde__, P.ut, P.zt, P.ht],
+                   color=['1'],
+                   lorentz=[L.FFVS6, L.FFVS4],
+                   couplings={(0, 0): C.GC_HDIP, (0, 1): C.GC_HDIPI})
