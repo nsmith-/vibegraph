@@ -6,7 +6,7 @@ area: validation
 state: open
 priority: high
 closes_when: "With the imaginary-coupling fix, card 6 reads within 2σ of 0.04754 pb over 5 seeds at campaign budget (lhaid 325300), with the spread read, and card 7 is read on the same footing."
-blocked_by: [imaginary-couplings-on-contact-and-self-conjugate-vertices-wrong-phase]
+blocked_by: []
 opened: 2026-11-26
 tags: [eft, dim6top, tzq, sigma, madgraph-parity, cuts, cms, release-gate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
