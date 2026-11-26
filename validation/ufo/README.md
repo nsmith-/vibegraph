@@ -174,3 +174,20 @@ and `xw^3` (`V_xw3`), each QED=1; `xw^3` again (`V_xw3np`) at NP=1, QED=-1,
 WEIGHTED -1; and `xw^4` at QED=2. No restrict card: the model is used whole, and
 every parameter is distinct and neither 0 nor 1, so a restriction would merge
 nothing. Diagram counts only; the couplings' values are arbitrary.
+
+## `vibegraph_toy_cpodd_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-11-26 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | The two vertex classes where the coupling a diagram binds is not the one the vertex is written with, each with a complex Wilson coefficient: a charged two-fermion contact `[gamma^mu, gamma^nu] P_R` whose Hermitian partner carries the conjugate coupling on `P_L`, and a self-conjugate dipole whose CP-odd term `[gamma^mu, pslash](P_L - P_R)` is written with projectors and carries a real coupling |
+
+The Lorentz structures and the shape of the couplings are the dim6top model's
+(`FFV9`, `FFV11`, `FFVV1`, `FFVV3`; `c^I -/+ i c` on the contact pair, `i c`
+and `c^I` on the dipole), which is where the two classes were found: that model
+ships with no licence text, so this copy of its structures on four toy fields
+is what the committed rows read instead. Four fields: Dirac fermions `ut` and
+`dt`, a charged vector `wt+` and a neutral vector `zt`, every particle stable.
+No restrict card: every parameter is live at its default.
+
