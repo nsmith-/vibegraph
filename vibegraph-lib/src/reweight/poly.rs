@@ -261,7 +261,7 @@ impl<'m> PolyAnalysis<'m> {
             for vertex in &diagram.vertices {
                 let mut vertex_support = Support::empty(n);
                 for &key in model.vertex_def(vertex.interaction).couplings.keys() {
-                    let coupling = model.bound_coupling(vertex.interaction, key);
+                    let coupling = model.bound_coupling(vertex.interaction, key).id;
                     let expr = &model.coupling_def(coupling).value;
                     vertex_support = vertex_support.union(&self.expr_support(expr)?);
                 }

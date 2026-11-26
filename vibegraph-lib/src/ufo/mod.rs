@@ -756,7 +756,8 @@ impl UFOModel {
         &self.vertices[id.0]
     }
 
-    /// The coupling a diagram vertex bound to `vertex` carries on its `key` term.
+    /// The coupling a diagram vertex bound to `vertex` carries on its `key` term, and
+    /// the sign it enters with.
     ///
     /// Diagram enumeration binds a vertex by its particles read all-incoming; a UFO
     /// interaction lists them all-outgoing, which is how MadGraph binds it. The two
@@ -769,47 +770,65 @@ impl UFOModel {
     ///
     /// The exchange is made term by term ([`conjugate_couplings`](Self::conjugate_couplings)):
     /// each term of the bound vertex takes the coupling the conjugate interaction
-    /// carries on the conjugate of its structure. A vector current is its own
-    /// conjugate, so its term keeps its key; a momentum-slashed chain with one
-    /// chirality conjugates into the other (`FFV10 ↔ FFV4` in SMEFTsim), whose
-    /// coupling differs from the bound one wherever the coefficient is complex — the
-    /// CP-odd parts of the W dipoles. A self-conjugate vertex, a structure outside
-    /// the chain normal form, or a vertex with no unique conjugate keeps its own.
-    pub(crate) fn bound_coupling(&self, vertex: VertexId, key: (usize, usize)) -> CouplingId {
+    /// carries on the conjugate of its structure, times the sign relating the two
+    /// structures. A vector current is its own conjugate, so its term keeps its key; a
+    /// momentum-slashed chain with one chirality conjugates into the other
+    /// (`FFV10 ↔ FFV4` in SMEFTsim), and a two-gamma contact `[γ^μ, γ^ν] P_R` into
+    /// minus the other chirality's. The coupling differs from the bound one wherever
+    /// the coefficient is complex — the CP-odd parts of the dipoles. A structure
+    /// outside the chain normal form, or a vertex with no unique conjugate, keeps its
+    /// own coupling with sign `+1`.
+    pub(crate) fn bound_coupling(&self, vertex: VertexId, key: (usize, usize)) -> BoundCoupling {
         match self.conjugate_couplings(vertex) {
             Some(couplings) => couplings[&key],
-            None => self.vertex_def(vertex).couplings[&key],
+            None => BoundCoupling {
+                id: self.vertex_def(vertex).couplings[&key],
+                sign: 1,
+            },
         }
     }
 
-    /// For a charged vertex with two fermion slots, the coupling the Hermitian-conjugate
-    /// interaction carries on the conjugate of each of `vertex`'s terms, by term key.
+    /// For a vertex with two fermion slots and vector bosons, the coupling each of
+    /// `vertex`'s terms binds and the sign it enters with, by term key.
     ///
-    /// The conjugate of a term is what this crate's binding evaluates in its place:
-    /// `γ⁰L†γ⁰` with the fermion slots exchanged, read with each momentum's sign
-    /// reversed (the kernels read momenta incoming, against MadGraph's outgoing; see
-    /// `boson_momentum_sign` in `helas::eval::root_diagram`). For a vector current
-    /// that is the structure itself; for `[γ^μ, p̸]P_R` it is `[γ^μ, p̸]P_L` (the
-    /// `−1` of `γ⁰[γ^μ, p̸]†γ⁰ = [p̸, γ^μ]` against that of the momentum). The
-    /// conjugate interaction is the unique vertex with the antiparticles of
-    /// `vertex`'s particles and the same colour structures whose terms are those
-    /// conjugates one to one, at the same colour index and coupling orders.
+    /// For a charged vertex the coupling is the one the Hermitian-conjugate
+    /// interaction carries on the conjugate of the term. The conjugate of a term is
+    /// what this crate's binding evaluates in its place: `γ⁰L†γ⁰` with the fermion
+    /// slots exchanged, read with each momentum's sign reversed (the kernels read
+    /// momenta incoming, against MadGraph's outgoing; see `boson_momentum_sign` in
+    /// `helas::eval::root_diagram`). For a vector current that is the structure
+    /// itself; for `[γ^μ, p̸]P_R` it is `[γ^μ, p̸]P_L` (the `−1` of
+    /// `γ⁰[γ^μ, p̸]†γ⁰ = [p̸, γ^μ]` against that of the momentum); for
+    /// `[γ^μ, γ^ν]P_R` it is `−[γ^μ, γ^ν]P_L`, with no momentum to absorb the
+    /// commutator's sign. The conjugate interaction is the unique vertex with the
+    /// antiparticles of `vertex`'s particles and the same colour structures whose
+    /// terms are those conjugates one to one up to a sign each, at the same colour
+    /// index and coupling orders, and the sign is the one relating the conjugate to
+    /// the partner's term.
     ///
-    /// The exchange is made only for a fermion–fermion–vector vertex whose every term
-    /// carries a gamma, the class it is measured on: the vector currents (the CKM
-    /// vertices) and SMEFTsim's momentum-slashed W dipoles. A scalar or chiral-scalar
-    /// structure (`FFS`, a charged Goldstone's or Higgs's Yukawa) and a vertex with a
-    /// further boson (`FFVS`) keep their own couplings, as they did before the dipoles
-    /// were mapped: what such a term's conjugate is under this crate's binding has not
-    /// been measured against MadGraph, and the binding is a convention, not an
-    /// identity, so it is not extended to them by analogy.
+    /// A vertex whose particles are their own conjugate set (`t~ t g`) is read by
+    /// MadGraph and by this crate as the same interaction, so each term keeps its own
+    /// coupling. Its sign is the one relating the structure the rooting evaluates to
+    /// the structure as written ([`even_chain_chirality_flipped`]): `−1` for a
+    /// two-gamma chain whose chirality is written with projectors and is not
+    /// symmetric, the dim6top model's `[γ^μ, p̸](P_L − P_R)`, and `+1` for the same
+    /// chain written with `Gamma5` (SMEFTsim's), for one with both projectors at equal
+    /// weight, and for every vector current.
     ///
-    /// `None` for any other vertex, a self-conjugate vertex, a structure outside
-    /// [`chain_normal_form`], or no unique conjugate.
+    /// The exchange is made only where every term carries a gamma and every boson is a
+    /// vector: the vector currents, the momentum-slashed dipoles and the two-gamma
+    /// contacts. A scalar or chiral-scalar structure (`FFS`, a Yukawa) and a vertex
+    /// with a scalar beside the vector (`FFVS`) keep their own couplings with sign
+    /// `+1`: what such a term's conjugate is under this crate's binding has not been
+    /// measured against MadGraph, and the binding is a convention, not an identity, so
+    /// it is not extended to them by analogy.
+    ///
+    /// `None` for any other vertex, a structure outside [`chain_normal_form`], or no
+    /// unique conjugate.
     pub(crate) fn conjugate_couplings(
         &self,
         vertex: VertexId,
-    ) -> Option<BTreeMap<(usize, usize), CouplingId>> {
+    ) -> Option<BTreeMap<(usize, usize), BoundCoupling>> {
         let v = self.vertex_def(vertex);
         let spin_count = |s: i32| {
             v.particles
@@ -817,7 +836,8 @@ impl UFOModel {
                 .filter(|&&p| self.particle(p).spin == s)
                 .count()
         };
-        if v.particles.len() != 3 || spin_count(2) != 2 || spin_count(3) != 1 {
+        let vectors = spin_count(3);
+        if spin_count(2) != 2 || vectors == 0 || v.particles.len() != 2 + vectors {
             return None;
         }
         let every_term_carries_a_gamma = v.lorentz.iter().all(|&l| {
@@ -842,7 +862,18 @@ impl UFOModel {
                 .collect::<Option<Vec<_>>>()?,
         );
         if own == anti {
-            return None;
+            return v
+                .couplings
+                .iter()
+                .map(|(&key, &g)| {
+                    let structure = self.lorentz_struct(v.lorentz[key.1]);
+                    let written = chain_normal_form(structure, false)?;
+                    let evaluated =
+                        chain_normal_form(&even_chain_chirality_flipped(structure), false)?;
+                    let sign = form_sign(&evaluated, &written)?;
+                    Some((key, BoundCoupling { id: g, sign }))
+                })
+                .collect();
         }
         let targets = v
             .couplings
@@ -862,14 +893,16 @@ impl UFOModel {
             }
             let mut couplings = BTreeMap::new();
             let matched = targets.iter().all(|(key, form, orders)| {
-                let mut hits = w.couplings.iter().filter(|(&(c, l), &g)| {
-                    c == key.0
-                        && self.coupling_def(g).orders == **orders
-                        && chain_normal_form(self.lorentz_struct(w.lorentz[l]), false).as_ref()
-                            == Some(form)
+                let mut hits = w.couplings.iter().filter_map(|(&(c, l), &g)| {
+                    if c != key.0 || self.coupling_def(g).orders != **orders {
+                        return None;
+                    }
+                    let theirs = chain_normal_form(self.lorentz_struct(w.lorentz[l]), false)?;
+                    let sign = form_sign(form, &theirs)?;
+                    Some(BoundCoupling { id: g, sign })
                 });
                 match (hits.next(), hits.next()) {
-                    (Some((_, &g)), None) => couplings.insert(*key, g).is_none(),
+                    (Some(bound), None) => couplings.insert(*key, bound).is_none(),
                     _ => false,
                 }
             });
@@ -882,6 +915,69 @@ impl UFOModel {
         }
         found
     }
+}
+
+/// A coupling as a diagram vertex binds it: the model coupling `id`, entering the
+/// amplitude multiplied by `sign` (`±1`).
+///
+/// The sign is the one relating the structure this crate evaluates to the
+/// structure the coupling belongs to (see [`UFOModel::bound_coupling`]); it is part
+/// of the vertex's value, not of the coupling's, so the coupling's parameter
+/// dependence and its zeros are those of `id`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BoundCoupling {
+    pub(crate) id: CouplingId,
+    pub(crate) sign: i8,
+}
+
+/// `structure` with `P_L ↔ P_R` exchanged in every term whose spinor chain carries
+/// an even, non-zero number of `Gamma`s and no `Sigma`; every other term, and every
+/// `Gamma5`, as written.
+///
+/// This is the structure the rooting evaluates for a two-gamma chain written with
+/// projectors on a vertex whose particles are their own conjugate set: it
+/// conjugates a gamma-chained projector where a line reads the vertex against its
+/// arrow, which `γ^μ P_χ = P_χ̄ γ^μ` makes right through one gamma, while through two
+/// the chirality is unchanged. A `Gamma5` reached through a summed index is not
+/// conjugated, and a projector beside a literal `Sigma` keeps its chirality, so
+/// neither is exchanged here.
+fn even_chain_chirality_flipped(
+    structure: &lorentz::LorentzStructure,
+) -> lorentz::LorentzStructure {
+    use lorentz::LorentzOp as Op;
+    let mut flipped = structure.clone();
+    for term in &mut flipped.expr {
+        let gammas = term
+            .ops
+            .iter()
+            .filter(|op| matches!(op, Op::Gamma { .. }))
+            .count();
+        let sigma = term.ops.iter().any(|op| matches!(op, Op::Sigma { .. }));
+        if sigma || gammas == 0 || gammas % 2 == 1 {
+            continue;
+        }
+        for op in &mut term.ops {
+            match *op {
+                Op::ProjM { i, j } => *op = Op::ProjP { i, j },
+                Op::ProjP { i, j } => *op = Op::ProjM { i, j },
+                _ => {}
+            }
+        }
+    }
+    flipped
+}
+
+/// `+1` where two chain normal forms are equal, `−1` where one is the other negated,
+/// `None` otherwise.
+fn form_sign(
+    a: &BTreeMap<(Vec<String>, bool), i64>,
+    b: &BTreeMap<(Vec<String>, bool), i64>,
+) -> Option<i8> {
+    if a == b {
+        return Some(1);
+    }
+    let negated = a.len() == b.len() && a.iter().all(|(k, &x)| b.get(k).is_some_and(|&y| x == -y));
+    negated.then_some(-1)
 }
 
 /// The normal form of a two-fermion Lorentz structure, or of its Hermitian
@@ -1654,7 +1750,7 @@ mod tests {
                         .find_map(|w| {
                             w.couplings
                                 .iter()
-                                .find(|&(_, &h)| h == map[&key])
+                                .find(|&(_, &h)| h == map[&key].id)
                                 .map(|(&k, _)| (w, k))
                         })
                         .unwrap_or_else(|| {
@@ -1667,7 +1763,8 @@ mod tests {
                     };
                     assert_eq!(lorentz(w, pkey), want, "{} {own}", v.name);
                     assert_eq!(model.bound_coupling(id, key), map[&key]);
-                    let (gb, gp) = (ev.coupling(g), ev.coupling(map[&key]));
+                    assert_eq!(map[&key].sign, 1, "{} {own}", v.name);
+                    let (gb, gp) = (ev.coupling(g), ev.coupling(map[&key].id));
                     assert!(gb.norm() > 0.0, "{} {own} vanishes on this card", v.name);
                     assert!(
                         (gb + gp.conj()).norm() <= 1e-15 * gb.norm(),
@@ -1701,7 +1798,10 @@ mod tests {
         for key in sm.vertex_def(id).couplings.keys() {
             assert_eq!(
                 sm.bound_coupling(id, *key),
-                sm.vertex_def(id).couplings[key],
+                BoundCoupling {
+                    id: sm.vertex_def(id).couplings[key],
+                    sign: 1
+                },
                 "V_88 {key:?}"
             );
         }
@@ -1744,7 +1844,11 @@ mod tests {
                 .unwrap();
             for (key, g) in map {
                 assert_eq!(
-                    partner.couplings[&key], g,
+                    BoundCoupling {
+                        id: partner.couplings[&key],
+                        sign: 1
+                    },
+                    g,
                     "{} keeps its key {key:?}",
                     v.name
                 );
@@ -1779,10 +1883,13 @@ mod tests {
         assert!(checked >= 2, "the t b W H vertices");
     }
 
-    /// A self-conjugate vertex binds its own couplings: the photon and Z dipoles of the
-    /// b, whose CP-odd coupling is real like the W's.
+    /// A self-conjugate vertex binds its own couplings with sign `+1` where its chirality
+    /// is written with `Gamma5` or is symmetric: SMEFTsim's photon and Z dipoles of the
+    /// b, whose CP-odd term `[γ^μ, p̸]γ⁵` has a real coupling, and its `t~ t g g`
+    /// contact, whose `[γ^μ, γ^ν]` has a real one. `bbx_to_ttx_tbdipole` and
+    /// `ttx_to_gg_ctg` agree with MadGraph per graph under exactly this binding.
     #[test]
-    fn a_self_conjugate_dipole_vertex_has_no_partner() {
+    fn a_gamma5_dipole_on_a_self_conjugate_vertex_keeps_its_sign() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let model = UFOModel::load(
             &root.join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
@@ -1792,16 +1899,103 @@ mod tests {
         let mut checked = 0;
         for (i, v) in model.vertices.values().enumerate() {
             let base = v.name.split('#').next().unwrap();
-            if ["V_188", "V_189", "V_233", "V_234"].contains(&base) {
-                assert!(
-                    model.conjugate_couplings(VertexId(i)).is_none(),
-                    "{}",
-                    v.name
-                );
+            if ["V_188", "V_189", "V_233", "V_234", "V_564"].contains(&base) {
+                let map = model
+                    .conjugate_couplings(VertexId(i))
+                    .unwrap_or_else(|| panic!("{} binds no term", v.name));
+                for (key, &g) in &v.couplings {
+                    assert_eq!(
+                        map[key],
+                        BoundCoupling { id: g, sign: 1 },
+                        "{} {key:?}",
+                        v.name
+                    );
+                }
                 checked += 1;
             }
         }
-        assert!(checked >= 4, "the b photon and Z vertices");
+        assert!(
+            checked >= 5,
+            "the b photon and Z vertices and the t~ t g g contact"
+        );
+    }
+
+    fn toy_cpodd() -> Arc<UFOModel> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        UFOModel::load(
+            &root.join("../validation/ufo/vibegraph_toy_cpodd_UFO"),
+            None,
+        )
+        .unwrap()
+    }
+
+    /// The charged two-fermion contact binds its Hermitian partner's coupling with sign
+    /// `−1`: `[γ^μ, γ^ν]P_R` on `[ut~ dt zt wt+]` conjugates into `−[γ^μ, γ^ν]P_L`, the
+    /// structure `[dt~ ut zt wt-]` carries. With the couplings the Lagrangian's
+    /// hermiticity ties together (`c^I ∓ i c`), the bound value is `−conj` of the
+    /// vertex's own, which differs from it exactly where `c^I ≠ 0`. Dropping the sign
+    /// fails this test, and `udx_to_wpz_toy_cpodd` and `dux_to_wmz_toy_cpodd` against
+    /// MadGraph.
+    #[test]
+    fn a_charged_contact_binds_minus_its_partners_coupling() {
+        let model = toy_cpodd();
+        let ev = EvaluatedModel::from_model(model.clone());
+        for (bound, partner) in [("V_utdtzwp", "GC_CL"), ("V_dtutzwm", "GC_CR")] {
+            let id = model.vertex_id(bound).unwrap();
+            let own = model.vertex_def(id).couplings[&(0, 0)];
+            let got = model.bound_coupling(id, (0, 0));
+            assert_eq!(
+                got,
+                BoundCoupling {
+                    id: model.coupling_id(partner).unwrap(),
+                    sign: -1
+                },
+                "{bound}"
+            );
+            let (gv, gb) = (ev.coupling(own), ev.coupling(got.id) * f64::from(got.sign));
+            assert!(
+                (gb + gv.conj()).norm() <= 1e-15 * gv.norm(),
+                "{bound}: {gb} against {gv}"
+            );
+            assert!(
+                (gb - gv).norm() > 0.1 * gv.norm(),
+                "{bound}: the card is CP-even"
+            );
+        }
+    }
+
+    /// The self-conjugate dipole keeps its couplings, and its CP-odd term, written as
+    /// `[γ^μ, p̸](P_L − P_R)` with projectors, enters negated: the rooting evaluates
+    /// that chain with its projectors exchanged. The gauge term and the CP-even
+    /// `[γ^μ, p̸]` enter as written. Dropping the sign fails this test, and every
+    /// `*_toy_cpodd` row against MadGraph.
+    #[test]
+    fn a_projector_written_cp_odd_dipole_term_enters_negated() {
+        let model = toy_cpodd();
+        // Enumeration splits the vertex by coupling orders (`V_ututzt#1`, ...).
+        let mut seen = Vec::new();
+        for (i, v) in model.vertices.values().enumerate() {
+            if v.name.split('#').next() != Some("V_ututzt") {
+                continue;
+            }
+            for (key, &g) in &v.couplings {
+                let name = model.lorentz_struct(v.lorentz[key.1]).python_name.clone();
+                let sign = if name == "FFV9" { -1 } else { 1 };
+                assert_eq!(
+                    model.bound_coupling(VertexId(i), *key),
+                    BoundCoupling { id: g, sign },
+                    "{} {name}",
+                    v.name
+                );
+                seen.push(name);
+            }
+        }
+        seen.sort();
+        assert_eq!(seen, ["FFV1", "FFV11", "FFV9"]);
+        for name in ["V_dtdtzt", "V_utdtwp", "V_dtutwm"] {
+            let id = model.vertex_id(name).unwrap();
+            assert_eq!(model.bound_coupling(id, (0, 0)).sign, 1, "{name}");
+        }
     }
 
     /// Every W–quark vertex of the CKM model carries, as bound by diagram
@@ -1864,7 +2058,7 @@ mod tests {
                 _ => continue,
             };
             assert_eq!(v.couplings.len(), 1, "{}", v.name);
-            let got = ev.coupling(model.bound_coupling(VertexId(i), (0, 0)));
+            let got = ev.coupling(model.bound_coupling(VertexId(i), (0, 0)).id);
             let rel = (got - expected).norm() / expected.norm();
             assert!(
                 rel < 1e-13,

@@ -41,7 +41,7 @@
 //! helicity or kinematic region the few banked points do not visit.
 //!
 //! Needs only the committed tables, the interned SM model, the vendored SMEFTsim
-//! UFO and the authored toy UFO.
+//! UFO and the authored toy UFOs.
 
 mod common;
 
@@ -138,6 +138,13 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
         &[1, 0, 3, 2, 5, 4, 8, 7, 6, 9, 10, 11],
     ),
     ("ab_to_ab_toy_fnv", &[0, 1]),
+    ("udx_to_wpz_toy_cpodd", &[0, 1, 2, 3, 4]),
+    ("dux_to_wmz_toy_cpodd", &[0, 1, 2, 3, 4]),
+    (
+        "uux_to_zz_toy_cpodd",
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+    ),
+    ("zu_to_wpd_toy_cpodd", &[0, 1, 2, 3, 4]),
     ("ab_to_dqvt_toy_fnv", &[0, 1]),
     ("dqxvt_to_abx_toy_fnv", &[0, 1]),
     ("ee_to_n1n2_mssm", &[0, 1, 2, 3, 4]),
@@ -1526,6 +1533,39 @@ fn ab_to_dqvt_toy_fnv() {
 #[test]
 fn dqxvt_to_abx_toy_fnv() {
     check("dqxvt_to_abx_toy_fnv");
+}
+
+/// A charged two-fermion contact with a complex coupling, `[γ^μ, γ^ν] P_L` on
+/// `[dt~ ut zt wt-]`, whose Hermitian partner `[ut~ dt zt wt+]` carries the conjugate
+/// coupling on `[γ^μ, γ^ν] P_R`; beside the self-conjugate `ut` dipole, whose CP-odd
+/// term `[γ^μ, p̸](P_L − P_R)` has a real coupling, on the exchanged `ut`. Both are
+/// written as the dim6top model writes them. Compared per MadGraph graph: a
+/// contact binding its own coupling is off by the phase `−c/c*`, and a dipole whose
+/// CP-odd term keeps its sign has the wrong shape.
+#[test]
+fn udx_to_wpz_toy_cpodd() {
+    check("udx_to_wpz_toy_cpodd");
+}
+
+/// The charge conjugate of [`udx_to_wpz_toy_cpodd`]: the contact the other half of
+/// the Hermitian pair binds.
+#[test]
+fn dux_to_wmz_toy_cpodd() {
+    check("dux_to_wmz_toy_cpodd");
+}
+
+/// The `ut` dipole on both vertices of an annihilating pair, every combination of
+/// its gauge, CP-even and CP-odd terms.
+#[test]
+fn uux_to_zz_toy_cpodd() {
+    check("uux_to_zz_toy_cpodd");
+}
+
+/// The crossing with the `ut` incoming beside the neutral vector: the contact and
+/// the dipole on a line from an initial to a final fermion.
+#[test]
+fn zu_to_wpd_toy_cpodd() {
+    check("zu_to_wpd_toy_cpodd");
 }
 
 /// Two different neutralinos: the chiral `n2 n1 Z` vertex on a final-state line of two
