@@ -46,6 +46,7 @@ sprint traffic. Each session's brief and report is in `sessions/`.
 | #206 | 3f4dd815 | | The dev-build CI workflow: static musl binaries of unreleased commits, for batch. |
 | #210 | c16f8ec2 | | CI on `release/v*`, the backport flow, and no publish from a dispatch. |
 | #211 | 54cecfac | | Release prep: version 0.2.3, `ENUMERATION_VERSION` 4, and the release notes the user approved. |
+| #214 | c58fc146 | L-D1, L-D2 | Complex couplings on charged two-fermion contacts and on projector-written self-conjugate dipoles bind as MadGraph's. Card 6 (tZq EFT CPV) goes from 1.655 to 1.000 ± 0.007 of MadGraph at 4× budget, and card 7 (ttZ) from 1.215 to 1.015. |
 
 Records and kb-only PRs:
 - #189 and #190: the pipeline close-out and the v0.3 decisions;
@@ -53,7 +54,8 @@ Records and kb-only PRs:
 - #205: the PR 11 gates;
 - #203: the g2HDM close-out;
 - #208: L-I1;
-- #187, #181, #192, #207 and #209: Found items and planner filings.
+- #187, #181, #192, #207 and #209: Found items and planner filings;
+- #213 and #215: stage B's card 6/7 findings, the imaginary-coefficient census and the dim6top convergence item.
 
 ## Validation on the merged code
 
@@ -148,5 +150,13 @@ one-group-per-point evaluation lands before lane batching.
 - **A 2,889-file build tree passed review.** PR 8's agent staged
   `vibegraph-cli/target/` (about 917 MB), and the PR 8 hygiene pass did not flag
   it. `ci-does-not-refuse-tracked-ignored-files` covers the CI side.
+- **A fixed-energy scan is not a σ oracle.** L-D1's first RAMBO scan at fixed
+  √ŝ put the CP-odd defect at 0.99–1.09 of \|M\|². That scan never reached the
+  collinear b̄ region or the high-pT tail, where σ lives, and the defect was the
+  whole 1.66×. A one-subprocess σ pair, with and without the suspect
+  coefficients, settled it in minutes.
+- **A rule signed off on one model can break another.** The planner-signed
+  self-conjugate rule closed the dim6top rows and broke five enforced SMEFTsim
+  rows. The bit-identity requirement on every other table is what caught it.
 - **Unique session IDs.** L-X1 was used twice, and #204 renamed the second to
   L-X3. Draw IDs from the sessions directory, not from memory.
