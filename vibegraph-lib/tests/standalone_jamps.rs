@@ -145,6 +145,16 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
         &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
     ),
     ("zu_to_wpd_toy_cpodd", &[0, 1, 2, 3, 4]),
+    (
+        "uux_to_zh_toy_cpodd",
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+    ),
+    (
+        "hu_to_zu_toy_cpodd",
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+    ),
+    ("udx_to_wph_toy_cpodd", &[0, 1, 2]),
+    ("dux_to_wmh_toy_cpodd", &[0, 1, 2]),
     ("ab_to_dqvt_toy_fnv", &[0, 1]),
     ("dqxvt_to_abx_toy_fnv", &[0, 1]),
     ("ee_to_n1n2_mssm", &[0, 1, 2, 3, 4]),
@@ -1566,6 +1576,37 @@ fn uux_to_zz_toy_cpodd() {
 #[test]
 fn zu_to_wpd_toy_cpodd() {
     check("zu_to_wpd_toy_cpodd");
+}
+
+/// The dipole's chains beside a scalar on the self-conjugate contact `ut ut~ zt ht`,
+/// its CP-odd term entering negated as the dipole's does, beside a scalar Yukawa and
+/// a pseudoscalar one whose coupling is real (`Gamma5`, the Higgs-characterisation
+/// model's `X0 t t~` shape), which binds as written.
+#[test]
+fn uux_to_zh_toy_cpodd() {
+    check("uux_to_zh_toy_cpodd");
+}
+
+/// The crossing of [`uux_to_zh_toy_cpodd`] with the line from an initial to a final
+/// `ut`.
+#[test]
+fn hu_to_zu_toy_cpodd() {
+    check("hu_to_zu_toy_cpodd");
+}
+
+/// A charged contact with a scalar beside the vector, `[γ^μ, p̸] P_L` on
+/// `[dt~ ut wt- ht]` with a complex coupling, whose Hermitian partner
+/// `[ut~ dt wt+ ht]` carries `[γ^μ, p̸] P_R`, as dim6top's `t b W H` contacts;
+/// beside both Yukawas on the exchanged `ut`.
+#[test]
+fn udx_to_wph_toy_cpodd() {
+    check("udx_to_wph_toy_cpodd");
+}
+
+/// The charge conjugate of [`udx_to_wph_toy_cpodd`].
+#[test]
+fn dux_to_wmh_toy_cpodd() {
+    check("dux_to_wmh_toy_cpodd");
 }
 
 /// Two different neutralinos: the chiral `n2 n1 Z` vertex on a final-state line of two
