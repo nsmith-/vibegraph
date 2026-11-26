@@ -82,3 +82,23 @@ That run used lhaid 247000 on both sides.
   the five. That is a missed-region signature on a collinear-dominated
   integrand. If the fix build's 5 seeds show it again, it becomes its own
   sampling item.
+
+**Card 7's cause.** L-D1 ran card 7 one subprocess at a time, with Γt fixed at
+1.4558:
+
+| subprocess | vg/MG, card 7's ctXI | vg/MG, ctXI = 0 |
+|---|---|---|
+| g g | 1.014 | 0.996 |
+| u u~ | 0.999 | 1.008 |
+| b b~ | 46.7 | 1.06 (unconverged) |
+
+The excess is entirely `b b~ > t t~ l+ l-`. That is the only initial state that
+reaches the class-A t-b-W-γ/Z contacts, through a t-channel W.
+
+So class A drives σ on both cards. Class B, the self-conjugate dipoles, is
+probably invisible in σ, because its CP-odd linear interference integrates to
+zero. That is an inference, not a per-diagram measurement.
+
+σ can therefore confirm only the class-A half of the fix:
+- `b b~ > t t~ l+ l-` against MG is the sharp class-A test.
+- Class B, and HC_NLO_X0, rest on the per-diagram table and the reweight check.
