@@ -901,3 +901,144 @@ first.
 
 The scratch probe was again copied into `vibegraph-lib/tests/` for one run and
 deleted afterwards (`ls vibegraph-lib/tests/ld1_probe.rs` → no such file).
+
+## Follow-up: card 7 (ttZ_3l_4l_EFT_CPV_point_0_13p6)
+
+Branch `sprintl-dim6top-sigma` at `dd1feada`. Card 7 reads vg/MG 1.215 ± 0.034 (one
+seed at campaign budget, main `54cecfac`). It uses the same dim6top UFO as card 6.
+
+### Inputs
+
+All inputs are under `/home/user/wt/sprintl-dim6top-mg/card7/`.
+
+- **Proc card.** `proc_card_card7.dat` (sha `ecb1b0f9…`) is from the validator. It
+  imports `dim6top_LO_UFO-restrict` and has three lines: `p p > t t~ l+ l- / h
+  FCNC=0 DIM6=1` with `t > b w+` and `t~ > b~ w-` at `DIM6=0`. The W decays are,
+  in turn, leptonic/hadronic, hadronic/leptonic and leptonic/leptonic.
+- **Param card.** `param_card_card7_validator.dat` (sha `b571fb8a…`) has the
+  validator's block values verbatim. Its top width, Γt = 1.4558 GeV, is MadGraph's
+  `decay 6 auto` at card 7's point.
+  - I reproduced that value independently with MadGraph 3.7.1: `compute_widths t
+    --body_decay=2` on the same couplings gives `DECAY 6 1.455800e+00`
+    (`param_card_card7_auto.dat`, log `ld1-c7-widths.log`).
+- **Γt in every run.** Γt = 1.4558 in every run on both sides, imaginary
+  coefficients on or off. Nothing was recomputed with `auto`; each MadGraph run's
+  `Cards/param_card.dat` was grepped after the run (`DECAY 6 1.455800e+00` in all
+  six).
+- **Cards for each side.**
+  - vibegraph reads the validator's card, or `param_card_card7_validator_noI.dat`
+    (sha `7afea638…`) with ctpI, ctWI, ctZI and ctGI set to 0.
+  - MadGraph reads the restricted model's own card with every validator entry set
+    (`param_card_c7_on.dat`, sha `98c71afb…`; `param_card_c7_off.dat`, sha
+    `b96386db…`). This is built by `harness/ld1_c7_cards.py`, which asserts that
+    every validator entry is carried.
+- **Run card.** `run_card_c7.dat` (sha `a76b40a0…`) is card 6's `run_card_gp.dat`
+  with `mmll = 10`. It keeps `ptj 0.1`, `ptl 0`, `drll 0`, `etaj −1`, `cut_decays
+  F`, `maxjetflavor 5`, `dynamical_scale_choice −1` and lhaid 247000 on both sides.
+- **Process line.** The proc-card line for one subprocess, with `FCNC=0` removed for
+  MadGraph. W decays: W+ → e+ νe, W− → d ū. Z/γ* → μ+μ− in the core.
+- **Commands.**
+  - Census and MadEvent output: `/home/user/wt/logs/ld1-c7-setup.sh` and
+    `/home/user/wt/logs/ld1-c7b.sh`.
+  - σ: `/home/user/wt/logs/ld1-c7-sigma.sh` and `ld1-c7b.sh`.
+  - Logs: `ld1-c7-*.log`.
+  - vibegraph: `integrate --target-rel 0.02`, seed 20260719. MadGraph: madevent
+    `generate_events`, 2000 events, 3 cores.
+
+### Census
+
+| subprocess | MadGraph core × decays | vibegraph set | class A (`V_382 V_402 V_349 V_369`) | class B (`V_189/V_49/V_51 #1`) |
+|---|---|---|---|---|
+| `g g > t t~ mu+ mu-` | 64 × 1·1·1·1 | 64 | 0 | 44 (plus 4 with `V_199`, the t t g g dipole contact) |
+| `b b~ > t t~ mu+ mu-` | 117 × 1·1·1·1 | 117 | 4 | 48 |
+| `u u~ > t t~ mu+ mu-` | 76 × 1·1·1·1 | 76 | 0 | 44 |
+
+- The counts match one to one. No process is mirrored on either side, so both
+  sides integrate the same single initial-state order.
+- On the suggested `g g` subprocess, class A cannot occur. Its core has no W,
+  and the W's of the decays are at `DIM6=0`.
+- The t-channel-W contact vertices appear only with an initial b b̄, through
+  `p = p b b~`. I therefore added `b b~` as the class-A carrier and `u u~` as a
+  control.
+
+### σ with the imaginary coefficients on and off
+
+| subprocess | ctXI | vibegraph | MadGraph 3.7.1 | vg/MG |
+|---|---|---|---|---|
+| `g g` | card 7 | 1.1269 ± 0.0044 fb (χ²/dof 516) | 1.111 ± 0.0089 fb | **1.014 ± 0.009** |
+| `g g` | 0 | 0.8192 ± 0.0033 fb (χ²/dof 51) | 0.8227 ± 0.0057 fb | **0.996 ± 0.008** |
+| `u u~` | card 7 | 80.90 ± 0.36 ab | 81.01 ± 0.44 ab | **0.999 ± 0.007** |
+| `u u~` | 0 | 74.93 ± 0.35 ab | 74.30 ± 0.41 ab | **1.008 ± 0.007** |
+| `b b~` | card 7 | 265.4 ± 2.7 ab (χ²/dof 1.5e7) | 5.680 ± 0.035 ab | **46.7** |
+| `b b~` | 0 | 4.027 ± 0.028 ab (χ²/dof 1.4e7) | 3.812 ± 0.020 ab | **1.056 ± 0.009** |
+
+### What this shows
+
+- **`g g` and `u u~` agree with the coefficients on.** Both subprocesses carry 44
+  class-B diagrams each, yet they agree to 1% at card 7's point. There is a
+  consistent reading of this, which this session did not test. On a self-conjugate
+  vertex, class B flips the sign of the σγ⁵ (CP-odd) term only. For σ that amounts
+  to ctXI → −ctXI inside that one vertex, so the CP-odd operator stays CP-odd. Its
+  linear interference with the SM integrates to zero in a CP-even σ on both sides,
+  and its square is unchanged. On card 6, class A (complex c → −c*-type mixing)
+  turns CP-odd parts into CP-even interference.
+- **Class A is the card-7 excess.** On `b b~ > t t~ mu+ mu-` vibegraph reads
+  **46.7×** MadGraph with the imaginary coefficients on, and 1.06× with them zero.
+  This is the subprocess that carries the four t–b–W–γ/Z contact diagrams. The
+  1.06 at zero is from a run whose iterations disagree wildly (χ²/dof 1.4e7), so I
+  treat it as unconverged, not as a 6% defect. An estimate of the card total from
+  this channel family:
+  - vibegraph σ(gg + uū + dd̄ + bb̄) ≈ 1.127 + 0.081 + ~0.04 + 0.265 ≈ 1.51 fb;
+  - MadGraph σ ≈ 1.111 + 0.081 + ~0.04 + 0.006 ≈ 1.24 fb;
+  - ratio ≈ **1.22**, where dd̄ is taken as about half of uū and agreeing.
+  The card's 1.215 ± 0.034 matches that. This is not a measurement of the full
+  card: other W-decay channels and flavours were not run.
+- **The prediction to check after the fix.** The class-A part of the fix in the
+  main section (the bound contact takes the Hermitian partner's coupling times
+  `−1`) should take `b b~` from 46.7× to about 1. Card 7 should then fall to about
+  1.0.
+
+### The core m(ll) > 10 cut, per event
+
+Command: `python3 harness/ld1_c7_mll.py mg_on.lhe vg_on/events.lhe mg_off.lhe
+vg_off/events.lhe`, on the `g g` subprocess. The muons there are core only.
+
+```
+mg_on.lhe: 2000 events, min m(mu+mu-) 10.030 GeV, below 10: 0; [10,20):175 [20,40):112 [40,70):90 [70,85):67 [85,97):1366 [97,120):96 [120,10000):94
+vg_on/events.lhe: 500 events, min m(mu+mu-) 10.165 GeV, below 10: 0; [10,20):41 [20,40):34 [40,70):14 [70,85):29 [85,97):325 [97,120):31 [120,10000):26
+mg_off.lhe: 2000 events, min m(mu+mu-) 10.119 GeV, below 10: 0; [10,20):174 [20,40):98 [40,70):78 [70,85):84 [85,97):1433 [97,120):96 [120,10000):37
+vg_off/events.lhe: 500 events, min m(mu+mu-) 10.039 GeV, below 10: 0; [10,20):57 [20,40):30 [40,70):13 [70,85):16 [85,97):353 [97,120):21 [120,10000):10
+```
+
+Both sides cut the core pair at 10 GeV, and the shapes agree at the statistics of
+500 events. The per-event check covers only `g g`. `b b~` and `u u~` were
+integrated without generating events.
+
+### What these oracles cannot see
+
+- **Coverage.** These are one W-decay channel and three initial states, one
+  reduced seed each.
+- **The `b b~` runs.** Their χ²/dof is 1e7 on both settings, so their vibegraph
+  σ values are not converged numbers. The 46.7× is far outside any plausible
+  sampling error, and the zero-coefficient control removes it.
+- **The class-B explanation.** That class B is invisible in CP-even σ here is
+  inferred from these σ, not measured per diagram on card 7.
+
+### Long-run request (addition)
+
+After the fix:
+
+- card 7 at campaign budget, 5 seeds; expected ≈ 1.0;
+- the `b b~ > t t~ l+ l-` subprocess family on its own, against MadGraph 3.7.1,
+  5 seeds; expected 46.7 → ≈ 1.
+
+### Found (additions)
+
+9. **vibegraph's `b b~`-initiated ttZ runs at card-7 cuts have iteration χ²/dof
+   ≈ 1e7 on both settings, and so does `u u~` (2e11).** Several channels' iterations
+   disagree completely while σ agrees with MadGraph on `u u~`. Worth a convergence
+   look, alongside Found 8.
+10. **Class B affects amplitudes but, on these two cards, not CP-even σ.** A
+    CP-odd observable (a T-odd triple product in ttZ) would expose it. The fix's
+    validation needs the per-diagram amplitude table (Found 4), because σ
+    comparisons cannot see class B.
