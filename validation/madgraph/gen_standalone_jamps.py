@@ -591,6 +591,46 @@ ROWS = {
         # Two antiparticles in the final state from the same vertex.
         Row("dqxvt_to_abx_toy_fnv", "dq~ vt > at~ bt~", (-9000006, 9000023), (-9000001, -9000003),
             1000.0, 3, 5413, model="vibegraph_toy_fnv_UFO", zero_widths=True, bank_amps=True),
+        # Complex couplings on the two vertex classes where the coupling a diagram
+        # binds is not the vertex's own as written: the charged two-fermion
+        # contact, whose Hermitian partner carries the conjugate coupling on the
+        # other chirality, and the self-conjugate dipole, whose CP-odd term is
+        # written with projectors. One row per charge with the contact beside the
+        # dipole on the exchanged up-type line; an annihilating pair with the
+        # dipole on both vertices; and the crossing with the up-type fermion
+        # incoming beside a vector. Every propagator is a stable fermion, so the
+        # model has no widths to zero.
+        Row("udx_to_wpz_toy_cpodd", "ut dt~ > wt+ zt QED<=2 NP<=1 NPCP<=1 NPC<=1",
+            (9000002, -9000001), (9000024, 9000023), 600.0, 3, 5431,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("dux_to_wmz_toy_cpodd", "dt ut~ > wt- zt QED<=2 NP<=1 NPCP<=1 NPC<=1",
+            (9000001, -9000002), (-9000024, 9000023), 600.0, 3, 5432,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("uux_to_zz_toy_cpodd", "ut ut~ > zt zt QED<=2 NP<=2 NPCP<=2",
+            (9000002, -9000002), (9000023, 9000023), 600.0, 3, 5433,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("zu_to_wpd_toy_cpodd", "zt ut > wt+ dt QED<=2 NP<=1 NPCP<=1 NPC<=1",
+            (9000023, 9000002), (9000024, 9000001), 600.0, 3, 5434,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        # The same dipole chains beside a scalar on the self-conjugate contact
+        # `ut ut~ zt ht`, beside a scalar Yukawa and a pseudoscalar one with a real
+        # coupling: an annihilating pair, and the crossing with the line running
+        # from an initial to a final `ut`.
+        Row("uux_to_zh_toy_cpodd", "ut ut~ > zt ht QED<=2 NP<=1 NPCP<=1 NPA<=1",
+            (9000002, -9000002), (9000023, 9000025), 600.0, 3, 5435,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("hu_to_zu_toy_cpodd", "ht ut > zt ut QED<=2 NP<=1 NPCP<=1 NPA<=1",
+            (9000025, 9000002), (9000023, 9000002), 600.0, 3, 5436,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        # A charged contact with a scalar beside the vector, one chirality of the
+        # momentum chain with a complex coupling, whose Hermitian partner carries
+        # the other; one row per charge, beside the Yukawas on the exchanged `ut`.
+        Row("udx_to_wph_toy_cpodd", "ut dt~ > wt+ ht QED<=2 NPC<=1 NPA<=1",
+            (9000002, -9000001), (9000024, 9000025), 600.0, 3, 5437,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
+        Row("dux_to_wmh_toy_cpodd", "dt ut~ > wt- ht QED<=2 NPC<=1 NPA<=1",
+            (9000001, -9000002), (-9000024, 9000025), 600.0, 3, 5438,
+            model="vibegraph_toy_cpodd_UFO", bank_amps=True),
     ]
 }
 

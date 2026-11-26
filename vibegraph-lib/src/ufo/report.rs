@@ -234,7 +234,7 @@ fn reads(model: &UFOModel, sets: &[DiagramSet]) -> Reads {
             }
             for vertex in &d.vertices {
                 for &key in model.vertex_def(vertex.interaction).couplings.keys() {
-                    let coupling = model.bound_coupling(vertex.interaction, key);
+                    let coupling = model.bound_coupling(vertex.interaction, key).id;
                     r.couplings
                         .extend(model.coupling_def(coupling).deps.iter().cloned());
                 }
@@ -800,7 +800,7 @@ mod tests {
             for d in &set.diagrams {
                 for v in &d.vertices {
                     for &key in model.vertex_def(v.interaction).couplings.keys() {
-                        used.insert(model.bound_coupling(v.interaction, key).index());
+                        used.insert(model.bound_coupling(v.interaction, key).id.index());
                     }
                 }
             }
