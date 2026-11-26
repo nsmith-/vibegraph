@@ -26,15 +26,19 @@ These models set only real parts:
 - TopFCNC_model_ATLAS (948–954) and TopFCNC_UFO (590–595);
 - WEff_UFO, QuarticCKM_5, SM_HEL_UFO_noLightYukawa.
 
-**Unscreened neighbours.** These cards have real CP-odd parameters that build
-an explicit i·γ⁵ coupling. They are implicated only if their model puts two
-interfering structures on one self-conjugate vertex:
-- **HC_NLO_X0_UFO card 4** (tth, kAtt and kHtt): 0.992 in v022, with a 5-seed
-  mean pull of −2.19.
-- **SM_alp_UFO TCP cards 174, 175 and 965–969**: all 1.0065–1.0199 high. Cards
-  967–969 are on the v022 fail list
-  (`half-percent-residual-after-hard-survey-134-967`).
-
-The sign test on these models is a per-vertex check on the UFO: whether any
-self-conjugate vertex carries both a scalar-like and a γ⁵ structure, with
-different couplings.
+**Neighbours, scanned on the UFO text.** `vg-validator`'s scan looked for
+self-conjugate vertices with two or more Lorentz structures on distinct
+couplings, at least one chiral. Its positive control on dim6top found the known
+class-B vertices.
+- **SM_alp_UFO: clear.** Every ALP vertex has a single structure, so a
+  conjugation sign cancels in |M|². The TCP cards' 0.7–2% offset (174, 175,
+  965–969) stays with `half-percent-residual-after-hard-survey-134-967`.
+- **HC_NLO_X0_UFO: implicated by shape.** X0 t t̄ (V_3010) carries FFS1 with
+  coupling i·kHtt and FFS5 (γ⁵) with a real kAtt, with no factor i. That is the
+  same relative phase as dim6top's V_110 with an imaginary ctpI. The same holds
+  for the X0 couplings to τ, b, μ and c (V_3008, V_3009, V_3011 and V_3012).
+  Either main is wrong on HC with any nonzero kAff, or a fix that closes
+  dim6top breaks HC. Card 4 (`p p > x0 t t~`, kAtt and kHtt) read 0.992 in v022.
+  A CP-even σ cannot settle this, because CP-odd interference can integrate to
+  zero. The per-diagram x per-helicity check against MadGraph on card 4's point
+  is required of the fix.
