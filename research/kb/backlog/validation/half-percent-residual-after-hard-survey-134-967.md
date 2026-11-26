@@ -40,3 +40,10 @@ Card 967 had been tracked on the g2HDM high-mass σ item since sprint L's PR 12.
 That item closes on V1's g2HDM seeds, and L-G1 showed the chirality fix cannot
 be 967's cause: 967 has no charged-scalar FFS vertex. Its siblings 968 and 969
 (+1.2–1.9% before the survey treatment) belong here too.
+
+The ALP TCP cards (174, 175 and 965–969) carry real CP-odd couplings, and every
+one reads high. If SM_alp_UFO puts two interfering structures on a
+self-conjugate vertex, the self-conjugate sign defect
+(`imaginary-couplings-on-contact-and-self-conjugate-vertices-wrong-phase`, class
+B) is a candidate cause for 967–969. Check the model's vertices for that before
+localising per subprocess.
