@@ -5,8 +5,8 @@ description: "Five seeds, every one ≥ 1.44×; provenance, census, couplings an
 area: validation
 state: open
 priority: high
-closes_when: "The 1.66× is localised and explained with a recorded measurement: the cut application (ptj on b under maxjetflavor 5, mmll on core pairs only under cut_decays False), the collinear b~ region, or the reference (MG 2.9.18 against 3.7.1 on the same cards). It is fixed, or shown to be a reference effect. Card 6 then reads within 2σ over 5+ seeds, with the spread read, and card 7 (ttZ EFT) is read on the same footing."
-blocked_by: []
+closes_when: "With the imaginary-coupling fix, card 6 reads within 2σ of 0.04754 pb over 5 seeds at campaign budget (lhaid 325300), with the spread read, and card 7 is read on the same footing."
+blocked_by: [imaginary-couplings-on-contact-and-self-conjugate-vertices-wrong-phase]
 opened: 2026-11-26
 tags: [eft, dim6top, tzq, sigma, madgraph-parity, cuts, cms, release-gate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
@@ -54,3 +54,15 @@ The two cards discriminate between the hypotheses in two ways:
 - **Per event:** check the core m(l+l−) against mmll, with the W-decay leptons
   exempt.
 - **Single seed:** compare a reduced σ at ctXI = 0 against card 7's ctXI.
+
+**Cause found.** L-D1's follow-up compared vibegraph against MG 3.7.1 on one
+subprocess, `g u > e+ ve b b~ d mu+ mu-`, at card 6's own cuts:
+- with card 6's coefficients, vg/MG is 1.668;
+- with ctXI = 0 on both sides, it is 1.011.
+
+So the imaginary-coupling defect accounts for the whole gap. The cuts match:
+- mmll applies to the core OSSF pair only, on both sides; the minimum core
+  m(ll) is 32.2 and 30.07 GeV.
+- ptj = 0.1 applies to the b~ at maxjetflavor 5 on both sides.
+
+That run used lhaid 247000 on both sides.
