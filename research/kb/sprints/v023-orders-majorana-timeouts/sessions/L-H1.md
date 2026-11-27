@@ -86,7 +86,7 @@ Match each one, or refuse it by name.
    - use the wrong helicity (for example, reversed leg order);
    - drop a helicity's sign convention.
 4. **Bit for bit:** with the default mode, banked reweight outputs are
-   unchanged against main 4b132cc. Show this on at least 2 banked reweight
+   unchanged against main f4d6eba. Show this on at least 2 banked reweight
    rows plus one non-reweight row, using `generate` with a fixed seed and
    comparing the event file sha256 or weights.
 

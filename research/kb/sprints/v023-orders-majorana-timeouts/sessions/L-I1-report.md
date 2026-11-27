@@ -1,13 +1,13 @@
 ---
 type: Session Report
 title: "L-I1 report: the VLQ 612 interference sign is the released chirality bug, fixed on main"
-description: "Per diagram, per helicity and per flow, g u > h t b~ d / bp x y VLQ^2==2 on main matches MadGraph 3.7.1 standalone to 1e-15 in both classes (G2/G0 = 1), with and without widths and near the T' pole. The campaign binary 9f196713 gets the five VLQ=2 diagrams wrong: it lacks a5bf8fca's projector exchange on the non-self-conjugate T' t H vertex, and disabling that exchange on main reproduces it bit for bit. On main the reduced 612 σ is negative, −937 ± 27 ab; helicity pruning changes nothing."
+description: "Per diagram, per helicity and per flow, g u > h t b~ d / bp x y VLQ^2==2 on main matches MadGraph 3.7.1 standalone to 1e-15 in both classes (G2/G0 = 1), with and without widths and near the T' pole. The campaign binary 9f196713 gets the five VLQ=2 diagrams wrong: it lacks 631cdbca's projector exchange on the non-self-conjugate T' t H vertex, and disabling that exchange on main reproduces it bit for bit. On main the reduced 612 σ is negative, −937 ± 27 ab; helicity pruning changes nothing."
 status: draft
 tags: [vlq, squared-orders, interference, chirality, oracle, madgraph-parity, cms-gridpacks, report, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-25}
 ---
 Worktree `/home/user/wt/sprintl-interference-sign`, branch `sprintl-interference-sign`,
-head `e6ba95ea` (main `3f4dd815` plus the brief). No source change is committed: the
+head `e6ba95ea` (main `042be00b` plus the brief). No source change is committed: the
 only commit is this report. Every scratch artifact is under
 `/home/user/wt/sprintl-interference-sign-mg/` (listed at the end). The item
 `squared-order-interference-sign-opposite-to-madgraph` has no file on main (it was
@@ -20,7 +20,7 @@ planner's decision: see "What closes the item".
   every residual at 1e-15, on 4 generic points and 6 points near the T' pole, with
   widths zero and with widths.
 - **The defect is in the binary the campaign ran.** vg-validator ran bin-pr1
-  `9f196713`, which does not contain `a5bf8fca` (the charged-scalar chirality fix,
+  `9f196713`, which does not contain `631cdbca` (the charged-scalar chirality fix,
   PR #169). On `9f196713` the 14 VLQ=0 diagrams match MadGraph to 1e-15 and all 5
   VLQ=2 diagrams are wrong. They are wrong in chirality, not by a sign: G2 = −0.31i,
   with residual 0.39 of the largest entry. The 5 diagrams share one vertex, `V_24`
@@ -285,7 +285,7 @@ w, res_w: the same, 19/19 diagrams bit-identical, eval_m2 bit-identical at all 4
 ```
 
 So on this subprocess everything between `9f196713` and main that touches the
-amplitude is `a5bf8fca`'s exchange at `helas/eval/diagram_eval.rs:422`
+amplitude is `631cdbca`'s exchange at `helas/eval/diagram_eval.rs:422`
 (`conjugate_standalone_projectors`, `:125`). It reaches exactly the VLQ=2 class and
 nothing else.
 
@@ -325,7 +325,7 @@ copied from `sprintl-vbs-mg/pdf`), not the `_pdfas` set `tprime126.md` names.
 
 ## Candidate fix
 
-**There is nothing to fix on main.** The fix is `a5bf8fca`: a vertex whose particles
+**There is nothing to fix on main.** The fix is `631cdbca`: a vertex whose particles
 are not their own conjugate set has its bare chiral projectors exchanged, at
 `helas/eval/diagram_eval.rs:422` through `conjugate_standalone_projectors`
 (`diagram_eval.rs:125`). It is already on main.
@@ -349,7 +349,7 @@ are not their own conjugate set has its bare chiral projectors exchanged, at
 ### What closes the item
 
 The sign on 612 should already be right on main and on any release that contains
-`a5bf8fca`. That claim rests on one subprocess per diagram and one reduced-budget σ
+`631cdbca`. That claim rests on one subprocess per diagram and one reduced-budget σ
 with a sibling card's run card. Closing it at the σ level needs the long-run request
 below.
 
@@ -375,8 +375,8 @@ below.
 
 ## Requests for the long-run host
 
-- **R1.** vibegraph on card 612, and on card 614, at main (`3f4dd815` or later, which
-  contains `a5bf8fca`). Use the cards' own proc, run and param cards, campaign budget,
+- **R1.** vibegraph on card 612, and on card 614, at main (`042be00b` or later, which
+  contains `631cdbca`). Use the cards' own proc, run and param cards, campaign budget,
   seeds 1–5.
   - Expected: σ negative, near MadGraph's −1.101e-3 ± 3.2e-5 pb on 612.
   - Card 614 should move the same way.
@@ -457,7 +457,7 @@ Logs: `/home/user/wt/logs/li1-*.log`.
     `V_24`'s exchange on a model other than MSSM and g2HDM. That needs the VLQ UFO
     vendored under `validation/ufo/`.
 - **The campaign's squared-order σ rows ran a binary without the chirality fix.** Every
-  vg-validator row from bin-pr1 `9f196713` predates `a5bf8fca`. So does any other
+  vg-validator row from bin-pr1 `9f196713` predates `631cdbca`. So does any other
   pre-#169 binary. Those rows carry the bug on any vertex with a bare chiral projector
   and particles that are not their own conjugate set. The rows that matter are the
   VLQ cards (612, 614, the 126 family), the g2HDM cards (already found, L-G1) and
@@ -494,7 +494,7 @@ Logs: `/home/user/wt/logs/li1-*.log`.
   `tests/standalone_jamps.rs`. Its `measure` and `check` cannot read a split table; the
   scratch probe replaces them.
 - **The binary matters as much as the card.** The campaign's +4.779e-4 pb comes from a
-  binary without `a5bf8fca`, and the brief's "what is known" does not say so. Main
+  binary without `631cdbca`, and the brief's "what is known" does not say so. Main
   differs from it on exactly this vertex class.
 
 ## Follow-up A: t-channel zero-width sets, every subprocess of card 612

@@ -6,8 +6,8 @@ status: draft
 tags: [hygiene, squared-orders, reweight, helicity, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-amp` off main 8b3af5ab. Scope: the squash commits
-`4b132cc5` (#168) and `dfdf85d4` (#182), their direct callers and tests.
+Branch `sprintl-hyg-amp` off main 033044e4. Scope: the squash commits
+`f4d6eba9` (#168) and `853028f8` (#182), their direct callers and tests.
 
 ## Findings (written before any edit)
 
@@ -16,9 +16,9 @@ Ranked by consequence. Points: 1 maintainability, 2 non-vacuity, 3 visibility,
 
 | id | pt | site | what is wrong | evidence | disposition |
 |---|---|---|---|---|---|
-| F1 | 4 | `reweight/engine.rs:441-447`, `:527-533`; `:455-466`, `:538-555` | Second copy of the split read-out: the node quadratic form `uᵀRu` is the same eight lines in `Reweighter::ratios` and `BoundSub::ratios_in`, and the exact-slot memo loop is copied with only the per-slot evaluation changed. | `git show dfdf85d4 -- vibegraph-lib/src/reweight/engine.rs`: the `for (j, &uj) in u.iter().enumerate() { let row = &r[j * k..(j + 1) * k]; …` block appears twice, identical. | **fix**: one `quadratic_form(r, u)` and one slot-memo helper taking the evaluation as a closure. |
+| F1 | 4 | `reweight/engine.rs:441-447`, `:527-533`; `:455-466`, `:538-555` | Second copy of the split read-out: the node quadratic form `uᵀRu` is the same eight lines in `Reweighter::ratios` and `BoundSub::ratios_in`, and the exact-slot memo loop is copied with only the per-slot evaluation changed. | `git show 853028f8 -- vibegraph-lib/src/reweight/engine.rs`: the `for (j, &uj) in u.iter().enumerate() { let row = &r[j * k..(j + 1) * k]; …` block appears twice, identical. | **fix**: one `quadratic_form(r, u)` and one slot-memo helper taking the evaluation as a closure. |
 | F2 | 3/1 | `helas/eval/lower.rs:36-88` | The production lowering's contract (the JAMP formula, the `CoeffRat` rule, the configs bundle) is documented on `lower_flows`, which #168 made `#[cfg(test)]`; `lower.rs:38` says "the production path is [`lower_flows`]", false since `compile` calls `lower_split_flows`. Seven doc sites name `lower_flows` as what `compile` runs: `lower.rs:89,98,190`, `compile.rs:1460`, `eval/mod.rs:10`, `egraph.rs:332`, `run/probe_bridge.rs:6`. | `grep -rn lower_flows vibegraph-lib/src` gives one call, `compile.rs:1477`, inside `#[cfg(test)]`. | **fix**: delete the test-only wrapper, give its name and its doc to the one production function (`lower_flows(…, class_of)`), the one test caller passes `None`. |
-| F3 | 1 | `helas/eval/lower.rs:151` | "reduces to today's color-free lowering": temporal framing (AGENTS.md comment rules). | `git show 4b132cc5 … \| grep today` | **fix** |
+| F3 | 1 | `helas/eval/lower.rs:151` | "reduces to today's color-free lowering": temporal framing (AGENTS.md comment rules). | `git show f4d6eba9 … \| grep today` | **fix** |
 | F4 | 1 | `generate/audit.rs:166-168` | `finish`'s doc lists the subprocess and non-finite refusals only; #182 added three more it makes (refused helicity, identical particles under different mothers, helicity denominator mismatch). | quoted doc vs the `why` chain at `audit.rs:205-226`. | **fix** |
 | F5 | 4 | `generate/audit.rs:89`, `:125` | The relative-deviation expression `(a - b).abs() / b.abs().max(f64::MIN_POSITIVE)` written twice in one function. | quoted lines. | **fix**: one helper. |
 | F6 | 4 | `hadronic.rs:1684-1696` | `drawn_helicity` finds the drawn combination's index again by a linear `position` over `helicities()` after `select_helicity`, its only caller, already had it from `select_index`; the second lookup's `?` cannot fail. | `grep -rn "select_helicity(" vibegraph-lib/src`: one call, `hadronic.rs:1691`. | **fix**: `select_helicity` returns the index. |
@@ -37,7 +37,7 @@ Found during the fixes (after the table above was committed in c4da11c2):
 
 | id | pt | site | what is wrong | evidence | disposition |
 |---|---|---|---|---|---|
-| F14 | 1 | `hadronic.rs:1678-1696` | #182 inserted `drawn_helicity` between `zeroed_diagonals`' doc comment and its `fn`: the rustdoc of `drawn_helicity` began with `zeroed_diagonals`' paragraph, and `zeroed_diagonals` had none. | `sed -n 1678,1700p` at c4da11c2; `git show dfdf85d4^:vibegraph-lib/src/hadronic.rs` has the paragraph directly on `zeroed_diagonals`. | **fixed** with F6 (the helper is gone). |
+| F14 | 1 | `hadronic.rs:1678-1696` | #182 inserted `drawn_helicity` between `zeroed_diagonals`' doc comment and its `fn`: the rustdoc of `drawn_helicity` began with `zeroed_diagonals`' paragraph, and `zeroed_diagonals` had none. | `sed -n 1678,1700p` at c4da11c2; `git show 853028f8^:vibegraph-lib/src/hadronic.rs` has the paragraph directly on `zeroed_diagonals`. | **fixed** with F6 (the helper is gone). |
 | F15 | 1 | `diagrams/squared.rs:26` | Redundant explicit link target ``[`DiagramSet`](super::DiagramSet)``, a `cargo doc` warning #168 added. | `cargo doc -p vibegraph-lib --no-deps --document-private-items`: "redundant explicit link target --> vibegraph-lib/src/diagrams/squared.rs:26:20". | **fixed** |
 | F16 | 4/2 | `diagrams/squared.rs:189-205` | `orders_of` hand-wrote the weighted order `Σ n·hierarchy` that `ufo::weighted::order_weight` already computes (and unit-tests); and no test reached it: M7 survived, because `weighted_exact_and_lower_bounds_filter_the_weighted_order` exercises the amplitude-level `WEIGHTED==`/`>` filter (`diagrams/mod.rs:929`), not `WEIGHTED^2`. | M7 below; `grep -rn "fn order_weight"`. | **fixed**: `orders_of` calls `order_weight`; new test `a_weighted_squared_order_weighs_each_order_by_its_hierarchy` (N7). |
 | F17 | 2 | `helas/eval/run.rs:460-463` (split `JAMP2`), `:718-720` (pruning moduli), `compile.rs:342-347` (signed draw) | No hermetic test reaches the `.abs()` of the split `JAMP2` (M10), the moduli in `mark_contributing_helicities` (M12) or the signed helicity draw (M11). | M10, M10L, M11, M12, M12L, N12 survived. | **Found** (validation-dev): a test of each needs a reference or a constructed signed term; a pruning test over the three banked tables (N12) did not reach M12 and was deleted rather than shipped. |
@@ -66,7 +66,7 @@ and deleted before any commit, see F17). Hermetic suite 2352 → 2353 passed.
 
 ## Identity oracle
 
-Chosen before the first edit. Main 8b3af5ab built in
+Chosen before the first edit. Main 033044e4 built in
 `/home/user/wt/lz1-main-target` (deleted afterwards) from a detached worktree,
 the branch in its own target, both `cargo build -p vibegraph --bin vibegraph`
 (dev profile). Driver `oracle.sh <bin> <outdir>`, `LHAPDF_DATA_PATH=validation/pdf`,

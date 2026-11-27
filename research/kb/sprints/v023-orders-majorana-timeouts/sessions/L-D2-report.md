@@ -6,8 +6,8 @@ status: draft
 tags: [ufo, couplings, cp-violation, hermitian-conjugate, dim6top, madgraph-parity, report, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
 ---
-Branch `sprintl-cp-odd-couplings` off main `c095a1cf` (brief at `2210e855`), merged
-with `origin/main` `27beee97` (#213) in the final commit. Worktree
+Branch `sprintl-cp-odd-couplings` off main `35ace596` (brief at `2210e855`), merged
+with `origin/main` `eae7655f` (#213) in the final commit. Worktree
 `/home/user/wt/sprintl-cp-odd-couplings`; every scratch artifact is under
 `/home/user/wt/sprintl-cp-odd-couplings-mg/` (listed at the end). The final commit
 deletes `imaginary-couplings-on-contact-and-self-conjugate-vertices-wrong-phase`
@@ -170,7 +170,7 @@ the final model).
 | `udx_to_wph_toy_cpodd` | `ut dt~ > wt+ ht` | charged FFVS contact (FFVS2 bound), Yukawas |
 | `dux_to_wmh_toy_cpodd` | `dt ut~ > wt- ht` | the other half |
 
-**Fail on main.** Production source reverted to `c095a1cf`, tests and tables as
+**Fail on main.** Production source reverted to `35ace596`, tests and tables as
 committed (`/home/user/wt/logs/ld2-toy8.sh`, log `…-mg/ab/main_toy8.log`):
 
 ```
@@ -236,7 +236,7 @@ restored; (git diff --stat HEAD -- vibegraph-lib/src empty)
 A scratch test (`ld2_bit_dump`, since removed) wrote, for every committed standalone
 table, the full set's flows and every diagram's amplitude (single-flow tables) at
 every banked point and helicity as `f64::to_bits` hex. Main (source reverted to
-`c095a1cf`) against the fix (`/home/user/wt/logs/ld2-ab.sh`, `ld2-fixrun.sh`):
+`35ace596`) against the fix (`/home/user/wt/logs/ld2-ab.sh`, `ld2-fixrun.sh`):
 
 ```
 $ grep -v toy_cpodd main.txt | sha256sum ; grep -v toy_cpodd fix3.txt | sha256sum

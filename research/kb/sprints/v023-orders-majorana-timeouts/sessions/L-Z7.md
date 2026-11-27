@@ -8,10 +8,10 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-enumerate` off main 8b3af5ab.
+A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-enumerate` off main 033044e4.
 
 It covers one merged PR. Read the squash commit's diff (`git show <sha>`) and its session brief and report under `sessions/`:
-- **#185 `ae88d176`**, enumeration and set compilation across the cores, the flavour prune, and one compile per set (PR 3b). Brief and report: `sessions/L-T3.md`, `L-T3-report.md`.
+- **#185 `39180cb4`**, enumeration and set compilation across the cores, the flavour prune, and one compile per set (PR 3b). Brief and report: `sessions/L-T3.md`, `L-T3-report.md`.
 
 **The code:**
 - `vibegraph-lib/src/diagrams/mod.rs` (about 650 changed lines), `diagrams/artifact.rs`, `diagrams/chain.rs`;

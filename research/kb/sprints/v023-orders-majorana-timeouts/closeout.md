@@ -23,30 +23,30 @@ sprint traffic. Each session's brief and report is in `sessions/`.
 
 | PR | Squash | Session | What it established |
 |---|---|---|---|
-| #168 | 4b132cc5 | L-Q1 | Squared-order constraints (`^2==`, `^2<=`) by coupling-order split. The order classes partition \|M\|². |
-| #169 | a5bf8fca | L-M1 | Majorana fermions and fermion-number violation, per diagram and per helicity against MadGraph `AMP()`. It also fixed the charged-scalar chirality bug: a bare chiral projector between non-self-conjugate particles was exchanged the wrong way round. |
+| #168 | f4d6eba9 | L-Q1 | Squared-order constraints (`^2==`, `^2<=`) by coupling-order split. The order classes partition \|M\|². |
+| #169 | 631cdbca | L-M1 | Majorana fermions and fermion-number violation, per diagram and per helicity against MadGraph `AMP()`. It also fixed the charged-scalar chirality bug: a bare chiral projector between non-self-conjugate particles was exchanged the wrong way round. |
 | #172 | 7ca8d8bd | L-U1 | `$` run-card placeholders are refused, configuration-conditional UFO parameters load, and `time_of_flight` is handled. |
 | #178 | c18042ed | (L-X1) | Goldstones flagged `GoldstoneBoson` are dropped, and list/dict propagators are read. This closes bstar_tW. |
-| #171 | d5e7c71f | L-R1 | The model-parameter report and machine-readable artifact provenance (simshop). |
-| #179 | e99f8ba2 | L-W1 | `DECAY Auto` bound to the tree-level two-body width (simshop). |
-| #183 | abc3b31e | L-T1 | Streamed per-phase timing for `integrate` and `generate`. |
-| #173 | f08aa3ce | L-T2 | Per-family verdicts for the v022-1009 never-retried timeouts. |
-| #182 | dfdf85d4 | L-H1 | Reweighting in each event's own helicity (simshop). This changes the reweight default. |
-| #186 | b4e284a3 | L-Y1 | Group index and run-global position on ldjson progress records. |
-| #185 | ae88d176 | L-T3 | The conserved-number flavour prune, parallel enumeration walks, parallel set compilation, and one compile per set. |
-| #180 | 5b1f9f71 | L-S1 | Multicore `generate`: blocked accept/reject on seed-placed streams. The output is independent of `-j`. |
-| #170 | 2ac778e2 | L-V1 | The VBS stable-boson σ excess is two MadGraph effects: 2.9.18's sampling deficit, and MadEvent's default-survey bias. |
-| #174 | 2d9f18ea | L-G1 | The g2HDM charged-Higgs excess is the chirality bug that #169 fixed. |
-| #188 | 5a1c33e8 | L-G2 | `generate` resolves each group member's resonance code and colour from its own diagrams. |
-| #184 | 8b3af5ab | L-P1, L-P2 | The multichannel transfer bound at the leg's own cut. This closes the TprimeBToTZ region miss. |
-| #177 | 970be89d | L-X1, L-X2 | Campaign leftovers: TpTp is a card defect that MadGraph shares, bstar_tW, the stitch assert becomes a refusal, and param-card entries the model lacks bind as ignored, per the user's rulings. |
-| #193–#200 | 049fdc3e, 0c6f398b, ab4288a1, cd35c4e6, 0f1c1e8e, 839033b9, 71ae08e4, 1d50eca1 | L-Z1 to L-Z8 | Eight hygiene passes, one per PR cluster. |
-| #201 | 92877716 | L-U2 | The regression L-Z5 found: a `Parameter`-free `if` on an unevaluated condition loads again. |
-| #191 | 486668d8 | | The committed `vibegraph-cli/target` build tree is untracked, and `target/` is ignored in every crate. |
-| #206 | 3f4dd815 | | The dev-build CI workflow: static musl binaries of unreleased commits, for batch. |
-| #210 | c16f8ec2 | | CI on `release/v*`, the backport flow, and no publish from a dispatch. |
-| #211 | 54cecfac | | Release prep: version 0.2.3, `ENUMERATION_VERSION` 4, and the release notes the user approved. |
-| #214 | c58fc146 | L-D1, L-D2 | Complex couplings on charged two-fermion contacts and on projector-written self-conjugate dipoles bind as MadGraph's. Card 6 (tZq EFT CPV) goes from 1.655 to 1.000 ± 0.007 of MadGraph at 4× budget, and card 7 (ttZ) from 1.215 to 1.015. |
+| #171 | e8da7a48 | L-R1 | The model-parameter report and machine-readable artifact provenance (simshop). |
+| #179 | 8a23b8a4 | L-W1 | `DECAY Auto` bound to the tree-level two-body width (simshop). |
+| #183 | 1058b781 | L-T1 | Streamed per-phase timing for `integrate` and `generate`. |
+| #173 | 3b99cb6a | L-T2 | Per-family verdicts for the v022-1009 never-retried timeouts. |
+| #182 | 853028f8 | L-H1 | Reweighting in each event's own helicity (simshop). This changes the reweight default. |
+| #186 | a1a00162 | L-Y1 | Group index and run-global position on ldjson progress records. |
+| #185 | 39180cb4 | L-T3 | The conserved-number flavour prune, parallel enumeration walks, parallel set compilation, and one compile per set. |
+| #180 | 1dcc6b2b | L-S1 | Multicore `generate`: blocked accept/reject on seed-placed streams. The output is independent of `-j`. |
+| #170 | 2f1833ff | L-V1 | The VBS stable-boson σ excess is two MadGraph effects: 2.9.18's sampling deficit, and MadEvent's default-survey bias. |
+| #174 | 6265d8d9 | L-G1 | The g2HDM charged-Higgs excess is the chirality bug that #169 fixed. |
+| #188 | 56abf4a9 | L-G2 | `generate` resolves each group member's resonance code and colour from its own diagrams. |
+| #184 | 033044e4 | L-P1, L-P2 | The multichannel transfer bound at the leg's own cut. This closes the TprimeBToTZ region miss. |
+| #177 | 064256c9 | L-X1, L-X2 | Campaign leftovers: TpTp is a card defect that MadGraph shares, bstar_tW, the stitch assert becomes a refusal, and param-card entries the model lacks bind as ignored, per the user's rulings. |
+| #193–#200 | 4f196f64, efe090c8, 947a67e0, 71c269a6, d173f918, 9ebaef5c, f211ef27, b3fb46c7 | L-Z1 to L-Z8 | Eight hygiene passes, one per PR cluster. |
+| #201 | 00c7e650 | L-U2 | The regression L-Z5 found: a `Parameter`-free `if` on an unevaluated condition loads again. |
+| #191 | cc7fe0f0 | | The committed `vibegraph-cli/target` build tree is untracked, and `target/` is ignored in every crate. |
+| #206 | 042be00b | | The dev-build CI workflow: static musl binaries of unreleased commits, for batch. |
+| #210 | 0ea9846e | | CI on `release/v*`, the backport flow, and no publish from a dispatch. |
+| #211 | 40e87aa8 | | Release prep: version 0.2.3, `ENUMERATION_VERSION` 4, and the release notes the user approved. |
+| #214 | 968e2aba | L-D1, L-D2 | Complex couplings on charged two-fermion contacts and on projector-written self-conjugate dipoles bind as MadGraph's. Card 6 (tZq EFT CPV) goes from 1.655 to 1.000 ± 0.007 of MadGraph at 4× budget, and card 7 (ttZ) from 1.215 to 1.015. |
 
 Records and kb-only PRs:
 - #189 and #190: the pipeline close-out and the v0.3 decisions;
@@ -62,7 +62,7 @@ Records and kb-only PRs:
 - **g2HDM charged Higgs.**
   - V1, 5 seeds: 894 reads vg/MG 0.9991 ± 0.0088 (0.9903 without seed 4) and 889 reads 0.9995 ± 0.0062.
   - There is no claim of 1%-level agreement on 894. Its six-body rows are heavy-tailed: n_eff/N is 0.07–0.29% on every seed (`g2hdm-894-six-body-rows-heavy-tailed`).
-  - V2 on batch, one seed per card on main 3f4dd815: 890–893 and 895 read 0.986–1.016.
+  - V2 on batch, one seed per card on main 042be00b: 890–893 and 895 read 0.986–1.016.
   - These cards take 3.3–4.2 h each at campaign budget, and 895 peaks at 4.6 GB, so they need batch.
 - **PR 11 cards.**
   - 157 (bstar_tW): 1.0069 ± 0.0075 over 20 seeds.
@@ -95,9 +95,27 @@ Records and kb-only PRs:
 
 ## Release
 
-v0.2.3 is not tagged yet. The release candidate is main 54cecfac (#211). Before the tag:
-- `vg-validator`'s targeted check of v022-1009's failures, on the dev build of 54cecfac. Stage A (`integrate --check` on all 1000 cards) is running. Stage B (1-seed integrations of newly running cards) waits on the user's approval of its batch cost.
-- The history rewrite dropping `vibegraph-cli/target/`, from d5e7c71f on. No v0.2.x tag contains that tree, so no tag moves.
+v0.2.3 is not tagged yet. Its gates, in order:
+- **`vg-validator`'s targeted check of v022-1009's failures.**
+  - Stage A: `integrate --check` on all 1000 cards, with no panics, and no
+    former pass fails.
+  - Stage B: 1-seed integrations of 105 newly running cards, on the dev build of
+    old-history 54cecfac (new 40e87aa8). It found the dim6top CP-odd defect,
+    fixed by #214. It also found a DarkHiggs deficit that scales with the Zp's
+    distance above threshold: 880 reads 0.976 ± 0.001 over 5 seeds. The
+    per-event oracle traces it to the dynamical-scale clustering choice. This
+    blocks the tag until it is diagnosed.
+  - The 4-jet family reads about 0.93 on one seed each. None of those cards ran
+    in v0.2.2, and batch seeds and a budget ladder are running on it.
+- **The history rewrite is done.** It drops `vibegraph-cli/target/` from old
+  d5e7c71f on.
+  - The user rewrote main on 2026-11-27. New main 59045b57 has the same tree as
+    old c18d4304, and no tag moved.
+  - A fresh clone of main packs to 28.90 MiB, against 313 MiB before, and holds
+    no `vibegraph-cli/target` object.
+  - The kb's main SHAs from #171 on are remapped to the new history by subject
+    and patch-id. Build-provenance strings (`-g<sha>`, binary paths) keep the
+    old SHA the binary was built from. SHAs of deleted branches are unchanged.
 
 After the tag: cut `release/v0.2`, run the non-publishing dispatch from it, and activate the ruleset (`release-v02-branch-dry-run-and-ruleset`, needs-user).
 
@@ -105,8 +123,7 @@ After the tag: cut `release/v0.2`, run the non-publishing dispatch from it, and 
 
 The high-priority items are:
 - `majorana-in-decay-chain-refused` (38 CMS cards);
-- `uniform-unit-weight-cms-samples` (v0.3);
-- `committed-build-output-in-history`.
+- `uniform-unit-weight-cms-samples` (v0.3).
 
 The medium items include:
 - `complex-mass-scheme-refused` (now 14 cards, with the on/off measurement);

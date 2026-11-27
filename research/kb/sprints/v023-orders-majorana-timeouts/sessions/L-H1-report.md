@@ -6,7 +6,7 @@ status: draft
 tags: [reweight, helicity, spinup, madgraph-parity, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
-Branch `sprintl-helicity-reweight` off main 4b132cc5 (brief at c512cec4).
+Branch `sprintl-helicity-reweight` off main f4d6eba9 (brief at c512cec4).
 Closes `reweight-helicity-summed-only`; its file is deleted. Commits: 614ca877
 (the feature, the e+e- row), 74bae80a (the hadronic and SMEFT rows, the
 classification page, the item's deletion), and the commit adding this report.
@@ -249,7 +249,7 @@ test result: FAILED. 1 passed; 2 failed
 restored: 3368f8c6ce27e57c original: 3368f8c6ce27e57c
 ```
 
-### 4. Bit for bit against main 4b132cc
+### 4. Bit for bit against main f4d6eba
 
 main's binary built from `git archive c512cec4` (main plus the brief only), this
 branch's from 614ca877's source (unchanged since in `src/`); one grid per row,
@@ -381,7 +381,7 @@ generate from that grid, seed 20261005, 500 events, `mz` and `wz` hypotheses):
 
 ```
 $ sha256sum main.lhe branch.lhe flag.lhe
-d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  main.lhe      (main 4b132cc, change helicity False)
+d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  main.lhe      (main f4d6eba, change helicity False)
 d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  branch.lhe    (this branch, change helicity False)
 d8bf1f3a847ea549317b6fd70855d7c86c70644108143dd251038295f65ac1b4  flag.lhe      (this branch, no line, --reweight-helicity summed)
 events: 500, wgt lines: 1000, intermediates (status 2) in event 1: 2

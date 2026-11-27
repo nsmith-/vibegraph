@@ -6,8 +6,8 @@ status: draft
 tags: [hygiene, run-card, ufo, parameters, provenance, audit]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-ufo-reports` off main 8b3af5ab. Reviewed: #172 `7ca8d8bd`
-(run-card placeholders and UFO parameter refusals) and #171 `d5e7c71f`
+Branch `sprintl-hyg-ufo-reports` off main 033044e4. Reviewed: #172 `7ca8d8bd`
+(run-card placeholders and UFO parameter refusals) and #171 `e8da7a48`
 (model-parameter and artifact-provenance reports), with their direct callers and
 tests.
 
@@ -47,7 +47,7 @@ patches, Fortran probes and reference tables.
 
 ## Identity oracle
 
-Chosen before the first edit. Main is 8b3af5ab, built in its own detached
+Chosen before the first edit. Main is 033044e4, built in its own detached
 worktree `/home/user/wt/lz5-main` with its own target. Every byte comparison
 runs both binaries on the same inputs, in the same relative layout, and diffs
 the outputs; the only masked field is the `version` string of `parameters.json`
@@ -205,7 +205,7 @@ dim6top) lists more than one particle, so no test can pin it.
 
 ## Oracles
 
-**Identity, main 8b3af5ab against head ac7f2f9f** (binaries copied to the
+**Identity, main 033044e4 against head ac7f2f9f** (binaries copied to the
 scratchpad as `vibegraph-main`, `vibegraph-head`):
 
 ```
@@ -280,7 +280,7 @@ CLIPPY_EV_RC=0                       # --features vibegraph/extended-validation,
 TEST_RC=0
 lines=79 passed=2355 failed=0        # cargo test --workspace --no-fail-fast, the three data paths hidden
 $ cargo doc -p vibegraph-lib --no-deps --document-private-items
-warning: `vibegraph-lib` (lib doc) generated 13 warnings      # main 8b3af5ab: 13, the same sites
+warning: `vibegraph-lib` (lib doc) generated 13 warnings      # main 033044e4: 13, the same sites
 $ cargo doc -p vibegraph --no-deps --document-private-items   # no warning, as on main
 $ cargo test -p vibegraph --features extended-validation --test cli_check_only --test cli_integrate
 test result: ok. 5 passed; 0 failed      # cli_check_only: integrate --check on run cards (the placeholder refusal's path)

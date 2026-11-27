@@ -6,7 +6,7 @@ status: draft
 tags: [generate, unweighting, parallelism, determinism, samples-gate, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
-Branch `sprintl-generate` off main d5e7c71. Commits `4b356145` (the pass and
+Branch `sprintl-generate` off main e8da7a4. Commits `4b356145` (the pass and
 its tests), `39f98611` (the `ee_to_wpwm` KS demotion and its census probe) and
 the final commit carrying this report. The item
 `two-to-six-samples-serial-unweighting-cost` is **not** closed and its file is
@@ -230,7 +230,7 @@ and the σ/shape readings in `validate_unweighting.rs`. None was loosened.
 ## Measurements
 
 Host: this container, 4 cores, release build (fat LTO) of `4b356145` and of
-main d5e7c71 (built in a separate worktree and target). Card: the banked
+main e8da7a4 (built in a separate worktree and target). Card: the banked
 `pp_to_jj` run card (13 TeV, NNPDF23 lhaid 247000, `dynamical_scale_choice =
 -1`, `use_syst = True`, 145 weights an event). One `integrate -j 4
 --fixed-budget --neval 200000 --niter 6 --seed 20261122` per process, reused
@@ -350,7 +350,7 @@ the r1 runs. This head predates the phase records.
   file is written. A cheap process like this one is bound by output, so the
   -j 8 number will depend more on the writer than on sampling.
 
-**Re-checked after the merge with main.** Main dfdf85d4 includes PR 10, which
+**Re-checked after the merge with main.** Main 853028f8 includes PR 10, which
 changes per-event helicity reweighting. On the merged head 0baf1703 (release,
 `v0.2.2-23-g0baf1703`), the event sha256s are unchanged from the table above:
 - card A at `-j 1`: `3b6467b394d7ea56…`;
@@ -386,7 +386,7 @@ clean number):
 patch on 5b546464, kept with vg-validator's records) runs main's trial-by-trial
 loop and this PR's blocked pass on the gate's own frozen grids and maxima. The
 trial loop is main's unchanged (`Unweighter::trial` delegates to `trial_with`
-with the same RNG order and per-channel trailing streams; `git diff b4e284a3
+with the same RNG order and per-channel trailing streams; `git diff a1a00162
 -- vibegraph-lib/src/unweight.rs`).
 
 | seed | serial vs MG, SCALUP / AQCDUP p | blocked vs MG | serial vs blocked, SCALUP / AQCDUP / worst kinematic p |

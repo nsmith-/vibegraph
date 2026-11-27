@@ -6,8 +6,8 @@ status: draft
 tags: [hygiene, cli, ldjson, progress, phase-timing, non-vacuity, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-progress` off main 8b3af5ab. Scope: the squash commits
-`abc3b31e` (#183, phase timing) and `b4e284a3` (#186, progress position), read
+Branch `sprintl-hyg-progress` off main 033044e4. Scope: the squash commits
+`1058b781` (#183, phase timing) and `a1a00162` (#186, progress position), read
 at the branch's base, where #185 has since reworked the surrounding compile
 code in `multiplicity.rs` and `integrate.rs`.
 
@@ -33,7 +33,7 @@ Mutations.
 | Z6.12 | 1, duplicated code across test files | `cli_progress_position.rs:67` (`write_pdf_set`), `cli_generate_vanishing_group.rs:56` (`synthetic_pdf_set`), `vibegraph-lib/src/systematics/plan.rs:702` | Three hand-written `lhagrid1` stand-in sets. | `grep -rn lhagrid1 --include=*.rs` | checked | Found; the filed item `proton-phase-timing-test-needs-fetched-pdf` is the natural place to share one |
 | Z6.13 | — | `multiplicity.rs` (compile `groups`) | Known gap (a) of the L-Y1 report, filed as `compile-and-alpha-survey-group-counts-differ`. Closing it means knowing before `derive_flavor_groups_with` runs whether it will refuse with `OneBodyCutToZero`: not a few lines. | filed item | checked | leave |
 
-Comment rules: `git show abc3b31e b4e284a3 -- '*.rs' docs | grep '^+' | grep -E '\bT[0-9]\b|\bC[0-9]\b|Phase [0-9]|note [0-9]+|used to|no longer|sprint|PR [0-9]|session|backlog|item'`
+Comment rules: `git show 1058b781 a1a00162 -- '*.rs' docs | grep '^+' | grep -E '\bT[0-9]\b|\bC[0-9]\b|Phase [0-9]|note [0-9]+|used to|no longer|sprint|PR [0-9]|session|backlog|item'`
 returns nothing. No `unwrap`/`expect` was added on a fallible path:
 `group_labels(..).remove(0)` takes the one label of a one-element input.
 
@@ -141,8 +141,8 @@ other tests' mutations of `in_group` are caught by
 ## Oracles
 
 **Identity, main against the fixed branch.** The branch before the first
-edit differs from main 8b3af5ab only by the brief and the findings
-(`git diff --stat 8b3af5ab 7a1bf90b`: two `.md` files under `research/kb`),
+edit differs from main 033044e4 only by the brief and the findings
+(`git diff --stat 033044e4 7a1bf90b`: two `.md` files under `research/kb`),
 so its dev build is main's code. It was built once, before any edit, and
 kept as `/home/user/wt/lz6-main/vibegraph-base`; the fixed tree's build is
 `vibegraph-fix`. Driver `/home/user/wt/lz6-main/oracle.sh <binary> <tag>`,
@@ -166,7 +166,7 @@ sigma/err/grid identical base2==fix
 σ is compared as its JSON shortest round-trip text, which is equal exactly
 when the bits are (`2029.545411444088` is `0x409fb62e80566ce3`,
 `937.0178812779731` is `0x408d48249ef080d7`). Both grid hashes are the ones
-L-Y1 recorded at abc3b31, so #184/#185/#188 moved neither card.
+L-Y1 recorded at 1058b78, so #184/#185/#188 moved neither card.
 
 **The masked stream.** The mask is `/home/user/wt/lz6-main/mask.jq`:
 
@@ -247,7 +247,7 @@ $ pixi run --skip-deps kb-lint
 1394 concepts, 480 backlog items; 0 errors, 7 warnings   # warnings on other items
 ```
 
-After merging `origin/main` 0f1c1e8e (L-Z5, no file in common with this
+After merging `origin/main` d173f918 (L-Z5, no file in common with this
 pass), the same script on the merge 3f50c67a: `FMT_OK`, `CLIPPY_RC=0`,
 `CLIPPY_EV_RC=0`, `TEST_RC=0`, `lines=79 passed=2355 failed=0` (main's three
 new tests).

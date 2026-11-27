@@ -6,8 +6,8 @@ status: draft
 tags: [generate, refusal, flavour-groups, resonance, g2hdm, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-generate-resonance`, off main 7b36722c with `origin/main`
-5b1f9f71 merged in first (multicore generate touched `generate.rs`). "Base"
+Branch `sprintl-generate-resonance`, off main 6eb11d1c with `origin/main`
+1dcc6b2b merged in first (multicore generate touched `generate.rs`). "Base"
 below is that merge, 39bfd845: current main plus the brief, no code change.
 The backlog item `generate-refuses-vanishing-group-resonance-flavour` is closed
 and its file deleted in the final commit.

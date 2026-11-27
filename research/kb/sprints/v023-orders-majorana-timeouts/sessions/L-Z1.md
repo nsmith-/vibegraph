@@ -9,12 +9,12 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 Hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch
-`sprintl-hyg-amp` off main 8b3af5ab. It covers these merged PRs. Read each squash
+`sprintl-hyg-amp` off main 033044e4. It covers these merged PRs. Read each squash
 commit's diff (`git show <sha>`) and its session briefs and reports under
 `sessions/`:
 
-- #168 `4b132cc5`: squared-order constraints by coupling-order split (PR 1). Brief and report: `sessions/L-Q1.md`, `L-Q1-report.md`.
-- #182 `dfdf85d4`: per-event-helicity reweighting (PR 10). Brief and report: `sessions/L-H1.md`, `L-H1-report.md`.
+- #168 `f4d6eba9`: squared-order constraints by coupling-order split (PR 1). Brief and report: `sessions/L-Q1.md`, `L-Q1-report.md`.
+- #182 `853028f8`: per-event-helicity reweighting (PR 10). Brief and report: `sessions/L-H1.md`, `L-H1-report.md`.
 
 Both change how amplitudes are split (`helas/eval/run.rs`, `reweight/engine.rs`), so review them together: a second copy of the split logic between them is the likeliest finding.
 

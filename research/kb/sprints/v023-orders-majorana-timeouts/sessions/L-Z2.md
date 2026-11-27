@@ -9,11 +9,11 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 Hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch
-`sprintl-hyg-fermion` off main 8b3af5ab. It covers these merged PRs. Read each squash
+`sprintl-hyg-fermion` off main 033044e4. It covers these merged PRs. Read each squash
 commit's diff (`git show <sha>`) and its session briefs and reports under
 `sessions/`:
 
-- #169 `a5bf8fca`: Majorana fermions, fermion-number violation and the charged-scalar chirality fix (PR 2): `diagrams/diagram.rs`, `helas/eval/diagram_eval.rs` (`conjugate_standalone_projectors`), `ufo/lorentz.rs`. Brief and report: `sessions/L-M1.md`, `L-M1-report.md`.
+- #169 `631cdbca`: Majorana fermions, fermion-number violation and the charged-scalar chirality fix (PR 2): `diagrams/diagram.rs`, `helas/eval/diagram_eval.rs` (`conjugate_standalone_projectors`), `ufo/lorentz.rs`. Brief and report: `sessions/L-M1.md`, `L-M1-report.md`.
 - #178 `c18042ed`: drop Goldstones flagged `GoldstoneBoson`, read list/dict propagators (`ufo/particles.rs`).
 
 **The convention tests are the point.** `conjugate_standalone_projectors` and the fermion-flow signs are conventions: for each test that pins one, name the error class it provably cannot detect (AGENTS.md, Physics Validation). A sign or phase fix is physics: route it, don't make it.

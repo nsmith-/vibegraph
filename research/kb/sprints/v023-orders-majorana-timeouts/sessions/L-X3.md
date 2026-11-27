@@ -8,7 +8,7 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-An investigation in [sprint L](../sprint.md), on branch `sprintl-xwgtup` off main cd35c4e6. Depending on what it finds, it may block the v0.2.3 tag.
+An investigation in [sprint L](../sprint.md), on branch `sprintl-xwgtup` off main 71c269a6. Depending on what it finds, it may block the v0.2.3 tag.
 
 ## The observation
 

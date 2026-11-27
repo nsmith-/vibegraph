@@ -6,8 +6,8 @@ status: draft
 tags: [hygiene, majorana, fermion-flow, goldstone, mutation-testing, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-fermion` off main 8b3af5ab (brief bbffe26c). Scope:
-`git show a5bf8fca` (#169) and `git show c18042ed` (#178), their callers and
+Branch `sprintl-hyg-fermion` off main 033044e4 (brief bbffe26c). Scope:
+`git show 631cdbca` (#169) and `git show c18042ed` (#178), their callers and
 tests. This section was committed before any code edit.
 
 ## Findings
@@ -111,7 +111,7 @@ either message (`grep` in F1, F2), so nothing could fail.
 
 ## Identity oracle
 
-Main 8b3af5ab built in `/home/user/wt/lz2-main-target` (release), branch at the
+Main 033044e4 built in `/home/user/wt/lz2-main-target` (release), branch at the
 fixed code (`v0.2.2-29-g40c43387-dirty`, the tree of f02dedf1) in its own
 target; driver `/home/user/wt/lz2-oracle/oracle.sh`, run from the branch
 worktree, `LHAPDF_DATA_PATH=validation/pdf`, `integrate <card> --run-card <rc>

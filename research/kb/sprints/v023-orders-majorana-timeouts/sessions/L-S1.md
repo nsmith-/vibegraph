@@ -9,7 +9,7 @@ closes: [two-to-six-samples-serial-unweighting-cost]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
 PR 13 of [sprint L](../sprint.md), on branch `sprintl-generate` off main
-d5e7c71. The user added it on 2026-11-22.
+e8da7a4. The user added it on 2026-11-22.
 
 Read `pixi run backlog --item two-to-six-samples-serial-unweighting-cost` and
 what it links (the samples cells in `validation/manifest.toml`, note 32 §5.1).

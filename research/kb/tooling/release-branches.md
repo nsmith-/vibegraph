@@ -7,8 +7,8 @@ tags: [release, branching, ci, ruleset, process]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-25}
 sources:
   - {id: split, resource: "../decisions/v03-branch-after-v023.md", title: "The v0.3 line splits from main at the v0.2.3 tag"}
-  - {id: ci-yml, resource: "https://github.com/nsmith-/vibegraph/blob/eaf09f77/.github/workflows/ci.yml", title: ".github/workflows/ci.yml"}
-  - {id: release-yml, resource: "https://github.com/nsmith-/vibegraph/blob/eaf09f77/.github/workflows/release.yml", title: ".github/workflows/release.yml"}
+  - {id: ci-yml, resource: "https://github.com/nsmith-/vibegraph/blob/9ee9c854/.github/workflows/ci.yml", title: ".github/workflows/ci.yml"}
+  - {id: release-yml, resource: "https://github.com/nsmith-/vibegraph/blob/9ee9c854/.github/workflows/release.yml", title: ".github/workflows/release.yml"}
   - {id: gh-rulesets, resource: "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets", title: "GitHub docs: available rules for rulesets"}
 ---
 # Release branches and backports

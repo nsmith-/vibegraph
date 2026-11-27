@@ -6,7 +6,7 @@ status: draft
 tags: [events, unweighting, lhef, normalisation, mlm, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-Branch `sprintl-xwgtup` off main cd35c4e6 (brief commit 54c31fe3). A
+Branch `sprintl-xwgtup` off main 71c269a6 (brief commit 54c31fe3). A
 diagnosis session: no source change. Brief: [L-X3](L-X3.md).
 
 ## Summary

@@ -259,7 +259,7 @@ above shows no banked model does.
 
   The TpTp and bstar conclusions stand on the gridpacks' bundled models: the validator confirmed the zero coupling and ran the enumerate diff on them, and the 157 gate runs on them too. This session's local reduced-budget 157 run (2.18 ± 0.39 fb) used the store model, so it is indicative only. **Found:** the CMS-store tarball and a gridpack's bundled UFO can differ under the same model name, so a local reproduction of a campaign card should use the bundled copy.
 
-## Gate evidence for PR 11 (#177, merged as 970be89d)
+## Gate evidence for PR 11 (#177, merged as 064256c9)
 
 The validator ran these gates (vg-validator). The manager relayed them; they were not re-run here.
 
@@ -353,7 +353,7 @@ The fix takes each card from 396 to 198 diagrams; every diagram it removes has a
 ### HNL cards 84, 85 and 438–442 on ba190428
 
 - **Binding:** all 7 cards bind with rc 0 and exactly 10 warnings each (6 YUKAWA, 4 CKMBLOCK). The command was `vibegraph parameters <proc card with only 'import model'> --param-card <gridpack card> --ufo-dir <bundled UFO>`, which binds the same way integrate does.
-- **Before the fix:** 8a651703 refused all 7 cards at YUKAWA codes 1, 2, 3, 4, 11 and 13. Main 7b36722c refused them at CKMBLOCK.
+- **Before the fix:** 8a651703 refused all 7 cards at YUKAWA codes 1, 2, 3, 4, 11 and 13. Main 6eb11d1c refused them at CKMBLOCK.
 - **Card 84's warnings,** without the card-path prefix:
 
 ```

@@ -8,10 +8,10 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-generate` off main 8b3af5ab.
+A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-generate` off main 033044e4.
 
 It covers one merged PR. Read the squash commit's diff (`git show <sha>`) and its session brief and report under `sessions/`:
-- **#180 `5b1f9f71`**, multicore generate: deterministic blocked accept/reject across the pool (PR 13). Brief and report: `sessions/L-S1.md`, `L-S1-report.md`.
+- **#180 `1dcc6b2b`**, multicore generate: deterministic blocked accept/reject across the pool (PR 13). Brief and report: `sessions/L-S1.md`, `L-S1-report.md`.
 
 **The code:**
 - `vibegraph-lib/src/unweight.rs` and `unweight/blocks.rs` (new, about 550 lines);

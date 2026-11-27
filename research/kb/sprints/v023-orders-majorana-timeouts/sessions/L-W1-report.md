@@ -6,7 +6,7 @@ status: draft
 tags: [param-card, widths, madgraph-parity, simshop, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-22}
 ---
-Branch `sprintl-auto-widths` off main d5e7c71 (brief commit ce5109b). Closes
+Branch `sprintl-auto-widths` off main e8da7a4 (brief commit ce5109b). Closes
 `auto-widths-not-computed`; its file is deleted.
 
 **Which SM particles bind under `DECAY <pdg> Auto`:** the top quark (6) and the
@@ -287,9 +287,9 @@ allowed to bind (`if width.not_included.len() < 1000 {`) fails the same two
 tests, the first assertion naming the Z (`23 binds; expected a refusal`), so a
 Z that starts binding is a visible change.
 
-### 3. Bit for bit, main d5e7c71 against the branch
+### 3. Bit for bit, main e8da7a4 against the branch
 
-Release binaries (main built from `git archive d5e7c71`; branch with the
+Release binaries (main built from `git archive e8da7a4`; branch with the
 `BeyondTwoBody` change), `integrate --seed 20261122 --fixed-budget
 --no-network`, each with a param card:
 

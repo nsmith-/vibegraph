@@ -9,12 +9,12 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 Hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch
-`sprintl-hyg-widths` off main 8b3af5ab. It covers these merged PRs. Read each squash
+`sprintl-hyg-widths` off main 033044e4. It covers these merged PRs. Read each squash
 commit's diff (`git show <sha>`) and its session briefs and reports under
 `sessions/`:
 
-- #179 `e99f8ba2`: Auto widths from two-body decays (PR 9): `widths.rs`, `ufo/bind.rs`, `ufo/report.rs`. Brief and report: `sessions/L-W1.md`, `L-W1-report.md`.
-- #188 `5a1c33e8`: per-member resonance codes and colours in `generate` (PR 15; `sessions/L-G2.md`, `L-G2-report.md`): `generate.rs` (`group_resonances`, `member_line_codes`), `generate/source.rs`, `lhef/resonance.rs` (`MemberLines`). That PR added two `cfg(test)` helpers on `MemberLines` and made the resonance test module `pub(crate)`. Check whether they are the right shape or test-only scaffolding the production API should replace.
+- #179 `8a23b8a4`: Auto widths from two-body decays (PR 9): `widths.rs`, `ufo/bind.rs`, `ufo/report.rs`. Brief and report: `sessions/L-W1.md`, `L-W1-report.md`.
+- #188 `56abf4a9`: per-member resonance codes and colours in `generate` (PR 15; `sessions/L-G2.md`, `L-G2-report.md`): `generate.rs` (`group_resonances`, `member_line_codes`), `generate/source.rs`, `lhef/resonance.rs` (`MemberLines`). That PR added two `cfg(test)` helpers on `MemberLines` and made the resonance test module `pub(crate)`. Check whether they are the right shape or test-only scaffolding the production API should replace.
 
 Up to two sibling hygiene passes run alongside you. Stay inside the files
 these PRs touched, plus their direct callers and tests. The other clusters

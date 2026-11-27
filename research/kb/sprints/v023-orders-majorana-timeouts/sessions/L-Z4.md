@@ -9,12 +9,12 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 Hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch
-`sprintl-hyg-phasespace` off main 8b3af5ab. It covers these merged PRs. Read each squash
+`sprintl-hyg-phasespace` off main 033044e4. It covers these merged PRs. Read each squash
 commit's diff (`git show <sha>`) and its session briefs and reports under
 `sessions/`:
 
-- #184 `8b3af5ab`: spine rungs bounded by what their single-leg sides prove, read off the channel's own pairing filter (PR 5): `cuts.rs` (`single_leg_transfer_bound`, `with_side_transfer_bounds`), `phasespace/diagram_channel.rs`, `phasespace/maps.rs`. Briefs and reports: `sessions/L-P1.md`, `L-P1-report.md`, `L-P2-report.md`.
-- #170 `2ac778e2`: `validation/madgraph/ew_recombine.py`, the equal-weight recombination script (PR 4; `sessions/L-V1-report.md`). Its other changes are kb only.
+- #184 `033044e4`: spine rungs bounded by what their single-leg sides prove, read off the channel's own pairing filter (PR 5): `cuts.rs` (`single_leg_transfer_bound`, `with_side_transfer_bounds`), `phasespace/diagram_channel.rs`, `phasespace/maps.rs`. Briefs and reports: `sessions/L-P1.md`, `L-P1-report.md`, `L-P2-report.md`.
+- #170 `2f1833ff`: `validation/madgraph/ew_recombine.py`, the equal-weight recombination script (PR 4; `sessions/L-V1-report.md`). Its other changes are kb only.
 
 Up to two sibling hygiene passes run alongside you. Stay inside the files
 these PRs touched, plus their direct callers and tests. The other clusters

@@ -9,7 +9,7 @@ closes: [enumeration-hands-flavour-violating-subprocesses-to-feyngraph, set-comp
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 First session of PR 3b of [sprint L](../sprint.md), on branch
-`sprintl-timeout-fixes` off main a5bf8fca. PR 3's triage named the causes
+`sprintl-timeout-fixes` off main 631cdbca. PR 3's triage named the causes
 (the L-T2 report `sessions/L-T2-report.md` and the sample page
 `v022-1009-phase-sample.md`, both on PR 3's branch until it merges).
 

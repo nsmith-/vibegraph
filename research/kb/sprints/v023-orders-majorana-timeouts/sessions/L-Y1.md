@@ -9,7 +9,7 @@ closes: [ldjson-progress-has-no-run-global-position]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 The only session of PR 14 of [sprint L](../sprint.md). It runs on branch
-`sprintl-progress` off main abc3b31, which already has PR 3a's phase
+`sprintl-progress` off main 1058b78, which already has PR 3a's phase
 records (`vibegraph-cli/src/phase.rs`).
 
 Start by reading the item:
