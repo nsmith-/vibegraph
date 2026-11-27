@@ -25,7 +25,7 @@ numbers at dispatch.
 **A released chirality bug runs through these cards: size it first.** v0.2.2
 read every non-self-conjugate vertex whose Lorentz term is a bare
 `ProjM`/`ProjP` (no `Gamma` or `Sigma`) with the wrong chirality: g_L where it
-should use g_R, and the reverse. PR 2 (#169) fixed this on main a5bf8fca. The
+should use g_R, and the reverse. PR 2 (#169) fixed this on main 631cdbca. The
 rule is `conjugate_standalone_projectors` in
 `vibegraph-lib/src/helas/eval/diagram_eval.rs`. Every quark–h± vertex in g2HDM
 is `[FFS1 = ProjM, FFS3 = ProjP]` with separate couplings. The census found
@@ -38,7 +38,7 @@ measured on v0.2.2.
   - σ_fix/σ_main from fixed momenta, which shows how much the fix moves σ.
     - Take N = 1000–2000 unweighted events from a short run on main c18042e
       (pre-fix). They are distributed as main's |M|².
-    - Evaluate |M|² at **exactly those momenta** on both c18042e and a5bf8fca,
+    - Evaluate |M|² at **exactly those momenta** on both c18042e and 631cdbca,
       and check the momenta match bit for bit before taking any ratio.
     - A pinned seed is not enough: VEGAS and the α survey adapt to |M|², so
       after the first warm-up the two builds sample different points.

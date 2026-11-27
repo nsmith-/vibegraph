@@ -9,7 +9,7 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
 ---
 Implementation session of [sprint L](../sprint.md), branch `sprintl-cp-odd-couplings` off
-main c095a1cf. The diagnosis is in `sessions/L-D1-report.md` on branch
+main 35ace596. The diagnosis is in `sessions/L-D1-report.md` on branch
 `sprintl-dim6top-sigma` (commit be45128c). Read it first: `git show
 origin/sprintl-dim6top-sigma:research/kb/sprints/v023-orders-majorana-timeouts/sessions/L-D1-report.md`.
 Its scratch harness is in `/home/user/wt/sprintl-dim6top-mg/harness/` (`ld1_fixcheck.py`,

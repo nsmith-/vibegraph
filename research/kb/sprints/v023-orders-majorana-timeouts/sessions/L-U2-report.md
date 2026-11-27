@@ -6,7 +6,7 @@ status: draft
 tags: [ufo, model-loading, refusal, regression]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-config-if` off main 8b3af5ab. Fix commit c6335a01. No backlog
+Branch `sprintl-config-if` off main 033044e4. Fix commit c6335a01. No backlog
 item is closed (the regression was never released, so none was filed).
 
 ## What changed

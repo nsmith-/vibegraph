@@ -40,7 +40,7 @@ seeds.
 ## A 20-seed calibration on a cancelling interference (614, 2026-11-25)
 
 Sprint L measured VLQ card 614 (TprimeBToTH, `VLQ^2==2`, a signed interference
-across a 20%-width pole) on main e6a4cba8, 20 seeds per rung:
+across a 20%-width pole) on main ff45724c, 20 seeds per rung:
 
 | rung | mean (pb) | seed sd | mean quoted error | χ²/dof |
 |---|---|---|---|---|

@@ -6,7 +6,7 @@ status: draft
 tags: [sampling, multichannel, spine, t-channel, cuts, confidently-wrong, cms-gridpacks, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-multichannel` off main a5bf8fca (brief commit ddd98052). The
+Branch `sprintl-multichannel` off main 631cdbca (brief commit ddd98052). The
 backlog item `multichannel-subdominant-channel-carries-dominant-region` is
 **not** deleted: its `closes_when` still needs the complex-mass-scheme-off
 MadGraph σ (below, "vg-validator requests"). Its corrected text is in Found.
@@ -33,7 +33,7 @@ unbiased (the union of supports covers the corner), so this is a variance
 failure, not a bias. That is why the existing coverage gate
 (`every_bounded_channel_set_covers_its_own_fiducial_region`) cannot see it.
 
-## Reproduction on main a5bf8fca
+## Reproduction on main 631cdbca
 
 Cards reproduced from `/home/user/wt/cards-sprintL/tprime126.md` into
 `/home/user/wt/lp1-card/` (proc, run with the hidden parameters, param card
@@ -241,7 +241,7 @@ caused the miss.
 scheme and is not used here. The fixed mean sits 0.7% above it, which says
 nothing until the CMS-off reference arrives.
 
-**Banked rows, bit for bit against main a5bf8fca** (CLI, both binaries, seed
+**Banked rows, bit for bit against main 631cdbca** (CLI, both binaries, seed
 1, `--neval 30000 --target-rel 0.02`, the banked cards,
 `/home/user/wt/lp1-bin/banked_bits.sh`):
 

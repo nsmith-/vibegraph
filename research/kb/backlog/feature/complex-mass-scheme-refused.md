@@ -28,7 +28,7 @@ interference cards (124, 125, 610, 612, 614, `VLQ^2==2`) also set it. gpdb's
 attempt 2 strips the line (`strip:set`), so every vibegraph σ on those cards so
 far is real-mass against a complex-mass MG reference.
 
-Main (e6a4cba8) at campaign budget, 5 seeds, against the signed references:
+Main (ff45724c) at campaign budget, 5 seeds, against the signed references:
 - 124, 125 and 610 (5–10% widths) read 0.958–0.997.
 - 612 (M800, Γ = 160) reads 0.807 ± 0.032.
 - 614 (M700, 20%) reads 0.523 ± 0.060.

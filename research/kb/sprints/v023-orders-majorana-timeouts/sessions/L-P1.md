@@ -42,7 +42,7 @@ on main, and this model has such vertices (`bp~ d H` and others). So:
    `conjugate_standalone_projectors`: a non-self-conjugate vertex whose Lorentz
    term has ProjM, ProjP or Gamma5 but no Gamma or Sigma. vg-validator's
    census may already answer this; check `tprime126.md`.
-2. Reproduce on **main a5bf8fca**, your worktree's base, using the base
+2. Reproduce on **main 631cdbca**, your worktree's base, using the base
    recipe: `--neval 120000 --target-rel 0.01 -j 4` plus whatever else the
    cards file records.
    - Start with seed 1 (the hit) and seed 2 (a miss).
@@ -126,7 +126,7 @@ Run locally only what fits the long-command discipline below.
 - The hermetic suite with the submodule and fetched data hidden, as the
   discipline section below requires.
 - The touched `extended-validation` targets.
-- Bit for bit on ≥3 banked cards against main a5bf8fca.
+- Bit for bit on ≥3 banked cards against main 631cdbca.
 
 New work goes in Found.
 

@@ -9,7 +9,7 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-25}
 ---
 Diagnosis session of [sprint L](../sprint.md), branch `sprintl-interference-sign` off
-main 3f4dd815. The item is `squared-order-interference-sign-opposite-to-madgraph`
+main 042be00b. The item is `squared-order-interference-sign-opposite-to-madgraph`
 (validation, high), filed on kb PR #207. It is a possible release blocker for v0.2.3.
 **No production code in this session**: the deliverable is the dumps, the fit and a
 candidate fix verified arithmetically on the dumped amplitudes. The planner reviews

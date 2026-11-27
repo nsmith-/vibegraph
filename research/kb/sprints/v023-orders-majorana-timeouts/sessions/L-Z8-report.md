@@ -6,8 +6,8 @@ status: draft
 tags: [hygiene, unweighting, generate, parallel, review]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-generate` off main 8b3af5ab. The change under review is
-#180 (`5b1f9f71`, [L-S1](L-S1.md), [report](L-S1-report.md)):
+Branch `sprintl-hyg-generate` off main 033044e4. The change under review is
+#180 (`1dcc6b2b`, [L-S1](L-S1.md), [report](L-S1-report.md)):
 `vibegraph-lib/src/unweight.rs`, the new `unweight/blocks.rs`,
 `generate/source.rs`, `generate.rs`, the CLI tests `cli_generate.rs` and
 `cli_generate_proton.rs`, the harnesses `validate_samples.rs`,
@@ -44,7 +44,7 @@ Suspected in the brief and not reproduced:
 
 ## Identity oracle
 
-Chosen before the first edit. Main 8b3af5ab is built in a detached worktree
+Chosen before the first edit. Main 033044e4 is built in a detached worktree
 (`/home/user/wt/lz8-main`, own target) and this branch in its own, both
 `cargo build --profile release-debug -p vibegraph --bin vibegraph`. Each card
 is integrated once with main's binary; both binaries then generate from that
@@ -97,7 +97,7 @@ Tests added or deleted: none. The suite's count is unchanged.
 
 ## Oracles
 
-**Identity, against main 8b3af5ab.** `oracle.sh integrate` integrates both
+**Identity, against main 033044e4.** `oracle.sh integrate` integrates both
 cards with main's binary. Its output:
 
 ```

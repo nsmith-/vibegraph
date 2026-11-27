@@ -1,13 +1,13 @@
 ---
 type: Session Report
 title: "L-G1 report: the g2HDM high-mass σ excess is the released chirality bug"
-description: "On card 894 (M1000) the chirality fix of main a5bf8fca lowers σ by 3.0 ± 0.4% at fixed momenta, which takes v0.2.2's +2.8% over MadGraph 3.7.1 to −0.3 ± 0.5%; on card 889 (M300) it lowers σ by 0.6 ± 0.4%. The shift comes from subprocesses whose amplitude vanishes, or nearly so, once the charged-Higgs vertex has the right chirality; per diagram and per helicity, the fixed code matches MadGraph 3.7.1 standalone to 2e-15."
+description: "On card 894 (M1000) the chirality fix of main 631cdbca lowers σ by 3.0 ± 0.4% at fixed momenta, which takes v0.2.2's +2.8% over MadGraph 3.7.1 to −0.3 ± 0.5%; on card 889 (M300) it lowers σ by 0.6 ± 0.4%. The shift comes from subprocesses whose amplitude vanishes, or nearly so, once the charged-Higgs vertex has the right chirality; per diagram and per helicity, the fixed code matches MadGraph 3.7.1 standalone to 2e-15."
 status: draft
 tags: [g2hdm, chirality, sigma, madgraph-parity, cms-gridpacks, oracle, report, validation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
 Worktree `/home/user/wt/sprintl-g2hdm`, branch `sprintl-g2hdm`, head `bb111efb`
-(main a5bf8fca with the brief merged in). It has no source changes. The only
+(main 631cdbca with the brief merged in). It has no source changes. The only
 commit is this report. The item `g2hdm-charged-higgs-high-mass-sigma-reads-high`
 was not deleted by this session: its closing condition asks the high-mass cards
 to match MadGraph by the multi-seed criterion, which is request V1 below. V1 ran
@@ -244,12 +244,12 @@ Blind to:
   894 events (365 on 889), two b's have the lepton's sign. There the choice
   "nearest m_t" is not exactly invariant under the rotation, and the pairing
   cut treats that b as a core jet in the other pairing.
-- The ratio is c18042e against a5bf8fca. Between v0.2.2 and c18042e the source
+- The ratio is c18042e against 631cdbca. Between v0.2.2 and c18042e the source
   diff is UFO parsing (Goldstone flag, list/dict propagators, parameter
   refusals) and run-card placeholders. g2HDM flags its Goldstones `goldstone =
   True`, which v0.2.2 already read, so c18042e is taken to compute v0.2.2's |M|²
   for this card. This was not measured, because no v0.2.2 artifact was at hand.
-- Between c18042e and a5bf8fca, main also landed squared orders (#168) and Auto
+- Between c18042e and 631cdbca, main also landed squared orders (#168) and Auto
   widths (#179). Neither acts on this card (no squared orders, explicit widths),
   so the ratio is attributed to #169's chirality fix. That attribution is an
   inference, not a third build.
@@ -312,7 +312,7 @@ by a post-fix run.
   - the scale, MLM clustering and colour-configuration draw, if the fix moves
     them;
   - c18042e standing in for v0.2.2;
-  - attributing the c18042e..a5bf8fca difference to #169 alone.
+  - attributing the c18042e..631cdbca difference to #169 alone.
 - **The rotation average:**
   - an exact invariant only where the top-decay b is unambiguous (74% of 894's
     events);
@@ -325,10 +325,10 @@ by a post-fix run.
 
 ## Requests for vg-validator
 
-Branch `sprintl-g2hdm`, head `bb111efb` (code identical to main a5bf8fca).
+Branch `sprintl-g2hdm`, head `bb111efb` (code identical to main 631cdbca).
 
 - **V1. Post-fix σ on 894 and 889.** 5 seeds each, the campaign's command and
-  budget, on main a5bf8fca or later.
+  budget, on main 631cdbca or later.
   - Expected against MadGraph 3.7.1 (default survey): 894 at 0.997 ± 0.005
     (σ ≈ 46.2 fb) and 889 at 0.998 ± 0.004.
   - Read 894 also against R3's `hard_survey = 2` σ. A post-fix vibegraph
@@ -342,7 +342,7 @@ Branch `sprintl-g2hdm`, head `bb111efb` (code identical to main a5bf8fca).
 - **V3. Per-event check on R3's MadGraph events.** For 894 (e.g.
   `scale-oracle-records/894_hs2_s1.unweighted_events.lhe.gz`), run
   `lg1_fixed_momenta.rs` (scratch copy `/home/user/wt/sprintl-g2hdm-mg/harness/`)
-  from a checkout of a5bf8fca.
+  from a checkout of 631cdbca.
   - Command: `LG1_UFO=<g2HDM_UFO> LG1_PROC=<proc_card> LG1_PARAM=<param_894>
     LG1_LHE=<events, gunzipped> LG1_OUT=m2.tsv cargo test -p vibegraph-lib
     --test lg1_fixed_momenta -- --ignored --nocapture`.
@@ -420,7 +420,7 @@ removed at the end of the session.
 
 ## Addendum: F1 on main, and R3 seed 1
 
-**F1 reproduces on main b4e284a3** (`vibegraph --version`: `v0.2.2-17-gb4e284a3`;
+**F1 reproduces on main a1a00162** (`vibegraph --version`: `v0.2.2-17-gb4e284a3`;
 detached worktree, own target directory, reconstructed cards).
 
 Card 894, the full card:
@@ -484,7 +484,7 @@ the five-line card above. No fix was made in this session.
 
 ## Addendum: V1, five seeds on 889 and 894 after the fix
 
-vg-validator ran both cards on main 7b36722c, which contains the chirality fix.
+vg-validator ran both cards on main 6eb11d1c, which contains the chirality fix.
 The argv is the 3-iteration fixed budget (`--neval 120000 --niter 3 -j 4
 --parallel-diagrams`), seeds 1–5, with a 7200 s cap. No seed timed out: walls
 were 5833–5884 s on 894 and 5460–5558 s on 889. Means are unweighted over the
@@ -573,7 +573,7 @@ What this does not claim: agreement with MadGraph at the 1% level on 894. Five
 seeds cannot calibrate its 6-body tail, and the tail item carries that.
 
 **V2: the other five cards, as corroboration (1 seed per card, batch, main
-3f4dd815).** vg-validator ran the five g2HDM cards V1 did not cover on lxbatch:
+042be00b).** vg-validator ran the five g2HDM cards V1 did not cover on lxbatch:
 - dev build "v0.2.2-42-g3f4dd815c605";
 - campaign budget: fixed, `--neval 120000 --niter 3`, parallel diagrams;
 - seed 1, 4 CPUs, no cap.
@@ -592,7 +592,7 @@ gate anything; the closure rests on V1's five-seed means.
 - Every card is within 1σ of MadGraph.
 - In v0.2.2's survey, M900–M1750 read +2.4% to +4.4% on every seed. On main,
   the same cards read 0.986–1.016.
-- Earlier local single seeds on 7b36722c, capped at 7200 s, agree:
+- Earlier local single seeds on 6eb11d1c, capped at 7200 s, agree:
   - 891: 0.0035278 pb (1.022);
   - 892: 0.082733 pb (0.973).
 

@@ -1,7 +1,7 @@
 ---
 type: Session Brief
 title: "L-D1: card 6 (dim6top tZq EFT CPV) reads 1.66× MadGraph; diagnose per diagram"
-description: "Diagnosis only. dim6top_LO_UFO card 6, tZq_EFT_CPV_point_1, reads vg/MG 1.655 ± 0.074 over 5 seeds on main 54cecfac, the first σ check ever on this model. Census and per-diagram × per-helicity complex values on one subprocess against MadGraph 3.7.1 standalone, with the imaginary-coefficient discriminator. No production code."
+description: "Diagnosis only. dim6top_LO_UFO card 6, tZq_EFT_CPV_point_1, reads vg/MG 1.655 ± 0.074 over 5 seeds on main 40e87aa8, the first σ check ever on this model. Census and per-diagram × per-helicity complex values on one subprocess against MadGraph 3.7.1 standalone, with the imaginary-coefficient discriminator. No production code."
 status: draft
 agent: validation-dev (Opus)
 depends_on: []
@@ -9,7 +9,7 @@ closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
 ---
 Diagnosis session of [sprint L](../sprint.md), branch `sprintl-dim6top-sigma` off
-main c095a1cf. It is a pre-tag blocker candidate for v0.2.3. **No production code**:
+main 35ace596. It is a pre-tag blocker candidate for v0.2.3. **No production code**:
 the deliverable is the census, the dumps, the fits and a located cause, with a
 candidate fix checked arithmetically on the dumps. The planner reviews them before
 anyone writes a fix.
@@ -21,7 +21,7 @@ anyone writes a fix.
   plus the charge conjugate as `add process`. The full proc card is in
   `/home/user/wt/sprintl-dim6top-mg/proc_card_card6_vg.dat`.
 - **Cross sections:**
-  - vibegraph main 54cecfac, 5 seeds at campaign budget: 0.07589, 0.07616, 0.08884,
+  - vibegraph main 40e87aa8, 5 seeds at campaign budget: 0.07589, 0.07616, 0.08884,
     0.06852 and 0.08400 pb, mean 0.07868. Every seed is ≥ 1.44 × MG; χ²/dof is 1.85.
   - MadGraph 2.9.18 gridpack survey: 0.04754 ± 0.0000554 pb, base point, not
     reweighted.

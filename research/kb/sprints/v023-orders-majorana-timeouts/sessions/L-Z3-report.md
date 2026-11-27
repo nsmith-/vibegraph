@@ -6,10 +6,10 @@ status: draft
 tags: [hygiene, widths, resonance, generate, mutation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-widths` off main 8b3af5ab (brief commit 0a1698b7). Scope:
-the code, tests and docs of e99f8ba2 (#179: `widths.rs`, `ufo/bind.rs`,
+Branch `sprintl-hyg-widths` off main 033044e4 (brief commit 0a1698b7). Scope:
+the code, tests and docs of 8a23b8a4 (#179: `widths.rs`, `ufo/bind.rs`,
 `ufo/report.rs`, `ufo/slha.rs`, the CLI's `bind_param_card`, `parameters`) and
-5a1c33e8 (#188: `generate.rs` `group_resonances`/`member_line_codes`,
+56abf4a9 (#188: `generate.rs` `group_resonances`/`member_line_codes`,
 `generate/source.rs`, `lhef/resonance.rs` `MemberLines`).
 
 No backlog item names a path of this scope: `grep -rln -e '/widths.rs' -e
@@ -157,7 +157,7 @@ lines), as the widthful one already was.
 ## Identity oracle
 
 Chosen before the first edit. Main's binary was built from this branch at
-0a1698b7 (main 8b3af5ab plus the brief; its build ran after the findings
+0a1698b7 (main 033044e4 plus the brief; its build ran after the findings
 commit 2f9b59d2, which `git describe` shows in `version`; neither commit
 touches code) into `/home/user/wt/lz3-main-target`, copied to
 `/home/user/wt/lz3-oracle/vibegraph-main`; the head binary is the fixed tree's

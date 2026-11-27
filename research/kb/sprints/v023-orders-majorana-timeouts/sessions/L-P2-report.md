@@ -13,12 +13,12 @@ adds only this report and the kb edits. Closes
 deleted.
 
 Every σ below names the code it ran on:
-- `main a5bf8fca` is the branch base. On card 134 its code equals main
-  7b36722c (one seed checked bit for bit below).
+- `main 631cdbca` is the branch base. On card 134 its code equals main
+  6eb11d1c (one seed checked bit for bit below).
 - `f70ab694` is L-P1's fix.
 - `2091a26f` is fix2, the code head.
 
-The binaries `vibegraph-probe` and `vibegraph-fix1` are a5bf8fca and
+The binaries `vibegraph-probe` and `vibegraph-fix1` are 631cdbca and
 f70ab694 with L-P1's env-gated per-point probe (`probe.patch`). The hook
 prints and changes nothing: L-P1 showed seed 2 of card 126 bit for bit
 between the probe build and a clean one.
@@ -84,7 +84,7 @@ neval 4000/16000/64000, on seeds 1–4 and 20261005
 
 | code | ESS range | pass-cuts | refusals |
 |---|---|---|---|
-| main a5bf8fca | 52–5118 | 0.46–0.48 | 0 |
+| main 631cdbca | 52–5118 | 0.46–0.48 | 0 |
 | f70ab694 | 9–786 | 0.37–0.42 | 1 (neval 4000, seed 20261005) |
 | fix2 | equal to main in `sigma` and `sigma_err`, full f64, all 15 runs | | 0 |
 
@@ -144,7 +144,7 @@ evidence either way.
 
 | code | mean (pb) | ± | seed sd | χ²/dof | mean reported err |
 |---|---|---|---|---|---|
-| main 7b36722c | 0.0551970 | 0.59% | 1.31% | 1.87 | 0.95% |
+| main 6eb11d1c | 0.0551970 | 0.59% | 1.31% | 1.87 | 0.95% |
 | #184 2091a26f | 0.0551242 | 0.60% | 1.33% | 1.89 | 0.93% |
 
 - #184/main per seed: 1.0049, 1.0003, 0.9926, 0.9994, 0.9963.
@@ -174,14 +174,14 @@ vibegraph integrate proc_134.dat --run-card run_card_pol.dat --param-card param_
 
 - **This is the campaign run.** The campaign command (`--target-rel 0.01`
   in place of the three fixed-budget flags) stops at `target_met` after
-  exactly 6 iterations. On seed 1, a5bf8fca gives the same σ both ways:
+  exactly 6 iterations. On seed 1, 631cdbca gives the same σ both ways:
   0.05567511783639536 ± 3.6959e-4.
 - **Evaluations: 1 548 076–1 576 980 per run on main, 1 536 706–1 577 067 on
   PR 5.** The v0.2.2 gpdb rows spent 1.55–1.58M.
 
 | code | mean (pb) | seed sd | χ²/dof | mean reported err | per-seed err |
 |---|---|---|---|---|---|
-| main a5bf8fca | 0.0553847 | 0.30% | 0.23 | 0.55% | 0.66 0.51 0.57 0.50 0.48% |
+| main 631cdbca | 0.0553847 | 0.30% | 0.23 | 0.55% | 0.66 0.51 0.57 0.50 0.48% |
 | PR 5 f70ab694 | 0.0554140 | 0.57% | 0.84 | 0.61% | 0.59 0.52 0.48 0.50 0.95% |
 
 PR 5/main per seed: 0.9981, 1.0004, 0.9957, 0.9994, 1.0091.
@@ -189,8 +189,8 @@ PR 5/main per seed: 0.9981, 1.0004, 0.9957, 0.9994, 1.0091.
 Which code each side is, checked on seed 1 with the same command:
 
 ```
-a5bf8fca+probe  0.05567511783639536  ± 0.0003695930791613474
-main 7b36722c   0.05567511783639536  ± 0.0003695930791613474   (vibegraph v0.2.2-18-g7b36722c)
+631cdbca+probe  0.05567511783639536  ± 0.0003695930791613474
+main 6eb11d1c   0.05567511783639536  ± 0.0003695930791613474   (vibegraph v0.2.2-18-g7b36722c)
 f70ab694+probe  0.055570658001722936 ± 0.00032783461379962576
 fix2 build      0.055570658001722936 ± 0.00032783461379962576
 ```
@@ -390,8 +390,8 @@ Command B (as the validator's pair): `--fixed-budget --neval 120000
 | card | command | expected answer |
 |---|---|---|
 | 134 (VBSWmTZLTo4Jets) | A | σ ≈ 0.0554 pb; seed sd and mean error within noise of main's campaign rows (0.30–0.6% sd, about 0.55% error); scatter χ²/dof about 1. Bit-identical to the validator's 2091a26f B run under B |
-| 700 (VBSWpZTo4Jets, `p p > w+ z j j QED=4 QCD=0`, unpolarised; cards as the sibling VBS session staged them) | A and B, both on main 7b36722c as well | PR 5 and main within noise on sd, χ²/dof and mean error; means within 1σ |
-| 967 (cards as the validator staged it) | A and B, both on main 7b36722c as well | as 700 |
+| 700 (VBSWpZTo4Jets, `p p > w+ z j j QED=4 QCD=0`, unpolarised; cards as the sibling VBS session staged them) | A and B, both on main 6eb11d1c as well | PR 5 and main within noise on sd, χ²/dof and mean error; means within 1σ |
+| 967 (cards as the validator staged it) | A and B, both on main 6eb11d1c as well | as 700 |
 
 Both 700 and 967 have no forced decays under `cut_decays` with no decay
 chain, so fix2 cannot move them. ab4fac69 and 2091a26f should be

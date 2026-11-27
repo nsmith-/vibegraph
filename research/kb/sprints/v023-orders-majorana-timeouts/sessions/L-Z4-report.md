@@ -6,7 +6,7 @@ status: draft
 tags: [hygiene, multichannel, spine, cuts, validation, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-11-24}
 ---
-Branch `sprintl-hyg-phasespace` off main 8b3af5ab. Source of every claim below
+Branch `sprintl-hyg-phasespace` off main 033044e4. Source of every claim below
 is a command shown with it; paths are relative to the worktree
 `/home/user/wt/sprintl-hyg-phasespace`.
 
@@ -15,9 +15,9 @@ sections after it record the fixes, mutations, oracle and gates.
 
 ## Findings (before any edit)
 
-Scope: `git show 8b3af5ab -- vibegraph-lib/src` (`cuts.rs`, `phasespace/diagram_channel.rs`,
-`phasespace/maps.rs`) and `git show 2ac778e2 -- validation/madgraph/ew_recombine.py`.
-Main equals the branch base: `git diff 8b3af5ab HEAD --stat` lists only the brief.
+Scope: `git show 033044e4 -- vibegraph-lib/src` (`cuts.rs`, `phasespace/diagram_channel.rs`,
+`phasespace/maps.rs`) and `git show 2f1833ff -- validation/madgraph/ew_recombine.py`.
+Main equals the branch base: `git diff 033044e4 HEAD --stat` lists only the brief.
 
 ### Mutation batch (point 2)
 
@@ -58,7 +58,7 @@ code, runs `cargo test -p vibegraph-lib --lib -- cuts:: phasespace:: proton::`
 | Z4-10 | 1 | `cuts.rs:2078`, `maps.rs:314-322` | The sentence added to `spacelike_floor`'s doc runs to 105 columns on its own line and the `MapChoices::channel` doc leaves a four-word line ("The one place a channel") where the added clause was inserted. Docs are correct, only mis-wrapped. | checked | fix: reflow |
 | Z4-11 | 4 | `cuts.rs:2247` and `maps.rs:255` | The same reduction, `reduce(\|a, b\| Some(a?.min(b?)))` over the filters' `Option<f64>` bounds, is written in two modules. | checked | **Found** (across modules; both named) |
 | Z4-12 | 3 | `diagram_channel.rs:983` `pub fn with_side_transfer_bounds` | Its only caller is `maps.rs` in the same crate, but every sibling builder (`with_timelike_floors`, `with_fiducial_t_max`, `with_forced_windows`) is `pub` the same way, and `with_fiducial_t_max` has integration-test users. A new `pub` with a user outside its module (`maps.rs`) passes the rule. | checked | leave |
-| Z4-13 | 1 | the three source files' added lines | `git show 8b3af5ab -- vibegraph-lib/src \| grep '^+' \| grep -nE '\bT[0-9]\b\|\bC[0-9]\b\|Phase [0-9]\|note [0-9]+\|used to\|no longer\|sprint\|session\|backlog\|previously\|the old'` returns nothing. | checked | not a finding |
+| Z4-13 | 1 | the three source files' added lines | `git show 033044e4 -- vibegraph-lib/src \| grep '^+' \| grep -nE '\bT[0-9]\b\|\bC[0-9]\b\|Phase [0-9]\|note [0-9]+\|used to\|no longer\|sprint\|session\|backlog\|previously\|the old'` returns nothing. | checked | not a finding |
 
 Backlog check. Items naming a path under review: `hygiene/cut-threshold-rule-spelled-inline`
 (cuts.rs: the default-off rule; `single_leg_transfer_bound` reads `pt_min_of`, which is
@@ -115,8 +115,8 @@ P15 survive and a path-with-`[` test was added.
 
 ## Identity oracle
 
-Base binary: this tree at HEAD fde61c2b built before any edit (`git diff 8b3af5ab HEAD
---stat` lists only the brief, so the source is main 8b3af5ab); new binary built from the
+Base binary: this tree at HEAD fde61c2b built before any edit (`git diff 033044e4 HEAD
+--stat` lists only the brief, so the source is main 033044e4); new binary built from the
 final tree. `vibegraph integrate <proc_card> --run-card <run_card> --fixed-budget --neval
 20000 --niter 3 --seed 7 -j 2 --no-network --force --output-ldjson` (`oracle.sh`), cards
 `pp_to_llj_mlm` (the banked run card, `p p > e+ e- j`) and `pp_to_ttx_0j1j_mlm` (the L-P1

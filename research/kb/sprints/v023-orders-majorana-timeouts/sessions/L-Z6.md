@@ -8,11 +8,11 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-progress` off main 8b3af5ab.
+A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-progress` off main 033044e4.
 
 It covers these merged PRs. For each one, read the squash commit's diff (`git show <sha>`) and its session brief and report under `sessions/`:
-- **#183 `abc3b31e`**, phase timing records for integrate and generate (PR 3a). Brief and report: `sessions/L-T1.md`, `L-T1-report.md`.
-- **#186 `b4e284a3`**, global position in ldjson progress records (PR 14). Brief and report: `sessions/L-Y1.md`, `L-Y1-report.md`.
+- **#183 `1058b781`**, phase timing records for integrate and generate (PR 3a). Brief and report: `sessions/L-T1.md`, `L-T1-report.md`.
+- **#186 `a1a00162`**, global position in ldjson progress records (PR 14). Brief and report: `sessions/L-Y1.md`, `L-Y1-report.md`.
 
 **The code:**
 - `vibegraph-cli/src/phase.rs`, `logging.rs`, `output.rs`;

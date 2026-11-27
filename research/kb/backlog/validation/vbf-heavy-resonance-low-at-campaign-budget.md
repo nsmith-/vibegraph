@@ -12,7 +12,7 @@ tags: [vbf, sigma, budget-convergence, cms, campaign]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
 The sprint L validator ran these on PR 5's set B (#184, 2091a26f) and on main
-7b36722c, from before PR 5. Both used the campaign argv: `--fixed-budget --neval
+6eb11d1c, from before PR 5. Both used the campaign argv: `--fixed-budget --neval
 120000 --niter 3 --parallel-diagrams`, with 5 seeds per build.
 
 | card | MG | PR 5 vg/MG | main vg/MG | per-seed (PR 5) | per-seed (main) |

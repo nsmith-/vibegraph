@@ -6,7 +6,7 @@ status: draft
 tags: [cli, ldjson, progress, output, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-progress` off main abc3b31 (brief commit 05412c4f). Closes
+Branch `sprintl-progress` off main 1058b78 (brief commit 05412c4f). Closes
 `ldjson-progress-has-no-run-global-position`; its file is deleted.
 
 ## What changed
@@ -98,7 +98,7 @@ restored byte for byte before the commit.
 
 **σ and grid, against main** (both binaries dev profile, `-j 1`, seed 5,
 `--fixed-budget --neval 3000 --niter 3`, `--no-tui`; main built in a detached
-worktree of abc3b31 with its own target, removed afterwards):
+worktree of 1058b78 with its own target, removed afterwards):
 
 | card | σ main | σ branch | `sha256sum out/grid.bin.zst` (both) |
 |---|---|---|---|

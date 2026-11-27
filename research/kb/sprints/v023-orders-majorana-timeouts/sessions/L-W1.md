@@ -77,7 +77,7 @@ Before writing code, read and cite (file:line) in the pinned checkout
    and a massless daughter. Each gets a unit test with the analytic value.
 3. **Bit for bit:** no banked card uses `Auto` today, since it is refused, so
    every banked row must be unchanged. Show it on at least 3 banked cards,
-   main d5e7c71 against the branch: release `integrate --seed 20261122
+   main e8da7a4 against the branch: release `integrate --seed 20261122
    --fixed-budget`, comparing σ and the grid sha256.
 4. **One end-to-end σ:** a card whose resonance width comes from `Auto`
    (for example `e+ e- > mu+ mu-` near the Z with `DECAY 23 Auto`) must give

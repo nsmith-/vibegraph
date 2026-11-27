@@ -8,7 +8,7 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-A follow-up to L-U1 in [sprint L](../sprint.md), on branch `sprintl-config-if` off main 8b3af5ab. It fixes a regression that blocks the v0.2.3 tag. L-Z5 found it (`sessions/L-Z5-report.md` on branch `sprintl-hyg-ufo-reports`, finding Z5-12), and the manager reproduced it with both binaries.
+A follow-up to L-U1 in [sprint L](../sprint.md), on branch `sprintl-config-if` off main 033044e4. It fixes a regression that blocks the v0.2.3 tag. L-Z5 found it (`sessions/L-Z5-report.md` on branch `sprintl-hyg-ufo-reports`, finding Z5-12), and the manager reproduced it with both binaries.
 
 ## The regression
 
@@ -24,7 +24,7 @@ The model is MadGraph's `models/sm` with two additions:
 The card is `import model sm_if` / `generate e+ e- > mu+ mu-`, run as `vibegraph --no-network enumerate <card> --ufo-dir <models> --out <dir> --svg none`.
 
 - **v0.2.2 release binary:** loads it, and writes 2 diagrams in 1 subprocess (rc=0).
-- **main 8b3af5ab:** refuses it (rc=1) with:
+- **main 033044e4:** refuses it (rc=1) with:
   `failed to load model: Parameter parse error: parameter(s)  are defined under an `if` of parameters.py whose condition is outside the subset of Python the loader evaluates against configuration.py (…)`
   - The doubled space is where a name should be.
 

@@ -6,15 +6,15 @@ status: draft
 tags: [hygiene, enumerate, compile, amplitude-probe, parallelism, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-hyg-enumerate` off main 8b3af5ab. Scope: the squash commit
-`ae88d176` (#185) — `diagrams/mod.rs`, `diagrams/artifact.rs`,
+Branch `sprintl-hyg-enumerate` off main 033044e4. Scope: the squash commit
+`39180cb4` (#185) — `diagrams/mod.rs`, `diagrams/artifact.rs`,
 `diagrams/chain.rs`, `ufo/conserved.rs`, `amplitude_probe.rs`, the compile
 paths in `hadronic.rs`, `proton.rs`, `multiplicity.rs` and `generate.rs`, and
 the CLI's `parallel.rs`, `enumerate.rs`, `integrate.rs` and `main.rs`.
 
 ## Findings
 
-Written and committed before any code edit. Line numbers are at 8b3af5ab.
+Written and committed before any code edit. Line numbers are at 033044e4.
 Points: 1 maintainability, 2 non-vacuity, 3 visibility, 4 abstractions.
 Confidence: *checked* (the evidence settles it) or *suspected* (what settles
 it is named, and the mutation batch below settles it).
@@ -49,7 +49,7 @@ over `research/kb/backlog`): `weighted-order-computed-three-ways` (Z7.13),
 `amplitude-probe-skips-two-to-one`. None is a finding here except the stale
 site name in the first.
 
-**Identity oracle, chosen before the first edit.** main 8b3af5ab and this
+**Identity oracle, chosen before the first edit.** main 033044e4 and this
 branch's head, each built in its own worktree and target (dev profile), run
 from the same directory:
 - `vibegraph enumerate --svg none` at `-j 1` and `-j 4`: sha256 of
@@ -88,12 +88,12 @@ Tests deleted: none. One test was extended (Z7.6).
 ### Identity: main against head, bit for bit
 
 `scratchpad/lz7/oracle.sh <binary> <tag>` runs each binary from this
-worktree, dev profile. main is 8b3af5ab, built in `/home/user/wt/lz7-main`
+worktree, dev profile. main is 033044e4, built in `/home/user/wt/lz7-main`
 (deleted afterwards). head is `919d823c`, built in this worktree. The 16-hex
 values are sha256 prefixes.
 
 ```
---- main 8b3af5ab                                          --- head 919d823c
+--- main 033044e4                                          --- head 919d823c
 enumerate ee   -j1 json=9ae189bfcc5c4647 bin=fa143aa62622df43   (same)
 enumerate ee   -j4 json=9ae189bfcc5c4647 bin=fa143aa62622df43   (same)
 enumerate eej  -j1 json=42c2a9b7b7b2bb30 bin=1770335d9adc11f7   (same)
@@ -172,7 +172,7 @@ $ cargo clippy --workspace --all-targets -- -D warnings          (on 919d823c)
 $ cargo clippy --workspace --all-targets --features vibegraph/extended-validation,vibegraph-lib/extended-validation -- -D warnings   (on 919d823c)
     Finished `dev` profile [optimized] target(s) in 24.79s       rc=0
 $ cargo doc -p vibegraph-lib --no-deps --document-private-items
-warning: `vibegraph-lib` (lib doc) generated 13 warnings          (main 8b3af5ab: 13; none new)
+warning: `vibegraph-lib` (lib doc) generated 13 warnings          (main 033044e4: 13; none new)
 $ cargo doc -p vibegraph --no-deps --document-private-items      0 warnings
 $ flock /home/user/wt/heavy.lock /tmp/claude-0/lp/verify-hidden.sh /home/user/wt/sprintl-hyg-enumerate lz7
 head b6b0862c
@@ -225,7 +225,7 @@ banked MLM card.
 
 | technique | share | result |
 |---|---|---|
-| Diff read of `ae88d176` with the L-T3 report's own "cannot see" lines | 25% | Z7.7 came straight from the report's stated blind spot; Z7.8 |
+| Diff read of `39180cb4` with the L-T3 report's own "cannot see" lines | 25% | Z7.7 came straight from the report's stated blind spot; Z7.8 |
 | Grep each new `pub` item and each `_with`/`_compiled` wrapper's callers across the workspace | 20% | Z7.1–Z7.5, Z7.9; the dead wrappers were invisible to the compiler because they are `pub` |
 | `grep allow(dead_code)` on the diff | 5% | Z7.3 |
 | Mutation batch (script, lock-serialised) | 35% | 2 survivors of 11 run, both fixed and re-run |

@@ -39,7 +39,7 @@ trusted (`research/kb/validation/bit-exact-amplitude-debugging.md`).
 
 ## Also refused: PR 2's 31 target cards
 
-On main a5bf8fca, with PR 2's Majorana support merged, all 31 of the cards PR 2
+On main 631cdbca, with PR 2's Majorana support merged, all 31 of the cards PR 2
 was aimed at are refused here too, each in under 0.1 s:
 - TypeIII `tr+ tr0`: 112, 113, 539–543.
 - LQ S3m43: 100, 101, 478–482.

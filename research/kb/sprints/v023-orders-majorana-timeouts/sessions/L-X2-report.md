@@ -78,7 +78,7 @@ All hermetic, debug build.
   table at -24 still refused), the classification row's example now carries a
   table (`Same` against the empty card, so a carried table would fail it), and
   the CLI test counts four warnings.
-- Main merged (`origin/main` 4b132cc, squared orders). One conflict: main had
+- Main merged (`origin/main` f4d6eba, squared orders). One conflict: main had
   appended the HNL `ckmblock` note to the backlog item this session deletes;
   resolved as deleted (the ruling answers that note). One missing
   `squared_orders: None` in a literal PR 11 added
@@ -132,7 +132,7 @@ Branch `sprintl-leftovers` at the commit of this session.
    they should bind with that entry ignored and the MZd of the card used; compare
    with the hand-trimmed runs (0.985 and 0.971 of MG). A decay table under 1000022 is ignored too.
 
-## Merge of main with Auto widths (e99f8ba2)
+## Merge of main with Auto widths (8a23b8a4)
 
 Conflicts in `bind.rs`, `enumerate.rs`, `integrate.rs`, `cli_param_card.rs`
 and `reference.md`; both behaviours kept.

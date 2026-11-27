@@ -7,7 +7,7 @@ tags: [dim6top, cp-violation, complex-couplings, hermitian-conjugate, oracle, ma
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-26}
 ---
 Worktree `/home/user/wt/sprintl-dim6top-sigma`, branch `sprintl-dim6top-sigma`, head
-`570f1ea9` (main `c095a1cf` plus the brief). This was a diagnosis session. No source
+`570f1ea9` (main `35ace596` plus the brief). This was a diagnosis session. No source
 change is committed: the only commit is this report. Every scratch artifact is under
 `/home/user/wt/sprintl-dim6top-mg/` (listed at the end). The scratch probe
 `vibegraph-lib/tests/ld1_probe.rs` was copied into the worktree for each run and then
@@ -687,7 +687,7 @@ Branch `sprintl-dim6top-sigma`, head = this report's commit (on `570f1ea9`).
 ## Follow-up: card 6's own cuts, and the σ the defect produces
 
 Branch `sprintl-dim6top-sigma`, starting at `be45128c`. `origin/main` was still
-`c095a1cf`, already merged (`git merge-base --is-ancestor origin/main HEAD`). Inputs
+`35ace596`, already merged (`git merge-base --is-ancestor origin/main HEAD`). Inputs
 from the validator:
 
 - The run card's cut and scale lines. Active cuts: `ptj = 0.1` and `mmll = 30`.
@@ -905,7 +905,7 @@ deleted afterwards (`ls vibegraph-lib/tests/ld1_probe.rs` → no such file).
 ## Follow-up: card 7 (ttZ_3l_4l_EFT_CPV_point_0_13p6)
 
 Branch `sprintl-dim6top-sigma` at `dd1feada`. Card 7 reads vg/MG 1.215 ± 0.034 (one
-seed at campaign budget, main `54cecfac`). It uses the same dim6top UFO as card 6.
+seed at campaign budget, main `40e87aa8`). It uses the same dim6top UFO as card 6.
 
 ### Inputs
 

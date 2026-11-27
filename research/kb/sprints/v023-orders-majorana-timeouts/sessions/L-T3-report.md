@@ -6,7 +6,7 @@ status: draft
 tags: [performance, enumerate, compile, amplitude-probe, parallelism, cli, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-Branch `sprintl-timeout-fixes` off main a5bf8fca, with origin/main (PR 3a
+Branch `sprintl-timeout-fixes` off main 631cdbca, with origin/main (PR 3a
 #183 and PR 3 #173) merged in at 6ee36331. Closes
 `enumeration-hands-flavour-violating-subprocesses-to-feyngraph`,
 `set-compilation-loops-are-serial`, `amplitude-probe-compiles-each-set-twice`
@@ -24,7 +24,7 @@ Local measurements are dev profile (opt-level 2, no LTO), on the shared
 4-core container, both sides of every comparison built the same way. The
 baseline binary was built in this worktree before any code change, at
 821053f5, whose `vibegraph-lib`/`vibegraph-cli`/`Cargo.*` are identical to
-a5bf8fca (`git diff a5bf8fca --stat -- vibegraph-lib vibegraph-cli
+631cdbca (`git diff 631cdbca --stat -- vibegraph-lib vibegraph-cli
 Cargo.toml Cargo.lock` is empty), instead of in a separate main worktree; it
 lives in the session scratchpad as `lt3-bin/vibegraph-dev-a5bf8fca`.
 
@@ -279,7 +279,7 @@ across the pool.
 ## Release measurements (manager-approved jobs 1–3)
 
 Release profile on both sides, `cargo build --release -p vibegraph -j 4`,
-each in its own target directory: old = main f08aa3ce (a detached worktree,
+each in its own target directory: old = main 3b99cb6a (a detached worktree,
 removed afterwards), new = c74ade3e. One run per configuration, run one at a
 time with nothing else heavy on the container (4 cores, which are not the
 reference VM's cores). Driver `lt3-scripts/jobs.sh`, logs `lt3--job{1,2,3}.log`
@@ -360,7 +360,7 @@ default single-thread walk.
 
 ## Merge with #186
 
-origin/main b4e284a3 (PR 14, run-global progress) merged at e47435fa, with
+origin/main a1a00162 (PR 14, run-global progress) merged at e47435fa, with
 conflicts in `vibegraph-cli/src/integrate.rs`, `vibegraph-lib/src/generate.rs`
 and `vibegraph-lib/src/multiplicity.rs`, resolved by keeping both sides:
 

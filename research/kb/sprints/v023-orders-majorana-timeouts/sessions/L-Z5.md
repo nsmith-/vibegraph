@@ -8,12 +8,12 @@ depends_on: []
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-23}
 ---
-A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-ufo-reports` off main 8b3af5ab.
+A hygiene pass of [sprint L](../sprint.md) (dispatch step 4), on branch `sprintl-hyg-ufo-reports` off main 033044e4.
 
 It covers these merged PRs. For each one, read the squash commit's diff (`git show <sha>`) and its session brief and report under `sessions/`:
 - **#172 `7ca8d8bd`**, run-card placeholders and UFO parameter refusals (PR 7). Brief and report: `sessions/L-U1.md`, `L-U1-report.md`.
-- **#171 `d5e7c71f`**, model-parameter and artifact-provenance reports (PR 8). Brief and reports: `sessions/L-R1.md`, `L-R1-report.md`, `L-R2-report.md`.
-  - `git show d5e7c71f` also lists 2889 files under `vibegraph-cli/target/`. #191 already untracked them; ignore them in the diff.
+- **#171 `e8da7a48`**, model-parameter and artifact-provenance reports (PR 8). Brief and reports: `sessions/L-R1.md`, `L-R1-report.md`, `L-R2-report.md`.
+  - `git show e8da7a48` also lists 2889 files under `vibegraph-cli/target/`. #191 already untracked them; ignore them in the diff.
 
 **The code:**
 - `vibegraph-lib/src/runcard/`;

@@ -18,7 +18,7 @@ symptoms. They are probably one cause.
   card 7's cuts show iteration χ²/dof from 1e7 to 2e11. That includes runs where
   σ agrees with MadGraph: `b b~` at ctXI = 0 reads 1.06, but unconverged at
   χ²/dof 1.4e7.
-- **A confidently low seed.** In card 6's 5-seed ctXI = 0 control on 54cecfac,
+- **A confidently low seed.** In card 6's 5-seed ctXI = 0 control on 40e87aa8,
   seed 2 read 0.902 with a quoted 2.0% error, the smallest of the five. The set's
   χ²/dof is 3.39.
 - **Zeroed points.** On `g u > e+ ve b b~ d mu+ mu-` at ptj = 0.1, 176361 of

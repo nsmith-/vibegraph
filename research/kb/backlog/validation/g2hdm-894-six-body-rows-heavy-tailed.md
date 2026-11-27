@@ -11,7 +11,7 @@ opened: 2026-11-24
 tags: [g2hdm, sampling, heavy-tail, multichannel, error-calibration]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-24}
 ---
-vg-validator ran g2HDM card 894 (M1000) for five seeds on main 7b36722c
+vg-validator ran g2HDM card 894 (M1000) for five seeds on main 6eb11d1c
 (`--fixed-budget --neval 120000 --niter 3`, about 5850 s each). Four seeds
 agree to 0.14% at 0.046014 pb while each reports 1.5–2.0%, so their χ²/dof is
 far below 1. Seed 4 reads 0.0480612 ± 3.23%, which is +4.4%. The five-seed
@@ -33,6 +33,6 @@ size, from each run's support line, out of about 1.31M kept points: 3830,
 lower than seed 1's, matching its doubled error.
 
 **First step.** The campaign script deleted each run's output directory, so no
-per-channel σ, error, α or w_max survives. Rerun seed 4 on 7b36722c with the
+per-channel σ, error, α or w_max survives. Rerun seed 4 on 6eb11d1c with the
 same argv and `--out` kept (about 1.6 h), check it reproduces σ = 0.0480612 pb,
 and read the heaviest channels from its grid against seed 1's.
