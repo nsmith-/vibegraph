@@ -112,8 +112,10 @@ something new. The gates:
       MadGraph's pre-3.7 `get_channel_cut` form. The user ruled that vibegraph
       keeps the 3.7.1 form, with a release note and no switch.
     - **The 4-jet and γ + jets family reading low** at the campaign budget.
-      This is sampler coverage, not a physics defect. It is released as a known
-      issue (`four-jet-photon-cards-confidently-low-at-campaign-budget`).
+      On 252 this is sampler coverage (1.012 ± 0.027 at 4×). Card 232 reads
+      0.696 ± 0.053 over 4 agreeing seeds at 1×, plus a refusal, and is not yet
+      separated from a defect. It is released as a known issue
+      (`four-jet-photon-cards-confidently-low-at-campaign-budget`).
   - The refusals on 108, 510–512 and 244 are legitimate: MadGraph's σ is 0 there.
 - **The history rewrite is done (#218).** It drops `vibegraph-cli/target/` from
   old d5e7c71f on.
