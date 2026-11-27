@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "A sample's reweight ratio (per event helicity or summed) is recorded only in a log line"
-description: "Neither the LHE header nor the generated record says which ratio the weights carry, and the per-event refusals cannot be checked before generate. simshop wants both, to label samples and refuse in its wizard."
+description: "Neither the LHE header nor the generated record says which ratio the weights carry, and the per-event refusals cannot be checked before generate. simshop wants both."
 area: feature
 state: open
 priority: medium
