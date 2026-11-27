@@ -69,6 +69,10 @@ short-circuits to 1 only when
 
 So `w_c = AMP2_c` only under `sde_strategy = 1` **and** `tmin_for_channel = -1`
 (both defaults); at `sde_strategy = 2`, `w_c = CC_c`.[^n29-b1][^n29-bres]
+`CC_c` is the 3.7.1 form. Before 3.7 MadGraph builds each factor from
+`q⁴ − M²`, which moves the realised configurations, and with them the scale, on
+pre-3.7 references
+([channel-cut-madgraph-versions](channel-cut-madgraph-versions.md)).
 
 vibegraph follows both branches. `EventScaleSource::weights_configurations_by_amp2`
 (`hadronic.rs`) reads both fields; where it is false,
