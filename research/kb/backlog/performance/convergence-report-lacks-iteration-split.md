@@ -25,3 +25,8 @@ ill-posed, so a reader cannot form the run-level χ² across kept iterations.
 `vg-validator` hit this on CMS card 252 (2026-11-28) while checking the
 overflowing reported χ²/dof (`vegas-chi2-per-dof-overflows-on-wide-splits`).
 The same per-iteration record should carry each kept iteration's own total.
+
+An accepted-points count per iteration (points that pass the cuts and pay for
+|M|²) belongs in the same record. On card 252 ns/eval rises 20–30× from the
+first warm-up to iteration 6 at flat points per iteration, which fits rising
+cut acceptance as the grids adapt, but the log cannot show it.

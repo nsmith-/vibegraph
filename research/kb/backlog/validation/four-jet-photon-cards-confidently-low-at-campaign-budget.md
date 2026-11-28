@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "γ + 4-jet cards read 5–30% low: every seed puts the γ+4j multiplicity at 0.12–0.75 of MadGraph's own, with γ+1j and γ+2j agreeing"
-description: "On 232 and 252 every seed reads γ+4j at 0.12–0.75 of MadGraph's per-multiplicity survey while γ+1j/2j agree to ~2%; cuts, veto and scales match MadGraph's events, and γ+4j doubles at 4× points."
+description: "On 232 and 252 every seed reads γ+4j at 0.12–0.75 of MadGraph's per-multiplicity survey. On 252, cuts, veto, scales and |M|² match MadGraph's events, so it is phase-space coverage."
 area: validation
 state: open
 priority: high
@@ -162,3 +162,26 @@ Per multiplicity: γ+1j 1.019, γ+2j 1.004, γ+3j 0.986 (spread 0.144),
 **γ+4j 0.373 (spread 0.125), up from about 0.17 at niter 3**. The γ+4j
 fraction roughly doubles for 4× the averaged points, which, with cuts, veto
 and scales clean, favours slow coverage of the γ+4j corner over a missing term.
+
+## |M|² matches on 252: the deficit is phase-space coverage
+
+MadGraph 3.7.1 standalone, with the gridpack's param card and
+`restrict_ckm_no_b_mass`, against vibegraph's `eval_m2` × initial average /
+Π n_k! at the events' own partonic momenta: 1 ± 6e-8 or better on
+u g → a g g g u (36 events), g g → a g g u ū (8), u u → a g g u u (5),
+u g → a g u c c̄ (6) and d g → a g g g d (7). Non-vacuity: with MadGraph left
+on its default card, every event reads 1.0285790 = 132.507 / 128.8253, the
+aEWM1 ratio.
+
+With cuts, veto, αs/PDF reweighting and |M|² all matching MadGraph's own
+events, card 252's γ+4j deficit is phase-space coverage, a sampler property.
+The niter-6 rung spends the same ~2.25M points per iteration as niter 3 but
+keeps four adapted iterations instead of one, so the γ+4j rise (0.17 → 0.37,
+spread 0.125) fits grids still adapting toward the region. The three sampler
+suspects are the α-survey's 40000-point cap (about 37 per channel at 1068
+channels), the 512-point floor, and kept iterations' Neyman re-allocation not
+lifting floor channels. Card 232's replays are pending.
+
+vibegraph and MadGraph count different diagram numbers at identical |M|² on
+these subprocesses (e.g. 428 against 516), likely a four-gluon-vertex
+convention.
