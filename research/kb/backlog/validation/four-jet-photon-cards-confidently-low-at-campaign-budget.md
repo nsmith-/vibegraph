@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
-title: "4-jet and γ + jets cards read 5–30% low at the campaign budget, with errors too small, on seeds that miss a region"
-description: "Cards 252, 993 and 232 read 0.91, 0.96 and 0.70–0.76 of MadGraph with too-small errors. Their 4× neval rungs spent only ~1.15× the points (512-point channel floor), so no real budget test exists."
+title: "γ + 4-jet cards read 5–30% low: every seed puts the γ+4j multiplicity at 0.12–0.75 of MadGraph's own, with γ+1j and γ+2j agreeing"
+description: "On 232 and 252, 17 of 17 seeds read γ+4j low against MadGraph's per-multiplicity survey, and 4× the averaged points do not move it; γ+1j/2j agree to ~2%. Likely a missing or suppressed γ+4j term."
 area: validation
 state: open
-priority: medium
-closes_when: "The region these seeds miss is localised (channel, cut boundary or phase-space map). Sampling is fixed so that card 252 reads within 2σ of MadGraph at the campaign budget over 20 seeds with seed χ²/dof near 1, or the campaign budget for this family is raised with a 20-seed ladder showing the chosen rung converged."
+priority: high
+closes_when: "The γ+4j deficit on cards 232 and 252 is attributed (per-subprocess σ against MadGraph's P3_* survey, then an unmatched equal-cuts p p > a j j j j comparison if needed) and either fixed, with both cards' γ+4j within 2σ of MadGraph over 5 seeds at a budget shown converged, or registered as a deviation with its cause."
 blocked_by: []
 opened: 2026-11-27
 tags: [vegas, multichannel, confidently-wrong, multi-jet, photon, cms, budget]
@@ -78,3 +78,41 @@ points per iteration are clamped to 40000 (`survey_points` in
 themselves is not ruled out. The gridpack banks only MadGraph's total
 (101.95 pb), so a per-multiplicity MadGraph survey (@0–@3 separately) is the
 oracle that would separate the two.
+
+## MadGraph's per-multiplicity split: γ+4j carries the deficit
+
+Both gridpacks keep MadGraph's own survey and refine results
+(`process/madevent/SubProcesses/P0–P3_*/G*/results.dat`, 823 channel files
+each, P0–P3 being @0–@3). `vg-validator` summed them by P group; they reproduce
+MadGraph's total to 0.2% (232) and 0.8% (252).
+
+| card | γ+1j (@0) | γ+2j (@1) | γ+3j (@2) | γ+4j (@3) |
+|---|---|---|---|---|
+| 232, MadGraph share | 0 | 0.049 | 0.260 | 0.691 |
+| 252, MadGraph share | 0.027 | 0.500 | 0.408 | 0.065 |
+
+vibegraph per final state against MadGraph's own value for that multiplicity,
+over every completed seed (232: 7 seeds at niter 3; 252: 10 seeds, one at
+niter 6):
+
+- γ+1j 0.98–1.09 and γ+2j 0.92–1.06 on every seed.
+- γ+3j 0.81–1.31: scatter around 1, the undersampling seen in the per-channel
+  reading.
+- **γ+4j low on 17 of 17 seeds:** 232 at 0.45–0.75, 252 at 0.12–0.71. 252's
+  niter-6 seed, with 4× the averaged points, reads 0.21.
+
+A heavy tail alone would put some seeds above 1, and more budget would move the
+mean up; neither happens. A missing or suppressed γ+4j contribution is now the
+leading hypothesis. The γ+3j scatter is a separate effect.
+
+MadGraph's γ+4j subprocess shares, to localise it: on 232, gq → γgggq 0.573,
+qq → γggqq 0.286, gq → γgqqq 0.089, gg → γggqq 0.035, qq → γqqqq 0.011,
+qq → γgggg 0.004, gg → γqqqq 0.001; on 252, 0.542, 0.172, 0.146 (gg → γggqq),
+0.123, 0.011 and 0.006 (gg → γqqqq).
+
+The highest multiplicity of an MLM-matched sample is validated elsewhere:
+`sigma_ll_0j2j_mlm_vs_madevent` gates DY's @2 at +0.88% (|pull| < 3). Candidates
+specific to these cards that are unchecked: the photon's own cuts at five
+outgoing legs (the `DR` and `dRGJ` cards cut on photon–jet ΔR), a subprocess
+class missing at four partons, and the highest-multiplicity scale or
+max-jet-flavour handling.
