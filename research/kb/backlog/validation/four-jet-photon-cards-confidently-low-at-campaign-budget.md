@@ -217,3 +217,12 @@ channels against vibegraph's 3 / 15 / 105 / 945), so a per-channel MadGraph
 comparison is not available. The next diagnostic is vibegraph's mixture
 density at MadGraph's own γ+4j events: f/g on events distributed as f locates
 the region the channel maps under-cover.
+
+## Card 232: the same four checks are clean
+
+From 2000 events of the 232 gridpack (1392 at γ+4j, 69.6% against the survey's
+0.691), with the run and param cards byte-identical to the batch's: the cuts
+(HT 600–1000, pta 100–200, draj 0.25, ptj = xqcut 10) accept every event; the
+clustering vetoes none; `<totfact>` agrees on 1261 of 1261 γ+4j candidates
+(worst 2.1e-7); and |M|² matches MadGraph standalone to 1.4e-7 or better on
+831 γ+4j events over five subprocesses. Both cards' deficits are sampling.
