@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
-title: "4-jet and γ + jets cards read 5–30% low at the campaign budget, with errors too small, on seeds that miss a region"
-description: "Cards 252, 993 and 232 read 0.91, 0.96 and 0.70–0.76 of MadGraph with too-small errors. Their 4× neval rungs spent only ~1.15× the points (512-point channel floor), so no real budget test exists."
+title: "γ + 4-jet cards read 5–30% low: every seed puts the γ+4j multiplicity at 0.12–0.75 of MadGraph's own, with γ+1j and γ+2j agreeing"
+description: "On 232 and 252 every seed reads γ+4j at 0.12–0.75 of MadGraph's per-multiplicity survey. On 252, cuts, veto, scales and |M|² match MadGraph's events, so it is phase-space coverage."
 area: validation
 state: open
-priority: medium
-closes_when: "The region these seeds miss is localised (channel, cut boundary or phase-space map). Sampling is fixed so that card 252 reads within 2σ of MadGraph at the campaign budget over 20 seeds with seed χ²/dof near 1, or the campaign budget for this family is raised with a 20-seed ladder showing the chosen rung converged."
+priority: high
+closes_when: "The γ+4j deficit on cards 232 and 252 is attributed (per-subprocess σ against MadGraph's P3_* survey, then an unmatched equal-cuts p p > a j j j j comparison if needed) and either fixed, with both cards' γ+4j within 2σ of MadGraph over 5 seeds at a budget shown converged, or registered as a deviation with its cause."
 blocked_by: []
 opened: 2026-11-27
 tags: [vegas, multichannel, confidently-wrong, multi-jet, photon, cms, budget]
@@ -78,3 +78,151 @@ points per iteration are clamped to 40000 (`survey_points` in
 themselves is not ruled out. The gridpack banks only MadGraph's total
 (101.95 pb), so a per-multiplicity MadGraph survey (@0–@3 separately) is the
 oracle that would separate the two.
+
+## MadGraph's per-multiplicity split: γ+4j carries the deficit
+
+Both gridpacks keep MadGraph's own survey and refine results
+(`process/madevent/SubProcesses/P0–P3_*/G*/results.dat`, 823 channel files
+each, P0–P3 being @0–@3). `vg-validator` summed them by P group; they reproduce
+MadGraph's total to 0.2% (232) and 0.8% (252).
+
+| card | γ+1j (@0) | γ+2j (@1) | γ+3j (@2) | γ+4j (@3) |
+|---|---|---|---|---|
+| 232, MadGraph share | 0 | 0.049 | 0.260 | 0.691 |
+| 252, MadGraph share | 0.027 | 0.500 | 0.408 | 0.065 |
+
+vibegraph per final state against MadGraph's own value for that multiplicity,
+over every completed seed (232: 7 seeds at niter 3; 252: 10 seeds, one at
+niter 6):
+
+- γ+1j 0.98–1.09 and γ+2j 0.92–1.06 on every seed.
+- γ+3j 0.81–1.31: scatter around 1, the undersampling seen in the per-channel
+  reading.
+- **γ+4j low on 17 of 17 seeds:** 232 at 0.45–0.75, 252 at 0.12–0.71. 252's
+  niter-6 seed, with 4× the averaged points, reads 0.21.
+
+No seed reads above 1, which at first suggested a missing or suppressed γ+4j
+contribution. The niter-6 rung below weakens that: γ+4j moves up with budget.
+The γ+3j scatter is a separate effect.
+
+MadGraph's γ+4j subprocess shares, to localise it: on 232, gq → γgggq 0.573,
+qq → γggqq 0.286, gq → γgqqq 0.089, gg → γggqq 0.035, qq → γqqqq 0.011,
+qq → γgggg 0.004, gg → γqqqq 0.001; on 252, 0.542, 0.172, 0.146 (gg → γggqq),
+0.123, 0.011 and 0.006 (gg → γqqqq).
+
+The highest multiplicity of an MLM-matched sample is validated elsewhere:
+`sigma_ll_0j2j_mlm_vs_madevent` gates DY's @2 at +0.88% (|pull| < 3). Candidates
+specific to these cards that are unchecked: the photon's own cuts at five
+outgoing legs (the `DR` and `dRGJ` cards cut on photon–jet ΔR), a subprocess
+class missing at four partons, and the highest-multiplicity scale or
+max-jet-flavour handling.
+
+## Per-subprocess reading: every γ+4j class is suppressed together
+
+The census matches MadGraph exactly: vibegraph enumerates 15 / 95 / 145 / 485
+subprocesses for γ+1j / 2j / 3j / 4j, and MadGraph's `P*/processes.dat` lists
+the same counts of non-mirror processes on both cards. Against MadGraph's P3_*
+values, every γ+4j class (gg → γggqq, gg → γqqqq, gq → γgggq, gq → γgqqq,
+qq → γgggg, qq → γggqq, qq → γqqqq) reads low on every seed, and the classes
+move together seed by seed: 232 at 0.45–0.75 per seed, 252 at 0.12–0.71. A
+factor common to all four-parton final states (cuts, matching, scale or
+phase-space coverage) fits; a defect in one class does not.
+
+252 is far worse than 232. 252 cuts HT to 40–70 GeV and photon–jet ΔR at 0.2;
+232 cuts HT to 600–1000 and ΔR at 0.25. Both use ickkw 1, xqcut 10,
+auto_ptj_mjj True and dynamical_scale_choice −1. Four jets of pT ≳ 10 under
+HT ≤ 70 is a thin corner just above threshold, which either a sampler that
+cannot reach it or a cut wrong only there (HT's jet definition, ptj = xqcut,
+the kt cut over six jet pairs) would explain. The DY @2 gate has one jet pair.
+
+Rungs built by neval share their floor channels' samples at the same seed:
+252 seed 2 reads bit-identical γ+4j values at neval 120000 and 480000.
+
+Next: MadGraph's own @3 events from each gridpack, replayed event by event
+through vibegraph's cuts, |M|² and clustered scales.
+
+## Replay of MadGraph's events, and the niter-6 rung on 252
+
+From 2000 events of the 252 gridpack (145 at γ+4j), replayed through the
+production `Cuts::compile` on the gridpack's run card and a copy of
+`validate_mlm_records`:
+
+- vibegraph's cuts accept 2000 of 2000 events, 145 of 145 at γ+4j. Mutating
+  htjmin, htjmax, pta, draj or xqcut rejects events, and the one-cut-off
+  recompile names the mutated cut, so the check sees each cut.
+- No event is vetoed by the clustering. On the events where a configuration
+  reproduces SCALUP, AQCDUP and pt_clust (124 of 145 at γ+4j; the rest are the
+  known permuted-P1 class, at similar rates on every multiplicity), the
+  `<totfact>` αs/PDF factor matches, worst 1.4e-7.
+- |M|² against MadGraph standalone at the events' momenta is not yet compared.
+
+Five seeds at `--niter 6` (4× the averaged points of niter 3) read
+0.956 ± 0.030 (spread 0.067, no refusals) against 0.907 ± 0.016 at niter 3.
+Per multiplicity: γ+1j 1.019, γ+2j 1.004, γ+3j 0.986 (spread 0.144),
+**γ+4j 0.373 (spread 0.125), up from about 0.17 at niter 3**. The γ+4j
+fraction roughly doubles for 4× the averaged points, which, with cuts, veto
+and scales clean, favours slow coverage of the γ+4j corner over a missing term.
+
+## |M|² matches on 252: the deficit is phase-space coverage
+
+MadGraph 3.7.1 standalone, with the gridpack's param card and
+`restrict_ckm_no_b_mass`, against vibegraph's `eval_m2` × initial average /
+Π n_k! at the events' own partonic momenta: 1 ± 6e-8 or better on
+u g → a g g g u (36 events), g g → a g g u ū (8), u u → a g g u u (5),
+u g → a g u c c̄ (6) and d g → a g g g d (7). Non-vacuity: with MadGraph left
+on its default card, every event reads 1.0285790 = 132.507 / 128.8253, the
+aEWM1 ratio.
+
+With cuts, veto, αs/PDF reweighting and |M|² all matching MadGraph's own
+events, card 252's γ+4j deficit is phase-space coverage, a sampler property.
+The niter-6 rung spends the same ~2.25M points per iteration as niter 3 but
+keeps four adapted iterations instead of one, so the γ+4j rise (0.17 → 0.37,
+spread 0.125) fits grids still adapting toward the region. Card 232's replays are pending.
+
+vibegraph and MadGraph count different diagram numbers at identical |M|² on
+these subprocesses (e.g. 428 against 516), likely a four-gluon-vertex
+convention.
+
+## Where the sampler loses it (card 252, from existing records)
+
+How these runs allocate, from `budget.rs`/`proton.rs` and the logs:
+- `BlockAllocation::ByAlpha`: the per-channel split α is set once by the
+  Kleiss–Pittau α-survey before grid training and never changes. There is no
+  re-allocation between iterations in this mode.
+- The survey is per multiplicity: 945 γ+4j channels over 6 × 40000 points,
+  about 42 points per channel per pass, on untrained grids.
+- The floor counts accepted points: 512 / acceptance, with the multiplier
+  capped at 4. Every channel accepts under one point in four, so each draws
+  2048 points per iteration with fewer than 512 accepted. The γ+4j channels
+  take 1.94M of the 2.23M points per iteration (86%): γ+4j is not starved
+  overall, but each of its channels is thin.
+
+What the records show (niter 6, 5 seeds):
+- γ+4j's final σ share against its α share has quantiles (5/25/50/75/95%)
+  about 0.02 / 0.08 / 0.22 / 0.7 / 4–8, so α barely predicts where σ lands.
+  Per-channel χ²/dof has median 78–156, and the median relative error is 0.55.
+- **The α-survey's own γ+4j estimate is not low:** 0.654, 0.178, 2.786, 1.924
+  and 0.733 of MadGraph, mean 1.25 ± 0.49. Every trained result at every rung
+  is 0.12–0.71, and niter 6 reads 0.37 ± 0.06, about 1.8σ below the survey. The
+  survey sees rare large weights (per-point spread/mean about 130) that the
+  trained per-channel grids, trained on under 512 accepted points per channel
+  per iteration, then miss. At 1.8σ this is suggestive, not proven.
+- Floor membership and α are identical between niter 3 and niter 6 at the same
+  seed. Half of γ+4j's σ sits in 2–8 of the 945 channels, and the top 10
+  channels carry 107–187% of the niter-3 → 6 gain: adaptation in a few dominant
+  channels, still moving at iteration 6.
+
+No one-to-one channel map to MadGraph exists (MadGraph has 4 / 24 / 128 / 667
+channels against vibegraph's 3 / 15 / 105 / 945), so a per-channel MadGraph
+comparison is not available. The next diagnostic is vibegraph's mixture
+density at MadGraph's own γ+4j events: f/g on events distributed as f locates
+the region the channel maps under-cover.
+
+## Card 232: the same four checks are clean
+
+From 2000 events of the 232 gridpack (1392 at γ+4j, 69.6% against the survey's
+0.691), with the run and param cards byte-identical to the batch's: the cuts
+(HT 600–1000, pta 100–200, draj 0.25, ptj = xqcut 10) accept every event; the
+clustering vetoes none; `<totfact>` agrees on 1261 of 1261 γ+4j candidates
+(worst 2.1e-7); and |M|² matches MadGraph standalone to 1.4e-7 or better on
+831 γ+4j events over five subprocesses. Both cards' deficits are sampling.

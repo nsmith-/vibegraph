@@ -4,7 +4,7 @@ title: Per-iteration χ²/dof overflows to ~1e254 on wide channel splits
 description: budget.rs floors a channel's variance at f64::MIN_POSITIVE, so the reported χ²/dof of hundred-channel rows overflows; σ is unaffected.
 area: performance
 state: open
-priority: low
+priority: medium
 closes_when: The combination code reports a finite, meaningful χ²/dof on the 2→6 rows (an estimator fix, not a clamp), or the value is replaced by a statistic that does not divide by a floored variance.
 blocked_by: []
 opened: 2026-08-05
@@ -29,3 +29,24 @@ sharing the cause do not occur under the pooled stop
 [chi2-per-own-sigma-misreads-heavy-tails](../validation/chi2-per-own-sigma-misreads-heavy-tails.md).
 
 Detail: [note 32 §5.4](../../history/notes/32-perf-addendum-plan.md).
+
+## Seen on the CMS 4-jet cards (2026-11-28)
+
+Card 252 (GJets-4Jets, 1068 grids) at `--fixed-budget --neval 120000 --niter 6`
+on 2431b587 logs and records an iteration χ²/dof of 5.66e6, 1.04e7 and 4.57e6,
+and `vg-validator` saw channels with σ = 0 and δσ ≈ 5.8e-146 in the record.
+The run's per-iteration totals cannot confirm the value independently: the
+`iteration N` log lines are running combinations of the kept iterations (the
+last equals the final σ), and inverting them is ill-posed (one seed's running
+error rises between iterations, which implies a negative weight). No log line
+or record field carries each kept iteration's own total, so a reader cannot
+compute the run-level χ² at all.
+
+The reported value is `running_estimate`'s mean of the channels' own χ²/dof
+(`vibegraph-lib/src/budget.rs`), so a single channel with a near-zero quoted
+variance sets it. The same number goes into the `iteration` log line, the
+progress records and the result record, so any reader of `chi2_per_dof` on a
+many-channel CMS card sees noise, not a diagnostic. Raised to medium for that
+reason: the campaign's seed and budget readings have no usable iteration χ²
+on these cards, and the per-iteration totals that would replace it are not
+recorded.

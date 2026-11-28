@@ -18,3 +18,20 @@ from an uncommitted `VG_TRACE` patch to `budget.rs` and `vegas.rs`; the
 committed TSV records only the last iteration's α-share floor count. Any
 allocation or floor change is judged by those numbers, so they belong on the
 report the run already returns.
+
+Each kept iteration's own total (σ_k ± δσ_k) is not recorded either. The
+`iteration N` log lines are running combinations, and inverting them is
+ill-posed, so a reader cannot form the run-level χ² across kept iterations.
+`vg-validator` hit this on CMS card 252 (2026-11-28) while checking the
+overflowing reported χ²/dof (`vegas-chi2-per-dof-overflows-on-wide-splits`).
+The same per-iteration record should carry each kept iteration's own total.
+
+An accepted-points count per iteration (points that pass the cuts and pay for
+|M|²) belongs in the same record. On card 252 ns/eval rises 20–30× from the
+first warm-up to iteration 6 at flat points per iteration, which fits rising
+cut acceptance as the grids adapt, but the log cannot show it.
+
+The record's per-channel `neval` is ambiguous too. On card 252 the top γ+1j
+channel records 982, below the 2048-point cap, while the log says all 1068
+channels are held at the cap. Either the field counts accepted points or the
+log line is wrong; the per-iteration record should state which count it carries.
