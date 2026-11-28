@@ -265,3 +265,30 @@ The record-replay harness reports a field as disagreeing when any one of an
 event's candidate configurations disagrees; on card 252's 20000-event sample
 one γ+4j event has an exact candidate and a 14%-off one. `validate_mlm_records`'
 matched-row reading should take the best candidate.
+
+## Card 232 at niter 6, five seeds
+
+| seed | total vg/MG | γ+2j | γ+3j | γ+4j | survey γ+4j | ESS |
+|---|---|---|---|---|---|---|
+| 1 | 0.855 | 1.023 | 0.969 | 0.800 | 1.053 | 128 |
+| 2 | 0.883 | 1.012 | 0.997 | 0.831 | 0.908 | 106 |
+| 3 | refused (support) | | | | 1.003 | 8 |
+| 4 | 0.981 | 0.989 | 1.166 | 0.910 | 1.201 | 38 |
+| 5 | 0.890 | 1.018 | 0.989 | 0.844 | 0.737 | 47 |
+
+Unweighted over the 4 completed seeds: 0.902 ± 0.027 (spread 0.055), about 3.6σ
+low; γ+4j 0.846 (spread 0.046), γ+3j 1.030, γ+2j 1.011. The survey's γ+4j
+averages 0.980 over all 5. Seed 3's last running value was about 1.29 of
+MadGraph before its sixth iteration raised the error sevenfold, so excluding it
+biases the mean low.
+
+Against the same seed at niter 3 (the first three iterations reproduce exactly),
+seeds 1, 2 and 4 rise: totals 0.651 → 0.855, 0.696 → 0.883, 0.596 → 0.981, and
+γ+4j 0.493 → 0.800, 0.567 → 0.831, 0.451 → 0.910. Seed 5's running value falls
+1.063 → 0.890. Most seeds are still climbing at iteration 6: an under-trained
+bias that shrinks with passes, plus the rare large-weight points the coverage
+harness found.
+
+On card 232 the α-survey gives each of the four multiplicities exactly 25.0% of
+its budget, including γ+1j, whose survey mean is 0; card 252 split
+0.5 / 20.6 / 51.6 / 27.3%. Not traced.
