@@ -100,7 +100,9 @@ Records and kb-only PRs:
 
 v0.2.3 is not tagged yet. The user decided to tag once card 232's last
 follow-up seeds and stage B's cards 724–728 report, unless either shows
-something new. The gates:
+something new. Both have reported, and neither did: 232 is already a known
+issue (its 4× rung runs after the tag), and 724–728 hit the 24 h cap. The
+gates:
 
 - **`vg-validator`'s targeted check of v022-1009's failures.**
   - Stage A: `integrate --check` on all 1000 cards, with no panics, and no
@@ -117,6 +119,9 @@ something new. The gates:
       separated from a defect. It is released as a known issue
       (`four-jet-photon-cards-confidently-low-at-campaign-budget`).
   - The refusals on 108, 510–512 and 244 are legitimate: MadGraph's σ is 0 there.
+  - Stage B's tally: 85 completed, 6 refused and 14 removed at the 24 h wall
+    cap (15, 16, 136, 137, 202–204, 297, 299, 724–728). The removed rows are
+    unmeasured, not passes (`fourteen-stage-b-cards-exceed-the-24-hour-cap`).
 - **The history rewrite is done (#218).** It drops `vibegraph-cli/target/` from
   old d5e7c71f on.
   - The user rewrote main on 2026-11-27. New main 59045b57 has the same tree as
