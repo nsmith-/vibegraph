@@ -116,3 +116,27 @@ specific to these cards that are unchecked: the photon's own cuts at five
 outgoing legs (the `DR` and `dRGJ` cards cut on photon–jet ΔR), a subprocess
 class missing at four partons, and the highest-multiplicity scale or
 max-jet-flavour handling.
+
+## Per-subprocess reading: every γ+4j class is suppressed together
+
+The census matches MadGraph exactly: vibegraph enumerates 15 / 95 / 145 / 485
+subprocesses for γ+1j / 2j / 3j / 4j, and MadGraph's `P*/processes.dat` lists
+the same counts of non-mirror processes on both cards. Against MadGraph's P3_*
+values, every γ+4j class (gg → γggqq, gg → γqqqq, gq → γgggq, gq → γgqqq,
+qq → γgggg, qq → γggqq, qq → γqqqq) reads low on every seed, and the classes
+move together seed by seed: 232 at 0.45–0.75 per seed, 252 at 0.12–0.71. A
+factor common to all four-parton final states (cuts, matching, scale or
+phase-space coverage) fits; a defect in one class does not.
+
+252 is far worse than 232. 252 cuts HT to 40–70 GeV and photon–jet ΔR at 0.2;
+232 cuts HT to 600–1000 and ΔR at 0.25. Both use ickkw 1, xqcut 10,
+auto_ptj_mjj True and dynamical_scale_choice −1. Four jets of pT ≳ 10 under
+HT ≤ 70 is a thin corner just above threshold, which either a sampler that
+cannot reach it or a cut wrong only there (HT's jet definition, ptj = xqcut,
+the kt cut over six jet pairs) would explain. The DY @2 gate has one jet pair.
+
+Rungs built by neval share their floor channels' samples at the same seed:
+252 seed 2 reads bit-identical γ+4j values at neval 120000 and 480000.
+
+Next: MadGraph's own @3 events from each gridpack, replayed event by event
+through vibegraph's cuts, |M|² and clustered scales.
