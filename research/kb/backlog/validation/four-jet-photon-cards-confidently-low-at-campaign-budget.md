@@ -177,11 +177,43 @@ With cuts, veto, αs/PDF reweighting and |M|² all matching MadGraph's own
 events, card 252's γ+4j deficit is phase-space coverage, a sampler property.
 The niter-6 rung spends the same ~2.25M points per iteration as niter 3 but
 keeps four adapted iterations instead of one, so the γ+4j rise (0.17 → 0.37,
-spread 0.125) fits grids still adapting toward the region. The three sampler
-suspects are the α-survey's 40000-point cap (about 37 per channel at 1068
-channels), the 512-point floor, and kept iterations' Neyman re-allocation not
-lifting floor channels. Card 232's replays are pending.
+spread 0.125) fits grids still adapting toward the region. Card 232's replays are pending.
 
 vibegraph and MadGraph count different diagram numbers at identical |M|² on
 these subprocesses (e.g. 428 against 516), likely a four-gluon-vertex
 convention.
+
+## Where the sampler loses it (card 252, from existing records)
+
+How these runs allocate, from `budget.rs`/`proton.rs` and the logs:
+- `BlockAllocation::ByAlpha`: the per-channel split α is set once by the
+  Kleiss–Pittau α-survey before grid training and never changes. There is no
+  re-allocation between iterations in this mode.
+- The survey is per multiplicity: 945 γ+4j channels over 6 × 40000 points,
+  about 42 points per channel per pass, on untrained grids.
+- The floor counts accepted points: 512 / acceptance, with the multiplier
+  capped at 4. Every channel accepts under one point in four, so each draws
+  2048 points per iteration with fewer than 512 accepted. The γ+4j channels
+  take 1.94M of the 2.23M points per iteration (86%): γ+4j is not starved
+  overall, but each of its channels is thin.
+
+What the records show (niter 6, 5 seeds):
+- γ+4j's final σ share against its α share has quantiles (5/25/50/75/95%)
+  about 0.02 / 0.08 / 0.22 / 0.7 / 4–8, so α barely predicts where σ lands.
+  Per-channel χ²/dof has median 78–156, and the median relative error is 0.55.
+- **The α-survey's own γ+4j estimate is not low:** 0.654, 0.178, 2.786, 1.924
+  and 0.733 of MadGraph, mean 1.25 ± 0.49. Every trained result at every rung
+  is 0.12–0.71, and niter 6 reads 0.37 ± 0.06, about 1.8σ below the survey. The
+  survey sees rare large weights (per-point spread/mean about 130) that the
+  trained per-channel grids, trained on under 512 accepted points per channel
+  per iteration, then miss. At 1.8σ this is suggestive, not proven.
+- Floor membership and α are identical between niter 3 and niter 6 at the same
+  seed. Half of γ+4j's σ sits in 2–8 of the 945 channels, and the top 10
+  channels carry 107–187% of the niter-3 → 6 gain: adaptation in a few dominant
+  channels, still moving at iteration 6.
+
+No one-to-one channel map to MadGraph exists (MadGraph has 4 / 24 / 128 / 667
+channels against vibegraph's 3 / 15 / 105 / 945), so a per-channel MadGraph
+comparison is not available. The next diagnostic is vibegraph's mixture
+density at MadGraph's own γ+4j events: f/g on events distributed as f locates
+the region the channel maps under-cover.

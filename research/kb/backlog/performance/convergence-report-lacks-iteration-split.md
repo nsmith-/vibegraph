@@ -30,3 +30,8 @@ An accepted-points count per iteration (points that pass the cuts and pay for
 |M|²) belongs in the same record. On card 252 ns/eval rises 20–30× from the
 first warm-up to iteration 6 at flat points per iteration, which fits rising
 cut acceptance as the grids adapt, but the log cannot show it.
+
+The record's per-channel `neval` is ambiguous too. On card 252 the top γ+1j
+channel records 982, below the 2048-point cap, while the log says all 1068
+channels are held at the cap. Either the field counts accepted points or the
+log line is wrong; the per-iteration record should state which count it carries.
