@@ -2,8 +2,8 @@
 type: Sprint Record
 title: "Sprint L: v0.2.3, squared orders, Majorana, multijet timeouts and simshop's reports"
 description: "Fifteen feature and validation PRs, eight hygiene passes and the kb close-outs before v0.2.3. Every claimed item closed on a measured oracle. The late validator lane found and closed two apparent σ defects as a pre-fix binary and the complex-mass scheme."
-closed: 2026-11-25
-status: draft
+closed: 2026-11-28
+status: stable
 tags: [release, v0.2.3, squared-orders, majorana, chirality, mlm, performance, simshop, cms-gridpacks, sprint-l, sprint-record]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-11-25}
 sources:
@@ -98,11 +98,13 @@ Records and kb-only PRs:
 
 ## Release
 
-v0.2.3 is not tagged yet. The user decided to tag once card 232's last
-follow-up seeds and stage B's cards 724–728 report, unless either shows
-something new. Both have reported, and neither did: 232 is already a known
-issue (its 4× rung runs after the tag), and 724–728 hit the 24 h cap. The
-gates:
+v0.2.3 is tagged at e4102398 (#221's squash; tag object 9d9bfe23) and
+published on 2026-11-28 with all four builds
+([release run](https://github.com/nsmith-/vibegraph/actions/runs/46099753950)).
+`vg-validator` tagged it at the user's instruction. The user had decided to tag
+once card 232's last follow-up seeds and stage B's cards 724–728 reported,
+unless either showed something new. Neither did: 232 was already a known issue
+(its 4× rung runs after the tag), and 724–728 hit the 24 h cap. The gates:
 
 - **`vg-validator`'s targeted check of v022-1009's failures.**
   - Stage A: `integrate --check` on all 1000 cards, with no panics, and no
@@ -132,7 +134,11 @@ gates:
     and patch-id. Build-provenance strings (`-g<sha>`, binary paths) keep the
     old SHA the binary was built from. SHAs of deleted branches are unchanged.
 
-After the tag: cut `release/v0.2`, run the non-publishing dispatch from it, and activate the ruleset (`release-v02-branch-dry-run-and-ruleset`, needs-user).
+After the tag, `release/v0.2` was cut at e4102398 and the non-publishing
+dispatch from it passed release-check and all four builds with publish skipped
+([dry run](https://github.com/nsmith-/vibegraph/actions/runs/46099791575)).
+Activating the `release/v*` ruleset is the user's remaining step
+(`release-v02-branch-dry-run-and-ruleset`, needs-user).
 
 ## Carried forward
 
