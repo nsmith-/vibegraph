@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
-title: "Cut release/v0.2 from the v0.2.3 tag, dry-run release.yml on it, and activate the release/v* ruleset"
-description: "#210 made CI run on release/v* and stopped dispatches from publishing. The remaining steps are the user's: cut the branch, run the non-publishing dispatch from it, and activate the ruleset."
+title: "Activate the release/v* ruleset now that release/v0.2 is cut and dry-run"
+description: "release/v0.2 is cut at the v0.2.3 tag and its non-publishing dispatch passed. The remaining step is the user's: activate the release/v* ruleset from #210's body."
 area: hygiene
 state: needs-user
 priority: high
@@ -25,3 +25,9 @@ builds.
 The ruleset settings mirror main's ruleset (id 22539060) and are given in #210's
 body as UI steps and as a `gh api` payload. Activate the ruleset after the
 branch is cut.
+
+Done on 2026-11-28: `release/v0.2` is at e4102398 (the v0.2.3 tag's commit),
+and the dispatch from it
+([run 46099791575](https://github.com/nsmith-/vibegraph/actions/runs/46099791575))
+passed release-check and all four build legs with publish skipped. Only the
+ruleset remains.
