@@ -51,3 +51,30 @@ Five seeds per rung cannot calibrate the 0.907 → 1.012 shift on a row this
 heavy-tailed, so 20 seeds per rung are needed. These cards use
 `sde_strategy = 1`, so the MadGraph channel-weight difference
 (`scales-pdf/channel-cut-madgraph-versions`) does not apply.
+
+## Per-channel reading of card 232
+
+`vg-validator` read the per-channel σ, error and neval of all 1068 channels from
+the result records of 7 completed 232 seeds (4 at 1×, 3 at neval 480000, build
+2431b587), taking each channel's effective N as (σ/δσ)².
+
+- 1054–1059 channels sit at the 512-point floor at 1× (1034–1040 at 480000).
+  Together they carry 0.26–0.50 of MadGraph per seed, at a median effective N
+  of 3–8 each, many at 1.
+- By final state, per seed: γ+2j 0.045–0.052 (stable), γ+3j 0.218–0.286,
+  γ+4j (945 channels) 0.311–0.519. The two highest seeds are the two whose γ+4j
+  sum is about 0.5.
+- The well-sampled channels are stable: γ+2j (3,0,0) reads 0.0195 ± 0.0015 at
+  effective N ≈ 925, and the top γ+3j channels have effective N ≈ 117.
+- The channels with the widest seed spread are all floor channels with
+  effective N 1–5, e.g. (5,9,383) at 0.004–0.090 of MadGraph.
+- The mean over the 7 seeds of the summed channel σ is 0.723.
+
+That fits about 1000 barely sampled channels, each unbiased in expectation but
+with a median far below its mean. A likely upstream cause is the α-survey: its
+points per iteration are clamped to 40000 (`survey_points` in
+`vibegraph-cli/src/integrate.rs`), about 37 per channel here, too few to rank
+1068 channels, so almost all of them get the floor. A bias in the γ+4j channels
+themselves is not ruled out. The gridpack banks only MadGraph's total
+(101.95 pb), so a per-multiplicity MadGraph survey (@0–@3 separately) is the
+oracle that would separate the two.
