@@ -55,7 +55,10 @@ Records and kb-only PRs:
 - #203: the g2HDM close-out;
 - #208: L-I1;
 - #187, #181, #192, #207 and #209: Found items and planner filings;
-- #213 and #215: stage B's card 6/7 findings, the imaginary-coefficient census and the dim6top convergence item.
+- #213 and #215: stage B's card 6/7 findings, the imaginary-coefficient census and the dim6top convergence item;
+- #216 and #217: L-D2's Found items and L-D1's report;
+- #218: the SHA remap after the history rewrite;
+- #220: MadGraph's pre-3.7 channel weight, which explains DarkHiggs 880 (L-D3).
 
 ## Validation on the merged code
 
@@ -95,20 +98,32 @@ Records and kb-only PRs:
 
 ## Release
 
-v0.2.3 is not tagged yet. Its gates, in order:
+v0.2.3 is not tagged yet. The user decided to tag once card 232's last
+follow-up seeds and stage B's cards 724–728 report, unless either shows
+something new. Both have reported, and neither did: 232 is already a known
+issue (its 4× rung runs after the tag), and 724–728 hit the 24 h cap. The
+gates:
+
 - **`vg-validator`'s targeted check of v022-1009's failures.**
   - Stage A: `integrate --check` on all 1000 cards, with no panics, and no
     former pass fails.
   - Stage B: 1-seed integrations of 105 newly running cards, on the dev build of
-    old-history 54cecfac (new 40e87aa8). It found the dim6top CP-odd defect,
-    fixed by #214. It also found a DarkHiggs deficit that scales with the Zp's
-    distance above threshold: 880 reads 0.976 ± 0.001 over 5 seeds. The
-    per-event oracle traces it to the dynamical-scale clustering choice. This
-    blocks the tag until it is diagnosed.
-  - The 4-jet family reads about 0.93 on one seed each. None of those cards ran
-    in v0.2.2, and batch seeds and a budget ladder are running on it.
-- **The history rewrite is done.** It drops `vibegraph-cli/target/` from old
-  d5e7c71f on.
+    old-history 54cecfac (new 40e87aa8). It found three things.
+    - **The dim6top CP-odd coupling defect**, fixed by #214.
+    - **The DarkHiggs deficit**, up to 2.4% on card 880. #220 attributes it to
+      MadGraph's pre-3.7 `get_channel_cut` form. The user ruled that vibegraph
+      keeps the 3.7.1 form, with a release note and no switch.
+    - **The 4-jet and γ + jets family reading low** at the campaign budget.
+      On 252 this is sampler coverage (1.012 ± 0.027 at 4×). Card 232 reads
+      0.696 ± 0.053 over 4 agreeing seeds at 1×, plus a refusal, and is not yet
+      separated from a defect. It is released as a known issue
+      (`four-jet-photon-cards-confidently-low-at-campaign-budget`).
+  - The refusals on 108, 510–512 and 244 are legitimate: MadGraph's σ is 0 there.
+  - Stage B's tally: 85 completed, 6 refused and 14 removed at the 24 h wall
+    cap (15, 16, 136, 137, 202–204, 297, 299, 724–728). The removed rows are
+    unmeasured, not passes (`fourteen-stage-b-cards-exceed-the-24-hour-cap`).
+- **The history rewrite is done (#218).** It drops `vibegraph-cli/target/` from
+  old d5e7c71f on.
   - The user rewrote main on 2026-11-27. New main 59045b57 has the same tree as
     old c18d4304, and no tag moved.
   - A fresh clone of main packs to 28.90 MiB, against 313 MiB before, and holds

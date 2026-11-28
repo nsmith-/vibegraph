@@ -25,3 +25,9 @@ the integrate log.
 
 The help text says a card `integrate` refuses is refused here too. That is true,
 but a reader takes the flag to mean the report describes the card.
+
+The companion `param_card.dat` is also always the restricted model's default
+card (`default_param_card(model)` in `parameters.rs`), even with `--param-card`:
+a run with MT moved to 172.5 writes a byte-identical `parameters.json` and
+`param_card.dat`. simshop's Parameters wizard step builds on this command, so it
+holds the edited values itself until the report carries them.
