@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "γ + 4-jet cards read 5–30% low: every seed puts the γ+4j multiplicity at 0.12–0.75 of MadGraph's own, with γ+1j and γ+2j agreeing"
-description: "On 232 and 252, 17 of 17 seeds read γ+4j low against MadGraph's per-multiplicity survey, and 4× the averaged points do not move it; γ+1j/2j agree to ~2%. Likely a missing or suppressed γ+4j term."
+description: "On 232 and 252 every seed reads γ+4j at 0.12–0.75 of MadGraph's per-multiplicity survey while γ+1j/2j agree to ~2%; cuts, veto and scales match MadGraph's events, and γ+4j doubles at 4× points."
 area: validation
 state: open
 priority: high
@@ -101,9 +101,9 @@ niter 6):
 - **γ+4j low on 17 of 17 seeds:** 232 at 0.45–0.75, 252 at 0.12–0.71. 252's
   niter-6 seed, with 4× the averaged points, reads 0.21.
 
-A heavy tail alone would put some seeds above 1, and more budget would move the
-mean up; neither happens. A missing or suppressed γ+4j contribution is now the
-leading hypothesis. The γ+3j scatter is a separate effect.
+No seed reads above 1, which at first suggested a missing or suppressed γ+4j
+contribution. The niter-6 rung below weakens that: γ+4j moves up with budget.
+The γ+3j scatter is a separate effect.
 
 MadGraph's γ+4j subprocess shares, to localise it: on 232, gq → γgggq 0.573,
 qq → γggqq 0.286, gq → γgqqq 0.089, gg → γggqq 0.035, qq → γqqqq 0.011,
@@ -140,3 +140,25 @@ Rungs built by neval share their floor channels' samples at the same seed:
 
 Next: MadGraph's own @3 events from each gridpack, replayed event by event
 through vibegraph's cuts, |M|² and clustered scales.
+
+## Replay of MadGraph's events, and the niter-6 rung on 252
+
+From 2000 events of the 252 gridpack (145 at γ+4j), replayed through the
+production `Cuts::compile` on the gridpack's run card and a copy of
+`validate_mlm_records`:
+
+- vibegraph's cuts accept 2000 of 2000 events, 145 of 145 at γ+4j. Mutating
+  htjmin, htjmax, pta, draj or xqcut rejects events, and the one-cut-off
+  recompile names the mutated cut, so the check sees each cut.
+- No event is vetoed by the clustering. On the events where a configuration
+  reproduces SCALUP, AQCDUP and pt_clust (124 of 145 at γ+4j; the rest are the
+  known permuted-P1 class, at similar rates on every multiplicity), the
+  `<totfact>` αs/PDF factor matches, worst 1.4e-7.
+- |M|² against MadGraph standalone at the events' momenta is not yet compared.
+
+Five seeds at `--niter 6` (4× the averaged points of niter 3) read
+0.956 ± 0.030 (spread 0.067, no refusals) against 0.907 ± 0.016 at niter 3.
+Per multiplicity: γ+1j 1.019, γ+2j 1.004, γ+3j 0.986 (spread 0.144),
+**γ+4j 0.373 (spread 0.125), up from about 0.17 at niter 3**. The γ+4j
+fraction roughly doubles for 4× the averaged points, which, with cuts, veto
+and scales clean, favours slow coverage of the γ+4j corner over a missing term.
