@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "No phase-space channel maps a momentum configuration back to its unit-cube coordinates, so a trained grid's density at a given event cannot be evaluated"
-description: "DiagramChannel::density_at rebuilds a channel's Jacobian from invariants but never the coordinates u, so a coverage check at MadGraph's events can use only untrained grids, not the trained VEGAS grids."
+description: "DiagramChannel::density_at rebuilds a channel's Jacobian from invariants but never the coordinates u, so a coverage check at MadGraph's events can use only untrained grids, not trained VEGAS grids."
 area: feature
 state: open
 priority: medium
