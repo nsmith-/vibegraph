@@ -226,3 +226,69 @@ From 2000 events of the 232 gridpack (1392 at γ+4j, 69.6% against the survey's
 clustering vetoes none; `<totfact>` agrees on 1261 of 1261 γ+4j candidates
 (worst 2.1e-7); and |M|² matches MadGraph standalone to 1.4e-7 or better on
 831 γ+4j events over five subprocesses. Both cards' deficits are sampling.
+
+## Coverage at MadGraph's events (card 252, untrained mixture)
+
+A scratch harness builds card 252's γ+4j integrand as `integrate_hadronic`
+does (171 flavour groups, 485 subprocesses, 945 channels) and evaluates the
+full weight W = shape / g, with g = Σ αⱼ gⱼ over every channel, at MadGraph's
+1314 γ+4j events from 20000. Checks: the record's 945 keys map one-to-one onto
+the combiner's channels; gⱼ × the channel's forward weight is 1 to 1.5e-9 on
+393 self-drawn points; W equals production `value(u)` to 2.2e-16; and
+A / mean(1/W) over MadGraph's events reproduces MadGraph's σ to 1.01–1.31.
+γ+4j acceptance is 0.45–0.57%.
+
+- W is heavy-tailed: the top 1% of events carry 66–76% of ΣW, and the top 10%
+  carry 93–96%. Uniform α keeps a tail (42% / 87%), so α is not the cause.
+- The tail sits at high √ŝ (median 888 GeV against 264) with wide jet η-span
+  (7.2 against 4.5): with HT ≤ 70, large ŝ forces forward–backward jets. Smaller
+  min ΔR(γ, j) adds to it. HT, the softest jet's pT and kt_min do not separate
+  it. qq → γggqq is 17% of the events but 41% of the top 10% and 86% of ΣW.
+- The channel holding the event's dominant diagram is the largest term of g only
+  5–16% of the time, no more often than in the bulk.
+
+So the untrained channel maps under-cover a forward, high-ŝ, VBF-like corner.
+Missing that corner alone would cost about 10–20% of γ+4j, not the observed
+63% (niter-6 mean 0.37). The rest has to come either from the trained grids
+moving density further away or from bias in the bulk from training on under
+512 accepted points per channel. Card 232 seed 4 rising from 0.45 to 0.91 at
+γ+4j between niter 3 and niter 6 supports the second. Separating the two needs
+the trained grids' density (`channel-inverse-map-missing`) or vibegraph's own
+generated events against MadGraph's in √ŝ, η-span and ΔR(γ, j).
+
+Card 232, niter 6, seed 4: 0.981 of MadGraph (γ+2j 0.989, γ+3j 1.166, γ+4j
+0.910), against 0.596 (γ+4j 0.451) for the same seed at niter 3; the running
+total climbs 0.596 → 0.650 → 0.811 → 0.981 over iterations 3–6. Its α-survey
+reads γ+4j at 1.20.
+
+The record-replay harness reports a field as disagreeing when any one of an
+event's candidate configurations disagrees; on card 252's 20000-event sample
+one γ+4j event has an exact candidate and a 14%-off one. `validate_mlm_records`'
+matched-row reading should take the best candidate.
+
+## Card 232 at niter 6, five seeds
+
+| seed | total vg/MG | γ+2j | γ+3j | γ+4j | survey γ+4j | ESS |
+|---|---|---|---|---|---|---|
+| 1 | 0.855 | 1.023 | 0.969 | 0.800 | 1.053 | 128 |
+| 2 | 0.883 | 1.012 | 0.997 | 0.831 | 0.908 | 106 |
+| 3 | refused (support) | | | | 1.003 | 8 |
+| 4 | 0.981 | 0.989 | 1.166 | 0.910 | 1.201 | 38 |
+| 5 | 0.890 | 1.018 | 0.989 | 0.844 | 0.737 | 47 |
+
+Unweighted over the 4 completed seeds: 0.902 ± 0.027 (spread 0.055), about 3.6σ
+low; γ+4j 0.846 (spread 0.046), γ+3j 1.030, γ+2j 1.011. The survey's γ+4j
+averages 0.980 over all 5. Seed 3's last running value was about 1.29 of
+MadGraph before its sixth iteration raised the error sevenfold, so excluding it
+biases the mean low.
+
+Against the same seed at niter 3 (the first three iterations reproduce exactly),
+seeds 1, 2 and 4 rise: totals 0.651 → 0.855, 0.696 → 0.883, 0.596 → 0.981, and
+γ+4j 0.493 → 0.800, 0.567 → 0.831, 0.451 → 0.910. Seed 5's running value falls
+1.063 → 0.890. Most seeds are still climbing at iteration 6: an under-trained
+bias that shrinks with passes, plus the rare large-weight points the coverage
+harness found.
+
+On card 232 the α-survey gives each of the four multiplicities exactly 25.0% of
+its budget, including γ+1j, whose survey mean is 0; card 252 split
+0.5 / 20.6 / 51.6 / 27.3%. Not traced.
