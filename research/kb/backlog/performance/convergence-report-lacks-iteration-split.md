@@ -18,3 +18,10 @@ from an uncommitted `VG_TRACE` patch to `budget.rs` and `vegas.rs`; the
 committed TSV records only the last iteration's α-share floor count. Any
 allocation or floor change is judged by those numbers, so they belong on the
 report the run already returns.
+
+Each kept iteration's own total (σ_k ± δσ_k) is not recorded either. The
+`iteration N` log lines are running combinations, and inverting them is
+ill-posed, so a reader cannot form the run-level χ² across kept iterations.
+`vg-validator` hit this on CMS card 252 (2026-11-28) while checking the
+overflowing reported χ²/dof (`vegas-chi2-per-dof-overflows-on-wide-splits`).
+The same per-iteration record should carry each kept iteration's own total.
