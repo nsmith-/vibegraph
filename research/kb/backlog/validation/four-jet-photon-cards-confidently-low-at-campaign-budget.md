@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: "4-jet and γ + jets cards read 5–30% low at the campaign budget, with errors too small, on seeds that miss a region"
-description: "Card 252 reads 0.907 ± 0.016 over 5 seeds at 1×, against 1.012 ± 0.027 at 4×. Every small-error seed is low and every seed at or above 1 has a large error. 993 and 232 scatter the same way."
+description: "Cards 252, 993 and 232 read 0.91, 0.96 and 0.70–0.76 of MadGraph with too-small errors. Their 4× neval rungs spent only ~1.15× the points (512-point channel floor), so no real budget test exists."
 area: validation
 state: open
 priority: medium
@@ -17,22 +17,34 @@ build 2431b587. None of these cards ran in v0.2.2.
 | card | rung | seeds | unweighted mean vg/MG | spread |
 |---|---|---|---|---|
 | 252 GJets-4Jets dRGJ-0p2 HT40-70 | 1× | 4, plus 1 refused | 0.907 ± 0.016 | 0.032 |
-| 252 | 4× | 5 | 1.012 ± 0.027 | 0.061 |
+| 252 | 4× neval (≈1.15× points) | 5 | 1.012 ± 0.027 | 0.061 |
 | 993 GJets_DR-0p4 HT-100to200 | 1× | 5 | 0.958 ± 0.060 | 0.135 |
 | 232 GJ-4Jets HT-600to1000 PTG-100to200 | 1× | 4, plus 1 refused | 0.696 ± 0.053 | 0.105 |
+| 232 | 4× neval (≈1.16× points) | 3, plus 2 refused | 0.759 ± 0.034 | 0.059 |
+
+Every rung ran `--fixed-budget --niter 3`, so σ comes from the third iteration
+alone. With 1068 grids, about 1030 channels sit at the 512-point floor per
+iteration, so 4× `--neval` moved the last iteration from 2.24M to 2.50M points
+(232) and 2.25M to 2.58M (252): ×1.12–1.14 in the iteration σ comes from,
+×1.16–1.18 in total evaluations (`vg-validator`, from the job logs). The 1× →
+"4×" shifts on 252 (+0.105) and 232 (+0.063, 1.0σ) are therefore seed scatter
+on heavy-tailed rows, not convergence. A real budget step raises the iteration
+count, or neval well above 512 × channels (about 550k here).
 
 On stage B's one seed each, about 20 independent 4-jet rows (GJ-4Jets,
 GJets-4Jets, WBtoLNuB-4Jets, DYBto2LB-4Jets, GJets_HT/DR) averaged about 0.93.
 
-On 252 at 4×, the two seeds with a small quoted error read 0.951 (1.2%) and
+On 252 at 4× neval, the two seeds with a small quoted error read 0.951 (1.2%) and
 0.961 (1.6%), and the seeds that read above 1 carry 7–11% errors. That is the
 missed-region signature.
 
 Card 232 differs: its four seeds (0.651, 0.696, 0.842, 0.596; errors 9–13%)
 agree on a deficit of about 30% with χ²/dof ≈ 1.7 about their mean, and seed 5
 is refused (5.1 effective points). Only the highest seed carries the largest
-error. Five seeds cannot tell persistent undersampling from a bias here; a 4×
-rung decides it (mean moves toward 1: coverage; stays near 0.7: a defect).
+error. Five seeds cannot tell persistent undersampling from a bias here; a real 4×
+budget rung (more iterations) decides it (mean moves toward 1: coverage; stays
+near 0.7: a defect). At 4× neval its three surviving seeds read 0.808, 0.777
+and 0.693, with seeds 1 and 5 refused (4.6 and 7.5 effective points).
 Seed 1 reproduces stage B's value on 54cecfac (0.6507).
 
 Five seeds per rung cannot calibrate the 0.907 → 1.012 shift on a row this
